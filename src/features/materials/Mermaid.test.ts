@@ -36,8 +36,11 @@ class FakeWorker {
   onmessage: ((event: { data: unknown }) => void) | null = null;
   requests: { id: number }[] = [];
   stopped = false;
-  constructor() {
-    FakeWorker.started.push(this);
+  /** Reads `type` as a browser with module workers does; the page's probe
+   * for them (`blob://`) starts no worker. */
+  constructor(url: string, options?: { type?: string }) {
+    if (options?.type === 'module' && url !== 'blob://')
+      FakeWorker.started.push(this);
   }
   postMessage(request: { id: number }) {
     this.requests.push(request);
@@ -188,11 +191,17 @@ it('keeps only failures the source causes', async () => {
   await vi.advanceTimersByTimeAsync(60_000);
   expect(first?.stopped).toBe(true);
 
+  // A browser with classic workers only never reads the `type` option, so
+  // it can never start this worker (review r3 L4).
+  const classic: unknown[] = [];
   vi.stubGlobal(
     'Worker',
     class {
       constructor() {
-        throw new Error('No module workers.');
+        classic.push(this);
+      }
+      terminate() {
+        // Nothing runs.
       }
     }
   );
@@ -200,6 +209,7 @@ it('keeps only failures the source causes', async () => {
   await expect(renderMermaid(code)).rejects.toMatchObject({
     reason: 'noWorker',
   });
+  expect(classic).toHaveLength(1);
   vi.stubGlobal('Worker', FakeWorker);
   await expect(drawn(code)).resolves.toMatchObject({ type: 'flowchart-v2' });
 });
@@ -230,13 +240,15 @@ it('draws in the worker the warm-up started', async () => {
   expect(FakeWorker.started[0]?.requests).toHaveLength(1);
 });
 
-// Review L1, r2 L2: every id a drawing defines becomes the copy's own, ids
-// from mermaid's per-worker counters (sankey gradients, sequence actors)
-// too, with every reference; a link to the page outside the drawing stays.
+// Review L1, r2 L2, r3 L2: every id a drawing defines becomes the copy's
+// own, ids from mermaid's per-worker counters (sankey gradients, sequence
+// actors) and from labels too, with every reference, so a label cannot take
+// another copy's marker (`mmi-12_…` in copy `mmi-1`); a link to the page
+// outside the drawing stays.
 it('makes every id a drawing defines its copy own', () => {
   const svg =
-    '<svg id="mmd-3" aria-labelledby="chart-title-mmd-3"><title id="chart-title-mmd-3">T</title><linearGradient id="linearGradient-1"/><path stroke="url(#linearGradient-1)" marker-end="url(#mmd-3_arrow)"/><g id="actor0"/><use href="#actor0"/><a href="#notes">x</a><g id="mmd-30"/></svg>';
-  expect(ownIds(svg, 'mmi-7')).toBe(
-    '<svg id="mmi-7" aria-labelledby="chart-title-mmi-7"><title id="chart-title-mmi-7">T</title><linearGradient id="mmi-7-linearGradient-1"/><path stroke="url(#mmi-7-linearGradient-1)" marker-end="url(#mmi-7_arrow)"/><g id="mmi-7-actor0"/><use href="#mmi-7-actor0"/><a href="#notes">x</a><g id="mmi-7-mmd-30"/></svg>'
+    '<svg id="mmd-3" aria-labelledby="chart-title-mmd-3"><title id="chart-title-mmd-3">T</title><linearGradient id="linearGradient-1"/><path stroke="url(#linearGradient-1)" marker-end="url(#mmd-3_arrow)"/><g id="actor0"/><use href="#actor0"/><a href="#notes">x</a><g id="mmd-30"/><span id="mmi-12_flowchart-v2-pointEnd"></span></svg>';
+  expect(ownIds(svg, 'mmi-1')).toBe(
+    '<svg id="mmi-1" aria-labelledby="mmi-1-chart-title-mmi-1"><title id="mmi-1-chart-title-mmi-1">T</title><linearGradient id="mmi-1-linearGradient-1"/><path stroke="url(#mmi-1-linearGradient-1)" marker-end="url(#mmi-1_arrow)"/><g id="mmi-1-actor0"/><use href="#mmi-1-actor0"/><a href="#notes">x</a><g id="mmi-1-mmd-30"/><span id="mmi-1-mmi-12_flowchart-v2-pointEnd"></span></svg>'
   );
 });

@@ -10,7 +10,7 @@
       // Results are collected by mermaid-probe.mjs.
       import "/src/styles/tailwind.css";
       import { forPage, renderMermaid } from "/src/features/materials/Mermaid.tsx";
-      import { drawMermaid } from "/src/features/materials/mermaidDraw.ts";
+      import { drawMermaid, themePreset } from "/src/features/materials/mermaidDraw.ts";
       import { nearLimitFlowchart, nearLimitMindmap } from "/src/mocks/nearLimits.ts";
 
       const sources = {
@@ -38,7 +38,7 @@
         host.style.cssText = "position:fixed;left:0;top:0;width:760px;height:0;overflow:hidden;visibility:hidden";
         document.body.append(host);
         try {
-          return await forPage(await drawMermaid(code, "linearLight", host, { id: `mmp-${runs}`, width: 760 }));
+          return await forPage(await drawMermaid(code, await themePreset("linearLight"), host, { id: `mmp-${runs}`, width: 760 }));
         } finally {
           host.remove();
         }

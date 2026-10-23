@@ -215,11 +215,24 @@ function restAfterIdle() {
   }, WORKER_IDLE_MS);
 }
 
-/** Whether this browser has what the worker's shim measures text with: a
- * 2D OffscreenCanvas (Safari before 16.4 has none). */
+/** Whether this browser can run the worker at all (review r3 L4): module
+ * workers (a browser reads the `type` option only if it has them; Firefox
+ * before 114 has none) and a 2D OffscreenCanvas, which the shim measures
+ * text with (Safari before 16.4 has none). Neither starts a worker. */
 function canDraw() {
+  let modules = false;
   try {
-    return Boolean(new OffscreenCanvas(1, 1).getContext('2d'));
+    new Worker('blob://', {
+      get type() {
+        modules = true;
+        return 'module' as const;
+      },
+    }).terminate();
+  } catch {
+    // The URL is refused once the options are read.
+  }
+  try {
+    return modules && Boolean(new OffscreenCanvas(1, 1).getContext('2d'));
   } catch {
     return false;
   }
@@ -346,7 +359,11 @@ const DRAWN_SVG = {
  * removed (one in a label or a nested `<svg>` would restyle the page or
  * `@import` from outside, review H1), then its links opened in a new tab. */
 export async function forPage(drawn: Drawn): Promise<Drawn> {
-  const { default: DOMPurify } = await import('dompurify');
+  // A sanitizer that did not download is not the source's fault (review r3
+  // L3): the draw is not kept and the next view tries again.
+  const { default: DOMPurify } = await import('dompurify').catch(() => {
+    throw new MermaidReasonError('notLoaded');
+  });
   const fragment = DOMPurify.sanitize(drawn.svg, DRAWN_SVG);
   const root = fragment.firstElementChild;
   for (const style of fragment.querySelectorAll('style'))
@@ -537,15 +554,18 @@ const ID_USE =
  * ids from the start again (sankey gradients, sequence actors, review r2 L2).
  * The root id, which prefixes most ids and scopes the stylesheet, becomes
  * `copy` wherever it appears (`mmd-1` is not the start of `mmd-12`); every
- * other defined id gets `copy` as a prefix where it is defined and used.
+ * other defined id that does not start with `copy` the same way gets `copy`
+ * as a prefix where it is defined and used, so no id a label defines can be
+ * another copy's (review r3 L2).
  */
 export function ownIds(svg: string, copy: string) {
   const root = ROOT_ID.exec(svg)?.[1];
   if (!root) return svg;
   const renamed = svg.replace(new RegExp(`${root}(?!\\d)`, 'g'), copy);
+  const ours = new RegExp(`^${copy}(?!\\d)`);
   const others = new Set<string>();
   for (const [, id] of renamed.matchAll(DEFINED_ID))
-    if (id && !id.includes(copy)) others.add(id);
+    if (id && !ours.test(id)) others.add(id);
   if (!others.size) return renamed;
   const own = (id: string) => (others.has(id) ? `${copy}-${id}` : id);
   return renamed.replace(ID_USE, (_, at: string, ids: string) =>

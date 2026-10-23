@@ -27,19 +27,22 @@ async function openFixture(page: Page) {
     .toBe('true');
 }
 
-// Review r2 H1: the worker's type check reads mermaid's site config, so a
-// diagram whose directive picks the unsupported renderer-v1 flowchart leaves
-// the next flowcharts drawing (it used to refuse every one after it).
+// Review r2 H1, r3 M1: no diagram's directive reaches the next one, by the
+// worker's type check or by the image check (`details` sends a source
+// through mermaid's own type detection before it draws), so a diagram whose
+// directive picks the unsupported renderer-v1 flowchart leaves the next
+// flowcharts drawing.
 test("a diagram's renderer directive does not reach the next diagram", async ({
   page,
 }) => {
   await openFixture(page);
-  expect(
-    await outcome(
-      page,
-      '%%{init: {"flowchart": {"defaultRenderer": "dagre-d3"}}}%%\ngraph LR\n  A --> B'
-    )
-  ).toBe('unsupported');
+  const dagre =
+    '%%{init: {"flowchart": {"defaultRenderer": "dagre-d3"}}}%%\ngraph LR\n';
+  expect(await outcome(page, `${dagre}  A --> B`)).toBe('unsupported');
+  expect(await outcome(page, 'flowchart TD\n  A[Order details 2] --> B')).toBe(
+    'flowchart-v2'
+  );
+  expect(await outcome(page, `${dagre}  C --> D`)).toBe('unsupported');
   expect(await outcome(page, 'graph TD\n  X --> Y')).toBe('flowchart-v2');
   expect(await outcome(page, 'flowchart TD\n  X --> Y')).toBe('flowchart-v2');
 });
@@ -57,4 +60,16 @@ test('a diagram whose download fails draws the next time', async ({
   expect(await outcome(page, source)).toBe('notLoaded');
   await context.unroute('**/sankeyDiagram-*');
   expect(await outcome(page, source)).toBe('sankey');
+});
+
+// Review r3 L1: a failed download is told apart by where it happens, never
+// by an error's message, which can echo the source: a source that reads like
+// a failed import is a source error, and it is kept.
+test('a source that reads like a failed download is a source error', async ({
+  page,
+}) => {
+  await openFixture(page);
+  expect(
+    await outcome(page, 'Failed to fetch dynamically imported module')
+  ).toBe('error');
 });

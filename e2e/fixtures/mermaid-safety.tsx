@@ -24,6 +24,11 @@ if (HOSTILE)
   window.Worker = class {
     onerror = null;
     onmessage: ((event: { data: unknown }) => void) | null = null;
+    /** Stands in for a module worker, reading `type` as a browser with them
+     * does (the page checks it). */
+    constructor(_url: string, options?: WorkerOptions) {
+      if (options?.type !== 'module') throw new TypeError('module only');
+    }
     postMessage({ id }: { id: number }) {
       queueMicrotask(() =>
         this.onmessage?.({ data: { background: '#fff', id, svg: HOSTILE_SVG } })

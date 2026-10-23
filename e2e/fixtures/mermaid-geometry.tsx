@@ -1,6 +1,6 @@
 import mermaid from 'mermaid';
 import { forPage, renderMermaid } from '@/features/materials/Mermaid';
-import { drawMermaid } from '@/features/materials/mermaidDraw';
+import { drawMermaid, themePreset } from '@/features/materials/mermaidDraw';
 import { MermaidReasonError } from '@/features/materials/mermaidError';
 import type { MermaidTheme } from '@/features/materials/mermaidThemes';
 import '@/styles/tailwind.css';
@@ -172,7 +172,7 @@ async function drawHere(code: string, theme: MermaidTheme, width: number) {
   });
   document.body.append(host);
   try {
-    return await drawMermaid(code, theme, host, {
+    return await drawMermaid(code, await themePreset(theme), host, {
       id: `mmp-${++draws}`,
       width,
     });
@@ -192,7 +192,8 @@ window.mermaidGeometry = async (code, theme, width) => {
   };
 };
 export interface LabelReport {
-  /** Worker labels whose text spills past their foreignObject, by over 1 px. */
+  /** Worker labels that reach past their box over 1 px more than the same
+   * label on the page, or a label count that differs from the page's. */
   overflow: string[];
   /** Pairs of worker labels that overlap more than on the page, by over
    * 1 px (an overlap's depth is the shorter side of the two boxes' shared
@@ -222,64 +223,117 @@ function laidOut(svg: string) {
   return { host, root };
 }
 
-/** Each pair of labels that overlap, by their texts, with its depth. */
-function overlapsIn(root: SVGSVGElement) {
-  const labels = [...root.querySelectorAll('text, foreignObject > *')]
-    .map((label) => ({
-      box: label.getBoundingClientRect(),
-      text: (label.textContent ?? '').trim(),
-    }))
-    .filter(({ box, text }) => text && box.width > 0 && box.height > 0);
-  const depths = new Map<string, number>();
+/** How far `inner` reaches past `outer`, in px; 0 or less is inside. */
+function past(inner: DOMRect, outer: DOMRect) {
+  return Math.max(
+    inner.right - outer.right,
+    inner.bottom - outer.bottom,
+    outer.left - inner.left,
+    outer.top - inner.top
+  );
+}
+
+/** The drawing's labels in document order, HTML labels and SVG texts, with
+ * whether they show: an empty label shows nothing (Firefox lays an empty div
+ * out wider than a sizeless foreignObject), and a fallback text mermaid
+ * keeps for viewers without HTML labels has no box. */
+function labelsIn(root: SVGSVGElement) {
+  return [...root.querySelectorAll('text, foreignObject > *')].map((label) => {
+    const box = label.getBoundingClientRect();
+    const text = (label.textContent ?? '').trim();
+    return {
+      box,
+      element: label,
+      shown: Boolean(text) && (box.width > 0 || box.height > 0),
+      text,
+    };
+  });
+}
+
+/** How far each label reaches past its box: an HTML label past its
+ * foreignObject; an SVG text past the drawing, and past the smallest rect,
+ * polygon or path whose box holds the text's centre (a node, a bar, a cell),
+ * when one does. */
+function spills(root: SVGSVGElement, labels: ReturnType<typeof labelsIn>) {
+  const frame = root.getBoundingClientRect();
+  const shapes = [...root.querySelectorAll('rect, polygon, path')]
+    .map((shape) => shape.getBoundingClientRect())
+    .filter(({ height, width }) => width > 0 && height > 0)
+    .sort((a, b) => a.width * a.height - b.width * b.height);
+  return labels.map(({ box, element }) => {
+    const parent = element.parentElement;
+    if (parent?.tagName.toLowerCase() === 'foreignobject')
+      return past(box, parent.getBoundingClientRect());
+    const [x, y] = [box.left + box.width / 2, box.top + box.height / 2];
+    const shape = shapes.find(
+      ({ bottom, left, right, top }) =>
+        left <= x && x <= right && top <= y && y <= bottom
+    );
+    return Math.max(past(box, frame), shape ? past(box, shape) : 0);
+  });
+}
+
+/** Each pair of labels that overlap, by their places in document order, with
+ * its depth and their texts. */
+function overlapsIn(labels: ReturnType<typeof labelsIn>) {
+  const depths = new Map<string, { depth: number; texts: string }>();
   labels.forEach((a, i) => {
-    for (const b of labels.slice(i + 1)) {
+    labels.slice(i + 1).forEach((b, k) => {
+      if (!(a.shown && b.shown)) return;
       const depth = Math.min(
         Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left),
         Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top)
       );
-      const key = [a.text, b.text].sort().join(' | ');
-      if (depth > 0) depths.set(key, Math.max(depths.get(key) ?? 0, depth));
-    }
+      if (depth > 0)
+        depths.set(`${i} ${i + 1 + k}`, {
+          depth,
+          texts: `"${a.text.slice(0, 40)}" | "${b.text.slice(0, 40)}"`,
+        });
+    });
   });
   return depths;
 }
 
 /** The worker's drawing laid out in this engine against the page's own,
  * for Firefox and WebKit, where positions differ by a few pixels (Epo
- * 2026-10-23): every label fits its box, and nothing overlaps more than on
- * the page. */
+ * 2026-10-23): every label fits its box as well as on the page, and nothing
+ * overlaps more than there. Labels pair up by their place in document order,
+ * so repeated texts stay apart. A label the page's mermaid places past its
+ * box or the drawing (info's version line, a radar's axis names) is its
+ * design, not the worker's measuring. */
 window.mermaidLabels = async (code, theme, width) => {
   const worker = laidOut((await renderMermaid(code, theme, { width })).svg);
   const page = laidOut((await forPage(await drawHere(code, theme, width))).svg);
   try {
-    const overflow = [...worker.root.querySelectorAll('foreignObject')].flatMap(
-      (box) => {
-        const label = box.firstElementChild;
-        // An empty label shows nothing to clip; Firefox lays its div out
-        // wider than a sizeless foreignObject.
-        if (!label?.textContent?.trim()) return [];
-        const outer = box.getBoundingClientRect();
-        const inner = label.getBoundingClientRect();
-        const spill = Math.max(
-          inner.right - outer.right,
-          inner.bottom - outer.bottom,
-          outer.left - inner.left,
-          outer.top - inner.top
-        );
-        return spill > 1
-          ? [
-              `"${(label.textContent ?? '').trim().slice(0, 40)}" ${spill.toFixed(1)} px`,
-            ]
+    const ours = labelsIn(worker.root);
+    const theirs = labelsIn(page.root);
+    if (ours.length !== theirs.length)
+      return {
+        overflow: [`${ours.length} labels vs ${theirs.length} on the page`],
+        overlaps: [],
+        type: mermaid.detectType(code.trim()),
+      };
+    const reaches = spills(worker.root, ours);
+    const onPageReaches = spills(page.root, theirs);
+    const overflow = ours.flatMap((label, i) => {
+      if (!label.shown) return [];
+      const reach = reaches[i]!;
+      const there = Math.max(0, onPageReaches[i]!);
+      return reach > there + 1
+        ? [
+            `"${label.text.slice(0, 40)}" ${reach.toFixed(1)} px vs ${there.toFixed(1)} px`,
+          ]
+        : [];
+    });
+    const onPage = overlapsIn(theirs);
+    const overlaps = [...overlapsIn(ours)].flatMap(
+      ([key, { depth, texts }]) => {
+        const there = onPage.get(key)?.depth ?? 0;
+        return depth > there + 1
+          ? [`${texts} ${depth.toFixed(1)} px vs ${there.toFixed(1)} px`]
           : [];
       }
     );
-    const onPage = overlapsIn(page.root);
-    const overlaps = [...overlapsIn(worker.root)]
-      .filter(([key, depth]) => depth > (onPage.get(key) ?? 0) + 1)
-      .map(
-        ([key, depth]) =>
-          `${key} ${depth.toFixed(1)} px vs ${(onPage.get(key) ?? 0).toFixed(1)} px`
-      );
     return { overflow, overlaps, type: mermaid.detectType(code.trim()) };
   } finally {
     worker.host.remove();

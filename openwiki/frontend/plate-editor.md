@@ -669,14 +669,20 @@ finds the faces its generic families draw in (`genericFaces` in
 worker's `self.fonts`. The page sends one draw at a time
 (`renderMermaid`): a queued draw no caller wants when its turn comes is
 skipped (a newer source superseded it), and one already drawing finishes
-into the cache (Epo 2026-10-23). The worker posts `started` once mermaid,
-the theme preset and its fonts are in. A draw still running 30 s after that
-(`MERMAID_RENDER_LIMIT_MS`) stops, the worker with it, and the block says
-"This diagram is too large to draw on this device." A worker that has not
-started 30 s after the request, a download that fails in it (mermaid, a
-theme, a diagram type's chunk: the worker tells a failed dynamic import from
-a source error), or an error escaping it says "Diagrams couldn't load." and
-stops (Epo 2026-10-23, review r2 M1/M2). Neither result is cached, nor is a
+into the cache (Epo 2026-10-23). The worker posts `started` once everything
+the draw needs is in: mermaid, the theme preset and its fonts, the diagram
+type's code and its layout's (mermaid has no loader per type, so the worker
+draws the type's small source in `MERMAID_TYPES` once before its first
+diagram of that type), and KaTeX for a source with `$$` math. A draw still
+running 30 s after that (`MERMAID_RENDER_LIMIT_MS`) stops, the worker with
+it, and the block says "This diagram is too large to draw on this device."
+A worker that has not started 30 s after the request, any failure before
+`started` (a download: the worker tells it from a source error by where it
+happens, never by the error's message, which can echo the source; review r3
+L1, L5), the page's DOMPurify failing to load, or an error escaping the
+worker says "Diagrams couldn't load." and stops (Epo 2026-10-23, review r2
+M1/M2, r3 L3). A theme font that fails to load fails the draw the same way,
+and the next draw loads it again. Neither result is cached, nor is a
 missing worker: only failures the source causes are kept, so the next view
 draws again, in a new worker. The page sanitizes the worker's SVG (`forPage`: DOMPurify with
 mermaid's foreignObject setup, our forbid lists and no form controls, then
@@ -685,10 +691,12 @@ DOMPurify finds no document implementation in linkedom, so mermaid's label
 pass does nothing in the worker and the page's pass is the sanitizer (review
 H1 and L6, Epo 2026-10-23). Each inserted copy makes every id the SVG
 defines its own (`ownIds`): the root id, which prefixes most ids and scopes
-the stylesheet, and the ids mermaid counts per worker (sankey gradients,
-sequence actors), with every `url(#…)`, `href="#…"` and aria reference, so a
-block and its full-screen preview, or two drawings from different worker
-lifetimes, never share one (review L1, r2 L2). Drawn diagrams are cached in memory by theme and source (and
+the stylesheet, becomes the copy's, and every other defined id (the ids
+mermaid counts per worker, such as sankey gradients and sequence actors, and
+any id a label's HTML sets) takes the copy's id as a prefix, with every
+`url(#…)`, `href="#…"` and aria reference, so a block and its full-screen
+preview, or two drawings from different worker lifetimes, never share one,
+and no label can claim another diagram's ids (review L1, r2 L2, r3 L2). Drawn diagrams are cached in memory by theme and source (and
 width for a gantt chart, which spans its box), up to about 8 million
 characters of SVG in all (`CACHE_CHARS`, oldest dropped first), shared by
 the block, the full-screen preview, View/Edit and exports, so opening full
@@ -713,10 +721,14 @@ not be drawn". A registered id outside the list, the renderer-v1 `flowchart`
 that a `defaultRenderer` directive picks, is unsupported: the worker refuses
 it before drawing (`mermaid.detectType` against mermaid's site config, which
 a diagram's directives never reach, review r2 H1) or after (by the drawn
-`diagramType`). There is no main-thread drawing path. An unsupported type
+`diagramType`). `drawMermaid` clears mermaid's directives
+(`mermaidAPI.reset`) before it initializes, so no diagram's config reaches
+the next draw by any path, the image check's type detection included
+(review r3 M1). There is no main-thread drawing path. An unsupported type
 says "This diagram type isn't supported." and a browser without a 2D
-OffscreenCanvas (Safari before 16.4, checked on the page) or module workers
-says "This browser can't draw diagrams."; every Mermaid error shows in
+OffscreenCanvas (Safari before 16.4) or module workers (a `Worker` that never
+reads its `type` option) says "This browser can't draw diagrams.", both
+checked on the page (review r3 L4); every Mermaid error shows in
 `MermaidError` as a source error does, everywhere (block, preview, chat). A
 Word export writes a diagram that cannot be drawn, for any of these reasons,
 as its source in a code block, as Markdown export does (Epo 2026-10-23). The geometry check (`e2e/editor/mermaid-geometry.spec.ts`) draws
@@ -728,9 +740,19 @@ CI. That exact check runs in Chromium, where Windows and Linux both match;
 only the timeline's title (font-size `4ex`) is about 1 px off, since canvas
 exposes no x-height. Firefox and WebKit lay text out a few pixels apart, so
 there the same spec (`e2e/editor/playwright.mermaid-engines.config.ts`, CI
-job `e2e_mermaid_engines`) checks that no worker label with text spills past
-its foreignObject and no two labels overlap more than on that engine's own
-page drawing (Epo 2026-10-23).
+job `e2e_mermaid_engines`) lays both drawings out and checks every worker
+label with text against its box: an HTML label against its foreignObject,
+an SVG text against the drawing and the smallest rect, polygon or path whose
+box holds its centre (a node, a bar, a cell). A label may reach past its box
+by no more than the same label on that engine's own page drawing, plus 1 px,
+which keeps mermaid's own placements (info's version line and a radar's axis
+names past the drawing, a sequence `loop` tab), and no two labels may overlap
+more than there; labels pair up by their place in document order (Epo
+2026-10-23, review r3 M2). Info, radar, sankey and treeView have no box
+around any text (a version line, axis names around the web, names beside
+the bars, a tree drawn in lines), so their texts are checked against the
+drawing only, as are titles, axis ticks, legend entries and edge labels in
+other types.
 
 **Scale.** A block never shows a diagram below half its natural size
 (`MIN_SCALE`, Epo 2026-10-22): the SVG keeps a minimum width and height of

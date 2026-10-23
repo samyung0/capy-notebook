@@ -1,4 +1,4 @@
-import type { MermaidFont } from './mermaidPresets';
+import type { MermaidFont, MermaidPreset } from './mermaidPresets';
 import {
   MERMAID_SECURITY,
   withoutImageFunctions,
@@ -36,9 +36,12 @@ function loadFont({ family, url, weight = '400' }: MermaidFont) {
       .then((face) => {
         fontSet().add(face);
       })
-      // The diagram still draws in the theme's fallback font; retry next time.
-      .catch(() => {
+      // A drawing measured in the fallback font is wrong for the theme, so
+      // the draw fails as a download does and the next one retries (review
+      // r3 L3).
+      .catch((error: unknown) => {
         fonts.delete(key);
+        throw error;
       });
     fonts.set(key, loading);
   }
@@ -55,22 +58,24 @@ export async function themePreset(theme: MermaidTheme) {
 }
 
 /**
- * Draws `code` in `theme` into `container` (mermaid measures there). Calls
- * must not overlap: mermaid.initialize is global, so each draw sets its own
- * preset; the output CSS is scoped to the SVG's `id`, unique on the page, so
- * diagrams in different themes coexist. `width` is the box a gantt chart
- * spans (it reads its host's width, which the worker's DOM has none of).
+ * Draws `code` in a theme's `preset` (from themePreset) into `container`
+ * (mermaid measures there). Calls must not overlap: mermaid.initialize is
+ * global, so each draw sets its own preset; the output CSS is scoped to the
+ * SVG's `id`, unique on the page, so diagrams in different themes coexist.
+ * `width` is the box a gantt chart spans (it reads its host's width, which
+ * the worker's DOM has none of).
  */
 export async function drawMermaid(
   code: string,
-  theme: MermaidTheme,
+  preset: MermaidPreset,
   container: Element,
   { id, width }: { id: string; width: number }
 ): Promise<Drawn> {
-  const [{ default: mermaid }, preset] = await Promise.all([
-    import('mermaid'),
-    themePreset(theme),
-  ]);
+  const { default: mermaid } = await import('mermaid');
+  // The last diagram's front matter and directives stay in mermaid's config
+  // until its next render, and initialize keeps them: without this, the image
+  // check below would detect this source under them (review r3 M1).
+  mermaid.mermaidAPI.reset();
   mermaid.initialize({
     startOnLoad: false,
     ...preset.config,
