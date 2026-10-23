@@ -13,6 +13,12 @@
 //! tab never saw is a tie. Units the current document holds are skipped, so
 //! merging or sending again is a no-op.
 //!
+//! Re-authored (`reauthor`): edits under a client id the room never assigned
+//! or no longer holds are refused as they are, so the same placement writes
+//! them as new edits under the tab's newly assigned id. Their ids are new on
+//! every run, so this mode is not repeat-safe: the caller runs it once per
+//! group of stored edits and keeps the result instead.
+//!
 //! The browser runs this in a worker, compiled to WASM on the server's own
 //! yrs (the fork's patched copy) by `scripts/build-late-merge.mjs`.
 
@@ -43,29 +49,40 @@ pub enum Refused {
     Shape(&'static str),
 }
 
-/// The tab's unsent edits as one v1 update against `current`. `old`: the
-/// tab's document as a v1 state; `base`: the encoded state vector it knows
-/// the room acknowledged (empty for none); `current`: the room's document as
-/// fetched, a v1 state.
+/// The tab's unsent edits as one v1 update against `current`, under their
+/// own ids. `old`: the tab's document as a v1 state; `base`: the encoded
+/// state vector it knows the room acknowledged (empty for none); `current`:
+/// the room's document as fetched, a v1 state.
 pub fn merge(old: &[u8], base: &[u8], current: &[u8]) -> Result<Vec<u8>, Refused> {
-    let base = if base.is_empty() {
+    unsent(old, base, current, None)
+}
+
+/// `merge`, with every unsent unit written as a new one under `author` (the
+/// tab's newly assigned client id), from the first clock `current` lacks
+/// for it. Not repeat-safe: a second run writes the edits again.
+pub fn reauthor(old: &[u8], base: &[u8], current: &[u8], author: u64) -> Result<Vec<u8>, Refused> {
+    unsent(old, base, current, Some(ClientID::new(author)))
+}
+
+fn unsent(
+    old: &[u8],
+    base: &[u8],
+    current: &[u8],
+    author: Option<ClientID>,
+) -> Result<Vec<u8>, Refused> {
+    let mut base = if base.is_empty() {
         StateVector::default()
     } else {
         StateVector::decode_v1(base).map_err(|error| Refused::Decode(error.to_string()))?
     };
-    merge_unsent(&load(old)?, &base, &load(current)?)
-}
-
-/// `merge` over loaded documents.
-pub fn merge_unsent(old: &Doc, base: &StateVector, current: &Doc) -> Result<Vec<u8>, Refused> {
+    let (old, current) = (load(old)?, load(current)?);
     // The room acknowledged at least what it holds now. The collection keeps
     // every client's clock, so its state vector covers the rest too.
-    let mut base = base.clone();
     base.merge(current.transact().state_vector());
     let update = old.transact().encode_state_as_update_v1(&base);
-    let own = own_left(old, &base);
-    let view = view(old, &base, current);
-    place::stable_left(&update, current, &view, &own)
+    let own = own_left(&old, &base);
+    let view = view(&old, &base, &current);
+    place::stable_left(&update, &current, &view, &own, author)
 }
 
 /// A working document holding `state` (no local writes go into it).

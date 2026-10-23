@@ -2158,6 +2158,17 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   id. Units the current document holds are skipped, so sending or merging
   again is a no-op, and the browser passes no acknowledged base: the
   collection keeps every client's clock. Text the tab never saw is a tie.
+- **Re-authored** (`reauthor`; `mergeLate(old, current, author)`): unsent
+  edits under a client id the room never assigned (made before the tab had
+  one) or no longer holds are refused as they are (Developer Epo,
+  2026-10-24, [error handling](../../human/frontend/error-handling.md)), so
+  the same placement writes them as new edits under the session's assigned
+  id, from the first clock the current document lacks for it. New ids on
+  every run make this mode not repeat-safe: the caller runs it once per
+  group of stored edits and drops them once the send is acknowledged.
+  Edits older than 7 days get the copy-only notice instead. The editor
+  takes this path once the client-id binding's refusal names such edits;
+  until then only the merge and its worker carry it.
 - **Build**: `scripts/build-late-merge.mjs`, run by `office:prepare`, builds
   the crate with wasm-pack (profile `late-merge-wasm`: no unwinding, no debug
   info) on the workspace's yrs, which is the pinned fork's, into the gitignored

@@ -74,6 +74,7 @@ pub fn stable_left(
     current: &Doc,
     view: &View,
     own: &HashMap<ID, Option<ID>>,
+    author: Option<ClientID>,
 ) -> Result<Vec<u8>, Refused> {
     let txn = current.transact();
     let store = txn.store();
@@ -501,6 +502,23 @@ pub fn stable_left(
         return Err(Refused::Shape("an anchor is missing from its list"));
     }
 
+    if let Some(author) = author {
+        return reauthored(&Placed {
+            author,
+            from: held.get(&author),
+            news: &news,
+            res: &res,
+            live: &live,
+            rank: &rank,
+            origin_of: &origin_of,
+            right_of: &right_of,
+            struct_of: &struct_of,
+            kept: &kept,
+            new_from: &new_from,
+            deletes: ds,
+        });
+    }
+
     // Write, client by client over the update's new ranges.
     let mut sections: BTreeMap<ClientID, (u32, Vec<Out>)> = BTreeMap::new();
     let emit = |client: ClientID,
@@ -588,5 +606,163 @@ pub fn stable_left(
             }
         }
     }
+    write::update(sections, &deletes)
+}
+
+/// What `stable_left` worked out, for writing it under a new client id.
+struct Placed<'a, 'p> {
+    author: ClientID,
+    /// The first clock the current document lacks for `author`.
+    from: u32,
+    news: &'a [Piece<'p>],
+    res: &'a [Res],
+    live: &'a dyn Fn(usize) -> bool,
+    rank: &'a HashMap<usize, usize>,
+    origin_of: &'a HashMap<usize, ID>,
+    right_of: &'a HashMap<usize, ID>,
+    struct_of: &'a dyn Fn(&ID) -> Option<usize>,
+    kept: &'a dyn Fn(&ID) -> bool,
+    new_from: &'a dyn Fn(&ClientID) -> u32,
+    deletes: &'a IdSet,
+}
+
+/// The placed live pieces as new units of `author`, each after every new
+/// piece it names (its origins, its parent, a map value's origin). A piece
+/// naming one that is not written (deleted in the tab, under a dropped
+/// parent) is not written either: nothing of it shows in the tab.
+fn reauthored(p: &Placed) -> Result<Vec<u8>, Refused> {
+    let named = |i: usize| -> Vec<ID> {
+        let mut ids: Vec<ID> = Vec::new();
+        ids.extend(p.origin_of.get(&i));
+        ids.extend(p.right_of.get(&i));
+        match &p.res[i] {
+            Res::List {
+                list: ParentRef::Item(parent),
+                ..
+            } => ids.push(*parent),
+            Res::Map { origin, parent, .. } => {
+                ids.extend(origin);
+                if let Some(ParentRef::Item(parent)) = parent {
+                    ids.push(*parent);
+                }
+            }
+            _ => {}
+        }
+        ids
+    };
+    let live_ix: Vec<usize> = (0..p.news.len()).filter(|&i| (p.live)(i)).collect();
+    let mut deps: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut users: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut unwritten: HashSet<usize> = HashSet::new();
+    for &i in &live_ix {
+        let mut on: Vec<usize> = named(i)
+            .iter()
+            .filter_map(|id| (p.struct_of)(id))
+            .filter(|&d| d != i)
+            .collect();
+        on.sort_unstable();
+        on.dedup();
+        if on.iter().any(|&d| !(p.live)(d)) {
+            unwritten.insert(i);
+        }
+        on.retain(|&d| (p.live)(d));
+        for &d in &on {
+            users.entry(d).or_default().push(i);
+        }
+        deps.insert(i, on);
+    }
+    let mut waiting: HashMap<usize, usize> = deps.iter().map(|(&i, on)| (i, on.len())).collect();
+    let mut ready: BinaryHeap<Reverse<(usize, usize)>> = waiting
+        .iter()
+        .filter(|(_, n)| **n == 0)
+        .map(|(&i, _)| Reverse((p.rank[&i], i)))
+        .collect();
+    // Each written piece's first new clock.
+    let mut at: HashMap<usize, u32> = HashMap::new();
+    let mut order: Vec<usize> = Vec::new();
+    let mut next = p.from;
+    let mut seen = 0usize;
+    while let Some(Reverse((_, i))) = ready.pop() {
+        seen += 1;
+        if unwritten.contains(&i) || deps[&i].iter().any(|d| unwritten.contains(d)) {
+            unwritten.insert(i);
+        } else {
+            at.insert(i, next);
+            next += p.news[i].len();
+            order.push(i);
+        }
+        for &u in users.get(&i).into_iter().flatten() {
+            let n = waiting.entry(u).or_default();
+            *n -= 1;
+            if *n == 0 {
+                ready.push(Reverse((p.rank[&u], u)));
+            }
+        }
+    }
+    if seen != live_ix.len() {
+        return Err(Refused::Shape("the new structs form a cycle"));
+    }
+    // A unit of a written piece under its new id; a held unit as it is.
+    let new_id = |id: ID| -> Result<ID, Refused> {
+        match (p.struct_of)(&id) {
+            None => Ok(id),
+            Some(d) => at
+                .get(&d)
+                .map(|&start| ID::new(p.author, start + id.clock - p.news[d].id().clock))
+                .ok_or(Refused::Shape("a written struct names one not written")),
+        }
+    };
+    let new_parent = |parent: &Option<ParentRef>| -> Result<Option<ParentRef>, Refused> {
+        Ok(match parent {
+            Some(ParentRef::Item(id)) => Some(ParentRef::Item(new_id(*id)?)),
+            other => other.clone(),
+        })
+    };
+    let mut structs: Vec<Out> = Vec::new();
+    for &i in &order {
+        let piece = p.news[i];
+        let (origin, right, parent, key) = match &p.res[i] {
+            Res::List { list, .. } => (
+                p.origin_of.get(&i).copied(),
+                p.right_of.get(&i).copied(),
+                Some(list.clone()),
+                None,
+            ),
+            Res::Map {
+                origin,
+                parent,
+                key,
+            } => (*origin, None, parent.clone(), key.clone()),
+            Res::Drop => continue,
+        };
+        let content = if piece.start == 0 && piece.end + 1 == piece.item.len() {
+            ContentRef::Owned(piece.item.content().clone())
+        } else {
+            ContentRef::Slice(piece.item.content().clone(), piece.start, piece.end)
+        };
+        structs.push(Out::Item {
+            origin: origin.map(new_id).transpose()?,
+            right: right.map(new_id).transpose()?,
+            parent: new_parent(&parent)?,
+            key,
+            content,
+        });
+    }
+    // The tab's deletions of held units. A new unit it deleted is in a dead
+    // piece (loading the old document split its items at every deletion),
+    // which is not written.
+    let mut deletes = IdSet::new();
+    for (client, ranges) in p.deletes.iter() {
+        for r in ranges.iter() {
+            for clock in r.start..r.end.min((p.new_from)(client)) {
+                let id = ID::new(*client, clock);
+                if (p.kept)(&id) {
+                    deletes.insert(id, 1);
+                }
+            }
+        }
+    }
+    let mut sections = BTreeMap::new();
+    sections.insert(p.author, (p.from, structs));
     write::update(sections, &deletes)
 }

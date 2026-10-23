@@ -1,6 +1,7 @@
 //! The late merge on small hand-made documents: where a run lands next to
 //! collected units, the snap to the end of a deleted run, the tab's own ids,
-//! held units skipped, a map value on a collected origin, repeats, refusals.
+//! held units skipped, a map value on a collected origin, repeats, refusals,
+//! and the re-authored mode (the same places under a newly assigned id).
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
 
 mod support;
@@ -116,6 +117,12 @@ fn a_run_after_a_collected_unit_lands_at_the_end_of_its_deleted_run() {
     // run to after c, before R.
     let (c, r) = (id(5, 0), id(1, 1));
     assert_eq!(items(&update), vec![(id(2, 0), Some(c), Some(r))]);
+    // Re-authored under the tab's new id 9: the same place.
+    let fresh = collected(&room);
+    let reauthored = late_merge::reauthor(&state(&tab), &[], &state(&fresh), 9).unwrap();
+    assert_eq!(items(&reauthored), vec![(id(9, 0), Some(c), Some(r))]);
+    apply(&fresh, &reauthored);
+    assert_eq!(text(&fresh), "LXR");
     apply(&current, &update);
     assert_eq!(text(&current), "LXR");
 }
@@ -199,9 +206,53 @@ fn a_map_value_over_a_collected_one_follows_the_keys_current_value() {
     assert!(current.transact().store().get_item(&id(4, 0)).is_none());
     let update = late_merge::merge(&state(&tab), &[], &state(&current)).unwrap();
     assert_eq!(items(&update), vec![(id(2, 0), Some(id(6, 0)), None)]);
+    let reauthored = late_merge::reauthor(&state(&tab), &[], &state(&current), 9).unwrap();
+    assert_eq!(items(&reauthored), vec![(id(9, 0), Some(id(6, 0)), None)]);
     apply(&current, &update);
     let value = current.get_or_insert_map("m").get(&current.transact(), "k");
     assert_eq!(value, Some(Out::Any(Any::from("tab"))));
+}
+
+/// The room's admission of a client id binding: structs past what the room
+/// holds, under an id not assigned to the writer, refuse the update.
+fn refused_as_is(update: &[u8], room: &Doc, assigned: &[u64]) -> bool {
+    let held = room.transact().state_vector();
+    Update::decode_v1(update).unwrap().blocks().any(|block| {
+        let (client, end) = match block {
+            UpdateBlock::Item(item) => (item.id().client, item.id().clock + item.len()),
+            UpdateBlock::Gc(r) | UpdateBlock::Skip(r) => (r.client, r.clock + r.len),
+        };
+        end > held.get(&client) && !assigned.contains(&client.get())
+    })
+}
+
+#[test]
+fn edits_under_an_unassigned_id_refused_as_they_are_go_in_reauthored() {
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "ab");
+    // The tab wrote under 2, an id the room never assigned (or no longer
+    // holds): it types XYZ, removes its own Z and the room's b.
+    let tab = doc(2);
+    sync(&room, &tab);
+    let t = tab.get_or_insert_text("t");
+    t.insert(&mut tab.transact_mut(), 1, "XYZ");
+    t.remove_range(&mut tab.transact_mut(), 3, 2);
+    assert_eq!(text(&tab), "aXY");
+    let assigned = [1, 9];
+    let as_is = late_merge::merge(&state(&tab), &[], &state(&room)).unwrap();
+    assert!(refused_as_is(&as_is, &room, &assigned));
+    // Its newly assigned id is 9: the same edits, all of them under it.
+    let reauthored = late_merge::reauthor(&state(&tab), &[], &state(&room), 9).unwrap();
+    assert!(!refused_as_is(&reauthored, &room, &assigned));
+    assert!(
+        items(&reauthored)
+            .iter()
+            .all(|(id, _, _)| id.client.get() == 9)
+    );
+    apply(&room, &reauthored);
+    assert_eq!(text(&room), "aXY");
+    assert!(room.transact().store().pending_update().is_none());
 }
 
 #[test]

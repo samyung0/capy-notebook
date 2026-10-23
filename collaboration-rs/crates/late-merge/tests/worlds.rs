@@ -16,6 +16,11 @@
 //! merging again, changes nothing, and the tab's acknowledged base gives the
 //! same bytes as none.
 //!
+//! Each late merge is also run re-authored under the tab's next client id
+//! (edits under an id the room does not hold): that update holds structs
+//! under the new id only, applies with nothing pending, and gives the room
+//! the text the merge under the tab's own ids gives (ties aside).
+//!
 //! LATE_MERGE_SEEDS seeds (default 200) from LATE_MERGE_FIRST_SEED (0); the
 //! prototype measured 4,000.
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
@@ -64,6 +69,8 @@ struct Tally {
     /// Merges from equal states: equal after, reordered only, same text
     /// characters with other marks or splits, text characters differ.
     merges: [u64; 4],
+    /// Re-authored merges against the own-id merge, the same four ways.
+    reauthored: [u64; 4],
     refused: Vec<String>,
     failures: Vec<String>,
 }
@@ -114,6 +121,19 @@ fn sorted_chars(value: &str) -> Vec<char> {
     let mut chars: Vec<char> = value.chars().collect();
     chars.sort_unstable();
     chars
+}
+
+/// 0 equal, 1 reordered only, 2 the same text characters, 3 they differ.
+fn compare(a: &str, b: &str) -> usize {
+    if a == b {
+        0
+    } else if sorted_chars(a) == sorted_chars(b) {
+        1
+    } else if text_chars(a) == text_chars(b) {
+        2
+    } else {
+        3
+    }
 }
 
 struct World {
@@ -193,8 +213,35 @@ impl World {
             tally.late_rejoins += 1;
             let comparable = self.s.value() == self.r.value() && tab.g.value() == tab.r.value();
             let (old, current) = (tab.g.state(), self.s.state());
+            // Re-authored under the id the new session gets below.
+            let reauthored = late_merge::reauthor(&old, &[], &current, self.next_client);
             match late_merge::merge(&old, &[], &current) {
                 Ok(update) => {
+                    match &reauthored {
+                        Ok(reauthored) => {
+                            let mut copy = Note::load(u64::from(u32::MAX), "x", &current);
+                            copy.receive(reauthored);
+                            let foreign = ydoc::decode(reauthored).is_ok_and(|u| {
+                                u.blocks().any(|b| match b {
+                                    yrs::UpdateBlock::Item(item) => {
+                                        item.id().client.get() != self.next_client
+                                    }
+                                    _ => true,
+                                })
+                            });
+                            if copy.pending() || foreign {
+                                tally.failures.push(format!(
+                                    "seed {seed}: a re-authored merge is pending or not all under the new id"
+                                ));
+                            }
+                            let mut own = Note::load(u64::from(u32::MAX), "x", &current);
+                            own.receive(&update);
+                            tally.reauthored[compare(&copy.value(), &own.value())] += 1;
+                        }
+                        Err(error) => tally
+                            .refused
+                            .push(format!("seed {seed}: re-authored: {error}")),
+                    }
                     let based = late_merge::merge(&old, &tab.base.encode_v1(), &current);
                     if based.as_ref().ok() != Some(&update) {
                         tally
@@ -234,17 +281,7 @@ impl World {
             sync(&tab.r, &mut self.r);
             sync(&self.r, &mut tab.r);
             if comparable {
-                let (s, r) = (self.s.value(), self.r.value());
-                let k = if s == r {
-                    0
-                } else if sorted_chars(&s) == sorted_chars(&r) {
-                    1
-                } else if text_chars(&s) == text_chars(&r) {
-                    2
-                } else {
-                    3
-                };
-                tally.merges[k] += 1;
+                tally.merges[compare(&self.s.value(), &self.r.value())] += 1;
             }
         } else {
             tally.raw_rejoins += 1;
@@ -404,7 +441,7 @@ fn late_tabs_merge_without_losing_or_doubling_text() {
         run(seed, &mut tally);
     }
     eprintln!(
-        "seeds {} converged {} | collections {} load-differs {} | rejoins raw {} late {} | merges from equal states: equal {}, reordered {}, same text {}, text differs {} | refused {}",
+        "seeds {} converged {} | collections {} load-differs {} | rejoins raw {} late {} | merges from equal states: equal {}, reordered {}, same text {}, text differs {} | re-authored vs own ids: equal {}, reordered {}, same text {}, text differs {} | refused {}",
         tally.seeds,
         tally.converged,
         tally.collections,
@@ -415,6 +452,10 @@ fn late_tabs_merge_without_losing_or_doubling_text() {
         tally.merges[1],
         tally.merges[2],
         tally.merges[3],
+        tally.reauthored[0],
+        tally.reauthored[1],
+        tally.reauthored[2],
+        tally.reauthored[3],
         tally.refused.len(),
     );
     assert!(tally.late_rejoins > 0, "no tab took the late path");
@@ -425,4 +466,8 @@ fn late_tabs_merge_without_losing_or_doubling_text() {
         "a collected state loads to another value"
     );
     assert_eq!(tally.merges[3], 0, "a merge lost or doubled text");
+    assert_eq!(
+        tally.reauthored[3], 0,
+        "a re-authored merge lost or doubled text"
+    );
 }
