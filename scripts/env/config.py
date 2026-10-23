@@ -124,13 +124,16 @@ def private_write(path, text):
 
 
 def dotenv(values):
-    # Compose single quotes suppress $ interpolation, including passwords.
+    # Compose single quotes suppress $ interpolation, including passwords. A
+    # quote inside, or a backslash before the closing quote, lets Compose read
+    # another assignment out of the line, so the app host refuses such lines
+    # (review R1) and they are refused here rather than escaped.
     if any("\n" in value or "\r" in value for value in values.values()):
         fail("multiline values cannot be rendered as container dotenv")
-    return "".join(
-        f"{key}='" + value.replace("'", "\\'") + "'\n"
-        for key, value in sorted(values.items())
-    )
+    for key, value in values.items():
+        if "'" in value or value.endswith("\\"):
+            fail(f"{key} may not hold a single quote or end in a backslash")
+    return "".join(f"{key}='{value}'\n" for key, value in sorted(values.items()))
 
 
 def refuse_other_environments(values, environment):

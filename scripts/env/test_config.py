@@ -195,7 +195,7 @@ class ConfigTest(unittest.TestCase):
             CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
             CLERK_PUBLISHABLE_KEY="pk_public",
             DEPLOYMENT_APP_URL="https://uat.example.com",
-            STRIPE_SECRET_KEY="sk_$HOME'${X} #kept",
+            STRIPE_SECRET_KEY="sk_$HOME${X} #kept\\inside",
             OPS_DATABASE_URL="ops-only",
         )
         derived = {
@@ -215,7 +215,7 @@ class ConfigTest(unittest.TestCase):
             text = path.read_text()
             self.assertIn("\nRELEASE_SHA='" + "a" * 40 + "'\n", text)
             app = config.parse_dotenv(text)
-            self.assertEqual(app["STRIPE_SECRET_KEY"], "sk_$HOME'${X} #kept")
+            self.assertEqual(app["STRIPE_SECRET_KEY"], "sk_$HOME${X} #kept\\inside")
             self.assertEqual(
                 app.keys(),
                 {k for k, r in config.MANIFEST.items() if "app" in r["targets"]}
@@ -224,6 +224,15 @@ class ConfigTest(unittest.TestCase):
             values["STRIPE_SECRET_KEY"] = "two\nlines"
             with self.assertRaisesRegex(ValueError, "multiline"):
                 config.render(values, "uat", temp, "a" * 40)
+            # Security regression (review R1): Compose reads `A='x' B='y'` as
+            # two assignments and `\'` as an escaped quote, so neither a quote
+            # nor a trailing backslash is rendered.
+            for value in ("x' CAPY_SERVER_IMAGE='alpine:3", "abc\\"):
+                values["STRIPE_SECRET_KEY"] = value
+                with self.assertRaisesRegex(
+                    ValueError, "STRIPE_SECRET_KEY may not hold"
+                ):
+                    config.render(values, "uat", temp, "a" * 40)
 
     def test_render_refuses_an_unspecified_or_loopback_bind_address(self):
         """Security regression (review L6): Postgres, Redis and the gateway
