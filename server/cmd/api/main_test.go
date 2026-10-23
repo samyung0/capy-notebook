@@ -141,3 +141,31 @@ func TestStartupRefusesAMissingAppEnv(t *testing.T) {
 		}
 	}
 }
+
+// TestDeployedGatewaysRefuseShortServiceSecrets (security regression:
+// rate-limit audit M4). Outside development and e2e, a set PIPELINE_SECRET or
+// the collaboration secret in use shorter than 32 characters stops the boot;
+// local stacks keep their short development values.
+func TestDeployedGatewaysRefuseShortServiceSecrets(t *testing.T) {
+	long := strings.Repeat("s", 32)
+	for _, appEnv := range []string{"development", "e2e"} {
+		if err := validateServiceSecrets(appEnv, "dev-pipeline-secret", "dev-collaboration-secret"); err != nil {
+			t.Fatalf("%s: %v", appEnv, err)
+		}
+	}
+	if err := validateServiceSecrets("production", "", long); err != nil {
+		t.Fatalf("production without a pipeline secret: %v", err)
+	}
+	if err := validateServiceSecrets("production", long, long); err != nil {
+		t.Fatalf("production with long secrets: %v", err)
+	}
+	for name, secrets := range map[string][2]string{
+		"short pipeline secret":         {"dev-pipeline-secret", long},
+		"short collaboration secret":    {long, "prod-collaboration-secret"},
+		"development collaboration one": {"", "dev-collaboration-secret"},
+	} {
+		if err := validateServiceSecrets("production", secrets[0], secrets[1]); err == nil {
+			t.Errorf("production with a %s started", name)
+		}
+	}
+}

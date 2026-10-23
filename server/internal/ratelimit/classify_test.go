@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"net/http"
 	"testing"
 	"time"
 )
@@ -8,6 +9,7 @@ import (
 func TestClassifySplitsEditorFromChat(t *testing.T) {
 	cases := map[string]class{
 		"/healthz":                                          classExempt,
+		"/readyz":                                           classExempt,
 		"/api/internal/materials":                           classExempt,
 		"/webhooks/stripe":                                  classExempt,
 		"/api/workspaces/ws_1/chat/stream":                  classAI,
@@ -24,16 +26,36 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces/ws_1/sources/uploads":              classDefault,
 		"/api/materials/m_1/editor-assets/uploads/tickets":  classUpload,
 		"/api/workspaces/ws_1/sources/batches/sb_1/removed": classUpload,
-		"/api/workspaces/ws_1/sources/import-inspect":       classUpload,
-		"/api/workspaces/ws_1/sources/import-content":       classUpload,
+		"/api/workspaces/ws_1/sources/import":               classImport,
+		"/api/workspaces/ws_1/sources/import-inspect":       classImport,
+		"/api/workspaces/ws_1/sources/import-content":       classImport,
+		"/api/workspaces/ws_1/sources/imports/job_1":        classDefault,
+		"/api/integrations":                                 classIntegration,
+		"/api/integrations/google/picker-token":             classIntegration,
+		"/api/me":                                           classDefault,
 		"/api/workspaces":                                   classDefault,
 		"/api/edit-incidents":                               classIncident,
 		"/api/files/f_1/thumbnail":                          classThumbnail,
 	}
 	for path, want := range cases {
-		if got := classify(path); got != want {
+		if got := classify(http.MethodGet, path); got != want {
 			t.Errorf("classify(%q) = %v, want %v", path, got, want)
 		}
+	}
+}
+
+// TestClassifyNamesTheLimiterRules (security regression: rate-limit audit L3,
+// M12): only the exact health paths are exempt, and a profile save takes the
+// integration class.
+func TestClassifyNamesTheLimiterRules(t *testing.T) {
+	// No route ends in /sources: the suffix was dead and is gone.
+	for _, path := range []string{"/healthz/x", "/healthzz", "/readyz/x", "/api/workspaces/ws_1/sources"} {
+		if got := classify(http.MethodGet, path); got != classDefault {
+			t.Errorf("classify(%q) = %v, want the default class", path, got)
+		}
+	}
+	if got := classify(http.MethodPatch, "/api/me"); got != classIntegration {
+		t.Errorf("PATCH /api/me = %v, want the integration class", got)
 	}
 }
 
@@ -53,5 +75,8 @@ func TestDefaultConfigRaisesAIAndAddsBurst(t *testing.T) {
 	}
 	if cfg.Thumbnail.Limit != 60 || cfg.Thumbnail.Window != time.Hour || cfg.Thumbnail.burst() != 60 {
 		t.Fatalf("thumbnail = %+v", cfg.Thumbnail)
+	}
+	if cfg.Integration.Limit != 30 || cfg.Integration.Window != time.Minute {
+		t.Fatalf("integration = %+v", cfg.Integration)
 	}
 }

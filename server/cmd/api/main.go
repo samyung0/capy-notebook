@@ -60,8 +60,9 @@ func envList(key string) []string {
 // rateLimitConfig disables limiting under e2e, where Playwright drives hundreds
 // of requests per second through a handful of fixed users and would otherwise
 // trip every budget.
-func rateLimitConfig(appEnv string) ratelimit.Config {
+func rateLimitConfig(appEnv, shareLinkSecret string) ratelimit.Config {
 	cfg := ratelimit.DefaultConfig()
+	cfg.ShareReadSecret = []byte(shareLinkSecret)
 	if appEnv == "e2e" || envBool("RATE_LIMIT_DISABLED") {
 		cfg.Disabled = true
 		return cfg
@@ -116,6 +117,23 @@ func strongEmailSecret(value string) bool {
 		}
 	}
 	return count >= 3
+}
+
+// validateServiceSecrets refuses, outside development and e2e, a set
+// PIPELINE_SECRET or the COLLABORATION_SECRET in use (its unset default is the
+// development value) shorter than 32 characters, as SHARE_LINK_SECRET's floor.
+// Local stacks keep their short development values.
+func validateServiceSecrets(appEnv, pipelineSecret, collaborationSecret string) error {
+	if appEnv == "development" || appEnv == "e2e" {
+		return nil
+	}
+	if pipelineSecret != "" && len(pipelineSecret) < 32 {
+		return errors.New("PIPELINE_SECRET must be at least 32 characters")
+	}
+	if len(collaborationSecret) < 32 {
+		return errors.New("COLLABORATION_SECRET must be at least 32 characters and match the collaboration server's")
+	}
+	return nil
 }
 
 func validateAuthConfiguration(
@@ -324,6 +342,10 @@ func main() {
 	}
 
 	pipeSecret := env("PIPELINE_SECRET", "")
+	collaborationSecret := env("COLLABORATION_SECRET", "dev-collaboration-secret")
+	if err := validateServiceSecrets(appEnv, pipeSecret, collaborationSecret); err != nil {
+		log.Fatal(err)
+	}
 	var pipe *pipeline.Client
 	if u := env("PIPELINE_URL", ""); u != "" {
 		pipe = pipeline.New(u, pipeSecret)
@@ -491,14 +513,14 @@ func main() {
 		StripePricePro:         stripePricePro,
 		AppURL:                 appURL,
 		EmailUnsubscribeSecret: emailUnsubscribeSecret,
-		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
+		CollaborationSecret:    collaborationSecret,
 		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
 		PipelineSecret:         pipeSecret,
 		ParseMaxPages:          parseMaxPages,
 		ParseMaxOCRPages:       parseMaxOCRPages,
 		AllowedOrigins:         corsOrigins,
 		AuthorizedParties:      authorizedParties,
-		RateLimit:              rateLimitConfig(appEnv),
+		RateLimit:              rateLimitConfig(appEnv, shareLinkSecret),
 		ModelRegistry:          modelReg,
 		Jev:                    jev.New(env("JEV_TYPESAFE_API_KEY", "")),
 	}
@@ -508,11 +530,7 @@ func main() {
 
 	// Upload spools a crashed run left behind count against nothing now.
 	httpapi.RemoveUploadSpools(os.TempDir())
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           httpapi.New(st, blobStore, pipe, rdb, parser, cfg),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := httpapi.NewServer(addr, httpapi.New(st, blobStore, pipe, rdb, parser, cfg))
 	runUsageWorkers(ctx, st, rdb, reconcile.Config{
 		StripeSecretKey: cfg.StripeSecretKey,
 		StripePricePro:  cfg.StripePricePro,

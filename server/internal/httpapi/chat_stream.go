@@ -41,6 +41,12 @@ type chatOpenResource struct {
 const (
 	chatQueryMaxEstimatedTokens = 8192
 	chatQueryMaxBytes           = 65_536
+	// chatStreamBodyMaxBytes bounds the request body before it is decoded: the
+	// longest allowed message escaped as JSON fits with room to spare.
+	chatStreamBodyMaxBytes = 128 << 10
+	// chatStreamDeadline bounds how long one relay of a turn (chat or an
+	// editor AI command) stays open.
+	chatStreamDeadline = time.Hour
 )
 
 func estimateChatQueryTokens(text string) int {
@@ -123,8 +129,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req chatStreamReq
-	if err := decode(r, &req); err != nil {
-		a.fail(w, err)
+	if err := decodeBoundedJSON(w, r, &req, chatStreamBodyMaxBytes); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{
+				"code": "query_too_long", "message": "The message is too long. Shorten it and try again.",
+			})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid chat request"})
 		return
 	}
 	if chatQueryTooLong(req.Text) {
@@ -138,6 +151,8 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
+	// The relay outlives the server's timeouts; the turn itself is detached.
+	extendDeadlines(w, chatStreamDeadline)
 	// A turn outlives its browser connection, and runs no periodic check:
 	// only a stop request or the pipeline's own bounds end it early, and lost
 	// permission surfaces through each tool call's own check (Epo 2026-10-21).

@@ -1,10 +1,9 @@
-// Package ratelimit implements the semantic half of the rate limiting story.
+// Package ratelimit is the gateway's request limiter: per user, per route
+// class, and per client address (IPv6 by its /64) for signed-out callers.
 //
-// The edge (Cloudflare) handles volumetric floods: it counts by IP over a ten
-// second window and knows nothing about who is calling. That is deliberately
-// not enough here, because the limits that matter are per user, per plan, and
-// per route class — "200 chat requests an hour for a free account" cannot be
-// expressed at the edge, which never sees the Clerk identity.
+// The edge adds one rule only (deploy/cloudflare/rules.json, Free plan): per IP
+// over ten seconds on /api/public/. Everything else, chat and uploads included,
+// is bounded here or not at all, and the edge never sees the Clerk identity.
 //
 // Spend is limited elsewhere. The credits ledger in internal/store gates model
 // usage by cost; this package only bounds request volume.
@@ -62,6 +61,17 @@ type Config struct {
 	// Thumbnail applies to browser thumbnail captures of edited Office files,
 	// on top of the per-file minimum interval the handler enforces.
 	Thumbnail Rule
+	// Integration applies to the routes that call Clerk's Backend API
+	// (integrations, Drive/OneDrive imports, a profile save), whose limit the
+	// whole instance shares.
+	Integration Rule
+	// SharePage applies, per share token, to the site Worker's reads of
+	// /api/public/ that carry a valid ShareReadHeader, instead of the
+	// anonymous per-address bucket every Worker read would otherwise share.
+	SharePage Rule
+	// ShareReadSecret is SHARE_LINK_SECRET, which signs ShareReadHeader.
+	// Empty sends every signed-out read to the anonymous bucket.
+	ShareReadSecret []byte
 }
 
 // DefaultConfig is tuned for a single-seat free tier: generous enough that
@@ -78,7 +88,12 @@ func DefaultConfig() Config {
 		Upload:        Rule{Limit: 120, Window: time.Hour, Burst: 20},
 		Incident:      Rule{Limit: 60, Window: time.Hour, Burst: 20},
 		// Epo 2026-10-11: 60 captures an hour per user.
-		Thumbnail: Rule{Limit: 60, Window: time.Hour},
+		Thumbnail:   Rule{Limit: 60, Window: time.Hour},
+		Integration: Rule{Limit: 30, Window: time.Minute},
+		// The signed-in base rate, so a share link buys no more API reads
+		// than its owner's account; it covers a cold page with a few hundred
+		// images, or a class opening one page at once.
+		SharePage: Rule{Limit: 300, Window: time.Minute},
 	}
 }
 
@@ -135,12 +150,12 @@ redis.call('SET', key, new_tat, 'PX', math.ceil(new_tat - now) + interval)
 return {1, 0}
 `)
 
-// Allow reports whether one request against key is permitted. Redis failures
-// allow the request: a limiter outage must not become an API outage, and the
-// edge still bounds the blast radius.
-func (l *Limiter) Allow(ctx context.Context, key string, rule Rule) (bool, time.Duration) {
+// Allow reports whether one request against key is permitted. err is non-nil
+// when Redis could not decide; the caller chooses whether that allows the
+// request (Middleware fails closed only for the AI and upload classes).
+func (l *Limiter) Allow(ctx context.Context, key string, rule Rule) (bool, time.Duration, error) {
 	if l == nil || !rule.enabled() {
-		return true, 0
+		return true, 0, nil
 	}
 	interval := rule.Window.Milliseconds() / int64(rule.Limit)
 	if interval <= 0 {
@@ -152,11 +167,14 @@ func (l *Limiter) Allow(ctx context.Context, key string, rule Rule) (bool, time.
 		[]string{"capy:rl:" + key},
 		time.Now().UnixMilli(), interval, tolerance,
 	).Int64Slice()
-	if err != nil || len(res) != 2 {
-		return true, 0
+	if err == nil && len(res) != 2 {
+		err = errors.New("ratelimit: unexpected script reply")
+	}
+	if err != nil {
+		return true, 0, err
 	}
 	if res[0] == 1 {
-		return true, 0
+		return true, 0, nil
 	}
-	return false, time.Duration(res[1]) * time.Millisecond
+	return false, time.Duration(res[1]) * time.Millisecond, nil
 }

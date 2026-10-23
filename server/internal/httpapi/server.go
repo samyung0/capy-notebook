@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -313,6 +314,39 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 }
 
 /* ------------------------------------------------------------------ helpers */
+
+// The API listener's timeouts: a request has a minute to send its headers and
+// body and five to be answered, and an idle keep-alive connection closes after
+// two. Routes that stream or take a long upload body extend their own
+// deadlines (extendDeadlines, readUploadMetadata).
+const (
+	serverReadTimeout  = time.Minute
+	serverWriteTimeout = 5 * time.Minute
+	serverIdleTimeout  = 2 * time.Minute
+)
+
+// NewServer is the API's http.Server for handler on addr.
+func NewServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       serverReadTimeout,
+		WriteTimeout:      serverWriteTimeout,
+		IdleTimeout:       serverIdleTimeout,
+	}
+}
+
+// extendDeadlines lets a streaming request read and write for d from now,
+// past the server's timeouts; the connection's read deadline also ends a
+// stream, since a failed background read cancels the request. A writer
+// without deadlines (a test recorder) keeps none.
+func extendDeadlines(w http.ResponseWriter, d time.Duration) {
+	conn := http.NewResponseController(w)
+	at := time.Now().Add(d)
+	_ = conn.SetReadDeadline(at)
+	_ = conn.SetWriteDeadline(at)
+}
 
 // internalBodyMaxBytes caps every service-to-service body at the largest an
 // internal route takes (a source state); routes with a tighter bound keep it.

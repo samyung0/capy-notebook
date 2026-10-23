@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -46,12 +48,15 @@ func AccessLog(next http.Handler) http.Handler {
 				slog.Int("bytes", ww.BytesWritten()),
 				slog.String("ip", ClientIP(r)),
 			}
-			if ctx.Err() != nil {
+			aborted := ctx.Err() != nil
+			if aborted {
 				attrs = append(attrs, slog.Bool("client_aborted", true))
 			}
 			logger := Log(ctx)
 			switch {
-			case ww.Status() >= 500:
+			// A 5xx written after the client left reached no one (Sentry
+			// drops it too, sentry.go), so it logs as a warning.
+			case ww.Status() >= 500 && !aborted:
 				logger.Error("http request", attrs...)
 			case ww.Status() >= 400:
 				logger.Warn("http request", attrs...)
@@ -111,9 +116,34 @@ func ClientIP(r *http.Request) string {
 		}
 		return strings.TrimSpace(fwd)
 	}
-	host, _, found := strings.Cut(r.RemoteAddr, ":")
-	if !found {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// ClientAddress is ClientIP as limits count it: an IPv6 address by its /64,
+// the block one host is given, as the collaboration server counts sockets
+// (collaboration-rs/crates/server/src/http.rs client_address).
+func ClientAddress(r *http.Request) string {
+	return FoldAddress(ClientIP(r))
+}
+
+// FoldAddress turns an IPv6 address into its /64 ("2001:db8:1:2::/64") and
+// leaves IPv4 (also IPv4-mapped IPv6) and unparsable values as they are.
+func FoldAddress(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.Unmap().WithZone("")
+	if addr.Is4() {
+		return addr.String()
+	}
+	prefix, err := addr.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return prefix.String()
 }
