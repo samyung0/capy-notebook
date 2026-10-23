@@ -7126,6 +7126,20 @@ components:
         - chat
         - editor
       type: string
+    VoiceTranscription:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/VoiceTranscription.json
+          format: uri
+          readOnly: true
+          type: string
+        text:
+          type: string
+      required:
+        - text
+      type: object
     Workspace:
       additionalProperties: false
       properties:
@@ -12752,6 +12766,51 @@ paths:
       summary: Transfer workspace ownership to another member
       tags:
         - Workspace collaboration
+  /api/workspaces/{id}/voice-transcriptions:
+    post:
+      operationId: transcribeVoice
+      parameters:
+        - description: Workspace id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Workspace id
+            type: string
+      requestBody:
+        content:
+          audio/mp4:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+          audio/ogg:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+          audio/webm:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceTranscription"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Transcribe a chat voice recording for the composer
+      tags:
+        - Chat
   /internal/collaboration/files/{id}/access:
     get:
       operationId: checkSourceAccess

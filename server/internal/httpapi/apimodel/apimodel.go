@@ -460,6 +460,12 @@ type GradedQuiz struct {
 	Questions []map[string]any `json:"questions" nullable:"false"`
 }
 
+// VoiceTranscription is a chat voice recording's text, for the composer to
+// insert where the user edits and sends it; nothing is sent or stored.
+type VoiceTranscription struct {
+	Text string `json:"text"`
+}
+
 // GradedQuestion is one checked question, keyed and awarded like GradedQuiz.
 type GradedQuestion struct {
 	Correct  float64        `json:"correct"`

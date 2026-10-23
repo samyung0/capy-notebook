@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
@@ -64,5 +66,23 @@ func TestCreditsForAudioSecondsChargesWholeSeconds(t *testing.T) {
 	}
 	if got := CreditsForAudioSeconds(-1, 16_667); got != 0 {
 		t.Fatalf("negative audio seconds = %d, want 0", got)
+	}
+}
+
+// Only the gateway's voice input settles audio, in whole seconds; token kinds
+// take no units. The checks come before any database work.
+func TestSettleProviderCallTakesSecondsOnlyForAudio(t *testing.T) {
+	s := &Store{}
+	for _, call := range []ProviderCallUsage{
+		{CallID: "pc_1", Kind: KindAudio},
+		{CallID: "pc_1", Kind: KindAudio, Unit: "tokens", Units: 3},
+		{CallID: "pc_1", Kind: KindAudio, Unit: "seconds", Units: -1},
+		{CallID: "pc_1", Kind: KindAudio, Unit: "seconds", Units: 3, Thinking: "low"},
+		{CallID: "pc_1", Kind: KindLLM, Thinking: "low", Unit: "seconds", Units: 3},
+		{CallID: "pc_1", Kind: KindEmbedding, Units: 3},
+	} {
+		if _, err := s.SettleProviderCall(context.Background(), "cr_1", call); !errors.Is(err, ErrInvalidProviderCall) {
+			t.Errorf("%+v: %v", call, err)
+		}
 	}
 }

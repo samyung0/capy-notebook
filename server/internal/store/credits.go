@@ -201,6 +201,10 @@ type ProviderCallUsage struct {
 	// ServedBy is the provider OpenRouter routed the call to, kept in the
 	// usage event's metadata only.
 	ServedBy string
+	// Units and Unit measure an audio call ("seconds"); token kinds leave
+	// them empty.
+	Units int64
+	Unit  string
 }
 
 type ProviderCallSettlement struct {
@@ -439,6 +443,29 @@ func (s *Store) BeginProviderSession(
 	llm, embedding TokenRates,
 	thinking string,
 ) (string, error) {
+	return s.beginProviderSession(ctx, actorUserID, workspaceID, surface, paidBy, llm, embedding, thinking, 0)
+}
+
+// BeginReservedSession opens a platform-paid session that holds
+// reserveMicros of the actor's credits until it settles, is released or
+// expires: for a call whose most it can cost is known before it runs (voice
+// input, at most two minutes). Admission is the usual gate; the hold then
+// counts against every later gate while the call runs.
+func (s *Store) BeginReservedSession(ctx context.Context, actorUserID, workspaceID, surface string, reserveMicros int64) (string, error) {
+	if reserveMicros < 0 {
+		return "", fmt.Errorf("negative reservation %d", reserveMicros)
+	}
+	return s.beginProviderSession(ctx, actorUserID, workspaceID, surface, models.PaidByPlatform,
+		TokenRates{}, TokenRates{}, "", reserveMicros)
+}
+
+func (s *Store) beginProviderSession(
+	ctx context.Context,
+	actorUserID, workspaceID, surface, paidBy string,
+	llm, embedding TokenRates,
+	thinking string,
+	reserveMicros int64,
+) (string, error) {
 	if actorUserID == "" {
 		return "", ErrNotFound
 	}
@@ -481,6 +508,15 @@ func (s *Store) BeginProviderSession(
 		if open >= ConcurrentLLMLeases {
 			return "", ErrTooManyLLMLeases
 		}
+		// SettleCredits, ReleaseCredits and the expiry sweep take the hold
+		// back off the counter.
+		if reserveMicros > 0 {
+			if _, err := tx.Exec(ctx, `UPDATE user_credits
+				SET reserved_micros = reserved_micros + $2, updated_at = now()
+				WHERE user_id = $1`, actorUserID, reserveMicros); err != nil {
+				return "", err
+			}
+		}
 	}
 
 	id := uid("cr")
@@ -495,13 +531,13 @@ func (s *Store) BeginProviderSession(
 			 llm_micros_per_input_token, llm_micros_per_output_token,
 			 llm_micros_per_cached_input_token,
 			 embedding_provider_slug, embedding_model_slug, embedding_model_version, expires_at)
-		VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+		VALUES ($1,$2,$3,$4,$5,$18,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
 		        now() + ($17 * interval '1 millisecond'))`,
 		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), surface, paidBy,
 		llm.Model.ProviderSlug, llm.Model.ModelSlug, llm.ModelVersion, thinking,
 		llm.MicrosPerInputToken, llm.MicrosPerOutputToken, llm.MicrosPerCachedInputToken,
 		embedding.Model.ProviderSlug, embedding.Model.ModelSlug, embedding.ModelVersion,
-		reservationTTL.Milliseconds(),
+		reservationTTL.Milliseconds(), reserveMicros,
 	); err != nil {
 		return "", err
 	}
@@ -540,11 +576,17 @@ func (s *Store) SettleProviderCall(
 	if sessionID == "" || call.CallID == "" {
 		return out, fmt.Errorf("%w: session id and provider call id are required", ErrInvalidProviderCall)
 	}
-	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank {
+	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank && call.Kind != KindAudio {
 		return out, fmt.Errorf("%w: kind %q", ErrInvalidProviderCall, call.Kind)
 	}
-	if (call.Kind == KindEmbedding || call.Kind == KindRerank) && call.Thinking != "" {
-		return out, fmt.Errorf("%w: embedding and rerank calls cannot have thinking", ErrInvalidProviderCall)
+	if call.Kind != KindLLM && call.Thinking != "" {
+		return out, fmt.Errorf("%w: embedding, rerank and audio calls cannot have thinking", ErrInvalidProviderCall)
+	}
+	// Only the gateway's own voice input settles audio here, in seconds; the
+	// pipeline's receipt endpoint never sends units.
+	if (call.Kind == KindAudio) != (call.Unit == "seconds") || call.Units < 0 ||
+		call.Kind != KindAudio && call.Units != 0 {
+		return out, fmt.Errorf("%w: audio calls, and only they, settle seconds", ErrInvalidProviderCall)
 	}
 	if call.Kind == KindLLM && !models.IsKnownThinking(call.Thinking) {
 		return out, fmt.Errorf("%w: thinking %q", ErrInvalidProviderCall, call.Thinking)
@@ -646,7 +688,9 @@ func (s *Store) settleProviderCallAtomic(
 			       COALESCE((metadata->>'reasoningTokens')::bigint, 0),
 			       COALESCE(metadata->>'cacheAnomaly', ''),
 			       CASE WHEN kind = 'rerank' THEN model_version ELSE 0 END,
-			       COALESCE(metadata->>'servedBy', '')
+			       COALESCE(metadata->>'servedBy', ''),
+			       CASE WHEN kind = 'audio' THEN units ELSE 0 END,
+			       CASE WHEN kind = 'audio' THEN unit ELSE '' END
 			FROM usage_events
 			WHERE reservation_id = $1 AND provider_call_id = $2`,
 			sessionID, call.CallID,
@@ -655,7 +699,7 @@ func (s *Store) settleProviderCallAtomic(
 			&recorded.InputTokens, &recorded.OutputTokens,
 			&recorded.CachedReadTokens, &recorded.CacheWriteTokens,
 			&recorded.ReasoningTokens, &recorded.CacheAnomaly, &recorded.ModelVersion,
-			&recorded.ServedBy,
+			&recorded.ServedBy, &recorded.Units, &recorded.Unit,
 		); err != nil {
 			return settlement, err
 		}
@@ -703,7 +747,18 @@ func (s *Store) settleProviderCallAtomic(
 
 	rates := TokenRates{}
 	catalogModel, modelVersion := llmRef, llmVersion
-	if call.Kind == KindEmbedding || call.Kind == KindRerank {
+	if call.Kind == KindAudio {
+		// Voice input has no catalog model: it is priced per second at the
+		// voice_input_second rate active when it settles.
+		catalogModel, modelVersion = models.Ref{}, 0
+		if out.paidBy == models.PaidByPlatform {
+			active, err := activeResourceRates(ctx, tx, []string{ResourceVoiceInputSecond})
+			if err != nil {
+				return settlement, err
+			}
+			out.credits = CreditsForAudioSeconds(call.Units, active[ResourceVoiceInputSecond].CreditMicrosPerUnit)
+		}
+	} else if call.Kind == KindEmbedding || call.Kind == KindRerank {
 		catalogModel, modelVersion = embeddingRef, embeddingVersion
 		if call.Kind == KindRerank {
 			// DeepInfra's transport identity is the catalog identity.
@@ -766,6 +821,10 @@ func (s *Store) settleProviderCallAtomic(
 	if call.InputTokens == 0 && call.OutputTokens == 0 {
 		meta["usageMissing"] = true
 	}
+	unit := "tokens"
+	if call.Kind == KindAudio {
+		unit = call.Unit
+	}
 	event := UsageEvent{
 		TraceID:        traceID,
 		ActorUserID:    out.actorUserID,
@@ -777,7 +836,8 @@ func (s *Store) settleProviderCallAtomic(
 		Thinking:       call.Thinking,
 		InputTokens:    call.InputTokens,
 		OutputTokens:   call.OutputTokens,
-		Unit:           "tokens",
+		Units:          call.Units,
+		Unit:           unit,
 		CreditMicros:   out.credits,
 		CatalogModel:   catalogModel,
 		ModelVersion:   modelVersion,
@@ -803,6 +863,8 @@ func (s *Store) settleProviderCallAtomic(
 		  cache_write_tokens=$11,
 		  reasoning_tokens=$12,
 		  cache_anomaly=$13,
+		  units=$14,
+		  unit=$15,
 		  credit_micros=$5,
 		  received_at=now(),
 		  applied_at=now()
@@ -811,7 +873,7 @@ func (s *Store) settleProviderCallAtomic(
 		call.CallID, sessionID, call.Kind, call.Purpose, out.credits,
 		call.Provider, call.Model, call.InputTokens, call.OutputTokens,
 		call.CachedReadTokens, call.CacheWriteTokens, call.ReasoningTokens,
-		call.CacheAnomaly,
+		call.CacheAnomaly, call.Units, call.Unit,
 	)
 	if err != nil {
 		return settlement, err
@@ -855,6 +917,44 @@ func (s *Store) settleProviderCallAtomic(
 		return ProviderCallSettlement{}, err
 	}
 	return settlement, nil
+}
+
+// OpenProviderCall records one provider attempt the gateway makes itself
+// (voice input), before the request leaves: an open call under an open
+// session, settleable until receiptWindow has passed. It returns the call id.
+func (s *Store) OpenProviderCall(
+	ctx context.Context,
+	sessionID, kind, purpose, provider, model string,
+	receiptWindow time.Duration,
+) (string, error) {
+	id := uid("pc")
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO provider_calls
+			(id, reservation_id, actor_user_id, kind, purpose, provider, model, receipt_deadline_at)
+		SELECT $2, id, actor_user_id, $3, $4, $5, $6, now() + ($7 * interval '1 millisecond')
+		  FROM provider_sessions WHERE id = $1 AND status = 'open'`,
+		sessionID, id, kind, purpose, provider, model, receiptWindow.Milliseconds())
+	if err != nil {
+		return "", err
+	}
+	if tag.RowsAffected() != 1 {
+		return "", ErrProviderSessionClosed
+	}
+	return id, nil
+}
+
+// AbandonProviderCall closes an open attempt uncharged, naming why (a
+// provider status and code, or the request's own refusal).
+func (s *Store) AbandonProviderCall(ctx context.Context, callID, category, code string, providerStatus int) error {
+	var status *int
+	if providerStatus >= 100 && providerStatus <= 599 {
+		status = &providerStatus
+	}
+	_, err := s.pool.Exec(ctx, `
+		UPDATE provider_calls SET status = 'abandoned', abandoned_at = now(),
+		  error_category = $2, error_code = $3, provider_status = $4
+		 WHERE id = $1 AND status = 'open'`, callID, category, code, status)
+	return err
 }
 
 // IngestSlots is this actor's ingest concurrency remaining, across every
