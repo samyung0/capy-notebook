@@ -608,6 +608,12 @@ prune cron.
    error with exit 2, `-L` forwarding is refused, the same key against the
    host's public address is refused (`from=`), and `sshd -t` passes as root.
    As root, `DOCKER_CONFIG=$(mktemp -d) docker compose version` must work.
+   Then check that Access refuses a client without the service token: with
+   `TUNNEL_SERVICE_TOKEN_*` unset, `cloudflared access ssh --hostname <ssh
+   hostname>` fails at Access, and `curl -sI https://<ssh hostname>` answers
+   with the Access login redirect or a 403. If either gets through, sshd is on
+   the internet through the tunnel, where every connection comes from
+   127.0.0.1 and passes `from=`.
 
 #### Tunnel ingress
 
@@ -880,7 +886,30 @@ every env value), the `coolify` key in root's `authorized_keys`, the
 `/usr/local/sbin/capy-prune-app-images.sh` files, the ufw "Docker networks to
 the host" rule (it served only Coolify's Sentinel), the `uat-coolify`
 hostname with its DNS record and Access application, and in GitHub the
-`COOLIFY_*` values and the Coolify deploy key.
+`COOLIFY_*` values and the Coolify deploy key. Revoke `COOLIFY_API_TOKEN` here,
+when Coolify is removed, not at the cutover: the way back below needs it.
+
+To go back to Coolify during the soak (review L7):
+
+1. Stop the new stacks, keeping their volumes: in `/opt/capy/ops/current`
+   and then `/opt/capy/app/current`, as root,
+   `docker compose -p capy-ops -f compose.yml --env-file stack.env down` and
+   `docker compose -p capy -f compose.yml --env-file stack.env down`. Never
+   `-v`.
+2. Point the tunnel's app hostnames back at Coolify's proxy
+   (`http://localhost:80` with the HTTP Host header override each had before
+   the cutover).
+3. Undo the cutover's `docker update --restart=no` on Coolify's containers
+   (restore each to the policy recorded with
+   `docker inspect -f '{{.HostConfig.RestartPolicy.Name}}'` before the
+   cutover), start Coolify, then start both applications from Coolify. They
+   come back on the old `<uuid>_capy-pgdata` volume: writes made since the
+   cutover stay in `capy-pgdata` and are not in it. Coolify pulls the floating
+   `pgvector/pgvector:pg16` and `redis:7-alpine` tags again, so its Postgres
+   and Redis can be newer builds than the ones it ran before.
+4. Revert the switch on main (`git revert`), which brings back the
+   `COOLIFY_*` manifest keys; put their `deploy/.env.uat` lines back and
+   `pnpm env:push`, so `COOLIFY_API_TOKEN` must still be valid.
 
 ### 1.2 A/AAAA instead of a tunnel
 
