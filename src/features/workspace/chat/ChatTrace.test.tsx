@@ -100,4 +100,21 @@ it('ends showing the commands a turn left unapplied', () => {
   expect(html).toContain('Edited grades.xlsx');
   expect(html).toContain('2 commands not applied');
   expect(html).toContain('Undo');
+  // Once undone, nothing of the edit stands.
+  const undone = text(
+    render(
+      [
+        cut({
+          applied: 30,
+          effects: [{ ...edit('op_1'), operation: 'edit_undone' }],
+          endedAt: at(2),
+          outcome: 'succeeded',
+          total: 32,
+        }),
+      ],
+      false
+    )
+  );
+  expect(undone).toContain('Undid the edit to grades.xlsx');
+  expect(undone).not.toContain('not applied');
 });

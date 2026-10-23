@@ -355,7 +355,7 @@ function ReceiptRow({
   handlers: UndoHandlers;
   /** create_deck: a source file whose title may carry no extension. */
   deck?: boolean;
-  /** The commands its call left unapplied. */
+  /** The commands its call left unapplied, said while its edit stands. */
   note?: string;
 }) {
   const { resource } = effect;
@@ -390,7 +390,7 @@ function ReceiptRow({
         </span>
         {text.slice(at + label.length)}
       </span>
-      {note ? (
+      {note && !muted ? (
         <span className="shrink-0 text-[12.5px] text-fg-muted">{note}</span>
       ) : null}
       <span className="ml-auto flex shrink-0 items-center gap-2 pl-1">

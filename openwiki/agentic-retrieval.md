@@ -2784,8 +2784,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    Redo (Epo 2026-10-20). A cut Office edit (Office tools, below) gets its
    receipt when its row closes, as a plain edit's after the next edit of its
    file, or with its "N commands not applied" (`chat_step_not_applied`)
-   muted after the sentence when the turn left them unapplied; its Undo and
-   Redo are any edit's (Epo 2026-10-23, Q171).
+   muted after the sentence when the turn left them unapplied (hidden while
+   the edit is undone); its Undo and Redo are any edit's (Epo 2026-10-23,
+   Q171).
 
 `generate_material` mints a deterministic `mat_` id from
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
