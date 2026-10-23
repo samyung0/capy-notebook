@@ -4,6 +4,7 @@
 import contextlib
 import copy
 import io
+import ipaddress
 import json
 import os
 import sys
@@ -225,19 +226,69 @@ class RulesFileTest(unittest.TestCase):
             "noindex, nofollow",
         )
 
-    def test_webhooks_skip_the_security_rules(self):
+    def test_webhooks_skip_the_security_rules_only_from_the_providers(self):
+        """Security regression: rate-limit audit M5."""
         skip = rule(
             CONFIG["phases"],
             "http_request_firewall_custom",
             "capy_webhooks_skip_security",
         )
-        # Human decision (Epo 2026-10-20): only the API hosts' webhooks.
-        self.assertEqual(
-            skip["expression"],
+        # Human decisions: only the API hosts' webhooks (Epo 2026-10-20), and
+        # only from the providers' published ranges (Epo 2026-10-24).
+        prefix = (
             'http.host in {"api.capynotebook.com" "uat-api.capynotebook.com"}'
-            ' and starts_with(http.request.uri.path, "/webhooks/")',
+            ' and starts_with(http.request.uri.path, "/webhooks/")'
+            " and ip.src in {"
         )
+        self.assertTrue(skip["expression"].startswith(prefix))
+        self.assertTrue(skip["expression"].endswith("}"))
+        sources = skip["expression"][len(prefix) : -1].split()
+        for source in sources:
+            ipaddress.ip_network(source)
+        # One address of each provider's list (runbook §2: refreshing them).
+        self.assertIn("3.18.12.63", sources)  # Stripe
+        self.assertIn("44.228.126.217", sources)  # Svix, Clerk's sender
         self.assertIn("http_ratelimit", skip["action_parameters"]["phases"])
+
+    def test_internal_paths_are_blocked_on_every_public_host(self):
+        """Security regression: rate-limit audit M4."""
+        block = rule(
+            CONFIG["phases"],
+            "http_request_firewall_custom",
+            "capy_block_internal_paths",
+        )
+        self.assertEqual(block["action"], "block")
+        for host in (
+            "api",
+            "uat-api",
+            "app",
+            "app.uat",
+            "uat",
+            "collab",
+            "uat-collab",
+        ):
+            self.assertIn(f'"{host}.capynotebook.com"', block["expression"])
+        for path in ("/api/internal/", "/internal/"):
+            self.assertIn(
+                f'starts_with(http.request.uri.path, "{path}")', block["expression"]
+            )
+
+    def test_signed_out_api_reads_have_the_edge_rate_limit(self):
+        """Security regression: rate-limit audit H1 (the Free plan's one rule)."""
+        (limit,) = CONFIG["phases"]["http_ratelimit"]
+        self.assertEqual(
+            limit["expression"], 'starts_with(http.request.uri.path, "/api/public/")'
+        )
+        self.assertEqual(limit["action"], "block")
+        self.assertEqual(
+            limit["ratelimit"],
+            {
+                "characteristics": ["ip.src", "cf.colo.id"],
+                "period": 10,
+                "requests_per_period": 100,
+                "mitigation_timeout": 10,
+            },
+        )
 
     def test_ops_and_backend_hosts_are_never_cached_in_either_environment(self):
         ops = rule(
