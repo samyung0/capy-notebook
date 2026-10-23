@@ -17,6 +17,7 @@ import {
 class FakeRecorder {
   static supported = ['audio/webm;codecs=opus'];
   static last: FakeRecorder | null = null;
+  static startError: Error | null = null;
   static isTypeSupported(type: string) {
     return FakeRecorder.supported.includes(type);
   }
@@ -31,6 +32,7 @@ class FakeRecorder {
     FakeRecorder.last = this;
   }
   start() {
+    if (FakeRecorder.startError) throw FakeRecorder.startError;
     this.state = 'recording';
   }
   stop() {
@@ -58,6 +60,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   FakeRecorder.supported = ['audio/webm;codecs=opus'];
+  FakeRecorder.startError = null;
 });
 
 describe('chat voice input', () => {
@@ -104,6 +107,24 @@ describe('chat voice input', () => {
       '解释三羧酸循环'
     );
     expect(insertTranscript('', text, 0, 0).value).toBe('the Krebs cycle');
+    // Korean spaces its words; Chinese and Japanese do not.
+    expect(insertTranscript('세포막은', '얇다', 4, 4).value).toBe(
+      '세포막은 얇다'
+    );
+  });
+
+  it('lets the microphone go when the recorder cannot start', async () => {
+    vi.useFakeTimers();
+    const { track } = microphone(async () => undefined);
+    const ended = new DOMException('track ended', 'InvalidStateError');
+    FakeRecorder.startError = ended;
+    const failed = await startRecording('audio/webm;codecs=opus', () => {
+      throw new Error('no clip');
+    }).catch((error: unknown) => error);
+    expect(failed).toBe(ended);
+    expect(track.stop).toHaveBeenCalledOnce();
+    // No two-minute timer is left to fire later.
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('stops by itself at the two-minute limit, and a cancel keeps no clip', async () => {

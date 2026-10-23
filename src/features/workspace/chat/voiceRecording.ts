@@ -82,7 +82,15 @@ export async function startRecording(
     if (keep && chunks.length)
       onClip(new Blob(chunks, { type: recorder.mimeType || mimeType }));
   };
-  recorder.start();
+  try {
+    // Throws when the track ended after the permission prompt (an unplugged
+    // headset): no onstop follows, so the microphone is let go here.
+    recorder.start();
+  } catch (error) {
+    clearTimeout(limit);
+    release();
+    throw error;
+  }
   return { cancel: () => end(false), stop: () => end(true) };
 }
 
@@ -112,9 +120,10 @@ export function voiceErrorMessage(error: unknown): string {
   return errorCopy(error, m.voice_error_failed());
 }
 
-/** Whitespace, and CJK (U+2E80-U+9FFF, Hangul syllables, compatibility
- * ideographs, full-width forms), which is written without spaces. */
-const UNSPACED = /[\s⺀-鿿가-힯豈-﫿＀-￯]/;
+/** Whitespace, and Chinese and Japanese (U+2E80-U+9FFF, compatibility
+ * ideographs, full-width forms), which are written without spaces. Korean
+ * spaces its words, so Hangul is spaced like Latin text. */
+const UNSPACED = /[\s⺀-鿿豈-﫿＀-￯]/;
 
 /** Whether two characters written next to each other need a space between
  * them. */
