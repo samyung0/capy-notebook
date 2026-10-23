@@ -31,6 +31,7 @@ import {
   type OfficeHostMessage,
   type OfficeMode,
   type OfficeNotice,
+  type OfficePosition,
   type OfficeRenderedPage,
   type OfficeZoom,
 } from './officeProtocol';
@@ -57,6 +58,29 @@ import {
   useSourceSession,
 } from './useSourceSession';
 
+/** A view's part in a room swap (Epo 2026-10-22, OfficeFileView): it says
+ * when a newer epoch replaced its saved session, and when it has settled
+ * (ready, or failed) so it can take the screen. */
+export interface OfficeSwap {
+  /** Building hidden beside the replaced view: its status reads
+   * Reconnecting until it takes the screen, offline and errors aside. */
+  building: boolean;
+  /** Its frame's reader position calls (null once it goes): the replaced
+   * view's is read and the next view opens there. */
+  onPosition: (position: OfficeViewPosition | null) => void;
+  onReplaced: () => void;
+  onSettled: () => void;
+}
+
+/** Both answer where the reader is once the frame says (null: no answer). */
+export interface OfficeViewPosition {
+  read: () => Promise<OfficePosition | null>;
+  show: (position: OfficePosition) => Promise<OfficePosition | null>;
+}
+
+/** How long a frame may take to say where its reader is. */
+const POSITION_WAIT_MS = 1000;
+
 interface OfficeRuntimeOptions {
   canEdit: boolean;
   citation?: OfficeCitation;
@@ -64,6 +88,7 @@ interface OfficeRuntimeOptions {
   format: OfficeFormat;
   initialMode?: OfficeMode;
   revision: number;
+  swap?: OfficeSwap;
 }
 
 export function officeRuntimeKey(
@@ -100,6 +125,7 @@ export function useOfficeRuntime({
   format,
   initialMode = 'view',
   revision,
+  swap,
 }: OfficeRuntimeOptions) {
   const citationRef = useRef(citation);
   citationRef.current = citation;
@@ -136,17 +162,23 @@ export function useOfficeRuntime({
   const [replicaReady, setReplicaReady] = useState(false);
   const [leaving, setLeaving] = useState(false);
   // The room turned read-only (a storage or frozen refusal): the session
-  // discarded its unsaved edits, and the frame reloads the saved view.
-  const source = useSourceSession(file.id, joined, () => {
-    setJoined(false);
-    initializedFrame.current = -1;
-    setFrameLoaded(false);
-    setFrameGeneration((value) => value + 1);
-    setPresenting(false);
-    setViewBytes(null);
-    setAnalysis(null);
-    setMode('view');
-  });
+  // discarded its unsaved edits, and the frame reloads the saved view. The
+  // join ends once the frame reports its replica ready.
+  const source = useSourceSession(
+    file.id,
+    joined,
+    () => {
+      setJoined(false);
+      initializedFrame.current = -1;
+      setFrameLoaded(false);
+      setFrameGeneration((value) => value + 1);
+      setPresenting(false);
+      setViewBytes(null);
+      setAnalysis(null);
+      setMode('view');
+    },
+    replicaReady
+  );
   // The maintenance pause refused editing before the room opened: show the
   // saved view instead. The frame was never loaded for editing, so view mode
   // loads into the same frame.
@@ -187,6 +219,10 @@ export function useOfficeRuntime({
       string,
       { resolve: (bytes: ArrayBuffer) => void; reject: (error: Error) => void }
     >()
+  );
+  // Position requests waiting for their frame's answer (a room swap).
+  const positionRequests = useRef(
+    new Map<string, (position: OfficePosition | null) => void>()
   );
   // An edit frame's list-card capture, fed its local edits.
   const captureRef = useRef<ThumbnailCapture | null>(null);
@@ -635,6 +671,10 @@ export function useOfficeRuntime({
         });
         return;
       }
+      if (message.type === 'position') {
+        positionRequests.current.get(message.id)?.(message.position);
+        return;
+      }
       if (message.type === 'rendered') {
         renderRequests.current.get(message.id)?.resolve(message);
         renderRequests.current.delete(message.id);
@@ -949,6 +989,58 @@ export function useOfficeRuntime({
 
   useEffect(() => () => reportInset?.(0), [reportInset]);
 
+  // A newer epoch while this session was saved (a base handoff, a discard's
+  // epoch reset) swaps to a new view instead of a reload banner; only the
+  // maintenance pause keeps this view under its banner.
+  const swapping = source.replaced && !source.paused;
+  const ready = mode === 'view' ? !!analysis : replicaReady;
+  // A swap takes the screen once the next frame has painted its document.
+  const painted = ready && !!analysis;
+  // Any answer settles it, the server's included (refused, unavailable,
+  // outdated, an error, recovery); nothing arriving waits as a first join
+  // does, until its own timeout errors (Epo 2026-10-23).
+  const settled =
+    painted ||
+    source.status === 'error' ||
+    !!(error ?? source.error) ||
+    !!source.unavailable ||
+    outdated ||
+    source.status === 'recovery';
+  const swapRef = useRef(swap);
+  swapRef.current = swap;
+  useEffect(() => {
+    if (swapping) swapRef.current?.onReplaced();
+  }, [swapping]);
+  useEffect(() => {
+    if (settled) swapRef.current?.onSettled();
+  }, [settled]);
+  useEffect(() => {
+    const requests = positionRequests.current;
+    const ask = (position?: OfficePosition) =>
+      new Promise<OfficePosition | null>((resolve) => {
+        const id = crypto.randomUUID();
+        const done = (answer: OfficePosition | null) => {
+          clearTimeout(timer);
+          requests.delete(id);
+          resolve(answer);
+        };
+        const timer = setTimeout(() => done(null), POSITION_WAIT_MS);
+        requests.set(id, done);
+        post(
+          position
+            ? {
+                id,
+                position,
+                type: 'set-position',
+                version: OFFICE_PROTOCOL_VERSION,
+              }
+            : { id, type: 'position-request', version: OFFICE_PROTOCOL_VERSION }
+        );
+      });
+    swapRef.current?.onPosition({ read: () => ask(), show: ask });
+    return () => swapRef.current?.onPosition(null);
+  }, [post]);
+
   // Each frame's URL names the format and the mode it opened in, fixed for
   // its lifetime: a changed src reloads the frame, and the pause's drop to
   // View keeps the frame opened for Edit.
@@ -991,7 +1083,7 @@ export function useOfficeRuntime({
     pausedAtOpen,
     presenting,
     readOnly: source.readOnly,
-    ready: mode === 'view' ? !!analysis : replicaReady,
+    ready,
     replaced: source.replaced,
     retryView,
     runMenuCommand,
@@ -1001,7 +1093,13 @@ export function useOfficeRuntime({
     setRuntimeMode,
     sizeLimited,
     slowed: mode === 'edit' && source.slowed,
-    status: source.status,
+    // The header says Reconnecting until the new view takes over.
+    // Building: Reconnecting until it takes the screen, as the swap's header
+    // reads (Epo 2026-10-22); offline and an error show as a first join's.
+    status:
+      swap?.building && source.status !== 'offline' && source.status !== 'error'
+        ? ('reconnecting' as const)
+        : source.status,
     storageFull: source.session?.storageFull,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
   };

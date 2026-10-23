@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { SourceFile } from '@/api/types';
+import { m } from '@/i18n';
 import DocxView from './DocxView';
 import { FileHeaderTarget } from './fileModeContext';
 import { useOfficeRuntime } from './useOfficeRuntime';
@@ -64,6 +65,18 @@ describe('DocxView header', () => {
     const markup = render({ error: 'x', errorId: 'trace-1', mode: 'view' });
     expect(markup).toContain('trace-1');
     expect(markup).not.toContain('<iframe');
+  });
+
+  // A newer version swaps the view (FileViewer's OfficeSwap, Epo
+  // 2026-10-22): the replaced view shows no banner or Reload; the
+  // maintenance pause keeps its banner.
+  it('shows no newer-version banner, only the maintenance one', () => {
+    const replaced = render({ mode: 'edit', ready: true, replaced: true });
+    expect(replaced).not.toContain(m.source_edit_replaced());
+    expect(replaced).not.toContain(m.error_action_reload());
+    expect(
+      render({ mode: 'edit', paused: true, ready: true, replaced: true })
+    ).toContain(m.source_edit_paused());
   });
 
   it('asks for a reload when the Office runtime speaks another protocol version', () => {

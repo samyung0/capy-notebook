@@ -472,3 +472,15 @@ it('loads while its open is slowed, never offline, until it syncs', async () => 
   expect(room.getSnapshot().slowed).toBe(false);
   room.destroy();
 });
+
+// Epo 2026-10-23: an item room's join has 30 s from its token request; one
+// never answered then shows the room's connection error (offline).
+it('goes offline when its join has not finished 30 s after its token request', async () => {
+  vi.stubGlobal('navigator', { onLine: true });
+  const { room } = await started();
+  vi.advanceTimersByTime(29_999);
+  expect(room.getSnapshot().status).toBe('connecting');
+  vi.advanceTimersByTime(1);
+  expect(room.getSnapshot().status).toBe('offline');
+  vi.unstubAllGlobals();
+});
