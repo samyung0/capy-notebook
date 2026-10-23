@@ -6,7 +6,7 @@ import {
   type OfficeMenu,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 12 as const;
+export const OFFICE_PROTOCOL_VERSION = 13 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
@@ -124,7 +124,13 @@ export type OfficeHostMessage =
       canEdit: boolean;
       mode: OfficeMode;
       revision: number;
-      collaboration?: { epoch: number; initialUpdate: ArrayBuffer };
+      /** The session's Yjs client id (Q213), which the editor writes
+       * under. */
+      collaboration?: {
+        clientId: number;
+        epoch: number;
+        initialUpdate: ArrayBuffer;
+      };
       /**
        * Edit mode only: the plan image cap of the account paying for the
        * file; an inserted image over it is shrunk first.
@@ -751,7 +757,10 @@ function isCollaboration(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   return (
-    isCount(candidate.epoch) && candidate.initialUpdate instanceof ArrayBuffer
+    isCount(candidate.clientId) &&
+    candidate.clientId > 0 &&
+    isCount(candidate.epoch) &&
+    candidate.initialUpdate instanceof ArrayBuffer
   );
 }
 

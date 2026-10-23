@@ -21,6 +21,7 @@ import {
   SyncKind,
   syncMessage,
   text,
+  tokenClientId,
 } from './protocol';
 import { type ChannelHandler, CollabSocket } from './socket';
 
@@ -101,6 +102,13 @@ export const UPDATE_TOO_LARGE_REASON = 'collaboration-update-too-large';
  * with it and joined again when it joins. Closed as its note's oldest embed
  * it waits like a room closed as the user's oldest, and joins again once it
  * is near the screen again (`wake`).
+ *
+ * The document writes under the client id the server assigned (Q213): until
+ * its first writable JOINED it takes the id each JOIN's token offers (a read
+ * channel, which never writes, keeps taking them), then it keeps that id for
+ * life and names it in every JOIN, so a reconnect binds the same id and its
+ * Undo stack survives. The server admits its changes only under ids it
+ * assigned to this user.
  */
 export class RoomProvider implements ChannelHandler, SeatedRoom {
   readonly awareness: Awareness;
@@ -133,6 +141,8 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private destroyed = false;
   /** A note's room: the seat its embeds join inside. */
   private noteSeat: NoteSeat | null = null;
+  /** The client id a writable JOINED bound: kept for the document's life. */
+  private bound = false;
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
@@ -455,17 +465,46 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       this.endChannel();
       return;
     }
+    if (!this.bound) {
+      try {
+        this.adopt(tokenClientId(token));
+      } catch (error) {
+        this.endChannel();
+        throw error;
+      }
+    }
     this.socket.join(
       channel,
       message(
         channel,
         MessageKind.Join,
-        joinPayload(this.config.name, token, note)
+        joinPayload(this.config.name, token, this.awareness.clientID, note)
       )
     );
   }
 
-  private joined(_writable: boolean) {
+  /** Takes the client id a token offers, before the document's first write
+   * (Q213): the document and its presence go under it. A document that
+   * already wrote under its own id cannot change it. */
+  private adopt(clientId: number) {
+    const { awareness, document } = this;
+    if (document.clientID !== clientId) {
+      if (Y.getState(document.store, document.clientID) > 0)
+        throw new Error(
+          'A collaboration document wrote before its client id was assigned'
+        );
+      document.clientID = clientId;
+    }
+    if (awareness.clientID !== clientId) {
+      const state = awareness.getLocalState();
+      removeAwarenessStates(awareness, [awareness.clientID], this);
+      awareness.clientID = clientId;
+      if (state !== null) awareness.setLocalState(state);
+    }
+  }
+
+  private joined(writable: boolean) {
+    if (writable) this.bound = true;
     // A join after a timeout counts afresh from here, so waiters on the
     // unsynced count see it go to zero only after the resync.
     this.resetCounts();
@@ -481,7 +520,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     if (this.awareness.getLocalState() !== null)
       this.send(
         MessageKind.Awareness,
-        encodeAwarenessUpdate(this.awareness, [this.document.clientID])
+        encodeAwarenessUpdate(this.awareness, [this.awareness.clientID])
       );
   }
 
@@ -524,7 +563,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     this.resetCounts();
     // Remote cursors go with the room.
     const remote = [...this.awareness.getStates().keys()].filter(
-      (client) => client !== this.document.clientID
+      (client) => client !== this.awareness.clientID
     );
     if (remote.length) removeAwarenessStates(this.awareness, remote, this);
     if (this.presence) {
@@ -573,7 +612,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     // the server outdates it.
     let clients = [...added, ...updated, ...removed];
     if (origin === this) {
-      const own = this.document.clientID;
+      const own = this.awareness.clientID;
       clients = updated.includes(own) || removed.includes(own) ? [own] : [];
     }
     if (clients.length)

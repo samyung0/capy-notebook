@@ -98,6 +98,8 @@ const DocxEditorHost = lazy(() =>
 
 interface LoadedFile {
   bytes: Uint8Array;
+  /** Edit loads only: the session's Yjs client id (Q213). */
+  clientId?: number;
   epoch?: number;
   fileName: string;
   format: OfficeFormat;
@@ -340,17 +342,17 @@ function OfficeRuntime() {
   cursorsRef.current = cursors;
   const collaboration = useMemo(
     () =>
-      file?.initialUpdate
+      file?.initialUpdate && file.clientId
         ? {
-            // Never 0, the client the DOCX seed is written under (Yrs does
-            // not move a colliding id).
-            clientId: crypto.getRandomValues(new Uint32Array(1))[0] || 1,
+            // The id the collaboration server assigned this session (Q213),
+            // never 0 (the DOCX seed's client).
+            clientId: file.clientId,
             cursors,
             initialUpdate: file.initialUpdate,
             onReplica: reportReplica,
           }
         : null,
-    [cursors, file?.initialUpdate, reportReplica]
+    [cursors, file?.clientId, file?.initialUpdate, reportReplica]
   );
   // An inserted image over the payer's plan cap, or over what the room may
   // still grow by, is shrunk first, and one older Office apps cannot open is
@@ -461,6 +463,7 @@ function OfficeRuntime() {
             : new Uint8Array(message.bytes);
         setFile({
           bytes,
+          clientId: message.collaboration?.clientId,
           epoch: message.collaboration?.epoch,
           fileName: message.fileName,
           format: message.format,

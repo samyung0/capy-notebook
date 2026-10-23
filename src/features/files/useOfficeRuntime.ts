@@ -42,7 +42,7 @@ import {
 } from './officeRuntimeConfig';
 import { printPages } from './printPages';
 import { holdSource, takeSourceOpen } from './sourceOpen';
-import { savedSourceUpdate } from './sourceState';
+import { applyOwnUpdate, savedSourceUpdate } from './sourceState';
 import {
   canEncodeWebp,
   createThumbnailCapture,
@@ -438,6 +438,9 @@ export function useOfficeRuntime({
     const collaboration =
       mode === 'edit'
         ? {
+            // The id the room assigned this session (Q213): the editor
+            // writes under it.
+            clientId: source.doc!.clientID,
             epoch: source.session!.epoch,
             initialUpdate: Y.encodeStateAsUpdate(source.doc!).slice().buffer,
           }
@@ -736,7 +739,8 @@ export function useOfficeRuntime({
         )
           return;
         const replicaUpdate = new Uint8Array(message.bytes);
-        Y.applyUpdate(active.doc, replicaUpdate, SOURCE_IFRAME_ORIGIN);
+        // The editor writes under this document's client id (Q213).
+        applyOwnUpdate(active.doc, replicaUpdate, SOURCE_IFRAME_ORIGIN);
         if (message.type === 'update' && message.capture)
           captureRef.current?.edited();
         if (message.type === 'collaboration-ready') {

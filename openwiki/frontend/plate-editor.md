@@ -265,10 +265,8 @@ hears none (its page's header shows the note's). A member's own connection is
 never in its list, so its user appears only for their other tabs and devices.
 The ids come from the room's own map of which channel holds which client id,
 so a client cannot label a cursor as someone else: labels and the group read
-only this message. An id its user released (a removal, a leave) stays theirs
-until the next presence, which no longer lists it, has gone out: until then
-co-editors still label it with their name, so another user's channel cannot
-take it.
+only this message. A channel's awareness lives only under its own bound client
+id ([client ids](#client-ids)), so no other user's channel can take it.
 
 The browser (`presence.ts`) hands it to the open editor (`onPresence` on
 `RoomProvider`; it goes empty when the channel ends): notes keep it for cursor
@@ -1289,12 +1287,12 @@ document, storage, history, keys room and id; its own token refreshes and
 expiry apply as for any channel, and a JOIN costs one message of the
 allowance. With no note channel (an embedded set opened on its own study
 page, or under MSW) an item room joins as any document does. A room keeps at most 256 awareness
-client ids and a channel at most 4 (`MAX_CLIENTS_PER_ROOM`,
-`MAX_CLIENTS_PER_MEMBER`); a new id past either is not kept. The room's cap
-counts removed ids until their removal went out (the next flush forgets
+client ids (`MAX_CLIENTS_PER_ROOM`); a new id past it is not kept. The room's
+cap counts removed ids until their removal went out (the next flush forgets
 them), so adding and removing ids in a loop stays capped and needs no scan.
-A client id is its user's: another user's channel neither overwrites nor
-removes it, and a channel's leave removes only the ids it still holds.
+A channel writes awareness only under the client id its JOIN bound (see
+[client ids](#client-ids)); entries under any other id are ignored, and its
+leave removes its entry unless a later channel of its user took it over.
 
 A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
 pending receipts (the failed-store retry answers them), shows Not saved and,
@@ -1344,13 +1342,71 @@ writers. Relational metadata and standalone sharing use separate endpoints so a
 privacy or metadata failure cannot be reported as though it rolled back an
 already-durable Yjs command.
 
+### Client ids
+
+Epo decided on 2026-10-23 (Q213) that the collaboration server assigns each
+editing session its Yjs client id and admits a writer's changes only under
+ids assigned to that writer's user, in every room (notes, items, keys,
+Office and text files).
+
+- **Assignment.** Every collaboration token (material, keys and source
+  rooms; read and write) offers a fresh random client id (its `clientId`
+  claim, 1 to 2^32-1, `newClientID` in
+  `server/internal/httpapi/collaboration_tokens.go`). A Y.Doc's
+  `RoomProvider` takes the id each JOIN's token offers until its first
+  writable JOINED, then keeps that id for the document's life and names it in
+  every JOIN, so a reconnect binds the same id and the Undo stack survives. A
+  read session never writes and keeps taking each token's id. A new id comes
+  only with a new Y.Doc (a new editor or item room, a room swap's renderer).
+- **Binding** (`ClientIds::bind` in
+  `collaboration-rs/crates/server/src/client_ids.rs`). A JOIN naming an id
+  recorded to its user, other than the one its token offers, binds it. A JOIN
+  naming an id recorded to another user, or a recorded id its token offers
+  again, is refused as `collaboration-client-id` (two documents never share
+  an id); a bound document retries with a fresh token naming its id. An
+  unrecorded id must be the one the token offers and held by nothing in the
+  room (its state or a live channel). A write JOIN records it before JOINED;
+  a read JOIN binds it in memory for the channel's life.
+- **The record.** `material_yjs_client_ids` (material, document `content` or
+  `keys`, id) and `source_document_client_ids` (file, id), each row naming
+  the user and deleted with its document or user (migration 0109). A room
+  loads its rows once and keeps them in memory: only a new Y.Doc's write JOIN
+  writes a row, and reconnects and update checks read no database. Ids never
+  enter the Yjs document, whose readers must not map ids to users.
+- **Admission** (`client_ids::foreign`, after the marker check). Every block
+  an update adds beyond the room's held clock for its client must be under an
+  id recorded to the writer's user; any of the user's ids counts, so drafts
+  of their earlier sessions still apply. Blocks at clocks the room holds pass
+  as duplicates, and delete sets are not bound. Server-side writers (the room
+  client, Office engine children, seeds) do not go through admission.
+- **Refusal.** An update under another id goes the refused-on-entry way:
+  material rooms send `document-rejected` `invalid_document` (the editor keeps
+  its unsaved edits as a refused draft), source rooms `source-checkpoint-failed`
+  with `recoverable: false` (recovery), and a draft send answers `malformed`
+  (the group is marked refused, never sent again). Each is logged at warn and
+  recorded as the edit incident `save_refused`/`client_id`. So after the
+  server lost state a tab restores only its own user's unsaved edits; another
+  user's are lost (accepted, Q213). Drafts stored before the binding, under
+  ids nobody was assigned, are refused once and kept for copying.
+- **Awareness.** A channel's awareness entries are kept only under its bound
+  id; entries under any other id are ignored.
+- **Browser writers.** Notes, items and text sources write under their
+  provider's document id; the text editor's IME merge writes its scratch copy
+  under the same id. The Office editor's replica takes the id from the edit
+  `load` message (Office protocol 13, `collaboration.clientId`), and the host
+  applies its updates as the document's own (`applyOwnUpdate` in
+  `src/features/files/sourceState.ts`): Yjs moves a document to a new id when
+  its own id arrives in an applied update.
+
 ### Client protocol and the release nudge
 
 Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
 design, option d), and the nudge's release file on 2026-10-17.
 
 - **The gate.** Every JOIN carries the build's client protocol after the
-  token (`room, token, varuint protocol`), and every draft send carries it as
+  token (`room, token, varuint protocol, varuint clientId`, then an embed's
+  note channel; the client id is the Y.Doc's, see [client ids](#client-ids)),
+  and every draft send carries it as
   `X-Capy-Protocol`. The number is `CLIENT_PROTOCOL` in
   `src/features/collaboration/protocol.ts` and
   `collaboration-rs/crates/server/src/protocol.rs`; a vitest keeps them equal.
@@ -1470,6 +1526,10 @@ design, option d), and the nudge's release file on 2026-10-17.
   into view, a peer's change never does; Epo 2026-10-22, 2026-10-23) raised
   `CLIENT_PROTOCOL` to 13 and `MIN_SOURCE` to 13; `MIN_MATERIAL` stays 7. Its
   deploy request names "client protocol 12 -> 13, source 12 -> 13".
+  The client-id binding (Q213: every JOIN names its Y.Doc's client id after
+  the protocol, Office protocol 13) raised `CLIENT_PROTOCOL` to 15 and both
+  minimums to 15. Its deploy request names "client protocol 14 -> 15,
+  material and source minimums -> 15".
 
 #### When to bump
 

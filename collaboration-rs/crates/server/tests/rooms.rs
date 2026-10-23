@@ -302,11 +302,42 @@ fn protocol_constant(name: &str) -> u64 {
         .unwrap_or_else(|| panic!("{name} in protocol.rs"))
 }
 
+/// A token for a fresh session (a new Y.Doc): `token` itself, or, when a
+/// session of this process already took the id it offers, the same claims
+/// re-signed with a fresh id. A browser fetches a token per JOIN, so a new
+/// Y.Doc never reuses another's id (the server refuses an id offered again,
+/// Q213); tests reuse token strings freely.
+fn session_token(token: &str) -> String {
+    static TAKEN: std::sync::Mutex<std::collections::BTreeSet<u64>> =
+        std::sync::Mutex::new(std::collections::BTreeSet::new());
+    let Some(offered) = token_client_id(token) else {
+        return token.to_owned();
+    };
+    let mut taken = TAKEN.lock().expect("taken ids");
+    if taken.insert(offered) {
+        return token.to_owned();
+    }
+    use base64::Engine;
+    let payload = token.split('.').nth(1).expect("claims");
+    let mut claims: serde_json::Value = serde_json::from_slice(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .expect("base64"),
+    )
+    .expect("json");
+    let fresh = fresh_client_id();
+    taken.insert(fresh);
+    claims["clientId"] = fresh.into();
+    sign_claims(&claims)
+}
+
 /// A JOIN's payload for a fresh session: the room, the token and the client
 /// protocol (none from a tab before the version gate), then the session's
-/// client id, the one the token offers (Q213).
+/// client id, the one its token offers (Q213).
 fn join_payload(room: &str, token: &str, protocol: Option<u64>) -> Vec<u8> {
-    join_payload_as(room, token, protocol, token_client_id(token).unwrap_or(0))
+    let token = session_token(token);
+    let client = token_client_id(&token).unwrap_or(0);
+    join_payload_as(room, &token, protocol, client)
 }
 
 /// A JOIN's payload naming the session's client id `client`.
@@ -389,7 +420,14 @@ impl Client {
     /// nothing yet takes the token's client id; one that wrote keeps its own.
     async fn join(&mut self, room: &str, token: &str) {
         let own = self.doc.client_id();
-        if self.doc.transact().state_vector().get(&own) == 0
+        let fresh = self.doc.transact().state_vector().get(&own) == 0;
+        let token = if fresh {
+            session_token(token)
+        } else {
+            token.to_owned()
+        };
+        let token = token.as_str();
+        if fresh
             && let Some(offered) = token_client_id(token)
             && offered != own.get()
         {
@@ -823,10 +861,17 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     previous
         .send(0, &join_payload(&room, &write, Some(protocol)))
         .await;
-    assert!(
-        previous.until(1).await.is_some(),
-        "protocol {protocol} joins a material room"
-    );
+    let material_refusals = if protocol >= protocol_constant("MIN_MATERIAL") {
+        assert!(
+            previous.until(1).await.is_some(),
+            "protocol {protocol} joins a material room"
+        );
+        4
+    } else {
+        let reason = text_payload(&previous.until(2).await.expect("refused"));
+        assert_eq!(reason, "collaboration-outdated", "protocol {protocol}");
+        5
+    };
     // The current protocol joins.
     assert_eq!(client.joined(&room, &write).await, 1);
     assert!(client.settle(|c| c.block_text() == "base").await);
@@ -853,9 +898,11 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     );
     let metrics = metrics_text(server.port).await;
     for line in [
-        "capy_collaboration_outdated_refusals_total{family=\"material\"} 4",
-        "capy_collaboration_outdated_refusals_total{family=\"source\"} 2",
-        "capy_collaboration_draft_refusals_total{class=\"outdated\"} 1",
+        format!(
+            "capy_collaboration_outdated_refusals_total{{family=\"material\"}} {material_refusals}"
+        ),
+        "capy_collaboration_outdated_refusals_total{family=\"source\"} 2".to_owned(),
+        "capy_collaboration_draft_refusals_total{class=\"outdated\"} 1".to_owned(),
     ] {
         assert!(
             metrics.lines().any(|known| known == line),
@@ -2144,7 +2191,18 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
     .await;
     let (user, room, mut client) = writer(&env, server.port, "crowd").await;
     let write = token(&room, &user, "write");
-    let join = join_payload(&room, &write, Some(client_protocol()));
+    // Channel 2's session: each re-JOIN names its id with a fresh token.
+    let rejoin = token(&room, &user, "write");
+    let rejoined = token_client_id(&rejoin).expect("client id");
+    let join = || {
+        join_payload_as(
+            &room,
+            &token(&room, &user, "write"),
+            Some(client_protocol()),
+            rejoined,
+        )
+    };
+    let mut first = Some(join_payload(&room, &rejoin, Some(client_protocol())));
     // A second socket of eight presence sessions (a channel writes only its
     // session's id), its first synced (so its channels serve) while the room
     // holds none.
@@ -2174,7 +2232,9 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
     other.ws.send(Ws::Binary(batch.into())).await.expect("send");
     assert!(client.heard_within(1, 7, Duration::from_secs(5)).await);
     for round in 0..2 {
-        client.send_on(2, 0, &join).await;
+        client
+            .send_on(2, 0, &first.take().unwrap_or_else(join))
+            .await;
         assert!(
             client
                 .awareness_after_join(2, Duration::from_secs(2))
@@ -2183,7 +2243,7 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
             "re-JOIN {round} hears the presence"
         );
     }
-    client.send_on(2, 0, &join).await;
+    client.send_on(2, 0, &join()).await;
     // A client's step 1 follows its JOIN.
     client
         .send_on(2, 5, &sync(0, &StateVector::default().encode_v1()))
@@ -2267,12 +2327,13 @@ async fn a_join_that_closes_an_embed_still_closes_the_users_oldest_document() {
         .expect("one set");
     let embed = embed_token(&set, &user, &material);
     assert_eq!(note.join_embed(2, &set, &embed).await.0, 1);
-    let alone = join_payload(&set, &token(&set, &user, "write"), Some(client_protocol()));
+    // Two tabs, so two sessions: each its own token and client id.
+    let alone = || join_payload(&set, &token(&set, &user, "write"), Some(client_protocol()));
     let mut first = Client::open(server.port).await;
-    first.send(0, &alone).await;
+    first.send(0, &alone()).await;
     assert!(first.until(1).await.is_some(), "joined on its own");
     let mut second = Client::open(server.port).await;
-    second.send(0, &alone).await;
+    second.send(0, &alone()).await;
     assert!(second.until(1).await.is_some(), "joined on its own again");
     let closes = note.closes_within(Duration::from_secs(1)).await;
     let closed: Vec<u64> = closes.iter().map(|(channel, _)| *channel).collect();
@@ -2327,13 +2388,20 @@ async fn a_join_costs_one_message_of_the_users_allowance() {
     let Some(env) = env() else { return };
     let server = start_configured(&env, env.api.as_deref(), &SLOW_ALLOWANCE).await;
     let (user, room, mut client) = writer(&env, server.port, "joins").await;
-    let join = join_payload(
-        &room,
-        &token(&room, &user, "write"),
-        Some(client_protocol()),
-    );
+    // One session joining again and again, its id with a fresh token each time.
+    let first = token(&room, &user, "write");
+    let id = token_client_id(&first).expect("client id");
+    let mut first = Some(join_payload(&room, &first, Some(client_protocol())));
     let mut timed_out = false;
     'joins: for _ in 0..100 {
+        let join = first.take().unwrap_or_else(|| {
+            join_payload_as(
+                &room,
+                &token(&room, &user, "write"),
+                Some(client_protocol()),
+                id,
+            )
+        });
         client.send_on(2, 0, &join).await;
         // Its answer, read as it comes: nothing else is sent (no step 2).
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
@@ -2417,11 +2485,9 @@ impl Client {
 }
 
 /// Security regression (Q213, Epo 2026-10-23): a channel's awareness goes
-/// only under its own session's client id. Another member can neither claim
-/// that id before its session sends awareness (the id is visible in the
-/// document) nor remove it afterwards, nor write any other id. Fails if a
-/// channel may take an awareness client id no one holds: the claimer's state
-/// then shows under the victim's id and the victim's own entries are refused.
+/// only under the client id its JOIN bound. Another member can neither set
+/// nor remove that id's entry, nor write any other id. Fails if a channel
+/// may write awareness under an id its JOIN did not bind.
 #[tokio::test]
 async fn a_member_writes_awareness_only_under_its_own_client_id() {
     let Some(env) = env() else { return };
@@ -2514,8 +2580,12 @@ async fn a_bound_session_keeps_its_client_id_and_no_id_is_assigned_twice() {
     session.until(6).await.expect("ack after the retry");
     // A new document offered the same id never binds to it.
     let mut fresh = Client::open(server.port).await;
+    let offer = token_offering(&room, &user, "write", kept);
     fresh
-        .join(&room, &token_offering(&room, &user, "write", kept))
+        .send(
+            0,
+            &join_payload_as(&room, &offer, Some(client_protocol()), kept),
+        )
         .await;
     let refused = text_payload(&fresh.until(2).await.expect("refused"));
     assert_eq!(refused, "collaboration-client-id");
@@ -2528,9 +2598,8 @@ async fn a_bound_session_keeps_its_client_id_and_no_id_is_assigned_twice() {
     );
 }
 
-/// What a writer forging another writer's client id sends: `from`'s document
-/// with `text` appended to its first block under `client`, as an update over
-/// `from`'s state (so it starts at the room's held clock for `client`).
+/// An update over `from`'s state appending `text` to its first block under
+/// `client`.
 fn forged(from: &Doc, client: u64, text: &str) -> Vec<u8> {
     let doc = Doc::with_options(ydoc::doc_options(client));
     let state = from
@@ -2545,11 +2614,9 @@ fn forged(from: &Doc, client: u64, text: &str) -> Vec<u8> {
 }
 
 /// Security regression (Q213, Epo 2026-10-23): an update under a client id
-/// the server did not assign to the writer's user is refused, so a writer
-/// cannot occupy another writer's next clocks. The victim's edit made at
-/// those clocks meanwhile still lands. Fails if a connection may write under
-/// any client id: the forged text integrates and the victim's edit is
-/// skipped as already held, silently.
+/// the server did not assign to the writer's user is refused, and the next
+/// edit of the session the id was assigned to lands. Fails if a connection
+/// may write under any client id.
 #[tokio::test]
 async fn a_writer_cannot_write_under_another_writers_client_id() {
     let Some(env) = env() else { return };
@@ -5044,6 +5111,54 @@ async fn a_source_room_refuses_growth_past_its_export_cap() {
     closed_for_size(client.until(4).await);
 }
 
+/// Security regression (Q213): a source room admits structs only under the
+/// writer's assigned client ids, like a note. An update under an id nobody
+/// was assigned closes the writer's channel, the room reports its checkpoint
+/// failed for good (the page shows recovery instead of sending it again) and
+/// keeps nothing of it. Fails if a source room skips the binding.
+#[tokio::test]
+async fn a_source_room_refuses_an_update_under_an_unassigned_client_id() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(client.settle(|c| source_text(c) == "base").await);
+    let stray = Doc::with_options(ydoc::doc_options(fresh_client_id()));
+    let state = client
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    stray
+        .transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    stray
+        .get_or_insert_text("source")
+        .insert(&mut stray.transact_mut(), 0, "x");
+    let update = stray
+        .transact()
+        .encode_state_as_update_v1(&client.doc.transact().state_vector());
+    client.send(5, &sync(2, &update)).await;
+    let closed = client.until(4).await.expect("the writer's channel closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("client id"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    let (failed, _) = client.stateless("source-checkpoint-failed").await;
+    assert_eq!(failed["recoverable"], false);
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        reader.settle(|c| source_text(c) == "base").await,
+        "{}",
+        source_text(&reader)
+    );
+}
+
 /// Epo 2026-10-17: an agent's edit counts toward the room's running size, so
 /// a writer's update that fits only beside an uncounted agent edit takes the
 /// exact measure and is refused.
@@ -5387,8 +5502,16 @@ async fn a_socket_keeps_serving_its_rooms_while_another_room_loads() {
             &join_payload(room, token, Some(client_protocol())),
         )
     };
+    // The note channel's session id, which its cursor goes under.
+    let note_token = token(&note_room, &user, "write");
+    let session = token_client_id(&note_token).expect("client id");
     ws.send(Ws::Binary(
-        join(1, &note_room, &token(&note_room, &user, "write")).into(),
+        frame(
+            1,
+            0,
+            &join_payload_as(&note_room, &note_token, Some(client_protocol()), session),
+        )
+        .into(),
     ))
     .await
     .expect("join");
@@ -5424,7 +5547,7 @@ async fn a_socket_keeps_serving_its_rooms_while_another_room_loads() {
     assert!(downloads() > before, "the slow load started");
     let mut cursor = Vec::new();
     var(&mut cursor, 1);
-    var(&mut cursor, 42);
+    var(&mut cursor, session);
     var(&mut cursor, 1);
     varbytes(&mut cursor, br#"{"cursor":"a"}"#);
     ws.send(Ws::Binary(frame(1, 7, &cursor).into()))

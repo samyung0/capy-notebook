@@ -179,17 +179,47 @@ export function readSync(payload: Uint8Array) {
  * in protocol.rs is the same number (a test keeps them equal). When to bump:
  * openwiki/frontend/plate-editor.md "Client protocol".
  */
-export const CLIENT_PROTOCOL = 13;
+export const CLIENT_PROTOCOL = 15;
 
-/** A JOIN's payload; an embed's names its note's channel last (Epo
+/** A JOIN's payload: the room, the token, the client protocol, the Y.Doc's
+ * client id (Q213); an embed's names its note's channel last (Epo
  * 2026-10-20). */
-export function joinPayload(room: string, token: string, note?: number) {
+export function joinPayload(
+  room: string,
+  token: string,
+  clientId: number,
+  note?: number
+) {
   const writer = new Writer()
     .varString(room)
     .varString(token)
-    .varUint(CLIENT_PROTOCOL);
+    .varUint(CLIENT_PROTOCOL)
+    .varUint(clientId);
   if (note !== undefined) writer.varUint(note);
   return writer.done();
+}
+
+/** The Yjs client id a collaboration token offers (its `clientId` claim,
+ * which Go mints fresh per token). A token without one is refused here: the
+ * server would refuse its JOIN anyway. */
+export function tokenClientId(token: string): number {
+  const payload = token.split('.')[1] ?? '';
+  let claims: { clientId?: unknown } = {};
+  try {
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    claims = JSON.parse(atob(base64)) as { clientId?: unknown };
+  } catch {
+    // Not a token the API minted; refused below.
+  }
+  const { clientId } = claims;
+  if (
+    typeof clientId !== 'number' ||
+    !Number.isInteger(clientId) ||
+    clientId < 1 ||
+    clientId > 0xff_ff_ff_ff
+  )
+    throw new Error('The collaboration token offers no client id');
+  return clientId;
 }
 
 export const closedPayload = (code: number, reason: string) =>
