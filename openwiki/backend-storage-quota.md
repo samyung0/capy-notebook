@@ -84,11 +84,16 @@ workspace: `files.user_id`, `upload_sessions.user_id`, `editor_assets.user_id`
 and `materials.owner_user_id` are set once at insert from the actor (a BEFORE
 INSERT trigger fills an omitted one from `created_by`, migration 0095) and
 never re-derived. A collaborator's upload, note, quiz, flashcard set, clone or
-deck is charged to the collaborator. What goes inside a note, quiz or set
-(images, audio, an embedded quiz or set, pasted or chat-placed) is charged to
-that material's payer instead, as Google Docs does (Sam 2026-10-19):
-`lockEditorAssetScopeTx` returns the material's `owner_user_id`, and
-`createMaterialTx` gives an embedded row its parent's. A workspace
+deck is charged to the collaborator, and so are the images and audio it adds
+inside someone else's note, quiz or set, uploaded, pasted or placed by the
+chat agent for it (Epo 2026-10-24, M16): `lockEditorAssetScopeTx` returns the
+actor, whose plan caps them. An embedded quiz or set row is charged to its
+note's payer instead (Sam 2026-10-19): `createMaterialTx` gives an embedded
+row its parent's, and a pasted embedded block's copy, its images included,
+goes to the note's payer as well (`AdoptEmbeddedMaterials`). A material's
+view-only state follows only its own payer: an uploader at its limit just
+cannot add more, and nobody adds media to a material whose payer is frozen. A
+workspace
 ownership transfer moves no charges (`TransferWorkspace` only swaps roles and
 still checks the recipient's owned-workspace and file caps). A member who
 leaves or is removed keeps paying for what it added; the items stay in the
@@ -107,8 +112,22 @@ deleted, deleting or suspended owner's workspace also loses its name there
 (`workspaceNameSQL`; the card reads "Unavailable workspace"), as every other
 read of it answers 404, yet its payer still trashes and purges what it pays
 for there (`lockWorkspacePayerTx`, which needs only the payer live; Sam
-2026-10-19). Deleting an account deletes everything it pays for, in other
-people's workspaces too (`PurgeUser`). For a workspace material, `owner_user_id` is only the payer:
+2026-10-19). Images and audio it added to someone else's note, quiz or set
+that it can no longer open (`lostAccessSQL` on the workspace of the material,
+or of its note when embedded) have their own section on the Files tab
+(`GET /api/editor-assets/lost`, `ListLostEditorAssets`: name, size, added
+time and the note's title, blank once that workspace's owner is no longer
+live), with Delete only (`DELETE /api/editor-assets/{assetId}`,
+`DeleteEditorAsset`, open to the payer of media in a material it does not pay
+for, whether or not it can open it). Deleting one is final, because a trashed
+asset would come back with the note's next save. The note keeps the node:
+the material response lists such ids in `removedAssetIds` (with those of its
+embedded quizzes and sets, `RemovedEditorAssetIDs`) and the app shows the
+block as removed by its uploader instead of loading it. Media in the payer's
+own materials go with their nodes and their material's trash instead.
+Deleting an account deletes everything it pays for, in other people's
+workspaces too (`PurgeUser`), its images and audio in other people's notes
+included, which then read as removed. For a workspace material, `owner_user_id` is only the payer:
 access, the owner role and the owner's lifecycle (deleted, suspended) follow
 the workspace (`materialEffectiveAccess`, `live_access`).
 
@@ -124,7 +143,7 @@ Storage limits are **100 MB** free and **1 GB** Pro. These use decimal bytes:
 100,000,000 and 1,000,000,000 respectively.
 
 Per-file **source upload** caps are separate from that quota. Editor assets
-take the payer's plan by purpose (`planlimits.Limits.EditorAssetBytes`): images
+take the uploader's plan by purpose (`planlimits.Limits.EditorAssetBytes`): images
 the plan image cap, audio this per-file cap (Epo 2026-10-15), on upload and on
 a pasted copy (`AdoptEditorAssets`); a note holds no other asset. An image
 uploaded as a source takes the source cap, not the image cap. They follow the
@@ -132,7 +151,8 @@ uploaded as a source takes the source cap, not the image cap. They follow the
 free, **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
 elsewhere. `GET /api/source-upload-policy` returns the caller's own cap, which
 the dialog enforces before it asks for a ticket. The material response
-carries its payer's editor caps as `imageMaxBytes` and `audioMaxBytes`, which
+carries the reader's own editor caps, since what it adds is charged to it
+(M16), as `imageMaxBytes` and `audioMaxBytes`, which
 `uploadEditorAsset` checks the same way (Epo 2026-10-22); the server keeps
 its own checks. Uploads stream through the API host, which Cloudflare
 proxies with a 100 MB request body limit; the 30 MiB largest per-file cap stays
@@ -312,8 +332,8 @@ second part, `file`, is its bytes (`uploadSource`, `uploadEditorAsset`,
 helpers in `server/internal/httpapi/uploads.go`). The request body is capped
 (`http.MaxBytesReader`) at the payer's per-file cap plus 64 KiB of metadata
 and framing. From the metadata the gateway reserves storage as before:
-`reserveStorageTx` on the uploader's counter for a source, on the material's
-payer's counter for an editor asset. Reserved bytes count toward the gate
+`reserveStorageTx` on the uploader's counter, for a source and an editor
+asset alike (M16). Reserved bytes count toward the gate
 immediately so concurrent uploads cannot double-spend remaining quota. It
 then spools the file part to a temporary file, hashing it (SHA-256) as it
 streams, and refuses a part whose type differs from the metadata's or whose
@@ -352,7 +372,7 @@ checks its upload repeats (editor access, the metadata's
 bounds, size, type, parse pages and credit headroom) and the reservation's
 gates in a rolled-back transaction (`AssertSourceUploadRoom`: the uploader's
 account and storage and the workspace's file cap; `AssertEditorAssetRoom`:
-the scope's locks and the payer's storage), so an upload that would be
+the scope's locks and the uploader's storage), so an upload that would be
 refused never waits. The reservation itself still happens when the upload
 starts, and gates again; a ticket holds none. Running uploads share a
 budget of 1 GB of declared size, the temp disk their bodies spool to; at most
@@ -515,12 +535,12 @@ the currently published source/index.
 Editor assets upload through the material that uses them
 (`/api/materials/{id}/editor-assets/uploads`, any editor of the material).
 Every asset names that material (`editor_assets.material_id`). A workspace
-material's asset also names the workspace. Every asset is charged to the
-material's payer, whoever uploads it (Sam 2026-10-19); the uploader still
-completes its own reservation. Every editor image (note, quiz, flashcard set,
-and a pasted copy through the children pass) is capped by the payer's plan
-image cap, checked before any bytes are reserved; the material response
-carries it as `imageMaxBytes`. The browser
+material's asset also names the workspace. Every asset is charged to its
+uploader (Epo 2026-10-24, M16), who alone completes its reservation. Every
+editor image (note, quiz, flashcard set, and a pasted copy through the
+children pass) is capped by the uploader's plan image cap, checked before any
+bytes are reserved; the material response carries the reader's as
+`imageMaxBytes`. The browser
 uploads an image under the cap unchanged and shrinks a larger one first
 (`src/lib/fitImage.ts`, called from `uploadEditorAsset`: long side to 2000 px,
 WebP at falling quality, JPEG or PNG where the browser has no WebP encoder,
@@ -543,7 +563,7 @@ with "This image type can't be inserted." (`image-type`). DOCX picture
 watermarks take the same path. The check is the browser's only: the
 collaboration server does not read image sizes (a server check is queued for
 later).
-A note's audio is capped by the payer's per-file cap (10 MiB Free, 30 MiB
+A note's audio is capped by the uploader's per-file cap (10 MiB Free, 30 MiB
 Pro) at the reservation. The browser checks it first against the material's
 `audioMaxBytes` (Epo 2026-10-22): a file over it asks for no ticket and its
 placeholder shows "The selected file is larger than N MB."; an image still
@@ -583,7 +603,8 @@ after a source object was written, handlers delete the orphan object.
 A library figure the chat agent places in a note is stored by the gateway as
 the same kind of asset (`server/internal/httpapi/agent_figures.go`,
 [agentic-retrieval.md](agentic-retrieval.md)): the retrieval service sends the
-rendered JPEG with the write, Go checks it against the payer's plan image cap,
+rendered JPEG with the write, Go checks it against the chatting actor's plan
+image cap (the actor pays for it, M16),
 writes the object and inserts a `ready` row named for the note in one
 transaction that gates its bytes with `gateStorageTx` (the note's creating
 transaction, or one before an edit's blocks are sent). The bytes are known
@@ -602,9 +623,10 @@ Per asset: the same id when it already belongs to the material (restored when
 trashed), a new ready row when the source is ready and readable by the writer
 (the resolve rule; a trashed source too), and "" otherwise (purged,
 unreadable, pending, unknown), which drops the node. A copy shares the stored
-object under blob refcounting, is charged to the material's payer like an
-upload and counts as just completed, so the 60-second rule keeps it until the
-repointed node is saved. Copies over the payer's quota are all left out and
+object under blob refcounting, is charged to the writer who pasted it, like
+an upload (M16), and counts as just completed, so the 60-second rule keeps it
+until the repointed node is saved. Copies over the writer's quota are all
+left out and
 the answer says `storageRefused`; restores still land. One transaction locks
 the target scope, share-locks the source rows, locks their blob paths in order
 and gates the quota (`AdoptEditorAssets`).

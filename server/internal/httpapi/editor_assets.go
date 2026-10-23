@@ -68,7 +68,7 @@ func validateEditorAssetMetadata(
 	if !ok {
 		return "", "", "", errors.New("purpose must be image or audio")
 	}
-	// The payer's plan cap (the browser shrinks larger images first), never
+	// The uploader's plan cap (the browser shrinks larger images first), never
 	// above the storage ceiling.
 	maxBytes := min(limits.EditorAssetBytes(in.Purpose), storageCeiling)
 	if in.SizeBytes <= 0 || in.SizeBytes > maxBytes {
@@ -96,14 +96,14 @@ func validateEditorAssetMetadata(
 // one.
 type editorAssetScope struct {
 	workspaceID, materialID string
-	// The payer's plan limits, which cap each asset (EditorAssetBytes).
+	// The uploader's plan limits, which cap each asset (EditorAssetBytes).
 	// Bank figures have their own limit (bank/assets.go).
 	limits planlimits.Limits
 }
 
 // editorAssetScopeFor admits an editor of the route's material and resolves the
-// scope: the material plus its workspace when it has one. The material's
-// payer pays (Sam 2026-10-19). The store transaction rechecks both.
+// scope: the material plus its workspace when it has one. The uploader pays
+// (Epo 2026-10-24, M16). The store transaction rechecks both.
 func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (editorAssetScope, bool) {
 	materialID := id(r)
 	err := a.s.AssertMaterialEditor(r.Context(), uid(r), materialID)
@@ -115,7 +115,7 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	workspaceID, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID)
+	workspaceID, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID, uid(r))
 	if err != nil {
 		a.fail(w, err)
 		return editorAssetScope{}, false
@@ -123,7 +123,7 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, limits: limits}, true
 }
 
-// editorAssetUploadTicket checks an editor asset's metadata and its payer's
+// editorAssetUploadTicket checks an editor asset's metadata and its uploader's
 // room, the checks its upload repeats, and takes the upload's ticket
 // (upload_queue.go), so a refused upload never waits in line.
 func (a *api) editorAssetUploadTicket(w http.ResponseWriter, r *http.Request) {
@@ -170,9 +170,8 @@ func (a *api) checkEditorAsset(in reserveEditorAssetRequest, scope editorAssetSc
 }
 
 // uploadEditorAsset streams one image or audio file for a material through
-// the gateway (Epo 2026-10-22; see uploads.go). The material's payer is
-// charged (Sam 2026-10-19), and the bytes must open with their type's
-// signature.
+// the gateway (Epo 2026-10-22; see uploads.go). The uploader is charged
+// (M16), and the bytes must open with their type's signature.
 func (a *api) uploadEditorAsset(w http.ResponseWriter, r *http.Request) {
 	scope, ok := a.editorAssetScopeFor(w, r)
 	if !ok {
@@ -193,7 +192,7 @@ func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope e
 		return store.EditorAsset{}, err
 	}
 	defer release()
-	// Audio, at the payer's per-file cap, is the largest asset.
+	// Audio, at the uploader's per-file cap, is the largest asset.
 	r.Body = http.MaxBytesReader(w, r.Body, scope.limits.EditorAssetBytes("audio")+uploadMetadataMaxBytes)
 	if a.blob == nil {
 		return store.EditorAsset{}, errors.New("blob store not configured")

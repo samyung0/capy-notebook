@@ -5,6 +5,7 @@ import {
 } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
+  type ComponentProps,
   lazy,
   type ReactNode,
   Suspense,
@@ -111,6 +112,7 @@ import {
   MaterialAttributionFooter,
   SourcesLine,
 } from './MaterialAttributionFooter';
+import { RemovedAssetsContext } from './MediaAssetView';
 import { MermaidMaterialView } from './MermaidMaterialView';
 import {
   type MaterialMode,
@@ -487,7 +489,23 @@ function LiveSetGrid({
   );
 }
 
-export function MaterialContent({
+/** The material's view or editor. Every media block in it, an embedded quiz's
+ * or set's too, knows the images and audio it shows that are gone (deleted by
+ * their uploader, M16) and shows them as removed. */
+export function MaterialContent(
+  props: ComponentProps<typeof MaterialContentBody>
+) {
+  const { data } = useMaterial(props.materialId, { errorBoundary: false });
+  const removedAssetIds = data?.removedAssetIds;
+  const removed = useMemo(() => new Set(removedAssetIds), [removedAssetIds]);
+  return (
+    <RemovedAssetsContext.Provider value={removed}>
+      <MaterialContentBody {...props} />
+    </RemovedAssetsContext.Provider>
+  );
+}
+
+function MaterialContentBody({
   centerQuiz,
   kind,
   materialId,

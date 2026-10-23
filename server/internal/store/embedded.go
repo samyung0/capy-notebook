@@ -115,10 +115,10 @@ func (s *Store) AdoptEmbeddedMaterials(
 	defer tx.Rollback(ctx)
 	note := Material{ID: noteID}
 	var noteProvenance []byte
-	err = tx.QueryRow(ctx, `SELECT COALESCE(m.workspace_id,''), m.workspace_name, m.content, m.provenance
+	err = tx.QueryRow(ctx, `SELECT COALESCE(m.workspace_id,''), m.workspace_name, m.content, m.provenance, m.owner_user_id
 		FROM materials m
 		WHERE m.id=$1 AND m.kind='note' AND m.parent_material_id IS NULL AND m.trashed_at IS NULL`,
-		noteID).Scan(&note.WorkspaceID, &note.WorkspaceName, &note.Content, &noteProvenance)
+		noteID).Scan(&note.WorkspaceID, &note.WorkspaceName, &note.Content, &noteProvenance, &note.OwnerUserID)
 	if isNoRows(err) {
 		return nil, false, ErrNotFound
 	}
@@ -128,10 +128,13 @@ func (s *Store) AdoptEmbeddedMaterials(
 	if note.Provenance, err = decodeProvenance(noteProvenance); err != nil {
 		return nil, false, err
 	}
-	payerID, err := s.lockEditorAssetScopeTx(ctx, tx, note.WorkspaceID, noteID, actorID)
-	if err != nil {
+	// The scope admits the actor and locks the note's payer, who pays for
+	// each copy, its images included (Sam 2026-10-19; a pasted image alone is
+	// the paster's, M16). The payer is set once at insert.
+	if _, err := s.lockEditorAssetScopeTx(ctx, tx, note.WorkspaceID, noteID, actorID); err != nil {
 		return nil, false, err
 	}
+	payerID := note.OwnerUserID
 	sourceIDs := make([]string, len(blocks))
 	for i, block := range blocks {
 		sourceIDs[i] = block.SourceID
