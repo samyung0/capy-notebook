@@ -705,6 +705,24 @@ and agent markdown's V8 (~0.8 GiB, its heap capped). Production has
 7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
 lean on swap; they bound a runaway call, not the expected footprint.
 
+The retrieval container has `mem_limit` and `cpus` (Epo 2026-10-24, rate-limit
+audit): production 3 GiB and 2 CPUs, UAT 1.5 GiB and 1 CPU, rendered by
+`scripts/env/config.py` as `RETRIEVAL_MEM_LIMIT` and `RETRIEVAL_CPUS`. Measured
+in the retrieval image: the idle service holds about 85 MiB; a 12-slide deck
+export runs about 4 s of CPU in ppt-master subprocesses of about 75 MiB; a
+page render adds about 25 MiB; an image capture at Pillow's pixel limit (80
+megapixels) about 950 MiB, a 12-megapixel photo about 160 MiB. Two render
+threads (`retrieval/limits.py`) bound the decodes running at once, and 32
+request slots the turns. A container over its limit is killed and restarted
+(`restart: unless-stopped`), failing only its own streams. Check after a
+deploy that changes them:
+
+```bash
+docker inspect -f '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}}' $(docker ps -qf name=retrieval)
+```
+
+It prints `3221225472 2000000000` in production and `1610612736 1000000000` on UAT.
+
 The collaboration service runs with `MALLOC_ARENA_MAX=2`,
 `MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
 (`docker-compose.prod.yml`, UAT and production; the engine processes

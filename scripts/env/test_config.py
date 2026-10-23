@@ -206,6 +206,8 @@ class ConfigTest(unittest.TestCase):
             "COLLABORATION_ENGINE_BACKGROUND_PROCESSES",
             "COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES",
             "COLLABORATION_SOURCE_DISK_BYTES",
+            "RETRIEVAL_MEM_LIMIT",
+            "RETRIEVAL_CPUS",
         }
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
@@ -387,6 +389,32 @@ class ConfigTest(unittest.TestCase):
                     config.render(values, environment, temp, "a" * 40)
                 app = config.parse_dotenv(Path(temp, "app.env").read_text())
                 self.assertEqual(app["COLLABORATION_SOURCE_DISK_BYTES"], str(cap))
+
+    def test_render_limits_retrieval_per_environment(self):
+        """Security regression (rate-limit audit L13): the retrieval container
+        gets a memory and CPU limit sized to each app host."""
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+        )
+        for environment, limits in (
+            ("production", ("3g", "2")),
+            ("uat", ("1536m", "1")),
+        ):
+            with tempfile.TemporaryDirectory() as temp:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    config.render(values, environment, temp, "a" * 40)
+                app = config.parse_dotenv(Path(temp, "app.env").read_text())
+                self.assertEqual(
+                    (app["RETRIEVAL_MEM_LIMIT"], app["RETRIEVAL_CPUS"]), limits
+                )
 
     def test_render_gives_only_production_its_page_read_gates(self):
         """Production's page-read gates (64/40, Epo 2026-10-21) come from its

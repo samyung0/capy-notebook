@@ -208,6 +208,11 @@ def render(values, environment, output, revision):
     # The source rooms' disk store cap: production 10 GiB, UAT 5 GiB
     # (Epo 2026-10-17).
     app["COLLABORATION_SOURCE_DISK_BYTES"] = str((10 if production else 5) << 30)
+    # The retrieval container's memory and CPU on the shared app host:
+    # production 3 GiB and 2 of its 4 vCPU, UAT 1.5 GiB and 1 of its 2
+    # (Epo 2026-10-24, rate-limit audit; runbook §1.1).
+    app["RETRIEVAL_MEM_LIMIT"] = "3g" if production else "1536m"
+    app["RETRIEVAL_CPUS"] = "2" if production else "1"
     private_write(output / "app.env", dotenv(app))
     build = build_values(values, environment, revision)
     private_write(output / "build.json", json.dumps(build))
