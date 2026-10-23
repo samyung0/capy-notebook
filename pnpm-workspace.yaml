@@ -33,6 +33,8 @@ patchedDependencies:
   # plot's or graph's `block` is a Y.Map edited entry by entry (Epo 2026-10-17).
   # A position that falls on an inline element (an inline equation, a link)
   # resolves to the text beside it, so a co-editor's caret there is drawn.
+  # History maps the selection onto the room only once the editor is bound
+  # to it (before that it holds the note's last projection).
   "@slate-yjs/core@1.0.2": patches/@slate-yjs__core@1.0.2.patch
   # Capy patch: Yjs has no option to skip its after-transaction formatting
   # cleanup; a doc built with `meta: { formattingCleanup: false }` skips it.
