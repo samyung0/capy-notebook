@@ -295,28 +295,34 @@ export function ChatDock({
                 rows={1}
                 value={text}
               />
-              {voice.supported && (
-                <VoiceButton
-                  elapsed={false}
-                  elapsedMs={voice.elapsedMs}
-                  // Keeps the field focused through the tap, as Send does.
+              {/* As tall as one line of the field (py-2 + 22px) and the
+                  history button, so the smaller toolbar buttons centre on
+                  the field's last line. */}
+              <div className="flex h-9.5 shrink-0 items-center gap-1">
+                {voice.supported && (
+                  <VoiceButton
+                    elapsed={false}
+                    elapsedMs={voice.elapsedMs}
+                    // Keeps the field focused through the tap, as Send does.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onToggle={voice.toggle}
+                    phase={voice.phase}
+                  />
+                )}
+                <IconButton
+                  disabled={sendDisabled}
+                  icon="send"
+                  // A purple plane on no background, as in the composer.
+                  iconClassName="fill-current text-action-accent"
+                  label={m.chat_send()}
+                  onClick={onSend}
+                  // Keeps the field focused through the tap, so its blur
+                  // cannot fold the dock before the send lands.
                   onMouseDown={(event) => event.preventDefault()}
-                  onToggle={voice.toggle}
-                  phase={voice.phase}
+                  size="toolbar"
+                  variant="ghost-hover"
                 />
-              )}
-              <IconButton
-                className="p-2.5"
-                disabled={sendDisabled}
-                icon="send"
-                label={m.chat_send()}
-                onClick={onSend}
-                // Keeps the field focused through the tap, so its blur cannot
-                // fold the dock before the send lands.
-                onMouseDown={(event) => event.preventDefault()}
-                size="sm"
-                variant="accent"
-              />
+              </div>
             </div>
           </div>
         </div>

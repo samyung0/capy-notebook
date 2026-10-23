@@ -547,19 +547,19 @@ export function ChatPanel({
                   />
                 )}
                 <IconButton
-                  className="p-2.5"
                   disabled={!streaming && overLimit}
                   icon="send"
+                  // A purple plane on no background; dimmed while disabled.
                   iconClassName={cn(
-                    'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                    'fill-current text-action-accent transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
                     streaming
                       ? 'scale-25 opacity-0 blur-[2px]'
                       : 'scale-100 opacity-100 blur-none'
                   )}
                   label={streaming ? m.chat_stop() : m.chat_send()}
                   onClick={streaming ? stop : submit}
-                  size="sm"
-                  variant={streaming ? 'ghost' : 'accent'}
+                  size="toolbar"
+                  variant="ghost-hover"
                 >
                   <span
                     aria-hidden
@@ -570,10 +570,9 @@ export function ChatPanel({
                         : 'scale-25 opacity-0 blur-[2px]'
                     )}
                   >
-                    {/* Flush with the send button's bottom-right edge, not centred in its padding */}
-                    <span className="translate-0.5 grid size-6.5 place-items-center rounded-full border-2 border-action-accent">
+                    <span className="grid size-(--toolbar-icon) place-items-center rounded-full border-2 border-action-accent">
                       <Icon
-                        className="size-3 fill-current text-action-accent"
+                        className="size-2 fill-current text-action-accent"
                         name="stop"
                       />
                     </span>

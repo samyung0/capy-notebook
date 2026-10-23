@@ -121,9 +121,10 @@ export function VoiceElapsed({ elapsedMs }: { elapsedMs: number }) {
   );
 }
 
-/** The bordered mic button, with the elapsed time beside it while it records
- * (unless the caller shows VoiceElapsed elsewhere) and a spinner while the
- * clip is transcribed; the full composer and the chat dock both show it. */
+/** The mic button, its icon filled purple while it records, with the elapsed
+ * time beside it then (unless the caller shows VoiceElapsed elsewhere) and a
+ * spinner while the clip is transcribed; the full composer and the chat dock
+ * both show it. */
 export function VoiceButton({
   phase,
   elapsedMs,
@@ -144,14 +145,13 @@ export function VoiceButton({
       {recording && elapsed && <VoiceElapsed elapsedMs={elapsedMs} />}
       <IconButton
         aria-pressed={recording}
-        // 9px keeps the bordered button as tall as Send beside it.
-        className={cn(
-          'rounded-full p-[9px]',
-          recording && 'border-solid-error text-tint-error-fg'
-        )}
         disabled={busy}
-        icon={recording ? 'stop' : 'microphone'}
-        iconClassName={cn(busy && 'invisible', recording && 'fill-current')}
+        icon="microphone"
+        // While recording the mic's capsule (its first path) is filled.
+        iconClassName={cn(
+          busy && 'invisible',
+          recording && 'text-action-accent [&>path:first-child]:fill-current'
+        )}
         label={
           phase === 'pending'
             ? m.voice_transcribing()
@@ -161,9 +161,9 @@ export function VoiceButton({
         }
         onClick={onToggle}
         onMouseDown={onMouseDown}
-        size="sm"
+        size="toolbar"
         tooltip
-        variant="outline"
+        variant="ghost-hover"
       >
         {busy && <Spinner className="absolute size-4" />}
       </IconButton>

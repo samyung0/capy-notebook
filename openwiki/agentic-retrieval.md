@@ -3062,7 +3062,7 @@ only the composer lifts above the keyboard.
 ### Chat voice input
 
 The chat composer (`ChatPanel`) and the one-line dock on file pages below lg
-(`ChatDock`) have a bordered mic button left of Send where the browser has
+(`ChatDock`) have a mic button left of Send where the browser has
 `MediaRecorder` and `getUserMedia` (`chat/VoiceInput.tsx`, logic in
 `chat/voiceRecording.ts`); elsewhere it is not shown. Both show one
 `useVoiceInput` in `ChatPanel`, so a recording carries over between the dock
@@ -3071,9 +3071,10 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
 - **Recording.** The button toggles one recording: Opus in WebM or Ogg where
   `MediaRecorder.isTypeSupported` says so, else Safari's AAC in MP4, asked for
   at 32 kb/s. While it records, the elapsed time and the limit show beside it
-  (`0:42 / 2:00`) and the button turns into Stop; it stops by itself at
-  `VOICE_INPUT_MAX_SECONDS` (120, `fieldlimits.VoiceInputSeconds`, generated
-  into `src/api/limits.generated.ts`). The microphone's tracks stop whenever
+  (`0:42 / 2:00`) and the mic is filled purple, its label Stop recording; it
+  stops by itself at `VOICE_INPUT_MAX_SECONDS` (120,
+  `fieldlimits.VoiceInputSeconds`, generated into
+  `src/api/limits.generated.ts`). The microphone's tracks stop whenever
   a recording ends; a recording is dropped when the questions block takes
   the composer's place or the chat goes.
 - **Transcription.** The clip goes as the raw body of
@@ -3091,8 +3092,8 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
   keeps the field focused through a tap. The field stays open while a
   recording runs or is transcribed (scrolling and blur do not fold it, and a
   recording started on the chat page opens it), the transcript lands at the
-  dock field's caret, and an error shows inside the dock above the field,
-  which grows to fit it.
+  dock field's caret, and the elapsed time or an error shows inside the dock
+  above the field, which grows to fit it.
 
 The gateway (`server/internal/httpapi/voice.go`) lets anyone who may chat in
 the workspace transcribe (the chat stream's `WorkspaceEffectiveRole` check;
