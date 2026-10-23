@@ -62,6 +62,27 @@ export const purchases = (run: UatRun, actor: Actor) =>
     [actor.id]
   );
 
+/** The one-off starter credits a first saved card adds (migration 0109). */
+export const STARTER_MICROS = 800 * MICROS;
+
+/**
+ * The starter credits saving card `pmId` should have added to `actor`. The
+ * grant is once per account and once per card, and Stripe test cards share one
+ * fingerprint across customers, so only the first UAT account ever to save a
+ * test card gets it: exactly one starter_grants row holds the card, and it is
+ * this account's when the save added the credits.
+ */
+export async function starterGrantFor(run: UatRun, actor: Actor, pmId: string) {
+  const method = await stripeRequest(run.env, `/v1/payment_methods/${pmId}`);
+  const cardKey = `card:${stringField(object(method.card), 'fingerprint')}`;
+  const rows = await run.query<{ user_id: string }>(
+    'SELECT user_id FROM starter_grants WHERE card_key=%s',
+    [cardKey]
+  );
+  expect(rows.length, 'no starter grant holds the saved card').toBe(1);
+  return rows[0].user_id === actor.id ? STARTER_MICROS : 0;
+}
+
 export async function creditsRow(run: UatRun, actor: Actor) {
   const rows = await run.query<Credits>(
     'SELECT purchased_micros,reload_armed,reload_pm_id,reload_pm_last4,spending_limit_cents,reload_skipped_at FROM user_credits WHERE user_id=%s',
@@ -311,9 +332,9 @@ export async function switchAutoReloadOff(page: Page) {
 
 /** The purchased balance in the line under Usage's credits bar, the only
  * place that shows it. Callers are Free owners who have spent none of the
- * monthly allowance, so the purchased pool is the balance and the line ends
- * with the starter sentence. Switches tabs in the app, without reloading the
- * page, and goes back to Subscription. */
+ * monthly allowance and hold purchased credits, so the purchased pool is the
+ * balance and the line ends with the purchased sentence. Switches tabs in the
+ * app, without reloading the page, and goes back to Subscription. */
 export async function expectPurchasedOnUsage(page: Page, micros: number) {
   // Exact: "Detailed usage" contains "Usage".
   await page
@@ -321,7 +342,7 @@ export async function expectPurchasedOnUsage(page: Page, micros: number) {
     .click();
   await expect(
     page.getByText(
-      m.billing_credits_hint_then_starter({ amount: credits(micros) })
+      m.billing_credits_hint_then_purchased({ amount: credits(micros) })
     )
   ).toBeVisible({ timeout: 60_000 });
   await page.getByRole('tab', { name: m.subscription_title() }).click();
