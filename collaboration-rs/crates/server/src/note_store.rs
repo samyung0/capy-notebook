@@ -3,6 +3,9 @@
 //! `material_yjs_updates`. Every write takes the material's advisory lock, as
 //! the Node server's `persistence.ts` does.
 
+use std::collections::HashSet;
+use std::sync::{LazyLock, Mutex};
+
 use deadpool_postgres::{Pool, Transaction};
 use serde_json::Value;
 use ydoc::gc::Window;
@@ -13,6 +16,7 @@ use yrs::{IdSet, ReadTxn, StateVector, Transact};
 
 use crate::access::{self, AccessError};
 use crate::model::Model;
+use crate::observe;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -357,8 +361,11 @@ pub struct Holds {
     /// window is the newest snapshot stored at or before it. None when no
     /// session is counted: the window is the folded document itself.
     pub reached: Option<i64>,
-    /// H: what counted sessions deleted (their Undo may restore it) and what
-    /// agent edits deleted whose durable Undo payload is still valid (24 h).
+    /// H: what may still be restored, so nothing next to it is collected:
+    /// what counted sessions deleted (their Undo), what the agent steps the
+    /// open room holds deleted (the live agent Undo and Redo re-create it,
+    /// naming the deleted items), and what agent edits deleted whose durable
+    /// Undo payload is still valid (24 h).
     pub held: IdSet,
     /// The open room's own client, whose contributor-marker chains stay.
     pub live_room: Option<ClientID>,
@@ -371,7 +378,9 @@ const WINDOWS_KEPT: i64 = 4;
 /// base after the load check (DESIGN.md 3.5). Rows appended meanwhile stay.
 /// With `holds` (the collection's switch on) the new base is collected in
 /// place at the window the holds choose, when one qualifies, and the folded
-/// document is stored as a later window candidate.
+/// document is stored as a later window candidate. A collection the guard
+/// refuses folds uncollected and is reported once per material (human/
+/// 2026-10-24); the next fold collects again.
 pub async fn fold(
     pool: &Pool,
     material_id: &str,
@@ -417,8 +426,9 @@ pub async fn fold(
     };
     let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();
     let count = rows.len();
-    let (state, window) =
-        tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Option<Window>), StoreError> {
+    type Built = (Vec<u8>, Option<Window>, Option<String>);
+    let (state, window, refused) =
+        tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
             let scratch = ydoc::scratch_doc();
             let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
             ydoc::replay(&scratch, &base, &updates)
@@ -426,21 +436,23 @@ pub async fn fold(
             let txn = scratch.transact();
             model.assert_roots(&txn).map_err(StoreError::Invalid)?;
             let Some(holds) = holds else {
-                return Ok((txn.encode_state_as_update_v1(&StateVector::default()), None));
+                return Ok((whole(&scratch), None, None));
             };
             let now = Window::of(&txn, last);
+            drop(txn);
             let window = match holds.reached {
                 None => Some(&now),
                 Some(reached) => ydoc::gc::window_for(&windows, reached),
             };
-            let state = match window {
+            let (state, refused) = match window {
                 Some(window) => {
-                    drop(txn);
-                    collected(&scratch, window, &holds, model)?
+                    let collected =
+                        ydoc::gc::collect(&scratch, window, &holds.held, holds.live_room);
+                    checked(&scratch, collected.state, model)
                 }
-                None => txn.encode_state_as_update_v1(&StateVector::default()),
+                None => (whole(&scratch), None),
             };
-            Ok((state, Some(now)))
+            Ok((state, Some(now), refused))
         })
         .await
         .map_err(|error| StoreError::Other(error.to_string()))??;
@@ -463,6 +475,9 @@ pub async fn fold(
         store_window(&tx, material_id, doc, &window).await?;
     }
     tx.commit().await?;
+    if let Some(why) = refused {
+        report_refusal(material_id, doc, &why);
+    }
     Ok(Some(Folded {
         rows: count,
         log_bytes: folded_bytes,
@@ -470,33 +485,53 @@ pub async fn fold(
     }))
 }
 
-/// The folded document collected at `window`, refused unless the collected
-/// state loads with nothing pending, keeps the model's roots and holds the
-/// same document value.
-fn collected(
-    scratch: &yrs::Doc,
-    window: &Window,
-    holds: &Holds,
-    model: Model,
-) -> Result<Vec<u8>, StoreError> {
-    let collected = ydoc::gc::collect(scratch, window, &holds.held, holds.live_room);
-    checked(scratch, collected.state, model)
+fn whole(doc: &yrs::Doc) -> Vec<u8> {
+    doc.transact()
+        .encode_state_as_update_v1(&StateVector::default())
 }
 
-/// `state` if it loads with nothing pending, keeps the model's roots and
-/// holds the document value of `folded`.
-fn checked(folded: &yrs::Doc, state: Vec<u8>, model: Model) -> Result<Vec<u8>, StoreError> {
-    let refused = |why: String| StoreError::Other(format!("in-place collection refused: {why}"));
-    let loaded = ydoc::scratch_doc();
-    ydoc::replay(&loaded, &state, &[] as &[&[u8]]).map_err(|error| refused(error.to_string()))?;
-    let (before, after) = (folded.transact(), loaded.transact());
-    model.assert_roots(&after).map_err(refused)?;
-    if model.document_value(&before).map_err(refused)?
-        != model.document_value(&after).map_err(refused)?
-    {
-        return Err(refused("the collected state holds another value".into()));
+/// The collected `state` if it loads with nothing pending, keeps the model's
+/// roots and holds the document value of `folded`; otherwise `folded` whole,
+/// with why the guard refused the collection.
+fn checked(folded: &yrs::Doc, state: Vec<u8>, model: Model) -> (Vec<u8>, Option<String>) {
+    let guard = || -> Result<(), String> {
+        let loaded = ydoc::scratch_doc();
+        ydoc::replay(&loaded, &state, &[] as &[&[u8]]).map_err(|error| error.to_string())?;
+        let (before, after) = (folded.transact(), loaded.transact());
+        model.assert_roots(&after)?;
+        if model.document_value(&before)? != model.document_value(&after)? {
+            return Err("the collected state holds another value".into());
+        }
+        Ok(())
+    };
+    match guard() {
+        Ok(()) => (state, None),
+        Err(why) => (whole(folded), Some(why)),
     }
-    Ok(state)
+}
+
+/// Materials whose refused collection this process reported.
+static REPORTED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
+
+/// Reports a refused collection to Sentry the first time for its material in
+/// this process; whether it reported.
+fn report_refusal(material_id: &str, doc: Doc, why: &str) -> bool {
+    let first = REPORTED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(material_id.to_owned());
+    if first {
+        observe::capture(
+            &format!("in-place collection refused, folded uncollected: {why}"),
+            None,
+            &[
+                ("room", material_id),
+                ("document", doc.name()),
+                ("stage", "fold"),
+            ],
+        );
+    }
+    first
 }
 
 /// A document's window snapshots.
@@ -730,12 +765,18 @@ mod tests {
     }
 
     /// A fold writes a collected state only when it loads, with nothing
-    /// pending, to the value it folded.
+    /// pending, to the value it folded; otherwise it writes the folded
+    /// document whole (human/ 2026-10-24).
     #[test]
-    fn a_collected_state_must_load_to_the_folded_value() {
+    fn a_refused_collection_folds_uncollected() {
         let folded = note("kept");
-        assert!(checked(&folded, state(&folded), Model::Note).is_ok());
-        assert!(checked(&folded, state(&note("lost")), Model::Note).is_err());
+        assert_eq!(
+            checked(&folded, state(&folded), Model::Note),
+            (state(&folded), None)
+        );
+        let lost = checked(&folded, state(&note("lost")), Model::Note);
+        assert_eq!(lost.0, state(&folded));
+        assert!(lost.1.is_some_and(|why| why.contains("another value")));
         // An update naming structs the state does not hold.
         let later = ydoc::scratch_doc();
         ydoc::replay(&later, &state(&folded), &[] as &[&[u8]]).unwrap();
@@ -744,6 +785,17 @@ mod tests {
             .get_or_insert_text(notes::CONTENT_ROOT)
             .insert(&mut later.transact_mut(), 0, "x");
         let tail = later.transact().encode_state_as_update_v1(&before);
-        assert!(checked(&folded, tail, Model::Note).is_err());
+        let pending = checked(&folded, tail, Model::Note);
+        assert_eq!(pending.0, state(&folded));
+        assert!(pending.1.is_some());
+    }
+
+    /// A material's refusals reach Sentry once; another material's still do.
+    #[test]
+    fn a_refusal_is_reported_once_per_material() {
+        assert!(report_refusal("m_refused_once", Doc::Content, "why"));
+        assert!(!report_refusal("m_refused_once", Doc::Content, "why"));
+        assert!(!report_refusal("m_refused_once", Doc::Keys, "why"));
+        assert!(report_refusal("m_refused_other", Doc::Content, "why"));
     }
 }

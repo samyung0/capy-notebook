@@ -853,6 +853,91 @@ async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
     );
 }
 
+/// The live agent Undo after a fold that collects (switch on, every store
+/// folds): what an agent step the room holds deleted is held, so a fold whose
+/// window covers the deletion keeps it, and the Undo, which re-creates each
+/// deleted item naming the item itself, restores the whole text and the next
+/// load holds it. Fails if the folds do not hold the room's agent steps (the
+/// middle writer's letter is collected and lost on load).
+#[tokio::test]
+async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+        ],
+    )
+    .await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &write).await;
+    // Three writers type a, c, then b between them: three items, the middle
+    // one named by nothing.
+    let mut middle = None;
+    for (at, letter, before) in [(4, "a", "base"), (5, "c", "basea"), (5, "b", "baseac")] {
+        let mut writer = Client::open(server.port).await;
+        writer.joined(&room, &write).await;
+        assert!(writer.settle(|c| c.block_text() == before).await);
+        writer.type_at(at, letter).await;
+        persisted(&mut writer, letter).await;
+        assert!(log_folded(&env, &material).await);
+        middle = Some(yrs::ID::new(writer.doc.client_id(), 0));
+    }
+    let middle = middle.expect("the middle letter");
+    assert!(a.settle(|c| c.block_text() == "baseabc").await);
+    let (edit, undo) = (format!("e_{material}"), format!("u_{material}"));
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "abc", "text": "Z" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["effect"]["undo"]["operationId"], edit.as_str());
+    assert!(a.settle(|c| c.block_text() == "baseZ").await);
+    assert!(log_folded(&env, &material).await);
+    // A later fold's window covers the agent's deletion.
+    a.type_at(0, "!").await;
+    persisted(&mut a, "bang").await;
+    assert!(log_folded(&env, &material).await);
+    assert!(
+        !collected_in_base(&env, &material, middle).await,
+        "the agent step's deletion was collected while its Undo is live"
+    );
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &edit, &undo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        a.settle(|c| c.block_text() == "!baseabc").await,
+        "{}",
+        a.block_text()
+    );
+    drop(a);
+    assert!(log_folded(&env, &material).await);
+    let mut c = Client::open(server.port).await;
+    c.joined(&room, &write).await;
+    assert!(
+        c.settle(|c| c.block_text() == "!baseabc").await,
+        "{}",
+        c.block_text()
+    );
+}
+
 /// A stop (SIGTERM, what Docker sends before the compose file's 60 s grace
 /// period) stores every room's unsaved edits before the process exits: a new
 /// server opens the room with the typed text. The debounce here is a minute,

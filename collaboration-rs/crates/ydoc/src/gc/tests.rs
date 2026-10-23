@@ -2,7 +2,9 @@ use std::collections::HashSet;
 
 use yrs::block::ClientID;
 use yrs::undo::{Options, UndoManager};
-use yrs::{Any, Array, Doc, GetString, ID, IdSet, Map, Origin, Out, ReadTxn, Text, Transact};
+use yrs::{
+    Any, Array, Doc, GetString, ID, IdSet, Map, Origin, Out, ReadTxn, Text, TextPrelim, Transact,
+};
 
 use super::*;
 use crate::{decode, doc_options, has_pending};
@@ -213,6 +215,122 @@ fn an_update_naming_a_collected_unit_is_detected() {
     let undone = decode(&undone).unwrap();
     assert!(names_collected(&collected.transact(), &undone));
     assert!(!names_collected(&room.transact(), &undone));
+}
+
+/// An item with neither origin names its parent: a first insert into a
+/// nested type that a collection dropped is detected too.
+#[test]
+fn an_update_naming_a_collected_parent_is_detected() {
+    let room = doc(1);
+    room.get_or_insert_array("a")
+        .insert_range(&mut room.transact_mut(), 0, ["L", "R"]);
+    // Three empty texts from clients 2, 4 and 3 (b last, between): b is a
+    // run's interior that nothing names.
+    for (client, at) in [(2, 1), (4, 2), (3, 2)] {
+        let writer = doc(client);
+        sync(&room, &writer);
+        writer
+            .get_or_insert_array("a")
+            .insert(&mut writer.transact_mut(), at, TextPrelim::new(""));
+        sync(&writer, &room);
+    }
+    let tab = doc(5);
+    sync(&room, &tab);
+    room.get_or_insert_array("a")
+        .remove_range(&mut room.transact_mut(), 1, 3);
+    let collected = collected(&room, &IdSet::new());
+    assert!(is_collected(&collected, id(3, 0)));
+    let before = tab.transact().state_vector();
+    let Some(Out::YText(b)) = tab.get_or_insert_array("a").get(&tab.transact(), 2) else {
+        panic!("b is a text");
+    };
+    b.insert(&mut tab.transact_mut(), 0, "x");
+    let typed = tab.transact().encode_state_as_update_v1(&before);
+    let typed = decode(&typed).unwrap();
+    assert!(names_collected(&collected.transact(), &typed));
+    assert!(!names_collected(&room.transact(), &typed));
+}
+
+/// `L a c R`; tab T holds it and goes offline; b lands between a and c, T
+/// types Y between a and c, and a b c are deleted. The window is that state.
+/// Returns the room, T and the window, before T comes back.
+fn run_with_an_offline_insert() -> (Doc, Doc, Window) {
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "LR");
+    for (client, at, s) in [(2, 1, "a"), (4, 2, "c")] {
+        let writer = doc(client);
+        sync(&room, &writer);
+        writer
+            .get_or_insert_text("t")
+            .insert(&mut writer.transact_mut(), at, s);
+        sync(&writer, &room);
+    }
+    let offline = doc(9);
+    sync(&room, &offline);
+    let writer = doc(3);
+    sync(&room, &writer);
+    writer
+        .get_or_insert_text("t")
+        .insert(&mut writer.transact_mut(), 2, "b");
+    sync(&writer, &room);
+    offline
+        .get_or_insert_text("t")
+        .insert(&mut offline.transact_mut(), 2, "Y");
+    room.get_or_insert_text("t")
+        .remove_range(&mut room.transact_mut(), 1, 3);
+    let window = Window::of(&room.transact(), 1);
+    (room, offline, window)
+}
+
+/// `typer` types `X` at `at`; the update lands on the room and on the
+/// collected state.
+fn type_on_both(typer: &Doc, at: u32, room: &Doc, collected: &Doc) {
+    let before = typer.transact().state_vector();
+    typer
+        .get_or_insert_text("t")
+        .insert(&mut typer.transact_mut(), at, "X");
+    let typed = typer.transact().encode_state_as_update_v1(&before);
+    for doc in [room, collected] {
+        doc.transact_mut()
+            .apply_update(decode(&typed).unwrap())
+            .unwrap();
+    }
+}
+
+/// T's Y comes back after the window and lands after b (client 3 < 9):
+/// `L a b Y c R`. Typing just before Y names b, so b ends the run although
+/// it is interior in the window's order.
+#[test]
+fn a_unit_newer_than_the_window_ends_a_deleted_run() {
+    let (room, offline, window) = run_with_an_offline_insert();
+    sync(&offline, &room);
+    assert_eq!(text(&room), "LYR");
+    let collected = collected_at(&room, &window, &IdSet::new(), None);
+    assert!(!is_collected(&collected, id(3, 0)));
+    let typer = doc(6);
+    sync(&room, &typer);
+    type_on_both(&typer, 1, &room, &collected);
+    assert_eq!(text(&room), "LXYR");
+    assert_eq!(text(&collected), "LXYR");
+}
+
+/// The same with Y deleted after the window: a session that still shows Y
+/// live types before it, naming b.
+#[test]
+fn a_unit_deleted_after_the_window_ends_a_deleted_run() {
+    let (room, offline, window) = run_with_an_offline_insert();
+    sync(&offline, &room);
+    let typer = doc(6);
+    sync(&room, &typer);
+    room.get_or_insert_text("t")
+        .remove_range(&mut room.transact_mut(), 1, 1);
+    assert_eq!(text(&room), "LR");
+    let collected = collected_at(&room, &window, &IdSet::new(), None);
+    assert!(!is_collected(&collected, id(3, 0)));
+    type_on_both(&typer, 1, &room, &collected);
+    assert_eq!(text(&room), "LXR");
+    assert_eq!(text(&collected), "LXR");
 }
 
 #[test]

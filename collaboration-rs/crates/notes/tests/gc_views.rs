@@ -1,37 +1,53 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken run.
 //! The in-place collection (`ydoc::gc`) against tabs that come and go: a
-//! server S and up to eight tabs edit a Plate note through the room's
+//! room S and up to eight tabs edit a Plate note through the room's
 //! slate-yjs mapping. Tabs join, edit online, go offline and keep editing,
 //! come back and send their drafts, leave for good, and undo or redo their
 //! own steps. Every tab has a twin editing a room R that never collects.
 //!
-//! S collects at every leave and idle moment, as a fold does, and the result
-//! replaces S at once (every later joiner loads it):
+//! As the server does, the open room keeps its whole history, and what is
+//! stored is a base plus the rows stored since (each store's update, with
+//! the room's contributor marker for the writer written and claimed). A fold
+//! replays them and collects the result into the new base: at every leave
+//! and idle moment with the room open (the open room's own marker chains
+//! stay), and when the last online tab goes (the room unloads; its next life
+//! loads the stored state under a new client):
 //! * counted tabs are the online ones and those offline for at most 25 steps
 //!   (the cap);
 //! * the window is the newest of the last four stored snapshots that every
-//!   counted tab has reached, or S itself when no tab is counted, and each
-//!   collection stores S as the next snapshot;
+//!   counted tab has reached, or the folded document itself when no tab is
+//!   counted, and each fold stores the folded document as the next snapshot;
 //! * H is what the counted tabs' sessions deleted (their Undo may restore it).
 //!
-//! A tab some collection did not count (it left, or stayed offline past the
-//! cap) comes back on the late path. The late merge is not exercised here: the
+//! A third of the edits land on one spot of the first paragraph (typing
+//! there, range deletes around it), and now and then a contended episode
+//! plays out there: an offline tab and an online one type at the spot, a
+//! third tab deletes the range around it and leaves, the offline tab comes
+//! back with its draft and the room folds, so the draft sits inside a run
+//! the window holds deleted.
+//!
+//! A tab some fold did not count (it left, or stayed offline past the cap)
+//! comes back on the late path. The late merge is not exercised here: the
 //! tab and its twin both drop their unsent edits and load the current state
-//! under a new client id, with an empty Undo stack. Every other tab comes back
-//! raw and sends its drafts.
+//! under a new client id, with an empty Undo stack. Every other tab comes
+//! back raw and sends its drafts.
 //!
 //! Checked for every seed:
 //! * every collected state loads to the value collected, with the same state
 //!   vector and nothing pending;
-//! * at the end every tab, S and a fresh load of S are equal, with nothing
-//!   pending;
-//! * S equals R: an Undo after a collection restores what it restores
+//! * no counted tab can name a unit the collected state dropped: in its
+//!   view, the units next to every live unit, each list's first and last
+//!   unit and each key's current value stay;
+//! * at the end every tab, the open room and a fresh load of the stored state
+//!   are equal, with nothing pending;
+//! * they equal R: an Undo after a collection restores what it restores
 //!   without one.
 //!
-//! A sample of collected states, with the state each was collected from, is
-//! loaded by Yjs (`gc_yjs_load.mjs`, the browser's Yjs from the repository's
-//! node_modules), which must read both alike; without Node the check skips
-//! unless CAPY_IT_REQUIRED is set (CI).
+//! A sample of collected states, each with the state it was collected from
+//! and the rows stored after it, is loaded by Yjs (`gc_yjs_load.mjs`, the
+//! browser's Yjs from the repository's node_modules), which must read both
+//! alike before and after the rows; without Node the check skips unless
+//! CAPY_IT_REQUIRED is set (CI).
 //!
 //! `GC_SEEDS` (200 by default) and `GC_FIRST_SEED` (0) choose the seeds; the
 //! manual run takes 4,000 in release (`--release`).
@@ -44,8 +60,10 @@ use notes::slate::{self, Operation, Root};
 use notes::slate_yjs;
 use serde_json::{Map, Value, json};
 use ydoc::gc::{self, Window};
+use yrs::block::ItemContent;
+use yrs::branch::{BranchID, BranchPtr};
 use yrs::undo::{Options, UndoManager};
-use yrs::{Doc, IdSet, Origin, ReadTxn, StateVector, Transact};
+use yrs::{Any, Doc, ID, IdSet, Map as _, Origin, ReadTxn, StateVector, Transact};
 
 /// The origin of a replica's own edits: its Undo tracks only these.
 const LOCAL: &str = "local";
@@ -56,6 +74,8 @@ const WINDOWS_KEPT: usize = 4;
 const YJS_SAMPLE: usize = 600;
 /// Steps an offline tab stays counted.
 const CAP: usize = 25;
+/// The char offset of the first paragraph where a third of the edits land.
+const HOT: usize = 5;
 
 /// A small deterministic PRNG (splitmix64), so a seed replays.
 struct Rng(u64);
@@ -385,6 +405,21 @@ impl Note {
                 node: paragraph(&id, "fresh"),
             }];
         }
+        // The hot spot: typing at it, or a range delete around it.
+        if rng.chance(0.33) {
+            let b = blocks[0];
+            let n = self.chars(b);
+            let at = HOT.min(n);
+            if n > 0 && rng.chance(0.4) {
+                let start = at.saturating_sub(rng.below(4)).min(n - 1);
+                let count = 1 + rng.below((n - start).min(6));
+                return self.remove_ops(b, start, count);
+            }
+            let text: String = (0..1 + rng.below(3))
+                .map(|_| (b'a' + rng.below(26) as u8) as char)
+                .collect();
+            return self.insert_ops(b, at, &text);
+        }
         let b = *rng.pick(&blocks);
         let n = self.chars(b);
         match rng.below(100) {
@@ -653,15 +688,95 @@ struct Tally {
     raw_rejoins: u64,
     late_rejoins: u64,
     load_differs: u64,
+    /// Units a counted tab can name that a collected state dropped.
+    unnameable: u64,
+    contended: u64,
     failures: Vec<String>,
-    /// (state collected from, collected state), for Yjs.
-    sample: Vec<(Vec<u8>, Vec<u8>)>,
+    /// For Yjs: the state collected from, the collected state, and the rows
+    /// stored after the fold, as a load replays them.
+    sample: Vec<Sampled>,
+}
+
+struct Sampled {
+    before: Vec<u8>,
+    after: Vec<u8>,
+    later: Vec<Vec<u8>>,
+}
+
+/// How many units a session holding `view` can name in its next edit that
+/// the collection of `folded` into `base` dropped: in every list, the unit
+/// before and after each live unit (typing names the deleted unit just before
+/// the next live one, a list insert the one just after a live one) and the
+/// first and last unit; each key's current value. The marker root is the
+/// room's alone. (A deleted type's children are collected at its deletion,
+/// as Yjs does, before any fold.)
+fn named_but_collected(view: &Doc, folded: &Doc, base: &Doc) -> usize {
+    let (txn, before, after) = (view.transact(), folded.transact(), base.transact());
+    let collected = |id: &ID| {
+        matches!(before.store().get_block_range(id), Some((_, Some(_))))
+            && matches!(after.store().get_block_range(id), Some((_, None)))
+    };
+    let mut branches: Vec<BranchPtr> = txn
+        .root_refs()
+        .filter(|(name, _)| *name != ydoc::CONTRIBUTORS_ROOT)
+        .filter_map(|(name, _)| BranchID::get_root(&txn, name))
+        .collect();
+    let nested = |item: &yrs::block::ItemPtr, branches: &mut Vec<BranchPtr>| {
+        if let ItemContent::Type(inner) = item.content()
+            && !item.is_deleted()
+        {
+            branches.push(BranchPtr::from(inner.as_ref()));
+        }
+    };
+    let mut count = 0;
+    while let Some(branch) = branches.pop() {
+        let mut items = Vec::new();
+        let mut next = branch.start();
+        while let Some(item) = next {
+            items.push(item);
+            next = item.right();
+        }
+        let mut named: Vec<ID> = Vec::new();
+        if let (Some(first), Some(last)) = (items.first(), items.last()) {
+            named.extend([*first.id(), last.last_id()]);
+        }
+        for (k, item) in items.iter().enumerate() {
+            if item.is_deleted() {
+                continue;
+            }
+            if k > 0 {
+                named.push(items[k - 1].last_id());
+            }
+            if let Some(after) = items.get(k + 1) {
+                named.push(*after.id());
+            }
+            nested(item, &mut branches);
+        }
+        for (_, current) in branch.map_items() {
+            named.push(*current.id());
+            nested(&current, &mut branches);
+        }
+        count += named.iter().filter(|id| collected(id)).count();
+    }
+    count
 }
 
 struct World {
+    /// The open room's document (its whole history); stale while closed.
     s: Note,
+    open: bool,
+    /// Room lives so far: each loads the stored state under a new client,
+    /// which writes its markers.
+    lives: u64,
+    /// The stored state: the base and the rows stored since the last fold.
+    base: Vec<u8>,
+    rows: Vec<Vec<u8>>,
+    /// S's state vector at its last row.
+    stored_sv: StateVector,
+    /// The sample entry of the last fold, waiting for the rows after it.
+    sampled: Option<usize>,
     r: Note,
-    /// S's stored version: one more for every update a tab stores.
+    /// The stored version: one more for every row.
     version: i64,
     windows: Vec<Window>,
     tabs: Vec<Tab>,
@@ -671,7 +786,135 @@ struct World {
 }
 
 impl World {
+    /// The stored state loaded, as a fold or the next room life reads it.
+    fn stored(&self, client: u64) -> Note {
+        let mut note = Note::load(client, "s", &self.base);
+        for row in &self.rows {
+            note.doc
+                .transact_mut()
+                .apply_update(ydoc::decode(row).unwrap())
+                .unwrap();
+        }
+        note.refresh();
+        note
+    }
+
+    /// A closed room loads the stored state under a new client.
+    fn open_room(&mut self) {
+        if self.open {
+            return;
+        }
+        let c = self.next_client;
+        self.next_client += 1;
+        self.s = self.stored(c);
+        self.stored_sv = self.s.doc.transact().state_vector();
+        self.lives += 1;
+        self.open = true;
+    }
+
+    fn online(&self) -> bool {
+        self.tabs.iter().any(|t| t.st == St::Online)
+    }
+
+    /// Tab `i` is no longer online: the room folds, unloading first when no
+    /// tab is left online.
+    fn went(&mut self, now: usize, tally: &mut Tally) {
+        if !self.online() {
+            self.open = false;
+        }
+        self.fold(now, tally);
+    }
+
+    /// Every online tab hears the room.
+    fn hear(&mut self) {
+        for t in self.tabs.iter_mut().filter(|t| t.st == St::Online) {
+            sync(&self.s, &mut t.g);
+            sync(&self.r, &mut t.r);
+            t.reached = self.version;
+        }
+    }
+
+    /// Tab `i` and its twin apply `ops`; the tab's session holds what they
+    /// delete. Online, it stores and every online tab hears the room.
+    fn type_ops(&mut self, i: usize, ops: &[Operation]) {
+        let t = &mut self.tabs[i];
+        let before = t.g.delete_set();
+        t.g.apply(ops);
+        t.r.apply(ops);
+        let deleted = t.g.delete_set().diff(&before);
+        t.held.merge_with(deleted);
+        if t.st == St::Online {
+            self.store_from(i);
+            self.hear();
+        }
+    }
+
+    /// The contended episode (module docs): tab T goes offline, B types at
+    /// the spot, T types there too, D deletes from the unit before the spot
+    /// through the one after B's text and leaves (a fold), T comes back raw
+    /// and the room folds at a window holding the deletion. Half the time T
+    /// goes offline again first, still showing its draft, and B deletes the
+    /// draft: deleted after the window, it still splits the run.
+    fn contended(&mut self, now: usize, rng: &mut Rng, tally: &mut Tally) {
+        for i in 0..self.tabs.len() {
+            if matches!(self.tabs[i].st, St::Offline(_)) {
+                self.rejoin(i, tally);
+            }
+        }
+        self.hear();
+        let spot = |note: &Note| {
+            note.text_blocks()
+                .first()
+                .copied()
+                .filter(|&b| note.chars(b) > HOT)
+        };
+        let mut on: Vec<usize> = (0..self.tabs.len())
+            .filter(|&i| self.tabs[i].st == St::Online)
+            .collect();
+        if on.len() < 3 || spot(&self.s).is_none() {
+            return;
+        }
+        let mut take = || on.remove(rng.below(on.len()));
+        let (t, b, d) = (take(), take(), take());
+        tally.contended += 1;
+        self.tabs[t].st = St::Offline(now);
+        let mut typed = [0, 0];
+        for (k, i) in [b, t].into_iter().enumerate() {
+            let Some(block) = spot(&self.tabs[i].g) else {
+                return;
+            };
+            let text: String = (0..1 + rng.below(3))
+                .map(|_| (b'a' + rng.below(26) as u8) as char)
+                .collect();
+            typed[k] = text.chars().count();
+            let ops = self.tabs[i].g.insert_ops(block, HOT, &text);
+            self.type_ops(i, &ops);
+        }
+        let deleter = &self.tabs[d].g;
+        let Some(block) = spot(deleter) else {
+            return;
+        };
+        let count = (typed[0] + 2).min(deleter.chars(block) - (HOT - 1));
+        let ops = deleter.remove_ops(block, HOT - 1, count);
+        self.type_ops(d, &ops);
+        self.tabs[d].st = St::Left;
+        self.went(now, tally);
+        self.rejoin(t, tally);
+        if rng.chance(0.5) {
+            self.hear();
+            self.tabs[t].st = St::Offline(now);
+            let Some(block) = spot(&self.tabs[b].g) else {
+                return;
+            };
+            let count = typed[1].min(self.tabs[b].g.chars(block) - (HOT - 1));
+            let ops = self.tabs[b].g.remove_ops(block, HOT - 1, count);
+            self.type_ops(b, &ops);
+        }
+        self.fold(now, tally);
+    }
+
     fn join(&mut self) {
+        self.open_room();
         let c = self.next_client;
         self.next_client += 1;
         let prefix = format!("c{c}-");
@@ -691,9 +934,10 @@ impl World {
         });
     }
 
-    /// Tab `i` comes back: raw (it sends its drafts) when every collection
-    /// since its last sync counted it, else on the late path's stand-in.
+    /// Tab `i` comes back: raw (it sends its drafts) when every fold since
+    /// its last sync counted it, else on the late path's stand-in.
     fn rejoin(&mut self, i: usize, tally: &mut Tally) {
+        self.open_room();
         if !self.tabs[i].excluded {
             tally.raw_rejoins += 1;
             self.tabs[i].st = St::Online;
@@ -715,54 +959,90 @@ impl World {
         t.reached = self.version;
     }
 
-    /// Tab `i` sends what it has (a store), and hears S back.
+    /// Tab `i` sends what it has (a store), and hears S back. The room
+    /// writes the writer's contributor marker and the store claims it, so
+    /// the row carries it deleted.
     fn store_from(&mut self, i: usize) {
         let t = &mut self.tabs[i];
         sync(&t.g, &mut self.s);
         sync(&t.r, &mut self.r);
+        let markers = self.s.doc.get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
+        let key = format!("{}-{}", self.lives, t.prefix);
+        let marker = Any::from(std::collections::HashMap::from([
+            ("access".to_owned(), Any::from("write")),
+            ("nonce".to_owned(), Any::from(self.version.to_string())),
+        ]));
+        markers.insert(&mut self.s.doc.transact_mut(), key.clone(), marker);
+        markers.remove(&mut self.s.doc.transact_mut(), &key);
+        let row = self
+            .s
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&self.stored_sv);
+        self.rows.push(row);
+        self.stored_sv = self.s.doc.transact().state_vector();
         self.version += 1;
         sync(&self.s, &mut t.g);
         sync(&self.r, &mut t.r);
         t.reached = self.version;
     }
 
-    /// A fold: collect S at the window the counted tabs allow, replace S with
-    /// the result and store S as the next window candidate.
-    fn collect(&mut self, now_step: usize, tally: &mut Tally) {
+    /// A fold: replay the stored state, collect it at the window the counted
+    /// tabs allow into the new base, and store it as the next window
+    /// candidate. With no row since the last fold there is nothing to fold.
+    fn fold(&mut self, now_step: usize, tally: &mut Tally) {
+        if self.rows.is_empty() {
+            return;
+        }
         for t in self.tabs.iter_mut().filter(|t| !t.counted(now_step)) {
             t.excluded = true;
         }
+        if let Some(k) = self.sampled.take() {
+            tally.sample[k].later = self.rows.clone();
+        }
+        let folded = self.stored(1);
         let counted: Vec<&Tab> = self.tabs.iter().filter(|t| t.counted(now_step)).collect();
-        let now = Window::of(&self.s.doc.transact(), self.version);
+        let now = Window::of(&folded.doc.transact(), self.version);
         let window = match counted.iter().map(|t| t.reached).min() {
             None => Some(now.clone()),
             Some(reached) => gc::window_for(&self.windows, reached).cloned(),
         };
-        if let Some(window) = window {
-            let mut held = IdSet::new();
-            for t in &counted {
-                held.merge_with(t.held.clone());
+        self.base = match window {
+            Some(window) => {
+                let mut held = IdSet::new();
+                for t in &counted {
+                    held.merge_with(t.held.clone());
+                }
+                let live_room = self.open.then(|| self.s.doc.client_id());
+                let collected = gc::collect(&folded.doc, &window, &held, live_room);
+                let loaded = Note::load(1, "s", &collected.state);
+                let same_vector =
+                    loaded.doc.transact().state_vector() == folded.doc.transact().state_vector();
+                if loaded.value() != folded.value() || loaded.pending() || !same_vector {
+                    tally.load_differs += 1;
+                }
+                for t in &counted {
+                    tally.unnameable +=
+                        named_but_collected(&t.g.doc, &folded.doc, &loaded.doc) as u64;
+                }
+                tally.collections += 1;
+                tally.units += collected.units;
+                if collected.units > 0
+                    && tally.sample.len() < YJS_SAMPLE
+                    && tally.collections.is_multiple_of(3)
+                {
+                    self.sampled = Some(tally.sample.len());
+                    tally.sample.push(Sampled {
+                        before: folded.state(),
+                        after: collected.state.clone(),
+                        later: Vec::new(),
+                    });
+                }
+                collected.state
             }
-            let before = self.s.state();
-            let collected = gc::collect(&self.s.doc, &window, &held, None);
-            let loaded = Note::load(1, "s", &collected.state);
-            let same_vector =
-                loaded.doc.transact().state_vector() == self.s.doc.transact().state_vector();
-            if loaded.value() != self.s.value() || loaded.pending() || !same_vector {
-                tally.load_differs += 1;
-            }
-            tally.collections += 1;
-            tally.units += collected.units;
-            if collected.units > 0
-                && tally.sample.len() < YJS_SAMPLE
-                && tally.collections.is_multiple_of(3)
-            {
-                tally.sample.push((before, collected.state));
-            }
-            let next_id = self.s.next_id;
-            self.s = loaded;
-            self.s.next_id = next_id;
-        }
+            None => folded.state(),
+        };
+        self.rows.clear();
         if !self
             .windows
             .iter()
@@ -797,8 +1077,15 @@ fn run(seed: u64, tally: &mut Tally) {
         node: m,
     }]);
     let r = Note::load(1, "s", &s.state());
+    let (base, stored_sv) = (s.state(), s.doc.transact().state_vector());
     let mut w = World {
         s,
+        open: true,
+        lives: 1,
+        base,
+        rows: Vec::new(),
+        stored_sv,
+        sampled: None,
         r,
         version: 0,
         windows: Vec::new(),
@@ -842,11 +1129,7 @@ fn run(seed: u64, tally: &mut Tally) {
                 t.held.merge_with(deleted);
                 if t.st == St::Online {
                     w.store_from(i);
-                    for t in w.tabs.iter_mut().filter(|t| t.st == St::Online) {
-                        sync(&w.s, &mut t.g);
-                        sync(&w.r, &mut t.r);
-                        t.reached = w.version;
-                    }
+                    w.hear();
                 }
             }
             // An online tab goes offline.
@@ -856,6 +1139,9 @@ fn run(seed: u64, tally: &mut Tally) {
                     .collect();
                 if !on.is_empty() {
                     w.tabs[on[rng.below(on.len())]].st = St::Offline(now);
+                    if !w.online() {
+                        w.went(now, tally);
+                    }
                 }
             }
             // An offline tab comes back, or one that left (a back/forward
@@ -876,12 +1162,13 @@ fn run(seed: u64, tally: &mut Tally) {
                     .collect();
                 if !on.is_empty() {
                     w.tabs[on[rng.below(on.len())]].st = St::Left;
-                    w.collect(now, tally);
+                    w.went(now, tally);
                 }
             }
             90..=94 if w.tabs.len() < 8 => w.join(),
+            95 | 96 => w.contended(now, &mut rng, tally),
             // The room is idle a moment: it folds.
-            _ => w.collect(now, tally),
+            _ => w.fold(now, tally),
         }
     }
     // Every tab still away comes back; every open tab syncs.
@@ -890,11 +1177,15 @@ fn run(seed: u64, tally: &mut Tally) {
             w.rejoin(i, tally);
         }
     }
+    w.open_room();
     for t in w.tabs.iter_mut().filter(|t| t.st == St::Online) {
         sync(&w.s, &mut t.g);
         sync(&w.r, &mut t.r);
     }
-    let fresh = Note::load(99, "f", &w.s.state());
+    if let Some(k) = w.sampled.take() {
+        tally.sample[k].later = w.rows.clone();
+    }
+    let fresh = w.stored(99);
     let mut values = vec![w.s.value(), fresh.value()];
     let mut pending = w.s.pending() || fresh.pending();
     for t in w.tabs.iter().filter(|t| t.st == St::Online) {
@@ -913,8 +1204,9 @@ fn run(seed: u64, tally: &mut Tally) {
     }
 }
 
-/// Loads each sampled pair in Yjs; both states must read alike.
-fn yjs_check(sample: &[(Vec<u8>, Vec<u8>)]) {
+/// Loads each sampled pair in Yjs, then the rows stored after it on each;
+/// both must read alike.
+fn yjs_check(sample: &[Sampled]) {
     let required = std::env::var_os("CAPY_IT_REQUIRED").is_some();
     let node = std::process::Command::new("node").arg("--version").output();
     if node.is_err() {
@@ -925,7 +1217,13 @@ fn yjs_check(sample: &[(Vec<u8>, Vec<u8>)]) {
     let b64 = base64::engine::general_purpose::STANDARD;
     let pairs: Vec<Value> = sample
         .iter()
-        .map(|(before, after)| json!({"before": b64.encode(before), "after": b64.encode(after)}))
+        .map(|pair| {
+            json!({
+                "before": b64.encode(&pair.before),
+                "after": b64.encode(&pair.after),
+                "later": pair.later.iter().map(|row| b64.encode(row)).collect::<Vec<_>>(),
+            })
+        })
         .collect();
     let file = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("gc_views_pairs.json");
     std::fs::write(
@@ -958,13 +1256,15 @@ fn collections_keep_every_replica_and_every_undo_exact() {
         run(seed, &mut tally);
     }
     eprintln!(
-        "gc_views: seeds {} converged {} equals R {} | collections {} (units collected {}, loads differing {}) | rejoins raw {} late {} | undos {} | {:.1} s",
+        "gc_views: seeds {} converged {} equals R {} | collections {} (units collected {}, loads differing {}, unnameable {}) | contended {} | rejoins raw {} late {} | undos {} | {:.1} s",
         tally.seeds,
         tally.converged,
         tally.equals_reference,
         tally.collections,
         tally.units,
         tally.load_differs,
+        tally.unnameable,
+        tally.contended,
         tally.raw_rejoins,
         tally.late_rejoins,
         tally.undos,
@@ -972,7 +1272,10 @@ fn collections_keep_every_replica_and_every_undo_exact() {
     );
     assert!(tally.failures.is_empty(), "{:?}", tally.failures);
     assert_eq!(tally.load_differs, 0);
-    // Not vacuous: collections ran, discarded units, and tabs undid steps.
+    assert_eq!(tally.unnameable, 0);
+    // Not vacuous: collections ran, discarded units, tabs undid steps and
+    // contended episodes played out.
     assert!(tally.collections > seeds && tally.units > 0 && tally.undos > seeds);
+    assert!(tally.contended > seeds / 4);
     yjs_check(&tally.sample);
 }

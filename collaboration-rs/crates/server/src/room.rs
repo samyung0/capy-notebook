@@ -1962,13 +1962,21 @@ impl Room {
             note.stored_version,
             note.doc,
         );
-        // Until the room counts its sessions and their held deletions, it
-        // knows only its connected members, which hold its stored version;
-        // the switch stays off until then.
-        let holds = self.app.config.gc_collect.then(|| note_store::Holds {
-            reached: Some(through),
-            held: yrs::IdSet::new(),
-            live_room: Some(self.doc.client_id()),
+        // The switch is on only in tests (config.rs): the connected members,
+        // which hold the stored version, stand in for every counted session,
+        // and nothing a session deleted is held yet. The agent steps this
+        // room holds are: their live Undo and Redo re-create what they
+        // deleted, naming it.
+        let holds = self.app.config.gc_collect.then(|| {
+            let mut held = yrs::IdSet::new();
+            for (change, _) in self.agent_changes.values() {
+                held.merge_with(change.deletions().clone());
+            }
+            note_store::Holds {
+                reached: Some(through),
+                held,
+                live_room: Some(self.doc.client_id()),
+            }
         });
         tokio::spawn(async move {
             let folded = match note_store::fold(
@@ -4137,9 +4145,10 @@ impl Room {
                     );
                 }
             };
-            // The log folds while the room is empty (DESIGN.md 3.5). No member
-            // is connected; sessions away from the room are not counted yet,
-            // so the switch stays off until they are.
+            // The log folds while the room is empty (DESIGN.md 3.5). The switch
+            // is on only in tests (config.rs): no session away from the room
+            // is counted yet, so the window is the folded document, and the
+            // room's agent steps went with it.
             let folding = async {
                 let holds = app.config.gc_collect.then(|| note_store::Holds {
                     reached: None,

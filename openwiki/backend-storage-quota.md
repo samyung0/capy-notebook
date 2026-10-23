@@ -670,9 +670,10 @@ log in `source_document_updates`, charged in `storage_bytes` with the state
 compare-and-swap; a moved checkpoint re-reads the rows saved meanwhile and
 appends again, 3 attempts in all (`collaboration-rs/crates/sources/src/store.rs`).
 
-A compaction never moves the room epoch (`room_schema`): history is collected
-in place, at the fold, with no new lineage and no reload for anyone (Epo
-2026-10-22 and 2026-10-23). Note, quiz and flashcard history is not charged: a
+A compaction never moves the room epoch (`room_schema`): history is to be
+collected in place, at the fold, with no new lineage and no reload for anyone
+(Epo 2026-10-22 and 2026-10-23). The collection below is built and stays off
+in deployments until its inputs exist (**Switch**). Note, quiz and flashcard history is not charged: a
 material pays for its content JSON alone (`materials.size_bytes`). No cap
 bounds a note room's state: a store appends only the update since the durable
 state, each client update is at most `ydoc::MAX_UPDATE_BYTES`, and the shape
@@ -688,8 +689,9 @@ replays its base and rows into a scratch document and, with the collection
 on, writes that document without the deleted units no replica can still name
 (`ydoc::gc::collect`). The live room document is never collected: tabs joining
 an open room get its whole state, and the next room life loads the collected
-base. Every kept item keeps its origins, so tabs holding the full history and
-tabs loading the collected state agree.
+base. Kept list items keep their origins, and a map value drops its origin
+only when nothing behind it stays, so tabs holding the full history and tabs
+loading the collected state agree.
 
 - **Inputs.** The folded document, a window W (a state vector, delete set and
   stored_version an earlier fold stored) and a held set H. A unit is dead when
@@ -697,13 +699,16 @@ tabs loading the collected state agree.
   - W is the newest stored window that every counted session has reached; with
     no counted session, W is the folded document itself; with no qualifying
     window, the fold collects nothing.
-  - H holds what counted sessions deleted (their editor Undo may restore it)
-    and what agent edits deleted while their durable Undo payload is valid
-    (24 h).
-- **Lists.** Of the units W covers, in W's order, each run of dead units keeps
-  its first and last unit: typing names the last unit of a deleted run, a list
-  insert the first. The rest goes unless a kept item names it as origin or right
-  origin, closed over that. Origins are never rewritten.
+  - H holds what counted sessions deleted (their editor Undo may restore it),
+    what the agent steps an open room holds deleted (their live Undo and Redo
+    re-create it, naming the deleted items), and what agent edits deleted
+    while their durable Undo payload is valid (24 h).
+- **Lists.** In the document's current order, each run of dead units keeps its
+  first and last unit: typing names the last unit of a deleted run, a list
+  insert the first. Any other unit ends a run, a unit newer than W included,
+  since a session that has seen it can type next to it. The rest goes unless a
+  kept item names it as origin or right origin, closed over that. List origins
+  are never rewritten.
 - **Maps.** The value current at W is kept. It drops its origin, so the values
   behind it go, only when nothing behind it stays: a value behind it held,
   newer than W, or named by a value after it keeps the origin.
@@ -715,14 +720,22 @@ tabs loading the collected state agree.
   ids only and are not charged.
 - **Guard.** A collected state that does not load with nothing pending, keep
   the model's roots and hold the folded document's value is refused: the fold
-  fails and the log stays as it was.
-- **Undo.** An item that names a collected unit integrates as collected, so
-  a durable Undo payload whose items name one would restore only part of its
-  edit: the Undo route refuses it (`undo_unavailable`), found by
-  `ydoc::gc::names_collected`.
-- **Switch.** `COLLABORATION_GC_COLLECT=true` turns the collection on; it is
-  off by default and stays off until the rooms count sessions, their held
-  deletions and the agent holds.
+  stores the folded document uncollected, as without the collection, and
+  reports the refusal to Sentry once per material while the process runs; the
+  next fold collects again (Epo 2026-10-24).
+- **Undo.** An item that names a collected unit as origin, right origin or
+  parent integrates as collected, so a durable Undo payload whose items name
+  one would restore only part of its edit. `ydoc::gc::names_collected` finds
+  such a payload; the durable Undo route must refuse it (`undo_unavailable`)
+  before the collection is turned on.
+- **Switch.** `COLLABORATION_GC_COLLECT=true` turns the collection on. It is
+  off by default, and the server refuses to start with it on outside tests
+  (`APP_ENV=test`) until the inputs exist: counted sessions with what each
+  deleted, the durable Undo payloads' deletions, the merge of a tab or draft
+  older than the window, and the durable Undo route's refusal. Until then the
+  folds pass stand-ins (the connected members for every counted session,
+  nothing a session deleted held) that would drop the text of a session away
+  from the room.
 
 On the most churned note measured (1,000 characters after 100,000 edit
 bursts in 605 sessions) one collection takes the stored state from 716 KB to

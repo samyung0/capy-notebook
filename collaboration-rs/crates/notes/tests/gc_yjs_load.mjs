@@ -1,7 +1,8 @@
 // Loads pairs of note states in Yjs, the browser's CRDT, from the repository's
 // node_modules: each collected state must read as the state it was collected
 // from (the content root projected as slate-yjs reads it), with nothing
-// pending. gc_views.rs writes the pairs and runs this.
+// pending, before and after the rows stored after it are applied to each, as
+// a load replays them. gc_views.rs writes the pairs and runs this.
 // Usage: node gc_yjs_load.mjs <pairs.json> <repository root>
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -83,31 +84,41 @@ const canonical = (value) => {
   return JSON.stringify(value);
 };
 
-const load = (base64) => {
+const read = (doc) => ({
+  pending: doc.store.pendingStructs !== null || doc.store.pendingDs !== null,
+  value: canonical(children(doc.get('content', Y.XmlText))),
+});
+
+// The state's reading, and its reading after `rows`.
+const load = (base64, rows) => {
   const doc = new Y.Doc();
   doc.get('content', Y.XmlText);
   Y.applyUpdate(doc, Buffer.from(base64, 'base64'));
-  const pending =
-    doc.store.pendingStructs !== null || doc.store.pendingDs !== null;
-  return { pending, value: canonical(children(doc.get('content', Y.XmlText))) };
+  const loaded = read(doc);
+  for (const row of rows) {
+    Y.applyUpdate(doc, Buffer.from(row, 'base64'));
+  }
+  return [loaded, read(doc)];
 };
 
 const { pairs } = JSON.parse(readFileSync(file, 'utf8'));
 let differ = 0;
 let pending = 0;
+let withRows = 0;
 for (const pair of pairs) {
-  const before = load(pair.before);
-  const after = load(pair.after);
-  if (before.pending || after.pending) {
+  const before = load(pair.before, pair.later);
+  const after = load(pair.after, pair.later);
+  withRows += pair.later.length > 0 ? 1 : 0;
+  if ([...before, ...after].some((reading) => reading.pending)) {
     pending += 1;
   }
-  if (before.value !== after.value) {
+  if (before.some((reading, k) => reading.value !== after[k].value)) {
     differ += 1;
   }
 }
 process.stdout.write(
-  `yjs ${version}: ${pairs.length} pairs, ${pairs.length - differ} same, ${differ} differ, ${pending} pending\n`
+  `yjs ${version}: ${pairs.length} pairs (${withRows} with later rows), ${pairs.length - differ} same, ${differ} differ, ${pending} pending\n`
 );
-if (differ > 0 || pending > 0 || pairs.length === 0) {
+if (differ > 0 || pending > 0 || withRows === 0) {
   process.exitCode = 1;
 }

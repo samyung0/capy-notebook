@@ -2,16 +2,18 @@
 //! storage growth"): a fold writes its document's state without the deleted
 //! units no replica can still name. Pure: the document D, the window W (what
 //! an earlier fold stored: its state vector and delete set) and the held set
-//! H in, a state out. Every kept item keeps its origins, so a replica holding
+//! H in, a state out. Kept list items keep their origins, and a map value
+//! drops its origin only when nothing behind it stays, so a replica holding
 //! the full history and one loading this state agree on every kept item, and
 //! no room or tab moves to a new lineage.
 //!
-//! A unit is dead when W deleted it and H does not hold it. Of the units
-//! W's state vector covers, in W's order (units are only ever added between):
-//! * lists: each run of dead units keeps its first and last unit (Yjs typing
-//!   names the last unit of a deleted run, a list insert the first); the rest
-//!   goes unless a kept item names it as origin or right origin, closed over
-//!   that;
+//! A unit is dead when W deleted it and H does not hold it.
+//! * lists: in the document's current order, each run of dead units keeps its
+//!   first and last unit (Yjs typing names the last unit of a deleted run, a
+//!   list insert the first). Any other unit ends a run, a unit newer than W
+//!   included: a session that has seen it can type next to it. The rest of a
+//!   run goes unless a kept item names it as origin or right origin, closed
+//!   over that;
 //! * maps: the value current at W is kept; it drops its origin, so the values
 //!   behind it go, only when nothing behind it stays (a value behind it held,
 //!   newer than W, or named by a value after it);
@@ -21,7 +23,7 @@
 
 use std::collections::HashSet;
 
-use yrs::block::{ClientID, HAS_PARENT_SUB, HAS_RIGHT_ORIGIN, ItemPtr};
+use yrs::block::{ClientID, HAS_PARENT_SUB, HAS_RIGHT_ORIGIN, ItemPtr, UpdateParent};
 use yrs::branch::{BranchID, BranchPtr};
 use yrs::encoding::write::Write;
 use yrs::updates::encoder::{Encode, Encoder, EncoderV1};
@@ -152,23 +154,18 @@ pub fn collect(doc: &Doc, window: &Window, held: &IdSet, live_room: Option<Clien
     let dead = |id: &ID| window.delete_set.contains(id) && !held.contains(id);
     let mut edges: HashSet<ID> = HashSet::new();
     for list in &seqs.lists {
-        // The last unit of the dead run being read, in W's order.
+        // The last unit of the dead run being read. Anything but a dead unit
+        // ends it: live, held or newer than W (a session that saw a newer
+        // unit can type next to it, naming the run's unit beside it).
         let mut run: Option<ID> = None;
         for item in list {
             if !item.is_deleted() {
-                // A live unit was live at W: it ends a run when W held it.
-                if existed(item.id())
-                    && let Some(last) = run.take()
-                {
+                if let Some(last) = run.take() {
                     edges.insert(last);
                 }
                 continue;
             }
             for unit in units(item) {
-                if !existed(&unit) {
-                    // Newer than W, and so is the rest of the item.
-                    break;
-                }
                 if dead(&unit) {
                     if run.is_none() {
                         edges.insert(unit);
@@ -336,16 +333,23 @@ fn encode_cut(item: &ItemPtr, encoder: &mut EncoderV1) {
 }
 
 /// Whether an update's new items name a unit `txn`'s document holds
-/// collected: Yjs and yrs integrate such an item as collected too, so an Undo
-/// payload naming one would restore only part of its edit. The durable Undo
-/// route refuses it (`undo_unavailable`).
+/// collected, as origin, right origin or parent: Yjs and yrs integrate such
+/// an item as collected too, so an Undo payload naming one would restore only
+/// part of its edit. The durable Undo route is to refuse it
+/// (`undo_unavailable`).
 pub fn names_collected<T: ReadTxn>(txn: &T, update: &Update) -> bool {
     let store = txn.store();
     update.blocks().any(|block| match block {
-        UpdateBlock::Item(item) => [item.origin(), item.right_origin()]
-            .into_iter()
-            .flatten()
-            .any(|id| matches!(store.get_block_range(id), Some((_, None)))),
+        UpdateBlock::Item(item) => {
+            let parent = match item.update_parent() {
+                UpdateParent::Item(id) => Some(id),
+                _ => None,
+            };
+            [item.origin(), item.right_origin(), parent]
+                .into_iter()
+                .flatten()
+                .any(|id| matches!(store.get_block_range(id), Some((_, None))))
+        }
         UpdateBlock::Gc(_) | UpdateBlock::Skip(_) => false,
     })
 }

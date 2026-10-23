@@ -35,9 +35,13 @@ pub struct Config {
     pub fold_min_bytes: u64,
     pub fold_max_rows: u64,
     /// A fold collects the tombstones no session can still name
-    /// (`ydoc::gc`), in place. The kill switch, off unless exactly `true`:
-    /// it stays off until the room counts its sessions and their held
-    /// deletions.
+    /// (`ydoc::gc`), in place. The kill switch, off unless exactly `true`,
+    /// and refused outside tests (`APP_ENV=test`) until the collection's
+    /// inputs exist: counted sessions with what each deleted, the durable
+    /// Undo payloads' deletions, the merge of a tab older than the window,
+    /// and the durable Undo route's refusal of payloads naming collected
+    /// units. Until then the folds pass stand-ins that would drop the text of
+    /// a session away from the room, an editor's Undo or an offline draft.
     pub gc_collect: bool,
     /// Office engine child processes per lane and each one's memory cap
     /// (Epo 2026-10-07: production 2 + 1 at 4 GiB, UAT 1 + 1 at 3 GiB).
@@ -136,6 +140,18 @@ fn flag(env: &HashMap<String, String>, name: &str) -> Result<bool, ConfigError> 
     }
 }
 
+/// `COLLABORATION_GC_COLLECT`, refused outside tests (see `gc_collect`).
+fn collection(env: &HashMap<String, String>) -> Result<bool, ConfigError> {
+    let on = flag(env, "COLLABORATION_GC_COLLECT")?;
+    if on && env.get("APP_ENV").map(|value| value.trim()) != Some("test") {
+        return Err(ConfigError(
+            "COLLABORATION_GC_COLLECT=true is refused outside tests until the collection's              inputs exist (counted sessions and held deletions, the late merge, the durable Undo              refusal)"
+                .into(),
+        ));
+    }
+    Ok(on)
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::load(&std::env::vars().collect())
@@ -207,7 +223,7 @@ impl Config {
             projection_cadence: millis(env, "COLLABORATION_PROJECTION_CADENCE_MS", 300_000)?,
             fold_min_bytes: positive(env, "COLLABORATION_FOLD_MIN_BYTES", 256 * 1024)?,
             fold_max_rows: positive(env, "COLLABORATION_FOLD_MAX_ROWS", 1000)?,
-            gc_collect: flag(env, "COLLABORATION_GC_COLLECT")?,
+            gc_collect: collection(env)?,
             engine_save_processes: required(env, "COLLABORATION_ENGINE_SAVE_PROCESSES")?,
             engine_background_processes: required(
                 env,
@@ -329,15 +345,26 @@ mod tests {
         assert_eq!(config.secret, "prod-secret");
     }
 
+    /// Off unless exactly `true`, and refused outside tests: turned on in a
+    /// deployment, the folds' stand-in inputs would drop text.
     #[test]
-    fn the_collection_is_off_unless_exactly_true() {
+    fn the_collection_is_off_unless_exactly_true_and_only_in_tests() {
+        let on = ("COLLABORATION_GC_COLLECT", "true");
         assert!(!Config::load(&env(&[])).unwrap().gc_collect);
         assert!(
-            Config::load(&env(&[("COLLABORATION_GC_COLLECT", "true")]))
+            Config::load(&env(&[on, ("APP_ENV", "test")]))
                 .unwrap()
                 .gc_collect
         );
-        assert!(Config::load(&env(&[("COLLABORATION_GC_COLLECT", "on")])).is_err());
+        assert!(Config::load(&env(&[on])).is_err());
+        assert!(Config::load(&env(&[on, ("APP_ENV", "production")])).is_err());
+        assert!(
+            Config::load(&env(&[
+                ("COLLABORATION_GC_COLLECT", "on"),
+                ("APP_ENV", "test")
+            ]))
+            .is_err()
+        );
     }
 
     #[test]
