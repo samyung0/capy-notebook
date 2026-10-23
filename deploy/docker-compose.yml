@@ -153,6 +153,9 @@ services:
       SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:-dev-share-link-secret-0123456789abcdef}
       # Grades open quiz parts; without it grading answers 503.
       JEV_TYPESAFE_API_KEY: ${JEV_TYPESAFE_API_KEY:-}
+      # Chat voice input: Alibaba Model Studio; without it voice input answers 503.
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       COLLABORATION_URL: ${COLLABORATION_URL:-ws://localhost:1234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Vestigial label stored on the job payload; the parse route is chosen by

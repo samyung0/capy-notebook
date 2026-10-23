@@ -7641,6 +7641,19 @@ export const TransferWorkspaceResponse = zod.object({
 
 
 /**
+ * @summary Transcribe a chat voice recording for the composer
+ */
+export const TranscribeVoiceParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const TranscribeVoiceResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "text": zod.string()
+})
+
+
+/**
  * @summary Revalidate source room access
  */
 export const CheckSourceAccessParams = zod.object({

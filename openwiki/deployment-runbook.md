@@ -143,7 +143,11 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `secrets.required`. Changing it invalidates every shared link, including
    quiz and flashcard links, and resets the anonymous grading IP hashes.
    `JEV_TYPESAFE_API_KEY` (manifest secret, target `app`) is the typesafe.ai
-   key that grades open quiz parts; without it grading answers 503. Both app environments use exact Worker Routes in `wrangler.jsonc`,
+   key that grades open quiz parts; without it grading answers 503.
+   `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
+   (variable) also reach the app target for chat voice input, which the API
+   calls itself (the same Singapore workspace and key as uploaded audio,
+   below); without both, voice input answers 503 `voice_unavailable`. Both app environments use exact Worker Routes in `wrangler.jsonc`,
    with DNS pointing at their tunnel. Do not attach either app as a Worker
    Custom Domain; that would replace the tunnel destination. The apex and
    `www` remain reserved for the future public site, whose implementation is
@@ -1899,15 +1903,20 @@ those services start.
    Model Studio workspace in Singapore (`ap-southeast-1`), with the key
    restricted to the `qwen-audio-3.1-asr-flash*` models. Both reach the
    production worker and each environment's queue workers (manifest targets
-   `ingest-production`, `ingest-queue`); set both or neither, and without them
-   an audio upload fails terminally. The worker hands Alibaba a ten-minute
-   signed GET link for the one source object, so nothing else needs bucket
-   access. Check the workspace's Filetrans quota before launch: each
-   environment runs at most 12 tasks across its workers (a task holds its slot
-   while its job re-pends between polls), and Flash answered 429 from about
-   20 requests in flight. Audio needs no worker or service of its own: the
-   ingest workers submit and poll in short claims. Those calls
-   happen on this ingest host after it
+   `ingest-production`, `ingest-queue`) and the app host's API for chat voice
+   input (target `app`); set both or neither, and without them an audio
+   upload fails terminally and voice input answers 503. Production needs
+   both in its GitHub environment before a deploy whose API serves voice
+   input; local development reads them from `deploy/.env` like any app key.
+   The worker hands Alibaba a ten-minute signed GET link for the one source
+   object, so nothing else needs bucket access. Check the workspace's
+   Filetrans quota before launch: each environment runs at most 12 tasks
+   across its workers (a task holds its slot while its job re-pends between
+   polls), and Flash answered 429 from about 20 requests in flight (chat voice
+   input calls Flash from the app host, one request a recording, at most 60
+   an hour per user). Audio needs no worker or service of its own: the ingest
+   workers submit and poll in short claims. Filetrans calls happen on this
+   ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
    parser is OpenDataLoader 2.5.7 plus the refined repairs (`parser/odl/`);

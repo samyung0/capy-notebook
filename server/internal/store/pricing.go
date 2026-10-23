@@ -31,6 +31,7 @@ const (
 	ResourceDigitalParsePage = "digital_parse_page"
 	ResourceVLMIngestPage    = "vlm_ingest_page"
 	ResourceAudioSecond      = "audio_transcription_second"
+	ResourceVoiceInputSecond = "voice_input_second"
 	ResourceEmailMessage     = "email_message"
 )
 

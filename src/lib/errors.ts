@@ -407,7 +407,9 @@ const TYPED_SERVER_CODES = new Set([
   'bank_unavailable',
   'generate_empty',
   'provider_busy',
+  'transcription_failed',
   'upload_queue_full',
+  'voice_unavailable',
 ]);
 
 /** The trace id an error that stays on screen shows (a boundary, FormAlert,

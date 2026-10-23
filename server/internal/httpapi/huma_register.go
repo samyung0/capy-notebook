@@ -406,7 +406,7 @@ func newUnexpectedError(status int, traceID string) *unexpectedError {
 // typedServerCodes are the 5xx codes the browser gives their own copy; a 5xx
 // carrying anything else in errors[] (an error's text, even one word) is
 // unexpected. src/lib/errors.ts keeps the same list.
-var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full"}
+var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full", "transcription_failed", "voice_unavailable"}
 
 func typedServerError(details []*huma.ErrorDetail) bool {
 	return len(details) > 0 && !slices.ContainsFunc(details, func(detail *huma.ErrorDetail) bool {
@@ -586,6 +586,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerAnonymousMaterials(api)
 	a.registerBillingIntegrations(api)
 	a.registerEditIncidents(api)
+	a.registerVoice(api)
 }
 
 func quotaError(detail map[string]any) *huma.ErrorModel {
