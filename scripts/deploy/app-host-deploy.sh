@@ -119,6 +119,23 @@ mapfile -t pinned < <(sed -n 's/^ *image: *\([^$ ]*\)$/\1/p' "$files/compose.yml
 expected="$(printf '%s\n' "${images[@]}" "${pinned[@]}" | LC_ALL=C sort -u)"
 resolved="$(dc config --images 2>/dev/null | LC_ALL=C sort -u)" || fail "Compose could not list the images"
 [[ "$resolved" == "$expected" ]] || fail "Compose resolves other images than the verified ones"
+# Compose's own view of the published ports (Epo 2026-10-23): each binds
+# loopback (the tunnel's) or this host's WireGuard address, which the
+# app-host playbook writes, whatever stack.env says.
+bind_file="${CAPY_PRIVATE_BIND_FILE:-/etc/capy/private-bind-address}"
+private_address="$(cat -- "$bind_file" 2>/dev/null)" || fail "$bind_file is missing"
+[[ "$private_address" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ && "$private_address" != 0.0.0.0 && "$private_address" != 127.* ]] ||
+  fail "$bind_file must hold this host's WireGuard IPv4 address"
+binds="$(dc config --format json 2>/dev/null | python3 -I -c '
+import json, sys
+for service in json.load(sys.stdin)["services"].values():
+    for port in service.get("ports", []):
+        print(port.get("host_ip") or "every interface")
+')" || fail "could not read the published ports"
+while read -r bind; do
+  [[ -z "$bind" || "$bind" == 127.0.0.1 || "$bind" == "$private_address" ]] ||
+    fail "a port is published on $bind, not 127.0.0.1 or $private_address"
+done <<<"$binds"
 # Only the app images: Postgres and Redis stay on their pinned local images.
 DOCKER_CONFIG="$incoming/docker" dc pull --quiet "${services[@]}" >/dev/null 2>&1 || fail "pulling the $stack images failed"
 rm -rf -- "$incoming/docker" "$files/ghcr-token"

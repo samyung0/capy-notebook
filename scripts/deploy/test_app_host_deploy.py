@@ -30,6 +30,7 @@ APP_IMAGES = {
     "CAPY_PIPELINE_IMAGE": "capy-pipeline",
 }
 APP_SERVICES = ["migrate", "server", "collaboration", "retrieval"]
+WIREGUARD = "10.77.0.3"
 DOCKER = r"""#!/usr/bin/env python3
 import json, os, pathlib, sys
 state_file = pathlib.Path(os.environ["CAPY_DOCKER_STATE"])
@@ -76,6 +77,11 @@ if args[0] == "compose":
         resolved = [value for key, value in env.items() if key.startswith("CAPY_") and key.endswith("_IMAGE")]
         # A test sets compose_images for what a Compose parser bug would resolve.
         print("\n".join(state.get("compose_images", resolved + literal)))
+    elif command[:3] == ["config", "--format", "json"]:
+        ports = [{"host_ip": "127.0.0.1", "target": 8080}]
+        if "CAPY_PRIVATE_BIND_ADDRESS" in env:
+            ports.append({"host_ip": env["CAPY_PRIVATE_BIND_ADDRESS"], "target": 5432})
+        print(json.dumps({"services": {"db": {"ports": state.get("ports", ports)}}}))
     elif command[0] == "pull":
         for key, value in env.items():
             if key.startswith("CAPY_") and key.endswith("_IMAGE"):
@@ -152,7 +158,11 @@ def upload(files=None, extra=()):
 
 
 def stack_env(sha=SHA, images=APP_IMAGES, extra=""):
-    lines = [f"POSTGRES_PASSWORD='{PASSWORD}'", f"RELEASE_SHA='{sha}'"]
+    lines = [
+        f"POSTGRES_PASSWORD='{PASSWORD}'",
+        f"RELEASE_SHA='{sha}'",
+        f"CAPY_PRIVATE_BIND_ADDRESS='{WIREGUARD}'",
+    ]
     lines += [
         f"{variable}='{REGISTRY}{name}@{digest(REGISTRY + name, sha)}'"
         for variable, name in images.items()
@@ -200,8 +210,11 @@ class AppHostDeployTest(unittest.TestCase):
         self.write_state(state)
         for name in APP_IMAGES.values():
             self.publish(name, SHA)
+        self.bind_file = base / "private-bind-address"
+        self.bind_file.write_text(WIREGUARD + "\n")
         self.env = {
             **os.environ,
+            "CAPY_PRIVATE_BIND_FILE": str(self.bind_file),
             "CAPY_DEPLOY_ROOT": str(self.root),
             "CAPY_DEPLOY_RUN": str(self.run_dir),
             "CAPY_DOCKER_STATE": str(self.state_file),
@@ -331,6 +344,50 @@ class AppHostDeployTest(unittest.TestCase):
                 )
                 output = self.deploy(upload(stack_files()), status=1)
                 self.assertIn("Compose resolves other images", output)
+                self.assertIsNone(self.compose("pull"))
+                self.assertIsNone(self.compose("up"))
+
+    def test_publishes_ports_only_on_loopback_and_the_wireguard_address(self):
+        """Security regression (Epo 2026-10-23): whatever stack.env says,
+        Compose's resolved ports bind only 127.0.0.1 or the address the
+        playbook wrote, so Postgres, Redis and the gateway stay on WireGuard."""
+        cases = {
+            "0.0.0.0 in stack.env": ("CAPY_PRIVATE_BIND_ADDRESS='0.0.0.0'", None, None),
+            "another address": ("CAPY_PRIVATE_BIND_ADDRESS='10.77.0.9'", None, None),
+            "no host_ip": (None, [{"target": 5432}], None),
+            "no address file": (None, None, ""),
+            # The file itself must name a WireGuard address, even when
+            # stack.env agrees with it.
+            "an unspecified address file": (
+                "CAPY_PRIVATE_BIND_ADDRESS='0.0.0.0'",
+                None,
+                "0.0.0.0\n",
+            ),
+            "a loopback address file": (
+                "CAPY_PRIVATE_BIND_ADDRESS='127.0.0.2'",
+                None,
+                "127.0.0.2\n",
+            ),
+        }
+        for name, (line, ports, address) in cases.items():
+            with self.subTest(name):
+                state = {**self.state(), "calls": []}
+                state.pop("ports", None)
+                if ports is not None:
+                    state["ports"] = ports
+                self.write_state(state)
+                self.bind_file.write_text(WIREGUARD + "\n")
+                if address == "":
+                    self.bind_file.unlink()
+                elif address is not None:
+                    self.bind_file.write_text(address)
+                env = stack_env()
+                if line:
+                    env = env.replace(
+                        f"CAPY_PRIVATE_BIND_ADDRESS='{WIREGUARD}'".encode(),
+                        line.encode(),
+                    )
+                self.deploy(upload(stack_files(env=env)), status=1)
                 self.assertIsNone(self.compose("pull"))
                 self.assertIsNone(self.compose("up"))
 

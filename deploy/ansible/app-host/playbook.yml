@@ -21,7 +21,7 @@
           - app_wireguard_address | default('') is match('^[0-9.]+/[0-9]+$')
           - app_wireguard_peer_address | default('') is match('^[0-9.]+/[0-9]+$')
         fail_msg: Fill the WireGuard peer values in inventory.yml first.
-      tags: [firewall]
+      tags: [firewall, deploy]
 
     # One bare public key, so the variable can add neither options nor a
     # second line to the deploy user's authorized_keys.
@@ -316,6 +316,26 @@
         owner: root
         group: root
         mode: "0700"
+      tags: [deploy]
+
+    # The deploy command refuses a release that publishes a port anywhere
+    # but loopback and this address (Epo 2026-10-23).
+    - name: Create the deploy command's configuration directory
+      ansible.builtin.file:
+        path: /etc/capy
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      tags: [deploy]
+
+    - name: Record the WireGuard address private services may bind
+      ansible.builtin.copy:
+        dest: /etc/capy/private-bind-address
+        owner: root
+        group: root
+        mode: "0644"
+        content: "{{ app_wireguard_address | regex_replace('/.*$', '') }}\n"
       tags: [deploy]
 
     # Exactly one root command with no arguments, keeping only the forced
