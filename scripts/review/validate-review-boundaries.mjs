@@ -26,8 +26,14 @@ function events(source, label) {
   return Object.keys(map);
 }
 
+/** The one scheduled workflow: daily dependency and image vulnerability scans. */
+const SCHEDULED_WORKFLOW = 'audit.yml';
+
 export function validateWorkflowIsDeterministic(source, label) {
-  if (events(source, label).includes('schedule')) {
+  if (
+    events(source, label).includes('schedule') &&
+    label !== SCHEDULED_WORKFLOW
+  ) {
     throw new Error(`${label}: workflows must not be scheduled`);
   }
   for (const marker of AGENT_SCANNER_MARKERS) {
