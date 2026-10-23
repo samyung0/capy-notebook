@@ -213,9 +213,16 @@ def render(values, environment, output, revision):
     address = values.get("CAPY_PRIVATE_BIND_ADDRESS", "")
     password = values.get("POSTGRES_PASSWORD", "")
     try:
-        address = str(ipaddress.IPv4Address(address))
+        parsed = ipaddress.IPv4Address(address)
     except ipaddress.AddressValueError:
         fail("CAPY_PRIVATE_BIND_ADDRESS must be a valid IPv4 address")
+    # Compose publishes Postgres, Redis and the gateway on it: 0.0.0.0 binds
+    # every interface, and loopback leaves the ingest host without them.
+    if parsed.is_unspecified or parsed.is_loopback:
+        fail(
+            "CAPY_PRIVATE_BIND_ADDRESS must be the WireGuard address, not unspecified or loopback"
+        )
+    address = str(parsed)
     if not password:
         fail("POSTGRES_PASSWORD is required for ingest")
     queue.update(

@@ -225,6 +225,28 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "multiline"):
                 config.render(values, "uat", temp, "a" * 40)
 
+    def test_render_refuses_an_unspecified_or_loopback_bind_address(self):
+        """Security regression (review L6): Postgres, Redis and the gateway
+        are published only on the WireGuard address."""
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://uat.example.com",
+        )
+        for address in ("0.0.0.0", "127.0.0.1", "127.0.1.1"):
+            values["CAPY_PRIVATE_BIND_ADDRESS"] = address
+            with (
+                self.subTest(address=address),
+                tempfile.TemporaryDirectory() as temp,
+                self.assertRaisesRegex(ValueError, "not unspecified or loopback"),
+            ):
+                config.render(values, "uat", temp, "a" * 40)
+
     def test_render_refuses_the_uat_switches_outside_uat(self):
         for switch in (
             "COLLABORATION_UAT_PUBLICATION_HOLD",
