@@ -1617,9 +1617,9 @@ design, option d), and the nudge's release file on 2026-10-17.
   The Office agent's short paragraph ids and malformed-id refusals (pin
   faacf7887: a DOCX paraId alone names its one paragraph, and a malformed
   slide, shape, paragraph or table id is refused as malformed, showing the
-  read's form; Epo 2026-10-24, Q222 and Q223) raised `CLIENT_PROTOCOL` to 16
-  and `MIN_SOURCE` to 16, 15 being the binding branch's; `MIN_MATERIAL`
-  stays 7. Its deploy request names the step from the number main held.
+  read's form; Epo 2026-10-24, Q222 and Q223) raised `CLIENT_PROTOCOL` to 15
+  and `MIN_SOURCE` to 15; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 14 -> 15, source 14 -> 15".
 
 #### When to bump
 
