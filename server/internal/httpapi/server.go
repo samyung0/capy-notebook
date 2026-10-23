@@ -116,10 +116,12 @@ type api struct {
 	stripeGetCheckout    func(sessionID string) (billing.CheckoutSession, error)
 	stripeExpireCheckout func(sessionID string) error
 	// Credit top-up and auto-reload calls, replaced by tests.
-	stripeTopUpMethod   func(string) (store.PaymentMethod, error)
-	stripeSetupMethod   func(string) (store.PaymentMethod, error)
-	stripeVoidInvoice   func(string) error
-	stripeReloadOutcome func(string) (billing.ReloadResult, error)
+	stripeTopUpMethod func(string) (store.PaymentMethod, error)
+	stripeSetupMethod func(string) (store.PaymentMethod, error)
+	// The card a Pro Checkout saved, for the starter grant.
+	stripeSubscriptionMethod func(string) (store.PaymentMethod, error)
+	stripeVoidInvoice        func(string) error
+	stripeReloadOutcome      func(string) (billing.ReloadResult, error)
 	// Credit Checkout and portal sessions, replaced by tests.
 	stripeTopUpCheckout  func(customerID, userID string, amountCents int64, successURL, cancelURL string) (billing.CheckoutSession, error)
 	stripeMethodCheckout func(customerID, userID, successURL, cancelURL string) (billing.CheckoutSession, error)
@@ -174,10 +176,11 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeGetCheckout:    billing.GetCheckoutSession,
 		stripeExpireCheckout: billing.ExpireCheckoutSession,
 
-		stripeTopUpMethod:   billing.TopUpPaymentMethod,
-		stripeSetupMethod:   billing.SetupPaymentMethod,
-		stripeVoidInvoice:   billing.VoidInvoice,
-		stripeReloadOutcome: billing.ReloadOutcome,
+		stripeTopUpMethod:        billing.TopUpPaymentMethod,
+		stripeSetupMethod:        billing.SetupPaymentMethod,
+		stripeSubscriptionMethod: billing.SubscriptionPaymentMethod,
+		stripeVoidInvoice:        billing.VoidInvoice,
+		stripeReloadOutcome:      billing.ReloadOutcome,
 
 		stripeTopUpCheckout:  billing.CreateTopUpCheckout,
 		stripeMethodCheckout: billing.CreateReloadMethodCheckout,

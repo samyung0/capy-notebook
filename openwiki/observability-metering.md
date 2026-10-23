@@ -828,9 +828,8 @@ ledger is small enough for indexed live queries.
 Decisions: `human/observability-metering.md` (2026-10-15/16). Prices: $1 buys
 1,000 credits (`store.CreditsMicrosForCents`).
 
-**Balance.** `user_credits.purchased_micros` never expires and is signed: its
-column default is the one-off 800-credit starter grant, a negative value is
-credits owed. Two SQL functions in `0088_purchased_credits.sql` are the only
+**Balance.** `user_credits.purchased_micros` never expires and is signed: it
+starts at zero, a negative value is credits owed. Two SQL functions in `0088_purchased_credits.sql` are the only
 writers of spend, called by the gateway (`credits.go`) and the ingest worker
 (`pipeline/pipeline/store/db.py`) with the actor's monthly limit:
 `spend_user_credits` takes the monthly allowance first and the rest from the
@@ -838,6 +837,19 @@ purchased balance (it may go negative: overrun from already-admitted work stays
 owed), and `roll_user_credits` rolls the period, taking owed credits off the new
 allowance first and recording them in `carried_micros` (the Usage tab's "Owed
 from <month>" row); what the allowance cannot cover stays owed.
+
+**Starter grant.** The one-off 800 credits (`store.StarterGrantMicros`) come
+with the first saved card, not with the account (Epo 2026-10-24).
+`GrantStarterCredits` runs from the webhooks that save a card: the setup
+Checkout (Add a card), a paid top-up and a Pro subscription Checkout (its
+subscription's default payment method). It inserts into `starter_grants`
+(migration 0109), keyed once per account and once per card key, and adds the
+credits in the same transaction, so a replayed or concurrent event adds
+nothing. The card key is Stripe's card fingerprint; no other card data is
+stored there. Only a card earns the grant: a Link method has no fingerprint
+and earns none, and nothing derived from its email is kept (Epo 2026-10-24). Rows are kept when an
+account is purged, so a recreated account cannot claim the same card again.
+`CreditSettings.starterAvailable` drives the offer on the Subscription tab.
 
 **Gate.** Available is `max(limit − used, 0) + purchased − reserved`. At zero
 or below new work is refused unless a started reload's 60-second window is open

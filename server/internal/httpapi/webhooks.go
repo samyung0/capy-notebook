@@ -42,6 +42,7 @@ type webhookStore interface {
 	GrantTopUp(ctx context.Context, userID, checkoutSessionID, paymentIntentID string, amountCents int64) (bool, []string, error)
 	MarkReloadVoid(ctx context.Context, invoiceID string) error
 	SavePaymentMethod(ctx context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error
+	GrantStarterCredits(ctx context.Context, userID, cardKey string) (bool, error)
 	MarkReloadPaid(ctx context.Context, purchaseID, invoiceID, paymentIntentID string) error
 	MarkReloadFailed(ctx context.Context, purchaseID, invoiceID string, nextAttempt time.Time, declineReason string) error
 	ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) (string, error)
@@ -429,6 +430,9 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 				procErr = a.wh.UpsertSubscription(r.Context(), billing.SubscriptionRecord(
 					subscription, userID, a.cfg.StripePricePro, event.Created))
 			}
+			if procErr == nil {
+				procErr = a.grantSubscriptionStarter(r.Context(), userID, sess.Subscription.ID)
+			}
 		}
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var sub stripe.Subscription
@@ -634,6 +638,9 @@ func (a *api) creditCheckoutCompleted(
 		if err := a.wh.SavePaymentMethod(ctx, userID, pm, false); err != nil {
 			return true, err
 		}
+		if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
+			return true, err
+		}
 		// A new card ends Stripe's retries of the old one.
 		retrying, err := a.wh.RetryingReloadInvoices(ctx, userID)
 		if err != nil {
@@ -656,7 +663,24 @@ func (a *api) creditCheckoutCompleted(
 	if err := a.wh.SavePaymentMethod(ctx, userID, pm, true); err != nil {
 		return true, err
 	}
+	if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
+		return true, err
+	}
 	return true, a.voidReloadsAndPublish(ctx, userID, retrying)
+}
+
+// grantSubscriptionStarter gives the starter credits for the card a Pro
+// Checkout saved, when it is the account's first.
+func (a *api) grantSubscriptionStarter(ctx context.Context, userID, subscriptionID string) error {
+	pm, err := a.stripeSubscriptionMethod(subscriptionID)
+	if err != nil {
+		return err
+	}
+	granted, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey)
+	if granted {
+		a.publishBillingChanged(ctx, userID)
+	}
+	return err
 }
 
 // voidReloadsAndPublish ends the retries a top-up or new card replaces, then

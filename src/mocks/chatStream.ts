@@ -129,10 +129,25 @@ export function mockChatStream(fixture?: ChatFixture) {
             const workspaceFiles = files.filter(
               (file) => file.workspaceId === params.id
             );
+            // Office edits cut at a per-call limit, by file id: each row
+            // stays in progress until the next edit of its file lands, or
+            // the turn's end closes it with its counts.
+            const cuts = new Map<string, MockTool>();
+            const close = (tool: MockTool) =>
+              send({
+                applied: tool.applied,
+                callId: tool.callId,
+                effects: tool.effects,
+                endedAt: tool.endedAt,
+                outcome: tool.outcome,
+                total: tool.total,
+                type: 'tool_end',
+              });
             const run = async (
               step: MockStep,
               ms: number,
-              effects?: ResourceEffect[]
+              effects?: ResourceEffect[],
+              cut?: FixtureEdit['cut']
             ) => {
               const tool: MockTool = {
                 ...step,
@@ -159,13 +174,30 @@ export function mockChatStream(fixture?: ChatFixture) {
               tool.outcome = 'succeeded';
               tool.effects = effects;
               for (const effect of effects ?? []) rememberUndo(effect);
-              send({
-                callId: tool.callId,
-                effects,
-                endedAt: tool.endedAt,
-                outcome: tool.outcome,
-                type: 'tool_end',
-              });
+              const file =
+                step.name === 'edit_office_document'
+                  ? effects?.[0]?.resource.id
+                  : undefined;
+              const earlier = file ? cuts.get(file) : undefined;
+              if (cut && file) {
+                Object.assign(tool, cut);
+                cuts.set(file, tool);
+                send({ ...cut, callId: tool.callId, type: 'tool_progress' });
+              } else {
+                if (file) cuts.delete(file);
+                send({
+                  callId: tool.callId,
+                  effects,
+                  endedAt: tool.endedAt,
+                  outcome: tool.outcome,
+                  type: 'tool_end',
+                });
+              }
+              if (earlier) {
+                delete earlier.applied;
+                delete earlier.total;
+                close(earlier);
+              }
               return true;
             };
             // A turn that searches, reads, looks at a page, narrates, asks
@@ -209,8 +241,17 @@ export function mockChatStream(fixture?: ChatFixture) {
                 const detail = effects
                   .map(({ resource }) => resource.title)
                   .join(', ');
-                if (!(await run({ detail, name: edit.tool }, 800, effects)))
+                if (
+                  !(await run(
+                    { detail, name: edit.tool },
+                    800,
+                    effects,
+                    edit.cut
+                  ))
+                )
                   return;
+                // The model reads the cut call's result before sending the rest.
+                if (edit.cut) await delay(2500);
               }
             }
             const quiz = materials.find((item) => item.id === 'qz_1');
@@ -263,6 +304,9 @@ export function mockChatStream(fixture?: ChatFixture) {
               const text = selected.content.slice(offset, offset + chunkSize);
               content += text;
               send({ blockId, text, type: 'block_delta' });
+            }
+            if (!selected.closeEarly) {
+              for (const tool of cuts.values()) close(tool);
             }
             if (selected.errorCode) {
               // The gateway sends the guard's error, never the detected tool markup.

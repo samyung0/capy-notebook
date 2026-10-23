@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -214,6 +215,11 @@ func (f *fakeStore) MarkReloadVoid(_ context.Context, invoiceID string) error {
 	return nil
 }
 
+func (f *fakeStore) GrantStarterCredits(_ context.Context, userID, cardKey string) (bool, error) {
+	f.creditCalls = append(f.creditCalls, fmt.Sprintf("starter %s %s", userID, cardKey))
+	return cardKey != "", nil
+}
+
 func (f *fakeStore) SavePaymentMethod(_ context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error {
 	f.creditCalls = append(f.creditCalls, fmt.Sprintf("method %s %s %t", userID, pm.ID, onlyIfNone))
 	return nil
@@ -342,6 +348,12 @@ func signStripe(_ *testing.T, secret string, body []byte) http.Header {
 	return h
 }
 
+// subscriptionCard is the card a Pro Checkout saved, as the stubbed Stripe
+// read reports it.
+func subscriptionCard(string) (store.PaymentMethod, error) {
+	return store.PaymentMethod{ID: "pm_sub", Type: "card", CardKey: "card:fp_sub"}, nil
+}
+
 // newTestServer builds an httptest server whose only wired collaborator is the
 // fake store, so requests flow through the same routing + handlers as production.
 func newTestServer(t *testing.T, f *fakeStore, cfg Config) *httptest.Server {
@@ -355,7 +367,7 @@ func newTestServerWithSubscription(
 	retrieve func(string) (*stripe.Subscription, error),
 ) *httptest.Server {
 	t.Helper()
-	a := &api{wh: f, cfg: cfg, stripeSubscription: retrieve}
+	a := &api{wh: f, cfg: cfg, stripeSubscription: retrieve, stripeSubscriptionMethod: subscriptionCard}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/webhooks/clerk", a.clerkWebhook)
 	mux.HandleFunc("/webhooks/stripe", a.stripeWebhook)
@@ -725,6 +737,10 @@ func TestStripeWebhook_CheckoutCompleted(t *testing.T) {
 	if got.UserID != "user_abc" || got.PlanTier != store.PlanPro || got.Status != "active" {
 		t.Errorf("checkout did not record the paid tier: %+v", got)
 	}
+	// The card Pro Checkout saved claims the starter credits.
+	if !slices.Equal(f.creditCalls, []string{"starter user_abc card:fp_sub"}) {
+		t.Errorf("credit calls = %q", f.creditCalls)
+	}
 }
 
 func TestStripeWebhook_CheckoutCompletedRejectsCustomerUserMismatch(t *testing.T) {
@@ -808,8 +824,8 @@ func TestStripeWebhook_CheckoutCompletedLockedAccountDoesNotGrantEntitlement(t *
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	if len(f.subUpserts) != 0 {
-		t.Fatalf("locked account received entitlement: %+v", f.subUpserts)
+	if len(f.subUpserts) != 0 || len(f.creditCalls) != 0 {
+		t.Fatalf("locked account received entitlement: %+v credits: %q", f.subUpserts, f.creditCalls)
 	}
 }
 

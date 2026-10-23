@@ -669,6 +669,7 @@ const mockCreditSettings: CreditSettings = {
   reloadThresholdMicros: 0,
   spendingLimitCents: 5000,
   spentThisMonthCents: 1800,
+  starterAvailable: false,
 };
 
 export const handlers = [
