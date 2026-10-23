@@ -57,6 +57,13 @@ export async function themePreset(theme: MermaidTheme) {
   return preset;
 }
 
+/** WebKit does not pass a text's dominant-baseline down to its tspans, as
+ * Chromium and Firefox do and the worker's shim measures: there a label
+ * mermaid centres with `middle` (an ishikawa cause) drew about 4 px above
+ * the box drawn around it (review r3 M2's WebKit check). */
+const TSPAN_BASELINE =
+  'tspan:not([dominant-baseline]) { dominant-baseline: inherit; }';
+
 /**
  * Draws `code` in a theme's `preset` (from themePreset) into `container`
  * (mermaid measures there). Calls must not overlap: mermaid.initialize is
@@ -90,6 +97,7 @@ export async function drawMermaid(
     // come out the same each time, so a source draws one SVG and the
     // geometry check compares.
     handDrawnSeed: 1,
+    themeCSS: `${preset.config.themeCSS ?? ''}\n${TSPAN_BASELINE}`,
     ...MERMAID_SECURITY,
   });
   // Nothing that loads a file may reach mermaid (mermaidSafety.ts).

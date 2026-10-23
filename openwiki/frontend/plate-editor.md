@@ -752,7 +752,12 @@ more than there; labels pair up by their place in document order (Epo
 around any text (a version line, axis names around the web, names beside
 the bars, a tree drawn in lines), so their texts are checked against the
 drawing only, as are titles, axis ticks, legend entries and edge labels in
-other types.
+other types. The check's first WebKit run found that WebKit does not pass a
+text's `dominant-baseline` down to its tspans, as Chromium, Firefox and the
+shim do: ishikawa causes drew about 4 px above their boxes there. Every
+drawing's stylesheet now says a tspan without its own inherits it
+(`TSPAN_BASELINE` in `mermaidDraw.ts`), which changes nothing in Chromium or
+Firefox.
 
 **Scale.** A block never shows a diagram below half its natural size
 (`MIN_SCALE`, Epo 2026-10-22): the SVG keeps a minimum width and height of

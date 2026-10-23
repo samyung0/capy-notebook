@@ -591,8 +591,11 @@ function baselineShift(
   metrics: { ascent: number; descent: number }
 ) {
   const parent = element.parentElement;
+  // A tspan inherits its text's (the drawing's stylesheet says so for
+  // WebKit, mermaidDraw.ts TSPAN_BASELINE).
+  const mine = own(element, 'dominant-baseline');
   const baseline =
-    own(element, 'dominant-baseline') ??
+    (mine === 'inherit' ? undefined : mine) ??
     element.getAttribute('alignment-baseline') ??
     (parent ? own(parent, 'dominant-baseline') : undefined);
   switch (baseline) {
