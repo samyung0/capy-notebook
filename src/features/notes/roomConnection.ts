@@ -80,8 +80,8 @@ export function sendCheckpointRequest(
 
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 30_000;
-/** How long a lost room connection may keep failing before the editor says it
- * cannot save. */
+/** How long a room join, or a lost room connection, may keep failing before
+ * the editor says it cannot save. */
 export const RECONNECT_GRACE_MS = 30_000;
 
 interface ReconnectableProvider {
@@ -100,7 +100,8 @@ export function roomReconnector({
   onStuck,
 }: {
   provider: () => ReconnectableProvider | null | undefined;
-  /** Still not connected after RECONNECT_GRACE_MS while the browser is online. */
+  /** Still not connected after RECONNECT_GRACE_MS while the browser is
+   * online: from the join's start (`started`) or a lost connection. */
   onStuck: () => void;
 }) {
   let attempts = 0;
@@ -160,6 +161,11 @@ export function roomReconnector({
       clearTimeout(stuck);
       stuck = undefined;
     },
+    /** A join started, first or after a reload (Epo 2026-10-23): one watch
+     * over all of it (a JOIN never answered, a hung session request, a view
+     * never ready), ended by `connected`; a slowed open clears it and
+     * offline keeps waiting. */
+    started: watch,
   };
 }
 

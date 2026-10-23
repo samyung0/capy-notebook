@@ -348,10 +348,12 @@ function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
     if (building === null) return;
     const hidden = async () => {
       if (!tabHidden()) return;
-      const { shown } = viewsRef.current;
-      carried.current = await read(shown);
-      if (viewsRef.current.next === building)
-        setViews({ next: null, shown: building });
+      const place = await read(viewsRef.current.shown);
+      // A build that settled meanwhile swapped with its own read: this one
+      // is dropped, never shown later (review r2 L2).
+      if (viewsRef.current.next !== building) return;
+      carried.current = place;
+      setViews({ next: null, shown: building });
     };
     document.addEventListener('visibilitychange', hidden);
     return () => document.removeEventListener('visibilitychange', hidden);

@@ -408,11 +408,15 @@ The header shows the building view's status as a first join's (Epo
 slowed open's line; Offline and an error as they come. Any answer settles the build: painted with its
 replica ready, or the server's answer (refused, unavailable, outdated, an
 error, recovery), which then shows in place of the paused view. When nothing
-arrives it waits as a first join does: an unreachable service errors at the
-first join's 30 s timeout (`RECONNECT_GRACE_MS`, `roomReconnector`'s
-`onStuck`), which settles it and unmounts the paused view; offline, and an
-open waiting on the open budget, wait without a timeout, as a first join
-does. On settling, the host asks the replaced
+arrives it waits as a first join does. Every join, first or after a reload,
+has 30 s from its start (Epo 2026-10-23; `RECONNECT_GRACE_MS`, one
+`roomReconnector` watch from `started`, which `useSourceSession` arms before
+its session request): a hung source-session request, a JOIN never answered
+on the open socket, an Office view whose frame never reports its replica
+ready (the join ends at `collaboration-ready`, a text view's at the room's
+first sync), or a dropped connection errors at `onStuck`, which settles the
+build and unmounts the paused view. Offline, and an open waiting on the open
+budget, wait without a timeout, as a first join does. On settling, the host asks the replaced
 frame where its reader is (`position-request`, answered by `position` within
 a second, else nothing) and gives it to the new one (`set-position`, answered
 by `position` once the editor is there, which the swap waits for): DOCX the

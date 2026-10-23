@@ -69,6 +69,7 @@ import {
   sourceRoom,
   sourceRoomName,
   sourceRoomState,
+  sourceSessionHeld,
 } from './collaboration';
 import * as db from './db';
 import { uid } from './db';
@@ -756,6 +757,12 @@ export const handlers = [
         { status: 503 }
       );
     }
+    // A hung edit open (`holdSourceSessions`): never answered.
+    if (
+      sourceSessionHeld() &&
+      new URL(request.url).searchParams.get('view') !== 'true'
+    )
+      await new Promise(() => {});
     const session = await mockSourceSession(String(params.id));
     return session
       ? HttpResponse.json(session)

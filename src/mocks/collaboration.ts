@@ -730,6 +730,7 @@ class MockCollaborationProvider implements UnifiedProvider {
       this.options.onSlowed?.(true);
       return;
     }
+    if (roomJoinsHeld) return;
     const room = materialRoom(this.options.name, this.options.initialValue);
     this.room = room;
     materialProviders.add(this);
@@ -877,10 +878,9 @@ class MockSourceProvider implements SourceProvider {
         String(Number(sessionStorage.getItem(SOURCE_JOINS) ?? 0) + 1)
       );
     sourceProviders.add(this);
-    // A held join never connects, as an unreachable service's: the socket
-    // reports it dropped and the room never syncs.
-    if (sourceJoinsHeld) queueMicrotask(() => config.onDisconnect?.());
-    else queueMicrotask(() => config.onSynced?.({ state: true }));
+    // A held JOIN is never answered on the open socket: no sync, no close.
+    if (!roomJoinsHeld)
+      queueMicrotask(() => config.onSynced?.({ state: true }));
   }
 
   sendStateless(payload: string) {
@@ -1044,12 +1044,19 @@ export function holdSourceSaveReceipts(hold: boolean) {
   heldSaveReceipts = null;
   for (const send of held) send();
 }
-let sourceJoinsHeld = false;
-/** Office and text source joins from now on never connect (a first join's
- * timeout, then its error); joins already in rooms are untouched. */
-export function holdSourceJoins(hold: boolean) {
-  sourceJoinsHeld = hold;
+let roomJoinsHeld = false;
+/** Note, Office and text room JOINs from now on are never answered, the
+ * socket staying open (the join's 30 s, then its error); joins already in
+ * rooms are untouched. */
+export function holdRoomJoins(hold: boolean) {
+  roomJoinsHeld = hold;
 }
+let sourceSessionsHeld = false;
+/** Office and text edit opens' source-session requests from now on hang. */
+export function holdSourceSessions(hold: boolean) {
+  sourceSessionsHeld = hold;
+}
+export const sourceSessionHeld = () => sourceSessionsHeld;
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
     provider.announceEpoch(fileId, epoch);
@@ -1060,7 +1067,8 @@ export function announceSourcePaused(fileId: string) {
   for (const provider of [...sourceProviders]) provider.announcePaused(fileId);
 }
 export function resetScenarioRooms() {
-  sourceJoinsHeld = false;
+  roomJoinsHeld = false;
+  sourceSessionsHeld = false;
   failedSourceSaves.clear();
   refusedSourceSaves.clear();
   holdSourceSaveReceipts(false);

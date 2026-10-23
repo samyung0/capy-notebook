@@ -140,6 +140,33 @@ test('a hidden tab swaps at once, with no paused note', async ({ page }) => {
   );
 });
 
+// A note's join has the same 30 s (Epo 2026-10-23): a JOIN never answered
+// on the open socket keeps the paused note under Reconnecting until then,
+// and the failing editor takes its place with the connection error.
+test("a note reload whose JOIN is never answered ends at the join's 30 s", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdRoomJoins } = await import(path);
+    holdRoomJoins(true);
+  });
+  await compact(page, EDITOR_NOTE.id);
+  const paused = page.locator('[data-note-mount="paused"]');
+  await expect(paused).toBeVisible();
+  await expect(saveState(page)).toHaveAttribute(
+    'data-save-state',
+    'reconnecting'
+  );
+  await page.waitForTimeout(15_000);
+  await expect(paused).toBeVisible();
+  await expect(paused).toHaveCount(0, { timeout: 60_000 });
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
+});
+
 test.describe('on a phone', () => {
   test.use({ viewport: { height: 740, width: 360 } });
 
@@ -208,9 +235,10 @@ test('a refused update keeps its edits for copying after the swap', async ({
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
 });
 
-// The reading place wins over a restored caret (review M2): the caret in the
-// intro near the top, the reader half way down.
-test('a restored caret leaves the reader at the block they were reading', async ({
+// The reading place wins over a restored caret, and the focus the editor
+// held as it paused comes back with the selection (review r2 M1/M2): the
+// caret in the intro near the top, the reader half way down.
+test('a swap keeps the reading place and gives the caret back', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -218,22 +246,77 @@ test('a restored caret leaves the reader at the block they were reading', async 
   if (!block) throw new Error('The heading has no block id');
   const before = await offsetIn(page, 'live', block);
   if (before === null) throw new Error('The heading is not on screen');
+  const intro = await page.evaluate(
+    () =>
+      document
+        .getSelection()
+        ?.anchorNode?.parentElement?.closest('[data-block-id]')
+        ?.getAttribute('data-block-id') ?? null
+  );
+  if (!intro) throw new Error('The caret is not in a block');
+
+  await holdRooms(page, true);
   await compact(page, MATRIX);
-  await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
-    timeout: 30_000,
-  });
+  const paused = page.locator('[data-note-mount="paused"]');
+  await expect(paused).toBeVisible();
+  await holdRooms(page, false);
+  await expect(paused).toHaveCount(0, { timeout: 30_000 });
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
-  const after = await offsetIn(page, 'live', block);
-  expect(Math.abs((after ?? Number.NaN) - before)).toBeLessThan(2);
-  // The caret came back too, in the intro.
+
+  // Still at the block for a while after the swap: a late caret scroll would
+  // move it within a few frames.
+  const drift = await page.evaluate(
+    ({ id, start }) =>
+      new Promise<number>((resolve) => {
+        const root = document.querySelector('[data-note-mount="live"]');
+        const area = root?.querySelector('[data-note-scroll]');
+        const element = root?.querySelector(`[data-block-id="${id}"]`);
+        if (!(area && element)) return resolve(Number.POSITIVE_INFINITY);
+        let most = 0;
+        const until = performance.now() + 500;
+        const sample = () => {
+          const offset =
+            element.getBoundingClientRect().top -
+            area.getBoundingClientRect().top;
+          most = Math.max(most, Math.abs(offset - start));
+          if (performance.now() < until) requestAnimationFrame(sample);
+          else resolve(most);
+        };
+        sample();
+      }),
+    { id: block, start: before }
+  );
+  expect(drift).toBeLessThan(2);
+
+  // The live editor has the focus, its caret in the intro, and typing lands
+  // there.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.activeElement?.matches(
+            '[data-note-mount="live"] [data-slate-editor]'
+          ) ?? false
+      )
+    )
+    .toBe(true);
   expect(
     await page.evaluate(
       () =>
         document
           .getSelection()
-          ?.anchorNode?.parentElement?.closest('[data-block-id]')?.textContent
+          ?.anchorNode?.parentElement?.closest('[data-block-id]')
+          ?.getAttribute('data-block-id') ?? null
     )
-  ).toContain(INTRO);
+  ).toBe(intro);
+  const introBlock = page.locator(
+    `[data-note-mount="live"] [data-block-id="${intro}"]`
+  );
+  const marks = async () =>
+    ((await introBlock.textContent()) ?? '').split('Q').length - 1;
+  const typed = (await marks()) + 1;
+  await page.keyboard.type('Q');
+  await expect.poll(marks).toBe(typed);
 });
 
 // A paused note takes no edit by any path (review M1): its model takes only
@@ -518,20 +601,26 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   ).not.toHaveAttribute('aria-disabled', 'true');
 });
 
-/** A newer epoch for an open source file, as a base handoff announces it. */
-async function newEpoch(page: Page, fileId: string, holdJoins = false) {
+/** A newer epoch for an open source file, as a base handoff announces it;
+ * `hold` leaves the next view's JOIN unanswered or its session request
+ * hanging. */
+async function newEpoch(
+  page: Page,
+  fileId: string,
+  hold: 'join' | 'session' | null = null
+) {
   await page.evaluate(
-    async ({ hold, id }) => {
+    async ({ held, id }) => {
       const collaboration = '/src/mocks/collaboration.ts';
       const fixtures = '/src/mocks/scenarioFixtures.ts';
-      const { announceSourceEpoch, holdSourceJoins } = await import(
-        collaboration
-      );
+      const { announceSourceEpoch, holdRoomJoins, holdSourceSessions } =
+        await import(collaboration);
       const { advanceScenarioSource } = await import(fixtures);
-      if (hold) holdSourceJoins(true);
+      if (held === 'join') holdRoomJoins(true);
+      if (held === 'session') holdSourceSessions(true);
       announceSourceEpoch(id, advanceScenarioSource(id));
     },
-    { hold: holdJoins, id: fileId }
+    { held: hold, id: fileId }
   );
 }
 
@@ -558,27 +647,28 @@ test('a tab hidden during a DOCX build swaps at once at the same page', async ({
     .toBe(true);
 });
 
-// A reload whose next view never connects behaves as a first join (Epo
-// 2026-10-23): Reconnecting until the first join's timeout, then the failing
-// view takes the paused one's place with its error.
-test('a DOCX reload that cannot connect ends at the first join timeout', async ({
-  page,
-}) => {
-  test.setTimeout(300_000);
-  await openDocxOnPage4(page);
-  await newEpoch(page, DOCX, true);
-  const replaced = page.locator('[data-office-view="replaced"]');
-  await expect(replaced).toBeVisible();
-  await expect(saveState(page)).toHaveAttribute(
-    'data-save-state',
-    'reconnecting'
-  );
-  // Well inside the 30 s a first join waits.
-  await page.waitForTimeout(15_000);
-  await expect(replaced).toBeVisible();
-  await expect(replaced).toHaveCount(0, { timeout: 60_000 });
-  await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
-});
+// Every join, first or after a reload, has 30 s from its start (Epo
+// 2026-10-23): the paused view stays under Reconnecting until then, and the
+// failing view takes its place with the connection error.
+for (const [hold, what] of [
+  ['join', 'whose JOIN is never answered'],
+  ['session', 'whose session request hangs'],
+] as const)
+  test(`a DOCX reload ${what} ends at the join's 30 s`, async ({ page }) => {
+    test.setTimeout(300_000);
+    await openDocxOnPage4(page);
+    await newEpoch(page, DOCX, hold);
+    const replaced = page.locator('[data-office-view="replaced"]');
+    await expect(replaced).toBeVisible();
+    await expect(saveState(page)).toHaveAttribute(
+      'data-save-state',
+      'reconnecting'
+    );
+    await page.waitForTimeout(15_000);
+    await expect(replaced).toBeVisible();
+    await expect(replaced).toHaveCount(0, { timeout: 60_000 });
+    await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
+  });
 
 // A reader's edit that keeps the caret still brings it into view (review
 // L1): forward Delete with the caret on page 1 and the reader on page 4.

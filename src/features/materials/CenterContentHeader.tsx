@@ -212,7 +212,6 @@ export function EditorSaveStatus({
               'md:not-sr-only md:ml-1 md:whitespace-nowrap md:text-[0.8125rem]',
             labelFromMd && !failed && 'md:text-fg-muted'
           )}
-          data-testid="editor-save-label"
         >
           {statusLabel}
         </span>

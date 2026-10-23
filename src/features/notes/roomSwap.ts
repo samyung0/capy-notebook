@@ -46,6 +46,16 @@ function blockPoint(
     : null;
 }
 
+/** Whether each paused editor held the focus as it paused: the pause makes
+ * its root non-editable, which blurs it before the swap reads it (review r2
+ * M1). */
+const focusedAtPause = new WeakMap<PlateEditor, boolean>();
+
+/** Records the focus before `pauseEdits` drops it. */
+export function noteFocusAtPause(editor: PlateEditor) {
+  focusedAtPause.set(editor, editor.api.isFocused());
+}
+
 export function captureNotePosition(view: NoteView): NotePosition {
   const { editor, scrollArea } = view;
   const top = scrollArea.getBoundingClientRect().top;
@@ -67,10 +77,10 @@ export function captureNotePosition(view: NoteView): NotePosition {
   const focus = selection && blockPoint(editor, selection.focus);
   return {
     block: found?.dataset.blockId ?? null,
-    // A paused editor is read-only, which may already have dropped the DOM
-    // focus; Slate still knows it held it unless the reader went elsewhere.
+    // The focus it held as it paused, unless the reader went elsewhere since.
     focused:
-      !!editor?.api.isFocused() &&
+      !!editor &&
+      !!focusedAtPause.get(editor) &&
       (document.activeElement === document.body ||
         scrollArea.contains(document.activeElement)),
     offset: found ? found.getBoundingClientRect().top - top : 0,

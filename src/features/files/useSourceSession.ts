@@ -202,15 +202,24 @@ export function maintenancePaused(value: unknown): boolean {
 
 /** `onReadOnly` runs when the room turns read-only (a storage or frozen
  * refusal) after the unsaved changes were discarded: the view leaves the
- * session and drops to view mode. */
+ * session and drops to view mode. `viewReady` is an Office view's frame
+ * reporting its replica ready: its join ends there, not at the room's first
+ * sync as a text view's does (Epo 2026-10-23). */
 export function useSourceSession(
   fileId: string,
   enabled: boolean,
-  onReadOnly?: () => void
+  onReadOnly?: () => void,
+  viewReady?: boolean
 ) {
   const { data: me } = useMe({ errorBoundary: false });
   const readOnlyHandler = useRef(onReadOnly);
   readOnlyHandler.current = onReadOnly;
+  const viewReadyRef = useRef(viewReady);
+  viewReadyRef.current = viewReady;
+  const viewJoined = useRef(() => {});
+  useEffect(() => {
+    if (viewReady) viewJoined.current();
+  }, [viewReady]);
   // The room's other editors go to the header's avatar group (Epo
   // 2026-10-20).
   const presence = useContext(PresenceContext);
@@ -331,8 +340,28 @@ export function useSourceSession(
     let provider: SourceProvider | null = null;
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let disposeReconnect = () => {};
     let goOffline = () => {};
+    // The join (Epo 2026-10-23): one 30 s watch from here over the session
+    // request, the room's answer and an Office view's ready; a session that
+    // has not joined by then errors as a first join does.
+    let joined = false;
+    const reconnect = roomReconnector({
+      // Reconnecting kept failing: edit on this device until it is back.
+      onStuck: () => {
+        if (cancelled || runtime.current?.recovery) return;
+        if (joined) goOffline();
+        else setStatus('error');
+      },
+      // A closed session never reconnects (replaced, paused, reset).
+      provider: () =>
+        cancelled || runtime.current?.recovery ? null : provider,
+    });
+    reconnect.started();
+    const join = () => {
+      joined = true;
+      reconnect.connected();
+    };
+    viewJoined.current = join;
     const report = editIncidentReporter('source_file', fileId);
     // The unconfirmed-edit warning is reported once until saving works again.
     let unconfirmedReported = false;
@@ -459,6 +488,8 @@ export function useSourceSession(
         setStatus('recovery');
         setDirty(true);
         setBanner(draft.refused ? 'refused' : 'changed');
+        // No room joins: recovery is its answer.
+        reconnect.dispose();
         return;
       }
       // A draft nothing can draw was dropped; one whose base could not be
@@ -469,6 +500,7 @@ export function useSourceSession(
         controller.abort();
         shared.destroy();
         doc = null;
+        reconnect.dispose();
         setAtSizeLimit(true);
         return;
       }
@@ -543,16 +575,6 @@ export function useSourceSession(
         recorder?.disconnected();
         showOffline();
       };
-      const reconnect = roomReconnector({
-        // Reconnecting kept failing: edit on this device until it is back.
-        onStuck: () => {
-          if (cancelled || active.recovery) return;
-          if (everSynced) goOffline();
-          else setStatus('error');
-        },
-        // A closed session never reconnects (replaced, paused, reset).
-        provider: () => (cancelled || active.recovery ? null : provider),
-      });
       // Back to the last saved version with nothing unsaved worth keeping:
       // this session's drafts go. Lost access or a file gone (`lostAccess`)
       // drops every session's drafts of the file, other tabs' included; the
@@ -942,7 +964,7 @@ export function useSourceSession(
           if (state && !cancelled && !active.recovery) {
             active.synced = true;
             setSlowed(false);
-            reconnect.connected();
+            if (joined || viewReadyRef.current !== false) join();
             delay.connected();
             if (offlineMode) {
               offlineMode = false;
@@ -1000,7 +1022,6 @@ export function useSourceSession(
       active.provider = provider;
       runtime.current = active;
       cursors.attach(provider.awareness);
-      disposeReconnect = reconnect.dispose;
       // A base that cannot be read ends the session as its read did before.
       const baseRead = async () => {
         try {
@@ -1051,7 +1072,11 @@ export function useSourceSession(
         clearTimeout(timer);
         timer = setTimeout(() => checkpoint(), 1000);
       });
-    })().catch(fail);
+    })().catch((value) => {
+      // An open that ended before its room: no join to watch.
+      if (!provider) reconnect.dispose();
+      fail(value);
+    });
     return () => {
       cancelled = true;
       disposed = true;
@@ -1062,7 +1087,7 @@ export function useSourceSession(
       void recorder?.dispose();
       runtime.current = null;
       discardHandler.current = null;
-      disposeReconnect();
+      reconnect.dispose();
       cursors.attach(null);
       cursors.names(null);
       provider?.destroy();

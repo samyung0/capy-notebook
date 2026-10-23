@@ -1028,7 +1028,11 @@ for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)
 and anything else (an expired token, a room being reset or compacted) is
 retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
-sync it turns the status red). A failed first token request shows the panel for its status (not found,
+sync it turns the status red). A join, first or after a reload, has the same
+30 s from its start (`roomReconnector`'s `started`, Epo 2026-10-23): one not
+synced by then, a JOIN never answered on the open socket included, turns the
+status red, and after a reload that failing editor replaces the paused one;
+a slowed open and offline wait. A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry). A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
@@ -1934,8 +1938,10 @@ by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
   slot loses the hidden classes (the DOM is never moved), the paused one
   unmounts, and the reader's place comes back by block id
   (`captureNotePosition`/`restoreNotePosition`): first the selection by
-  top-level block id plus path and offset, focus too when the paused editor
-  still held it, then the first top-level block under the scroll box's top
+  top-level block id plus path and offset, with the focus when the editor
+  held it as it paused (`noteFocusAtPause`, read before the pause makes the
+  root non-editable and blurs it) and the reader has not focused something
+  else since, then the first top-level block under the scroll box's top
   edge at the same offset (else the old scroll offset), last, so the
   reading place wins over the caret. Yjs ids are never used: a compaction
   gives the room new ones.

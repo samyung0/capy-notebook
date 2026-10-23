@@ -116,6 +116,7 @@ import {
   dropComposedText,
   holdModel,
   type NoteView,
+  noteFocusAtPause,
   pauseEdits,
 } from './roomSwap';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
@@ -1138,6 +1139,8 @@ export function NoteEditorCore({
           : roomProvider(editor)?.provider,
     });
     reconnector.current = current;
+    // The join's own 30 s, until the first sync (Epo 2026-10-23).
+    current.started();
     return () => {
       current.dispose();
       if (reconnector.current === current) reconnector.current = null;
@@ -1222,6 +1225,7 @@ export function NoteEditorCore({
   // nothing; the DOM listeners stop the rest before Slate sees it.
   useEffect(() => {
     if (phase !== 'paused') return;
+    noteFocusAtPause(editor);
     const release = holdModel(editor);
     // Slate's own handler inserts the composed text (dropped) first.
     const composed = () => setTimeout(() => dropComposedText(editor));
