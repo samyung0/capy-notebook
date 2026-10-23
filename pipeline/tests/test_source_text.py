@@ -185,6 +185,8 @@ class _FakeFiletrans:
                     status, payload = fake.transcript
                 data = json.dumps(payload).encode()
                 self.send_response(status)
+                if 300 <= status < 400:
+                    self.send_header("Location", "/elsewhere.json")
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
@@ -210,6 +212,8 @@ def filetrans(monkeypatch):
         source_text.cfg, "alibaba_modelstudio_url", f"{fake.url}/compatible-mode/v1"
     )
     monkeypatch.setattr(source_text, "_FILETRANS_POLL_S", 0)
+    # The fake serves the result itself, on 127.0.0.1 over http.
+    monkeypatch.setattr(source_text, "_transcript_url", lambda url: url)
     yield fake
     server.shutdown()
     server.server_close()
@@ -268,6 +272,42 @@ async def test_filetrans_submits_polls_and_reads_the_transcript(filetrans) -> No
 
 
 _SUBMIT = ("POST", "/api/v1/services/audio/asr/transcription")
+
+
+def test_the_transcript_link_is_read_over_https_from_alibabas_result_buckets():
+    host = "dashscope-result-sgp.oss-ap-southeast-1.aliyuncs.com"
+    signed = "/prod/r.json?Expires=1&OSSAccessKeyId=id&Signature=sig"
+
+    assert source_text._transcript_url(f"http://{host}{signed}") == (
+        f"https://{host}{signed}"
+    )
+    assert source_text._transcript_url(f"https://{host}{signed}") == (
+        f"https://{host}{signed}"
+    )
+    for link in [
+        f"https://{host}.example.com{signed}",
+        f"https://{host}:8443{signed}",
+        f"https://user@{host}{signed}",
+        f"ftp://{host}{signed}",
+        f"https://bucket.oss-ap-southeast-1.aliyuncs.com{signed}",
+        "http://127.0.0.1:8080/r.json?Signature=sig",
+        "http://[::1/r.json",
+    ]:
+        with pytest.raises(source_text.FiletransTerminalError) as refused:
+            source_text._transcript_url(link)
+        assert "Signature" not in str(refused.value)
+
+
+@pytest.mark.asyncio
+async def test_a_redirected_transcript_link_is_not_followed(filetrans) -> None:
+    filetrans.polls = [filetrans.succeeded()]
+    filetrans.transcript = (302, {})
+
+    with pytest.raises(source_text.FiletransRetryableError) as failure:
+        await source_text._filetrans(_SOURCE_URL, "context")
+
+    assert failure.value.status_code == 302
+    assert "/elsewhere.json" not in [request[1] for request in filetrans.requests]
 
 
 @pytest.mark.asyncio

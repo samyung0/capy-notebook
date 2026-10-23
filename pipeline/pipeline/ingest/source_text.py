@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 import requests
@@ -431,24 +432,55 @@ async def _filetrans(source_url: str, context: str) -> list[dict[str, Any]]:
         if code.startswith("InvalidFile"):
             raise FiletransTerminalError(code)
         raise FiletransRetryableError(code)
-    transcript = await asyncio.to_thread(_download_transcript, str(url))
+    transcript = await asyncio.to_thread(
+        _download_transcript, _transcript_url(str(url))
+    )
     try:
         return _sentences(transcript)
     except (KeyError, TypeError, ValueError):
         raise FiletransRetryableError("invalid transcript") from None
 
 
+# Alibaba's result buckets, one per region
+# (dashscope-result-<region>.oss-<region>.aliyuncs.com).
+_RESULT_HOST = re.compile(r"dashscope-result-[a-z0-9-]+\.oss-[a-z0-9-]+\.aliyuncs\.com")
+
+
+def _transcript_url(raw: str) -> str:
+    """The task's result link, on Alibaba's result buckets only and always
+    over https: tasks answer http links, and OSS serves the same signed link
+    on either scheme."""
+    try:
+        parts = urlsplit(raw)
+        port = parts.port
+    except ValueError:
+        raise FiletransTerminalError("transcript link refused") from None
+    host = (parts.hostname or "").lower()
+    if (
+        parts.scheme not in ("http", "https")
+        or parts.username
+        or parts.password
+        or port is not None
+        or not _RESULT_HOST.fullmatch(host)
+    ):
+        raise FiletransTerminalError("transcript link refused")
+    return urlunsplit(("https", host, parts.path, parts.query, ""))
+
+
 def _download_transcript(url: str) -> dict[str, Any]:
     """The result JSON behind Alibaba's signed link, which takes no API key.
 
-    Fetched with requests, which logs no URL at INFO as httpx does, and with
-    the cause dropped from errors, whose text would carry the link.
+    Fetched with requests, which logs no URL at INFO as httpx does, with no
+    redirect followed, and with the cause dropped from errors, whose text
+    would carry the link.
     """
     try:
-        response = requests.get(url, timeout=_FILETRANS_REQUEST_TIMEOUT_S)
+        response = requests.get(
+            url, timeout=_FILETRANS_REQUEST_TIMEOUT_S, allow_redirects=False
+        )
     except requests.RequestException:
         raise FiletransRetryableError("transcript download failed") from None
-    if response.status_code >= 400:
+    if response.status_code != 200:
         raise FiletransRetryableError(response.status_code)
     try:
         value = response.json()

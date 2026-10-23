@@ -1347,7 +1347,12 @@ reused with no task and no charge. Otherwise, in one ingest attempt:
    half again as long as the last up to 10 s, and logs each poll's request
    at DEBUG only (the submit stays at INFO). It then reads the result JSON
    from the task's `transcription_url` (Alibaba's own signed link, fetched
-   without the API key and without logging its URL).
+   without the API key and without logging its URL). The link must be on
+   Alibaba's result buckets (`dashscope-result-*.oss-*.aliyuncs.com`, no
+   port or user part) and is always fetched over https: tasks answer `http://`
+   links, which are upgraded, since OSS serves the same signed link on either
+   scheme. A redirect is not followed. Another host fails at once; a redirect
+   or any answer but 200 is retryable.
 5. Only a transcript with sentences is charged: whole seconds (ceil) of the
    measured duration or the last sentence's end, whichever is later, at the
    job's snapshotted `audio_transcription_second` rate, settled locally on the
