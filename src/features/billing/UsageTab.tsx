@@ -263,9 +263,5 @@ function creditsHint(billing: BillingInfo, view: CreditView, date: string) {
         })
       : m.billing_credits_hint_monthly({ date, limit, used });
   if (view.purchasedPool <= 0) return monthly;
-  const then =
-    billing.planTier === 'free'
-      ? m.billing_credits_hint_then_starter({ amount: pool })
-      : m.billing_credits_hint_then_purchased({ amount: pool });
-  return `${monthly} ${then}`;
+  return `${monthly} ${m.billing_credits_hint_then_purchased({ amount: pool })}`;
 }

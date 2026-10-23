@@ -8,7 +8,11 @@ import {
   billingTopUpBodyAmountCentsMax,
   billingTopUpBodyAmountCentsMin,
 } from '@/api/gen/validators';
-import { useSetAutoReload, useTopUp } from '@/api/hooks';
+import {
+  usePaymentMethodCheckout,
+  useSetAutoReload,
+  useTopUp,
+} from '@/api/hooks';
 import type { BillingInfo } from '@/api/types';
 import { UsageBar } from '@/components/app/UsageMeter';
 import { Button } from '@/components/ui/Button';
@@ -190,6 +194,7 @@ function BuyCredits({
           {m.billing_purchased_owed({ amount: formatCredits(view.owed) })}
         </p>
       )}
+      {settings.starterAvailable && <StarterOffer />}
       <form noValidate onSubmit={submit}>
         <label
           className="mt-5 mb-1.5 block text-fg-secondary text-sm"
@@ -274,6 +279,27 @@ function BuyCredits({
         }}
         open={pendingCents !== null}
       />
+    </div>
+  );
+}
+
+/** The account's first saved card adds the starter credits (once). */
+function StarterOffer() {
+  const { isPending, mutate: addCard } = usePaymentMethodCheckout();
+  return (
+    <div className="mt-3 flex items-start gap-2 text-fg-secondary text-sm">
+      <Icon className="size-4.5 shrink-0 text-fg-muted" name="info" />
+      <span>
+        {m.billing_starter_offer()}{' '}
+        <button
+          className="font-semibold text-fg underline underline-offset-4 disabled:opacity-50"
+          disabled={isPending}
+          onClick={() => addCard()}
+          type="button"
+        >
+          {m.billing_payment_add()}
+        </button>
+      </span>
     </div>
   );
 }

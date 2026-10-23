@@ -905,7 +905,8 @@ export const GetBillingResponse = zod.object({
   "reloadAmountCents": zod.int(),
   "reloadThresholdMicros": zod.int(),
   "spendingLimitCents": zod.int().optional(),
-  "spentThisMonthCents": zod.int()
+  "spentThisMonthCents": zod.int(),
+  "starterAvailable": zod.boolean()
 }),
   "creditsCarriedMicros": zod.int(),
   "creditsLimitMicros": zod.int(),

@@ -30,11 +30,6 @@ _telemetry_maintenance_lock = threading.Lock()
 _telemetry_maintenance_at = 0.0
 log = logging.getLogger(__name__)
 
-# The one-off starter grant every account's purchased balance starts with
-# (user_credits.purchased_micros default).
-STARTER_GRANT_MICROS = 800_000_000
-
-
 # The worker binds one source candidate for its task. asyncio.to_thread copies
 # this context, while heartbeats pass their durable job payload explicitly.
 _source_refresh: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
@@ -2461,13 +2456,13 @@ def actor_has_credits(cur, user_id: str) -> bool:
                COALESCE(c.used_micros, 0),
                COALESCE(c.reserved_micros, 0),
                c.period_start,
-               COALESCE(c.purchased_micros, %s),
+               COALESCE(c.purchased_micros, 0),
                credit_reload_pending(u.id)
           FROM users u
           LEFT JOIN user_credits c ON c.user_id = u.id
          WHERE u.id = %s
         """,
-        (STARTER_GRANT_MICROS, user_id),
+        (user_id,),
     )
     row = cur.fetchone()
     if not row:

@@ -67,6 +67,7 @@ GRANT SELECT ON TABLE
     public.edit_incidents,
     public.user_credits,
     public.credit_purchases,
+    public.starter_grants,
     public.webhook_events,
     public.email_outbox,
     public.user_subscriptions,

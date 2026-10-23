@@ -22,10 +22,10 @@ func newCreditTestServer(t *testing.T, f *fakeStore, outcome billing.ReloadResul
 		wh:  f,
 		cfg: Config{StripeWebhookSecret: testStripeSecret},
 		stripeTopUpMethod: func(string) (store.PaymentMethod, error) {
-			return store.PaymentMethod{ID: "pm_topup", Type: "card"}, nil
+			return store.PaymentMethod{ID: "pm_topup", Type: "card", CardKey: "card:fp_topup"}, nil
 		},
 		stripeSetupMethod: func(string) (store.PaymentMethod, error) {
-			return store.PaymentMethod{ID: "pm_setup", Type: "card"}, nil
+			return store.PaymentMethod{ID: "pm_setup", Type: "card", CardKey: "card:fp_setup"}, nil
 		},
 		stripeVoidInvoice: func(id string) error {
 			*voided = append(*voided, id)
@@ -68,6 +68,7 @@ func TestStripeWebhook_TopUpCreditsSavesCardAndVoidsRetryingReloads(t *testing.T
 	want := []string{
 		"grant user_1 cs_topup pi_topup 2000",
 		"method user_1 pm_topup true",
+		"starter user_1 card:fp_topup",
 		"void in_reload",
 	}
 	if !slices.Equal(f.creditCalls, want) {
@@ -92,7 +93,7 @@ func TestStripeWebhook_SetupCheckoutReplacesTheReloadCard(t *testing.T) {
 		"metadata":     map[string]string{"kind": "reload_method", "user_id": "user_1"},
 	})
 	// The new card ends Stripe's retries of the old one.
-	if !slices.Equal(f.creditCalls, []string{"method user_1 pm_setup false", "void in_old_card"}) ||
+	if !slices.Equal(f.creditCalls, []string{"method user_1 pm_setup false", "starter user_1 card:fp_setup", "void in_old_card"}) ||
 		!slices.Equal(*voided, []string{"in_old_card"}) {
 		t.Fatalf("calls = %q voided = %q", f.creditCalls, *voided)
 	}
