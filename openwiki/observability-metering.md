@@ -1657,8 +1657,11 @@ limiter outage must not become an API outage; the edge covers only
 body within 1 minute, writes an answer within 5 minutes and closes idle
 connections after 2 minutes (`httpapi.NewServer`). A chat stream, an
 AI command, the event stream and an allowed upload extend their own
-deadlines once admitted (`extendDeadlines`). The chat stream body is capped
-at 128 KiB before it is decoded (413 `query_too_long`).
+deadlines once admitted (`extendDeadlines`). A cloud import's content
+stream has an upload's body deadline for the plan's file cap (30 s plus the
+cap at 100 KB/s, at most 5 minutes); its provider client bounds only the
+dial, TLS and response headers, so a slow browser does not cut it. The chat
+stream body is capped at 128 KiB before it is decoded (413 `query_too_long`).
 
 **Request logs.** A 5xx whose client went away first is logged at WARN, not
 ERROR, so aborted streams do not page.

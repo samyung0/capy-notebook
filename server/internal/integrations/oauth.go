@@ -89,6 +89,7 @@ var providerHTTP = &http.Client{Timeout: 30 * time.Second}
 const (
 	importDownloadResolveTimeout = 5 * time.Second
 	importDownloadDialTimeout    = 10 * time.Second
+	importDownloadHeaderTimeout  = 30 * time.Second
 	importDownloadMaxRedirects   = 5
 )
 
@@ -225,6 +226,10 @@ func importDownloadClient() *http.Client {
 	}
 	client := *base
 	client.Jar = nil
+	// The body streams at the pace of whoever reads it, so no total timeout:
+	// the transport bounds the dial, TLS and the response headers, and the
+	// caller's context bounds the whole download.
+	client.Timeout = 0
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= importDownloadMaxRedirects {
 			return ErrImportFileUnavailable
@@ -264,6 +269,7 @@ func hardenedImportTransport(base http.RoundTripper) http.RoundTripper {
 	clone.DialContext = importDialContext
 	clone.DialTLSContext = nil
 	clone.DialTLS = nil
+	clone.ResponseHeaderTimeout = importDownloadHeaderTimeout
 	return clone
 }
 
@@ -338,7 +344,8 @@ type ImportFileMetadata struct {
 // analysis and returns its content type; the gateway never holds the whole
 // object. The caller supplies the workspace upload cap: an object past it
 // stops with ErrImportFileTooLarge, after part of it may have reached dst when
-// the provider named no size.
+// the provider named no size. ctx bounds the whole download; no client
+// timeout cuts a body that a slow dst is still taking.
 func DownloadImportFile(
 	ctx context.Context,
 	provider, accessToken string,

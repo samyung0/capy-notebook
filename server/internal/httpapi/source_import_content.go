@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
 )
@@ -41,9 +43,15 @@ func (a *api) getSourceImportContent(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	// The download has an upload's body deadline for its size (30 s plus the
+	// cap at 100 KB/s, at most 5 minutes), however fast the browser reads.
+	deadline := bodyDeadline(maxBytes)
+	extendDeadlines(w, deadline+time.Minute)
+	ctx, cancel := context.WithTimeout(r.Context(), deadline)
+	defer cancel()
 	out := &analysisContent{w: w}
 	_, err = integrations.DownloadImportFile(
-		r.Context(),
+		ctx,
 		provider,
 		token,
 		integrations.ImportRef{

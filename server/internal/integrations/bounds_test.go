@@ -108,3 +108,64 @@ func TestProviderReadsAreBounded(t *testing.T) {
 		}
 	}
 }
+
+// slowWriter takes each write after a pause, as a slow browser does.
+type slowWriter struct {
+	n     int
+	pause time.Duration
+}
+
+func (w *slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.pause)
+	w.n += len(p)
+	return len(p), nil
+}
+
+// ctxBody hands its bytes out 1 KiB at a time and fails once the request's
+// context ends, as a connection does.
+type ctxBody struct {
+	ctx  context.Context
+	data []byte
+}
+
+func (b *ctxBody) Read(p []byte) (int, error) {
+	if err := b.ctx.Err(); err != nil {
+		return 0, err
+	}
+	if len(b.data) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p[:min(len(p), 1<<10)], b.data)
+	b.data = b.data[n:]
+	return n, nil
+}
+
+func (b *ctxBody) Close() error { return nil }
+
+// TestDownloadImportFileOutlastsTheProviderTimeout (security regression:
+// rate-limit audit M10, review M-1). The provider client's total timeout
+// (50 ms here) does not cut a download that a slow reader is still taking
+// (ten writes of 25 ms); the caller's context bounds it instead.
+func TestDownloadImportFileOutlastsTheProviderTimeout(t *testing.T) {
+	previous := providerHTTP
+	t.Cleanup(func() { providerHTTP = previous })
+	usePublicImportHostResolver(t)
+	data := bytes.Repeat([]byte{'a'}, 10<<10)
+	calls := 0
+	providerHTTP = &http.Client{Timeout: 50 * time.Millisecond, Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(
+				`{"name":"Notes","mimeType":"application/vnd.google-apps.document","capabilities":{"canDownload":true}}`))}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/pdf"}},
+			Body: &ctxBody{ctx: req.Context(), data: data}, Request: req}, nil
+	})}
+	dst := &slowWriter{pause: 25 * time.Millisecond}
+	if _, err := DownloadImportFile(context.Background(), ProviderGoogle, "token", ImportRef{ID: "file_1"}, 1<<20, dst); err != nil {
+		t.Fatalf("a slow reader's download failed: %v", err)
+	}
+	if dst.n != len(data) {
+		t.Fatalf("streamed %d of %d bytes", dst.n, len(data))
+	}
+}
