@@ -641,8 +641,10 @@ because `mermaid.initialize` is global: each render sets its own preset
 (`drawMermaid` in `mermaidDraw.ts`), and mermaid scopes the output CSS to the
 SVG id, unique on the page, so blocks in one note keep their own themes.
 Frontmatter config would scope too, but mermaid's sanitizer blanks font stacks
-containing hyphens. Hand Drawn gets per-diagram roughen filters after
-rendering. `drawMermaid` also sets mermaid's top-level `fontFamily` to the
+containing hyphens. Hand Drawn draws in Excalifont with plain strokes; its
+roughen filters are gone (Epo 2026-10-23): they never applied on the page,
+and in the worker their bounding-box region erased straight lines (sequence
+lifelines, messages, loop boxes) in Chromium and WebKit. `drawMermaid` also sets mermaid's top-level `fontFamily` to the
 theme's (mermaid's default ends in `;`, so the page used to drop it and
 measure some ER, class and sequence labels in the app's body font) and
 `handDrawnSeed: 1` (the class and ER shapes mermaid draws with rough.js came
@@ -667,34 +669,41 @@ finds the faces its generic families draw in (`genericFaces` in
 worker's `self.fonts`. The page sends one draw at a time
 (`renderMermaid`): a queued draw no caller wants when its turn comes is
 skipped (a newer source superseded it), and one already drawing finishes
-into the cache (Epo 2026-10-23). A draw still running 30 s after the worker
-starts drawing it (`MERMAID_RENDER_LIMIT_MS`; loading mermaid does not count)
-stops, the worker with it, and the block says "This diagram is too large to
-draw on this device."; that result is not cached, so the next draw starts a
-new worker. The page sanitizes the worker's SVG (`forPage`: DOMPurify with
+into the cache (Epo 2026-10-23). The worker posts `started` once mermaid,
+the theme preset and its fonts are in. A draw still running 30 s after that
+(`MERMAID_RENDER_LIMIT_MS`) stops, the worker with it, and the block says
+"This diagram is too large to draw on this device." A worker that has not
+started 30 s after the request, a download that fails in it (mermaid, a
+theme, a diagram type's chunk: the worker tells a failed dynamic import from
+a source error), or an error escaping it says "Diagrams couldn't load." and
+stops (Epo 2026-10-23, review r2 M1/M2). Neither result is cached, nor is a
+missing worker: only failures the source causes are kept, so the next view
+draws again, in a new worker. The page sanitizes the worker's SVG (`forPage`: DOMPurify with
 mermaid's foreignObject setup, our forbid lists and no form controls, then
 every `<style>` but mermaid's root stylesheet removed, then `withSafeLinks`):
 DOMPurify finds no document implementation in linkedom, so mermaid's label
 pass does nothing in the worker and the page's pass is the sanitizer (review
-H1 and L6, Epo 2026-10-23). Each inserted copy renames the SVG's ids to its
-own (`ownIds`), so a block and its full-screen preview never share marker or
-filter ids. Drawn diagrams are cached in memory by theme and source (and
+H1 and L6, Epo 2026-10-23). Each inserted copy makes every id the SVG
+defines its own (`ownIds`): the root id, which prefixes most ids and scopes
+the stylesheet, and the ids mermaid counts per worker (sankey gradients,
+sequence actors), with every `url(#…)`, `href="#…"` and aria reference, so a
+block and its full-screen preview, or two drawings from different worker
+lifetimes, never share one (review L1, r2 L2). Drawn diagrams are cached in memory by theme and source (and
 width for a gantt chart, which spans its box), up to about 8 million
 characters of SVG in all (`CACHE_CHARS`, oldest dropped first), shared by
 the block, the full-screen preview, View/Edit and exports, so opening full
 screen or switching mode does not draw again. The worker ends after 60 s
-without a draw (`WORKER_IDLE_MS`). A block draws once it comes within a
+without a draw (`WORKER_IDLE_MS`); a warm-up extends that. A block draws once it comes within a
 screen of the viewport (`useNearScreen`), showing "Rendering diagram" until
 then; any mounted diagram starts the worker (which loads mermaid as it
 starts), the page's generic-face probe and DOMPurify at idle (`warmMermaid`,
-Epo 2026-10-23), so a diagram scrolled to later waits on neither. A worker
-that fails to start, warming or drawing, fails the draw it holds.
+Epo 2026-10-23), so a diagram scrolled to later waits on neither.
 
 The worker draws only the types the geometry check covers (`MERMAID_TYPES` in
 `mermaidTypes.ts`, one source each in `e2e/fixtures/mermaid-sources.ts`, a
 unit test keeping the two equal; Epo 2026-10-23): every type mermaid 11.16.1
 registers, by detected id: architecture, block, c4, class and classDiagram
-(the two class renderers), cynefin, er, eventmodeling, flowchart-v2 and
+(`classDiagram` and `classDiagram-v2`, one renderer), cynefin, er, eventmodeling, flowchart-v2 and
 flowchart-elk, gantt, gitGraph, info, ishikawa, journey, kanban, mindmap,
 packet, pie, quadrantChart, radar, railroad (plain, ABNF, EBNF and PEG),
 requirement, sankey, sequence, stateDiagram, swimlane, timeline, treemap,
@@ -702,21 +711,26 @@ treeView, venn, wardley and xychart. A type mermaid does not ship (an add-on
 such as ZenUML) or misspells fails mermaid's own detection: "This diagram could
 not be drawn". A registered id outside the list, the renderer-v1 `flowchart`
 that a `defaultRenderer` directive picks, is unsupported: the worker refuses
-it before drawing (by `mermaid.detectType`) or after (by the drawn
+it before drawing (`mermaid.detectType` against mermaid's site config, which
+a diagram's directives never reach, review r2 H1) or after (by the drawn
 `diagramType`). There is no main-thread drawing path. An unsupported type
-says "This diagram type isn't supported." and a browser whose worker cannot start (no module workers or no
-2D OffscreenCanvas, as before Safari 16.4) says "This browser can't draw
-diagrams."; both show in `MermaidError` as a source error does, everywhere
-(block, preview, chat), and an export fails such a diagram as it fails a
-syntax error. The geometry check (`e2e/editor/mermaid-geometry.spec.ts`) draws
+says "This diagram type isn't supported." and a browser without a 2D
+OffscreenCanvas (Safari before 16.4, checked on the page) or module workers
+says "This browser can't draw diagrams."; every Mermaid error shows in
+`MermaidError` as a source error does, everywhere (block, preview, chat). A
+Word export writes a diagram that cannot be drawn, for any of these reasons,
+as its source in a code block, as Markdown export does (Epo 2026-10-23). The geometry check (`e2e/editor/mermaid-geometry.spec.ts`) draws
 each type in the worker and on the page (`drawMermaid`, then the same
 `forPage`) and compares the detected type and every element's numbers
 (positions, sizes, path points, transforms, the viewBox) within 1.5 px, in all
 five themes, so a mermaid upgrade or a shim change that moves anything fails
-CI. It runs in Chromium, where Windows and Linux both match. WebKit and
-Firefox differ on some types and are not in CI (waiting on Epo, Q194). Only
-the timeline's title (font-size `4ex`) is about 1 px off, since canvas
-exposes no x-height.
+CI. That exact check runs in Chromium, where Windows and Linux both match;
+only the timeline's title (font-size `4ex`) is about 1 px off, since canvas
+exposes no x-height. Firefox and WebKit lay text out a few pixels apart, so
+there the same spec (`e2e/editor/playwright.mermaid-engines.config.ts`, CI
+job `e2e_mermaid_engines`) checks that no worker label with text spills past
+its foreignObject and no two labels overlap more than on that engine's own
+page drawing (Epo 2026-10-23).
 
 **Scale.** A block never shows a diagram below half its natural size
 (`MIN_SCALE`, Epo 2026-10-22): the SVG keeps a minimum width and height of

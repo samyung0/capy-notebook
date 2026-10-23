@@ -14,8 +14,6 @@ export interface MermaidPreset {
   config: MermaidConfig;
   /** Loaded before rendering, because mermaid measures labels as it draws. */
   fonts?: MermaidFont[];
-  /** Hand-drawn look: strokes reference the roughen filters added after rendering. */
-  roughen?: true;
 }
 
 const EXCALIFONT: MermaidFont = { family: 'Excalifont', url: excalifont };
@@ -454,8 +452,6 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-width: 2.8px !important;
             rx: 8px !important;
             ry: 8px !important;
-            /* Simulate hand-drawn with slight irregularity */
-            filter: url(#roughen) drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.15));
         }
         
         .node .label {
@@ -472,7 +468,6 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-linecap: round;
             stroke-linejoin: round;
             fill: none !important;
-            filter: url(#roughen-line);
         }
         
         .arrowheadPath {
@@ -497,7 +492,6 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-width: 2.8px !important;
             rx: 8px !important;
             ry: 8px !important;
-            filter: url(#roughen) drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.15));
         }
         
         .actor text {
@@ -512,21 +506,18 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-width: 2.5px !important;
             stroke-dasharray: 8 4 !important;
             stroke-linecap: round;
-            filter: url(#roughen-line);
         }
         
         .activation0, .activation1, .activation2 {
             fill: #fff9e6 !important;
             stroke: #1a1a1a !important;
             stroke-width: 2.8px !important;
-            filter: url(#roughen);
         }
         
         .messageLine0, .messageLine1 {
             stroke: #1a1a1a !important;
             stroke-width: 2.8px !important;
             stroke-linecap: round;
-            filter: url(#roughen-line);
         }
         
         .messageText {
@@ -548,7 +539,6 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-width: 2.8px !important;
             rx: 8px !important;
             ry: 8px !important;
-            filter: url(#roughen) drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.15));
         }
         
         .noteText {
@@ -565,7 +555,6 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-width: 2.8px !important;
             rx: 8px !important;
             ry: 8px !important;
-            filter: url(#roughen) drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.15));
         }
         
         .labelText, .loopText {
@@ -580,7 +569,6 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-width: 2.8px !important;
             stroke-dasharray: 8 4 !important;
             stroke-linecap: round;
-            filter: url(#roughen-line);
         }
         
         /* Class diagram */
@@ -633,7 +621,6 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-dasharray: 8 4 !important;
             rx: 8px !important;
             ry: 8px !important;
-            filter: url(#roughen) drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.15));
         }
         
         .cluster text {
@@ -648,42 +635,36 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
             stroke-width: 3px !important;
             stroke-linecap: round;
             stroke-linejoin: round;
-            filter: url(#roughen-line) drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.1));
         }
         .line-plot-1 path {
             stroke: #7E6B5D !important;
             stroke-width: 3px !important;
             stroke-linecap: round;
             stroke-linejoin: round;
-            filter: url(#roughen-line) drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.1));
         }
         .line-plot-2 path {
             stroke: #6B7E5D !important;
             stroke-width: 3px !important;
             stroke-linecap: round;
             stroke-linejoin: round;
-            filter: url(#roughen-line) drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.1));
         }
         .bar-plot-0 rect {
             fill: #E8EBF0 !important;
             stroke: #5D6D7E !important;
             stroke-width: 2.8px !important;
             rx: 4px !important;
-            filter: url(#roughen) drop-shadow(2px 2px 3px rgba(0, 0, 0, 0.15));
         }
         .bar-plot-1 rect {
             fill: #F0EBE8 !important;
             stroke: #7E6B5D !important;
             stroke-width: 2.8px !important;
             rx: 4px !important;
-            filter: url(#roughen) drop-shadow(2px 2px 3px rgba(0, 0, 0, 0.15));
         }
         .bar-plot-2 rect {
             fill: #EBF0E8 !important;
             stroke: #6B7E5D !important;
             stroke-width: 2.8px !important;
             rx: 4px !important;
-            filter: url(#roughen) drop-shadow(2px 2px 3px rgba(0, 0, 0, 0.15));
         }
         .ticks path {
             stroke: #1a1a1a !important; 
@@ -722,7 +703,6 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
       },
     },
     fonts: [EXCALIFONT],
-    roughen: true,
   },
   kawaii: {
     config: {
@@ -1327,8 +1307,3 @@ export const MERMAID_PRESETS: Record<MermaidTheme, MermaidPreset> = {
     },
   },
 };
-
-/** SVG filters Hand Drawn's CSS points at, prefixed so each diagram owns its copy. */
-export function roughenFilters(prefix: string) {
-  return `<defs><filter id="${prefix}roughen" x="-25%" y="-25%" width="150%" height="150%" filterUnits="objectBoundingBox"><feTurbulence type="fractalNoise" baseFrequency="0.04 0.04" numOctaves="3" result="noise" seed="2"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2" xChannelSelector="R" yChannelSelector="G" result="displaced"/><feTurbulence type="fractalNoise" baseFrequency="0.01 0.01" numOctaves="2" result="noise2" seed="5"/><feDisplacementMap in="displaced" in2="noise2" scale="1" xChannelSelector="R" yChannelSelector="G"/></filter><filter id="${prefix}roughen-line" x="-30%" y="-30%" width="160%" height="160%" filterUnits="objectBoundingBox"><feTurbulence type="fractalNoise" baseFrequency="0.05 0.05" numOctaves="3" result="noise" seed="1"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="1.8" xChannelSelector="R" yChannelSelector="G" result="displaced"/><feTurbulence type="fractalNoise" baseFrequency="0.02 0.02" numOctaves="2" result="noise2" seed="3"/><feDisplacementMap in="displaced" in2="noise2" scale="0.8" xChannelSelector="R" yChannelSelector="G"/></filter></defs>`;
-}

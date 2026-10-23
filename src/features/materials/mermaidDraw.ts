@@ -19,8 +19,6 @@ export interface Drawn {
   type: string;
 }
 
-const SVG_OPEN = /<svg[^>]*>/;
-
 /** The page's or the worker's font set: mermaid measures labels while it
  * draws, so a theme's fonts load first. */
 function fontSet(): FontFaceSet {
@@ -69,10 +67,9 @@ export async function drawMermaid(
   container: Element,
   { id, width }: { id: string; width: number }
 ): Promise<Drawn> {
-  const [{ default: mermaid }, preset, { roughenFilters }] = await Promise.all([
+  const [{ default: mermaid }, preset] = await Promise.all([
     import('mermaid'),
     themePreset(theme),
-    import('./mermaidPresets'),
   ]);
   mermaid.initialize({
     startOnLoad: false,
@@ -95,16 +92,10 @@ export async function drawMermaid(
     mermaid,
     withoutImageFunctions(code.trim())
   );
-  const drawn = await mermaid.render(id, source, container);
-  let { svg } = drawn;
-  if (preset.roughen) {
-    svg = svg
-      .replaceAll('url(#roughen', `url(#${id}-roughen`)
-      .replace(SVG_OPEN, (open) => open + roughenFilters(`${id}-`));
-  }
+  const { diagramType, svg } = await mermaid.render(id, source, container);
   return {
     background: String(preset.config.themeVariables?.background),
     svg,
-    type: drawn.diagramType,
+    type: diagramType,
   };
 }

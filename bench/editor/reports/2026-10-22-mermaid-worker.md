@@ -56,6 +56,11 @@ worker's mermaid instead of the page's, plus DOMPurify on the page (11 KB);
 the page's mermaid loads only for "Draw diagram" or an export of such a type.
 No bundle budget exists in `bench/editor` or the editor perf checks.
 
+Note (2026-10-23): the page drawing path ("Draw diagram", and exports drawing
+on the page) is gone since 1ce8514ee, so the last table row no longer
+applies. A build of index.html and share.html has no mermaid code in any page
+chunk (review r2); only the worker carries mermaid.
+
 ## Editor perf budgets
 
 `pnpm bench:editor` on this branch: the near-limit open cost, small-note
