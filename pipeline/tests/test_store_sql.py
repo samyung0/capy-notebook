@@ -1877,6 +1877,58 @@ def test_claim_selects_only_the_requested_stage(workspace):
     )
 
 
+def test_claims_go_round_robin_by_actor(workspace):
+    """(security regression: rate-limit audit M14) The job whose actor has the
+    fewest jobs running goes first, oldest among those, so one account's
+    backlog does not hold back another's newer upload; two workers claiming
+    at once still get different jobs."""
+    from pipeline.store import db
+
+    suffix = workspace.id[-8:]
+    a, b = f"u_a_{suffix}", f"u_b_{suffix}"
+    actors = (a, a, a, b)
+    ids = [f"job_{n}_{suffix}" for n in range(len(actors))]
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        for age, job_id, actor in zip((40, 30, 20, 10), ids, actors, strict=True):
+            cur.execute(
+                """
+                INSERT INTO jobs (id, type, payload, created_at)
+                VALUES (%s, 'ingest', jsonb_build_object('actorUserId', %s::text),
+                        now() - make_interval(mins => %s))
+                """,
+                (job_id, actor, age),
+            )
+        cur.execute(
+            """
+            UPDATE jobs SET not_before = now() + interval '7 days'
+            WHERE status = 'pending' AND NOT (id = ANY(%s))
+            """,
+            (ids,),
+        )
+        conn.commit()
+
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        claimed = []
+        for _ in ids:
+            claimed.append(db.claim_job(cur, "ingest", 180)["id"])
+            conn.commit()
+    # a1, then b's newer job (a has one running), then a's backlog.
+    assert claimed == [ids[0], ids[3], ids[1], ids[2]]
+
+    with workspace._connect() as conn:
+        conn.execute("UPDATE jobs SET status='pending' WHERE id = ANY(%s)", (ids,))
+        conn.commit()
+    with workspace._connect() as first, workspace._connect() as second:
+        one = db.claim_job(first.cursor(), "ingest", 180)
+        two = db.claim_job(second.cursor(), "ingest", 180)
+        first.commit()
+        second.commit()
+    assert one["id"] == ids[0]
+    assert two is not None and two["id"] in ids[1:]
+
+
 def test_requeue_then_claim(workspace):
     from pipeline.store import db
 

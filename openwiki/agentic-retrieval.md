@@ -233,6 +233,20 @@ process does not leave the row `running` forever. Unknown errors retry;
 `TerminalError` (missing file, unresolvable pins, locked account, confirmed
 parser quarantine) does not. Policy lives in `pipeline/jobs.py`, not on the row.
 
+Every queue consumer (`parse`, `ingest` and `import`) claims through
+`db.claim_job`, round-robin by actor (Epo 2026-10-24, rate-limit audit M14):
+of the due pending jobs of its type, the one whose `actorUserId` has the fewest
+jobs of that type `running` goes first, the oldest (`created_at`) among those,
+under `FOR UPDATE OF j SKIP LOCKED`, so concurrent workers still take different
+rows. One account's backlog therefore waits behind another account's newer
+upload instead of ahead of it; the per-actor cap of 20 open ingest sessions
+(Go) still bounds what each account has queued. A job re-pended for a busy
+provider or a full parser keeps its `created_at`, so it keeps its place among
+jobs of actors with as many running. The pending rows of a type are read
+through `jobs_claim_idx` and sorted by that rank: on a local database with
+20,000 pending ingest jobs (1,000 actors) a claim took about 27 ms, with 2,000
+about 2 ms (oldest-first took 0.1 ms).
+
 A reclaimed lease does not stop the old worker: cancellation is cooperative and
 a heartbeat can simply fail. So `attempts` doubles as a fencing token — it is
 written only by a claim — and every heartbeat, requeue and terminal transition
