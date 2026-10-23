@@ -2,13 +2,16 @@ import type { Citation, SourceFile } from '@/api/types';
 
 /** One tool call of a fixture's turn and the files or materials it changed.
  * `undo` defaults to available; `none` is an edit no loaded room took, whose
- * receipt shows without Undo. */
+ * receipt shows without Undo. `cut` is an Office edit the engine cut at a
+ * per-call limit: its row stays in progress until the next edit of its file,
+ * or the turn's end (Epo 2026-10-23, Q171). */
 export interface FixtureEdit {
   changes: readonly {
     id: string;
     operation: 'created' | 'edited';
     undo?: 'none';
   }[];
+  cut?: { applied: number; total: number };
   tool: string;
 }
 
@@ -41,6 +44,8 @@ const edited =
   'root = Answer([Md("I updated the membrane wording in your notes and diagrams so they match the textbook.", [1, 2])])';
 const created =
   'root = Answer([Md("Your study pack is ready: a quiz, a mindmap and a diagram, and the cheatsheet now links them.", [1, 2])])';
+const officeEdited =
+  'root = Answer([Md("I filled in the weekly plan of the course guide.", [1])])';
 
 export const chatFixtures = [
   {
@@ -384,6 +389,40 @@ export const chatFixtures = [
     label: 'Files: edits without Undo',
     passages: [1, 2],
     prompt: 'Rewrite my osmosis notes and the mindmap.',
+  },
+  {
+    content: officeEdited,
+    edits: [
+      {
+        changes: [{ id: 'bio-office-xlsx', operation: 'edited' }],
+        cut: { applied: 30, total: 32 },
+        tool: 'edit_office_document',
+      },
+      {
+        changes: [{ id: 'bio-office-xlsx', operation: 'edited' }],
+        tool: 'edit_office_document',
+      },
+    ],
+    hint: 'Biology 101: an Office edit cut at a per-call limit stays in progress (30 of 32) until the next edit of the file, then both close as edits.',
+    id: 'chat-office-cut',
+    label: 'Files: Office edit cut at a limit',
+    passages: [1],
+    prompt: 'Fill in the course guide.',
+  },
+  {
+    content: officeEdited,
+    edits: [
+      {
+        changes: [{ id: 'bio-office-xlsx', operation: 'edited' }],
+        cut: { applied: 30, total: 32 },
+        tool: 'edit_office_document',
+      },
+    ],
+    hint: 'Biology 101: an Office edit cut at a per-call limit that the turn never follows up ends showing 2 commands not applied.',
+    id: 'chat-office-unapplied',
+    label: 'Files: Office commands not applied',
+    passages: [1],
+    prompt: 'Fill in the whole course guide.',
   },
   {
     content: overview,

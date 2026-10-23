@@ -29,6 +29,7 @@ import {
   groupTitle,
   latestStep,
   type StepState,
+  stepCount,
   stepTitle,
   THINKING_DELAY_MS,
   type ToolBlock,
@@ -95,6 +96,13 @@ function Title({ text, label }: { text: string; label?: string }) {
 const ROW =
   'group/row flex w-fit min-w-0 max-w-full items-center gap-2 text-fg-muted text-sm data-[state=failed]:text-tint-error-fg';
 
+/** A row's muted words after its sentence: a count, a group's detail. */
+function Aside({ children }: { children?: string }) {
+  return children ? (
+    <span className="shrink-0 text-[12.5px] opacity-80">{children}</span>
+  ) : null;
+}
+
 function StepRow({ tool, state }: { tool: ToolBlock; state: StepState }) {
   const title = stepTitle(tool, state);
   const failed = state === 'failed';
@@ -114,6 +122,7 @@ function StepRow({ tool, state }: { tool: ToolBlock; state: StepState }) {
           />
         )}
         <Title label={title.label} text={title.text} />
+        <Aside>{stepCount(tool, state)}</Aside>
       </div>
       {failed || state === 'unknown' ? (
         <p
@@ -220,11 +229,7 @@ function ExpandRow({
       >
         {icon}
         <span className="min-w-0 truncate">{title}</span>
-        {description ? (
-          <span className="shrink-0 text-[12.5px] opacity-80">
-            {description}
-          </span>
-        ) : null}
+        <Aside>{description}</Aside>
         <Icon
           className={cn(
             '-ml-1 size-3.5 shrink-0 transition-transform duration-(--motion-duration-quick) ease-(--motion-ease-smooth-out) motion-reduce:transition-none',
@@ -344,11 +349,14 @@ function ReceiptRow({
   effect,
   handlers,
   deck = false,
+  note,
 }: {
   effect: ResourceEffect;
   handlers: UndoHandlers;
   /** create_deck: a source file whose title may carry no extension. */
   deck?: boolean;
+  /** The commands its call left unapplied. */
+  note?: string;
 }) {
   const { resource } = effect;
   const label = resource.title || resource.id;
@@ -382,6 +390,9 @@ function ReceiptRow({
         </span>
         {text.slice(at + label.length)}
       </span>
+      {note ? (
+        <span className="shrink-0 text-[12.5px] text-fg-muted">{note}</span>
+      ) : null}
       <span className="ml-auto flex shrink-0 items-center gap-2 pl-1">
         {hasUndo(effect) ? (
           <UndoButton effect={effect} handlers={handlers} />
@@ -457,10 +468,17 @@ function Row({
           deck={row.tool.name === 'create_deck'}
           effect={row.effect}
           handlers={handlers}
+          note={stepCount(row.tool, 'done')}
         />
       );
     case 'edited':
-      return <ReceiptRow effect={row.effect} handlers={handlers} />;
+      return (
+        <ReceiptRow
+          effect={row.effect}
+          handlers={handlers}
+          note={stepCount(row.tool, 'done')}
+        />
+      );
   }
 }
 

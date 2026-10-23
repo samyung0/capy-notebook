@@ -2706,8 +2706,15 @@ current pending changes applied. Embedded source instructions remain untrusted.
    start another planning step.
 9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
-   `tool_start` / `tool_end`, versioned `citations` (`final: true` on the
-   answer's own list), `done` | `error`. A `capture_page` activity block carries
+   `tool_start` / `tool_progress` / `tool_end`, versioned `citations`
+   (`final: true` on the answer's own list), `done` | `error`.
+   `tool_progress {callId, applied, total}` says how many of a running
+   call's commands are applied, out of how many; a call may send any number
+   between its start and end (Epo 2026-10-23, Q171: the frame later
+   debounced edits reuse). Today only an Office edit the engine cut at a
+   per-call limit sends one (Office tools, below), and its `tool_end` comes
+   later; a `tool_end` carries `applied` and `total` only for a call that
+   ended with commands unapplied, and the stored tool block keeps them. A `capture_page` activity block carries
    `capture: {page, bbox, bytes}` so the frontend can show "Looked at page 4".
    A tool row's `detail` is a human label at most 240 characters long
    (`agent._describe`, 2026-10-15): the file or material title for
@@ -2746,7 +2753,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    running, past tense when done, "Couldn't …" in the error colour with the
    `toolErrorMessage` reason below on failure, muted with a question icon for
    `outcome_unknown`, "Stopped while …" after a stop. The running row is the
-   newest tool without an outcome while the message streams; only its icon
+   newest tool without an outcome while the message streams, and any tool
+   that sent `tool_progress` runs until its outcome too, its count ("30 of
+   32", `chat_step_progress`) muted after the sentence; only its icon
    moves (no title shimmer), and reduced motion stops it. Thinking rows come
    from gaps of 400ms or more between steps (the tool blocks'
    `startedAt`/`endedAt` and the message's `createdAt`); a live "Thinking" row
@@ -2772,7 +2781,11 @@ current pending changes applied. Embedded source instructions remain untrusted.
    edit without an Undo ref (no loaded room took it, its Undo would be too
    large to send, or a reload after its room unloaded) keeps its strip without
    the button; a reopened conversation shows created files without Undo or
-   Redo (Epo 2026-10-20).
+   Redo (Epo 2026-10-20). A cut Office edit (Office tools, below) gets its
+   receipt when its row closes, as a plain edit's after the next edit of its
+   file, or with its "N commands not applied" (`chat_step_not_applied`)
+   muted after the sentence when the turn left them unapplied; its Undo and
+   Redo are any edit's (Epo 2026-10-23, Q171).
 
 `generate_material` mints a deterministic `mat_` id from
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
@@ -3109,7 +3122,8 @@ build, and the knowledge library is one more source while the switch is on.
   final tools-off response, reported as `stall` and logged with the count of
   writes landed. Each of the first two errored writes raises that threshold
   by two, to at most nine. Empty nonterminal responses count as stalls. The
-  loop counts landed writes itself from the `tool_end` outcomes; nothing about
+  loop counts landed writes itself from each call's activity block outcome
+  (a cut Office edit's `tool_end` may come in a later batch); nothing about
   the budget is stored. When the next response is the last with tools (the
   planning cap's second to last, or the stall guard one response short), every
   tool result of the current response ends with `agent.LAST_TOOLS_NOTICE`: the
@@ -4311,7 +4325,22 @@ notice with `Not applied: the commands at indexes N to M (counting from 0),
 past the limit of … a call; send them in another call.` (after a create
 command the indexes start at 1, the agent's call counting it); a first
 command alone past one is refused as `invalid_input`. The retrieval service
-counts nothing: its result passes the receipt's notice through. Measured at
+counts nothing: its result passes the receipt's notice through, and it reads
+the notice's N as the commands applied of the call's commands
+(`ToolResult.progress`, `tools._NOT_APPLIED`). Such a cut call's chat row
+stays in progress (Epo 2026-10-23, Q171): `agent._office_frames` sends
+`tool_progress {applied: N, total}` instead of its `tool_end` and keeps its
+activity block, which holds the counts as the state a turn ending now
+leaves (checkpoints save it so), in `ToolContext.cut_edits` by file id. The
+turn's next `edit_office_document` that lands on the same file (a create's
+file included; a refused or failed one does not count; an unrelated edit of
+that file closes it early, accepted) sends its own frames, then the cut
+call's `tool_end` as a plain success, counts dropped from its block. A cut
+call no later edit followed closes before the turn's `done` or `error`
+(`agent.close_cut_edits`, also on `service.py`'s generic failure) with
+`applied` and `total` on its `tool_end` and block, so the row ends showing
+the commands not applied, live and after a reload. A stop sends nothing
+more: the saved block keeps its counts. Measured at
 each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`,
 `bench_pptx.py` (a 60-slide deck) and `bench_pptx500.py` (50 commands of
 each PPTX type on a 500-slide deck, against 10 s).
