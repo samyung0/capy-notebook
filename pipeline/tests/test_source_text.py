@@ -148,6 +148,8 @@ async def test_image_source_routes_authoritative_file_and_sha_to_caption_cache(
 # ------------------------------------------------------------------ audio
 
 _SOURCE_URL = "https://b2.test/sources/lecture.mp3?X-Amz-Signature=secret"
+# The real poll, for the claim-cycle tests that answer it from the fake server.
+_REAL_POLL = source_text._poll
 
 
 class _FakeFiletrans:
@@ -407,7 +409,8 @@ class _Flow:
             events.append(("release",))
 
         async def abandon_call(call_id, exc=None):
-            self.calls[call_id] = "abandoned"
+            if self.calls.get(call_id) == "open":
+                self.calls[call_id] = "abandoned"
             events.append(("abandon",))
 
         async def settle_units(**kwargs):
@@ -459,7 +462,7 @@ class _Flow:
         monkeypatch.setattr(source_text.accounting, "abandon_call", abandon_call)
         monkeypatch.setattr(source_text.accounting, "settle_units", settle_units)
 
-    async def claim(self):
+    async def claim(self, transcript_url: str = ""):
         """One job claim with the job's stored state."""
         return await source_text.transcribe_audio_source(
             job_id="job_1",
@@ -470,7 +473,24 @@ class _Flow:
             blob_path="sources/lecture.mp3",
             context="Workspace: Bio",
             second_rate_micros=16_667,
+            transcript_url=transcript_url,
         )
+
+    def stored_task(self, call: str = "open", **state) -> None:
+        """The job holds task-1 under call pc_1 (``call``: its state; empty
+        when it ran out unpolled)."""
+        self.payload = {
+            "taskId": "task-1",
+            "callId": "pc_1",
+            "submittedAt": time.time(),
+            "seconds": 60.2,
+            "sha256": "ab" * 32,
+            "providerFailures": 0,
+            **state,
+        }
+        if call:
+            self.calls["pc_1"] = call
+            self.leases.add("pc_1")
 
     async def run(self):
         """Claims until the job ends; the re-pend delays they asked for."""
@@ -652,15 +672,92 @@ async def test_a_lost_task_counts_one_provider_failure(monkeypatch):
     assert flow.payload == {"providerFailures": 1}
     assert "poll" not in flow.kinds()
 
-    flow.payload = {
-        "taskId": "task-1",
-        "callId": "pc_gone",
-        "submittedAt": time.time(),
-        "seconds": 60.2,
-        "providerFailures": 1,
-    }
+
+@pytest.mark.asyncio
+async def test_a_task_whose_call_ran_out_unpolled_is_polled_and_settles_once(
+    monkeypatch,
+):
+    """The host was down past the hour: the task's call and lease ran out,
+    but Alibaba finished the task. The claim polls it, takes a new call under
+    the gate and settles that once, with no second task."""
+    flow = _Flow(monkeypatch)
+    flow.stored_task(call="", submittedAt=time.time() - 3 * 60 * 60)
+    flow.polls = [_SUCCEEDED]
+    flow.transcripts = [_HELLO]
+
+    sentences, _key, _size = await flow.claim()
+
+    assert [sentence["text"] for sentence in sentences] == ["Hello."]
+    assert flow.kinds() == ["renew", "poll", "open", "settle", "release"]
+    (new_call,) = flow.calls
+    assert new_call != "pc_1" and flow.calls[new_call] == "applied"
+    # Stored before the settlement, so a crash after it renews the new call.
+    assert flow.payload["callId"] == new_call
+    assert flow.leases == set()
+
+
+@pytest.mark.asyncio
+async def test_a_running_task_whose_call_ran_out_waits_for_a_slot_under_a_new_call(
+    monkeypatch,
+):
+    flow = _Flow(monkeypatch)
+    flow.stored_task(call="")
+    flow.polls = [_RUNNING, _RUNNING, _SUCCEEDED]
+    flow.transcripts = [_HELLO]
+
+    # The gate is full: the job waits for a slot with its state as it was.
+    flow.gate_full = True
+    with pytest.raises(jobs.CapacityWait) as full:
+        await flow.claim()
+    assert not isinstance(full.value, source_text.FiletransWait)
+    assert flow.payload["callId"] == "pc_1" and not flow.calls
+
+    flow.gate_full = False
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+    (new_call,) = flow.calls
+    assert flow.payload["callId"] == new_call and flow.leases == {new_call}
+
+    await flow.claim()
+    assert flow.kinds().count("settle") == 1 and "submit" not in flow.kinds()
+    assert flow.calls[new_call] == "applied" and flow.leases == set()
+
+
+@pytest.mark.asyncio
+async def test_a_task_alibaba_does_not_know_is_lost(monkeypatch, filetrans):
+    """A 404 on the poll: one provider failure (the job submits again), the
+    second fails the file; the call ends and its lease is freed each time."""
+    flow = _Flow(monkeypatch)
+    monkeypatch.setattr(source_text, "_poll", _REAL_POLL)
+    filetrans.polls = [(404, {"code": "NotFound"}), (404, {"code": "NotFound"})]
+    flow.stored_task()
+
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+    assert flow.payload == {"providerFailures": 1}
+    assert flow.calls == {"pc_1": "abandoned"} and flow.leases == set()
+
+    flow.stored_task(providerFailures=1)
     with pytest.raises(source_text.FiletransTerminalError, match="task lost"):
         await flow.claim()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 401, 403])
+async def test_a_poll_refused_otherwise_ends_the_call_before_failing(
+    monkeypatch, filetrans, status
+):
+    flow = _Flow(monkeypatch)
+    monkeypatch.setattr(source_text, "_poll", _REAL_POLL)
+    filetrans.polls = [(status, {"code": "InvalidApiKey"})]
+    flow.stored_task()
+
+    with pytest.raises(source_text.FiletransTerminalError) as failure:
+        await flow.claim()
+
+    assert failure.value.status_code == status
+    # The gate slot is free at once, not when the lease runs out.
+    assert flow.calls == {"pc_1": "abandoned"} and flow.leases == set()
 
 
 @pytest.mark.asyncio
@@ -687,10 +784,87 @@ async def test_an_unreadable_result_is_read_again_and_a_broken_one_is_a_failure(
         await flow.claim()
     assert wait.value.delay_s == 10 and flow.payload["polls"] == 4
     assert flow.payload["providerFailures"] == 0
+    assert flow.payload["downloadFailures"] == 1
 
     with pytest.raises(source_text.FiletransWait):
         await flow.claim()
     assert flow.payload == {"providerFailures": 1}
+
+
+@pytest.mark.asyncio
+async def test_the_fifth_failed_result_read_is_a_provider_failure(monkeypatch):
+    flow = _Flow(monkeypatch)
+    flow.stored_task(downloadFailures=4)
+    flow.polls = [_SUCCEEDED]
+    flow.transcripts = [source_text.FiletransRetryableError(403)]
+
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+
+    assert flow.payload == {"providerFailures": 1}
+    assert flow.calls == {"pc_1": "abandoned"} and flow.leases == set()
+
+
+@pytest.mark.asyncio
+async def test_a_cached_transcript_ends_this_jobs_own_open_call(monkeypatch):
+    """Another job cached the same bytes while this one's task ran: this
+    task's call ends uncharged and its lease is freed. One settled before the
+    cache was written stays settled."""
+    flow = _Flow(monkeypatch)
+    flow.cache[source_text.audio_artifact_key("ab" * 32)] = json.dumps(
+        {"sentences": [{"start_ms": 0, "end_ms": 900, "text": "Hello."}]}
+    ).encode()
+    flow.stored_task()
+
+    sentences, _key, _size = await flow.claim()
+
+    assert [sentence["text"] for sentence in sentences] == ["Hello."]
+    assert flow.kinds() == ["abandon", "release"]
+    assert flow.calls == {"pc_1": "abandoned"} and flow.leases == set()
+
+    flow.stored_task(call="applied")
+    await flow.claim()
+    assert flow.calls == {"pc_1": "applied"} and "settle" not in flow.kinds()
+
+
+@pytest.mark.asyncio
+async def test_a_task_the_worker_found_succeeded_is_not_polled_again(monkeypatch):
+    flow = _Flow(monkeypatch)
+    flow.stored_task()
+    flow.polls = [_SUCCEEDED]
+    flow.transcripts = [_HELLO]
+
+    state, url = await source_text.poll_task(flow.payload, job_id="job_1", attempt=1)
+    flow.payload = state
+    await flow.claim(transcript_url=url)
+
+    assert flow.kinds() == ["renew", "poll", "settle", "release"]
+
+
+@pytest.mark.asyncio
+async def test_a_claim_that_loses_its_job_before_storing_the_task_orphans_it(
+    monkeypatch,
+):
+    """The job was reclaimed between the submit and the store: the task is
+    never polled, its call and lease run out on their own, and the job's
+    next claim submits again and settles that task once."""
+    flow = _Flow(monkeypatch)
+    kept = source_text._store_state
+    monkeypatch.setattr(source_text, "_store_state", lambda *_a: None)
+
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+    assert flow.payload == {}
+    (orphan,) = flow.leases
+
+    monkeypatch.setattr(source_text, "_store_state", kept)
+    flow.polls = [_SUCCEEDED]
+    flow.transcripts = [_HELLO]
+    await flow.run()
+
+    assert flow.kinds().count("submit") == 2
+    assert flow.kinds().count("settle") == 1
+    assert flow.calls[orphan] == "open" and flow.leases == {orphan}
 
 
 @pytest.mark.asyncio
@@ -790,7 +964,12 @@ async def test_a_full_gate_or_another_jobs_task_waits_without_a_task(monkeypatch
         await flow.claim()
     assert not isinstance(full.value, source_text.FiletransWait)
 
-    # Another job is transcribing the same bytes: wait for its transcript.
+    # Another job is transcribing the same bytes: wait for its transcript,
+    # with nothing measured.
+    def measure(_path):
+        raise AssertionError("measured while another job's task runs")
+
+    monkeypatch.setattr(source_text, "audio_duration_seconds", measure)
     flow.gate_full, flow.in_flight = False, True
     with pytest.raises(source_text.FiletransWait) as wait:
         await flow.claim()

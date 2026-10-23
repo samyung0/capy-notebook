@@ -205,9 +205,10 @@ def tabular_text(path: str, name: str) -> str:
 # Uploaded audio goes to Alibaba Model Studio's Filetrans: an async task that
 # fetches the source through a presigned link. One job claim submits the task
 # and stores it in the job's payload (``filetrans``), then the job re-pends
-# without spending an attempt; each later claim polls the task once and
-# re-pends again until the task ends. A worker that dies mid-claim leaves the
-# task stored, so the job's next claim polls it instead of submitting another.
+# without spending an attempt; each later claim polls the task once
+# (``poll_task``, before the claim fetches or hashes the source) and re-pends
+# again until the task ends. A worker that dies mid-claim leaves the task
+# stored, so the job's next claim polls it instead of submitting another.
 # Log lines and error messages name statuses and provider error codes only,
 # never transcript text or a signed link.
 
@@ -219,7 +220,9 @@ FILETRANS_CAPACITY = ("filetrans", 12)
 # How long a task's call and gate lease are held, renewed by every poll
 # claim: past the longest re-pend delay plus the queue's wait for a free
 # ingest worker (one claim may run CAPY_INGEST_TIMEOUT, 20 minutes), so the
-# lease of a job that died frees itself within the hour.
+# lease of a job that died frees itself within the hour. A task whose call
+# ran out unpolled (the host was down) is still polled, and takes a new call
+# under the gate if it runs on or succeeded.
 FILETRANS_HOLD_S = 60 * 60
 # A stored task older than this is lost (Alibaba keeps a task's result 24 h).
 FILETRANS_RESUME_S = 12 * 60 * 60
@@ -233,6 +236,9 @@ _FILETRANS_REQUEST_TIMEOUT_S = 30.0
 # Provider failures (a refused submit, a failed or lost task) before the file
 # fails: the first is retried with a new task.
 _PROVIDER_FAILURES_MAX = 2
+# Failed reads of a succeeded task's result link before it counts as one
+# provider failure; the earlier ones poll and read it again.
+_DOWNLOAD_FAILURES_MAX = 5
 
 
 class _PollsAtDebug(logging.Filter):
@@ -525,10 +531,30 @@ async def _provider_failure(
     raise FiletransWait(_POLL_FIRST_S)
 
 
-async def _end_call(call_id: str, exc: BaseException) -> None:
-    """The task is over without a charge: abandon its call, free its lease."""
+async def _end_call(call_id: str, exc: BaseException | None) -> None:
+    """The task is over without a charge: abandon its call (a no-op once it
+    was settled), free its lease."""
     await accounting.abandon_call(call_id, exc)
     await accounting.release_lease(call_id)
+
+
+async def _open_task_call() -> str:
+    """A call and one of the gate's leases for a task. A full gate re-pends
+    the job without spending an attempt."""
+    call_id = accounting.new_call_id()
+    try:
+        await accounting.open_call(
+            call_id,
+            kind=accounting.KIND_AUDIO,
+            purpose="transcription",
+            provider="alibaba",
+            model=FILETRANS_MODEL,
+            capacity=FILETRANS_CAPACITY,
+            provider_timeout_s=FILETRANS_HOLD_S,
+        )
+    except elitellm.ProviderBusy as exc:
+        raise CapacityWait("audio transcription tasks are at their cap") from exc
+    return call_id
 
 
 async def _submit_task(
@@ -545,28 +571,16 @@ async def _submit_task(
     with the job, which then re-pends."""
     if not cfg.alibaba_modelstudio_key:
         raise TerminalError("audio transcription is not configured")
+    if await asyncio.to_thread(_task_in_flight, source_sha256, job_id):
+        # Another job is transcribing the same bytes: its transcript will be
+        # cached, and this job reads it then, with nothing measured meanwhile.
+        raise FiletransWait(_POLL_MAX_S)
     duration = await asyncio.to_thread(audio_duration_seconds, Path(local_path))
     if duration > AUDIO_MAX_DURATION_SECONDS:
         raise InputLimitError(
             "audio_duration_limit", "audio is longer than the two-hour limit"
         )
-    if await asyncio.to_thread(_task_in_flight, source_sha256, job_id):
-        # Another job is transcribing the same bytes: its transcript will be
-        # cached, and this job reads it then.
-        raise FiletransWait(_POLL_MAX_S)
-    call_id = accounting.new_call_id()
-    try:
-        await accounting.open_call(
-            call_id,
-            kind=accounting.KIND_AUDIO,
-            purpose="transcription",
-            provider="alibaba",
-            model=FILETRANS_MODEL,
-            capacity=FILETRANS_CAPACITY,
-            provider_timeout_s=FILETRANS_HOLD_S,
-        )
-    except elitellm.ProviderBusy as exc:
-        raise CapacityWait("audio transcription tasks are at their cap") from exc
+    call_id = await _open_task_call()
     try:
         # Read-only, this one object, and long enough for Alibaba to fetch it.
         source_url = await asyncio.to_thread(
@@ -610,43 +624,83 @@ async def _wait_again(state: dict[str, Any], job_id: str, attempt: int) -> NoRet
     raise FiletransWait(_poll_delay(polls))
 
 
-async def _finish_task(
-    state: dict[str, Any], *, job_id: str, attempt: int, second_rate_micros: int
-) -> list[dict[str, Any]]:
-    """Poll the stored task once. Still running, or no answer: the job
-    re-pends. Ended without a transcript: a provider failure. Succeeded: its
-    sentences, charged once."""
+async def poll_task(
+    stored: dict[str, Any], *, job_id: str, attempt: int
+) -> tuple[dict[str, Any], str]:
+    """Poll the job's stored task once; the worker calls this before it
+    fetches or hashes the source. Still running, or no answer: the job
+    re-pends. Ended without a transcript, or unknown to Alibaba: a provider
+    failure. Succeeded: the state to finish it with and its result link.
+
+    A task whose call ran out unpolled is not lost while Alibaba keeps it:
+    running or succeeded, it takes a new call and gate lease (or waits for
+    one), so the 12-task cap holds again and it is charged once."""
+    state = dict(stored)
     call_id = str(state["callId"])
     call = await accounting.renew_call(call_id, FILETRANS_CAPACITY[0], FILETRANS_HOLD_S)
     age = time.time() - float(state["submittedAt"])
-    if not call or (call == "open" and age > FILETRANS_RESUME_S):
-        # Lost: its call ran out unpolled, or Alibaba no longer keeps it. An
-        # applied call was settled before a crash: its result is read again.
+    if call != "applied" and age > FILETRANS_RESUME_S:
+        # Lost: Alibaba no longer keeps it. An applied call was settled
+        # before a crash: its result is read again.
         await _end_call(call_id, FiletransRetryableError("task lost"))
         await _provider_failure(state, job_id, attempt, "task lost")
-    output = await _poll(str(state["taskId"]))
-    status = None if output is None else output.get("task_status")
-    if output is None or status in ("PENDING", "RUNNING"):
+    try:
+        output = await _poll(str(state["taskId"]))
+    except FiletransTerminalError as exc:
+        await _end_call(call_id, exc)
+        if exc.reason == 404:
+            # Alibaba does not know the task: lost.
+            await _provider_failure(state, job_id, attempt, "task lost")
+        raise
+    if output is None:
         await _wait_again(state, job_id, attempt)
+    status = output.get("task_status")
+    running = status in ("PENDING", "RUNNING")
     result = (output.get("results") or [{}])[0]
     url = result.get("transcription_url")
-    if status != "SUCCEEDED" or result.get("subtask_status") == "FAILED" or not url:
+    if not running and (
+        status != "SUCCEEDED" or result.get("subtask_status") == "FAILED" or not url
+    ):
         # FAILED, CANCELED, UNKNOWN or a state this code does not know.
         code = str(result.get("code") or output.get("code") or f"task {status}")[:80]
         await _end_call(call_id, FiletransRetryableError(code))
         if code.startswith("InvalidFile"):
             raise FiletransTerminalError(code)
         await _provider_failure(state, job_id, attempt, code)
+    if not call:
+        # Its call ran out unpolled (the host was down past the hour): the
+        # sweep abandons it, and the task carries on under a new one.
+        state["callId"] = await _open_task_call()
+        if not running:
+            await asyncio.to_thread(_store_state, job_id, attempt, state)
+    if running:
+        await _wait_again(state, job_id, attempt)
+    return state, str(url)
+
+
+async def _finish_task(
+    state: dict[str, Any],
+    url: str,
+    *,
+    job_id: str,
+    attempt: int,
+    second_rate_micros: int,
+) -> list[dict[str, Any]]:
+    """Read a succeeded task's result and charge it once: its sentences."""
+    call_id = str(state["callId"])
     try:
-        transcript = await asyncio.to_thread(
-            _download_transcript, _transcript_url(str(url))
-        )
+        transcript = await asyncio.to_thread(_download_transcript, _transcript_url(url))
     except FiletransTerminalError as exc:
         await _end_call(call_id, exc)
         raise
-    except FiletransRetryableError:
-        # Alibaba keeps the result for a day: poll and read it again later.
-        await _wait_again(state, job_id, attempt)
+    except FiletransRetryableError as exc:
+        # Alibaba keeps the result for a day: poll and read it again later,
+        # until the fifth failed read counts as a provider failure.
+        failures = int(state.get("downloadFailures") or 0) + 1
+        if failures >= _DOWNLOAD_FAILURES_MAX:
+            await _end_call(call_id, exc)
+            await _provider_failure(state, job_id, attempt, "transcript unreadable")
+        await _wait_again({**state, "downloadFailures": failures}, job_id, attempt)
     try:
         sentences = _sentences(transcript)
     except (KeyError, TypeError, ValueError):
@@ -699,6 +753,7 @@ async def transcribe_audio_source(
     blob_path: str,
     context: str,
     second_rate_micros: int,
+    transcript_url: str = "",
 ) -> tuple[list[dict[str, Any]], str, int]:
     """The source's transcript sentences, its cache key and the key's size,
     or ``FiletransWait`` while its task runs.
@@ -706,9 +761,11 @@ async def transcribe_audio_source(
     A cached transcript of the same bytes is reused. Otherwise a job with no
     stored task (``stored``, the payload's ``filetrans``) measures the source
     against the two-hour limit and submits one task under the 12-task gate,
-    and a job with one polls it. Only a usable transcript is charged: whole
-    seconds of the measured duration or the last sentence's end, whichever
-    is later, at the job's snapshotted rate.
+    and a job with one polls it, unless the worker's ``poll_task`` already
+    found it succeeded (``stored`` is then its state and ``transcript_url``
+    its result link). Only a usable transcript is charged: whole seconds of
+    the measured duration or the last sentence's end, whichever is later, at
+    the job's snapshotted rate.
     """
     key = audio_artifact_key(source_sha256)
     state = dict(stored or {})
@@ -716,8 +773,10 @@ async def transcribe_audio_source(
         cached = await asyncio.to_thread(_load_artifact, key)
         if cached:
             if state.get("callId"):
-                # Settled before the cache was written; its lease may remain.
-                await accounting.release_lease(str(state["callId"]))
+                # This job's task was not needed (or was settled before the
+                # cache was written): its call ends uncharged unless it was
+                # settled, and its lease is freed.
+                await _end_call(str(state["callId"]), None)
             size = len(
                 json.dumps(cached, ensure_ascii=False, separators=(",", ":")).encode()
             )
@@ -732,8 +791,13 @@ async def transcribe_audio_source(
                 blob_path=blob_path,
                 context=context,
             )
+        if not transcript_url:
+            state, transcript_url = await poll_task(
+                state, job_id=job_id, attempt=attempt
+            )
         sentences = await _finish_task(
             state,
+            transcript_url,
             job_id=job_id,
             attempt=attempt,
             second_rate_micros=second_rate_micros,

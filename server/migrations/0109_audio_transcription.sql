@@ -23,3 +23,11 @@ ALTER TABLE files ADD CONSTRAINT files_index_limit_check CHECK (index_limit IN (
 ALTER TABLE provider_calls
   ADD COLUMN IF NOT EXISTS units bigint NOT NULL DEFAULT 0 CHECK (units >= 0),
   ADD COLUMN IF NOT EXISTS unit text NOT NULL DEFAULT '';
+
+-- An audio job that re-pends to poll its transcription task again records
+-- its own attempt outcome, apart from capacity waits.
+ALTER TABLE ingest_job_attempts DROP CONSTRAINT ingest_job_attempts_status_check;
+ALTER TABLE ingest_job_attempts ADD CONSTRAINT ingest_job_attempts_status_check CHECK (status IN (
+  'running', 'succeeded', 'retrying', 'failed', 'superseded',
+  'lease_expired', 'capacity_wait', 'provider_busy', 'transcription_poll'
+));

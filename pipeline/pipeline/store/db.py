@@ -1009,12 +1009,15 @@ def requeue_job(
     return "pending"
 
 
-def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) -> None:
+def release_job_for_capacity(
+    cur, job_id: str, attempt: int, *, backoff_s: int, poll: bool = False
+) -> None:
     """Put a running job back to pending without spending an attempt.
 
     Used when every parser slot is taken. ``claim_job`` already incremented
     ``attempts``; undoing that is what keeps a long queue from looking like
-    repeated failures.
+    repeated failures. ``poll``: an audio job waiting to poll its task again,
+    whose delay is intended, so it counts as queued from when it is due.
     """
     cur.execute(
         """
@@ -1024,11 +1027,12 @@ def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) 
             error=NULL,
             not_before=now() + make_interval(secs => %s),
             lease_expires_at=NULL,
-            queued_at=now(),
+            queued_at=CASE WHEN %s THEN now() + make_interval(secs => %s)
+                           ELSE now() END,
             updated_at=now()
         WHERE id=%s AND status='running' AND attempts=%s
         """,
-        (backoff_s, job_id, attempt),
+        (backoff_s, poll, backoff_s, job_id, attempt),
     )
 
 

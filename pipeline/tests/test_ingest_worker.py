@@ -1354,11 +1354,16 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
     monkeypatch, tmp_path
 ):
     """While its task runs at Alibaba an audio job gives its claim back with
-    the attempt undone, after the task's poll delay, and its file shows
-    transcribing rather than queued."""
+    the attempt undone, after the task's poll delay, as a poll rather than a
+    capacity wait, and its file shows transcribing rather than queued. The
+    poll comes first: a claim that finds the task running neither fetches,
+    hashes nor measures the source. Once it succeeded, the claim takes the
+    source and finishes with the result link it polled."""
     from pipeline.ingest import source_text
 
     yields: list[tuple] = []
+    touched: list[str] = []
+    stored = {"taskId": "task-1", "callId": "pc_1", "sha256": "ab" * 32}
 
     async def _pin(_ws):
         return object()
@@ -1374,13 +1379,28 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
     async def _no_donor(**_k):
         return None
 
-    async def _running(**kwargs):
-        assert kwargs["stored"] == {"taskId": "task-1"}
-        assert kwargs["attempt"] == 1
-        raise source_text.FiletransWait(7)
+    polls = [source_text.FiletransWait(7), "https://result.test/r.json"]
+
+    async def _poll(state, *, job_id, attempt):
+        assert (state, job_id, attempt) == (stored, "job_audio", 1)
+        answer = polls.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return {**state, "callId": "pc_2"}, answer
+
+    async def _finish(**kwargs):
+        assert kwargs["stored"] == {**stored, "callId": "pc_2"}
+        assert kwargs["transcript_url"] == "https://result.test/r.json"
+        assert touched == ["fetch"]
+        raise source_text.FiletransWait(9)
+
+    def _measured(_path):
+        touched.append("measure")
+        return 60.0
 
     class FakeS3:
         def get_object(self, **_kwargs):
+            touched.append("fetch")
             return {"Body": io.BytesIO(b"audio")}
 
     monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
@@ -1400,7 +1420,9 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
     monkeypatch.setattr(worker.store, "find_ready_donor", _no_donor)
     monkeypatch.setattr(worker, "_set_file_status", lambda *_a, **_k: None)
     monkeypatch.setattr(worker, "_audio_context", lambda *_a: "Workspace: Bio")
-    monkeypatch.setattr(worker.source_text, "transcribe_audio_source", _running)
+    monkeypatch.setattr(worker.source_text, "poll_task", _poll)
+    monkeypatch.setattr(worker.source_text, "transcribe_audio_source", _finish)
+    monkeypatch.setattr(worker.source_text, "audio_duration_seconds", _measured)
     monkeypatch.setattr(
         worker, "_yield_for_capacity", lambda *a, **k: yields.append((a, k))
     )
@@ -1430,7 +1452,7 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
                 "object_storage_write",
             ],
         },
-        filetrans={"taskId": "task-1"},
+        filetrans=stored,
     )
     payload["resourceRates"]["audio_transcription_second"] = {
         "version": 2,
@@ -1445,8 +1467,13 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
         await worker.process_ingest_job(job)
 
     ((args, kwargs),) = yields
-    assert args[0] is job and args[7:10] == ("transcribing", 7, "capacity_wait")
+    assert args[0] is job and args[7:10] == ("transcribing", 7, "transcription_poll")
     assert kwargs == {"progress": ("transcribing", 20, "processing")}
+    assert touched == []
+
+    with pytest.raises(source_text.FiletransWait):
+        await worker.process_ingest_job(job)
+    assert yields[1][0][8] == 9 and touched == ["fetch"]
     worker._cleanup_payload_source(job["payload"])
 
 

@@ -1168,9 +1168,10 @@ def _yield_for_capacity(
     while an audio job's transcription task runs.
 
     A provider that stayed busy is the same wait with its own counter, so the
-    worker can cap how often one job comes back for the same model. A note
-    index job (no ``file_id``) keeps its note's job pointer and sends no
-    progress.
+    worker can cap how often one job comes back for the same model. An audio
+    job between polls of its task (``transcription_poll``) is not an error,
+    and counts as queued only once its delay is over. A note index job (no
+    ``file_id``) keeps its note's job pointer and sends no progress.
     """
     stage, percent, file_status = progress
     attempt = int(job.get("attempts") or 1)
@@ -1183,18 +1184,27 @@ def _yield_for_capacity(
                 cur, job["id"], attempt, backoff_s=backoff_s
             )
         else:
-            db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
+            db.release_job_for_capacity(
+                cur,
+                job["id"],
+                attempt,
+                backoff_s=backoff_s,
+                poll=outcome == "transcription_poll",
+            )
         if file_id:
             db.set_file_status(cur, file_id, file_status)
         cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
         row = cur.fetchone()
+        category = {"capacity_wait": "capacity", "provider_busy": "provider"}.get(
+            outcome, ""
+        )
         db.finish_job_attempt(
             cur,
             attempt_id=telemetry.current_attempt_id(),
             outcome=outcome,
             snapshot=telemetry.snapshot(),
-            error_category="capacity" if outcome == "capacity_wait" else "provider",
-            error_code=outcome,
+            error_category=category,
+            error_code=outcome if category else "",
             next_retry_at=row[0] if row else None,
         )
         conn.commit()
@@ -1549,10 +1559,12 @@ async def _chunks_for(
     job_id: str | None = None,
     attempt: int = 1,
     last_wait: bool = False,
+    transcript_url: str = "",
 ) -> tuple[list[Chunk], list[int], bytes | None]:
     """Parse one source into chunks, the 1-based pages the VLM left unread,
     and the parse's page-1 image for the card thumbnail. ``last_wait``: the
-    job's busy re-pend is spent (see ``_read_vlm_pages``)."""
+    job's busy re-pend is spent (see ``_read_vlm_pages``). ``transcript_url``:
+    the result link of the audio task this claim already polled."""
     source_revision = int(payload.get("sourceRevision") or 0)
     source_etag = str(payload.get("sourceETag") or "")
 
@@ -1635,6 +1647,7 @@ async def _chunks_for(
                 blob_path=str(payload["blobPath"]),
                 context=await asyncio.to_thread(_audio_context, ws, name),
                 second_rate_micros=_rate(_RESOURCE_AUDIO_SECOND)["creditMicrosPerUnit"],
+                transcript_url=transcript_url,
             )
         else:
             if not local_path:
@@ -1927,7 +1940,7 @@ async def _process_ingest_job_bound(job: dict) -> None:
             str(payload.get("actorUserId") or ""),
             "transcribing",
             wait.delay_s,
-            "capacity_wait",
+            "transcription_poll",
             progress=("transcribing", 20, "processing"),
         )
         raise
@@ -2387,6 +2400,19 @@ async def _process_ingest_job(
     if payload.get("partsOnly") is True:
         await _process_parts_bound(job, payload, file_id, ws, name)
         return
+    transcript_url = ""
+    filetrans = payload.get("filetrans")
+    if (
+        processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION
+        and isinstance(filetrans, dict)
+        and filetrans.get("taskId")
+    ):
+        # Polled before the source is fetched or hashed: most of these claims
+        # only find the task still running and re-pend.
+        _set_stage("audio_transcription")
+        payload["filetrans"], transcript_url = await source_text.poll_task(
+            filetrans, job_id=job["id"], attempt=attempt
+        )
     _publish_progress(ws, file_id, "queued", 5, status="pending")
 
     if processing_plan.route == ingest_plan.STORE_ONLY:
@@ -2539,6 +2565,7 @@ async def _process_ingest_job(
             job_id=job["id"],
             attempt=attempt,
             last_wait=int(job.get("provider_waits") or 0) >= PROVIDER_WAITS_MAX,
+            transcript_url=transcript_url,
         )
     except parser_client.ParserClientError:
         artifact = payload.get("parseArtifact")

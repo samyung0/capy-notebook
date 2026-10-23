@@ -2173,6 +2173,48 @@ def test_capacity_yield_does_not_spend_an_attempt(workspace):
     assert claimed["attempts"] == 1
 
 
+def test_a_transcription_poll_is_its_own_outcome_and_queued_once_due(workspace):
+    """An audio job re-pending to poll its task again: no attempt spent, its
+    attempt recorded as a poll rather than a capacity wait, and its delay
+    not counted as queue time."""
+    from pipeline.store import db
+
+    job_id = f"job_poll_{workspace.id[-8:]}"
+    workspace.scalar(
+        "INSERT INTO jobs (id, type, payload) VALUES (%s, 'ingest', '{}'::jsonb)"
+        " RETURNING id",
+        (job_id,),
+    )
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        _isolate_job(cur, job_id)
+        claimed = db.claim_job(cur, "ingest", 180)
+        assert claimed is not None and claimed["id"] == job_id
+        attempt_id = db.start_job_attempt(
+            cur,
+            job=claimed,
+            trace_id="trace-poll",
+            environment="uat",
+            host_id="ingest-1",
+            worker_instance_id="ingest-1",
+            release_sha="a" * 40,
+        )
+        db.release_job_for_capacity(cur, job_id, 1, backoff_s=30, poll=True)
+        db.finish_job_attempt(cur, attempt_id=attempt_id, outcome="transcription_poll")
+        cur.execute(
+            "SELECT attempts, queued_at = not_before, not_before > now()"
+            " FROM jobs WHERE id=%s",
+            (job_id,),
+        )
+        assert cur.fetchone() == (0, True, True)
+        cur.execute(
+            "SELECT status, error_category FROM ingest_job_attempts WHERE id=%s",
+            (attempt_id,),
+        )
+        assert cur.fetchone() == ("transcription_poll", "")
+        conn.commit()
+
+
 def test_job_attempt_records_claim_metrics_and_terminal_outcome(workspace):
     from pipeline.store import db
 
