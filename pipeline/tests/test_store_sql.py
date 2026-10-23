@@ -865,6 +865,31 @@ def test_ingest_provider_receipt_expires_even_before_sweeper(workspace):
         conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
 
 
+def test_every_index_limit_code_is_one_a_file_can_hold(workspace):
+    """The API's FileIndexLimit codes (no_speech included) and the files
+    table's check list agree, so a job's outcome can always be recorded."""
+    from pathlib import Path
+
+    import psycopg
+    import yaml
+
+    spec = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "openapi.yaml").read_text("utf-8")
+    )
+    codes = spec["components"]["schemas"]["FileIndexLimit"]["enum"]
+    file_id = workspace.add_file("lecture.mp3")
+    assert "no_speech" in codes
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        for code in codes:
+            db.set_file_index_limit(conn.cursor(), file_id, code)
+            assert (
+                workspace.scalar(
+                    "SELECT index_limit FROM files WHERE id=%s", (file_id,)
+                )
+                == code
+            )
+
+
 def test_a_job_pays_for_its_audio_seconds_once(workspace):
     """Two transcriptions in one ingest session (a retry whose cached
     transcript was lost) both record their seconds; only the first is charged,

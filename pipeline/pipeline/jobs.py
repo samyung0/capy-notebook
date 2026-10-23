@@ -26,7 +26,8 @@ class TerminalError(Exception):
 
 
 class InputLimitError(TerminalError):
-    """The user's file is over a documented size or shape limit.
+    """The user's file is over a documented size or shape limit, or holds
+    nothing to index (``no_speech``: a recording with no speech in it).
 
     The job fails with ``code`` as its attempt error code, while the file ends
     ready and unindexed with ``files.index_limit = code``: it still opens, only

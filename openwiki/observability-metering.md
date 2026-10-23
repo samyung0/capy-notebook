@@ -1294,8 +1294,9 @@ capacity is capped). Uploads are version 2, since 0001 seeded a version 1 at
 another price that 0079 deleted; voice input is version 1. An upload's charge is whole seconds (ceil) of the
 worker's measured duration (ffmpeg reading every packet, not the container
 header) or the last sentence's end, whichever is later, at the job's
-snapshotted rate, settled only when the transcript has sentences; a failed,
-retried or empty task is free, as is a transcript whose speech ends past two
+snapshotted rate, settled only when the transcript has sentences; a failed or
+retried task is free, a task that heard no speech settles as a successful
+call at zero credits (`no_speech`), as is a transcript whose speech ends past two
 hours (`audio_duration_limit`), and a job
 pays for its audio once (a later call on the same session, after a lost cache,
 settles at zero; the user's Retry of a job that lost its cache and then failed

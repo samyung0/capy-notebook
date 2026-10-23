@@ -2181,6 +2181,7 @@ components:
         - audio_duration_limit
         - tabular_column_limit
         - tabular_text_limit
+        - no_speech
       type: string
     FileKind:
       enum:

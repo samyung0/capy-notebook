@@ -16,4 +16,5 @@ export const FileIndexLimit = {
   audio_duration_limit: 'audio_duration_limit',
   tabular_column_limit: 'tabular_column_limit',
   tabular_text_limit: 'tabular_text_limit',
+  no_speech: 'no_speech',
 } as const;

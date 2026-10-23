@@ -2,7 +2,8 @@
 -- Transcribed seconds are priced per resource rate: audio_transcription_second
 -- for uploads, voice_input_second for chat voice input. An upload longer than
 -- the provider's two-hour limit stays ready and unindexed with
--- audio_duration_limit. Provider calls carry their non-token units again.
+-- audio_duration_limit, and one with no speech with no_speech. Provider calls
+-- carry their non-token units again.
 -- audio_transcription_second is version 2: 0001 seeded version 1 at another
 -- price, which 0079 deleted.
 INSERT INTO resource_credit_rates
@@ -15,7 +16,8 @@ ON CONFLICT (resource_key, version) DO NOTHING;
 ALTER TABLE files DROP CONSTRAINT files_index_limit_check;
 ALTER TABLE files ADD CONSTRAINT files_index_limit_check CHECK (index_limit IN (
   'page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit',
-  'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit'
+  'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit',
+  'no_speech'
 ));
 
 ALTER TABLE provider_calls

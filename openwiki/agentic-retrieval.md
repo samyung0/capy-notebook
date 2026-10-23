@@ -1191,6 +1191,7 @@ Indexing tab lists the change as failed.
 | `audio_duration_limit` | Length of an audio upload measured from its packets (ffmpeg in the decoder sandbox), before any provider task; also where the returned transcript's speech ends | 2 hours (`sourceupload.AudioMaxDurationSeconds`, generated into `pipeline/generated/limits.py`), the provider's limit with speaker labels | The browser reads the length (`audioDuration.ts`; a recorder's WebM or Ogg that names none is sought past its end to find it) and blocks submit past the policy's `audioMaxDurationSeconds`. A file whose length it cannot read within 5 s, or reads as zero, is refused before upload with a toast naming it, since its cost cannot be estimated (Epo 2026-10-24). The upload request requires `durationSeconds` for audio (400 without it) and refuses one past the limit. Imports are only checked by the worker. |
 | `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
 | `tabular_text_limit` | Estimated tokens of rendered CSV/TSV row text, counted while rendering, before chunking or embedding | 1,000,000 | No |
+| `no_speech` | Not a limit: a recording whose finished transcription has no sentences (Epo 2026-10-24: nothing indexed is not a failed index) | none | No |
 
 ### Provider source imports
 
@@ -1379,7 +1380,10 @@ reason but `InvalidFile.*`, a task in any state but `PENDING`, `RUNNING`,
 a task still running at the wall budget is retryable: the ingest job's one
 retry submits a new task, and a second failure fails the file. Any other refused
 request and `InvalidFile.*` (a link the task could not fetch, a file it could
-not decode) fail at once, as does a recording with no speech. Every failed
+not decode) fail at once. A recording with no speech is not a failure: its
+call settles at zero credits as a successful call, nothing is cached, and the
+file ends ready and unindexed with `index_limit = 'no_speech'`, shown in the
+neutral not-indexed banner as "No speech was found in this recording." Every failed
 call is abandoned uncharged; a cancelled one stays open for its receipt
 window. The gate's lease is freed once Alibaba has answered for the task (a
 transcript, a failed or refused task); a task that may still be running there

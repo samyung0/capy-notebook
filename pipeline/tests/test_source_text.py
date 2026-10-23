@@ -504,6 +504,24 @@ async def test_audio_over_two_hours_is_an_index_limit_before_any_task(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_a_recording_with_no_speech_is_ready_unindexed_and_free(monkeypatch):
+    """No speech is not a failure: the call settles at zero credits (not
+    abandoned), nothing is cached, and the file ends ready and unindexed
+    with its own reason."""
+    events = _audio_flow(monkeypatch, transcribe=list)
+
+    with pytest.raises(jobs.InputLimitError) as outcome:
+        await _transcribe()
+
+    assert outcome.value.code == "no_speech"
+    assert not jobs.is_retryable(outcome.value)
+    assert events[-2:] == [("settle", 61, "seconds", 0), ("release",)]
+    assert not any(event[0] == "abandon" for event in events)
+    key = source_text.audio_artifact_key("ab" * 32)
+    assert source_text.blobstore.read_bytes(key) is None
+
+
+@pytest.mark.asyncio
 async def test_speech_past_the_measured_length_is_billed_to_its_end(monkeypatch):
     def long_speech():
         return [{"start_ms": 0, "end_ms": 90_400, "speaker": 0, "text": "Hello."}]

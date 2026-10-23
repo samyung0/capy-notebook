@@ -1561,10 +1561,15 @@ _COLUMN_LIMIT = worker.InputLimitError(
 )
 
 
+_NO_SPEECH = worker.InputLimitError("no_speech", "no speech was found")
+
+
 @pytest.mark.parametrize(
     ("error", "refresh", "captured", "code", "index_limit"),
     [
         (_COLUMN_LIMIT, False, False, "tabular_column_limit", "tabular_column_limit"),
+        # A recording with no speech ends ready and unindexed, not failed.
+        (_NO_SPEECH, False, False, "no_speech", "no_speech"),
         # An edited source over the limit keeps its published version.
         (_COLUMN_LIMIT, True, False, "tabular_column_limit", ""),
         (

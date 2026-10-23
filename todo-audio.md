@@ -191,6 +191,9 @@ Review fixes (2026-10-24):
       browser cannot read (5 s, zero, or Infinity after seeking past the
       end) is refused with a toast naming it; the upload request requires
       `durationSeconds` for audio.
+- [x] No speech (Epo 2026-10-24, "ready"): the call settles at zero credits
+      as a successful call and the file ends ready and unindexed with
+      `index_limit = 'no_speech'`, shown neutral with its own message.
 
 ## Part B: voice input (Flash)
 
@@ -221,8 +224,6 @@ Review fixes (2026-10-24):
   audio can hold every replica; a smaller gate or a separate audio worker
   (Epo). The gate is per environment database; whether the prod and UAT
   keys share one Alibaba workspace quota.
-- A recording with no speech fails the file today; failed or ready and
-  unindexed (Epo).
 - Migration number: 0109 on the branch, renumbered at landing.
 - Live checks from the ingest host: ffmpeg under the decoder sandbox in the
   deployed image, the result link's host shape and the `speaker_id` field

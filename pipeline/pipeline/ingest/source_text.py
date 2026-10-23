@@ -550,17 +550,23 @@ async def transcribe_audio_source(
                     "audio transcription is temporarily unavailable"
                 ) from exc
             running = False
-            if not sentences:
-                raise TerminalError("audio has no speech to transcribe")
-            # Where the speech ends is a floor under the measured length (an
-            # edit list can shorten what ffmpeg reads; the provider may not
-            # apply it). Speech past two hours is the same limit, uncharged.
-            spoken = max(sentence["end_ms"] for sentence in sentences) / 1000
-            if spoken > AUDIO_MAX_DURATION_SECONDS:
-                raise InputLimitError(
-                    "audio_duration_limit", "audio is longer than the two-hour limit"
-                )
-            seconds = math.ceil(max(duration, spoken))
+            if sentences:
+                # Where the speech ends is a floor under the measured length
+                # (an edit list can shorten what ffmpeg reads; the provider
+                # may not apply it). Speech past two hours is the same limit,
+                # uncharged.
+                spoken = max(sentence["end_ms"] for sentence in sentences) / 1000
+                if spoken > AUDIO_MAX_DURATION_SECONDS:
+                    raise InputLimitError(
+                        "audio_duration_limit",
+                        "audio is longer than the two-hour limit",
+                    )
+                seconds = math.ceil(max(duration, spoken))
+                credit_micros = seconds * second_rate_micros
+            else:
+                # A finished task that heard no speech: the call succeeded,
+                # and nothing is charged.
+                seconds, credit_micros = math.ceil(duration), 0
             await accounting.settle_units(
                 call_id=call_id,
                 kind=accounting.KIND_AUDIO,
@@ -569,7 +575,7 @@ async def transcribe_audio_source(
                 model=FILETRANS_MODEL,
                 units=seconds,
                 unit="seconds",
-                credit_micros=seconds * second_rate_micros,
+                credit_micros=credit_micros,
             )
         except (asyncio.CancelledError, accounting.SettlementError):
             # Cancelled: the task may still run, so the call stays open for
@@ -581,6 +587,9 @@ async def transcribe_audio_source(
         finally:
             if not running:
                 await accounting.release_call(call_id)
+        if not sentences:
+            # Ready and unindexed, with its own reason: not a failure.
+            raise InputLimitError("no_speech", "no speech was found in the recording")
 
         payload = {
             "kind": "audio_transcript",
