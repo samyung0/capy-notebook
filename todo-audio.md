@@ -133,7 +133,7 @@ Pipeline (`pipeline/pipeline/ingest/`):
       `CapacityWait`.
 - [x] Errors: 429 and task `FAILED` retry once, then terminal; a bad link or
       unsupported file is terminal at once.
-- [x] Duration: ffprobe before submitting; over 2 hours is the
+- [x] Duration: measured before submitting; over 2 hours is the
       `audio_duration_limit` index limit (restore the enum value).
 - [x] Chunking from sentences into `text` + `regions` as above.
 - [x] Settle `audio_transcription_second` on success (units back on
@@ -160,6 +160,34 @@ Config and docs:
 - [x] `openwiki/agentic-retrieval.md` (audio route, regions), metering doc,
       test catalog, `human/` lines.
 
+Review fixes (2026-10-24):
+- [x] Duration: ffmpeg copies every packet to the null muxer under the
+      decoder sandbox's policy (`decode.audio_seconds`), so a WebM with no
+      duration and an MP4 with edited header boxes are measured; a CI test
+      checks the probe runs sandboxed. CI installs ffmpeg for the pipeline
+      job.
+- [x] Billing: whole seconds of the measured length or the last sentence's
+      end, whichever is later; speech ending past 2 hours is
+      `audio_duration_limit`, uncharged and uncached.
+- [x] Polling: a 408, 429, 5xx or lost answer on a poll keeps polling within
+      the wall budget; any state but PENDING/RUNNING/SUCCEEDED/FAILED ends
+      the poll as retryable; polls back off from 2 s to 10 s and log at
+      DEBUG.
+- [x] Result link: https only (http upgraded), on
+      `dashscope-result-*.oss-*.aliyuncs.com`, no redirects.
+- [x] Pipeline Sentry breadcrumbs keep request URLs without their query.
+- [x] A task that may still run (timeout, cancel, lost submit answer) keeps
+      its gate lease until the receipt window ends.
+- [x] Config: `ALIBABA_MODELSTUDIO_URL` must end with `/compatible-mode/v1`
+      (startup); unset settings fail before measuring; the link is signed
+      after admission.
+- [x] Browser length read: 5 s timeout with no length, `audio.load()` called.
+- [x] `audio_transcription_second` seeded as version 2.
+- [x] Docs: whole-sentence chunks can exceed the budget; a Retry after a lost
+      cache and a later failure pays again.
+- [x] `KindAudio`, `CreditsForAudioSeconds` and the `voice_input_second`
+      row stay for Part B, which lands on this branch before main.
+
 ## Part B: voice input (Flash)
 
 - [ ] Chat composer mic button: hold or toggle to record with MediaRecorder
@@ -185,5 +213,15 @@ Config and docs:
 - Whether voice input works outside a workspace (no context to send).
 - Workspace quota for Singapore before launch; ask Alibaba for more if the
   observed ~20 in flight holds.
-- Measured duration source for billing: ffprobe locally vs Filetrans'
-  reported `duration`.
+- Filetrans gate size: 12 never binds with one job per ingest replica, and
+  audio can hold every replica; a smaller gate or a separate audio worker
+  (Epo). The gate is per environment database; whether the prod and UAT
+  keys share one Alibaba workspace quota.
+- When the browser cannot read a length, the dialog uploads with no
+  estimate and the worker measures (Epo's sign-off, then `human/`).
+- A recording with no speech fails the file today; failed or ready and
+  unindexed (Epo).
+- Migration number: 0109 on the branch, renumbered at landing.
+- Live checks from the ingest host: ffmpeg under the decoder sandbox in the
+  deployed image, the result link's host shape and the `speaker_id` field
+  on a real Singapore task.
