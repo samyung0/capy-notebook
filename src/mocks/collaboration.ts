@@ -608,6 +608,31 @@ export function setCollaborationSlowed(value: boolean) {
   window.dispatchEvent(new Event(REACHABILITY));
 }
 
+// A note whose collaboration-token requests hang, or answer after `delayMs`
+// (the join's 30 s, Epo 2026-10-23); kept across page loads, so a first open
+// starts held.
+const TOKENS_HELD = 'capy.mock.collaboration.tokensHeld';
+
+export function holdNoteTokens(materialId: string | null, delayMs?: number) {
+  if (materialId)
+    sessionStorage.setItem(
+      TOKENS_HELD,
+      JSON.stringify({ delayMs: delayMs ?? null, materialId })
+    );
+  else sessionStorage.removeItem(TOKENS_HELD);
+}
+
+/** How long a note's token request waits: null at once, Infinity for ever. */
+export function noteTokenDelay(materialId: string): number | null {
+  if (!browser) return null;
+  const held = JSON.parse(sessionStorage.getItem(TOKENS_HELD) ?? 'null') as {
+    delayMs: number | null;
+    materialId: string;
+  } | null;
+  if (held?.materialId !== materialId) return null;
+  return held.delayMs ?? Number.POSITIVE_INFINITY;
+}
+
 // A note's current room schema, as the service's material_yjs_documents
 // row names it (1 until a room moves).
 const SCHEMA = 'capy.scenario.schema.';
@@ -730,6 +755,7 @@ class MockCollaborationProvider implements UnifiedProvider {
       this.options.onSlowed?.(true);
       return;
     }
+    if (roomJoinsHeld) return;
     const room = materialRoom(this.options.name, this.options.initialValue);
     this.room = room;
     materialProviders.add(this);
@@ -782,6 +808,18 @@ class MockCollaborationProvider implements UnifiedProvider {
   announceOutdated() {
     this.disconnect();
     this.options.onAuthenticationFailed?.(outdated);
+  }
+
+  /** A room event the service sends this note's editors. */
+  announce(materialId: string, event: Record<string, unknown>) {
+    if (this.options.materialId !== materialId || !this.isConnected) return;
+    this.options.onStateless?.({
+      payload: JSON.stringify({
+        materialId,
+        room: this.options.name,
+        ...event,
+      }),
+    });
   }
 
   announceReadOnly() {
@@ -865,7 +903,9 @@ class MockSourceProvider implements SourceProvider {
         String(Number(sessionStorage.getItem(SOURCE_JOINS) ?? 0) + 1)
       );
     sourceProviders.add(this);
-    queueMicrotask(() => config.onSynced?.({ state: true }));
+    // A held JOIN is never answered on the open socket: no sync, no close.
+    if (!roomJoinsHeld)
+      queueMicrotask(() => config.onSynced?.({ state: true }));
   }
 
   sendStateless(payload: string) {
@@ -950,6 +990,13 @@ class MockSourceProvider implements SourceProvider {
     });
   }
 
+  announcePaused(fileId: string) {
+    if (this.room.target.id !== fileId) return;
+    this.config.onStateless?.({
+      payload: JSON.stringify({ fileId, type: 'source-editing-paused' }),
+    });
+  }
+
   announceEpoch(fileId: string, newEpoch: number) {
     if (this.room.target.id !== fileId) return;
     this.room.retired = true;
@@ -978,6 +1025,24 @@ export function refuseThisBuild() {
   ])
     provider.announceOutdated();
 }
+/** The service compacted an open note's room (Epo 2026-10-22's room swap):
+ * the room moves to its next schema with its saved state, and the open
+ * editors hear it. */
+export function compactMockMaterialRoom(materialId: string) {
+  const providers = [...materialProviders];
+  moveMockMaterialRoom(materialId, true);
+  for (const provider of providers)
+    provider.announce(materialId, { type: 'compaction-complete' });
+}
+/** The room refuses an open note's update for good (over a limit): its
+ * editors keep their unsaved edits as a refused draft. */
+export function rejectMockNoteUpdate(materialId: string) {
+  for (const provider of [...materialProviders])
+    provider.announce(materialId, {
+      code: 'document_size_exceeded',
+      type: 'document-rejected',
+    });
+}
 /** The collaboration service's refusal once the account freezes: every open
  * room turns read-only for its writer. */
 export function announceReadOnly() {
@@ -1004,11 +1069,31 @@ export function holdSourceSaveReceipts(hold: boolean) {
   heldSaveReceipts = null;
   for (const send of held) send();
 }
+let roomJoinsHeld = false;
+/** Note, Office and text room JOINs from now on are never answered, the
+ * socket staying open (the join's 30 s, then its error); joins already in
+ * rooms are untouched. */
+export function holdRoomJoins(hold: boolean) {
+  roomJoinsHeld = hold;
+}
+let sourceSessionsHeld = false;
+/** Office and text edit opens' source-session requests from now on hang. */
+export function holdSourceSessions(hold: boolean) {
+  sourceSessionsHeld = hold;
+}
+export const sourceSessionHeld = () => sourceSessionsHeld;
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
     provider.announceEpoch(fileId, epoch);
 }
+/** The maintenance window paused Office editing: open editors keep their
+ * view read-only under the paused banner. */
+export function announceSourcePaused(fileId: string) {
+  for (const provider of [...sourceProviders]) provider.announcePaused(fileId);
+}
 export function resetScenarioRooms() {
+  roomJoinsHeld = false;
+  sourceSessionsHeld = false;
   failedSourceSaves.clear();
   refusedSourceSaves.clear();
   holdSourceSaveReceipts(false);

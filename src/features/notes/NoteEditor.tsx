@@ -1,5 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   isAccountForbiddenError,
   isApiError,
@@ -12,7 +21,11 @@ import {
   useMaterialDiscussions,
   useMe,
 } from '@/api/hooks';
-import type { Material, WorkspaceRole } from '@/api/types';
+import type {
+  Material,
+  MaterialCollaborationToken,
+  WorkspaceRole,
+} from '@/api/types';
 import {
   SaveBanner,
   type SaveBannerState,
@@ -23,6 +36,7 @@ import type { PresenceConnection } from '@/features/collaboration/presence';
 import { FileError, FileLoading } from '@/features/files/FileStates';
 import { MaterialRenderProvider } from '@/features/materials/MaterialRenderContext';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { draftKey, dropLostDrafts } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -36,8 +50,22 @@ import {
   type EditorRuntimeValue,
 } from './EditorRuntime';
 import type { NoteEditorStatus } from './editorMode';
-import { NoteEditorCore, type NoteOfflineState } from './NoteEditorCore';
-import { NoteRecovery, useNoteDrafts } from './NoteRecovery';
+import {
+  NoteEditorCore,
+  type NoteEditorPhase,
+  type NoteOfflineState,
+} from './NoteEditorCore';
+import { type NoteDrafts, NoteRecovery, useNoteDrafts } from './NoteRecovery';
+import { RECONNECT_GRACE_MS } from './roomConnection';
+import {
+  captureNotePosition,
+  copyPausedView,
+  type NotePosition,
+  type NoteView,
+  onPhone,
+  restoreNotePosition,
+  tabHidden,
+} from './roomSwap';
 import { toastSaveUndone } from './saveFailure';
 
 /** Shared so a pending discussions query does not hand the editor a new array
@@ -139,8 +167,9 @@ function CollaborativeNoteEditor({
   });
   // The collaboration service discards a room whose document breaks the
   // material limits, so the local Y.Doc becomes a fork the moment that happens.
-  // Remounting is the only way back onto the authoritative state: invalidating
-  // the token alone can return the same room and leave this editor mounted.
+  // A new mount (swapped in, useRoomSwap) is the only way back onto the
+  // authoritative state: invalidating the token alone can return the same
+  // room and leave this editor mounted.
   const [editorGeneration, setEditorGeneration] = useState(0);
   // Saves are failing or unconfirmed while the editor keeps its edits.
   const [saveDelayed, setSaveDelayed] = useState(false);
@@ -220,11 +249,34 @@ function CollaborativeNoteEditor({
   const {
     data: collaborationTokenData,
     error: collaborationTokenError,
+    fetchStatus: collaborationTokenFetchStatus,
     isPending: collaborationTokenIsPending,
     refetch: refetchCollaborationToken,
   } = useMaterialCollaborationToken(material.id, true, {
     errorBoundary: false,
   });
+  // A note's join starts at its token request, first open or reload, or at
+  // a new mount of the same room, and has 30 s from then (Epo 2026-10-23):
+  // the editor's room watch counts from this start, and a first open whose
+  // token has not answered by then shows the connection error.
+  const tokenFetching = collaborationTokenFetchStatus === 'fetching';
+  const joinStart = useRef(Date.now());
+  const [tokenAttempt, setTokenAttempt] = useState(0);
+  const [tokenTimedOut, setTokenTimedOut] = useState(false);
+  useEffect(() => {
+    if (tokenFetching) joinStart.current = Date.now();
+  }, [tokenFetching]);
+  useEffect(() => {
+    joinStart.current = Date.now();
+  }, [editorGeneration]);
+  useEffect(() => {
+    if (collaborationTokenData || !tokenFetching) return;
+    const timer = setTimeout(
+      () => setTokenTimedOut(true),
+      Math.max(0, joinStart.current + RECONNECT_GRACE_MS - Date.now())
+    );
+    return () => clearTimeout(timer);
+  }, [collaborationTokenData, tokenFetching, tokenAttempt]);
   // Offline past the bound this device may hold, or refused as outdated:
   // every editing control (toolbar, palette, block actions) stands down with
   // the content.
@@ -284,6 +336,23 @@ function CollaborativeNoteEditor({
     [material.kind, material.title, material.workspaceId]
   );
 
+  // A room reload swaps renderers (Epo 2026-10-22; roomSwap.ts): the room
+  // and mount the note wants, and its editor once its stored edits are read.
+  const wanted = collaborationTokenData
+    ? `${collaborationTokenData.room}:${editorGeneration}`
+    : null;
+  const ready: NoteMount | null =
+    collaborationTokenData && storedKey && drafts && drafts.for === wanted
+      ? { drafts, key: wanted, token: collaborationTokenData }
+      : null;
+  const swap = useRoomSwap(ready, wanted, onEditorStatusChange);
+  // The paused editor's banners went with its room: the next starts clean.
+  useEffect(() => {
+    if (!swap.pending) return;
+    setOffline(null);
+    setSaveDelayed(false);
+  }, [swap.pending]);
+
   if (unavailable === 'notFound')
     return (
       <FileError
@@ -297,6 +366,21 @@ function CollaborativeNoteEditor({
         icon="securityWarning"
         message={m.editor_access_lost_body()}
         title={m.editor_access_lost()}
+      />
+    );
+
+  // A first open's token never answered within the join's 30 s.
+  if (tokenTimedOut && !collaborationTokenData)
+    return (
+      <FileError
+        icon="error"
+        message={m.editor_collab_unavailable()}
+        onRetry={() => {
+          joinStart.current = Date.now();
+          setTokenTimedOut(false);
+          setTokenAttempt((value) => value + 1);
+          void refetchCollaborationToken();
+        }}
       />
     );
 
@@ -334,48 +418,218 @@ function CollaborativeNoteEditor({
   }
 
   // Stored edits are read for each room and mount before the editor opens.
-  if (
-    !(storedKey && drafts) ||
-    drafts.for !== `${collaborationTokenData.room}:${editorGeneration}`
-  )
-    return <FileLoading />;
+  if (!(meData && storedKey && swap.shown)) return <FileLoading />;
+
+  const renderMount = (mount: NoteMount, phase: NoteEditorPhase) =>
+    mount.drafts.recovery ? (
+      <NoteRecovery
+        material={material}
+        onEditorStatusChange={
+          phase === 'live' ? onEditorStatusChange : undefined
+        }
+        onPainted={(view) => swap.painted(mount.key, view)}
+        onReload={() => setEditorGeneration((value) => value + 1)}
+        recovery={mount.drafts.recovery}
+      />
+    ) : (
+      <NoteEditorCore
+        allowExternalAssets={allowExternalAssets}
+        collaborationToken={mount.token}
+        currentUserId={meData.id}
+        discussions={discussionsData ?? NO_DISCUSSIONS}
+        draftKey={storedKey}
+        joinStartedAt={joinStart.current}
+        material={material}
+        onDocumentRejected={onDocumentRejected}
+        onEditorStatusChange={onEditorStatusChange}
+        onOffline={setOffline}
+        onOutdated={markOutdated}
+        onPainted={(view) => swap.painted(mount.key, view)}
+        onPresenceChange={onPresenceChange}
+        onReadOnly={reportReadOnly}
+        onSaveDelayed={setSaveDelayed}
+        onUnavailable={onUnavailable}
+        phase={phase}
+        restored={mount.drafts.current}
+      />
+    );
 
   return (
     <MaterialRenderProvider value={renderContext}>
       <EditorRuntimeProvider value={runtime}>
-        <div className="flex h-full flex-col gap-0 overflow-hidden">
-          {drafts.recovery ? (
-            <NoteRecovery
-              material={material}
-              onEditorStatusChange={onEditorStatusChange}
-              onReload={() => setEditorGeneration((value) => value + 1)}
-              recovery={drafts.recovery}
-            />
-          ) : (
-            <>
-              {banner && <SaveBanner state={banner} />}
-              <NoteEditorCore
-                allowExternalAssets={allowExternalAssets}
-                collaborationToken={collaborationTokenData}
-                currentUserId={meData.id}
-                discussions={discussionsData ?? NO_DISCUSSIONS}
-                draftKey={storedKey}
-                key={`${collaborationTokenData.room}:${editorGeneration}`}
-                material={material}
-                onDocumentRejected={onDocumentRejected}
-                onEditorStatusChange={onEditorStatusChange}
-                onOffline={setOffline}
-                onOutdated={markOutdated}
-                onPresenceChange={onPresenceChange}
-                onReadOnly={reportReadOnly}
-                onSaveDelayed={setSaveDelayed}
-                onUnavailable={onUnavailable}
-                restored={drafts.current}
+        {/* One drag-and-drop backend for every editor mounted here: react-dnd
+         * refuses two HTML5 backends at once. */}
+        <DndProvider backend={HTML5Backend}>
+          <div className="relative flex h-full flex-col gap-0 overflow-hidden">
+            {banner && !swap.shown.drafts.recovery && (
+              <SaveBanner state={banner} />
+            )}
+            {swap.mounts.map(({ mount, phase, hidden }) => (
+              // Keyed by room and mount: the swap only changes the classes, so
+              // the next editor's DOM is never moved or rebuilt.
+              <div
+                aria-hidden={phase === 'standby' || undefined}
+                className={cn(
+                  'flex min-h-0 flex-1 flex-col',
+                  hidden && 'invisible absolute inset-0'
+                )}
+                data-note-mount={phase}
+                inert={phase === 'standby'}
+                key={mount.key}
+              >
+                {renderMount(mount, phase)}
+              </div>
+            ))}
+            {swap.copying && (
+              // A phone's paused note, as a copy over the editor remounting in
+              // place under it.
+              <div
+                className="absolute inset-0 z-10 flex flex-col bg-surface"
+                ref={swap.copyTarget}
               />
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        </DndProvider>
       </EditorRuntimeProvider>
     </MaterialRenderProvider>
   );
+}
+
+/** One rendered room: the editor (or recovery) for a room and mount. */
+interface NoteMount {
+  drafts: NoteDrafts;
+  key: string;
+  token: MaterialCollaborationToken;
+}
+
+/**
+ * Runs a room reload as a swap (Epo 2026-10-22). `shown` is the renderer on
+ * screen; while the note wants another room or mount (`wanted`) it stays
+ * paused, and once that one's stored edits are read (`ready`) the next one
+ * builds hidden beside it and replaces it after its first paint, at the same
+ * block. A hidden tab swaps at once; a phone remounts in place under a copy
+ * of the paused view.
+ */
+function useRoomSwap(
+  ready: NoteMount | null,
+  wanted: string | null,
+  onEditorStatusChange?: (status: NoteEditorStatus | null) => void
+) {
+  const [shown, setShown] = useState<NoteMount | null>(null);
+  // The first open has nothing to pause.
+  if (!shown && ready) setShown(ready);
+  const pending = !!shown && shown.key !== wanted;
+  const [copy, setCopy] = useState<ReturnType<typeof copyPausedView> | null>(
+    null
+  );
+  // Each painted mount's editor and scroll box, by mount key.
+  const views = useRef(new Map<string, NoteView>());
+  const position = useRef<NotePosition | null>(null);
+  const latest = useRef({ copy, pending, ready, shown });
+  latest.current = { copy, pending, ready, shown };
+
+  const swapTo = useCallback((next: NoteMount, withCopy: boolean) => {
+    const old = latest.current.shown;
+    const view = old && views.current.get(old.key);
+    position.current = view ? captureNotePosition(view) : null;
+    const root = view?.scrollArea.closest<HTMLElement>('[data-note-mount]');
+    if (withCopy && root)
+      setCopy(copyPausedView(root, position.current?.scrollTop ?? 0));
+    setShown(next);
+  }, []);
+
+  // A hidden tab or a phone swaps as soon as the next one can mount; else it
+  // builds beside the paused one and its first paint swaps (`painted`). The
+  // path is decided once per swap, when the next mount is ready, so a
+  // breakpoint crossing during the build keeps it (review M3).
+  const readyKey = ready?.key;
+  const path = useRef<{ key: string; way: 'beside' | 'copy' | 'now' }>(null);
+  if (pending && readyKey && path.current?.key !== readyKey)
+    path.current = {
+      key: readyKey,
+      way: tabHidden() ? 'now' : onPhone() ? 'copy' : 'beside',
+    };
+  const way = pending && readyKey ? path.current?.way : undefined;
+  const atOnce = way === 'now' || way === 'copy';
+  useLayoutEffect(() => {
+    const mount = latest.current.ready;
+    if (!(pending && readyKey && mount && way)) return;
+    if (way !== 'beside') {
+      swapTo(mount, way === 'copy');
+      return;
+    }
+    const hidden = () => {
+      const next = latest.current.ready;
+      if (tabHidden() && next) swapTo(next, false);
+    };
+    document.addEventListener('visibilitychange', hidden);
+    return () => document.removeEventListener('visibilitychange', hidden);
+  }, [pending, readyKey, swapTo, way]);
+
+  // The paused note says Reconnecting; a standby editor keeps saying so
+  // itself, with a slowed open's line.
+  useEffect(() => {
+    if (pending) onEditorStatusChange?.({ saveState: 'reconnecting' });
+  }, [pending, onEditorStatusChange]);
+
+  // The shown editor painted after an at-once swap (its paint lifts a
+  // phone's copy).
+  const [paintedKey, setPaintedKey] = useState<string | null>(null);
+  const painted = useCallback(
+    (key: string, view: NoteView) => {
+      views.current.set(key, view);
+      const { pending: waiting, ready: next, shown: current } = latest.current;
+      if (waiting && next?.key === key) swapTo(next, false);
+      else if (current?.key === key) {
+        setPaintedKey(key);
+        setCopy(null);
+      }
+    },
+    [swapTo]
+  );
+
+  // Back where the reader was once the next editor is on screen and
+  // painted, before the browser paints the swap.
+  useLayoutEffect(() => {
+    const view = shown && views.current.get(shown.key);
+    if (!(view && position.current) || copy) return;
+    restoreNotePosition(view, position.current);
+    position.current = null;
+  }, [copy, paintedKey, shown]);
+
+  const copyTarget = useCallback((element: HTMLDivElement | null) => {
+    const current = latest.current.copy;
+    if (!(element && current)) return;
+    element.replaceChildren(current.copy);
+    current.place();
+  }, []);
+
+  const mounts: {
+    hidden: boolean;
+    mount: NoteMount;
+    phase: NoteEditorPhase;
+  }[] = [];
+  if (shown)
+    mounts.push({
+      hidden: false,
+      mount: shown,
+      phase: pending ? 'paused' : copy ? 'standby' : 'live',
+    });
+  if (pending && ready && !atOnce)
+    mounts.push({ hidden: true, mount: ready, phase: 'standby' });
+  // A mount that went takes its editor with it.
+  const mounted = mounts.map(({ mount }) => mount.key).join(' ');
+  useEffect(() => {
+    const keys = new Set(mounted.split(' '));
+    for (const key of views.current.keys())
+      if (!keys.has(key)) views.current.delete(key);
+  }, [mounted]);
+  return {
+    copying: !!copy,
+    copyTarget,
+    mounts,
+    painted,
+    pending,
+    shown,
+  };
 }

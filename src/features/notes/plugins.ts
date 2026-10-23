@@ -103,8 +103,6 @@ import {
   type RenderNodeWrapper,
 } from 'platejs/react';
 import { createElement } from 'react';
-import { DndProvider } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
 import { LIST_INDENT_MAX } from '@/features/materials/document';
 import { m } from '@/i18n';
 import { editorAiEnabled } from '@/lib/features';
@@ -522,11 +520,10 @@ function buildBlockInteractionKit(allowExternalAssets: boolean) {
             });
         },
       },
-      render: {
-        aboveNodes: BlockDraggable,
-        aboveSlate: ({ children }) =>
-          createElement(DndProvider, { backend: HTML5Backend }, children),
-      },
+      // NoteEditor holds the DndProvider for every editor it mounts: two
+      // providers (a paused editor and the next one) set up two HTML5
+      // backends, which react-dnd refuses.
+      render: { aboveNodes: BlockDraggable },
     }),
   ];
 }
