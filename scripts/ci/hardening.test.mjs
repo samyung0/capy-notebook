@@ -234,6 +234,24 @@ test('the deploy images carry their compose hash and production runs the digests
   );
 });
 
+// Deploy Ops checks the revision is on main before its image builds, and the
+// job holding the deploy secrets reads nothing but code and packages
+// (security regression, review L2/L3).
+const ON_MAIN = /git merge-base --is-ancestor "\$revision" origin\/main/;
+
+test('Deploy Ops checks the revision before building and its deploy job reads only code and packages', () => {
+  const { jobs } = parse(read('.github/workflows/deploy-ops.yml'));
+  const resolve = jobs.resolve_revision.steps.find(
+    (step) => step.id === 'resolve'
+  );
+  assert.match(resolve.run, ON_MAIN);
+  assert.equal(jobs.image.needs, 'resolve_revision');
+  assert.deepEqual(jobs.deploy.permissions, {
+    contents: 'read',
+    packages: 'read',
+  });
+});
+
 test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies, on every push and daily', () => {
   const audit = parse(read('.github/workflows/audit.yml'));
   assert.deepEqual(
