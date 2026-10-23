@@ -1,6 +1,6 @@
 # UAT activation checklist
 
-What to verify once the Coolify resource for `capy-notebook-uat` has real values and
+What to verify once the UAT app host's Compose stack has real values and
 has deployed at least once. Ordered by dependency: a failure at one step makes
 every later step meaningless. Setup instructions live in
 [`deployment-runbook.md`](deployment-runbook.md); this file is only the
@@ -57,7 +57,8 @@ The ops probe checks both directions of the Access gate. An anonymous request
 must be redirected to `OPS_CF_ACCESS_ISSUER`'s login page for the ops hostname,
 and the smoke service token (`UAT_OPS_ACCESS_CLIENT_ID`/`_SECRET`) must get a
 `200` shell and a `401` from `/api/ops/session`. A `404` with the token means
-Access passed but no Coolify service owns the hostname yet; a `401` means the
+Access passed but the tunnel does not route the hostname to `127.0.0.1:8082`
+(or the `capy-ops` stack is not running); a `401` means the
 ops container rejected Cloudflare's token, usually a wrong issuer or audience.
 
 Then, from the ingest host, confirm the import worker can reach the gateway on
@@ -67,15 +68,34 @@ WireGuard (`CAPY_PRIVATE_BIND_ADDRESS` must be set on the UAT app host):
 curl --fail --silent http://10.77.0.3:8080/healthz
 ```
 
+On the app host, as root (set up in
+[deployment runbook §1.1](deployment-runbook.md#11-docker-compose-and-cloudflare-tunnel)):
+
+- `ss -ltn` shows Docker publishing only on `127.0.0.1` (8080, 1234, 8082) and
+  the WireGuard address (5432, 6379, 8080). Nothing listens on 80, 443, 8000,
+  6001 or 6002.
+- `docker ps --format '{{.Names}} {{.Label "org.opencontainers.image.revision"}}'`
+  shows the release SHA on every `capy-` container except `capy-db-1` and
+  `capy-capy-redis-1`.
+- The deploy key works only through the tunnel: with it,
+  `ssh … capy-deploy@uat-deploy.capynotebook.com deploy` through
+  `cloudflared access ssh` and the service token answers the usage error with
+  exit 2, `bash` gets the same answer, and the same key against the host's
+  public address is refused.
+- Access refuses a client without the service token: with
+  `TUNNEL_SERVICE_TOKEN_*` unset, `cloudflared access ssh --hostname
+  uat-deploy.capynotebook.com` fails at Access, and
+  `curl -sI https://uat-deploy.capynotebook.com` answers with the Access login
+  redirect or a 403.
+
 If the gateway is unhealthy, check these before anything else:
 
 | Symptom | Cause |
 | --- | --- |
-| Gateway exits at startup, logs a credential that reads like a sentence | Coolify stored a `${VAR:?message}` guard's message as the variable's value. Every unset variable must be stored blank, not left absent. |
 | Gateway exits complaining about the email secret | `EMAIL_UNSUBSCRIBE_SECRET` needs 32+ characters across 3 character classes. Plain hex fails. |
-| Gateway exits with `unknown EMAIL_BACKEND "resend"` or `cloudflare email token is required` | Coolify still has the Resend settings. Set `EMAIL_BACKEND=cloudflare` and `CLOUDFLARE_EMAIL_TOKEN` in GitHub `uat` (deployment runbook §12.5) and redeploy. |
+| Gateway exits with `unknown EMAIL_BACKEND "resend"` or `cloudflare email token is required` | GitHub `uat` still has the Resend settings. Set `EMAIL_BACKEND=cloudflare` and `CLOUDFLARE_EMAIL_TOKEN` in GitHub `uat` (deployment runbook §12.5) and redeploy. |
 | Gateway refuses to start with Clerk configured | `CLERK_SECRET_KEY` or `CLERK_WEBHOOK_SECRET` is blank, or `CLERK_WEBHOOK_SECRET` is not a Svix signing secret (`whsec_` followed by base64). Both are required unless `AUTH_DISABLED` or `E2E_AUTH` is on. |
-| Variables changed but the container behaves as before | Coolify's compose parse is cached and only refreshes on deploy. Redeploy rather than restart. |
+| Variables changed but the container behaves as before | The host runs the env file of the last deploy (`/opt/capy/app/current/stack.env`). Run Deploy UAT rather than restarting a container. |
 | A platform model call fails with `model capacity is not configured` | Apply the Ops grants, then enter UAT’s own total and interactive reserve for each active model in Ops. |
 
 ## 2. Clerk webhook
@@ -188,7 +208,7 @@ a different Clerk instance than the gateway's secret key.
 ## 5. Data and money
 
 - Uploads land in the UAT bucket, not production. Check the bucket name in the
-  Coolify variables against `deploy/.env.uat`.
+  GitHub `uat` variables against `deploy/.env.uat`.
 - B2 honours a read link's response overrides
   ([deployment runbook §4](deployment-runbook.md#4-backblaze-b2) step 7). Upload
   a `.html` file, a `.svg` and a PDF, and read the headers of the `url` that
@@ -277,9 +297,9 @@ Clerk development instance. Point a local gateway at the UAT database only with
   `cf-cache-status: HIT` with an `age` (Workers Cache), and the identity
   request still prints
   `\0 a s m` once the file is a hit.
-- GitHub configuration sync/readback passed before deployment. Managed Coolify
-  variables are literal, non-preview and readable for verification; unset ones
-  are blank. Neither values nor fingerprints appear in runner logs.
+- The deploy job's render and the host's deploy command printed neither values
+  nor fingerprints in the runner logs; the deploy step printed one line per
+  service, each with the release SHA.
 - The interactive block frame answers at UAT's `VITE_EMBED_ORIGIN`:
   `curl -sI https://uat.capy-embed.pages.dev/` returns `200` with the
   `Content-Security-Policy` from `embed/_headers` (`default-src 'none'; …`),
@@ -332,10 +352,10 @@ Clerk development instance. Point a local gateway at the UAT database only with
   loads on those two), and a summary: each comes to life, and the console
   shows no `Refused to` message. A `Refused to` message names what the
   policy blocked: send it, with the URL, to the Editor session.
-- `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in UAT's Coolify variables and
+- `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in GitHub `uat` and
   blank in production's (the renderer refuses a production value). Without it
   the Office refusal journey's publication is never held and the journey fails.
-- `RETRIEVAL_UAT_SCRIPTED_TOOLS` is `true` in UAT's Coolify variables and blank
+- `RETRIEVAL_UAT_SCRIPTED_TOOLS` is `true` in GitHub `uat` and blank
   in production's, and the retrieval container is running (it refuses to start
   with the switch unless `SENTRY_ENVIRONMENT=uat`). Without it the chat
   journey's scripted turns reach the model and the journey fails.
@@ -350,7 +370,7 @@ Clerk development instance. Point a local gateway at the UAT database only with
   `docker inspect --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}}' "$parser"`
   prints `true [ALL]`.
 - An ingest-only run verifies the already deployed backend SHA. An unfinished
-  Coolify job leaves recovery pending rather than resuming incompatible workers.
+  app deploy leaves recovery pending rather than resuming incompatible workers.
 - Local UI plus UAT still renders the same summary through Vite. Full-local
   Compose uses `deploy/.env` with the renamed `CAPY_*` keys.
 

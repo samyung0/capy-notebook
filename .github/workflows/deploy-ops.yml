@@ -26,7 +26,8 @@ concurrency:
 jobs:
   # Ops reads the same database the backend migrates, so the revision that
   # matters is the one the backend serves rather than the head of main. The
-  # backend reports it; an operator names a revision only to override.
+  # backend reports it; an operator names a revision only to override. Every
+  # check on the revision runs here, before its image builds.
   resolve_revision:
     runs-on: ubuntu-24.04
     environment: ${{ inputs.environment_name }}
@@ -37,6 +38,7 @@ jobs:
         with:
           persist-credentials: false
           ref: main
+          fetch-depth: 0
       - name: Resolve the revision the backend already serves
         id: resolve
         env:
@@ -48,15 +50,36 @@ jobs:
           else
             revision="$(python3 scripts/deploy/verify-backend.py --print)"
           fi
-          [[ "$revision" =~ ^[0-9a-fA-F]{40}$ ]] || {
-            echo "Could not determine a full Git SHA for the Ops release." >&2
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Could not determine a lowercase full Git SHA for the Ops release." >&2
+            exit 1
+          }
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "Run Deploy Ops from main." >&2; exit 1; }
+          git cat-file -e "${revision}^{commit}"
+          git merge-base --is-ancestor "$revision" origin/main || {
+            echo "Revision is not reachable from origin/main." >&2
             exit 1
           }
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Require prior Ops UAT deployment
+        if: inputs.environment_name == 'production'
+        env:
+          DEPLOY_REVISION: ${{ steps.resolve.outputs.revision }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-ops.yml/runs?status=success&event=workflow_dispatch&per_page=100" \
+            --jq ".workflow_runs | any(.head_branch == \"main\" and .display_title == \"Deploy Ops uat $DEPLOY_REVISION\")" \
+            | grep -qx true || {
+              echo "Deploy this Ops revision to UAT successfully first, naming it explicitly:" >&2
+              echo "a UAT run left with a blank revision does not record which SHA it deployed." >&2
+              exit 1
+            }
 
   # The Ops image per environment (capy-ops:<sha>-<environment>): its build
   # arguments are the environment's public variables, never secrets. It builds
   # on every run, since those variables can change between runs of one SHA.
+  # Labelled with the Ops compose file's hash, which the host checks, and
+  # deployed by the digest pushed here.
   image:
     needs: resolve_revision
     runs-on: ubuntu-24.04
@@ -65,6 +88,8 @@ jobs:
       contents: read
       packages: write
     environment: ${{ inputs.environment_name }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     env:
       DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
     steps:
@@ -83,8 +108,14 @@ jobs:
         env:
           GHCR_TOKEN: ${{ github.token }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Hash the compose file the host will run
+        id: compose
+        run: |
+          read -r sha256 _ < <(sha256sum deploy/docker-compose.ops.yml)
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ops/Dockerfile
@@ -94,6 +125,7 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.resolve_revision.outputs.revision }}
             org.opencontainers.image.source=https://github.com/samyung0/capy-notebook
+            org.capynotebook.compose.sha256=${{ steps.compose.outputs.sha256 }}
           build-args: |
             VITE_CLERK_PUBLISHABLE_KEY=${{ vars.CLERK_PUBLISHABLE_KEY }}
             VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN_OPS }}
@@ -105,51 +137,33 @@ jobs:
         if: always()
         run: docker logout ghcr.io
 
+  # The same deploy command as the main stack, as Compose project capy-ops.
   deploy:
-    needs: resolve_revision
+    needs: [resolve_revision, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ vars.DEPLOYMENT_OPS_URL }}
-    # The Coolify token sits only on the steps that call Coolify.
     env:
       TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
       DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
-      COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
-      COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_OPS_RESOURCE_UUID }}
-      COOLIFY_MAIN_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
           ref: ${{ needs.resolve_revision.outputs.revision }}
-          fetch-depth: 0
-      - name: Validate target and immutable revision
+      - name: Validate the revision and name the image by its digest
+        env:
+          OPS_DIGEST: ${{ needs.image.outputs.digest }}
         run: |
-          [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$TARGET_ENVIRONMENT" == uat || "$TARGET_ENVIRONMENT" == production ]]
           [[ "$DEPLOY_REVISION" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$DEPLOY_REVISION" ]]
-          git merge-base --is-ancestor "$DEPLOY_REVISION" origin/main
-      - name: Require prior Ops UAT deployment
-        if: inputs.environment_name == 'production'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-ops.yml/runs?status=success&event=workflow_dispatch&per_page=100" \
-            --jq ".workflow_runs | any(.head_branch == \"main\" and .display_title == \"Deploy Ops uat $DEPLOY_REVISION\")" \
-            | grep -qx true || {
-              echo "Deploy this Ops revision to UAT successfully first, naming it explicitly:" >&2
-              echo "a UAT run left with a blank revision does not record which SHA it deployed." >&2
-              exit 1
-            }
-      - name: Verify the separate Ops application
-        env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-        run: |
-          [[ -n "$COOLIFY_RESOURCE_UUID" && -n "$COOLIFY_MAIN_RESOURCE_UUID" ]]
-          python3 scripts/env/config.py verify-ops-target
+          printf 'CAPY_OPS_IMAGE=ghcr.io/samyung0/capy-ops@%s\n' "$OPS_DIGEST" > "$RUNNER_TEMP/capy-images"
       - name: Render Ops configuration from GitHub
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
@@ -166,17 +180,21 @@ jobs:
           CAPY_SECRET_OPS_INGEST_UAT_DATABASE_URL: ${{ secrets.OPS_INGEST_UAT_DATABASE_URL }}
           CAPY_SECRET_OPS_LIBRARY_DATABASE_URL: ${{ secrets.OPS_LIBRARY_DATABASE_URL }}
         run: python3 scripts/env/config.py render-ops --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-ops-config"
-      - name: Synchronize and verify Ops configuration
+      - name: Configure SSH through Access
         env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-        run: python3 scripts/env/config.py apply-coolify --file "$RUNNER_TEMP/capy-ops-config/ops.json"
+          APP_HOST_SSH_HOSTNAME: ${{ vars.APP_HOST_SSH_HOSTNAME }}
+          APP_HOST_KNOWN_HOSTS: ${{ secrets.APP_HOST_KNOWN_HOSTS }}
+          APP_HOST_SSH_PRIVATE_KEY: ${{ secrets.APP_HOST_SSH_PRIVATE_KEY }}
+        run: scripts/deploy/app-host-release.sh configure
       - name: Deploy only the pinned Ops revision
         env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-        run: scripts/deploy/coolify-deploy.sh
-      - name: Remove runner configuration
+          GHCR_TOKEN: ${{ github.token }}
+          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.APP_HOST_ACCESS_CLIENT_ID }}
+          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.APP_HOST_ACCESS_CLIENT_SECRET }}
+        run: scripts/deploy/app-host-release.sh deploy ops deploy/docker-compose.ops.yml "$RUNNER_TEMP/capy-ops-config/ops.env" "$RUNNER_TEMP/capy-images"
+      - name: Remove runner configuration and SSH key
         if: always()
-        run: rm -rf "$RUNNER_TEMP/capy-ops-config"
+        run: rm -rf "$RUNNER_TEMP/capy-ops-config" "$RUNNER_TEMP/capy-ssh"
       # Only UAT holds an Access service token, so production stops at the deploy.
       - name: Probe the Ops edge
         if: inputs.environment_name == 'uat'

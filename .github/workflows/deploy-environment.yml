@@ -11,6 +11,15 @@ on:
         description: Full Git commit SHA to deploy
         required: true
         type: string
+      image_digests:
+        description: The CAPY_*_IMAGE=<image>@<digest> lines a UAT run deployed; a promotion runs exactly those
+        required: false
+        type: string
+        default: ""
+    outputs:
+      image_digests:
+        description: The CAPY_*_IMAGE=<image>@<digest> lines this run deployed
+        value: ${{ jobs.deploy.outputs.image_digests }}
 
 permissions:
   contents: read
@@ -64,7 +73,7 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
-      # Only the build's own values: the Coolify and ingest configuration is
+      # Only the build's own values: the app host and ingest configuration is
       # rendered in the deploy job, so it never sits on disk while
       # third-party build code runs.
       - name: Render the build configuration from GitHub
@@ -98,6 +107,9 @@ jobs:
   # token pushes. The only layer cache is this registry cache, which only
   # deploy jobs write; CI's Actions cache scopes are never read, since jobs
   # running third-party install and build code also write them (Epo 2026-10-23).
+  # Each image is labelled with the hash of the compose file of its revision
+  # (the host runs only that file, checking capy-server's label) and recorded
+  # by digest, which the host runs.
   images:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -108,12 +120,15 @@ jobs:
       matrix:
         include:
           - image: capy-server
+            variable: CAPY_SERVER_IMAGE
             context: server
             file: server/Dockerfile
           - image: capy-collaboration
+            variable: CAPY_COLLABORATION_IMAGE
             context: .
             file: collaboration-rs/Dockerfile
           - image: capy-pipeline
+            variable: CAPY_PIPELINE_IMAGE
             context: .
             file: pipeline/Dockerfile
             build-args: RELEASE_SHA=${{ inputs.revision }}
@@ -148,9 +163,15 @@ jobs:
             echo "$IMAGE already exists; not rebuilding it."
             echo "found=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Hash the compose file the host will run
+        id: compose
+        run: |
+          read -r sha256 _ < <(sha256sum deploy/docker-compose.prod.yml)
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
       - if: steps.existing.outputs.found != 'true'
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - if: steps.existing.outputs.found != 'true'
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ${{ matrix.context }}
@@ -161,25 +182,77 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ inputs.revision }}
             org.opencontainers.image.source=https://github.com/samyung0/capy-notebook
+            org.capynotebook.compose.sha256=${{ steps.compose.outputs.sha256 }}
           build-args: ${{ matrix.build-args }}
           cache-from: type=registry,ref=ghcr.io/samyung0/${{ matrix.image }}:buildcache
           cache-to: type=registry,ref=ghcr.io/samyung0/${{ matrix.image }}:buildcache,mode=max
+      # The digest just pushed, or the one the revision's tag already names.
+      - name: Record the image digest
+        env:
+          BUILT: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/samyung0/${{ matrix.image }}
+          REVISION: ${{ inputs.revision }}
+          VARIABLE: ${{ matrix.variable }}
+        run: |
+          digest="${BUILT:-$(docker buildx imagetools inspect "$IMAGE:$REVISION" --format '{{json .Manifest}}' | jq -r .digest)}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "No digest for $IMAGE:$REVISION" >&2; exit 1; }
+          mkdir -p "$RUNNER_TEMP/image-digest"
+          printf '%s=%s@%s\n' "$VARIABLE" "$IMAGE" "$digest" > "$RUNNER_TEMP/image-digest/$VARIABLE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: capy-image-digest-${{ inputs.environment_name }}-${{ inputs.revision }}-${{ matrix.image }}
+          path: ${{ runner.temp }}/image-digest/${{ matrix.variable }}
+          retention-days: 1
+          if-no-files-found: error
       - name: Log out of GHCR
         if: always()
         run: docker logout ghcr.io
 
+  # Runs the images on the app host: the rendered app.env and the compose file
+  # go over SSH, through a Cloudflare Access tunnel, to the host's forced
+  # deploy command (scripts/deploy/app-host-deploy.sh). The job token, which
+  # the host uses once to pull, can only read packages. The images run by the
+  # digests the images job recorded, or for a promotion by those UAT ran.
   deploy:
-    needs: build
+    needs: [build, images]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ vars.DEPLOYMENT_APP_URL }}
+    outputs:
+      image_digests: ${{ steps.images.outputs.lines }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
           ref: ${{ inputs.revision }}
+      - if: inputs.image_digests == ''
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: capy-image-digest-${{ inputs.environment_name }}-${{ inputs.revision }}-*
+          path: ${{ runner.temp }}/image-digests
+          merge-multiple: true
+      - name: Collect the image digests
+        id: images
+        env:
+          IMAGE_DIGESTS: ${{ inputs.image_digests }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+        run: |
+          [[ "$TARGET_ENVIRONMENT" != production || -n "$IMAGE_DIGESTS" ]] || {
+            echo "Production runs only the image digests a UAT run of this revision deployed." >&2
+            exit 1
+          }
+          if [[ -n "$IMAGE_DIGESTS" ]]; then
+            printf '%s\n' "$IMAGE_DIGESTS" > "$RUNNER_TEMP/capy-images"
+          else
+            cat "$RUNNER_TEMP"/image-digests/CAPY_*_IMAGE > "$RUNNER_TEMP/capy-images"
+          fi
+          delimiter="capy-$(openssl rand -hex 16)"
+          { echo "lines<<$delimiter"; cat "$RUNNER_TEMP/capy-images"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
       - name: Render deployment configuration from GitHub
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
@@ -215,22 +288,22 @@ jobs:
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
           DEPLOY_REVISION: ${{ inputs.revision }}
         run: python3 scripts/env/config.py render --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-config"
-      - name: Synchronize and verify Coolify configuration
+      - name: Configure SSH through Access
         env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
-          COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
-        run: python3 scripts/env/config.py apply-coolify --file "$RUNNER_TEMP/capy-config/coolify.json"
-      - name: Deploy the pinned backend revision through Coolify
+          APP_HOST_SSH_HOSTNAME: ${{ vars.APP_HOST_SSH_HOSTNAME }}
+          APP_HOST_KNOWN_HOSTS: ${{ secrets.APP_HOST_KNOWN_HOSTS }}
+          APP_HOST_SSH_PRIVATE_KEY: ${{ secrets.APP_HOST_SSH_PRIVATE_KEY }}
+        run: scripts/deploy/app-host-release.sh configure
+      - name: Deploy the pinned backend revision
         env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
-          COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
           DEPLOY_REVISION: ${{ inputs.revision }}
-        run: scripts/deploy/coolify-deploy.sh
-      - name: Remove runner configuration
+          GHCR_TOKEN: ${{ github.token }}
+          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.APP_HOST_ACCESS_CLIENT_ID }}
+          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.APP_HOST_ACCESS_CLIENT_SECRET }}
+        run: scripts/deploy/app-host-release.sh deploy app deploy/docker-compose.prod.yml "$RUNNER_TEMP/capy-config/app.env" "$RUNNER_TEMP/capy-images"
+      - name: Remove runner configuration and SSH key
         if: always()
-        run: rm -rf "$RUNNER_TEMP/capy-config"
+        run: rm -rf "$RUNNER_TEMP/capy-config" "$RUNNER_TEMP/capy-ssh"
 
   site:
     needs: deploy
@@ -333,7 +406,7 @@ jobs:
           APP_ORIGIN: ${{ vars.DEPLOYMENT_APP_URL }}
           SHARE_LINK_SECRET: ${{ secrets.SHARE_LINK_SECRET }}
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
-        # The same GitHub secret reaches Go through Coolify, so signed /w/ links
+        # The same GitHub secret reaches Go through app.env, so signed /w/ links
         # verify on both sides; the secrets file lives only in the runner temp.
         run: |
           secrets_file="$RUNNER_TEMP/site-secrets.json"
