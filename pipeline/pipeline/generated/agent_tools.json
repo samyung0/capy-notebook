@@ -1,5 +1,5 @@
 {
-  "version": 38,
+  "version": 39,
   "operations": [
     "source.read",
     "material.read",
@@ -1906,11 +1906,6 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "expected_text": {
-                      "description": "The exact text to format as inspect_office_document shows it; must occur once in the paragraph.",
-                      "minLength": 1,
-                      "type": "string"
-                    },
                     "font_family": {
                       "description": "A font name, like \"Arial\".",
                       "minLength": 1,
@@ -1956,6 +1951,11 @@
                       "minLength": 1,
                       "type": "string"
                     },
+                    "text": {
+                      "description": "The exact text to format as inspect_office_document shows it; must occur once in the paragraph.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
                     "type": {
                       "const": "format_text"
                     },
@@ -1966,7 +1966,7 @@
                   "required": [
                     "type",
                     "target_id",
-                    "expected_text"
+                    "text"
                   ],
                   "type": "object"
                 },
