@@ -648,10 +648,184 @@ async fn a_reopened_room_replays_its_log_and_folds_it_once_empty() {
         .get::<_, i32>(0)
         .into();
     assert_eq!(rows, 0);
+    // The in-place collection is off by default: no fold stored a window.
+    assert_eq!(windows(&env, &material).await, 0);
     let mut c = Client::open(server.port).await;
     c.joined(&room, &token(&room, &user, "write")).await;
     assert!(
         c.settle(|c| c.block_text() == "base plus").await,
+        "{}",
+        c.block_text()
+    );
+}
+
+/// How many window snapshots a material's folds keep.
+async fn windows(env: &Env, material: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM material_yjs_windows WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("windows")
+        .get(0)
+}
+
+/// Waits up to 5 s for a material's log to be folded (empty).
+async fn log_folded(env: &Env, material: &str) -> bool {
+    let client = db(env).await;
+    for _ in 0..50 {
+        let rows: i32 = client
+            .query_one(
+                "SELECT log_rows FROM material_yjs_documents WHERE material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("row")
+            .get(0);
+        if rows == 0 {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+/// Whether the stored base holds `unit` collected (no row folded since
+/// counts).
+async fn collected_in_base(env: &Env, material: &str, unit: yrs::ID) -> bool {
+    let state: Vec<u8> = db(env)
+        .await
+        .query_one(
+            "SELECT state FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("base")
+        .get(0);
+    let doc = Doc::with_options(ydoc::doc_options(0));
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("base decodes"))
+        .expect("base applies");
+    let txn = doc.transact();
+    matches!(txn.store().get_block_range(&unit), Some((_, None)))
+}
+
+/// The in-place collection at a room's folds (switch on, every store folds):
+/// the middle of a run of deleted text, typed by another writer and named by
+/// nothing, is collected from the stored state while the room stays open; a
+/// tab's Undo of its own deletion after those folds restores the text, the
+/// room's next load holds it, and the folds keep four window snapshots.
+/// Fails if the folds leave the run uncollected or the restored text is lost.
+#[tokio::test]
+async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+        ],
+    )
+    .await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut a = Client::open(server.port).await;
+    let mut b = Client::open(server.port).await;
+    a.joined(&room, &write).await;
+    b.joined(&room, &write).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    // A's editor Undo tracks A's own edits (origin "a").
+    let mut undo: yrs::undo::UndoManager<()> =
+        yrs::undo::UndoManager::with_options(yrs::undo::Options {
+            capture_timeout_millis: 0,
+            tracked_origins: std::collections::HashSet::from([yrs::Origin::from("a")]),
+            ..Default::default()
+        });
+    undo.expand_scope(&a.doc, &a.doc.get_or_insert_text("content"));
+    let first_block = |root: &yrs::TextRef, txn: &yrs::TransactionMut| {
+        root.diff(txn, yrs::types::text::YChange::identity)
+            .into_iter()
+            .find_map(|chunk| match chunk.insert {
+                yrs::Out::YXmlText(block) => Some(block),
+                _ => None,
+            })
+            .expect("a block")
+    };
+    // B types " one", A " two", then B "MID" between "base" and " one".
+    b.type_at(4, " one").await;
+    stored(&mut b, "one").await;
+    assert!(log_folded(&env, &material).await);
+    assert!(a.settle(|c| c.block_text() == "base one").await);
+    a.write(|doc| {
+        let root = doc.get_or_insert_text("content");
+        let mut txn = doc.transact_mut_with("a");
+        first_block(&root, &txn).insert(&mut txn, 8, " two");
+    })
+    .await;
+    stored(&mut a, "two").await;
+    assert!(log_folded(&env, &material).await);
+    assert!(b.settle(|c| c.block_text() == "base one two").await);
+    b.type_at(4, "MID").await;
+    stored(&mut b, "mid").await;
+    assert!(log_folded(&env, &material).await);
+    // B deletes "seMID o": a run of three items whose middle one ("MID")
+    // nothing names. B's session then ends.
+    b.write(|doc| {
+        let root = doc.get_or_insert_text("content");
+        let mut txn = doc.transact_mut();
+        first_block(&root, &txn).remove_range(&mut txn, 2, 7);
+    })
+    .await;
+    stored(&mut b, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    let mid = yrs::ID::new(b.doc.client_id(), 4);
+    drop(b);
+    assert!(a.settle(|c| c.block_text() == "bane two").await);
+    // A deletes its own " two", then types "!".
+    a.write(|doc| {
+        let root = doc.get_or_insert_text("content");
+        let mut txn = doc.transact_mut_with("a");
+        first_block(&root, &txn).remove_range(&mut txn, 4, 4);
+    })
+    .await;
+    stored(&mut a, "own").await;
+    assert!(log_folded(&env, &material).await);
+    a.write(|doc| {
+        let root = doc.get_or_insert_text("content");
+        let mut txn = doc.transact_mut_with("a");
+        first_block(&root, &txn).insert(&mut txn, 4, "!");
+    })
+    .await;
+    stored(&mut a, "bang").await;
+    assert!(log_folded(&env, &material).await);
+    // A later fold's window covers B's deletion: "MID" left the stored base
+    // while the room is open.
+    assert!(
+        collected_in_base(&env, &material, mid).await,
+        "the run's middle stayed in the stored base"
+    );
+    // A's Undo: "!" goes, then " two" comes back.
+    a.write(|_| {
+        assert!(undo.undo_blocking());
+        assert!(undo.undo_blocking());
+    })
+    .await;
+    assert_eq!(a.block_text(), "bane two");
+    stored(&mut a, "undo").await;
+    drop(a);
+    // The room unloads and folds once more; its next load holds the text.
+    assert!(log_folded(&env, &material).await);
+    assert_eq!(windows(&env, &material).await, 4);
+    assert!(collected_in_base(&env, &material, mid).await);
+    let mut c = Client::open(server.port).await;
+    c.joined(&room, &write).await;
+    assert!(
+        c.settle(|c| c.block_text() == "bane two").await,
         "{}",
         c.block_text()
     );

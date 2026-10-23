@@ -5,6 +5,11 @@
 
 use deadpool_postgres::{Pool, Transaction};
 use serde_json::Value;
+use ydoc::gc::Window;
+use yrs::block::ClientID;
+use yrs::updates::decoder::Decode;
+use yrs::updates::encoder::Encode;
+use yrs::{IdSet, ReadTxn, StateVector, Transact};
 
 use crate::access::{self, AccessError};
 use crate::model::Model;
@@ -83,6 +88,14 @@ impl Doc {
         match self {
             Doc::Content => ("material_yjs_documents", "material_yjs_updates"),
             Doc::Keys => ("material_yjs_keys", "material_yjs_key_updates"),
+        }
+    }
+
+    /// The document's name in `material_yjs_windows`.
+    fn name(self) -> &'static str {
+        match self {
+            Doc::Content => "content",
+            Doc::Keys => "keys",
         }
     }
 }
@@ -337,14 +350,35 @@ pub struct Folded {
     pub base_bytes: i64,
 }
 
+/// What a fold's collection must keep (`ydoc::gc`), from the room's
+/// sessions.
+pub struct Holds {
+    /// The oldest stored_version every counted session has reached: the
+    /// window is the newest snapshot stored at or before it. None when no
+    /// session is counted: the window is the folded document itself.
+    pub reached: Option<i64>,
+    /// H: what counted sessions deleted (their Undo may restore it) and what
+    /// agent edits deleted whose durable Undo payload is still valid (24 h).
+    pub held: IdSet,
+    /// The open room's own client, whose contributor-marker chains stay.
+    pub live_room: Option<ClientID>,
+}
+
+/// Window snapshots a document keeps (`material_yjs_windows`), the newest.
+const WINDOWS_KEPT: i64 = 4;
+
 /// Merges the base and the rows up to `through` (all when `None`) into a new
 /// base after the load check (DESIGN.md 3.5). Rows appended meanwhile stay.
+/// With `holds` (the collection's switch on) the new base is collected in
+/// place at the window the holds choose, when one qualifies, and the folded
+/// document is stored as a later window candidate.
 pub async fn fold(
     pool: &Pool,
     material_id: &str,
     schema: i64,
     doc: Doc,
     through: Option<i64>,
+    holds: Option<Holds>,
 ) -> Result<Option<Folded>, StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
@@ -377,20 +411,39 @@ pub async fn fold(
     let Some(&(last, _)) = rows.last() else {
         return Ok(None);
     };
+    let windows = match holds {
+        Some(_) => windows(&tx, material_id, doc).await?,
+        None => Vec::new(),
+    };
     let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();
     let count = rows.len();
-    let state = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, StoreError> {
-        let doc = ydoc::scratch_doc();
-        let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
-        ydoc::replay(&doc, &base, &updates)
-            .map_err(|error| StoreError::Other(error.to_string()))?;
-        use yrs::{ReadTxn, Transact};
-        let txn = doc.transact();
-        model.assert_roots(&txn).map_err(StoreError::Invalid)?;
-        Ok(txn.encode_state_as_update_v1(&yrs::StateVector::default()))
-    })
-    .await
-    .map_err(|error| StoreError::Other(error.to_string()))??;
+    let (state, window) =
+        tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Option<Window>), StoreError> {
+            let scratch = ydoc::scratch_doc();
+            let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
+            ydoc::replay(&scratch, &base, &updates)
+                .map_err(|error| StoreError::Other(error.to_string()))?;
+            let txn = scratch.transact();
+            model.assert_roots(&txn).map_err(StoreError::Invalid)?;
+            let Some(holds) = holds else {
+                return Ok((txn.encode_state_as_update_v1(&StateVector::default()), None));
+            };
+            let now = Window::of(&txn, last);
+            let window = match holds.reached {
+                None => Some(&now),
+                Some(reached) => ydoc::gc::window_for(&windows, reached),
+            };
+            let state = match window {
+                Some(window) => {
+                    drop(txn);
+                    collected(&scratch, window, &holds, model)?
+                }
+                None => txn.encode_state_as_update_v1(&StateVector::default()),
+            };
+            Ok((state, Some(now)))
+        })
+        .await
+        .map_err(|error| StoreError::Other(error.to_string()))??;
     let after_bytes = state.len() as i64;
     tx.execute(
         &format!(
@@ -406,12 +459,104 @@ pub async fn fold(
         &[&material_id, &last],
     )
     .await?;
+    if let Some(window) = window {
+        store_window(&tx, material_id, doc, &window).await?;
+    }
     tx.commit().await?;
     Ok(Some(Folded {
         rows: count,
         log_bytes: folded_bytes,
         base_bytes: after_bytes,
     }))
+}
+
+/// The folded document collected at `window`, refused unless the collected
+/// state loads with nothing pending, keeps the model's roots and holds the
+/// same document value.
+fn collected(
+    scratch: &yrs::Doc,
+    window: &Window,
+    holds: &Holds,
+    model: Model,
+) -> Result<Vec<u8>, StoreError> {
+    let collected = ydoc::gc::collect(scratch, window, &holds.held, holds.live_room);
+    checked(scratch, collected.state, model)
+}
+
+/// `state` if it loads with nothing pending, keeps the model's roots and
+/// holds the document value of `folded`.
+fn checked(folded: &yrs::Doc, state: Vec<u8>, model: Model) -> Result<Vec<u8>, StoreError> {
+    let refused = |why: String| StoreError::Other(format!("in-place collection refused: {why}"));
+    let loaded = ydoc::scratch_doc();
+    ydoc::replay(&loaded, &state, &[] as &[&[u8]]).map_err(|error| refused(error.to_string()))?;
+    let (before, after) = (folded.transact(), loaded.transact());
+    model.assert_roots(&after).map_err(refused)?;
+    if model.document_value(&before).map_err(refused)?
+        != model.document_value(&after).map_err(refused)?
+    {
+        return Err(refused("the collected state holds another value".into()));
+    }
+    Ok(state)
+}
+
+/// A document's window snapshots.
+async fn windows(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    doc: Doc,
+) -> Result<Vec<Window>, StoreError> {
+    let rows = tx
+        .query(
+            "SELECT stored_version, state_vector, delete_set FROM material_yjs_windows
+             WHERE material_id=$1 AND document=$2",
+            &[&material_id, &doc.name()],
+        )
+        .await?;
+    let invalid = |error: yrs::encoding::read::Error| {
+        StoreError::Other(format!("invalid window snapshot: {error}"))
+    };
+    rows.iter()
+        .map(|row| {
+            Ok(Window {
+                stored_version: row.get("stored_version"),
+                state_vector: StateVector::decode_v1(row.get("state_vector")).map_err(invalid)?,
+                delete_set: IdSet::decode_v1(row.get("delete_set")).map_err(invalid)?,
+            })
+        })
+        .collect()
+}
+
+/// Stores `window` as a later collection's candidate and keeps only the
+/// newest [WINDOWS_KEPT].
+async fn store_window(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    doc: Doc,
+    window: &Window,
+) -> Result<(), StoreError> {
+    tx.execute(
+        "INSERT INTO material_yjs_windows
+           (material_id, document, stored_version, state_vector, delete_set)
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+        &[
+            &material_id,
+            &doc.name(),
+            &window.stored_version,
+            &window.state_vector.encode_v1(),
+            &window.delete_set.encode_v1(),
+        ],
+    )
+    .await?;
+    tx.execute(
+        "DELETE FROM material_yjs_windows
+         WHERE material_id=$1 AND document=$2 AND stored_version NOT IN (
+           SELECT stored_version FROM material_yjs_windows
+           WHERE material_id=$1 AND document=$2
+           ORDER BY stored_version DESC LIMIT $3)",
+        &[&material_id, &doc.name(), &WINDOWS_KEPT],
+    )
+    .await?;
+    Ok(())
 }
 
 /// Moves a material to its next room schema after a discard threw unsaved
@@ -564,4 +709,41 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
         kind,
         keys,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use yrs::Text;
+
+    use super::*;
+
+    fn note(text: &str) -> yrs::Doc {
+        let doc = ydoc::scratch_doc();
+        let value = [serde_json::json!({"type": "p", "id": "b1", "children": [{"text": text}]})];
+        ydoc::replay(&doc, &Model::Note.state_from_value(&value), &[] as &[&[u8]]).unwrap();
+        doc
+    }
+
+    fn state(doc: &yrs::Doc) -> Vec<u8> {
+        doc.transact()
+            .encode_state_as_update_v1(&StateVector::default())
+    }
+
+    /// A fold writes a collected state only when it loads, with nothing
+    /// pending, to the value it folded.
+    #[test]
+    fn a_collected_state_must_load_to_the_folded_value() {
+        let folded = note("kept");
+        assert!(checked(&folded, state(&folded), Model::Note).is_ok());
+        assert!(checked(&folded, state(&note("lost")), Model::Note).is_err());
+        // An update naming structs the state does not hold.
+        let later = ydoc::scratch_doc();
+        ydoc::replay(&later, &state(&folded), &[] as &[&[u8]]).unwrap();
+        let before = later.transact().state_vector();
+        later
+            .get_or_insert_text(notes::CONTENT_ROOT)
+            .insert(&mut later.transact_mut(), 0, "x");
+        let tail = later.transact().encode_state_as_update_v1(&before);
+        assert!(checked(&folded, tail, Model::Note).is_err());
+    }
 }

@@ -1962,6 +1962,14 @@ impl Room {
             note.stored_version,
             note.doc,
         );
+        // Until the room counts its sessions and their held deletions, it
+        // knows only its connected members, which hold its stored version;
+        // the switch stays off until then.
+        let holds = self.app.config.gc_collect.then(|| note_store::Holds {
+            reached: Some(through),
+            held: yrs::IdSet::new(),
+            live_room: Some(self.doc.client_id()),
+        });
         tokio::spawn(async move {
             let folded = match note_store::fold(
                 &app.db,
@@ -1969,6 +1977,7 @@ impl Room {
                 schema,
                 doc_kind,
                 Some(through),
+                holds,
             )
             .await
             {
@@ -4128,10 +4137,17 @@ impl Room {
                     );
                 }
             };
-            // The log folds while the room is empty (DESIGN.md 3.5).
+            // The log folds while the room is empty (DESIGN.md 3.5). No member
+            // is connected; sessions away from the room are not counted yet,
+            // so the switch stays off until they are.
             let folding = async {
+                let holds = app.config.gc_collect.then(|| note_store::Holds {
+                    reached: None,
+                    held: yrs::IdSet::new(),
+                    live_room: None,
+                });
                 if let Err(error) =
-                    note_store::fold(&app.db, &material_id, schema, doc_kind, None).await
+                    note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds).await
                 {
                     observe::capture(
                         &error.to_string(),

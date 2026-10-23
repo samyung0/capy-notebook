@@ -34,6 +34,11 @@ pub struct Config {
     /// `fold_max_rows` rows (DESIGN.md 3.5); an unloaded one always.
     pub fold_min_bytes: u64,
     pub fold_max_rows: u64,
+    /// A fold collects the tombstones no session can still name
+    /// (`ydoc::gc`), in place. The kill switch, off unless exactly `true`:
+    /// it stays off until the room counts its sessions and their held
+    /// deletions.
+    pub gc_collect: bool,
     /// Office engine child processes per lane and each one's memory cap
     /// (Epo 2026-10-07: production 2 + 1 at 4 GiB, UAT 1 + 1 at 3 GiB).
     pub engine_save_processes: u64,
@@ -202,6 +207,7 @@ impl Config {
             projection_cadence: millis(env, "COLLABORATION_PROJECTION_CADENCE_MS", 300_000)?,
             fold_min_bytes: positive(env, "COLLABORATION_FOLD_MIN_BYTES", 256 * 1024)?,
             fold_max_rows: positive(env, "COLLABORATION_FOLD_MAX_ROWS", 1000)?,
+            gc_collect: flag(env, "COLLABORATION_GC_COLLECT")?,
             engine_save_processes: required(env, "COLLABORATION_ENGINE_SAVE_PROCESSES")?,
             engine_background_processes: required(
                 env,
@@ -321,6 +327,17 @@ mod tests {
         assert_eq!(config.api_url, "http://server:8080");
         assert_eq!(config.port, 2345);
         assert_eq!(config.secret, "prod-secret");
+    }
+
+    #[test]
+    fn the_collection_is_off_unless_exactly_true() {
+        assert!(!Config::load(&env(&[])).unwrap().gc_collect);
+        assert!(
+            Config::load(&env(&[("COLLABORATION_GC_COLLECT", "true")]))
+                .unwrap()
+                .gc_collect
+        );
+        assert!(Config::load(&env(&[("COLLABORATION_GC_COLLECT", "on")])).is_err());
     }
 
     #[test]

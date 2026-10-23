@@ -670,16 +670,65 @@ log in `source_document_updates`, charged in `storage_bytes` with the state
 compare-and-swap; a moved checkpoint re-reads the rows saved meanwhile and
 appends again, 3 attempts in all (`collaboration-rs/crates/sources/src/store.rs`).
 
-Yjs history is not compacted for now (Epo 2026-10-22). A compaction never
-moves the room epoch (`room_schema`), so the epoch-moving one (a rebuild from
-the projection under the next `room_schema`) is removed, and history stays
-until an in-place collection lands. Note, quiz and flashcard history is not
-charged: a material pays for its content JSON alone (`materials.size_bytes`).
-No cap bounds a note room's state: a store appends only the update since the
-durable state, each client update is at most `ydoc::MAX_UPDATE_BYTES`, and the
-shape bounds measure the content, not its history. A heavily edited note
-costs load time and memory instead, and a full answer of at least 256 KiB
-waits behind its user's spent open budget (`rate.rs`).
+A compaction never moves the room epoch (`room_schema`): history is collected
+in place, at the fold, with no new lineage and no reload for anyone (Epo
+2026-10-22 and 2026-10-23). Note, quiz and flashcard history is not charged: a
+material pays for its content JSON alone (`materials.size_bytes`). No cap
+bounds a note room's state: a store appends only the update since the durable
+state, each client update is at most `ydoc::MAX_UPDATE_BYTES`, and the shape
+bounds measure the content, not its history. A heavily edited note costs load
+time and memory instead, and a full answer of at least 256 KiB waits behind
+its user's spent open budget (`rate.rs`).
+
+### In-place collection at the fold
+
+Every fold of a material document (a note, mindmap, diagram, flashcard set,
+or a quiz's content or keys document), at unload and at the log threshold,
+replays its base and rows into a scratch document and, with the collection
+on, writes that document without the deleted units no replica can still name
+(`ydoc::gc::collect`). The live room document is never collected: tabs joining
+an open room get its whole state, and the next room life loads the collected
+base. Every kept item keeps its origins, so tabs holding the full history and
+tabs loading the collected state agree.
+
+- **Inputs.** The folded document, a window W (a state vector, delete set and
+  stored_version an earlier fold stored) and a held set H. A unit is dead when
+  W deleted it and H does not hold it.
+  - W is the newest stored window that every counted session has reached; with
+    no counted session, W is the folded document itself; with no qualifying
+    window, the fold collects nothing.
+  - H holds what counted sessions deleted (their editor Undo may restore it)
+    and what agent edits deleted while their durable Undo payload is valid
+    (24 h).
+- **Lists.** Of the units W covers, in W's order, each run of dead units keeps
+  its first and last unit: typing names the last unit of a deleted run, a list
+  insert the first. The rest goes unless a kept item names it as origin or right
+  origin, closed over that. Origins are never rewritten.
+- **Maps.** The value current at W is kept. It drops its origin, so the values
+  behind it go, only when nothing behind it stays: a value behind it held,
+  newer than W, or named by a value after it keeps the origin.
+- **Contributor markers.** A marker chain written by an ended room life goes
+  whole; the open room's own chains follow the map rule.
+- **Windows.** Each fold with the collection on stores the folded document's
+  state vector, delete set and stored_version in `material_yjs_windows`
+  (migration 0111) as a later window candidate, and keeps the newest four per
+  document. They hold ids only and are not charged.
+- **Guard.** A collected state that does not load with nothing pending, keep
+  the model's roots and hold the folded document's value is refused: the fold
+  fails and the log stays as it was.
+- **Undo.** An item that names a collected unit integrates as collected, so
+  a durable Undo payload whose items name one would restore only part of its
+  edit: the Undo route refuses it (`undo_unavailable`), found by
+  `ydoc::gc::names_collected`.
+- **Switch.** `COLLABORATION_GC_COLLECT=true` turns the collection on; it is
+  off by default and stays off until the rooms count sessions, their held
+  deletions and the agent holds.
+
+On the most churned note measured (1,000 characters after 100,000 edit
+bursts in 605 sessions) one collection takes the stored state from 716 KB to
+54 KB (12 KB of it the delete set) in about 60 ms, and the next fold writes
+49 KB; a collected state collects again in about 2 ms. Ordinarily edited notes
+gain 5-12%.
 
 Source text states grow the same way. Their history grows with the number of
 separate edits (and the contributor markers each save writes and clears), not
@@ -725,7 +774,8 @@ Sources: [storage gate and reconciliation](../server/internal/store/storage.go),
 [material bounds](../server/internal/materialdoc/document.go),
 [collab limits](../collaboration-rs/crates/notes/src/limits.rs),
 [collab document validation](../collaboration-rs/crates/notes/src/material.rs),
-[note store and folds](../collaboration-rs/crates/server/src/note_store.rs).
+[note store and folds](../collaboration-rs/crates/server/src/note_store.rs),
+[in-place collection](../collaboration-rs/crates/ydoc/src/gc.rs).
 
 ## Text field limits
 

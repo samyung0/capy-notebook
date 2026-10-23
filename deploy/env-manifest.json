@@ -407,6 +407,10 @@
       "kind": "variable",
       "targets": ["coolify"]
     },
+    "COLLABORATION_GC_COLLECT": {
+      "kind": "variable",
+      "targets": ["coolify"]
+    },
     "COLLABORATION_INTERNAL_URL": {
       "kind": "variable",
       "targets": ["local"]

@@ -2,7 +2,8 @@
 //! and the server: no I/O, no clocks. Ports of the Node server's `officeRoots.ts`
 //! (`inspectUpdate`), `yjsUpdateMessage.ts` (`yjsUpdateContainsChanges`),
 //! and `scratchDoc.ts`, plus the delta rows, the replay of delta saves
-//! (DESIGN.md section 3) and the live Undo of server edits ([undo]).
+//! (DESIGN.md section 3), the in-place collection of a folded state ([gc])
+//! and the live Undo of server edits ([undo]).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -964,6 +965,7 @@ pub fn has_pending<T: ReadTxn>(txn: &T) -> bool {
     txn.store().pending_update().is_some() || txn.store().pending_ds().is_some()
 }
 
+pub mod gc;
 pub mod undo;
 
 #[cfg(test)]

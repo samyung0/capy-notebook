@@ -193,6 +193,8 @@ services:
       # UAT only (the renderer refuses it in production): holds a publication
       # while its file's name contains [hold-publication], for the journey.
       COLLABORATION_UAT_PUBLICATION_HOLD: ${COLLABORATION_UAT_PUBLICATION_HOLD:-}
+      # The in-place Yjs collection at each fold: off unless exactly true.
+      COLLABORATION_GC_COLLECT: ${COLLABORATION_GC_COLLECT:-}
     # Disk-backed, never tmpfs; created with the image folder's owner (the
     # service user) and mode 0700; the server wipes it at start.
     volumes:
