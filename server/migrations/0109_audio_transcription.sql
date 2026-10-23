@@ -3,10 +3,12 @@
 -- for uploads, voice_input_second for chat voice input. An upload longer than
 -- the provider's two-hour limit stays ready and unindexed with
 -- audio_duration_limit. Provider calls carry their non-token units again.
+-- audio_transcription_second is version 2: 0001 seeded version 1 at another
+-- price, which 0079 deleted.
 INSERT INTO resource_credit_rates
   (resource_key, version, unit, credit_micros_per_unit, active)
 VALUES
-  ('audio_transcription_second', 1, 'second', 16667, true),
+  ('audio_transcription_second', 2, 'second', 16667, true),
   ('voice_input_second', 1, 'second', 16667, true)
 ON CONFLICT (resource_key, version) DO NOTHING;
 

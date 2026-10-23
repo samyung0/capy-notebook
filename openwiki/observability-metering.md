@@ -1288,9 +1288,10 @@ tokens only.
 
 Audio is priced per second. `audio_transcription_second` (uploads) and
 `voice_input_second` (chat voice input) are both 16,667 microcredits a second,
-one credit a minute (version 1, `0109_audio_transcription.sql`, Epo's proposal
-of 2026-10-23 at two to three times the standard markup because transcription
-capacity is capped). An upload's charge is whole seconds (ceil) of the
+one credit a minute (`0109_audio_transcription.sql`, Epo's proposal of
+2026-10-23 at two to three times the standard markup because transcription
+capacity is capped). Uploads are version 2, since 0001 seeded a version 1 at
+another price that 0079 deleted; voice input is version 1. An upload's charge is whole seconds (ceil) of the
 worker's measured duration (ffmpeg reading every packet, not the container
 header) or the last sentence's end, whichever is later, at the job's
 snapshotted rate, settled only when the transcript has sentences; a failed,
