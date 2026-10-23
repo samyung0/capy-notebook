@@ -98,11 +98,19 @@ def test_the_app_host_opens_ssh_and_wireguard_before_enabling_ufw() -> None:
 
 def test_the_app_host_allows_only_ssh_wireguard_and_the_ingest_host_in() -> None:
     """Security regression (Coolify removal): no rule lets Docker networks or
-    anything else reach the host; Coolify's Docker-networks rule is deleted."""
+    anything else reach the host; Coolify's Docker-networks rule is deleted
+    for both of its networks (review L8)."""
+    play = _play("app-host")
     allowed = [
         rule.get("comment")
-        for rule in _ufw(_play("app-host"))
+        for rule in _ufw(play)
         if rule.get("rule") == "allow" and not rule.get("delete")
+    ]
+    networks = [
+        task.get("loop")
+        for task in _tasks(play, "community.general.ufw")
+        if task["community.general.ufw"]
+        == {"rule": "allow", "direction": "in", "from_ip": "{{ item }}", "delete": True}
     ]
 
     assert allowed == [
@@ -110,6 +118,7 @@ def test_the_app_host_allows_only_ssh_wireguard_and_the_ingest_host_in() -> None
         "Capy Notebook ingest-host private service link",
         "Capy Notebook ingest-host private app service",
     ]
+    assert networks == [["10.0.0.0/16", "fdda:ad28:f840::/64"]]
 
 
 def _copied(play: dict, dest: str) -> dict:
