@@ -8,12 +8,14 @@ export interface MermaidFailure {
 }
 
 /** More links than mermaid draws, a browser whose worker cannot start, a
- * render still running at the time limit, a source over
- * `MERMAID_SOURCE_MAX`, or a type the worker does not draw (Epo
+ * worker that could not load (a download failed, or it had not started
+ * drawing at the time limit), a render still running at the time limit, a
+ * source over `MERMAID_SOURCE_MAX`, or a type the worker does not draw (Epo
  * 2026-10-23). */
 export type MermaidReason =
   | 'edges'
   | 'noWorker'
+  | 'notLoaded'
   | 'tooLarge'
   | 'tooLong'
   | 'unsupported';

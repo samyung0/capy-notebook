@@ -162,6 +162,7 @@
     "e2e:slow": "playwright test --workers=1",
     "e2e:ui": "playwright test --ui",
     "e2e:msw:editor": "playwright test --config=e2e/editor/playwright.editor.config.ts",
+    "e2e:msw:mermaid-engines": "playwright test --config=e2e/editor/playwright.mermaid-engines.config.ts",
     "e2e:uat": "playwright test --config=e2e/uat/playwright.uat.config.ts",
     "e2e:uat:journeys": "playwright test --config=e2e/uat/journeys/playwright.journeys.config.ts",
     "e2e:uat:cleanup": "tsx e2e/uat/journeys/cleanup.ts",

@@ -1011,6 +1011,7 @@
   "mermaid_too_large": "This diagram is too large to draw on this device.",
   "mermaid_unsupported": "This diagram type isn't supported.",
   "mermaid_no_worker": "This browser can't draw diagrams.",
+  "mermaid_not_loaded": "Diagrams couldn't load.",
   "mermaid_show_preview": "Preview",
   "mermaid_show_code": "Code",
   "mermaid_theme": "Diagram theme",

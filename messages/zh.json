@@ -1011,6 +1011,7 @@
   "mermaid_too_large": "此图表太大，无法在此设备上绘制。",
   "mermaid_unsupported": "不支持此图表类型。",
   "mermaid_no_worker": "此浏览器无法绘制图表。",
+  "mermaid_not_loaded": "图表无法加载。",
   "mermaid_show_preview": "预览",
   "mermaid_show_code": "源码",
   "mermaid_theme": "图表主题",

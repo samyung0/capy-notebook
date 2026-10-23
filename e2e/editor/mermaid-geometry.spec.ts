@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import type { GeometryReport } from '../fixtures/mermaid-geometry';
+import { expect, type Page, test } from '@playwright/test';
+import type { GeometryReport, LabelReport } from '../fixtures/mermaid-geometry';
 import { MERMAID_SOURCES } from '../fixtures/mermaid-sources';
 
 // Mermaid draws only in a Web Worker on a DOM shim (Epo 2026-10-22). For every
@@ -8,6 +8,9 @@ import { MERMAID_SOURCES } from '../fixtures/mermaid-sources';
 // element by element: positions, sizes, path points, transforms and the
 // viewBox. A mermaid upgrade or a shim change that moves anything fails here;
 // a type that cannot pass is unsupported and shows an error (Epo 2026-10-23).
+// Firefox and WebKit (playwright.mermaid-engines.config.ts) lay text out a
+// few pixels apart from Chromium, so there every label must fit its box and
+// nothing may overlap more than on that engine's own page (Epo 2026-10-23).
 
 /** px. The timeline title's 4ex size is about 1 px off: canvas exposes no
  * x-height, so the shim measures the glyph. */
@@ -24,29 +27,56 @@ const THEMES = [
   'kawaii',
 ] as const;
 
+interface Fixture {
+  mermaidGeometry: (
+    code: string,
+    theme: string,
+    width: number
+  ) => Promise<GeometryReport>;
+  mermaidLabels: (
+    code: string,
+    theme: string,
+    width: number
+  ) => Promise<LabelReport>;
+}
+
+async function openFixture(page: Page) {
+  await page.goto('/e2e/fixtures/mermaid-geometry.html');
+  await expect
+    .poll(() => page.evaluate(() => document.body.dataset.ready), {
+      timeout: 60_000,
+    })
+    .toBe('true');
+}
+
 for (const theme of THEMES)
   test(`the worker draws each type as the page does (${theme})`, async ({
+    browserName,
     page,
   }) => {
     test.setTimeout(240_000);
-    await page.goto('/e2e/fixtures/mermaid-geometry.html');
-    await expect
-      .poll(() => page.evaluate(() => document.body.dataset.ready), {
-        timeout: 60_000,
-      })
-      .toBe('true');
+    await openFixture(page);
     for (const [kind, source] of Object.entries(MERMAID_SOURCES)) {
+      if (browserName !== 'chromium') {
+        const report = await page.evaluate(
+          ([code, name]) =>
+            (window as unknown as Fixture).mermaidLabels(code, name, 760),
+          [source, theme] as const
+        );
+        expect
+          .soft(report.type, `${kind}: the type mermaid detects`)
+          .toBe(kind);
+        expect
+          .soft(report.overflow, `${kind}: labels past their box`)
+          .toEqual([]);
+        expect
+          .soft(report.overlaps, `${kind}: overlaps beyond the page's`)
+          .toEqual([]);
+        continue;
+      }
       const report = await page.evaluate(
         ([code, name]) =>
-          (
-            window as unknown as {
-              mermaidGeometry: (
-                source: string,
-                theme: string,
-                width: number
-              ) => Promise<GeometryReport>;
-            }
-          ).mermaidGeometry(code, name, 760),
+          (window as unknown as Fixture).mermaidGeometry(code, name, 760),
         [source, theme] as const
       );
       expect.soft(report.type, `${kind}: the type mermaid detects`).toBe(kind);

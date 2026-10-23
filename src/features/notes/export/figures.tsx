@@ -148,9 +148,9 @@ export async function renderExportFigure(figure: Figure): Promise<ExportImage> {
   document.body.append(host);
   try {
     if (figure.type === 'mermaid') {
-      // Exports drop the block's theme and draw in the default one. A type
-      // the worker does not draw fails as a syntax error does (Epo
-      // 2026-10-23).
+      // Exports drop the block's theme and draw in the default one. A
+      // diagram that cannot be drawn fails here, and the export writes its
+      // source instead (render.ts, Epo 2026-10-23).
       const { renderMermaid } = await import('@/features/materials/Mermaid');
       const { svg } = await renderMermaid(figure.source, undefined, {
         width: 560,

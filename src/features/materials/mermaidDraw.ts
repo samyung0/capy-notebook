@@ -47,6 +47,15 @@ function loadFont({ family, url, weight = '400' }: MermaidFont) {
   return loading;
 }
 
+/** The theme's preset with its fonts loaded, since mermaid measures labels
+ * while it draws. The worker waits on this before its time limit starts. */
+export async function themePreset(theme: MermaidTheme) {
+  const { MERMAID_PRESETS } = await import('./mermaidPresets');
+  const preset = MERMAID_PRESETS[theme];
+  await Promise.all((preset.fonts ?? []).map(loadFont));
+  return preset;
+}
+
 /**
  * Draws `code` in `theme` into `container` (mermaid measures there). Calls
  * must not overlap: mermaid.initialize is global, so each draw sets its own
@@ -60,10 +69,11 @@ export async function drawMermaid(
   container: Element,
   { id, width }: { id: string; width: number }
 ): Promise<Drawn> {
-  const [{ default: mermaid }, { MERMAID_PRESETS, roughenFilters }] =
-    await Promise.all([import('mermaid'), import('./mermaidPresets')]);
-  const preset = MERMAID_PRESETS[theme];
-  await Promise.all((preset.fonts ?? []).map(loadFont));
+  const [{ default: mermaid }, preset, { roughenFilters }] = await Promise.all([
+    import('mermaid'),
+    themePreset(theme),
+    import('./mermaidPresets'),
+  ]);
   mermaid.initialize({
     startOnLoad: false,
     ...preset.config,

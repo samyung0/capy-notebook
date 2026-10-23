@@ -865,8 +865,10 @@ export function installDom() {
     'Text',
   ])
     if (view[key] && !(key in scope)) scope[key] = view[key];
-  // Workers have no CSSOM: mermaid keeps the theme CSS as text (its browser
-  // parse is lost; ours is a constant).
+  // Workers have no CSSOM. With no `replaceSync` here, mermaid appends its
+  // stylesheet (the theme CSS and any classDef styles) as text, without a
+  // browser's re-serializing; stylis has already scoped every rule under the
+  // SVG id and commented out `@import` and `@font-face` (review r2 L7).
   scope.CSSStyleSheet ??= class {
     cssRules: { cssText: string }[] = [];
     insertRule(rule: string, index = 0) {

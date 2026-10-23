@@ -15,6 +15,7 @@ import type { Drawn } from './mermaidDraw';
 import {
   MERMAID_EDGES_MAX,
   type MermaidFailure,
+  type MermaidReason,
   MermaidReasonError,
   mermaidFailure,
 } from './mermaidError';
@@ -31,8 +32,10 @@ const VIEW_BOX = /<svg[^>]*\sviewBox="[\d.-]+ [\d.-]+ ([\d.]+) ([\d.]+)"/;
  * keystroke falls behind on a large diagram (REVIEW4 S2). */
 export const MERMAID_TYPING_DELAY_MS = 250;
 
-/** A render still running after this long stops with "too large to draw on
- * this device" (Epo 2026-10-22). */
+/** A render still running this long after the worker starts drawing stops
+ * with "too large to draw on this device" (Epo 2026-10-22); a worker that has
+ * not started drawing this long after the request says "Diagrams couldn't
+ * load." (Epo 2026-10-23). */
 export const MERMAID_RENDER_LIMIT_MS = 30_000;
 
 /** A block never shows a diagram smaller than this and scrolls instead
@@ -73,16 +76,21 @@ function cacheKey(code: string, theme: MermaidTheme, width: number) {
   return `${theme}|${GANTT.test(body) ? width : ''}|${code}`;
 }
 
-/** Failures the next caller should draw again: nobody wanted it, the worker
- * ran out of time (it may have been loading, review M1), or could not start
- * this time. */
+/** Failures the next caller should draw again, all but those the source
+ * causes (Epo 2026-10-23): nobody wanted it, the worker ran out of time,
+ * could not start, or could not load. */
 function retried(error: unknown) {
   return (
     error === SUPERSEDED ||
-    (error instanceof MermaidReasonError &&
-      (error.reason === 'tooLarge' || error.reason === 'noWorker'))
+    (error instanceof MermaidReasonError && RETRIED.has(error.reason))
   );
 }
+
+const RETRIED: ReadonlySet<MermaidReason> = new Set([
+  'noWorker',
+  'notLoaded',
+  'tooLarge',
+]);
 
 function remember(key: string, entry: Entry, code: string) {
   cache.set(key, entry);
@@ -207,10 +215,21 @@ function restAfterIdle() {
   }, WORKER_IDLE_MS);
 }
 
+/** Whether this browser has what the worker's shim measures text with: a
+ * 2D OffscreenCanvas (Safari before 16.4 has none). */
+function canDraw() {
+  try {
+    return Boolean(new OffscreenCanvas(1, 1).getContext('2d'));
+  } catch {
+    return false;
+  }
+}
+
 /** The worker, started once (it loads mermaid as it starts); none where a
- * module worker cannot start. */
+ * module worker cannot start or draw. */
 function startWorker() {
   if (worker) return worker;
+  if (!canDraw()) return null;
   let started: Worker;
   try {
     started = new Worker(new URL('./mermaid.worker.ts', import.meta.url), {
@@ -220,12 +239,13 @@ function startWorker() {
   } catch {
     return null;
   }
-  // A worker that cannot start (no 2D OffscreenCanvas before Safari 16.4)
-  // or broke, while warming or drawing.
+  // A worker that broke, warming or drawing: its script or mermaid did not
+  // download, or an error escaped. The next draw starts a new one (Epo
+  // 2026-10-23).
   started.onerror = (event) => {
     event.preventDefault();
     stopWorker(started);
-    pending?.(new MermaidReasonError('noWorker'));
+    pending?.(new MermaidReasonError('notLoaded'));
   };
   worker = started;
   restAfterIdle();
@@ -240,12 +260,16 @@ let pending: ((error: unknown) => void) | null = null;
  * comes near the screen then waits on neither. */
 export function warmMermaid() {
   if (!startWorker()) return;
+  // A worker already up stays up for this note too (review r2 L3).
+  if (!pending) restAfterIdle();
   genericFaces();
   import('dompurify').catch(() => undefined);
 }
 
-/** One draw in the worker. Its time limit runs from when the worker starts
- * drawing, not while it loads (review M1); at the limit the worker stops. */
+/** One draw in the worker. Loading (mermaid, the theme, its fonts) and
+ * drawing each get MERMAID_RENDER_LIMIT_MS (review M1, r2 M1); at either
+ * limit, or when a download fails, the worker stops and the next draw starts
+ * a new one. */
 function inWorker(
   request: Omit<DrawRequest, 'faces' | 'id' | 'screenWidth'>
 ): Promise<Drawn> {
@@ -257,21 +281,27 @@ function inWorker(
     }
     clearTimeout(idle);
     const id = ++jobs;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const settle = (finish: () => void) => {
       clearTimeout(timer);
       pending = null;
       restAfterIdle();
       finish();
     };
+    const stop = (reason: MermaidReason) => () => {
+      stopWorker(current);
+      settle(() => reject(new MermaidReasonError(reason)));
+    };
+    let timer = setTimeout(stop('notLoaded'), MERMAID_RENDER_LIMIT_MS);
     pending = (error) => settle(() => reject(error));
     current.onmessage = ({ data }: MessageEvent<DrawReply>) => {
       if (data.id !== id) return;
       if ('started' in data) {
-        timer = setTimeout(() => {
-          stopWorker(current);
-          settle(() => reject(new MermaidReasonError('tooLarge')));
-        }, MERMAID_RENDER_LIMIT_MS);
+        clearTimeout(timer);
+        timer = setTimeout(stop('tooLarge'), MERMAID_RENDER_LIMIT_MS);
+        return;
+      }
+      if ('notLoaded' in data) {
+        stop('notLoaded')();
         return;
       }
       settle(() => {
@@ -462,7 +492,9 @@ export function Mermaid({
           fill && '[&>svg]:max-w-none!',
           size && svgHeight && '[&>svg]:h-(--svg-height)',
           className,
-          MERMAID_TEXT_CLASS
+          // HTML labels lay out as the worker measured them, not in the
+          // surrounding text's weight and line height.
+          'font-normal leading-normal'
         )}
         // eslint-disable-next-line react/no-danger -- sanitized on this page (forPage)
         dangerouslySetInnerHTML={{ __html: svg }}
@@ -491,16 +523,36 @@ export function Mermaid({
   return <div ref={boxRef}>{body}</div>;
 }
 
-const MERMAID_TEXT_CLASS = 'font-normal leading-normal';
-
 let copies = 0;
 const ROOT_ID = /<svg[^>]*\sid="([\w-]+)"/;
+const DEFINED_ID = /\sid="([^"]+)"/g;
+/** Where an SVG refers to an id: its definition, `url(#…)`, `href="#…"`
+ * (`xlink:href` too) and the root's aria lists. */
+const ID_USE =
+  /(\sid="|url\(#|href="#|aria-(?:labelledby|describedby)=")([^"')]+)/g;
 
-/** `svg` with its root id, the prefix of every id and reference inside it,
- * replaced by `id` (`mmd-1` is not the start of `mmd-12`). */
-function ownIds(svg: string, id: string) {
+/**
+ * `svg` with every id it defines made this copy's own (`copy`): the cache
+ * hands one SVG to every box (review L1), and a restarted worker counts some
+ * ids from the start again (sankey gradients, sequence actors, review r2 L2).
+ * The root id, which prefixes most ids and scopes the stylesheet, becomes
+ * `copy` wherever it appears (`mmd-1` is not the start of `mmd-12`); every
+ * other defined id gets `copy` as a prefix where it is defined and used.
+ */
+export function ownIds(svg: string, copy: string) {
   const root = ROOT_ID.exec(svg)?.[1];
-  return root ? svg.replace(new RegExp(`${root}(?!\\d)`, 'g'), id) : svg;
+  if (!root) return svg;
+  const renamed = svg.replace(new RegExp(`${root}(?!\\d)`, 'g'), copy);
+  const others = new Set<string>();
+  for (const [, id] of renamed.matchAll(DEFINED_ID))
+    if (id && !id.includes(copy)) others.add(id);
+  if (!others.size) return renamed;
+  const own = (id: string) => (others.has(id) ? `${copy}-${id}` : id);
+  return renamed.replace(ID_USE, (_, at: string, ids: string) =>
+    at.startsWith('aria')
+      ? at + ids.split(' ').map(own).join(' ')
+      : at + own(ids)
+  );
 }
 
 /** A theme's panel with one node in its fill and border, for theme menus. */
@@ -541,6 +593,8 @@ export function mermaidFailureMessage(failure: MermaidFailure) {
       return m.mermaid_unsupported();
     case 'noWorker':
       return m.mermaid_no_worker();
+    case 'notLoaded':
+      return m.mermaid_not_loaded();
     default:
       return failure.line == null
         ? m.mermaid_failed()
