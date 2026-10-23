@@ -95,6 +95,7 @@ func mapHTTPError(err error) error {
 		"comment_limit":    store.ErrTooManyComments,
 		"annotation_limit": store.ErrTooManyAnnotations,
 		"event_limit":      store.ErrTooManyEvents,
+		"canvas_limit":     store.ErrTooManyCanvases,
 	} {
 		if errors.Is(err, rowCap) {
 			return conflictError(code, rowCap.Error())

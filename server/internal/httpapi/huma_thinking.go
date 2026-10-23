@@ -27,12 +27,17 @@ type saveCanvasInput struct {
 	Body apimodel.SaveCanvasReq
 }
 
+// canvasSceneMaxBytes caps a canvas's stored scene JSON; the save body may
+// add the name around it.
+const canvasSceneMaxBytes = 512 << 10
+
 func (a *api) registerThinking(api huma.API) {
 	const tag = "Thinking"
-	reg(api, http.MethodGet, "/api/thinking", "listCanvases", tag, "List thinking canvases", http.StatusOK, a.listCanvases)
+	reg(api, http.MethodGet, "/api/thinking", "listCanvases", tag, "List thinking canvases (without scenes)", http.StatusOK, a.listCanvases)
 	reg(api, http.MethodPost, "/api/thinking", "createCanvas", tag, "Create a canvas", http.StatusCreated, a.createCanvas)
 	reg(api, http.MethodGet, "/api/thinking/{id}", "getCanvas", tag, "Get a canvas", http.StatusOK, a.getCanvas)
-	reg(api, http.MethodPut, "/api/thinking/{id}", "saveCanvas", tag, "Save a canvas", http.StatusOK, a.saveCanvas)
+	regWithMaxBody(api, http.MethodPut, "/api/thinking/{id}", "saveCanvas", tag, "Save a canvas", http.StatusOK,
+		canvasSceneMaxBytes+4<<10, a.saveCanvas)
 }
 
 func (a *api) listCanvases(ctx context.Context, _ *struct{}) (*canvasesOutput, error) {
@@ -69,6 +74,14 @@ func (a *api) saveCanvas(ctx context.Context, in *saveCanvasInput) (*canvasOutpu
 	var scene json.RawMessage
 	if in.Body.Scene != nil {
 		scene = apimodel.EncodeRaw(in.Body.Scene)
+		if len(scene) > canvasSceneMaxBytes {
+			return nil, &huma.ErrorModel{
+				Status: http.StatusRequestEntityTooLarge,
+				Title:  http.StatusText(http.StatusRequestEntityTooLarge),
+				Detail: "the canvas is larger than 512 KiB",
+				Errors: []*huma.ErrorDetail{{Message: "canvas_too_large"}},
+			}
+		}
 	}
 	res, err := a.s.SaveCanvas(ctx, userID(ctx), in.ID, apimodel.Str(in.Body.Name), scene)
 	if err != nil {

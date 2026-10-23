@@ -19,12 +19,15 @@ const (
 	AnnotationsPerFile = 2_000
 	// EventsPerUser counts a user's schedule events.
 	EventsPerUser = 5_000
+	// CanvasesPerUser counts a user's thinking canvases.
+	CanvasesPerUser = 100
 )
 
 var (
 	ErrTooManyComments    = errors.New("this note holds the most comments it can")
 	ErrTooManyAnnotations = errors.New("this file holds the most annotations it can")
 	ErrTooManyEvents      = errors.New("the schedule holds the most events it can")
+	ErrTooManyCanvases    = errors.New("the account holds the most canvases it can")
 )
 
 // assertCommentRoomTx refuses a new comment on a note at CommentsPerNote. The
@@ -68,6 +71,19 @@ func assertEventRoomTx(ctx context.Context, tx pgx.Tx, userID string) error {
 	}
 	if n >= EventsPerUser {
 		return ErrTooManyEvents
+	}
+	return nil
+}
+
+// assertCanvasRoomTx refuses a new canvas at CanvasesPerUser; the caller
+// holds the user's account lock.
+func assertCanvasRoomTx(ctx context.Context, tx pgx.Tx, userID string) error {
+	var n int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM canvases WHERE user_id=$1`, userID).Scan(&n); err != nil {
+		return err
+	}
+	if n >= CanvasesPerUser {
+		return ErrTooManyCanvases
 	}
 	return nil
 }

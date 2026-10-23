@@ -2595,8 +2595,9 @@ func (s *Store) DeleteTask(ctx context.Context, userID, id string) error {
 
 /* ------------------------------------------------------------ thinking space */
 
+// ListCanvases lists a user's canvases without their scenes.
 func (s *Store) ListCanvases(ctx context.Context, userID string) ([]Canvas, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, name, updated_at, scene FROM canvases WHERE user_id=$1 ORDER BY updated_at DESC`, userID)
+	rows, err := s.pool.Query(ctx, `SELECT id, name, updated_at FROM canvases WHERE user_id=$1 ORDER BY updated_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2604,7 +2605,7 @@ func (s *Store) ListCanvases(ctx context.Context, userID string) ([]Canvas, erro
 	out := []Canvas{}
 	for rows.Next() {
 		var c Canvas
-		if err := rows.Scan(&c.ID, &c.Name, &c.UpdatedAt, &c.Scene); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -2632,6 +2633,9 @@ func (s *Store) CreateCanvas(ctx context.Context, userID, name string) (Canvas, 
 	}
 	defer tx.Rollback(ctx)
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return Canvas{}, err
+	}
+	if err := assertCanvasRoomTx(ctx, tx, userID); err != nil {
 		return Canvas{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO canvases (id, user_id, name, updated_at)
