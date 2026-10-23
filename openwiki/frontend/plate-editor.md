@@ -1167,6 +1167,15 @@ A first open whose token has not answered by then shows the collaboration
 unavailable panel with Retry instead of loading for ever; an editor not
 synced by then, a JOIN never answered on the open socket included, turns the
 status red, and after a reload that failing editor replaces the paused one.
+The editor binds to the room's document (`YjsEditor.connect`) only at the
+room's first sync (`roomBinding.ts`, CAPY-WEB-7). Plate's init binds after
+waiting at most 5 s; bound to a document the room had not filled, the editor
+showed it empty and kept a paragraph the document never got, which broke
+every later Yjs mapping. Until it binds, an editor painted early (red because
+its join ran out first) shows the projection. Binding replaces that tree and
+keeps a caret placed on it by block id where its text still exists, else
+drops it; history maps the selection onto the room only once bound (the
+@slate-yjs/core patch).
 Item rooms (quizzes, flashcard sets, standalone diagrams and mindmaps) have
 the same 30 s from their token request (`ItemRoom.start`); one not synced by
 then goes offline, the room's connection error (Epo 2026-10-23).
