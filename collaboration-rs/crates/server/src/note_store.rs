@@ -4,7 +4,7 @@
 //! the Node server's `persistence.ts` does.
 
 use std::collections::HashSet;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use deadpool_postgres::{Pool, Transaction};
 use serde_json::Value;
@@ -16,7 +16,7 @@ use yrs::{IdSet, ReadTxn, StateVector, Transact};
 
 use crate::access::{self, AccessError};
 use crate::model::Model;
-use crate::observe;
+use crate::observe::{self, Level, log};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -374,13 +374,17 @@ pub struct Holds {
 /// Window snapshots a document keeps (`material_yjs_windows`), the newest.
 const WINDOWS_KEPT: i64 = 4;
 
+/// Debug builds only: the integration tests' collection that panics, for a
+/// material whose id holds this.
+const IT_PANIC_COLLECTION: &str = "capy-it-panic-collection";
+
 /// Merges the base and the rows up to `through` (all when `None`) into a new
 /// base after the load check (DESIGN.md 3.5). Rows appended meanwhile stay.
 /// With `holds` (the collection's switch on) the new base is collected in
 /// place at the window the holds choose, when one qualifies, and the folded
 /// document is stored as a later window candidate. A collection the guard
-/// refuses folds uncollected and is reported once per material (human/
-/// 2026-10-24); the next fold collects again.
+/// refuses, or that panics, folds uncollected and is reported once per
+/// material (human/ 2026-10-24); the next fold collects again.
 pub async fn fold(
     pool: &Pool,
     material_id: &str,
@@ -426,6 +430,7 @@ pub async fn fold(
     };
     let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();
     let count = rows.len();
+    let it_panic = cfg!(debug_assertions) && material_id.contains(IT_PANIC_COLLECTION);
     type Built = (Vec<u8>, Option<Window>, Option<String>);
     let (state, window, refused) =
         tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
@@ -445,11 +450,14 @@ pub async fn fold(
                 Some(reached) => ydoc::gc::window_for(&windows, reached),
             };
             let (state, refused) = match window {
-                Some(window) => {
+                Some(window) => guarded(&scratch, || {
+                    if it_panic {
+                        panic!("integration test collection panic");
+                    }
                     let collected =
                         ydoc::gc::collect(&scratch, window, &holds.held, holds.live_room);
                     checked(&scratch, collected.state, model)
-                }
+                }),
                 None => (whole(&scratch), None),
             };
             Ok((state, Some(now), refused))
@@ -510,16 +518,47 @@ fn checked(folded: &yrs::Doc, state: Vec<u8>, model: Model) -> (Vec<u8>, Option<
     }
 }
 
+/// `collect` (a collection and its guard) with a panic in it counted as a
+/// refusal: `folded` whole, with why. Its panic event is muted (no client on
+/// the hub it runs under), so it reaches Sentry once, as a refusal.
+fn guarded(
+    folded: &yrs::Doc,
+    collect: impl FnOnce() -> (Vec<u8>, Option<String>),
+) -> (Vec<u8>, Option<String>) {
+    let muted = Arc::new(sentry::Hub::new(None, Arc::new(Default::default())));
+    let ran = sentry::Hub::run(muted, || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(collect))
+    });
+    ran.unwrap_or_else(|panic| {
+        let why = panic
+            .downcast_ref::<&str>()
+            .map(|why| (*why).to_owned())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        (whole(folded), Some(format!("panicked: {why}")))
+    })
+}
+
 /// Materials whose refused collection this process reported.
 static REPORTED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
 
 /// Reports a refused collection to Sentry the first time for its material in
-/// this process; whether it reported.
+/// this process, and logs every one; whether it reported.
 fn report_refusal(material_id: &str, doc: Doc, why: &str) -> bool {
     let first = REPORTED
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .insert(material_id.to_owned());
+    log(
+        Level::Info,
+        "in-place collection refused",
+        serde_json::json!({
+            "room": material_id,
+            "document": doc.name(),
+            "error": why,
+            "reported": first,
+        }),
+    );
     if first {
         observe::capture(
             &format!("in-place collection refused, folded uncollected: {why}"),
@@ -788,6 +827,24 @@ mod tests {
         let pending = checked(&folded, tail, Model::Note);
         assert_eq!(pending.0, state(&folded));
         assert!(pending.1.is_some());
+    }
+
+    /// A panic in the collection or its guard is a refusal: the folded
+    /// document whole, with why, and no Sentry event of its own (the refusal
+    /// is reported once instead).
+    #[test]
+    fn a_panicking_collection_folds_uncollected() {
+        let folded = note("kept");
+        let mut result = None;
+        let events = sentry::test::with_captured_events_options(
+            || result = Some(guarded(&folded, || panic!("collector bug"))),
+            sentry::ClientOptions::new()
+                .add_integration(sentry::integrations::panic::PanicIntegration::new()),
+        );
+        let (written, why) = result.unwrap();
+        assert_eq!(written, state(&folded));
+        assert_eq!(why.as_deref(), Some("panicked: collector bug"));
+        assert!(events.is_empty(), "{events:?}");
     }
 
     /// A material's refusals reach Sentry once; another material's still do.

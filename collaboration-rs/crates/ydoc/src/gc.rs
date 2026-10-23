@@ -22,6 +22,7 @@
 //!   written again); the open room's own chains are maps as above.
 
 use std::collections::HashSet;
+use std::ops::Range;
 
 use yrs::block::{ClientID, HAS_PARENT_SUB, HAS_RIGHT_ORIGIN, ItemPtr, UpdateParent};
 use yrs::branch::{BranchID, BranchPtr};
@@ -112,14 +113,58 @@ fn nested(item: ItemPtr, out: &mut Sequences) {
     }
 }
 
-fn units(item: &ItemPtr) -> impl Iterator<Item = ID> + '_ {
-    let id = *item.id();
-    (0..item.len()).map(move |offset| ID::new(id.client, id.clock + offset))
+/// The ranges of `set` for `client` that meet `span`, clipped to it, in
+/// clock order.
+fn clipped(set: &IdSet, client: &ClientID, span: Range<u32>) -> Vec<Range<u32>> {
+    let Some(ranges) = set.get(client) else {
+        return Vec::new();
+    };
+    let ranges = ranges.as_slice();
+    let first = ranges.partition_point(|(range, _)| range.end <= span.start);
+    ranges[first..]
+        .iter()
+        .take_while(|(range, _)| range.start < span.end)
+        .map(|(range, _)| range.start.max(span.start)..range.end.min(span.end))
+        .collect()
+}
+
+/// `item`'s units in clock order as stretches, each dead (W deleted it and H
+/// does not hold it) or not. Read off the ranges of W's delete set and H, so
+/// an item costs its ranges, however many units it claims.
+fn stretches(item: &ItemPtr, window: &Window, held: &IdSet) -> Vec<(Range<u32>, bool)> {
+    let id = item.id();
+    let span = id.clock..id.clock + item.len();
+    let mut dead = Vec::new();
+    for deleted in clipped(&window.delete_set, &id.client, span.clone()) {
+        let mut from = deleted.start;
+        for kept in clipped(held, &id.client, deleted.clone()) {
+            if from < kept.start {
+                dead.push(from..kept.start);
+            }
+            from = kept.end;
+        }
+        if from < deleted.end {
+            dead.push(from..deleted.end);
+        }
+    }
+    let mut out = Vec::new();
+    let mut at = span.start;
+    for range in dead {
+        if at < range.start {
+            out.push((at..range.start, false));
+        }
+        at = range.end;
+        out.push((range, true));
+    }
+    if at < span.end {
+        out.push((at..span.end, false));
+    }
+    out
 }
 
 /// `doc`'s state without what W, H and the marker rule let go (module docs).
-/// `held` is H: the deletions an open session's Undo or an unexpired agent
-/// Undo payload may still restore. `live_room` is the open room's own client,
+/// `held` is H: the deletions an open session's Undo, the open room's agent
+/// steps or an unexpired durable Undo payload may still restore. `live_room` is the open room's own client,
 /// whose marker chains stay; None at the unload fold.
 pub fn collect(doc: &Doc, window: &Window, held: &IdSet, live_room: Option<ClientID>) -> Collected {
     let txn = doc.transact();
@@ -151,33 +196,34 @@ pub fn collect(doc: &Doc, window: &Window, held: &IdSet, live_room: Option<Clien
     }
 
     let existed = |id: &ID| id.clock < window.state_vector.get(&id.client);
-    let dead = |id: &ID| window.delete_set.contains(id) && !held.contains(id);
-    let mut edges: HashSet<ID> = HashSet::new();
+    // The items holding a run's edge (its first or last unit).
+    let mut edged: HashSet<ID> = HashSet::new();
     for list in &seqs.lists {
-        // The last unit of the dead run being read. Anything but a dead unit
-        // ends it: live, held or newer than W (a session that saw a newer
-        // unit can type next to it, naming the run's unit beside it).
-        let mut run: Option<ID> = None;
+        // The item holding the last unit of the dead run being read.
+        // Anything but a dead unit ends it: live, held or newer than W (a
+        // session that saw a newer unit can type next to it, naming the
+        // run's unit beside it).
+        let mut run: Option<ItemPtr> = None;
         for item in list {
             if !item.is_deleted() {
                 if let Some(last) = run.take() {
-                    edges.insert(last);
+                    edged.insert(*last.id());
                 }
                 continue;
             }
-            for unit in units(item) {
-                if dead(&unit) {
+            for (_, dead) in stretches(item, window, held) {
+                if dead {
                     if run.is_none() {
-                        edges.insert(unit);
+                        edged.insert(*item.id());
                     }
-                    run = Some(unit);
+                    run = Some(*item);
                 } else if let Some(last) = run.take() {
-                    edges.insert(last);
+                    edged.insert(*last.id());
                 }
             }
         }
         if let Some(last) = run {
-            edges.insert(last);
+            edged.insert(*last.id());
         }
     }
     // Each key's value current at W, with the values behind it.
@@ -189,7 +235,7 @@ pub fn collect(doc: &Doc, window: &Window, held: &IdSet, live_room: Option<Clien
         let head = chain[at];
         // A map set names the key's current value, deleted or not.
         if window.delete_set.contains(head.id()) {
-            edges.insert(*head.id());
+            edged.insert(*head.id());
         }
         heads.push((head, &chain[..at]));
     }
@@ -197,7 +243,9 @@ pub fn collect(doc: &Doc, window: &Window, held: &IdSet, live_room: Option<Clien
     let mut kept: HashSet<ID> = HashSet::new();
     let mut work: Vec<ItemPtr> = Vec::new();
     for item in seqs.lists.iter().chain(&seqs.chains).flatten() {
-        let eligible = item.is_deleted() && units(item).all(|u| dead(&u) && !edges.contains(&u));
+        let eligible = item.is_deleted()
+            && !edged.contains(item.id())
+            && matches!(stretches(item, window, held).as_slice(), [(_, true)]);
         if !eligible && kept.insert(*item.id()) {
             work.push(*item);
         }

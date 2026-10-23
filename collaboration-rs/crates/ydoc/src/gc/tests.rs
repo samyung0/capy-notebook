@@ -333,6 +333,43 @@ fn a_unit_deleted_after_the_window_ends_a_deleted_run() {
     assert_eq!(text(&collected), "LXR");
 }
 
+/// A writer's planted deleted item claiming 2^31 units (a 12-byte update)
+/// costs a collection its ranges, not its units: walked unit by unit it takes
+/// minutes here. It holds both edges of its own run, so it stays.
+#[test]
+fn a_planted_huge_deleted_item_costs_its_ranges_not_its_units() {
+    use yrs::block::{BLOCK_ITEM_DELETED_REF_NUMBER, HAS_ORIGIN, HAS_RIGHT_ORIGIN};
+    use yrs::encoding::write::Write;
+    use yrs::updates::encoder::{Encoder, EncoderV1};
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let room = doc(1);
+        room.get_or_insert_text("t")
+            .insert(&mut room.transact_mut(), 0, "LR");
+        // Client 7, clock 0: deleted content of 2^31 units between L and R.
+        let mut planted = EncoderV1::new();
+        planted.write_var(1u32);
+        planted.write_var(1u32);
+        planted.write_client(ClientID::new(7));
+        planted.write_var(0u32);
+        planted.write_info(BLOCK_ITEM_DELETED_REF_NUMBER | HAS_ORIGIN | HAS_RIGHT_ORIGIN);
+        planted.write_left_id(&id(1, 0));
+        planted.write_right_id(&id(1, 1));
+        planted.write_len(1 << 31);
+        planted.write_var(0u32);
+        room.transact_mut()
+            .apply_update(decode(&planted.to_vec()).unwrap())
+            .unwrap();
+        let collected = collected(&room, &IdSet::new());
+        let _ = done.send((text(&collected), is_collected(&collected, id(7, 0))));
+    });
+    let (text, gone) = finished
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("the collection walked the planted item unit by unit");
+    assert_eq!(text, "LR");
+    assert!(!gone);
+}
+
 #[test]
 fn the_value_current_at_the_window_drops_the_values_behind_it() {
     let room = doc(1);

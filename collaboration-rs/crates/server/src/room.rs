@@ -470,8 +470,9 @@ pub struct Room {
     applying: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
     /// items of, by operation id (`ydoc::undo`), with what each one's revert
-    /// may send (the edit's `sources::undo_cost`); gone with the room.
-    agent_changes: HashMap<String, (Change, usize)>,
+    /// may send (the edit's `sources::undo_cost`) and when its deletions
+    /// arrived; gone with the room.
+    agent_changes: HashMap<String, (Change, usize, Instant)>,
     /// Steps this room reverted, by the id their reverse is kept under, so a
     /// request repeated after a lost answer gets the same answer.
     agent_reverted: HashMap<String, String>,
@@ -1583,7 +1584,7 @@ impl Room {
             && self.update_fits(cost)
         {
             self.agent_changes
-                .insert(id.clone(), (items.change(&self.doc), cost));
+                .insert(id.clone(), (items.change(&self.doc), cost, Instant::now()));
             self.app.agent_steps.hold(&id, &self.name);
             taken = true;
         }
@@ -1629,7 +1630,7 @@ impl Room {
             actor,
             reply,
         } = undo;
-        let Some((change, cost)) = self.agent_changes.remove(&step) else {
+        let Some((change, cost, at)) = self.agent_changes.remove(&step) else {
             let answer = match self.agent_reverted.get(&step) {
                 Some(kept) => Reverted::Done(kept.clone()),
                 None => Reverted::Missing,
@@ -1660,7 +1661,7 @@ impl Room {
                 .then_some(("unavailable_target", "integration test refusal"))
         });
         if let Some((code, message)) = refused {
-            self.agent_changes.insert(step, (change, cost));
+            self.agent_changes.insert(step, (change, cost, at));
             let _ = reply.send(Ok(Reverted::Refused {
                 code,
                 message: message.into(),
@@ -1721,7 +1722,7 @@ impl Room {
                         self.broadcast_update(None, restored.update);
                         match restored.next {
                             Some(again) => {
-                                self.agent_changes.insert(step, (again, cost));
+                                self.agent_changes.insert(step, (again, cost, at));
                             }
                             None => self.app.agent_steps.release(&step, &self.name),
                         }
@@ -1787,7 +1788,8 @@ impl Room {
         if let Some(back) = back
             && self.update_fits(cost)
         {
-            self.agent_changes.insert(next.clone(), (back, cost));
+            self.agent_changes
+                .insert(next.clone(), (back, cost, Instant::now()));
             self.app.agent_steps.hold(&next, &self.name);
         }
         // The next store's snapshot holds the revert.
@@ -1966,18 +1968,25 @@ impl Room {
         // which hold the stored version, stand in for every counted session,
         // and nothing a session deleted is held yet. The agent steps this
         // room holds are: their live Undo and Redo re-create what they
-        // deleted, naming it.
-        let holds = self.app.config.gc_collect.then(|| {
+        // deleted, naming it. Steps past the Undo horizon go first: their
+        // Undo is refused from then on.
+        let holds = if self.app.config.gc_collect {
+            for step in expired_steps(&self.agent_changes, Instant::now()) {
+                self.agent_changes.remove(&step);
+                self.app.agent_steps.release(&step, &self.name);
+            }
             let mut held = yrs::IdSet::new();
-            for (change, _) in self.agent_changes.values() {
+            for (change, _, _) in self.agent_changes.values() {
                 held.merge_with(change.deletions().clone());
             }
-            note_store::Holds {
+            Some(note_store::Holds {
                 reached: Some(through),
                 held,
                 live_room: Some(self.doc.client_id()),
-            }
-        });
+            })
+        } else {
+            None
+        };
         tokio::spawn(async move {
             let folded = match note_store::fold(
                 &app.db,
@@ -4170,6 +4179,21 @@ impl Room {
     }
 }
 
+/// How long a room keeps an agent step for its Undo, holding what it deleted
+/// from collection (human/ 2026-10-23: an Undo reaches back at most 24 h,
+/// and what it may restore is kept 25 h after it arrived).
+const AGENT_STEP_HORIZON: Duration = Duration::from_secs(25 * 60 * 60);
+
+/// The agent steps of `changes` whose deletions arrived a horizon or more
+/// before `now`.
+fn expired_steps(changes: &HashMap<String, (Change, usize, Instant)>, now: Instant) -> Vec<String> {
+    changes
+        .iter()
+        .filter(|(_, (_, _, at))| now.saturating_duration_since(*at) >= AGENT_STEP_HORIZON)
+        .map(|(step, _)| step.clone())
+        .collect()
+}
+
 /// What admission decided about a writer's update.
 enum Verdict {
     Accept,
@@ -4282,5 +4306,27 @@ fn without_uploads(entry: &mut awareness::Entry) {
         }
         Ok(_) => {}
         Err(_) => entry.state = "null".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An agent step goes once its deletions are a horizon old (25 h).
+    #[test]
+    fn agent_steps_expire_after_the_undo_horizon() {
+        let change = Captured::default().change(&Doc::new());
+        let start = Instant::now();
+        let changes = HashMap::from([
+            ("old".to_owned(), (change.clone(), 0, start)),
+            (
+                "new".to_owned(),
+                (change, 0, start + Duration::from_secs(3600)),
+            ),
+        ]);
+        let just_before = start + AGENT_STEP_HORIZON - Duration::from_secs(1);
+        assert!(expired_steps(&changes, just_before).is_empty());
+        assert_eq!(expired_steps(&changes, start + AGENT_STEP_HORIZON), ["old"]);
     }
 }

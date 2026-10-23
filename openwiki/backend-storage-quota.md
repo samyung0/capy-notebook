@@ -698,17 +698,22 @@ loading the collected state agree.
   W deleted it and H does not hold it.
   - W is the newest stored window that every counted session has reached; with
     no counted session, W is the folded document itself; with no qualifying
-    window, the fold collects nothing.
+    window, the fold collects nothing. A session has reached the last store it
+    acknowledged on its socket, never above the version its oldest unsent edit
+    was made at: an edit made before W and not yet admitted would otherwise sit
+    next to a unit the collection dropped.
   - H holds what counted sessions deleted (their editor Undo may restore it),
     what the agent steps an open room holds deleted (their live Undo and Redo
-    re-create it, naming the deleted items), and what agent edits deleted
-    while their durable Undo payload is valid (24 h).
+    re-create it, naming the deleted items; with the collection on, a step goes
+    25 h after its deletions arrived and its Undo is refused from then on), and
+    what agent edits deleted while their durable Undo payload is valid (24 h).
 - **Lists.** In the document's current order, each run of dead units keeps its
   first and last unit: typing names the last unit of a deleted run, a list
   insert the first. Any other unit ends a run, a unit newer than W included,
   since a session that has seen it can type next to it. The rest goes unless a
   kept item names it as origin or right origin, closed over that. List origins
-  are never rewritten.
+  are never rewritten. Runs are read by clock range, so an item costs its
+  ranges, not the units it claims.
 - **Maps.** The value current at W is kept. It drops its origin, so the values
   behind it go, only when nothing behind it stays: a value behind it held,
   newer than W, or named by a value after it keeps the origin.
@@ -721,8 +726,9 @@ loading the collected state agree.
 - **Guard.** A collected state that does not load with nothing pending, keep
   the model's roots and hold the folded document's value is refused: the fold
   stores the folded document uncollected, as without the collection, and
-  reports the refusal to Sentry once per material while the process runs; the
-  next fold collects again (Epo 2026-10-24).
+  reports the refusal to Sentry once per material while the process runs,
+  logging every refusal; a panic in the collection or the guard is a refusal
+  too. The next fold collects again (Epo 2026-10-24).
 - **Undo.** An item that names a collected unit as origin, right origin or
   parent integrates as collected, so a durable Undo payload whose items name
   one would restore only part of its edit. `ydoc::gc::names_collected` finds

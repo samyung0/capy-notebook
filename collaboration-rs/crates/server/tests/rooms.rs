@@ -938,6 +938,79 @@ async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
     );
 }
 
+/// A collection that panics (debug builds: a material id holding
+/// `capy-it-panic-collection`) is a refusal, through the fold itself: every
+/// fold still stores the folded document, uncollected, and deletes its rows,
+/// and the next load holds the text. Fails if a refused or panicking
+/// collection fails the fold (the log is never folded).
+#[tokio::test]
+async fn a_panicking_collection_still_folds_uncollected() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+        ],
+    )
+    .await;
+    let (user, material) = note_named(&env, "base", "capy-it-panic-collection").await;
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &write).await;
+    // Three writers' letters (b last, between a and c), each store folded:
+    // from the second fold on a window qualifies and the collection panics.
+    let mut middle = None;
+    for (at, letter, before) in [(4, "a", "base"), (5, "c", "basea"), (5, "b", "baseac")] {
+        let mut writer = Client::open(server.port).await;
+        writer.joined(&room, &write).await;
+        assert!(writer.settle(|c| c.block_text() == before).await);
+        writer.type_at(at, letter).await;
+        persisted(&mut writer, letter).await;
+        assert!(log_folded(&env, &material).await, "the fold after {letter}");
+        middle = Some(yrs::ID::new(writer.doc.client_id(), 0));
+    }
+    let middle = middle.expect("the middle letter");
+    assert!(a.settle(|c| c.block_text() == "baseabc").await);
+    // A deletes the letters, then types: a fold whose window holds the
+    // deletion would drop b.
+    a.write(|doc| {
+        let root = doc.get_or_insert_text("content");
+        let mut txn = doc.transact_mut();
+        let block = root
+            .diff(&txn, yrs::types::text::YChange::identity)
+            .into_iter()
+            .find_map(|chunk| match chunk.insert {
+                yrs::Out::YXmlText(block) => Some(block),
+                _ => None,
+            })
+            .expect("a block");
+        block.remove_range(&mut txn, 4, 3);
+    })
+    .await;
+    persisted(&mut a, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    a.type_at(0, "!").await;
+    persisted(&mut a, "bang").await;
+    assert!(log_folded(&env, &material).await);
+    assert!(windows(&env, &material).await > 0);
+    assert!(
+        !collected_in_base(&env, &material, middle).await,
+        "a panicking collection stored a collected base"
+    );
+    drop(a);
+    assert!(log_folded(&env, &material).await);
+    let mut c = Client::open(server.port).await;
+    c.joined(&room, &write).await;
+    assert!(
+        c.settle(|c| c.block_text() == "!base").await,
+        "{}",
+        c.block_text()
+    );
+}
+
 /// A stop (SIGTERM, what Docker sends before the compose file's 60 s grace
 /// period) stores every room's unsaved edits before the process exits: a new
 /// server opens the room with the typed text. The debounce here is a minute,

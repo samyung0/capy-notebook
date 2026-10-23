@@ -2,8 +2,9 @@
 //! The in-place collection (`ydoc::gc`) against tabs that come and go: a
 //! room S and up to eight tabs edit a Plate note through the room's
 //! slate-yjs mapping. Tabs join, edit online, go offline and keep editing,
-//! come back and send their drafts, leave for good, and undo or redo their
-//! own steps. Every tab has a twin editing a room R that never collects.
+//! hold edits the room has not admitted while they keep hearing it, come
+//! back and send their drafts, leave for good, and undo or redo their own
+//! steps. Every tab has a twin editing a room R that never collects.
 //!
 //! As the server does, the open room keeps its whole history, and what is
 //! stored is a base plus the rows stored since (each store's update, with
@@ -12,8 +13,9 @@
 //! and idle moment with the room open (the open room's own marker chains
 //! stay), and when the last online tab goes (the room unloads; its next life
 //! loads the stored state under a new client):
-//! * counted tabs are the online ones and those offline for at most 25 steps
-//!   (the cap);
+//! * counted tabs are the connected ones and those offline for at most 25
+//!   steps (the cap). A tab reports the last store it heard, never above the
+//!   version its oldest unsent edit was made at (PLAN section 4);
 //! * the window is the newest of the last four stored snapshots that every
 //!   counted tab has reached, or the folded document itself when no tab is
 //!   counted, and each fold stores the folded document as the next snapshot;
@@ -21,10 +23,10 @@
 //!
 //! A third of the edits land on one spot of the first paragraph (typing
 //! there, range deletes around it), and now and then a contended episode
-//! plays out there: an offline tab and an online one type at the spot, a
-//! third tab deletes the range around it and leaves, the offline tab comes
-//! back with its draft and the room folds, so the draft sits inside a run
-//! the window holds deleted.
+//! plays out there: an offline (or holding) tab and an online one type at
+//! the spot, a third tab deletes the range around it and leaves, and the
+//! room folds before or after the draft arrives, so the draft sits inside a
+//! run the window holds deleted.
 //!
 //! A tab some fold did not count (it left, or stayed offline past the cap)
 //! comes back on the late path. The late merge is not exercised here: the
@@ -33,8 +35,10 @@
 //! back raw and sends its drafts.
 //!
 //! Checked for every seed:
-//! * every collected state loads to the value collected, with the same state
-//!   vector and nothing pending;
+//! * every collected state loads to the value the uncollected fold's state
+//!   loads to, with the same state vector and nothing pending, and that value
+//!   is the folded document's (a separate count: a document that does not
+//!   survive its own reload is not the collection's doing);
 //! * no counted tab can name a unit the collected state dropped: in its
 //!   view, the units next to every live unit, each list's first and last
 //!   unit and each key's current value stay;
@@ -646,6 +650,9 @@ fn undo_manager(note: &Note) -> UndoManager<()> {
 #[derive(PartialEq, Clone, Copy)]
 enum St {
     Online,
+    /// Connected and hearing the room, but its own edits wait for a resend
+    /// (the room did not admit them yet).
+    Holding,
     /// Offline since this step.
     Offline(usize),
     Left,
@@ -657,8 +664,11 @@ struct Tab {
     r: Note,
     prefix: String,
     st: St,
-    /// S's stored version at the tab's last sync from S.
+    /// The version the tab reports: S's stored version at its last sync
+    /// from S, never above `unsent`.
     reached: i64,
+    /// The version the tab held when it made its oldest edit S has not got.
+    unsent: Option<i64>,
     /// A collection ran without counting this tab since its last sync.
     excluded: bool,
     ug: UndoManager<()>,
@@ -670,7 +680,7 @@ struct Tab {
 impl Tab {
     fn counted(&self, now: usize) -> bool {
         match self.st {
-            St::Online => true,
+            St::Online | St::Holding => true,
             St::Offline(since) => now - since <= CAP,
             St::Left => false,
         }
@@ -690,7 +700,12 @@ struct Tally {
     load_differs: u64,
     /// Units a counted tab can name that a collected state dropped.
     unnameable: u64,
+    /// Folded documents that read differently once their own state is
+    /// loaded: not the collection's doing (the uncollected fold writes it).
+    reloads_differ: u64,
     contended: u64,
+    /// Contended episodes whose draft was held while its tab heard the room.
+    holding: u64,
     failures: Vec<String>,
     /// For Yjs: the state collected from, the collected state, and the rows
     /// stored after the fold, as a load replays them.
@@ -812,25 +827,44 @@ impl World {
         self.open = true;
     }
 
-    fn online(&self) -> bool {
-        self.tabs.iter().any(|t| t.st == St::Online)
+    fn connected(&self) -> bool {
+        self.tabs
+            .iter()
+            .any(|t| matches!(t.st, St::Online | St::Holding))
     }
 
-    /// Tab `i` is no longer online: the room folds, unloading first when no
-    /// tab is left online.
+    /// A tab is no longer online: the room folds, unloading first when no
+    /// tab is left connected.
     fn went(&mut self, now: usize, tally: &mut Tally) {
-        if !self.online() {
+        if !self.connected() {
             self.open = false;
         }
         self.fold(now, tally);
     }
 
-    /// Every online tab hears the room.
+    /// Every connected tab hears the room and acknowledges the last store,
+    /// never above the version its oldest unsent edit was made at.
     fn hear(&mut self) {
-        for t in self.tabs.iter_mut().filter(|t| t.st == St::Online) {
+        for t in self
+            .tabs
+            .iter_mut()
+            .filter(|t| matches!(t.st, St::Online | St::Holding))
+        {
             sync(&self.s, &mut t.g);
             sync(&self.r, &mut t.r);
-            t.reached = self.version;
+            t.reached = t.unsent.map_or(self.version, |at| at.min(self.version));
+        }
+    }
+
+    /// Tab `i` made an edit: online, it stores and every connected tab hears
+    /// the room; otherwise the edit waits, unsent.
+    fn edited(&mut self, i: usize) {
+        if self.tabs[i].st == St::Online {
+            self.store_from(i);
+            self.hear();
+        } else {
+            let t = &mut self.tabs[i];
+            t.unsent.get_or_insert(t.reached);
         }
     }
 
@@ -843,10 +877,7 @@ impl World {
         t.r.apply(ops);
         let deleted = t.g.delete_set().diff(&before);
         t.held.merge_with(deleted);
-        if t.st == St::Online {
-            self.store_from(i);
-            self.hear();
-        }
+        self.edited(i);
     }
 
     /// The contended episode (module docs): tab T goes offline, B types at
@@ -855,9 +886,13 @@ impl World {
     /// and the room folds at a window holding the deletion. Half the time T
     /// goes offline again first, still showing its draft, and B deletes the
     /// draft: deleted after the window, it still splits the run.
+    ///
+    /// Or T holds instead: it types first, its edit unsent, B types, D
+    /// deletes and leaves, T hears all of it and the room folds before T
+    /// resends. T must not count as past the window then (PLAN section 4).
     fn contended(&mut self, now: usize, rng: &mut Rng, tally: &mut Tally) {
         for i in 0..self.tabs.len() {
-            if matches!(self.tabs[i].st, St::Offline(_)) {
+            if matches!(self.tabs[i].st, St::Offline(_) | St::Holding) {
                 self.rejoin(i, tally);
             }
         }
@@ -877,16 +912,25 @@ impl World {
         let mut take = || on.remove(rng.below(on.len()));
         let (t, b, d) = (take(), take(), take());
         tally.contended += 1;
-        self.tabs[t].st = St::Offline(now);
+        let holding = rng.chance(0.5);
+        tally.holding += u64::from(holding);
+        let order = if holding {
+            self.tabs[t].st = St::Holding;
+            [t, b]
+        } else {
+            self.tabs[t].st = St::Offline(now);
+            [b, t]
+        };
+        // How many letters B and T typed.
         let mut typed = [0, 0];
-        for (k, i) in [b, t].into_iter().enumerate() {
+        for i in order {
             let Some(block) = spot(&self.tabs[i].g) else {
                 return;
             };
             let text: String = (0..1 + rng.below(3))
                 .map(|_| (b'a' + rng.below(26) as u8) as char)
                 .collect();
-            typed[k] = text.chars().count();
+            typed[usize::from(i == t)] = text.chars().count();
             let ops = self.tabs[i].g.insert_ops(block, HOT, &text);
             self.type_ops(i, &ops);
         }
@@ -899,6 +943,19 @@ impl World {
         self.type_ops(d, &ops);
         self.tabs[d].st = St::Left;
         self.went(now, tally);
+        if holding {
+            // B types elsewhere, so the room has a row to fold; T hears it
+            // all before its draft is sent.
+            let Some(block) = spot(&self.tabs[b].g) else {
+                return;
+            };
+            let ops = self.tabs[b].g.insert_ops(block, 0, "z");
+            self.type_ops(b, &ops);
+            self.fold(now, tally);
+            self.rejoin(t, tally);
+            self.hear();
+            return;
+        }
         self.rejoin(t, tally);
         if rng.chance(0.5) {
             self.hear();
@@ -927,6 +984,7 @@ impl World {
             prefix,
             st: St::Online,
             reached: self.version,
+            unsent: None,
             excluded: false,
             ug,
             ur,
@@ -957,6 +1015,7 @@ impl World {
         t.st = St::Online;
         t.excluded = false;
         t.reached = self.version;
+        t.unsent = None;
     }
 
     /// Tab `i` sends what it has (a store), and hears S back. The room
@@ -985,6 +1044,7 @@ impl World {
         sync(&self.s, &mut t.g);
         sync(&self.r, &mut t.r);
         t.reached = self.version;
+        t.unsent = None;
     }
 
     /// A fold: replay the stored state, collect it at the window the counted
@@ -1001,6 +1061,11 @@ impl World {
             tally.sample[k].later = self.rows.clone();
         }
         let folded = self.stored(1);
+        // What the fold writes without the collection, as a load reads it.
+        let whole = Note::load(1, "s", &folded.state());
+        if whole.value() != folded.value() {
+            tally.reloads_differ += 1;
+        }
         let counted: Vec<&Tab> = self.tabs.iter().filter(|t| t.counted(now_step)).collect();
         let now = Window::of(&folded.doc.transact(), self.version);
         let window = match counted.iter().map(|t| t.reached).min() {
@@ -1018,7 +1083,7 @@ impl World {
                 let loaded = Note::load(1, "s", &collected.state);
                 let same_vector =
                     loaded.doc.transact().state_vector() == folded.doc.transact().state_vector();
-                if loaded.value() != folded.value() || loaded.pending() || !same_vector {
+                if loaded.value() != whole.value() || loaded.pending() || !same_vector {
                     tally.load_differs += 1;
                 }
                 for t in &counted {
@@ -1127,25 +1192,32 @@ fn run(seed: u64, tally: &mut Tally) {
                 }
                 let deleted = t.g.delete_set().diff(&before);
                 t.held.merge_with(deleted);
-                if t.st == St::Online {
-                    w.store_from(i);
-                    w.hear();
-                }
+                w.edited(i);
             }
             // An online tab goes offline.
-            55..=64 => {
+            55..=60 => {
                 let on: Vec<usize> = (0..w.tabs.len())
                     .filter(|&i| w.tabs[i].st == St::Online)
                     .collect();
                 if !on.is_empty() {
                     w.tabs[on[rng.below(on.len())]].st = St::Offline(now);
-                    if !w.online() {
+                    if !w.connected() {
                         w.went(now, tally);
                     }
                 }
             }
+            // An online tab's next edits wait for a resend while it keeps
+            // hearing the room.
+            61..=64 => {
+                let on: Vec<usize> = (0..w.tabs.len())
+                    .filter(|&i| w.tabs[i].st == St::Online)
+                    .collect();
+                if !on.is_empty() {
+                    w.tabs[on[rng.below(on.len())]].st = St::Holding;
+                }
+            }
             // An offline tab comes back, or one that left (a back/forward
-            // cache restore).
+            // cache restore), or a holding tab resends.
             65..=77 => {
                 let away: Vec<usize> = (0..w.tabs.len())
                     .filter(|&i| w.tabs[i].st != St::Online)
@@ -1171,9 +1243,9 @@ fn run(seed: u64, tally: &mut Tally) {
             _ => w.fold(now, tally),
         }
     }
-    // Every tab still away comes back; every open tab syncs.
+    // Every tab still away or holding comes back; every open tab syncs.
     for i in 0..w.tabs.len() {
-        if matches!(w.tabs[i].st, St::Offline(_)) {
+        if matches!(w.tabs[i].st, St::Offline(_) | St::Holding) {
             w.rejoin(i, tally);
         }
     }
@@ -1256,7 +1328,7 @@ fn collections_keep_every_replica_and_every_undo_exact() {
         run(seed, &mut tally);
     }
     eprintln!(
-        "gc_views: seeds {} converged {} equals R {} | collections {} (units collected {}, loads differing {}, unnameable {}) | contended {} | rejoins raw {} late {} | undos {} | {:.1} s",
+        "gc_views: seeds {} converged {} equals R {} | collections {} (units collected {}, loads differing {}, unnameable {}, reloads differing {}) | contended {} (holding {}) | rejoins raw {} late {} | undos {} | {:.1} s",
         tally.seeds,
         tally.converged,
         tally.equals_reference,
@@ -1264,7 +1336,9 @@ fn collections_keep_every_replica_and_every_undo_exact() {
         tally.units,
         tally.load_differs,
         tally.unnameable,
+        tally.reloads_differ,
         tally.contended,
+        tally.holding,
         tally.raw_rejoins,
         tally.late_rejoins,
         tally.undos,
@@ -1273,9 +1347,13 @@ fn collections_keep_every_replica_and_every_undo_exact() {
     assert!(tally.failures.is_empty(), "{:?}", tally.failures);
     assert_eq!(tally.load_differs, 0);
     assert_eq!(tally.unnameable, 0);
+    assert_eq!(
+        tally.reloads_differ, 0,
+        "a folded document reads differently after its own reload, collection or not"
+    );
     // Not vacuous: collections ran, discarded units, tabs undid steps and
     // contended episodes played out.
     assert!(tally.collections > seeds && tally.units > 0 && tally.undos > seeds);
-    assert!(tally.contended > seeds / 4);
+    assert!(tally.contended > seeds / 4 && tally.holding > seeds / 8);
     yjs_check(&tally.sample);
 }

@@ -145,8 +145,12 @@ fn collection(env: &HashMap<String, String>) -> Result<bool, ConfigError> {
     let on = flag(env, "COLLABORATION_GC_COLLECT")?;
     if on && env.get("APP_ENV").map(|value| value.trim()) != Some("test") {
         return Err(ConfigError(
-            "COLLABORATION_GC_COLLECT=true is refused outside tests until the collection's              inputs exist (counted sessions and held deletions, the late merge, the durable Undo              refusal)"
-                .into(),
+            concat!(
+                "COLLABORATION_GC_COLLECT=true is refused outside tests until the collection's ",
+                "inputs exist (counted sessions and held deletions, the late merge, the durable ",
+                "Undo refusal)"
+            )
+            .into(),
         ));
     }
     Ok(on)
@@ -356,7 +360,10 @@ mod tests {
                 .unwrap()
                 .gc_collect
         );
-        assert!(Config::load(&env(&[on])).is_err());
+        let refused = Config::load(&env(&[on]))
+            .err()
+            .map(|error| error.to_string());
+        assert!(refused.is_some_and(|message| message.contains("collection's inputs exist (")));
         assert!(Config::load(&env(&[on, ("APP_ENV", "production")])).is_err());
         assert!(
             Config::load(&env(&[
