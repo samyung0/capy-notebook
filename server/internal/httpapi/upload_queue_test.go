@@ -24,9 +24,19 @@ func takeOrFail(t *testing.T, q *uploadQueue, user string, position int) uploadT
 	return takeSized(t, q, user, 1, position)
 }
 
+// wholeBudgetPerUser lifts the per-user byte share to the whole budget for
+// a test of the shared budget alone.
+func wholeBudgetPerUser(t *testing.T) {
+	t.Helper()
+	previous := uploadUserBudget
+	uploadUserBudget = uploadBudget
+	t.Cleanup(func() { uploadUserBudget = previous })
+}
+
 // fillBudget takes the whole budget with r0's 4 turns; it returns the first.
 func fillBudget(t *testing.T, q *uploadQueue) uploadTurn {
 	t.Helper()
+	wholeBudgetPerUser(t)
 	first := takeSized(t, q, "r0", uploadBudget/4, 0)
 	for range uploadUserSlots - 1 {
 		takeSized(t, q, "r0", uploadBudget/4, 0)
@@ -134,6 +144,7 @@ func TestUploadQueueRunsSmallFilesPastThirtyTwo(t *testing.T) {
 // that fit pass it until it has waited uploadBlockAfter (Epo 2026-10-22)
 // (security regression: human backend-storage-quota 2026-10-22 upload limits).
 func TestUploadQueueHoldsABigFileUntilItFits(t *testing.T) {
+	wholeBudgetPerUser(t)
 	q := newUploadQueue(nil)
 	var held []uploadTurn
 	for range 3 {
@@ -162,6 +173,7 @@ func TestUploadQueueOldFileBlocksTheLineUntilItFits(t *testing.T) {
 	previous := uploadBlockAfter
 	uploadBlockAfter = 0
 	t.Cleanup(func() { uploadBlockAfter = previous })
+	wholeBudgetPerUser(t)
 	q := newUploadQueue(nil)
 	var held []uploadTurn
 	for range 3 {
@@ -213,6 +225,7 @@ func TestUploadQueueReleasesTheBudgetOnEveryExit(t *testing.T) {
 	previous := uploadTurnTTL
 	uploadTurnTTL = 300 * time.Millisecond
 	t.Cleanup(func() { uploadTurnTTL = previous })
+	wholeBudgetPerUser(t)
 	q := newUploadQueue(nil)
 	ran := takeSized(t, q, "a", 300_000_000, 0)
 	cancelled := takeSized(t, q, "a", 300_000_000, 0)
@@ -257,6 +270,7 @@ func TestUploadQueueReleasesTheBudgetOnEveryExit(t *testing.T) {
 // once it had waited it would block every file behind it (security
 // regression: upload-limits review r2 L4).
 func TestUploadQueueRefusesAFileLargerThanTheBudget(t *testing.T) {
+	wholeBudgetPerUser(t)
 	q := newUploadQueue(nil)
 	if _, err := q.take("a", "sources:ws", uploadClaim{size: uploadBudget + 1}); errorStatus(err) != 413 {
 		t.Fatalf("a ticket past the budget: %v", err)
@@ -316,6 +330,7 @@ func TestUploadQueueCapsAUsersUploads(t *testing.T) {
 // share, to the next user's (Epo 2026-10-22)
 // (security regression: human backend-storage-quota 2026-10-22 upload limits).
 func TestUploadQueuePassesOverAUserAtTheirShare(t *testing.T) {
+	wholeBudgetPerUser(t)
 	q := newUploadQueue(nil)
 	for range uploadUserSlots {
 		takeOrFail(t, q, "a", 0)
@@ -335,6 +350,38 @@ func TestUploadQueuePassesOverAUserAtTheirShare(t *testing.T) {
 	}
 	if place := placeOf(t, q, fifth, "a"); place != 1 {
 		t.Fatalf("a's 5th is at %d while a runs 4", place)
+	}
+}
+
+// One user's running uploads and held turns hold at most 128 MiB of the
+// budget (Epo 2026-10-24): a ticket past that share waits in line while
+// another user's file starts, is never let block the line, and gets its turn
+// once the user's own bytes free (security regression: rate-limit audit M15).
+func TestUploadQueueHoldsAUserToTheirByteShare(t *testing.T) {
+	previous := uploadBlockAfter
+	uploadBlockAfter = 0
+	t.Cleanup(func() { uploadBlockAfter = previous })
+	q := newUploadQueue(nil)
+	var held []uploadTurn
+	for range 3 {
+		held = append(held, takeSized(t, q, "a", 40<<20, 0))
+	}
+	// 120 MiB on 3 of a's 4 uploads: a 30 MiB file is past the byte share.
+	over := takeSized(t, q, "a", 30<<20, 1)
+	other := takeSized(t, q, "b", 30<<20, 0)
+	if place := placeOf(t, q, over, "a"); place != 1 {
+		t.Fatalf("a's file past the share is at %d", place)
+	}
+	if err := q.cancel(other.TicketID, "b", ""); err != nil {
+		t.Fatal(err)
+	}
+	_, release, err := q.start(held[0].TicketID, "a", "sources:ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if place := placeOf(t, q, over, "a"); place != 0 {
+		t.Fatalf("a's file is at %d once a's bytes freed", place)
 	}
 }
 

@@ -15,8 +15,10 @@ import (
 // Running uploads share a budget of declared bytes, uploadBudget, the temp
 // disk their bodies spool to; at most uploadRunMax run at once, and one user
 // at most uploadUserSlots of them (Epo 2026-10-22). Held turns count as
-// running. An upload first takes a ticket: a ticket whose file does not fit,
-// or whose user is at their share, waits in line, and its browser long-polls
+// running. One user's running uploads and held turns hold at most
+// uploadUserBudget of the declared bytes (Epo 2026-10-24). An upload first
+// takes a ticket: a ticket whose file does not fit, or whose user is at their
+// share (of uploads or of bytes), waits in line, and its browser long-polls
 // its place until its turn comes. The line goes oldest first, but a file that
 // does not fit is passed by smaller ones until it has waited uploadBlockAfter;
 // from then on nobody behind it starts until it fits, so small files cannot
@@ -47,6 +49,8 @@ var (
 	// (Epo 2026-10-22: 1 GB, 10^9 bytes), the temp disk their bodies spool to
 	// (the runbook asks for about 2 GB free).
 	uploadBudget int64 = 1_000_000_000
+	// uploadUserBudget is one user's share of uploadBudget.
+	uploadUserBudget int64 = 128 << 20
 	// uploadBlockAfter is how long a ticket that does not fit is passed by
 	// before it blocks the tickets behind it.
 	uploadBlockAfter = 30 * time.Second
@@ -127,6 +131,7 @@ type uploadQueue struct {
 	used    int64                    // declared bytes of running uploads and held turns
 	running int                      // running uploads and held turns
 	active  map[string]int           // each user's running uploads and held turns
+	bytes   map[string]int64         // each user's declared bytes of them
 	line    []*uploadTicket          // waiting tickets, oldest first
 	tickets map[string]*uploadTicket // waiting and turn-holding tickets
 	moved   chan struct{}            // closed and replaced when the line moves
@@ -137,7 +142,7 @@ type uploadQueue struct {
 
 func newUploadQueue(settle func(batch string, removed bool)) *uploadQueue {
 	return &uploadQueue{
-		active: map[string]int{}, tickets: map[string]*uploadTicket{},
+		active: map[string]int{}, bytes: map[string]int64{}, tickets: map[string]*uploadTicket{},
 		moved: make(chan struct{}), settle: settle,
 	}
 }
@@ -152,7 +157,7 @@ func editorAssetTarget(materialID string) string   { return "assets:" + material
 func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, error) {
 	// It would never fit, and once it had waited it would block every
 	// ticket behind it.
-	if claim.size > uploadBudget {
+	if claim.size > uploadBudget || claim.size > uploadUserBudget {
 		return uploadTurn{}, huma.Error413RequestEntityTooLarge("the upload is larger than the gateway's upload budget")
 	}
 	q.mu.Lock()
@@ -161,7 +166,7 @@ func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, 
 	// Every move grants the line first, so whoever still waits is at their
 	// share, does not fit, or is behind a blocking ticket: this ticket passes
 	// only those the line would pass too.
-	if q.active[user] < uploadUserSlots && q.fitsLocked(t) && !q.blockedLocked() {
+	if q.underShareLocked(t) && q.fitsLocked(t) && !q.blockedLocked() {
 		q.tickets[t.id] = t
 		q.grantLocked(t)
 		return uploadTurn{TicketID: t.id}, nil
@@ -175,6 +180,12 @@ func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, 
 	return uploadTurn{TicketID: t.id, Position: len(q.line)}, nil
 }
 
+// underShareLocked is whether t's user has an upload and the bytes for t's
+// file left of their share.
+func (q *uploadQueue) underShareLocked(t *uploadTicket) bool {
+	return q.active[t.user] < uploadUserSlots && q.bytes[t.user]+t.claim.size <= uploadUserBudget
+}
+
 // fitsLocked is whether t's file fits the budget and the running uploads.
 func (q *uploadQueue) fitsLocked(t *uploadTicket) bool {
 	return q.running < uploadRunMax && q.used+t.claim.size <= uploadBudget
@@ -184,7 +195,7 @@ func (q *uploadQueue) fitsLocked(t *uploadTicket) bool {
 // it: one under its user's share that does not fit and has waited
 // uploadBlockAfter.
 func (q *uploadQueue) blocksLocked(t *uploadTicket) bool {
-	return q.active[t.user] < uploadUserSlots && !q.fitsLocked(t) &&
+	return q.underShareLocked(t) && !q.fitsLocked(t) &&
 		time.Since(t.queued) >= uploadBlockAfter
 }
 
@@ -206,6 +217,7 @@ func (q *uploadQueue) grantLocked(t *uploadTicket) {
 	q.used += t.claim.size
 	q.running++
 	q.active[t.user]++
+	q.bytes[t.user] += t.claim.size
 	t.turn = time.AfterFunc(uploadTurnTTL, func() { q.pass(t) })
 }
 
@@ -262,7 +274,7 @@ func (q *uploadQueue) dropLocked(t *uploadTicket) {
 func (q *uploadQueue) advanceLocked() {
 	for i := 0; i < len(q.line); {
 		next := q.line[i]
-		if q.active[next.user] < uploadUserSlots && q.fitsLocked(next) {
+		if q.underShareLocked(next) && q.fitsLocked(next) {
 			q.line = slices.Delete(q.line, i, i+1)
 			q.grantLocked(next)
 			continue
@@ -282,6 +294,9 @@ func (q *uploadQueue) freeLocked(t *uploadTicket) {
 	q.running--
 	if q.active[t.user]--; q.active[t.user] == 0 {
 		delete(q.active, t.user)
+	}
+	if q.bytes[t.user] -= t.claim.size; q.bytes[t.user] == 0 {
+		delete(q.bytes, t.user)
 	}
 }
 
