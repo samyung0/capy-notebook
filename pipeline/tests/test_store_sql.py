@@ -1082,7 +1082,7 @@ def test_actor_credits_spend_purchased_balance_and_admit_a_pending_reload(worksp
                 """,
                 (
                     before[0] if before else 0,
-                    before[1] if before else 800 * credit,
+                    before[1] if before else 0,
                     uid,
                 ),
             )

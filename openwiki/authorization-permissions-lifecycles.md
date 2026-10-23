@@ -1558,7 +1558,10 @@ under their own retention requirements. The account's editing incidents
 (`edit_incidents`, see
 [observability-metering.md](observability-metering.md#editing-incidents)) are
 deleted with it; incidents that name no user, or another user, keep the
-purged account's file ids until their 90 days pass. A purged account and the 30-day deleted
+purged account's file ids until their 90 days pass. `starter_grants` keeps
+the user id and the card's Stripe fingerprint through purge, so the same card
+cannot claim the starter credits again on a new account (see
+[observability-metering.md](observability-metering.md#purchased-credits-top-ups-and-auto-reload)). A purged account and the 30-day deleted
 data cannot be restored.
 
 Deletion requests, support cancellation, purge, Clerk `user.deleted` handling
