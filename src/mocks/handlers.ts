@@ -65,10 +65,12 @@ import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
 import {
   mockMaterialRoom,
+  noteTokenDelay,
   savedSourceState,
   sourceRoom,
   sourceRoomName,
   sourceRoomState,
+  sourceSessionHeld,
 } from './collaboration';
 import * as db from './db';
 import { uid } from './db';
@@ -756,6 +758,12 @@ export const handlers = [
         { status: 503 }
       );
     }
+    // A hung edit open (`holdSourceSessions`): never answered.
+    if (
+      sourceSessionHeld() &&
+      new URL(request.url).searchParams.get('view') !== 'true'
+    )
+      await new Promise(() => {});
     const session = await mockSourceSession(String(params.id));
     return session
       ? HttpResponse.json(session)
@@ -2218,6 +2226,12 @@ export const handlers = [
     async ({ params, request }) => {
       const material = db.materials.find((item) => item.id === params.id);
       if (!material) return new HttpResponse(null, { status: 404 });
+      // A held token request (`holdNoteTokens`): late, or never answered.
+      const delay = noteTokenDelay(material.id);
+      if (delay !== null)
+        await new Promise((resolve) => {
+          if (Number.isFinite(delay)) setTimeout(resolve, delay);
+        });
       const body = (await request.json().catch(() => null)) as {
         access?: string;
         document?: string;

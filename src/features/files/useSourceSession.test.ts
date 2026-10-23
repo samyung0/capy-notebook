@@ -110,10 +110,13 @@ const TOKEN = {
   url: 'wss://collab.test',
 } as SourceCollaborationToken;
 
+/** The frame's readiness as an Office view passes it (none for text). */
+let viewReady: boolean | undefined;
+
 /** Renders the hook again and returns what it returns now. */
 const render = () => {
   hooks.begin();
-  return useSourceSession('f_1', true);
+  return useSourceSession('f_1', true, undefined, viewReady);
 };
 
 /** Opens the file with its base still downloading; resolves to the room's
@@ -138,6 +141,7 @@ async function open() {
 
 beforeEach(() => {
   hooks.reset();
+  viewReady = undefined;
   createSourceProvider.mockReset();
   createSourceProvider.mockReturnValue({
     destroy: vi.fn(),
@@ -155,6 +159,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const cleanup of hooks.cleanups.splice(0)) cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -182,5 +187,24 @@ describe('an Office edit session opening while its base downloads', () => {
     base.reject(new Error('HTTP 500'));
     await vi.waitFor(() => expect(render().status).toBe('error'));
     expect(render().bytes).toBeUndefined();
+  });
+});
+
+// Epo 2026-10-23: an Office join ends when its frame reports ready; one past
+// its 30 s errors, and gets its status back once the frame is ready with the
+// room synced (review r3 M1).
+describe("an Office view whose frame is ready after its join's 30 s", () => {
+  it('errors at 30 s, then reads Saved once the frame is ready', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', { onLine: true });
+    viewReady = false;
+    const { options } = await open();
+    options.onSynced?.({ state: true });
+    expect(render().status).toBe('saved');
+    vi.advanceTimersByTime(30_000);
+    expect(render().status).toBe('error');
+    viewReady = true;
+    render();
+    expect(render().status).toBe('saved');
   });
 });

@@ -467,16 +467,17 @@ shows a status strip (`[data-testid="file-not-indexed"]`) under the header
 instead of replacing the body with a full-page error.
 
 File and material banners share `FileBanner`: a flat full-width strip with no
-leading icon and `text-fg` on a grey (info, ingest progress, newer version,
-maintenance pause) or red-tint (error) background, `role="status"` or
+leading icon and `text-fg` on a grey (info, ingest progress, a text source's
+newer version, maintenance pause) or red-tint (error) background, `role="status"` or
 `role="alert"` respectively. Its close button hides it until the message
 changes or the page remounts it. Actions are small ghost underlined buttons on a
 new line, aligned right. The save banner uses its one-row form (`inline`): the
 message scrolls sideways without a visible scrollbar (`scroll-fade-x`, the
 note toolbar's scroller and `useHorizontalWheelScroll`), and its action takes
 the close button's place, so every save banner state has the same 40px
-height. The newer-version (and maintenance pause) strip uses the same one-row
-form, with Reload in the close button's place. The center pane shows one strip
+height. The maintenance pause strip (and a text source's newer-version strip;
+Office swaps instead) uses the same one-row form, with Reload in the close
+button's place. The center pane shows one strip
 at a time: `CenterContent` wraps each open item in a `BannerStack`, and only
 the newest strip mounted inside it shows (a strip whose message changes counts
 as new); closing or unmounting it reveals the one before. An Office or text source opened in edit mode while the
@@ -674,8 +675,11 @@ once per offline episode and at unmount (see
 failures (private mode, a full disk, a missing draft base) never block
 editing. Error
 strips carry localized copy only. An epoch
-change reloads a fully acknowledged editor; unacknowledged edits instead enter
-recovery, as do drafts of another version found on open.
+change swaps a fully acknowledged editor to the new epoch with no strip
+(notes and Office, the room swap of
+[plate-editor.md](plate-editor.md#room-swap) and
+[office-files.md](office-files.md#room-swap)); unacknowledged edits instead
+enter recovery, as do drafts of another version found on open.
 
 Every recovery path shows a recovery banner: a save refused for good the
 `refused` one ("These changes couldn't be saved. Copy anything you need, then

@@ -34,6 +34,7 @@ import { renderSlides, slideThumbnail } from './pptxRender';
 import { PRESENTER_VIEW } from './presenterWindow';
 import type {
   OfficeMenuReporter,
+  OfficePositioner,
   OfficeRenderer,
   OfficeThumbnailer,
 } from './runtimeMenus';
@@ -90,6 +91,7 @@ export function PptxEditorHost({
   onAskPresenter,
   onPendingChange,
   onPresentingChange,
+  onPositioner,
   onRenderer,
   onSave,
   onThumbnailer,
@@ -117,6 +119,7 @@ export function PptxEditorHost({
   onAskPresenter: () => void;
   onPendingChange: (pending: boolean) => void;
   onPresentingChange: (presenting: boolean) => void;
+  onPositioner: (positioner: OfficePositioner | null) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onSave: () => void;
   onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
@@ -198,6 +201,20 @@ export function PptxEditorHost({
     });
     return () => onRenderer(null);
   }, [commandState, onRenderer]);
+  // A room swap (Epo 2026-10-22): the slide on screen.
+  useEffect(() => {
+    onPositioner({
+      read: () =>
+        commandState
+          ? { format: 'pptx', slide: commandState.slideIndex + 1 }
+          : null,
+      show: (position) => {
+        if (position.format === 'pptx')
+          apiRef.current?.goToSlide(position.slide);
+      },
+    });
+    return () => onPositioner(null);
+  }, [commandState, onPositioner]);
   // Slide 1 for the list cards; Capy asks after edits settle.
   useEffect(() => {
     onThumbnailer(async () => {

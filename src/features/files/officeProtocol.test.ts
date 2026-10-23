@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import {
   isOfficeHostMessage,
+  isOfficePosition,
   isOfficeRuntimeMessage,
   isOutdatedOfficeRuntime,
   OFFICE_PROTOCOL_VERSION,
@@ -536,6 +537,46 @@ describe('source collaboration bridge', () => {
       })
     ).toBe(true);
   });
+});
+
+// A room swap's reader place crosses frames by content (Epo 2026-10-22):
+// a DOCX paragraph, an XLSX sheet id and cells, a PPTX slide.
+it('accepts a reader place in each format and nothing else', () => {
+  const docx = {
+    format: 'docx',
+    scrollTop: 3280,
+    selection: {
+      anchor: { offset: 0, paraId: '1A2B3C4D', story: 'body' },
+      head: { offset: 4, paraId: '1A2B3C4D', story: 'body' },
+    },
+    top: { line: null, offset: -12.5, paraId: '5E6F7A8B' },
+  };
+  const xlsx = {
+    anchor: { col: 2, row: 7 },
+    format: 'xlsx',
+    head: { col: 4, row: 9 },
+    sheet: 'sheet-2',
+  };
+  const pptx = { format: 'pptx', slide: 3 };
+  for (const position of [docx, xlsx, pptx])
+    expect(isOfficePosition(position)).toBe(true);
+  for (const position of [
+    { ...docx, scrollTop: -1 },
+    { ...docx, top: { line: 1.5, offset: 0, paraId: 'A' } },
+    { ...xlsx, anchor: { col: -1, row: 0 } },
+    { ...xlsx, sheet: 7 },
+    { ...pptx, slide: 0.5 },
+    { format: 'vsdx', page: 1 },
+  ])
+    expect(isOfficePosition(position)).toBe(false);
+  expect(
+    isOfficeHostMessage({
+      id: 'p1',
+      position: xlsx,
+      type: 'set-position',
+      version: OFFICE_PROTOCOL_VERSION,
+    })
+  ).toBe(true);
 });
 
 it('accepts bounded citation changes without a document reload', () => {
