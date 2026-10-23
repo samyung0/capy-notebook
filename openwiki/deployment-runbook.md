@@ -23,7 +23,7 @@ This repository defines deployment as follows:
 
 1. **Stage UAT:** push to `main` and let `CI` succeed, then manually dispatch
    **Deploy UAT** from `main` with a full SHA (blank takes the selected main
-   revision). It deploys that SHA to the isolated UAT Coolify and Cloudflare
+   revision). It deploys that SHA to the isolated UAT app host and Cloudflare
    Worker resources and calls the reusable **Deterministic UAT quality**
    workflow, which on a deploy only probes that the services answer. Nothing
    stages UAT on push.
@@ -45,14 +45,13 @@ self-review” off; otherwise nobody can approve. Manual workflow dispatch is th
 fallback approval on plans that do not offer required reviewers for a private
 repository.
 
-The current deployment adapter pins the same source SHA in UAT and production
-and verifies that SHA at the public SPA and gateway. Coolify still builds the
-Compose images separately for each environment, and the SPA is rebuilt with
-environment-specific public configuration. This is reproducible source
-promotion, not yet byte-identical artifact promotion. The mature follow-up is
-to publish content-addressed backend images once and make both environments
-pull the same digests; do that when the deployment exists and registry access
-can be tested.
+The deployment pins the same source SHA in UAT and production and verifies
+that SHA at the public SPA and gateway. The backend images are built once per
+SHA by the reusable workflow's `images` job and pushed to private GHCR
+packages tagged with the SHA (`capy-server`, `capy-collaboration`,
+`capy-pipeline`); a production promotion finds UAT's tags, builds nothing and
+runs the same images. Only the SPA and the Ops image are rebuilt per
+environment, because they carry environment-specific public configuration.
 
 The gateway (`server`) and the collaboration service always deploy together
 from one revision, as the Compose stack does (collaboration waits for a healthy
@@ -137,19 +136,19 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    in §1.0.1; production must provision the same tunnel and scriptless route
    before its first deployment. `APP_ORIGIN`
    is the canonical browser origin. CI supplies both from the GitHub deployment
-   URLs. `SHARE_LINK_SECRET` (manifest secret, targets `coolify` and `workflow`,
+   URLs. `SHARE_LINK_SECRET` (manifest secret, targets `app` and `workflow`,
    at least 32 characters, `openssl rand -hex 32`) signs `/w/` links in Go and
-   verifies them in the Worker; CI passes the same GitHub secret to Coolify and
-   to `wrangler deploy --secrets-file`, and `wrangler.jsonc` lists it under
+   verifies them in the Worker; CI renders the same GitHub secret into the app
+   host's env file and passes it to `wrangler deploy --secrets-file`, and `wrangler.jsonc` lists it under
    `secrets.required`. Changing it invalidates every shared link, including
    quiz and flashcard links, and resets the anonymous grading IP hashes.
-   `JEV_TYPESAFE_API_KEY` (manifest secret, target `coolify`) is the typesafe.ai
+   `JEV_TYPESAFE_API_KEY` (manifest secret, target `app`) is the typesafe.ai
    key that grades open quiz parts; without it grading answers 503. Both app environments use exact Worker Routes in `wrangler.jsonc`,
    with DNS pointing at their tunnel. Do not attach either app as a Worker
    Custom Domain; that would replace the tunnel destination. The apex and
    `www` remain reserved for the future public site, whose implementation is
    deferred. Help and credits stay in the app until public pages exist.
-   Coolify serves the backend, not the site. Rendered summaries are
+   The app host serves the backend, not the site. Rendered summaries are
    `public, s-maxage=300, max-age=0, must-revalidate`, and so are the
    `/share/*` pages and `/p/*` images. Workers Cache (`cache.enabled` in
    `wrangler.jsonc`) holds them for five minutes in front of the Worker,
@@ -282,15 +281,14 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    assets with 405. Do not proxy `/api`, issue authentication cookies, or set
    parent-domain cookies on this hostname. The Office host transfers protected
    bytes by exact-origin `postMessage`; it does not need CORS access to the API.
-2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or
-   §1.3 public A records. Retrieval, worker, Postgres, and Redis stay off
-   public DNS in every option.
+2. **API + collab.** Docker Compose behind a Cloudflare Tunnel (§1.1); §1.2
+   public A records is the alternative. Retrieval, worker, Postgres, and Redis
+   stay off public DNS in every option.
    The collaboration Docker build reads Binaryen's version and archive checksum
    from the pinned BetterOffice checkout's `.github/actions/wasm-toolchain/action.yml`,
    also used by frontend CI. Update the BetterOffice commit pin to update that
-   optimizer configuration. The current checksum covers Linux x86_64; on ARM
-   hosts, use `DOCKER_DEFAULT_PLATFORM=linux/amd64` for Compose or
-   `docker build --platform=linux/amd64`.
+   optimizer configuration. The current checksum covers Linux x86_64, which is
+   what the deploy's `images` job builds (`linux/amd64`).
 3. **Same-origin API.** Deployed app hosts bypass the Worker for `/api/*`
    using §1.0.1. The retained fallback forwards `/api/*` only to its explicit
    `API_ORIGIN` and streams request/response bodies. It passes Go's file redirects
@@ -308,7 +306,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
 ### 1.0.1 UAT API routing without Workers
 
 The browser uses `https://app.uat.capynotebook.com/api/*`; the edge sends these
-requests directly to `capy-uat`, then Traefik and Go. Static assets and workspace
+requests directly to `capy-uat` and its tunnel to Go. Static assets and workspace
 summary renders keep using the existing `capy-notebook-uat` deployment.
 
 | Setting | UAT value |
@@ -317,14 +315,13 @@ summary renders keep using the existing `capy-notebook-uat` deployment.
 | Worker Route | `app.uat.capynotebook.com/*` → `capy-notebook-uat` |
 | More-specific zone route | `app.uat.capynotebook.com/api/*` → **None**, no script |
 | More-specific Worker Route | `app.uat.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`; the old host has the same) |
-| Tunnel ingress | Host `app.uat.capynotebook.com`, path `^/api/`, service `http://localhost:80` |
-| Ingress HTTP Host Header | `uat-api.capynotebook.com` |
+| Tunnel ingress | Host `app.uat.capynotebook.com`, path `^/api/`, service `http://127.0.0.1:8080` |
 
-The ingress uses `originRequest.httpHostHeader` so Traefik selects the existing
-API service. Keep this ingress before the tunnel's final `http_status:404`
-entry and preserve every other ingress. There is no new Coolify domain or
-public VM port. Keep `uat-api.capynotebook.com` for local Vite, server-rendered
-summary fetches, and Clerk/Stripe webhooks.
+The ingress goes straight to the gateway's loopback port; Go never reads the
+Host header, so no `httpHostHeader` override is needed. Keep this ingress
+before the tunnel's final `http_status:404` entry and preserve every other
+ingress. There is no public VM port. Keep `uat-api.capynotebook.com` for local
+Vite, server-rendered summary fetches, and Clerk/Stripe webhooks.
 
 The scriptless zone route is managed in Cloudflare's **Workers Routes**, outside
 Wrangler: Wrangler's `routes` list assigns every entry to its Worker and cannot
@@ -457,423 +454,415 @@ example are preparation only. Provision its backend/tunnel, DNS, scriptless
 settings and GitHub environment before first deployment. The public site remains
 a separate future deployment; no app wildcard route may capture its apex or `www`.
 
-### 1.1 Coolify + Cloudflare Tunnel (recommended for this stack)
+### 1.1 Docker Compose and Cloudflare Tunnel
 
-Use `deploy/docker-compose.prod.yml`, not the local `docker-compose.yml`.
-The prod file runs `/migrate` once per deploy, starts the API with
-`MIGRATE=false`, and does not publish host ports.
+Each app host runs two Compose projects from images CI built: `capy`
+(`deploy/docker-compose.prod.yml`: `db`, `capy-redis`, `migrate`, `server`,
+`collaboration`, `retrieval`) and `capy-ops` (`deploy/docker-compose.ops.yml`,
+below). Nothing builds on a host and there is no dashboard (Epo 2026-10-23;
+Coolify was removed). `cloudflared` runs as a systemd service, connects out to
+Cloudflare and reaches the stack on loopback ports; nothing listens publicly
+except SSH (22) and WireGuard (51820/udp). The prod file runs `/migrate` once
+per deploy and starts the API with `MIGRATE=false`.
 
-#### Create the Coolify resource
+#### How a deploy runs
 
-1. **Project → production environment → + New Resource → Git** (GitHub App
-   or deploy key). Pick this repository and `main`; GitHub Actions pins the
-   exact commit separately.
-2. **Build Pack:** Docker Compose.
-3. **Docker Compose Location:** `deploy/docker-compose.prod.yml`.
-   Leave **Base Directory** empty (repository root). Coolify builds with
-   `--project-directory` at the repository root, and Compose resolves relative
-   paths against the project directory, not the compose file, so build contexts
-   are written repo-root relative (`./server` is `server/` in the repo). Any
-   CLI invocation must pass `--project-directory .` to match.
-4. **Environment Variables:** paste `deploy/.env.prod.example`, fill values,
-   and mark passwords/keys as secrets. Ops has its own application, described
-   below, and needs the §8 roles first. Do **not** set
-   `AUTH_DISABLED=true` or `MIGRATE=true`. In Advanced settings, enable
-   **Include Source Commit in Build** so Coolify supplies `SOURCE_COMMIT` to
-   the Compose build and runtime; the release verifier depends on it. Turn
-   **off** "Inject build args into Dockerfile" (Advanced, both applications).
-   With it on, Coolify writes `ARG KEY=value` for every build-time variable
-   under each `FROM`, so `SOURCE_COMMIT` and `RELEASE_SHA` sit above every
-   `RUN`, no layer below them is ever reused, every deploy leaves 5–7 GB of
-   dead build cache, and the values appear in `docker history`. Compose still
-   passes the `VITE_*` args the Dockerfiles declare.
-5. **Deploy.** Coolify runs `docker compose up --build`. `migrate` applies
-   pending `NNNN_*.sql` files and exits 0; `server` / `worker` / `retrieval`
-   wait on `service_completed_successfully`. An exited `migrate` container
-   is expected. Open its logs and look for `pending 0001_init.sql` (first
-   deploy) or only `migrations applied` (later deploys). Applied files are
-   checksum-ledgered and never edited; schema changes after the initial
-   deploy are new forward-only files (`0006_rag_chunk_confidence.sql`,
-   `0007_drop_caption_images.sql`, `0008_parse_page_rates.sql`,
-   `0009_default_chat_model.sql` came with the OpenDataLoader release and
-   apply on the next deploy of an existing database; `0009` also moves the
-   catalog's chat slot default to `zai/glm-5.3-flash`, so the `zai` GLM
-   capacity row and `OPENROUTER_API_KEY`, which serves GLM since 2026-10-21,
-   must be in place before that deploy).
-6. **Domains** on the resource, after the first successful deploy (Coolify
-   has to parse the compose file first). Enter **`http://`** — Cloudflare
-   terminates TLS. Include the container port if the UI asks for one:
+1. **Deploy UAT** or a promotion calls `deploy-environment.yml`. Its `build`
+   job builds the SPA; in parallel, its `images` job builds `capy-server`,
+   `capy-collaboration` and `capy-pipeline` for `linux/amd64`, labelled
+   `org.opencontainers.image.revision=<sha>`, and pushes them to private GHCR
+   packages tagged with the full SHA. A tag that already exists is not
+   rebuilt, so a promotion or a rollback to an earlier SHA builds nothing. The
+   layer cache is a GHCR registry cache (`:buildcache`, `mode=max`), plus
+   CI's `e2e-server` and `e2e-collaboration` Actions cache scopes read only:
+   a deploy right after a green CI usually builds from cache completely.
+2. The `deploy` job (permissions `contents: read, packages: read`) renders
+   `app.env` with `config.py render` and runs
+   `scripts/deploy/app-host-release.sh` in two steps, each holding only its
+   own secrets. `configure` installs a pinned `cloudflared` (checked against
+   its SHA-256) and writes the deploy key, the pinned host key
+   (`APP_HOST_KNOWN_HOSTS`) and an SSH config whose `ProxyCommand` is
+   `cloudflared access ssh`. `deploy app` sends a tar of exactly three files on
+   stdin, `compose.yml` (the compose file at the deploy SHA), `stack.env`
+   (`app.env`) and `ghcr-token` (the actor and the job's own token), to the
+   host's forced command `deploy app <sha>`, through the Access service token
+   in `TUNNEL_SERVICE_TOKEN_ID`/`_SECRET`. No secret is in an argument, a log
+   or an image.
+3. On the host, `capy-app-deploy` (`scripts/deploy/app-host-deploy.sh`, run as
+   root through sudo) accepts only `deploy app|ops <full lowercase SHA>` and an
+   upload of at most 1 MiB holding exactly those three regular files, and
+   refuses a `stack.env` whose `RELEASE_SHA` is another SHA. It checks the
+   Compose configuration without printing it, logs in to GHCR with a
+   throwaway `DOCKER_CONFIG` under `/run`, pulls the app images only
+   (`migrate server collaboration retrieval`, or `ops`), deletes the login and
+   the token, and checks that every pulled image carries the deploy SHA's
+   revision label. Nothing has changed up to here.
+4. It then stops `collaboration` and runs
+   `docker compose up -d --wait --wait-timeout 600 --remove-orphans`, checks
+   that every service runs the SHA (`migrate` exited 0, the others running
+   and healthy), keeps the release under `/opt/capy/app/releases/<sha>`
+   (`current` points to it), prunes, and prints one line per service: name,
+   state, health, exit code, revision. It never prints logs or configuration
+   values.
+5. The `site` job publishes the Workers and `verify-release.sh` checks
+   `X-Capy-Release` on the gateway and collaboration (both read `RELEASE_SHA`,
+   the same value that tags their images) and the SPA's `capy-release` tag.
 
-   | Service                                         | Domain field                   |
-   | ----------------------------------------------- | ------------------------------ |
-   | `server`                                        | `http://api.capynotebook.com:8080`     |
-   | `collaboration`                                 | `http://collab.capynotebook.com:1234`  |
-   | `ops` (separate application, after step 8)       | `http://ops.capynotebook.com:8082` |
-   | `db`, `redis`, `migrate`, `worker`, `retrieval` | no domain                      |
+The order is deliberate (Epo 2026-10-23). Collaboration flushes its Office
+source rooms through the gateway when it stops
+(`collaboration-rs/crates/sources/src/gateway.rs`), and Compose on its own
+would stop the gateway first and start nothing until collaboration had
+drained. So collaboration stops while the old gateway still serves; `up` then
+stops the old gateway and retrieval before `migrate` runs (the old stack stops
+before migrations, as the cutover reset below requires), and starts
+collaboration only once the new gateway is healthy (`depends_on`, with a probe
+a second while they boot). Old and new containers never overlap: the
+gateway's boot sweep and the single collaboration instance need that.
+Postgres and Redis are not restarted. Expect the API to be down for about
+2-12 s (the gateway's drain, up to 10 s with open SSE streams, plus `migrate`)
+and collaboration for about 4-35 s (its flush plus the API gap), against
+19.3 s and 45.6 s measured under Coolify.
 
-   Redeploy or wait for the proxy to pick up the domains.
+A failed deploy exits non-zero naming the step and, after `up`, each
+service's state. A failure before the stop changes nothing. There is no
+automatic rollback: migrations are forward-only, so rolling back is
+dispatching **Deploy UAT** (or the promotion) with the previous SHA, whose
+images are still on the host. An older `migrate` accepts newer applied files
+(`server/internal/store/migration_plan.go`), so an older SHA starts cleanly.
+SHAs from before the Coolify removal cannot be redeployed: their compose
+file builds instead of pulling.
 
-   Run exactly one `collaboration` container per environment. A redeploy
-   (`docker compose up`) replaces it: the old container gets SIGTERM, flushes
-   its rooms and exits before the new one starts, so two never serve at once.
-   The Rust collaboration server keeps documents and awareness in its own
-   rooms; Redis only carries evictions, relays and handoff, so a second
-   instance would not share document or awareness state with the first. Its
-   stale entry in the instance registry lingers up to 60 s after a restart, which only slows
-   an eviction or handoff in that window (they wait for its acknowledgement and
-   retry). Scaling out later means document-sticky routing, every connection
-   to a room reaching the instance that holds it, not Redis fan-out.
+`migrate` applies pending `NNNN_*.sql` files and exits 0; `server` and
+`retrieval` wait on `service_completed_successfully`. Its logs
+(`docker logs capy-migrate-1` as root) show `pending NNNN_*.sql` or only
+`migrations applied`. Applied files are checksum-ledgered and never edited;
+schema changes are new forward-only files.
 
-   Production pins `collaboration` to cores 2-3 of its 4 vCPU with `cpuset`.
-   `scripts/env/config.py render` sets `COLLABORATION_CPUSET=2,3` for
-   production and leaves it blank for UAT, and the compose file passes it as
-   `cpuset: ${COLLABORATION_CPUSET:-}`. Blank means no `cpuset`, so UAT's 2
-   vCPU stay unpinned. Every other service stays unpinned and can use all four
-   cores, so a busy collaboration service never takes the gateway, Postgres or
-   retrieval off a core. Coolify's own resource-limit fields do not apply to a
-   Docker Compose resource; the limit has to be in the compose file. The
-   second core gives the Office engines their own core: in the
-   2026-10-05 capacity run (`bench/collaboration/reports/2026-10-05-prod-capacity.md`)
-   it roughly halved small-room p95 and moved the small-room limit from about
-   80 to 160 rooms of 5. Docker refuses to start a container whose `cpuset`
-   names a core the host does not have, so change the value with the host
-   size. Check after a promotion:
+#### Host layout and the deploy user
 
-   ```bash
-   docker inspect -f '{{.HostConfig.CpusetCpus}}' $(docker ps -qf name=collaboration)
-   ```
+| Path or name | What |
+| --- | --- |
+| `/usr/local/sbin/capy-app-deploy` | the deploy command, root `0755`, installed by the app-host playbook's `deploy` tag (re-run it after changing the script) |
+| `/opt/capy` | root `0700`; `app/` and `ops/` each hold `releases/<sha>/{compose.yml,stack.env}` (root `0600`, the newest 3 kept), `current` and `.lock` |
+| `capy-deploy` | system user, no password, in no group (so not `docker`); home `/var/lib/capy-deploy`, root-owned |
+| `/var/lib/capy-deploy/.ssh/authorized_keys` | root-owned, one line: `restrict,from="127.0.0.1,::1",command="/usr/bin/sudo -n /usr/local/sbin/capy-app-deploy" <key>` |
+| `/etc/sudoers.d/capy-deploy` | `capy-deploy` may run exactly that script, with no arguments, keeping only `SSH_ORIGINAL_COMMAND` (checked with `visudo -cf`) |
+| network `capy`, volumes `capy-pgdata`, `capy-collaboration-sources` | fixed names, independent of the project name; Redis's anonymous `/data` volume is reused across deploys |
+| containers `capy-<service>-1`, `capy-ops-ops-1` | stable names; logs are `docker logs capy-server-1` as root, never in Actions logs (public) |
 
-   It prints `2,3` in production and nothing on UAT.
+`restrict` turns off forwarding, PTYs and the agent; `from=` makes the key
+work only through the tunnel, while port 22 stays open for root
+administration (§3.1); the forced command means no shell, and getting past it
+gives the user nothing, since it is not in the `docker` group. Postgres and
+Redis are pinned by digest in the compose file and are never pulled by a
+deploy, so an upstream republish never restarts Postgres; upgrading either is
+a commit (the next `up` pulls the new pin). The Compose plugin must be the
+system package (`/usr/libexec/docker/cli-plugins`): the deploy runs it with a
+temporary `DOCKER_CONFIG`, which hides plugins under `~/.docker`.
 
-   The collaboration service has no container memory limit (Epo 2026-10-08).
-   Its Office engines are child processes of the same binary, each with its
-   own data cap (`RLIMIT_DATA`, `COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES`) and
-   `oom_score_adj` 1000, so under memory pressure the kernel kills an engine
-   child first; the room's call fails as transient and a new process starts.
-   Postgres and the gateway run at `oom_score_adj` -500
-   (`docker-compose.prod.yml`). Size a host for the collaboration budget:
-   the engines (production 2 save + 1 background at 4 GiB each, UAT 1 + 1 at
-   3 GiB, rendered by `scripts/env/config.py`), the server itself (~0.7 GiB)
-   and agent markdown's V8 (~0.8 GiB, its heap capped). Production has
-   7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
-   lean on swap; they bound a runaway call, not the expected footprint.
+Each successful deploy prunes: it keeps the newest 3 release directories and
+the image tags of those SHAs, removes the other tags of the stack's images,
+and runs `docker image prune -f`. There is no build cache on a host and no
+prune cron.
 
-   The collaboration service runs with `MALLOC_ARENA_MAX=2`,
-   `MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
-   (`docker-compose.prod.yml`, UAT and production; the engine processes
-   inherit them, Epo 2026-10-17). Room loads replay on tokio's blocking
-   threads, each with its own glibc arena, and glibc raises its mmap
-   threshold as large blocks are freed, so without them memory freed after
-   peers leave stays in the process: 411-467 MiB kept, against ~90 MiB with
-   them, and a peak of ~180 MiB instead of ~520, at the same marker latency
-   (`bench/collaboration/reports/2026-10-17-collaboration-allocator.md`).
-   After a deploy that changes them, compare the container's memory
-   (`docker stats --no-stream $(docker ps -qf name=collaboration)`) at idle
-   and after a busy period with the numbers from before.
+**Deploy access, once per host** (the GitHub environment matches the host):
 
-   Open source rooms keep their original files, seeds and baselines on disk,
-   not in memory (Epo 2026-10-17; the disk store in
-   [office-files](frontend/office-files.md)). The folder is the image's
-   `/var/lib/capy/sources` (`COLLABORATION_SOURCE_DISK_DIR`, set in
-   `collaboration-rs/Dockerfile`) on the named volume
-   `capy_collaboration_sources` (`docker-compose.prod.yml`): disk-backed, never
-   tmpfs. Docker creates the volume with the image folder's owner (the
-   service user `nobody`) and mode 0700. The server deletes the files it wrote
-   there when it stops gracefully, once the rooms stored (a crash leaves them),
-   and wipes them at every start. One collaboration process per environment uses
-   it. The image sets the folder because the path is the image's layout, the
-   same in every environment; the cap has no default, and the server refuses
-   to start without it. The cap is `COLLABORATION_SOURCE_DISK_BYTES`, rendered
-   by `scripts/env/config.py`: production 10 GiB (10737418240), UAT 5 GiB
-   (5368709120); the local compose files use UAT's. Nothing is set by hand:
-   every Deploy UAT and production promotion runs `deploy-environment.yml`,
-   whose deploy job renders `coolify.json` (the cap included), applies it to
-   Coolify with `config.py apply-coolify` and reads it back before
-   `coolify-deploy.sh` starts the deploy. A deploy that skipped that sync
-   would fail on the compose file's `${COLLABORATION_SOURCE_DISK_BYTES:?}`
-   rather than run without a cap. Size the disk for the
-   cap: at the decision production had 50 of 75 GB free and UAT 29 of 78 GB
-   (UAT shrinks with deploy images until the weekly cleanup). When loaded
-   rooms' files fill the cap, new source rooms are refused
-   (`capy_collaboration_source_disk_refusals_total` on `/metrics`, a
-   `source room refused: disk store full` warn line);
-   `capy_collaboration_source_disk_held_bytes` shows how much of the cap the
-   open rooms hold. Raise the cap only with the free space to back it. To
-   check the folder after a deploy:
+1. Make a key: `ssh-keygen -t ed25519 -N '' -C capy-deploy-github-<env> -f capy-deploy-<env>`.
+   Put the public half in the app-host inventory as `app_deploy_ssh_public_key`
+   and run `ansible-playbook playbook.yml --tags deploy`.
+2. In the host's tunnel, add the SSH hostname (`uat-deploy.capynotebook.com`,
+   or `deploy.capynotebook.com` for production) with service
+   `ssh://127.0.0.1:22`, and a self-hosted Access application on it whose only
+   policy is **Service Auth** for a dedicated service token.
+3. Read the host key on the host:
+   `awk -v h=<ssh hostname> '{print h, $1, $2}' /etc/ssh/ssh_host_ed25519_key.pub`.
+4. In the ignored `deploy/.env.<env>`, set `APP_HOST_SSH_HOSTNAME`,
+   `APP_HOST_KNOWN_HOSTS` (that line), `APP_HOST_SSH_PRIVATE_KEY` (the private
+   half, double-quoted with `\n` escapes), `APP_HOST_ACCESS_CLIENT_ID` and
+   `APP_HOST_ACCESS_CLIENT_SECRET` (the service token), then `pnpm env:push`
+   (§12.7).
+5. Verify through the tunnel, with the service token in
+   `TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET` (not in
+   arguments): `ssh -o ProxyCommand='cloudflared access ssh --hostname %h'
+   -i capy-deploy-<env> capy-deploy@<ssh hostname> …`. `deploy` alone and `bash` answer the usage
+   error with exit 2, `-L` forwarding is refused, the same key against the
+   host's public address is refused (`from=`), and `sshd -t` passes as root.
+   As root, `DOCKER_CONFIG=$(mktemp -d) docker compose version` must work.
 
-   ```bash
-   c=$(docker ps -qf name=collaboration)
-   docker exec "$c" sh -c 'stat -c "%U %a" /var/lib/capy/sources; du -sh /var/lib/capy/sources'
-   ```
+#### Tunnel ingress
 
-   It prints `nobody 700` and the bytes on disk: the open rooms' files plus
-   idle ones still in their 3-minute grace (a few KB right after a restart).
+`cloudflared` is installed by hand on each host and runs as a systemd unit
+(`cloudflared service install <tunnel token>`, remotely managed); it is not in
+any compose file, so no stack restart drops the hostnames. Point every
+service at `127.0.0.1`, never `localhost`, which can resolve to `::1` where
+Compose does not bind:
 
-   Every client socket, gateway call and database connection is an open
-   file. The compose files give the collaboration service `nofile` 524288,
-   and the server raises its soft limit to the hard one at startup, as Go and
-   Node do, logging `open_files_limit`. If the raise fails, the server exits
-   instead of serving. Docker's default soft limit of 1024 held it near 1,000
-   connections in the production capacity run. The line names the soft limit
-   it reached, which is the container's hard limit: a value far below 524288
-   (1024, say) means the compose `ulimits` did not apply, and the server will
-   stop accepting connections near that number. To check:
+| Hostname (UAT / production) | Service |
+| --- | --- |
+| `uat-api` / `api` | `http://127.0.0.1:8080` |
+| `uat-collab` / `collab` | `http://127.0.0.1:1234` |
+| `uat-ops` / `ops` (Access, §2.1) | `http://127.0.0.1:8082` |
+| `app.uat` / `app`, path `^/api/` (§1.0.1) | `http://127.0.0.1:8080` |
+| `uat-deploy` / `deploy` (Access, service token only) | `ssh://127.0.0.1:22` |
+| anything else | `http_status:404` |
 
-   ```bash
-   docker exec $(docker ps -qf name=collaboration) sh -c 'grep "open files" /proc/1/limits'
-   ```
+Cloudflare creates the proxied CNAMEs to the tunnel; do not also create A or
+AAAA records for these hostnames. Cloudflare terminates TLS and the tunnel is
+encrypted, so SSL/TLS **Full** is enough. The gateway does not compress
+responses itself; the Cloudflare edge compresses for browsers. Client
+addresses come from `CF-Connecting-IP`, which `cloudflared` passes through.
+The gateway and collaboration publish on `127.0.0.1` for the tunnel and Ops
+on `127.0.0.1:8082` behind Access; Postgres, Redis and the gateway also
+publish on the WireGuard address for the ingest host's import worker (§2.2).
+`:8001` (retrieval) is never published. App env vars still use `https://` /
+`wss://`, which is what browsers, Clerk and Stripe see (§1.3).
 
-   The Office engine children run sandboxed (Epo 2026-10-20; the policy in
-   [office-files](frontend/office-files.md)). The compose files give the
-   collaboration service `cap_drop: [ALL]` and
-   `security_opt: [no-new-privileges:true]`; the server runs as `nobody` and
-   needs no capability. Each engine sets its own limits (64 descriptors, no
-   core file, the data cap above), Landlock and seccomp, and keeps only
-   `CAPY_ENGINE_*`, `MALLOC_*`, `APP_ENV` and `LOG_FORMAT` from the server's
-   environment; the server makes itself non-dumpable, so processes of the
-   same uid cannot read its environment or memory. The engine sandbox
-   needs Landlock with its signal and abstract Unix-socket scoping (ABI 6,
-   Linux 6.12 or later) in the host kernel: with `APP_ENV=production` (UAT
-   included) the server exits at start with `captured error` naming Landlock
-   (stage `engine_sandbox`) instead of serving without it. Before the first
-   deploy of this to a host, check that the kernel has it:
+#### The collaboration service
 
-   ```bash
-   grep -o landlock /sys/kernel/security/lsm; uname -r
-   ```
+Run exactly one `collaboration` container per environment. A redeploy
+(`docker compose up`) replaces it: the old container gets SIGTERM, flushes
+its rooms and exits before the new one starts, so two never serve at once.
+The Rust collaboration server keeps documents and awareness in its own
+rooms; Redis only carries evictions, relays and handoff, so a second
+instance would not share document or awareness state with the first. Its
+stale entry in the instance registry lingers up to 60 s after a restart, which only slows
+an eviction or handoff in that window (they wait for its acknowledgement and
+retry). Scaling out later means document-sticky routing, every connection
+to a room reaching the instance that holds it, not Redis fan-out.
 
-   It must print `landlock` and a kernel of 6.12 or later. The engine's
-   seccomp filters also refuse every x32 call, so the host's x32 setting does
-   not matter. The non-dumpable server's `/proc/1` files belong to root inside the
-   container: `docker exec … cat /proc/1/environ` as the service user fails by
-   design, while `/proc/1/limits` and `/proc/1/status` stay readable.
-
-   Each WebSocket has an 8 KiB read buffer (`READ_BUFFER` in `http.rs`;
-   tungstenite's default is 128 KiB). An idle connection costs about 30 KiB
-   in all, measured on a local stack with 2,000 idle connections; Node used
-   27 KB per connection in the production run. A connection's buffers grow to
-   a large frame it sends or receives (a viewer joining a 2 MB note is sent
-   the whole note; a writer may send a large paste, a peer up to the frame
-   cap) and give that room back once the frame is through: the server vendors
-   tungstenite with that patch (`collaboration-rs/third_party/tungstenite`,
-   `THIRD-PARTY-NOTICES.md`; upstream keeps the capacity, about 2.3 MiB per
-   viewer of the 2 MB test note, and a received frame's size per socket, Epo
-   2026-10-11 and 2026-10-12). A write buffer keeps at most 64 KiB; a read
-   buffer keeps about 72 KiB (a frame of up to 64 KiB plus one 8 KiB read).
-   When peers leave, the process keeps the small allocations they freed and
-   reuses them for later joins, so RSS stays near its peak instead of falling
-   back.
-
-   Each user's SYNC, awareness and query messages, over all their sockets
-   and draft sends, have an allowance kept in the process (Epo 2026-10-18,
-   [plate-editor](frontend/plate-editor.md#connection-lifetime-and-refusals)):
-   a burst of `COLLABORATION_UPDATE_BURST` messages or
-   `COLLABORATION_UPDATE_BURST_BYTES`, then
-   `COLLABORATION_UPDATES_PER_SECOND` and
-   `COLLABORATION_UPDATE_BYTES_PER_SECOND`. They default to 10,000 messages
-   or 8 MiB, then 200 and 2 MiB a second, the same in every environment, so
-   nothing renders or sets them. The byte burst may not be set below 8 MiB,
-   the largest update a room takes (the server refuses to start). A user
-   over it is timed out (3 s to 5 minutes) and shows as
-   `capy_collaboration_timeouts_total` on `/metrics` and a `user timed out`
-   warn line naming the room, socket and user. A count from many users means
-   real editing reaches it: measure with `pnpm bench:rates` before raising a
-   value in the compose environment. Never lower one: the client paces by
-   the defaults, so every tab would time out. Each user's open budget for
-   full-document answers (`COLLABORATION_OPEN_BYTES`, 80 MiB, refilled over
-   `COLLABORATION_OPEN_REFILL_SECONDS`, 300) slows opens past it and is also
-   left unset.
-
-   A client address holds at most `COLLABORATION_SOCKETS_PER_ADDRESS` sockets
-   (500, `capy_collaboration_seat_refusals_total` counts refusals) and a user
-   at most `COLLABORATION_JOINED_PER_USER` joined documents (22) and
-   `COLLABORATION_CONNECTIONS_PER_DOCUMENT` connections to one document (4;
-   one more closes their oldest, counted in
-   `capy_collaboration_oldest_closed_total`), also left unset, as are
-   `COLLABORATION_PING_SECONDS` (30) and `COLLABORATION_SILENT_SECONDS` (60):
-   every socket is pinged and one silent that long closes, freeing its places. The address is the gateway limiter's
-   (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
-   peer's; an IPv6 one by its /64), so the cap holds only while the origin is
-   reachable through the Cloudflare tunnel alone, as it is for the gateway's
-   own limits. A school behind one address would need the address cap
-   raised.
-
-   A load test whose peers share one user or one address (the local stress
-   stack's `u_owner` from one machine, `docker-compose.stress.yml`) shares
-   one allowance and one address cap: its compose file raises
-   `COLLABORATION_UPDATE_BURST`, `COLLABORATION_UPDATES_PER_SECOND`,
-   `COLLABORATION_OPEN_BYTES`, `COLLABORATION_SOCKETS_PER_ADDRESS`,
-   `COLLABORATION_JOINED_PER_USER` and
-   `COLLABORATION_CONNECTIONS_PER_DOCUMENT`.
-   A UAT stress run from one machine needs the address cap raised on UAT
-   for the run.
-
-   A warm deploy rebuilds only what changed: `go build`, the Vite/collab
-   bundles and the pipeline source copy. Dependency installs, the BetterOffice
-   WASM toolchain and `uv sync` come from the layer cache until their lockfile
-   or `vendor/betteroffice` moves. `ARG RELEASE_SHA` in `pipeline/Dockerfile`
-   stays below `uv sync` for the same reason. A cold build (empty cache) takes
-   about 16 minutes on the UAT host.
-   On the 2 vCPU UAT host the four concurrent builds also starve Coolify's own
-   API into `502`s; `coolify-deploy.sh` treats that as an unknown status and
-   keeps polling rather than abandoning a deployment that is still running.
-
-   Give the host swap before deploying. Those builds peaked at load 71 and
-   58 MB free on a 3.9 GB host, and the kernel killed Coolify's own PHP queue
-   worker, which left its deployment stuck `in_progress` with an idle machine
-   and no terminal status for the workflow to poll. Recover that state with
-   `POST /deployments/<uuid>/cancel`, then provision swap as in section 7 step 5
-   (6 GiB is enough here; the ingest host's 24 GiB sizing is for parsing):
-
-   ```bash
-   fallocate -l 6G /swapfile && chmod 600 /swapfile && mkswap /swapfile
-   swapon /swapfile
-   grep -q '^/swapfile none swap sw 0 0$' /etc/fstab || \
-     printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
-   ```
-
-   Cap the BuildKit cache. Docker's default GC on a 78 GB disk keeps up to
-   ~58 GiB of build cache and only evicts when under 15 GiB is free, so the
-   host sits at 80% by design. Add to `/etc/docker/daemon.json` and
-   `systemctl restart docker` (containers return through their restart
-   policies; `docker start coolify-sentinel` by hand, it has none):
-
-   ```json
-   "builder": { "gc": { "enabled": true, "defaultKeepStorage": "20GB" } }
-   ```
-
-   BuildKit then prunes least-recently-used entries after each build; the
-   `--mount=type=cache` mounts and the last build's layers are the most
-   recent and survive. In Coolify's server settings set **Docker cleanup**
-   to `force off`, threshold 85%. That cleanup always runs
-   `docker builder prune -af`, which empties the cache mounts too and makes
-   the next deploy cold, so it should only fire as a last resort when old
-   image generations push the disk past the threshold.
-
-   Coolify applies each application's *Docker images to keep* (2) only in
-   that cleanup, which runs weekly, while UAT takes about 20 deploys a day,
-   each leaving a full image generation (~0.27 GB after shared layers). A
-   daily root cron on the UAT host keeps the newest 2 images of every
-   `<uuid>_<service>` repository and removes dangling images, never the
-   build cache (`/usr/local/sbin/capy-prune-app-images.sh`, scheduled by
-   `/etc/cron.d/capy-prune-app-images` at 04:30, logged to the journal as
-   `capy-prune-app-images`):
-
-   ```sh
-   docker images --format '{{.Repository}}' | grep -E '^[a-z0-9]{24}_' | sort -u | while read -r repo; do
-     docker images "$repo" --format '{{.CreatedAt}}	{{.ID}}' | sort -r | awk -F'	' 'NR>2{print $2}' | sort -u | xargs -r docker rmi >/dev/null 2>&1 || true
-   done
-   docker image prune -f
-   ```
-
-   Production deploys rarely and has no cron; its `daemon.json` has had the
-   BuildKit cap above since 2026-10-08.
-
-7. Disable Coolify **Auto Deploy**. The GitHub deployment workflow updates
-   `git_commit_sha`, starts the deployment through the Coolify API, polls its
-   result, and verifies the reported commit. A native Coolify webhook would
-   bypass the UAT and production gates.
-8. After §8 grants and Access are ready, create the independent Ops application
-   below. Deploy it through **Deploy Ops**; the main workflow does not build
-   or restart Ops.
-
-CLI equivalent (same file, from the repo root):
+Production pins `collaboration` to cores 2-3 of its 4 vCPU with `cpuset`.
+`scripts/env/config.py render` sets `COLLABORATION_CPUSET=2,3` for
+production and leaves it blank for UAT, and the compose file passes it as
+`cpuset: ${COLLABORATION_CPUSET:-}`. Blank means no `cpuset`, so UAT's 2
+vCPU stay unpinned. Every other service stays unpinned and can use all four
+cores, so a busy collaboration service never takes the gateway, Postgres or
+retrieval off a core. The
+second core gives the Office engines their own core: in the
+2026-10-05 capacity run (`bench/collaboration/reports/2026-10-05-prod-capacity.md`)
+it roughly halved small-room p95 and moved the small-room limit from about
+80 to 160 rooms of 5. Docker refuses to start a container whose `cpuset`
+names a core the host does not have, so change the value with the host
+size. Check after a promotion:
 
 ```bash
-cp deploy/.env.prod.example deploy/.env.prod
-# fill deploy/.env.prod — never commit it
-docker compose -f deploy/docker-compose.prod.yml --project-directory . --env-file deploy/.env.prod up -d --build
-docker compose -f deploy/docker-compose.prod.yml --project-directory . --env-file deploy/.env.prod logs migrate
+docker inspect -f '{{.HostConfig.CpusetCpus}}' $(docker ps -qf name=collaboration)
 ```
 
-Ops uses `deploy/docker-compose.ops.yml` with a distinct Compose project name
-and database URLs pointing to the existing application database.
-Storage and Stripe reconciliation is scheduled and claimed by the gateway's
-database-backed runner; no Coolify task is required. To ensure today's runs are
-queued and drain any pending work from a one-off container, use:
+It prints `2,3` in production and nothing on UAT.
+
+The collaboration service has no container memory limit (Epo 2026-10-08).
+Its Office engines are child processes of the same binary, each with its
+own data cap (`RLIMIT_DATA`, `COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES`) and
+`oom_score_adj` 1000, so under memory pressure the kernel kills an engine
+child first; the room's call fails as transient and a new process starts.
+Postgres and the gateway run at `oom_score_adj` -500
+(`docker-compose.prod.yml`). Size a host for the collaboration budget:
+the engines (production 2 save + 1 background at 4 GiB each, UAT 1 + 1 at
+3 GiB, rendered by `scripts/env/config.py`), the server itself (~0.7 GiB)
+and agent markdown's V8 (~0.8 GiB, its heap capped). Production has
+7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
+lean on swap; they bound a runaway call, not the expected footprint.
+
+The collaboration service runs with `MALLOC_ARENA_MAX=2`,
+`MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
+(`docker-compose.prod.yml`, UAT and production; the engine processes
+inherit them, Epo 2026-10-17). Room loads replay on tokio's blocking
+threads, each with its own glibc arena, and glibc raises its mmap
+threshold as large blocks are freed, so without them memory freed after
+peers leave stays in the process: 411-467 MiB kept, against ~90 MiB with
+them, and a peak of ~180 MiB instead of ~520, at the same marker latency
+(`bench/collaboration/reports/2026-10-17-collaboration-allocator.md`).
+After a deploy that changes them, compare the container's memory
+(`docker stats --no-stream $(docker ps -qf name=collaboration)`) at idle
+and after a busy period with the numbers from before.
+
+Open source rooms keep their original files, seeds and baselines on disk,
+not in memory (Epo 2026-10-17; the disk store in
+[office-files](frontend/office-files.md)). The folder is the image's
+`/var/lib/capy/sources` (`COLLABORATION_SOURCE_DISK_DIR`, set in
+`collaboration-rs/Dockerfile`) on the named volume
+`capy-collaboration-sources` (`docker-compose.prod.yml`): disk-backed, never
+tmpfs. Docker creates the volume with the image folder's owner (the
+service user `nobody`) and mode 0700. The server deletes the files it wrote
+there when it stops gracefully, once the rooms stored (a crash leaves them),
+and wipes them at every start. One collaboration process per environment uses
+it. The image sets the folder because the path is the image's layout, the
+same in every environment; the cap has no default, and the server refuses
+to start without it. The cap is `COLLABORATION_SOURCE_DISK_BYTES`, rendered
+by `scripts/env/config.py`: production 10 GiB (10737418240), UAT 5 GiB
+(5368709120); the local compose files use UAT's. Nothing is set by hand:
+every Deploy UAT and production promotion renders `app.env` (the cap
+included) in `deploy-environment.yml`'s deploy job, and the host's deploy
+command refuses a configuration without it (the compose file's
+`${COLLABORATION_SOURCE_DISK_BYTES:?}`) before anything stops. Size the disk for the
+cap: at the decision production had 50 of 75 GB free and UAT 29 of 78 GB. When loaded
+rooms' files fill the cap, new source rooms are refused
+(`capy_collaboration_source_disk_refusals_total` on `/metrics`, a
+`source room refused: disk store full` warn line);
+`capy_collaboration_source_disk_held_bytes` shows how much of the cap the
+open rooms hold. Raise the cap only with the free space to back it. To
+check the folder after a deploy:
 
 ```bash
-docker compose -f deploy/docker-compose.prod.yml --project-directory . --env-file deploy/.env.prod --profile reconcile run --rm reconcile
+c=$(docker ps -qf name=collaboration)
+docker exec "$c" sh -c 'stat -c "%U %a" /var/lib/capy/sources; du -sh /var/lib/capy/sources'
+```
+
+It prints `nobody 700` and the bytes on disk: the open rooms' files plus
+idle ones still in their 3-minute grace (a few KB right after a restart).
+
+Every client socket, gateway call and database connection is an open
+file. The compose files give the collaboration service `nofile` 524288,
+and the server raises its soft limit to the hard one at startup, as Go and
+Node do, logging `open_files_limit`. If the raise fails, the server exits
+instead of serving. Docker's default soft limit of 1024 held it near 1,000
+connections in the production capacity run. The line names the soft limit
+it reached, which is the container's hard limit: a value far below 524288
+(1024, say) means the compose `ulimits` did not apply, and the server will
+stop accepting connections near that number. To check:
+
+```bash
+docker exec $(docker ps -qf name=collaboration) sh -c 'grep "open files" /proc/1/limits'
+```
+
+The Office engine children run sandboxed (Epo 2026-10-20; the policy in
+[office-files](frontend/office-files.md)). The compose files give the
+collaboration service `cap_drop: [ALL]` and
+`security_opt: [no-new-privileges:true]`; the server runs as `nobody` and
+needs no capability. Each engine sets its own limits (64 descriptors, no
+core file, the data cap above), Landlock and seccomp, and keeps only
+`CAPY_ENGINE_*`, `MALLOC_*`, `APP_ENV` and `LOG_FORMAT` from the server's
+environment; the server makes itself non-dumpable, so processes of the
+same uid cannot read its environment or memory. The engine sandbox
+needs Landlock with its signal and abstract Unix-socket scoping (ABI 6,
+Linux 6.12 or later) in the host kernel: with `APP_ENV=production` (UAT
+included) the server exits at start with `captured error` naming Landlock
+(stage `engine_sandbox`) instead of serving without it. Before the first
+deploy of this to a host, check that the kernel has it:
+
+```bash
+grep -o landlock /sys/kernel/security/lsm; uname -r
+```
+
+It must print `landlock` and a kernel of 6.12 or later. The engine's
+seccomp filters also refuse every x32 call, so the host's x32 setting does
+not matter. The non-dumpable server's `/proc/1` files belong to root inside the
+container: `docker exec … cat /proc/1/environ` as the service user fails by
+design, while `/proc/1/limits` and `/proc/1/status` stay readable.
+
+Each WebSocket has an 8 KiB read buffer (`READ_BUFFER` in `http.rs`;
+tungstenite's default is 128 KiB). An idle connection costs about 30 KiB
+in all, measured on a local stack with 2,000 idle connections; Node used
+27 KB per connection in the production run. A connection's buffers grow to
+a large frame it sends or receives (a viewer joining a 2 MB note is sent
+the whole note; a writer may send a large paste, a peer up to the frame
+cap) and give that room back once the frame is through: the server vendors
+tungstenite with that patch (`collaboration-rs/third_party/tungstenite`,
+`THIRD-PARTY-NOTICES.md`; upstream keeps the capacity, about 2.3 MiB per
+viewer of the 2 MB test note, and a received frame's size per socket, Epo
+2026-10-11 and 2026-10-12). A write buffer keeps at most 64 KiB; a read
+buffer keeps about 72 KiB (a frame of up to 64 KiB plus one 8 KiB read).
+When peers leave, the process keeps the small allocations they freed and
+reuses them for later joins, so RSS stays near its peak instead of falling
+back.
+
+Each user's SYNC, awareness and query messages, over all their sockets
+and draft sends, have an allowance kept in the process (Epo 2026-10-18,
+[plate-editor](frontend/plate-editor.md#connection-lifetime-and-refusals)):
+a burst of `COLLABORATION_UPDATE_BURST` messages or
+`COLLABORATION_UPDATE_BURST_BYTES`, then
+`COLLABORATION_UPDATES_PER_SECOND` and
+`COLLABORATION_UPDATE_BYTES_PER_SECOND`. They default to 10,000 messages
+or 8 MiB, then 200 and 2 MiB a second, the same in every environment, so
+nothing renders or sets them. The byte burst may not be set below 8 MiB,
+the largest update a room takes (the server refuses to start). A user
+over it is timed out (3 s to 5 minutes) and shows as
+`capy_collaboration_timeouts_total` on `/metrics` and a `user timed out`
+warn line naming the room, socket and user. A count from many users means
+real editing reaches it: measure with `pnpm bench:rates` before raising a
+value in the compose environment. Never lower one: the client paces by
+the defaults, so every tab would time out. Each user's open budget for
+full-document answers (`COLLABORATION_OPEN_BYTES`, 80 MiB, refilled over
+`COLLABORATION_OPEN_REFILL_SECONDS`, 300) slows opens past it and is also
+left unset.
+
+A client address holds at most `COLLABORATION_SOCKETS_PER_ADDRESS` sockets
+(500, `capy_collaboration_seat_refusals_total` counts refusals) and a user
+at most `COLLABORATION_JOINED_PER_USER` joined documents (22) and
+`COLLABORATION_CONNECTIONS_PER_DOCUMENT` connections to one document (4;
+one more closes their oldest, counted in
+`capy_collaboration_oldest_closed_total`), also left unset, as are
+`COLLABORATION_PING_SECONDS` (30) and `COLLABORATION_SILENT_SECONDS` (60):
+every socket is pinged and one silent that long closes, freeing its places. The address is the gateway limiter's
+(`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
+peer's; an IPv6 one by its /64), so the cap holds only while the origin is
+reachable through the Cloudflare tunnel alone, as it is for the gateway's
+own limits. A school behind one address would need the address cap
+raised.
+
+A load test whose peers share one user or one address (the local stress
+stack's `u_owner` from one machine, `docker-compose.stress.yml`) shares
+one allowance and one address cap: its compose file raises
+`COLLABORATION_UPDATE_BURST`, `COLLABORATION_UPDATES_PER_SECOND`,
+`COLLABORATION_OPEN_BYTES`, `COLLABORATION_SOCKETS_PER_ADDRESS`,
+`COLLABORATION_JOINED_PER_USER` and
+`COLLABORATION_CONNECTIONS_PER_DOCUMENT`.
+A UAT stress run from one machine needs the address cap raised on UAT
+for the run.
+
+The host needs swap: the Office engine caps above lean on it (6 GiB on UAT,
+12 GiB on production). Provision it as in section 7 step 5:
+
+```bash
+fallocate -l 6G /swapfile && chmod 600 /swapfile && mkswap /swapfile
+swapon /swapfile
+grep -q '^/swapfile none swap sw 0 0$' /etc/fstab || \
+  printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
+```
+
+#### Root's commands on the host
+
+Redeploying a kept release by hand, for example when GitHub is down (the
+images of the last three releases are still local):
+
+```bash
+cd /opt/capy/app/releases/<sha>    # or /opt/capy/app/current
+docker compose -p capy -f compose.yml --env-file stack.env stop collaboration
+docker compose -p capy -f compose.yml --env-file stack.env up -d --wait --remove-orphans
+docker compose -p capy -f compose.yml --env-file stack.env ps
+```
+
+Storage and Stripe reconciliation is scheduled and claimed by the gateway's
+database-backed runner. To queue today's runs and drain pending work from a
+one-off container:
+
+```bash
+cd /opt/capy/app/current
+docker compose -p capy -f compose.yml --env-file stack.env --profile reconcile run --rm reconcile
 ```
 
 The command and gateway share `reconcile_runs`, so concurrent invocations are
-safe and do not create a second run for the same UTC schedule slot.
+safe and do not create a second run for the same UTC schedule slot. Never run
+`down -v` on either project: it deletes the database volume.
 
-Do **not** point the tunnel at `:8080` / `:1234`. Coolify already runs Traefik
-or Caddy on the host; the tunnel should hit that proxy and let it route by
-`Host`. Follow [Coolify: access all resources via tunnels](https://coolify.io/docs/integrations/cloudflare/tunnels/all-resource), with these bindings:
+#### Removing Coolify from a host
 
-| Hostname                     | Tunnel service                                                                                                | Coolify domain field                            |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `api.capynotebook.com`               | `http://localhost:80` (or `http://coolify-proxy:80` if `cloudflared` is a container on the `coolify` network) | `http://api.capynotebook.com` on the **server** service |
-| `collab.capynotebook.com`            | same `:80`                                                                                                    | `http://collab.capynotebook.com` on **collaboration**   |
-| `ops.capynotebook.com`           | same `:80`                                                                                                    | `http://ops.capynotebook.com` on **ops**            |
-| retrieval, worker, db, redis | none                                                                                                          | no domain                                       |
+UAT moved off Coolify in one cutover window, then a soak with Coolify stopped
+but installed (Epo 2026-10-23). Once nothing needs it, remove from the host:
+Coolify's containers and images (`coollabsio/*`, `traefik`, its
+`postgres:15-alpine`; keep the `redis` image Capy uses), the `coolify`
+network, the volumes `coolify-db`, `coolify-redis` and the old
+`<uuid>_capy_*` ones, unused anonymous volumes (`docker volume prune`, which
+leaves named volumes alone), the build cache (`docker builder prune -af`),
+`/data/coolify` (it holds Coolify's app key, its root SSH key and a copy of
+every env value), the `coolify` key in root's `authorized_keys`, the
+`/etc/cron.d/capy-prune-app-images` and
+`/usr/local/sbin/capy-prune-app-images.sh` files, the ufw "Docker networks to
+the host" rule (it served only Coolify's Sentinel), the `uat-coolify`
+hostname with its DNS record and Access application, and in GitHub the
+`COOLIFY_*` values and the Coolify deploy key.
 
-Details that are easy to get wrong:
-
-- Run `cloudflared` as a **Coolify service** (or systemd on the host), not as a
-  service in either compose file. A compose restart must not drop every
-  hostname on the server.
-- Deploy the separate Ops application only after §8. **Deploy Ops** supplies
-  `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_SENTRY_DSN_OPS`, and `RELEASE_SHA`
-  from GitHub before building its dashboard and Go backend together.
-- Enter Coolify domains as **`http://`**. Cloudflare terminates TLS. `https://`
-  here makes Traefik request Let's Encrypt and usually 301-loops.
-- App env vars still use `https://` / `wss://` — those are what browsers, Clerk,
-  and Stripe see (see the block below).
-- Cloudflare SSL/TLS **Full** is enough: the tunnel is already encrypted, and
-  the last hop is HTTP to the proxy. **Full (strict)** needs origin certs —
-  Coolify's [full TLS guide](https://coolify.io/docs/integrations/cloudflare/tunnels/full-tls).
-- Do not publish `8080` / `1234` / `8001` on a public interface. Traefik + the
-  tunnel is the public path; `8080` is published only on the WireGuard address
-  for the ingest host's import worker (§2.2), and `:8001` must stay private.
-- Chat SSE and collab WebSockets both pass through Traefik. If streams die at
-  ~60–100s, raise the proxy read timeout on `api.capynotebook.com`. Cloudflare Tunnel
-  itself is not subject to the 100s orange-cloud proxy timeout; Traefik still
-  is.
-- Coolify parses every `${VAR:?message}` in the compose file and stores
-  `message` as that variable's value. The guard then cannot fire, because the
-  variable is not empty: the gateway boots with `CLERK_SECRET_KEY` set to the
-  literal `set CLERK_SECRET_KEY` and fails every request instead of refusing to
-  start. Once the resource exists, blank every variable you have not filled in
-  yourself. `SOURCE_COMMIT` picks up the literal `${RELEASE_SHA:-}` the same
-  way; blank it and let Coolify inject the real commit.
-- Coolify keeps a second value per variable for pull-request preview
-  deployments, and creates a twin of every key when it parses the compose file.
-  Preview deployments are disabled in this repository, so delete the preview
-  set rather than maintaining two columns.
-- Do not mark a generated secret **shown once**. Coolify then hides it from the
-  UI and the API permanently, and nothing can read back the Postgres password
-  that the ingest host queue env and `OPS_INGEST_UAT_DATABASE_URL` both need.
-  Keep those values in the ignored local env file.
-- Coolify caches its compose parse. Blanking a variable does not rewrite that
-  cache, and only a deploy re-parses the repository. Check the container
-  environment after the first deploy instead of trusting the stored parse.
-
-In the tunnel's Public Hostnames page, add `ops.capynotebook.com` with service
-`http://localhost:80`, or the Coolify proxy address from the table. Cloudflare
-creates the proxied CNAME to the tunnel. Do not also create an A or AAAA record
-for `ops.capynotebook.com`.
-
-### 1.2 Bare docker compose + Tunnel
-
-On a host running `deploy/docker-compose.yml` without Coolify's proxy,
-`cloudflared` publishes the app ports directly. Cloudflare creates the DNS
-records; do **not** also point A records at the VPS IP.
-
-```
-api.capynotebook.com     → http://localhost:8080  (the `server` container)
-collab.capynotebook.com  → http://localhost:1234  (the `collaboration` container)
-ops.capynotebook.com → http://localhost:8082  (the `ops` container)
-```
-
-SSL/TLS **Full (strict)** is appropriate here if the origin speaks TLS.
-Leave :8001, Postgres and Redis unpublished. Bind :8082 to localhost as shown
-in compose so the tunnel can reach it but the internet cannot bypass Access.
-This is the origin lockdown in §3.
-
-### 1.3 A/AAAA instead of a tunnel
+### 1.2 A/AAAA instead of a tunnel
 
 `A`/`AAAA` for `api.capynotebook.com` and `collab.capynotebook.com` to the VPS, **orange cloud
 on**, then firewall :80/:443 to Cloudflare IPs and enable Authenticated Origin
@@ -882,10 +871,10 @@ forgeable. SSL/TLS **Full (strict)**. "Flexible" terminates TLS at Cloudflare
 and speaks plain HTTP to the origin — anyone between them reads every bearer
 token.
 
-### 1.4 App URLs and env (all of the above)
+### 1.3 App URLs and env
 
-Same values whether Coolify, bare compose, or A records. Coolify domain fields
-are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
+Same values whether the origin is the tunnel or A records. The tunnel reaches
+the containers over plain `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `deploy/.env.example` (Clerk, Stripe, Sentry DSNs, provider keys).
 `APP_ENV` is required: the gateway and Ops refuse to start without it (Epo
 2026-10-20). `deploy/docker-compose.prod.yml` and `deploy/docker-compose.ops.yml`
@@ -1002,9 +991,9 @@ OPS_UNSAFE_DEVELOPMENT=false
 pool opens lazily from admin-only handlers. Viewer requests are rejected before
 the credential is used.
 
-Use `db` as the Postgres host only when the ops container shares the compose
-network with `db`. A managed database must use its private hostname. Do not add
-a public Postgres DNS record or a Coolify domain. The ops process does not run
+Use `db` as the Postgres host: the Ops container joins the main stack's `capy`
+network, where `db` is the database. A managed database must use its private
+hostname. Do not add a public Postgres DNS record or tunnel hostname. The ops process does not run
 migrations and must never receive the database owner URL. Deploy the gateway
 migration first, then start ops.
 
@@ -1202,9 +1191,9 @@ covers 1 and 2 with the service token):
 
 **Timeouts:** the default 100 s orange-cloud proxy read timeout will cut long
 chat streams. An upload ticket's long poll answers within 25 s, under it.
-Parser traffic stays on WireGuard and does not cross Cloudflare.
-Coolify's Traefik/Caddy in front of the tunnel still has its own read timeout —
-raise that on `api.capynotebook.com` if streams die around a minute.
+Parser traffic stays on WireGuard and does not cross Cloudflare. The tunnel
+reaches the gateway directly, with no proxy and no read timeout of its own in
+between.
 
 ### 2.2 Drive import worker
 
@@ -1429,9 +1418,9 @@ limit — edge and application — can be bypassed by hitting the origin directl
 
 Pick one:
 
-- **Cloudflare Tunnel (recommended).** Coolify: §1.1, tunnel → proxy `:80`.
-  Bare compose: §1.2, tunnel → `:8080` / `:1234`. The origin needs no inbound
-  ports and its IP is never published.
+- **Cloudflare Tunnel (what both app hosts use).** §1.1: the tunnel reaches
+  `127.0.0.1:8080` / `:1234` / `:8082` and sshd. The origin needs no inbound
+  ports for the app and its IP is never published.
 - **Firewall allowlist.** Restrict :80/:443 to Cloudflare's published IP ranges
   and enable **Authenticated Origin Pulls**. Requires re-checking the ranges
   periodically.
@@ -1439,7 +1428,7 @@ Pick one:
 ### 3.1 Host lockdown: SSH and firewalls
 
 Both hosts' SSH and firewall settings are code: `deploy/ansible/app-host`
-(the UAT Coolify host, and the production one) and `deploy/ansible/ingest-host`.
+(UAT's app host, and production's) and `deploy/ansible/ingest-host`.
 A rebuilt host gets them back from one playbook run, and a host changed by
 hand drifts back on the next one.
 
@@ -1460,11 +1449,14 @@ range is not decided. Ansible itself connects as root with a key.
 **App host firewall: ufw.** The playbook installs ufw and enables it at boot,
 denying inbound by default and allowing outbound. What stays reachable:
 
-- SSH on 22, from anywhere, IPv4 and IPv6. Coolify manages its own host over
-  SSH from its container, so a later restriction must keep the Docker bridges.
+- SSH on 22, from anywhere, IPv4 and IPv6. The CI deploy key works only from
+  loopback, through the Access tunnel (§1.1); root logs in directly.
 - WireGuard on UDP 51820, from the ingest host's public address only.
 - Loopback and established traffic (ufw's built-in rules). `cloudflared` only
-  connects out, and the Coolify proxy serves the tunnel on `localhost:80`.
+  connects out, and reaches sshd and the ports the stack publishes on
+  `127.0.0.1`.
+- Until Coolify is removed from the host, Docker networks to the host
+  (`10.0.0.0/16` and Coolify's IPv6 network), for Coolify's Sentinel only.
 - The database, Redis and gateway published on the WireGuard address, which
   the ingest host reaches over the link (and GitHub runners through it, by SSH
   to the ingest host). Docker forwards published ports before ufw sees them,
@@ -1474,11 +1466,11 @@ That last point is why the public interface needs its own rule. The playbook
 appends a `DOCKER-USER` block to ufw's `after.rules` (IPv4) and `after6.rules`
 (IPv6) that drops every new connection arriving on the public interface (the
 default route's, `eth0` on the UAT VM) for any container, whatever the port or
-protocol: Traefik's 80 and 443 (TCP and UDP), Coolify's 8000, 6001 and 6002, and
-any port a compose file publishes later. Replies to the containers' own
-outbound connections, the cloudflared tunnel among them, are not new and pass.
-ufw creates and refills the chain at boot and on
-every reload, and Docker keeps the chain's rules when it restarts, so the rule
+protocol, including any port a compose file publishes later (and, while
+Coolify was installed, Traefik's 80 and 443 and Coolify's 8000, 6001 and
+6002). Replies to the containers' own outbound connections, the cloudflared
+tunnel among them, are not new and pass. ufw creates and refills the chain at
+boot and on every reload, and Docker keeps the chain's rules when it restarts, so the rule
 survives both. The WireGuard address's services, traffic between containers
 and the tunnel's loopback hop are not on the public interface.
 
@@ -1529,9 +1521,9 @@ run also rewrites `/etc/docker/daemon.json` and restarts Docker when it differs.
      443/udp on the host's public address time out while the app hostnames
      still load through the tunnel; from the ingest host,
      `curl --fail http://<app WireGuard address>:8080/healthz` answers;
-     `pnpm review:uat:smoke` passes; Coolify's dashboard loads, its server
-     validates and a deploy runs; `journalctl -k --since -15min | grep 'UFW BLOCK'`
-     shows nothing arriving from `docker0` or a `br-` bridge.
+     `pnpm review:uat:smoke` passes and a Deploy UAT runs;
+     `ss -ltn` shows Docker publishing only on `127.0.0.1` and the WireGuard
+     address.
    - Ingest host: `nft list table inet capy_ingest_filter` is unchanged, and
      the next Deploy ingest (SSH as the service account) succeeds.
 
@@ -1652,7 +1644,7 @@ developer PC holds a key that can write.
    - **Writer**, `readFiles` and `writeFiles`: only in the developer PC's
      ignored `.env.local` as `KNOWLEDGE_BASE_B2_WRITER_KEY_ID` and
      `KNOWLEDGE_BASE_B2_WRITER_APP_KEY`, for the builder's source upload. It
-     never goes to GitHub, Coolify or a host; a CI test fails if any deploy
+     never goes to GitHub or a host; a CI test fails if any deploy
      file names these variables.
 
    To rotate (and when moving from the former single writable key): create the
@@ -1680,8 +1672,8 @@ developer PC holds a key that can write.
    | `KNOWLEDGE_BASE_B2_KEY_ID`   | the reader key's id                          |
    | `KNOWLEDGE_BASE_B2_APP_KEY`  | the reader key's secret                      |
 
-   All five carry the manifest targets `coolify` and `local` and are
-   `required_for` `coolify`, so a UAT or production render fails when any is
+   All five carry the manifest targets `app` and `local` and are
+   `required_for` `app`, so a UAT or production render fails when any is
    missing from GitHub; only `KNOWLEDGE_BASE_B2_KEY_ID` and
    `KNOWLEDGE_BASE_B2_APP_KEY` are manifest secrets, the other three are plain
    variables. Push them with `scripts/env/config.py push` from a file that
@@ -1829,10 +1821,8 @@ those services start.
    and the VLM read of text-less document pages) and GLM-5.3-Flash, the same
    key the app host's `retrieval` and `ops` containers carry (Ops reads it too,
    to flag a missing credential). No Z.AI key is read since 2026-10-21. The
-   deploy workflows' Coolify step (`config.py apply-coolify` in
-   `deploy-environment.yml` and `deploy-ops.yml`) deletes a leftover
-   `ZAI_API_KEY` from Coolify. The GitHub environment secret `ZAI_API_KEY`
-   stays until someone deletes it by hand, and a `ZAI_API_KEY=` line left in a
+   GitHub environment secret `ZAI_API_KEY` stays until someone deletes it by
+   hand, and a `ZAI_API_KEY=` line left in a
    local env file (`deploy/.env.uat`, `deploy/.env.prod`) makes `pnpm env:push`
    and `pnpm env:check` fail with "unknown configuration keys: ZAI_API_KEY":
    delete the line, and put the OpenRouter key in `OPENROUTER_API_KEY`. The
@@ -1844,7 +1834,7 @@ those services start.
    parser is OpenDataLoader 2.5.7 plus the refined repairs (`parser/odl/`);
    it renders text-less pages for the worker's VLM and holds no OCR model, so
    the image needs no model files or model volume.
-   Configure its platform model capacities through Ops (§1.4) before ingest.
+   Configure its platform model capacities through Ops (§1.3) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
    So are the VLM page-read gates, `CAPY_VLM_PAGE_CAPACITY` (page reads in
@@ -1857,7 +1847,8 @@ those services start.
    (`CAPY_PARSE_OCR_PAGE_CAP`, a name older than the VLM read; more fails as
    `parse_too_many_scanned_pages`). `CAPY_PARSE_MAX_PAGES` (1,400)
    caps pages per document. Both page caps are GitHub environment variables
-   rendered to Coolify (the API serves them in the upload policy) and to the
+   rendered into the app host's env file (the API serves them in the upload
+   policy) and to the
    ingest host (the parser enforces them), so one value feeds both; the
    manifest marks them required for both targets, and the API, the prod
    Compose and the ingest Compose refuse to start without
@@ -1905,7 +1896,7 @@ those services start.
    host; every source must match. Record wall time (the 610-page textbook is
    about four minutes), peak RAM and swap.
 8. App deployment and ingest are separate workflows: **Deploy UAT** builds the
-   site, applies GitHub config to Coolify, deploys the backend and publishes the
+   site and the backend images, deploys the backend on the app host and publishes the
    Workers, and never touches the ingest host. Deploy the app first, then run
    **Deploy ingest**, leaving `revision` blank so it resolves the SHA from the
    backend's own `X-Capy-Release`; it then verifies the backend still reports
@@ -1957,8 +1948,8 @@ existing images and environment after a reboot. There is no second systemd
 Compose launcher. The per-stack watchdog checks the same active/pending state
 and lock before restarting an unhealthy existing parser.
 
-For a failed or canceled deployment, inspect the exact Coolify deployment and
-live backend revision before invoking recovery with the original run owner.
+For a failed or canceled deployment, check that the app deploy's workflow run
+has finished and read the live backend revision before invoking recovery with the original run owner.
 Cancelling a run does not signal the remote script (no tty), but its next
 parser poll write fails and exits through cleanup, so `operation.lock` is free
 within about 15 seconds. `pending` keeps the original owner, so the next run
@@ -2193,7 +2184,7 @@ pinned per environment.
    404 `library_unconfigured`. That pool skips the app role contract because
    the library has its own schema and its own reader role. The retrieval
    service reads the same database through `LIBRARY_DATABASE_URL` (manifest
-   secret, targets `coolify` and `local`, required for `coolify`); both hold
+   secret, targets `app` and `local`, required for `app`); both hold
    the same reader URL. The loader keeps the owner URL through the tunnel in
    project-root `.env.local` under the same `LIBRARY_DATABASE_URL` name, so
    never copy one into the other. There is no pin variable, because UAT and
@@ -2523,7 +2514,7 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
    query or a file title. Apply them as the database owner:
 
    ```bash
-   docker exec -i db-<main-resource-uuid> psql -U capy -d capy \
+   docker exec -i capy-db-1 psql -U capy -d capy \
      -v ops_password="$READ_PASSWORD" -v ops_admin_password="$ADMIN_PASSWORD" \
      < deploy/ops-roles.sql
    ```
@@ -2594,9 +2585,9 @@ docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # 
    environment already run for ligatures alone needs one more run after the
    sub/superscript release. The shared library and the pilot database were
    done on 2026-09-24.
-   - UAT and production: on the Coolify host, in that resource's retrieval
-     container, which already holds `DATABASE_URL`:
-     `docker exec retrieval-<resource-uuid> python pipeline/scripts/reindex_ligatures.py app --dry-run`,
+   - UAT and production: on the app host, in the retrieval container, which
+     already holds `DATABASE_URL`:
+     `docker exec capy-retrieval-1 python pipeline/scripts/reindex_ligatures.py app --dry-run`,
      then the same command without `--dry-run`.
    - Local: from the repository root against the full-local database,
      `uv run python pipeline/scripts/reindex_ligatures.py app`
@@ -2683,7 +2674,7 @@ Embedding rows are the ones the database will actually reject a delete of.
 | Fire >200 AI requests in an hour, or 16 in a minute                          | `429` with `code: "ai_rate_limited"`             |
 | Open 6 platform-paid AI calls at once                                        | 6th returns `429 too_many_streams`               |
 | Hit the origin IP directly                                                   | connection refused                               |
-| Coolify: `ss`/`docker ps` shows `:8080`/`:1234`/`:8082` bound on `0.0.0.0`   | wrong: only Traefik `:80` should be public       |
+| `ss -ltn` on the app host                                                    | Docker publishes only on `127.0.0.1` (8080, 1234, 8082) and the WireGuard address; nothing on 80, 443 or 8000 |
 
 If `usage_events` stays empty while chat works, the usual cause is a streamed
 completion without `stream_options={"include_usage": True}` — the request
@@ -2869,7 +2860,7 @@ never mounts that volume.
 
 | Resource            | Local development                    | UAT                                                                                         | Production                                      |
 | ------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| App compute         | local compose                        | separate Coolify environment/resource                                                       | production Coolify environment/resource         |
+| App compute         | local compose                        | the UAT app host's Compose projects                                                         | the production app host's Compose projects      |
 | Postgres and Redis  | disposable/local                     | dedicated UAT instances/volumes                                                             | production instances/volumes                    |
 | Blob storage        | local/test bucket                    | dedicated private UAT bucket and key                                                        | production private bucket and key               |
 | Ingest host         | shared nonprod project, local queue consumers | same nonprod project, UAT queue consumers; one global `1/1/1` capacity with local | production project and `capy-ingest_parse_spool` |
@@ -2888,11 +2879,9 @@ authentication strategy.
 
 ### 12.2 Create the UAT deployment
 
-1. Create a Coolify environment named `uat` and a separate Docker Compose
-   resource tracking `main`. Disable its native auto-deploy webhook; the
-   workflow pins the candidate through `git_commit_sha`. Use
-   `deploy/docker-compose.prod.yml`; do not reuse the production resource.
-   Enable **Include Source Commit in Build**, matching production.
+1. Prepare a separate app host: Docker with the Compose plugin, the app-host
+   playbook (including its `deploy` tag), `cloudflared` with its own tunnel,
+   and the deploy access in §1.1. Do not reuse the production host.
 2. Provision separate Postgres and Redis state. A separate database on the same
    managed cluster is acceptable only if it has a distinct owner, database
    name, credentials, backup policy, and no cross-database application grants.
@@ -2900,7 +2889,7 @@ authentication strategy.
    `deploy/b2-cors.uat.json` and `deploy/b2-lifecycle.uat.json` (§4). Do not
    point UAT at the production bucket.
 4. Use `app.uat.capynotebook.com` for the app, keeping `uat-api`, `uat-collab`,
-   `uat-office`, `uat-ops` and `uat-coolify` unchanged. The advanced certificate
+   `uat-office` and `uat-ops` unchanged. The advanced certificate
    covering `*.uat.capynotebook.com` is required for `app.uat`; Universal SSL's
    `*.capynotebook.com` alone does not cover it. Verify certificate coverage and
    managed renewal before routing traffic. Configure DNS, tunnel routing,
@@ -2941,7 +2930,7 @@ authentication strategy.
    `/assets/*`), then Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
    following the route and hostname transition order in §1. No summary storage service is needed.
-7. Deploy once, inspect the `migrate` container, and verify all public routes
+7. Deploy once, inspect `docker logs capy-migrate-1`, and verify all public routes
    resolve through Cloudflare. This initial deployment may use a unique random
    temporary Clerk webhook secret until the public UAT webhook URL exists.
    Replace it with Clerk's actual endpoint signing secret and redeploy before
@@ -2950,7 +2939,7 @@ authentication strategy.
    ports. Select `bootstrap_ingest` on the first **Deploy UAT** run; it renders
    the queue configuration from GitHub and starts only UAT consumers after
    backend verification. Local consumers remain an explicit operator action.
-   Do not start an ingest worker inside the UAT Coolify resource.
+   Do not start an ingest worker on the UAT app host.
 
 Give UAT a visible banner. It shares Sentry projects with production and
 separates by `SENTRY_ENVIRONMENT` (§5); it has no PostHog project at all (§6).
@@ -2965,7 +2954,7 @@ verification, and browser restrictions match production. This does not mean
 sharing the real production Clerk application: UAT and production must have
 different user directories and keys. Within the real production environment,
 the product and ops dashboard still use the same production Clerk instance as
-required by §1.4.
+required by §1.3.
 
 In the Clerk dashboard:
 
@@ -2987,7 +2976,7 @@ In the Clerk dashboard:
    `CLERK_SECRET_KEY`. The GitHub authenticated tests receive the same values
    as `CLERK_PUBLISHABLE_KEY` and the protected `CLERK_SECRET_KEY` environment
    secret. Never put the secret key in a repository variable or browser build.
-6. Set up two-step verification as on production (§1.4): the authenticator
+6. Set up two-step verification as on production (§1.3): the authenticator
    application factor on, SMS codes off, the new-device check off, and the
    Account Portal user profile on.
 
@@ -3115,8 +3104,8 @@ before recording the event, and the gateway returns HTTP 400. Revisit this pin
 when upgrading the SDK. [Stripe endpoint creation](https://docs.stripe.com/api/webhook_endpoints/create)
 accepts `api_version`; changing request headers in the test runner does not
 change the webhook payload version. Put the sandbox
-`sk_test_…`, that endpoint's signing secret, and the price ID into the UAT
-Coolify resource as `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and
+`sk_test_…`, that endpoint's signing secret, and the price ID into the GitHub
+`uat` environment (§12.7) as `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and
 `STRIPE_PRICE_PRO`. There is no publishable-key setting: checkout is a
 server-side redirect to Stripe's hosted page (`CreateCheckoutSession` returns
 the URL) and the SPA never loads Stripe.js.
@@ -3173,8 +3162,8 @@ customers. Confirm plan state, idempotency, and reconciliation before the
 first production release.
 
 Stripe credentials are GitHub environment deployment secrets. Keep the matching
-sandbox values in ignored `deploy/.env.uat` and upload through `env:push`; the
-deployment sync applies them to Coolify. Scanner-only credentials remain local.
+sandbox values in ignored `deploy/.env.uat` and upload through `env:push`; each
+deploy renders them into the app host's env file. Scanner-only credentials remain local.
 
 Leaving the gateway's Stripe secret, webhook secret, and Pro price blank keeps
 billing disabled. If either `STRIPE_WEBHOOK_SECRET` or `STRIPE_PRICE_PRO` is
@@ -3217,12 +3206,12 @@ nothing; share and comment mentions are in-app only.
 `uat.capynotebook.com`. Cloudflare writes its own records: MX and SPF on
 `cf-bounce.uat`, DKIM at `cf-bounce._domainkey.uat`, DMARC at `_dmarc.uat`.
 Create an account API token with Email Sending permission, scoped as narrowly
-as the dashboard allows, and set in the GitHub `uat` environment (deploys copy
-them to Coolify): `EMAIL_BACKEND=cloudflare`, `CLOUDFLARE_EMAIL_TOKEN`,
+as the dashboard allows, and set in the GitHub `uat` environment (deploys render
+them for the gateway): `EMAIL_BACKEND=cloudflare`, `CLOUDFLARE_EMAIL_TOKEN`,
 `EMAIL_FROM=Capy Notebook <notifications@uat.capynotebook.com>`, and a fresh
 32-byte `EMAIL_UNSUBSCRIBE_SECRET`. `CLOUDFLARE_ACCOUNT_ID` is the variable
-the deploy workflows already use; the deployment renderer now also passes it
-to Coolify.
+the deploy workflows already use; the deployment renderer also passes it to
+the gateway.
 
 Verified 2026-10-13: a send shaped like the gateway's (display-name `From`,
 `reply_to`, both unsubscribe headers) was delivered at once and reached the
@@ -3259,7 +3248,7 @@ Routing rule forwarding to `support.capynotebook@gmail.com`. That Gmail's
 
 **Resend is retired.** The account journey passed on Cloudflare on 2026-10-13
 (UAT quality run 38359470612), and the GitHub `uat` entries `RESEND_API_KEY`,
-`UAT_RESEND_FROM` and `UAT_RESEND_READ_KEY` and Coolify UAT's `RESEND_API_KEY`
+`UAT_RESEND_FROM` and `UAT_RESEND_READ_KEY` and the UAT app's `RESEND_API_KEY`
 were deleted that day. The DNS records TXT `resend._domainkey.uat` and MX/TXT
 `send.uat` go with the Resend key.
 
@@ -3317,8 +3306,8 @@ their commit statuses and never receives local scanner credentials.
 `deploy/env-manifest.json` classifies each supported input as a GitHub variable
 or secret and names its deployment targets. Both complete examples include
 backend, browser, provider and ingest inputs. Keep the real files ignored and
-mode `0600`. Use `CLERK_PUBLISHABLE_KEY` for deployments; the renderer derives
-its browser/ops `VITE_` form. Local development continues using `deploy/.env`.
+mode `0600`. Use `CLERK_PUBLISHABLE_KEY` for deployments; the SPA render and
+the Ops image job derive their `VITE_` forms. Local development continues using `deploy/.env`.
 The renderer takes manifest variables from GitHub's whole `vars` context
 (`CAPY_GITHUB_VARS`), ignoring unrelated settings, and each secret from its own
 step variable `CAPY_SECRET_<KEY>: ${{ secrets.<KEY> }}`. Every render step
@@ -3365,12 +3354,13 @@ keys are left alone. Review-only `STRIX_*`, `LLM_API_KEY`, tunnel/dev controls,
 and derived release values remain local. Double-quoted `\n` escapes can hold
 an SSH private key. Do not put actual multiline shell fragments in the file.
 
-Every deployment reads GitHub's environment values afresh, renders private
-runner files, and applies/reads back all managed Coolify variables. Empty
-optional values remain literal blanks. After successful replacement readback, the sync removes only the corresponding old `EVO_*` names and retired `EVO_QUERY_MODEL`, `IMPORT_RELAY_ENQUEUE_URL` / `IMPORT_RELAY_SECRET`, verifies their absence, and preserves unrelated normal variables. The sync disables preview entries and
-uses `is_literal=true`, `is_shown_once=false`; it prints neither values nor
-fingerprints. Coolify's token needs sensitive-read access for verification.
-The Cloudflare token needs Worker scripts/assets deployment access and
+Every deployment reads GitHub's environment values afresh and renders private
+runner files: `app.env` for the app host (single-quoted literal values, which
+Compose never interpolates; a multi-line value fails the render), `ops.env`
+for Ops and the ingest files. The deploy job sends the env file to the host,
+where it is kept root `0600` with its release; nothing else stores the
+configuration, and the render prints neither values nor fingerprints. Empty
+optional values remain literal blanks. The Cloudflare token needs Worker scripts/assets deployment access and
 Cloudflare Pages edit access for the interactive block frame (§2.3). Retire
 `CLOUDFLARE_PAGES_PROJECT` and `CLOUDFLARE_PAGES_BRANCH` in GitHub before the
 first new deployment; they are rejected as unknown inputs.
@@ -3385,16 +3375,19 @@ needs the token for git (the submodule and fork fetches are public, `gh` reads
 step's `env`. Secrets sit only on the steps that use them, never in a
 workflow or job `env` or on an install or action step: the UAT journey job's
 secrets sit on its tunnel, ingest-check, journey and cleanup steps, and Deploy
-Ops passes the Coolify token only to its three Coolify steps. No file under
+each deploy job's app-host SSH key and pinned host key sit only on its
+"Configure SSH through Access" step and the Access service token only on its
+deploy step; the image jobs name no secret at all and pass only public build
+arguments. No file under
 `.github` uses `toJSON(secrets)`: since 2026-07-28 GitHub holds such runs on
 public repositories until someone approves them, and the step would see every
 secret; the render steps name theirs instead (§12.7). The SPA build
 job renders only the build values (`config.py render-build`); the deploy job
-renders the Coolify and ingest configuration, so it is never on disk while
+renders the app host and ingest configuration, so it is never on disk while
 third-party build code runs. `SENTRY_AUTH_TOKEN` stays in the build values
-(developer decision 6b). `coolify-deploy.sh` hands curl the API token as a
-config line on stdin, never as an argument. `scripts/ci/hardening.test.mjs`
-(in `pnpm test:deployment`) holds these rules.
+(developer decision 6b). The deploy job sends the env file and the job's own
+GHCR token to the host on stdin, never as an argument.
+`scripts/ci/hardening.test.mjs` (in `pnpm test:deployment`) holds these rules.
 
 **Dependency vulnerabilities.** `.github/workflows/audit.yml` runs on every
 push and pull request and again daily (03:17 UTC), so an advisory published
@@ -3432,11 +3425,12 @@ since 2026-10-21). `server/Dockerfile` and `ops/Dockerfile` pin the same
 Go jobs read the version from `go.mod`. A Go upgrade moves the three together;
 the `golang` image sets `GOTOOLCHAIN=local`, so an image older than `go.mod`
 fails its build. Upgrades go ahead without asking (developer decision,
-2026-10-21); the images rebuild on the next deploy.
+2026-10-21); the images rebuild with the next deployed SHA.
 
 Required families include application origins, Clerk/webhook keys, Postgres,
-B2, collaboration/pipeline secrets, actual provider/mail/billing keys, Coolify
-and Cloudflare credentials, and ingest SSH/token/network settings. Runtime
+B2, collaboration/pipeline secrets, actual provider/mail/billing keys, the app
+host's SSH and Access credentials (`APP_HOST_*`, §1.1), Cloudflare
+credentials, and ingest SSH/token/network settings. Runtime
 DSNs derive from the selected environment's private address and URL-encoded
 Postgres password. Never copy a development bucket or production secret into
 UAT merely to fill a missing input.
@@ -3458,8 +3452,8 @@ ingest host nor Ops can fail a **Deploy UAT** run, and its quality gate checks
 only that what it deployed is answering. The authenticated Playwright suite is
 opt-in: it runs on a manual **Deterministic UAT quality** dispatch and as the
 production promotion gate, not on every deploy. All
-apply their selected GitHub configuration on every run. Native Coolify
-Git auto-deploy stays disabled. Production promotion retains the UAT,
+apply their selected GitHub configuration on every run, and nothing deploys
+on push. Production promotion retains the UAT,
 editor-perf, and protected-environment gates.
 
 ### Independent Ops application
@@ -3473,72 +3467,41 @@ reports that Clerk failed to load. The SPA's policies are report-only
 (§2.4), which is why the same Clerk setup works there without
 configuration.
 
-Every hostname a stack publishes on the shared `coolify` network has to be
-unique, because Coolify's own infrastructure containers claim bare service
-aliases there too: `coolify-redis` answers to `redis` and `coolify-db` to
-`postgres`. A service named `redis` therefore resolves to both containers, and
-the gateway reaches the password-protected Coolify one about half the time,
-which surfaces as intermittent `503`s from SSE endpoints while ordinary requests
-keep working. The stack's own cache is named `capy-redis` for that reason.
-
-Point the Ops database URLs at the compose service alias `db`, not at
-`db-<main-uuid>`. Coolify appends a fresh timestamp to every compose container
-name, so it aliases the database on the shared network as both
-`db-<main-uuid>-<timestamp>` and `db`; only the latter survives a redeploy. A
-wrong host here fails as `hostname resolving error: lookup db-... no such host`
-in the Ops container logs, and the edge answers `404` because Traefik has a
-router but no healthy backend.
-
-Keep `${...}` defaults in `deploy/docker-compose.ops.yml` simple. Coolify parses
-the compose and materialises each variable's default expression into a real
-environment row, so a nested `:?` default becomes a `build-time.env` line that
-Compose cannot read — the deploy then fails with `failed to read
-/artifacts/build-time.env: required variable RELEASE_SHA is missing a value`
-before any image builds. `render-ops` always supplies `RELEASE_SHA`, so refer to
-it directly rather than defaulting through `SOURCE_COMMIT`. Delete any stored
-`SOURCE_COMMIT` row that already holds such an expression.
-
-Ops is a separate Coolify Git application on the same host as the main stack.
-It builds `ops/Dockerfile`, containing the dashboard and Go Ops API, using
-`deploy/docker-compose.ops.yml`. The main stack owns Postgres and migrations.
+Ops is its own Compose project, `capy-ops`, on the same app host as the main
+stack, from `deploy/docker-compose.ops.yml`. Its image,
+`ghcr.io/samyung0/capy-ops:<sha>-<environment>`, holds the dashboard and the
+Go Ops API; Deploy Ops's `image` job builds it on every run from the four
+public `VITE_*` values the dashboard needs (`CLERK_PUBLISHABLE_KEY`,
+`VITE_SENTRY_DSN_OPS`, the environment and the SHA), so a changed variable
+reaches the next run of the same SHA. The main stack owns Postgres and
+migrations. Ops joins the main stack's network `capy` (external in the Ops
+file), so its database URLs use the host `db`; no database port is published
+for it. It publishes `127.0.0.1:8082` for the tunnel's Access-protected
+`uat-ops` / `ops` hostname (§1.1).
 
 One-time setup per environment:
 
-1. Deploy the main stack and complete the Ops database roles/grants in §8.
-2. Create a Coolify Git application from this repository and `main`, using the
-   Docker Compose build pack, repository-root base directory, and
-   `/deploy/docker-compose.ops.yml`. Disable automatic and preview deployment;
-   enable Include Source Commit in Build.
-3. Set GitHub environment variable `COOLIFY_OPS_RESOURCE_UUID` to the new
-   application UUID. Keep `COOLIFY_RESOURCE_UUID` pointing to the main stack.
-4. Enable **Connect to Predefined Network** on both applications, using the
-   same Coolify destination. Redeploy the main stack once to attach its
-   database container. Use the full database container hostname shown in
-   Coolify, typically `db-<main-resource-uuid>`, rather than the stack-local
-   `db` alias. No additional database port needs to be published for Ops.
-   See [Coolify networking](https://coolify.io/docs/applications/build-packs/docker-compose#connect-to-predefined-networks).
-5. Set `OPS_DATABASE_URL` and `OPS_ADMIN_DATABASE_URL` using their restricted
-   database roles and that full database hostname. Configure Access
-   issuer/audience, Clerk, and optional telemetry/provider values through the
-   same GitHub environment. Ops-specific keys target only the Ops resource;
-   the renderer excludes the application owner's Postgres password, billing
-   credentials, ingest SSH keys, and development auth bypasses.
-6. Assign the existing Ops hostname to this application's `ops` service on
-   port `8082`, such as `http://uat-ops.capynotebook.com:8082`. Keep its
-   Cloudflare Access protection. If migrating an already-running Ops service,
-   move the hostname from the old application and retire that service before
-   starting the new one. Remove `COMPOSE_PROFILES=ops` from old configuration.
-7. Run **Deploy Ops** from `main`, select `uat`, and choose a full commit SHA
-   or leave it blank to use the running backend's revision. UAT and production
-   Ops deployments run independently of CI results.
+1. Deploy the main stack (it creates the `capy` network) and complete the Ops
+   database roles/grants in §8.
+2. Set `OPS_DATABASE_URL` and `OPS_ADMIN_DATABASE_URL` using their restricted
+   database roles and the host `db`. Configure Access issuer/audience, Clerk,
+   and optional telemetry/provider values through the same GitHub environment.
+   Ops-specific keys target only `ops.env`; the renderer excludes the
+   application owner's Postgres password, billing credentials, ingest SSH
+   keys, and development auth bypasses.
+3. Route the Ops hostname to `http://127.0.0.1:8082` in the host's tunnel and
+   keep its Cloudflare Access protection (§2.1).
+4. Run **Deploy Ops** from `main`, select the environment, and choose a full
+   commit SHA or leave it blank to use the running backend's revision. UAT and
+   production Ops deployments run independently of CI results.
 
-Each run verifies that its target is a different Coolify application with the
-Ops Compose file and a shared Coolify destination with predefined networking
-enabled on both applications, synchronizes and reads back GitHub configuration, and deploys
-that exact commit. The provider deployment result verifies the commit, and the
-container health check probes the Ops Go process. Verify dashboard sign-in and
-an authenticated read after the first deployment. Ops does not run migrations
-or redeploy the main app, ingest workers, or frontend Workers.
+Each run builds the image, renders `ops.env`, and sends it with the Ops
+compose file to the host's deploy command as `deploy ops <sha>` (§1.1), which
+pulls the image, checks its revision label and brings `capy-ops` up healthy;
+it never stops the main stack. On UAT the run then probes the Ops edge
+(`scripts/review/ops-smoke.sh`). Verify dashboard sign-in and an authenticated
+read after the first deployment. Ops does not run migrations or redeploy the
+main app, ingest workers, or frontend Workers.
 
 Production additionally requires a successful **Deploy Ops uat** run for the
 same SHA and the GitHub production environment protection. The workflow shares the main promotion
@@ -3599,10 +3562,10 @@ deploy and does not apply migrations or reset data.
 ```sh
 pnpm uat:seed --file deploy/.env.uat \
   --ssh-key ~/.ssh/id_ed25519_capy_uat \
-  --db-container <actual-UAT-Postgres-container>
+  --db-container capy-db-1
 ```
 
-Find the exact Postgres container name in the UAT Coolify resource or with
+The Postgres container is `capy-db-1` (Compose project `capy`); check with
 `ssh -i ~/.ssh/id_ed25519_capy_uat root@159.195.250.206 docker ps`.
 The script targets only this UAT host and checks the database schema before
 creating accounts. The ignored environment file must select the UAT URLs and
@@ -3748,7 +3711,7 @@ The commands are one binary, `office-maintenance`
 run against the environment's database:
 
 - UAT and production: in the gateway (`server`) container, which already holds `DATABASE_URL`:
-  `docker exec server-<resource-uuid> /app/office-maintenance <command>`.
+  `docker exec capy-server-1 /app/office-maintenance <command>`.
 - Local: `cd server && go run ./cmd/office-maintenance <command>`
   (`DATABASE_URL` defaults to the compose database on `localhost:5432`).
 
@@ -3766,7 +3729,7 @@ run against the environment's database:
 kept as their change over seed(base), so a pin that seeds any stored base
 differently cannot read them (the service refuses them, it never misapplies
 them). Before deploying a pin to an environment, run
-`docker exec server-<resource-uuid> /app/office-maintenance seed-manifest > seeds.jsonl`
+`docker exec capy-server-1 /app/office-maintenance seed-manifest > seeds.jsonl`
 there, copy the file to a checkout of the new pin, then run
 `pnpm office:seed-check seeds.jsonl` (the collaboration server's `seed-check`
 subcommand, built with the new pin's native engines). It prints `same` or `changed` per
@@ -3849,8 +3812,9 @@ stopped before that migration runs and must not outlive it. Otherwise an open
 room's next save fails on the new epoch, the browser reopens the room at that
 epoch, and the old engine seeds it. Its saves then name the old seed, which the
 new engine refuses (`SeedChanged`), and the file stays closed to editing until
-an operator acts. Nothing is corrupted. UAT's Coolify deploy stops the old
-stack before `migrate` runs, so this holds there. A deploy that keeps the old
+an operator acts. Nothing is corrupted. The app host's deploy command stops
+collaboration before Compose recreates the stack and runs `migrate` (§1.1), so
+this holds on UAT and production. A deploy that keeps the old
 collaboration container up while the gateway migrates (a rolling update) must
 stop it first.
 
@@ -3919,10 +3883,10 @@ Dropping unpublished work is never a default: every explicit-loss `UPDATE`
 below runs only after the operator has saved the listed ids, kinds and owners
 with the cutover notes and Epo has approved those rows.
 
-Steps on UAT (`docker exec` on the UAT host; find the container names with
-`docker ps`):
+Steps on UAT (`docker exec` on the UAT host; the containers are
+`capy-<service>-1`):
 
-1. `docker exec server-<uuid> /app/office-maintenance pause`. Notes and text
+1. `docker exec capy-server-1 /app/office-maintenance pause`. Notes and text
    sources stay editable until step 5; ask whoever uses UAT to stop editing.
 2. `publish-all --limit N` and `status` until `status` prints
    `0 unpublished, 0 in flight`, as in the
@@ -3958,10 +3922,10 @@ Steps on UAT (`docker exec` on the UAT host; find the container names with
    to a trashed material, which never projects) needs the material fixed or
    restored on the old release, or an explicit loss of its unprojected edits:
    `UPDATE material_yjs_documents SET projected_version = stored_version WHERE material_id = '<id>'`.
-5. `docker stop collaboration-<uuid>` (its 60 s grace period flushes every
+5. `docker stop -t 60 capy-collaboration-1` (its 60 s grace period flushes every
    room). From here nothing writes collaboration state. Run `status` and the
    queries of steps 3 and 4 again; if anything shows, `docker start
-   collaboration-<uuid>`, repeat steps 2 to 4 and stop it again. This restart
+   capy-collaboration-1`, repeat steps 2 to 4 and stop it again. This restart
    is allowed only before step 8.
 6. Note any storage drift that already exists, to compare after the deploy
    (reconciliation's recount, `storageRecountSQL`, against what the triggers
@@ -3981,8 +3945,8 @@ Steps on UAT (`docker exec` on the UAT host; find the container names with
 
    ```bash
    mkdir -p /root/backups
-   docker exec db-<uuid> pg_dump -U capy -d capy -Fc > /root/backups/capy-uat-pre-cutover-$(date -u +%Y%m%dT%H%MZ).dump
-   docker exec -i db-<uuid> pg_restore --list < /root/backups/capy-uat-pre-cutover-<UTC>.dump | head
+   docker exec capy-db-1 pg_dump -U capy -d capy -Fc > /root/backups/capy-uat-pre-cutover-$(date -u +%Y%m%dT%H%MZ).dump
+   docker exec -i capy-db-1 pg_restore --list < /root/backups/capy-uat-pre-cutover-<UTC>.dump | head
    ```
 
    Keep the dump on the UAT host and copy it to the developer machine
@@ -4043,8 +4007,8 @@ database and redeploy the old release:
 ```bash
 # Stop every service that connects to the database first: the stack's app
 # services, Ops and the nonprod ingest lane's consumers on the ingest host.
-docker exec db-<uuid> psql -U capy -d postgres -c 'DROP DATABASE capy WITH (FORCE)' -c 'CREATE DATABASE capy OWNER capy'
-docker exec -i db-<uuid> pg_restore -U capy -d capy --exit-on-error < /root/backups/capy-uat-pre-cutover-<UTC>.dump
+docker exec capy-db-1 psql -U capy -d postgres -c 'DROP DATABASE capy WITH (FORCE)' -c 'CREATE DATABASE capy OWNER capy'
+docker exec -i capy-db-1 pg_restore -U capy -d capy --exit-on-error < /root/backups/capy-uat-pre-cutover-<UTC>.dump
 ```
 
 Restore into a fresh database, never over the refused one: `--clean` leaves

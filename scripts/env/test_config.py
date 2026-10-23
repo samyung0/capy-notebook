@@ -22,7 +22,7 @@ class ConfigTest(unittest.TestCase):
         for key, rule in config.MANIFEST.items():
             if rule.get("required_for"):
                 values[key] = "explicit"
-        result = config.target_values(values, "coolify")
+        result = config.target_values(values, "app")
         self.assertEqual(result["BANK_DATABASE_URL"], "")
         self.assertEqual(result["BANK_EDITOR_DATABASE_URL"], "")
         self.assertNotIn("BANK_OWNER_DATABASE_URL", result)
@@ -171,18 +171,59 @@ class ConfigTest(unittest.TestCase):
             # Chat (GLM) and ingest share the one OpenRouter platform key
             # (Epo 2026-10-21).
             self.assertEqual(queue["OPENROUTER_API_KEY"], "or-key")
-            self.assertEqual(
-                json.loads(Path(temp, "coolify.json").read_text())["OPENROUTER_API_KEY"],
-                "or-key",
-            )
+            app = config.parse_dotenv(Path(temp, "app.env").read_text())
+            self.assertEqual(app["OPENROUTER_API_KEY"], "or-key")
             self.assertNotIn(
                 "DATABASE_URL",
                 config.parse_dotenv(Path(temp, "nonprod.env").read_text()),
             )
-            self.assertEqual(
-                json.loads(Path(temp, "coolify.json").read_text())["OPENAI_API_KEY"], ""
-            )
+            self.assertEqual(app["OPENAI_API_KEY"], "")
             self.assertEqual(Path(temp, "uat.queue.env").stat().st_mode & 0o777, 0o600)
+
+    def test_render_writes_the_app_env_compose_reads(self):
+        """app.env becomes the host's stack.env: private, literal single-quoted
+        values Compose never interpolates, the exact RELEASE_SHA line the deploy
+        command checks, the app target's keys and derived values only, and no
+        value Compose's dotenv cannot hold."""
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://uat.example.com",
+            STRIPE_SECRET_KEY="sk_$HOME'${X} #kept",
+            OPS_DATABASE_URL="ops-only",
+        )
+        derived = {
+            "DATABASE_URL",
+            "RELEASE_SHA",
+            "COLLABORATION_CPUSET",
+            "COLLABORATION_ENGINE_SAVE_PROCESSES",
+            "COLLABORATION_ENGINE_BACKGROUND_PROCESSES",
+            "COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES",
+            "COLLABORATION_SOURCE_DISK_BYTES",
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "uat", temp, "a" * 40)
+            path = Path(temp, "app.env")
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            text = path.read_text()
+            self.assertIn("\nRELEASE_SHA='" + "a" * 40 + "'\n", text)
+            app = config.parse_dotenv(text)
+            self.assertEqual(app["STRIPE_SECRET_KEY"], "sk_$HOME'${X} #kept")
+            self.assertEqual(
+                app.keys(),
+                {k for k, r in config.MANIFEST.items() if "app" in r["targets"]}
+                | derived,
+            )
+            values["STRIPE_SECRET_KEY"] = "two\nlines"
+            with self.assertRaisesRegex(ValueError, "multiline"):
+                config.render(values, "uat", temp, "a" * 40)
 
     def test_render_refuses_the_uat_switches_outside_uat(self):
         for switch in (
@@ -203,13 +244,13 @@ class ConfigTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 with contextlib.redirect_stdout(io.StringIO()):
                     config.render(values, "production", temp, "a" * 40)
-                coolify = json.loads(Path(temp, "coolify.json").read_text())
-                self.assertEqual(coolify[switch], "")
+                app = config.parse_dotenv(Path(temp, "app.env").read_text())
+                self.assertEqual(app[switch], "")
                 values[switch] = "true"
                 with contextlib.redirect_stdout(io.StringIO()):
                     config.render(values, "uat", temp, "a" * 40)
-                coolify = json.loads(Path(temp, "coolify.json").read_text())
-                self.assertEqual(coolify[switch], "true")
+                app = config.parse_dotenv(Path(temp, "app.env").read_text())
+                self.assertEqual(app[switch], "true")
                 with self.assertRaisesRegex(ValueError, f"{switch} is not allowed"):
                     config.render(values, "production", temp, "a" * 40)
 
@@ -265,8 +306,8 @@ class ConfigTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 with contextlib.redirect_stdout(io.StringIO()):
                     config.render(values, environment, temp, "a" * 40)
-                coolify = json.loads(Path(temp, "coolify.json").read_text())
-                self.assertEqual(coolify["COLLABORATION_CPUSET"], cpuset)
+                app = config.parse_dotenv(Path(temp, "app.env").read_text())
+                self.assertEqual(app["COLLABORATION_CPUSET"], cpuset)
 
     def test_render_sizes_the_office_engine_pool_per_environment(self):
         values = {
@@ -287,12 +328,12 @@ class ConfigTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 with contextlib.redirect_stdout(io.StringIO()):
                     config.render(values, environment, temp, "a" * 40)
-                coolify = json.loads(Path(temp, "coolify.json").read_text())
+                app = config.parse_dotenv(Path(temp, "app.env").read_text())
                 self.assertEqual(
                     (
-                        coolify["COLLABORATION_ENGINE_SAVE_PROCESSES"],
-                        coolify["COLLABORATION_ENGINE_BACKGROUND_PROCESSES"],
-                        coolify["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"],
+                        app["COLLABORATION_ENGINE_SAVE_PROCESSES"],
+                        app["COLLABORATION_ENGINE_BACKGROUND_PROCESSES"],
+                        app["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"],
                     ),
                     pool,
                 )
@@ -313,8 +354,8 @@ class ConfigTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 with contextlib.redirect_stdout(io.StringIO()):
                     config.render(values, environment, temp, "a" * 40)
-                coolify = json.loads(Path(temp, "coolify.json").read_text())
-                self.assertEqual(coolify["COLLABORATION_SOURCE_DISK_BYTES"], str(cap))
+                app = config.parse_dotenv(Path(temp, "app.env").read_text())
+                self.assertEqual(app["COLLABORATION_SOURCE_DISK_BYTES"], str(cap))
 
     def test_render_gives_only_production_its_page_read_gates(self):
         """Production's page-read gates (64/40, Epo 2026-10-21) come from its
@@ -391,7 +432,7 @@ class ConfigTest(unittest.TestCase):
         )
 
     def test_build_render_writes_only_the_build_values(self):
-        """(security regression: CI hardening, the Coolify config in the build job)"""
+        """(security regression: CI hardening, the deploy config in the build job)"""
         values = {
             key: "explicit"
             for key, rule in config.MANIFEST.items()
@@ -412,26 +453,6 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(json.loads(build)["VITE_APP_URL"], "https://app.example.com")
         self.assertNotIn("never-in-the-build", build)
 
-    def test_coolify_payload_and_redacted_readback(self):
-        secret = "never-disclose-this-value"
-        values = {"POSTGRES_PASSWORD": secret, "OPENAI_API_KEY": ""}
-        payload = config.coolify_payload(values)
-        rows = payload["data"]
-        for row in rows:
-            self.assertIs(row["is_literal"], True)
-            self.assertIs(row["is_preview"], False)
-            self.assertIs(row["is_shown_once"], False)
-        returned = [dict(row) for row in rows]
-        returned[0]["value"] = None  # empty API values normalize to null
-        with patch.object(config, "coolify_request", side_effect=[[], returned]) as api:
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                config.apply_coolify(values)
-            self.assertNotIn(secret, output.getvalue())
-            self.assertEqual(
-                api.call_args_list[0].args, ("PATCH", "/envs/bulk", payload)
-            )
-
     def test_ops_render_needs_only_ops_config_and_excludes_app_secrets(self):
         values = {
             key: "configured"
@@ -447,19 +468,20 @@ class ConfigTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 config.render_ops(values, "uat", temp, "a" * 40)
-            self.assertEqual(list(Path(temp).iterdir()), [Path(temp, "ops.json")])
-            rendered = json.loads(Path(temp, "ops.json").read_text())
-            self.assertEqual(rendered["VITE_CLERK_PUBLISHABLE_KEY"], "configured")
+            self.assertEqual(list(Path(temp).iterdir()), [Path(temp, "ops.env")])
+            rendered = config.parse_dotenv(Path(temp, "ops.env").read_text())
             self.assertEqual(rendered["RELEASE_SHA"], "a" * 40)
             self.assertEqual(rendered["SENTRY_ENVIRONMENT"], "uat")
             self.assertEqual(rendered["OPS_INGEST_LOCAL_DATABASE_URL"], "")
+            # The image job builds those in; the stack never reads them.
             self.assertNotIn("CLERK_PUBLISHABLE_KEY", rendered)
+            self.assertNotIn("VITE_SENTRY_DSN_OPS", rendered)
             self.assertNotIn("POSTGRES_PASSWORD", rendered)
             self.assertNotIn("STRIPE_SECRET_KEY", rendered)
             self.assertNotIn("OPS_AUTH_DISABLED", rendered)
-            self.assertEqual(Path(temp, "ops.json").stat().st_mode & 0o777, 0o600)
+            self.assertEqual(Path(temp, "ops.env").stat().st_mode & 0o777, 0o600)
             self.assertNotIn("configured", output.getvalue())
-            self.assertNotIn("coolify", config.MANIFEST["OPS_DATABASE_URL"]["targets"])
+            self.assertNotIn("app", config.MANIFEST["OPS_DATABASE_URL"]["targets"])
 
     def test_ops_render_rejects_missing_required_config_and_wrong_environment(self):
         values = {
@@ -474,130 +496,7 @@ class ConfigTest(unittest.TestCase):
             values["OPS_DATABASE_URL"] = ""
             with self.assertRaisesRegex(ValueError, "OPS_DATABASE_URL is required"):
                 config.render_ops(values, "uat", temp, "a" * 40)
-            self.assertFalse(Path(temp, "ops.json").exists())
-
-    def test_ops_target_refuses_main_stack_or_wrong_compose(self):
-        with (
-            patch.dict(
-                config.os.environ,
-                {
-                    "COOLIFY_RESOURCE_UUID": "main",
-                    "COOLIFY_MAIN_RESOURCE_UUID": "main",
-                },
-            ),
-            patch.object(config, "coolify_request") as api,
-        ):
-            with self.assertRaisesRegex(ValueError, "separate"):
-                config.verify_ops_target()
-            api.assert_not_called()
-            config.os.environ["COOLIFY_RESOURCE_UUID"] = "ops"
-            api.return_value = {
-                "docker_compose_location": "/deploy/docker-compose.prod.yml"
-            }
-            with self.assertRaisesRegex(ValueError, "docker-compose.ops.yml"):
-                config.verify_ops_target()
-            api.return_value = {
-                "docker_compose_location": "/deploy/docker-compose.ops.yml",
-                "settings": {"connect_to_docker_network": True},
-                "destination_id": 0,
-                "destination_type": "App\\Models\\StandaloneDocker",
-            }
-            with contextlib.redirect_stdout(io.StringIO()):
-                config.verify_ops_target()
-            self.assertTrue(all(call.args[0] == "GET" for call in api.call_args_list))
-            ops = api.return_value
-            api.side_effect = [
-                ops,
-                {**ops, "settings": {"connect_to_docker_network": False}},
-            ]
-            with self.assertRaisesRegex(ValueError, "Predefined Network"):
-                config.verify_ops_target()
-            api.side_effect = [ops, {**ops, "destination_id": 1}]
-            with self.assertRaisesRegex(ValueError, "share a Coolify destination"):
-                config.verify_ops_target()
-
-    def test_coolify_removes_replaced_and_retired_keys_after_verification(
-        self,
-    ):
-        values = {"CAPY_PRIVATE_BIND_ADDRESS": "10.77.0.3"}
-        current = config.coolify_payload(values)["data"]
-        retired = [
-            {"key": key, "uuid": f"retired-{index}", "is_preview": False}
-            for index, key in enumerate(
-                (
-                    "EVO_PRIVATE_BIND_ADDRESS",
-                    "EVO_QUERY_MODEL",
-                    "IMPORT_RELAY_ENQUEUE_URL",
-                    "IMPORT_RELAY_SECRET",
-                    "RELACE_API_KEY",
-                    "RELACE_INGEST_API_KEY",
-                    "ZAI_API_KEY",
-                )
-            )
-        ]
-        preserved = [
-            {"key": "EVO_UNRELATED", "uuid": "unrelated"},
-            {"key": "OPERATOR_SETTING", "uuid": "operator"},
-        ]
-        with (
-            patch.object(
-                config,
-                "coolify_request",
-                side_effect=[
-                    [],
-                    current + retired + preserved,
-                    *[{}] * len(retired),
-                    current + preserved,
-                ],
-            ) as api,
-            contextlib.redirect_stdout(io.StringIO()),
-        ):
-            config.apply_coolify(values)
-        self.assertEqual(
-            [call.args[:2] for call in api.call_args_list],
-            [
-                ("PATCH", "/envs/bulk"),
-                ("GET", "/envs"),
-                *[("DELETE", f"/envs/retired-{index}") for index in range(7)],
-                ("GET", "/envs"),
-            ],
-        )
-
-    def test_coolify_verification_failure_never_deletes_previous_or_preview_values(
-        self,
-    ):
-        values = {"CAPY_PRIVATE_BIND_ADDRESS": "10.77.0.3"}
-        actual = config.coolify_payload(values)["data"]
-        actual[0]["value"] = "mismatch"
-        actual.extend(
-            [
-                {"key": "EVO_PRIVATE_BIND_ADDRESS", "uuid": "previous"},
-                {
-                    "key": "CAPY_PRIVATE_BIND_ADDRESS",
-                    "is_preview": True,
-                    "uuid": "preview",
-                },
-            ]
-        )
-        with (
-            patch.object(config, "coolify_request", side_effect=[[], actual]) as api,
-            self.assertRaisesRegex(ValueError, "readback mismatch"),
-        ):
-            config.apply_coolify(values)
-        self.assertFalse(any(call.args[0] == "DELETE" for call in api.call_args_list))
-
-    def test_coolify_cleanup_requires_absence_readback(self):
-        values = {"CAPY_PRIVATE_BIND_ADDRESS": "10.77.0.3"}
-        actual = config.coolify_payload(values)["data"] + [
-            {"key": "IMPORT_RELAY_SECRET", "uuid": "relay"}
-        ]
-        with (
-            patch.object(
-                config, "coolify_request", side_effect=[[], actual, {}, actual]
-            ),
-            self.assertRaisesRegex(ValueError, "remain after cleanup"),
-        ):
-            config.apply_coolify(values)
+            self.assertFalse(Path(temp, "ops.env").exists())
 
     def test_secret_upload_uses_stdin_and_redacts_errors(self):
         secret = "private-value"

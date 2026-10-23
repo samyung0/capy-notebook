@@ -105,20 +105,21 @@ jobs:
         if: always()
         run: docker logout ghcr.io
 
+  # The same deploy command as the main stack, as Compose project capy-ops.
   deploy:
-    needs: resolve_revision
+    needs: [resolve_revision, image]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      packages: read
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ vars.DEPLOYMENT_OPS_URL }}
-    # The Coolify token sits only on the steps that call Coolify.
     env:
       TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
       DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
-      COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
-      COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_OPS_RESOURCE_UUID }}
-      COOLIFY_MAIN_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -144,12 +145,6 @@ jobs:
               echo "a UAT run left with a blank revision does not record which SHA it deployed." >&2
               exit 1
             }
-      - name: Verify the separate Ops application
-        env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-        run: |
-          [[ -n "$COOLIFY_RESOURCE_UUID" && -n "$COOLIFY_MAIN_RESOURCE_UUID" ]]
-          python3 scripts/env/config.py verify-ops-target
       - name: Render Ops configuration from GitHub
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
@@ -166,17 +161,21 @@ jobs:
           CAPY_SECRET_OPS_INGEST_UAT_DATABASE_URL: ${{ secrets.OPS_INGEST_UAT_DATABASE_URL }}
           CAPY_SECRET_OPS_LIBRARY_DATABASE_URL: ${{ secrets.OPS_LIBRARY_DATABASE_URL }}
         run: python3 scripts/env/config.py render-ops --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-ops-config"
-      - name: Synchronize and verify Ops configuration
+      - name: Configure SSH through Access
         env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-        run: python3 scripts/env/config.py apply-coolify --file "$RUNNER_TEMP/capy-ops-config/ops.json"
+          APP_HOST_SSH_HOSTNAME: ${{ vars.APP_HOST_SSH_HOSTNAME }}
+          APP_HOST_KNOWN_HOSTS: ${{ secrets.APP_HOST_KNOWN_HOSTS }}
+          APP_HOST_SSH_PRIVATE_KEY: ${{ secrets.APP_HOST_SSH_PRIVATE_KEY }}
+        run: scripts/deploy/app-host-release.sh configure
       - name: Deploy only the pinned Ops revision
         env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-        run: scripts/deploy/coolify-deploy.sh
-      - name: Remove runner configuration
+          GHCR_TOKEN: ${{ github.token }}
+          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.APP_HOST_ACCESS_CLIENT_ID }}
+          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.APP_HOST_ACCESS_CLIENT_SECRET }}
+        run: scripts/deploy/app-host-release.sh deploy ops deploy/docker-compose.ops.yml "$RUNNER_TEMP/capy-ops-config/ops.env"
+      - name: Remove runner configuration and SSH key
         if: always()
-        run: rm -rf "$RUNNER_TEMP/capy-ops-config"
+        run: rm -rf "$RUNNER_TEMP/capy-ops-config" "$RUNNER_TEMP/capy-ssh"
       # Only UAT holds an Access service token, so production stops at the deploy.
       - name: Probe the Ops edge
         if: inputs.environment_name == 'uat'
