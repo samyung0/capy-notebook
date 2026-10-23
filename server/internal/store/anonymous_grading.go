@@ -109,13 +109,14 @@ func (s *Store) ReserveGrading(ctx context.Context, userID string, parts int) er
 	return nil
 }
 
-// PruneGradingUsage keeps 30 days of signed-out and signed-in grading rows.
-func (s *Store) PruneGradingUsage(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx, `DELETE FROM anonymous_grading_usage
-		WHERE day < (now() AT TIME ZONE 'UTC')::date - 30`); err != nil {
-		return err
+// PruneDailyUsage keeps 30 days of the per-day counters: signed-out and
+// signed-in grading, and invites.
+func (s *Store) PruneDailyUsage(ctx context.Context) error {
+	for _, table := range []string{"anonymous_grading_usage", "grading_usage", "invite_usage"} {
+		if _, err := s.pool.Exec(ctx, `DELETE FROM `+table+`
+			WHERE day < (now() AT TIME ZONE 'UTC')::date - 30`); err != nil {
+			return err
+		}
 	}
-	_, err := s.pool.Exec(ctx, `DELETE FROM grading_usage
-		WHERE day < (now() AT TIME ZONE 'UTC')::date - 30`)
-	return err
+	return nil
 }

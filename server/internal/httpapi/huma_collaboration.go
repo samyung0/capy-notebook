@@ -563,9 +563,19 @@ func (a *api) publishCommentInvalidation(ctx context.Context, materialID string)
 	_ = a.rdb.Publish(ctx, "capy:collaboration:comments", payload).Err()
 }
 
-// checkCommentLength bounds a comment's plain text the way the note shows it:
-// each top-level block's text leaves joined, blocks separated by a newline.
+// commentMaxBytes bounds a comment's stored JSON. The note's comment box
+// sends one paragraph of at most fieldlimits.Comment characters, which
+// encodes to at most about 18 KB (every character a control character,
+// escaped to six bytes; emoji take 12 KB).
+const commentMaxBytes = 32 << 10
+
+// checkCommentLength bounds a comment's plain text the way the note shows it
+// (each top-level block's text leaves joined, blocks separated by a newline)
+// and its JSON to commentMaxBytes.
 func checkCommentLength(content []map[string]any) error {
+	if len(apimodel.EncodeRaw(content)) > commentMaxBytes {
+		return huma.Error422UnprocessableEntity(fmt.Sprintf("a comment is at most %d KiB", commentMaxBytes>>10))
+	}
 	runes := max(len(content)-1, 0)
 	var walk func(node map[string]any)
 	walk = func(node map[string]any) {

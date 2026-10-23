@@ -195,6 +195,9 @@ func (s *Store) SavePDFAnnotation(ctx context.Context, actor, file, id string, i
 	}
 	var row pgx.Row
 	if id == "" {
+		if err := assertAnnotationRoomTx(ctx, tx, file, actor); err != nil {
+			return PDFAnnotation{}, err
+		}
 		row = tx.QueryRow(ctx, `INSERT INTO pdf_annotations(id,file_id,author_id,source_identity,page,kind,rects,color,points,text) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING `+annotationColumns, uid("ann"), file, actor, in.SourceIdentity, in.Page, in.Kind, rects, in.Color, points, in.Text)
 	} else {
 		row = tx.QueryRow(ctx, `UPDATE pdf_annotations SET page=$4,kind=$5,rects=$6,color=$7,points=$9,text=$10,updated_at=now() WHERE id=$1 AND file_id=$2 AND author_id=$3 AND source_identity=$8 RETURNING `+annotationColumns, id, file, actor, in.Page, in.Kind, rects, in.Color, identity, points, in.Text)

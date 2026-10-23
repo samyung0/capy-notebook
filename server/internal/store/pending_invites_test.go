@@ -39,7 +39,8 @@ func TestPendingInvitesListEveryTypedAddress(t *testing.T) {
 			t.Fatalf("invite %q: %v", address, err)
 		}
 	}
-	// Typing an address again refreshes its row.
+	// Typing an address again (past the resend cooldown) refreshes its row.
+	ageInvitesPastCooldown(t, s, ws.ID)
 	if err := s.CreateWorkspaceInvite(ctx, ws.ID, "nobody@example.test", RoleEditor, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +121,7 @@ func TestPendingInvitesListEveryTypedAddress(t *testing.T) {
 		VALUES ($1,$2,'viewer')`, ws.ID, leaver); err != nil {
 		t.Fatal(err)
 	}
+	ageInvitesPastCooldown(t, s, ws.ID)
 	if err := s.CreateWorkspaceInvite(ctx, ws.ID, leaverAddress, RoleViewer, owner); err != nil {
 		t.Fatal(err)
 	}

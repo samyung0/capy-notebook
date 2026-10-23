@@ -352,6 +352,9 @@ func (s *Store) CreateCommentDiscussion(
 	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
 		return Discussion{}, err
 	}
+	if err := assertCommentRoomTx(ctx, tx, materialID); err != nil {
+		return Discussion{}, err
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO material_discussions
 		(id, material_id, block_id, anchor_start, anchor_end, anchor_version,
 		 anchor_quote, created_by)
@@ -400,6 +403,9 @@ func (s *Store) AddComment(
 		return Comment{}, err
 	}
 	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
+		return Comment{}, err
+	}
+	if err := assertCommentRoomTx(ctx, tx, materialID); err != nil {
 		return Comment{}, err
 	}
 	id := uid("com")

@@ -2459,6 +2459,9 @@ func (s *Store) CreateEvent(ctx context.Context, userID string, e Event) (Event,
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return Event{}, err
 	}
+	if err := assertEventRoomTx(ctx, tx, userID); err != nil {
+		return Event{}, err
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO events (id, user_id, title, start_at, end_at, location, note)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)`, e.ID, userID, e.Title, e.Start, e.End, e.Location, e.Note); err != nil {
 		return Event{}, err

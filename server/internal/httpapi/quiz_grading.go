@@ -149,10 +149,7 @@ func (a *api) grade(ctx context.Context, plan gradePlan) ([]map[string]any, floa
 
 // gradingLimitError is the refusal past the signed-in daily part cap.
 func gradingLimitError() error {
-	return &huma.ErrorModel{
-		Status: http.StatusTooManyRequests, Title: http.StatusText(http.StatusTooManyRequests),
-		Detail: "today's grading limit is reached; it resets at midnight UTC", Errors: []*huma.ErrorDetail{{Message: "grading_limit"}},
-	}
+	return limitError("grading_limit", "today's grading limit is reached; it resets at midnight UTC")
 }
 
 // reserveGrading counts parts against the signed-in user's daily cap before

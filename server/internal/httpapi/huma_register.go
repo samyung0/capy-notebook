@@ -77,9 +77,34 @@ func conflictError(code, detail string) error {
 	}
 }
 
+// limitError is a 429 carrying a machine code the browser maps to copy.
+func limitError(code, detail string) error {
+	return &huma.ErrorModel{
+		Status: http.StatusTooManyRequests,
+		Title:  http.StatusText(http.StatusTooManyRequests),
+		Detail: detail,
+		Errors: []*huma.ErrorDetail{{Message: code}},
+	}
+}
+
 func mapHTTPError(err error) error {
 	if err == nil {
 		return nil
+	}
+	for code, rowCap := range map[string]error{
+		"comment_limit":    store.ErrTooManyComments,
+		"annotation_limit": store.ErrTooManyAnnotations,
+		"event_limit":      store.ErrTooManyEvents,
+	} {
+		if errors.Is(err, rowCap) {
+			return conflictError(code, rowCap.Error())
+		}
+	}
+	if errors.Is(err, store.ErrInviteRecentlySent) {
+		return limitError("invite_recently_sent", "this address was invited in the last 10 minutes")
+	}
+	if errors.Is(err, store.ErrInviteLimit) {
+		return limitError("invite_limit", "the daily invite limit is reached; it resets at midnight UTC")
 	}
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return huma.Error400BadRequest(err.Error())
