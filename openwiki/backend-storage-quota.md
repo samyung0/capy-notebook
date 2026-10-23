@@ -710,9 +710,9 @@ tabs loading the collected state agree.
 - **Contributor markers.** A marker chain written by an ended room life goes
   whole; the open room's own chains follow the map rule.
 - **Windows.** Each fold with the collection on stores the folded document's
-  state vector, delete set and stored_version in `material_yjs_windows`
-  (migration 0111) as a later window candidate, and keeps the newest four per
-  document. They hold ids only and are not charged.
+  state vector, delete set and stored_version in `material_yjs_windows` as a
+  later window candidate, and keeps the newest four per document. They hold
+  ids only and are not charged.
 - **Guard.** A collected state that does not load with nothing pending, keep
   the model's roots and hold the folded document's value is refused: the fold
   fails and the log stays as it was.
