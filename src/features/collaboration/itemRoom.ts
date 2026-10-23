@@ -260,6 +260,9 @@ export class ItemRoom {
   }
 
   async start() {
+    // The join has 30 s from its token request until the first sync (Epo
+    // 2026-10-23); past them it shows this room's connection error, offline.
+    this.reconnector.started();
     let first: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
     try {
       first = await getMaterialCollaborationToken(
@@ -279,7 +282,11 @@ export class ItemRoom {
     const access = first.access === 'write' ? 'write' : 'read';
     this.set({ access });
     const key = this.draftKey();
-    if (key && access === 'write' && !(await this.restore(key))) return;
+    if (key && access === 'write' && !(await this.restore(key))) {
+      // Recovery is this open's answer: no room joins.
+      this.reconnector.dispose();
+      return;
+    }
     if (this.destroyed) return;
     let cached: string | null = first.token;
     this.provider = createItemProvider({

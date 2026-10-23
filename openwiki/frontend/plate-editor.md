@@ -1036,6 +1036,9 @@ A first open whose token has not answered by then shows the collaboration
 unavailable panel with Retry instead of loading for ever; an editor not
 synced by then, a JOIN never answered on the open socket included, turns the
 status red, and after a reload that failing editor replaces the paused one.
+Item rooms (quizzes, flashcard sets, standalone diagrams and mindmaps) have
+the same 30 s from their token request (`ItemRoom.start`); one not synced by
+then goes offline, the room's connection error (Epo 2026-10-23).
 A slowed open and offline wait. A reload pauses only once its new token has
 answered, so a reload whose token hangs keeps the old editor on screen,
 unpaused and editable. With the real server the compaction evicted its room,
