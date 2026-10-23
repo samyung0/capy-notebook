@@ -82,6 +82,11 @@ On the app host, as root (set up in
   `cloudflared access ssh` and the service token answers the usage error with
   exit 2, `bash` gets the same answer, and the same key against the host's
   public address is refused.
+- Access refuses a client without the service token: with
+  `TUNNEL_SERVICE_TOKEN_*` unset, `cloudflared access ssh --hostname
+  uat-deploy.capynotebook.com` fails at Access, and
+  `curl -sI https://uat-deploy.capynotebook.com` answers with the Access login
+  redirect or a 403.
 
 If the gateway is unhealthy, check these before anything else:
 
