@@ -1298,7 +1298,8 @@ snapshotted rate, settled only when the transcript has sentences; a failed,
 retried or empty task is free, as is a transcript whose speech ends past two
 hours (`audio_duration_limit`), and a job
 pays for its audio once (a later call on the same session, after a lost cache,
-settles at zero). `GET /api/source-upload-policy` also returns
+settles at zero; the user's Retry of a job that lost its cache and then failed
+later is a new job and pays again, a rare case). `GET /api/source-upload-policy` also returns
 `audioSecondCreditMicros` and `audioMaxDurationSeconds` (7,200); the upload
 dialog shows the estimate from the length the browser reads, and the worker's
 measured duration remains authoritative. `CreditsForAudioSeconds` in Go holds

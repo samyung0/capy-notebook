@@ -1364,7 +1364,11 @@ it):
    nothing is charged or cached, though the provider task ran.
    A job pays for its audio once: a later call on the same session (a retry
    whose cached transcript was lost) records its seconds at zero credits.
-   Then the transcript is cached (best effort, as below).
+   Then the transcript is cached (best effort, as below). The guard is per
+   job: when the cache write fails and the job then fails at a later stage,
+   the user's Retry is a new job on a new session, which transcribes and
+   charges again. This takes a failed write (after the bucket client's three
+   attempts) followed by a failure past transcription, so it is rare.
 
 Nothing about the task is stored between attempts. While a task runs, a poll
 answered 408, 429 or 5xx, or not answered, polls again: only the wall budget
@@ -1390,7 +1394,9 @@ sentences, one per line, with no overlap: `text`, `indexed_text` and the
 `regions` has one entry per sentence, `{"start_ms", "end_ms", "speaker",
 "space": "audio-ms"}` (speaker null without labels), and `page_start` /
 `page_end` stay null. A chunk ends before the token budget, and past half of
-it prefers to end at a speaker change or a pause of 2 s or more. The read
+it prefers to end at a speaker change or a pause of 2 s or more. Sentences
+are never split, so each keeps its one time range: a sentence longer than the
+budget (a long unpunctuated stretch) is a chunk of its own, over the budget. The read
 tool and search results render the times at read time: the passage header
 names the span (`lecture.mp3 › 12:30–14:05`) and each speaker's turn opens
 with `[12:30 · Speaker 2]` (`Passage.reading_text`). Citation text-layer
