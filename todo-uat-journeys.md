@@ -71,7 +71,7 @@ work from the shared tree. None of it has run on UAT; review before deploying.
       - with the switch off, the marker is plain text.
     - **Before these journeys can pass:**
       - set `RETRIEVAL_UAT_SCRIPTED_TOOLS=true` (deploy/.env.uat → GitHub env →
-        Coolify);
+        the next Deploy UAT);
       - run `GRANT SELECT ON model_configs TO capy_uat_verifier;` on UAT. It's
         already in `scripts/uat/verifier-role.sql`, but the existing role needs
         it by hand.

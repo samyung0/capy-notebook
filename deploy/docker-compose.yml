@@ -1,8 +1,8 @@
 # Dev stack for the Capy Notebook backend.
 #   docker compose -f deploy/docker-compose.yml up --build
 #
-# Production / Coolify: deploy/docker-compose.prod.yml
-# (MIGRATE=false, /migrate one-shot, no host ports). See
+# UAT and production: deploy/docker-compose.prod.yml
+# (MIGRATE=false, /migrate one-shot, CI-built images). See
 # openwiki/deployment-runbook.md §1.1.
 #
 # - db        : Postgres 16 + pgvector. The retrieval index lives in the same

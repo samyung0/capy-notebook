@@ -1,5 +1,5 @@
 ---
-- name: Configure the Coolify app host service link, firewall and SSH
+- name: Configure the app host service link, firewall, SSH and deploy command
   hosts: all
   become: true
   vars:
@@ -23,7 +23,16 @@
           - app_wireguard_address | default('') is match('^[0-9.]+/[0-9]+$')
           - app_wireguard_peer_address | default('') is match('^[0-9.]+/[0-9]+$')
         fail_msg: Fill the WireGuard peer values in inventory.yml first.
-      tags: [firewall]
+      tags: [firewall, deploy]
+
+    # One bare public key, so the variable can add neither options nor a
+    # second line to the deploy user's authorized_keys.
+    - name: Refuse a malformed deploy key
+      ansible.builtin.assert:
+        that:
+          - app_deploy_ssh_public_key | default('') is match('^ssh-ed25519 [A-Za-z0-9+/]+=* [A-Za-z0-9._@-]+$')
+        fail_msg: Set app_deploy_ssh_public_key in inventory.yml to the CI deploy key's public half.
+      tags: [deploy]
 
   tasks:
     - name: Install WireGuard
@@ -71,15 +80,15 @@
       when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
 
     # ufw is this host's only inbound firewall. It denies by default (below)
-    # and opens only SSH on 22, to all (restricting it is not decided; Coolify
-    # also manages this host over SSH from its own container), and WireGuard
-    # from the ingest host. ufw's built-in rules keep loopback and established
-    # traffic, so cloudflared, which only connects out, still reaches the
-    # Coolify proxy on localhost:80. ufw never sees Docker-published ports:
-    # Docker forwards them before ufw's chains run. The database, Redis and
-    # gateway are published on the WireGuard address only, for the ingest host
-    # (GitHub runners reach the database by SSH through the ingest host); the
-    # ports published on the public interface are dropped in DOCKER-USER below.
+    # and opens only SSH on 22, to all (restricting it is not decided), and
+    # WireGuard from the ingest host. ufw's built-in rules keep loopback and
+    # established traffic, so cloudflared, which only connects out, still
+    # reaches sshd and the stack's ports published on 127.0.0.1. ufw never
+    # sees Docker-published ports: Docker forwards them before ufw's chains
+    # run. The database, Redis and gateway are also published on the
+    # WireGuard address, for the ingest host (GitHub runners reach the
+    # database by SSH through the ingest host); any port published on the
+    # public interface is dropped in DOCKER-USER below.
     # Containers run as their own users on one kernel; with scope 1 a process
     # can trace only its own descendants, as on the ingest host.
     - name: Restrict ptrace to descendants
@@ -122,7 +131,8 @@
     # input rules see). Docker allocates its /24 networks from the start of
     # its 10.0.0.0/8 pool, so 10.0.0.0/16 covers them without the WireGuard
     # link's addresses, which sit elsewhere in 10/8. The IPv6 range is
-    # Coolify's own network on this host (Epo 2026-10-20).
+    # Coolify's own network on this host (Epo 2026-10-20). Only Coolify needs
+    # it: it goes once Coolify is removed from the host (runbook §1.1).
     - name: Allow Docker networks to reach the host
       community.general.ufw:
         rule: allow
@@ -258,6 +268,96 @@
       ansible.builtin.debug:
         msg: "App host WireGuard public key: {{ app_wireguard_public_key.stdout }}"
       when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
+
+    # The deploy command (openwiki/deployment-runbook.md §1.1). CI logs in as
+    # capy-deploy through the Access tunnel only (from= loopback, where
+    # cloudflared connects), and the key can run nothing but the deploy
+    # script through sudo: no shell, forwarding, PTY or agent. The user is
+    # not in the docker group, and owns nothing it could change: its home,
+    # authorized_keys, the script and /opt/capy (releases and their env
+    # files) all belong to root.
+    - name: Create the deploy user
+      ansible.builtin.user:
+        name: capy-deploy
+        system: true
+        shell: /bin/sh
+        home: /var/lib/capy-deploy
+        create_home: false
+        password: "*"
+        groups: ""
+      tags: [deploy]
+
+    - name: Create the deploy user's SSH directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: [/var/lib/capy-deploy, /var/lib/capy-deploy/.ssh]
+      tags: [deploy]
+
+    - name: Authorize only the deploy command for the CI key
+      ansible.builtin.copy:
+        dest: /var/lib/capy-deploy/.ssh/authorized_keys
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          restrict,from="127.0.0.1,::1",command="/usr/bin/sudo -n /usr/local/sbin/capy-app-deploy" {{ app_deploy_ssh_public_key }}
+      tags: [deploy]
+
+    - name: Install the deploy command
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../scripts/deploy/app-host-deploy.sh"
+        dest: /usr/local/sbin/capy-app-deploy
+        owner: root
+        group: root
+        mode: "0755"
+      tags: [deploy]
+
+    - name: Create the release directory
+      ansible.builtin.file:
+        path: /opt/capy
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      tags: [deploy]
+
+    # The deploy command refuses a release that publishes a port anywhere
+    # but loopback and this address (Epo 2026-10-23).
+    - name: Create the deploy command's configuration directory
+      ansible.builtin.file:
+        path: /etc/capy
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      tags: [deploy]
+
+    - name: Record the WireGuard address private services may bind
+      ansible.builtin.copy:
+        dest: /etc/capy/private-bind-address
+        owner: root
+        group: root
+        mode: "0644"
+        content: "{{ app_wireguard_address | regex_replace('/.*$', '') }}\n"
+      tags: [deploy]
+
+    # Exactly one root command with no arguments, keeping only the forced
+    # command's SSH_ORIGINAL_COMMAND; sudo resets everything else.
+    - name: Let the deploy user run only the deploy command as root
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/capy-deploy
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+        content: |
+          Defaults!/usr/local/sbin/capy-app-deploy env_keep = "SSH_ORIGINAL_COMMAND"
+          capy-deploy ALL=(root) NOPASSWD: /usr/local/sbin/capy-app-deploy ""
+      tags: [deploy]
 
     # Key-only SSH. Ansible connects as root with a key, so a root key must
     # already be authorized; verify a key login in a second terminal before
