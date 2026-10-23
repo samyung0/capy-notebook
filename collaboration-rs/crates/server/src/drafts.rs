@@ -322,15 +322,17 @@ async fn checked_and_stored(
     if let Some(refusal) = Refused::timed_out(app, user, verdict) {
         return Err(refusal);
     }
-    // The lease and a local reset may have begun while the body arrived: a
-    // JOIN joins at once after its checks, a send only now (REVIEW1 S2).
-    let evicting = crate::socket::room_evicting(app, room)
-        .await
-        .map_err(|error| Refused::new(Class::Unavailable, error))?;
+    // A source room's publication lease and a local reset may have begun
+    // while the body arrived: a JOIN joins at once after its checks, a send
+    // only now (REVIEW1 S2).
+    let evicting = matches!(name, RoomName::Source { .. })
+        && crate::socket::room_evicting(app, room)
+            .await
+            .map_err(|error| Refused::new(Class::Unavailable, error))?;
     if evicting || app.evictions.blocks(room, false) {
         return Err(Refused::new(
             Class::Unavailable,
-            "the room is being reset, compacted or published",
+            "the room is being reset or published",
         ));
     }
     let base = header_text(headers, BASE_HEADER).map(str::to_owned);

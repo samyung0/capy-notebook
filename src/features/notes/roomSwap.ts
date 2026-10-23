@@ -23,7 +23,7 @@ interface BlockPoint {
 
 /** Where the reader was: the first block showing at the top and how far it
  * sat below the box's top edge, and the selection by block id, never by Yjs
- * ids (a compaction gives the room new ones). */
+ * ids (the next room's document need not hold them). */
 export interface NotePosition {
   block: string | null;
   focused: boolean;

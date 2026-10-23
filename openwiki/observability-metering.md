@@ -328,8 +328,8 @@ info, with no Sentry event. The file itself ends ready and unindexed with
 expected outcome: the ingest worker logs the refused publication
 (`office_rebase_refused`) and collaboration logs a refused rebuild
 (`office_rebuild_refused`), and neither captures it. So is an agent edit, its
-Undo or a replace-block command refused because its room is being reset or
-compacted: nothing applied, so the caller may retry. Collaboration answers 503
+Undo or a replace-block command refused because its room is being reset:
+nothing applied, so the caller may retry. Collaboration answers 503
 `unavailable_target` and logs `edit refused: room unavailable` without
 capturing it (`DocumentError::Unavailable` in
 `collaboration-rs/crates/server/src/edits.rs`). The gateway marks that answer

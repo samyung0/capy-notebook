@@ -330,9 +330,9 @@ export class ItemRoom {
         }
         if (reason === EVICTED) {
           // A drain (access widened) stored the room first: rejoin, and
-          // anything in flight goes again. A discard (or a compaction)
-          // threw the room's unsaved state away and moves its lineage, so a
-          // fresh room opens, with this tab's unsent edits to copy.
+          // anything in flight goes again. A discard threw the room's
+          // unsaved state away and moves its lineage, so a fresh room
+          // opens, with this tab's unsent edits to copy.
           const drain = this.eviction === 'drain';
           this.eviction = null;
           if (drain) this.rejoin();
@@ -390,8 +390,8 @@ export class ItemRoom {
           this.tokenError = error;
           throw error;
         }
-        // Compacted or discarded while this tab was away: the room's
-        // lineage moved, and a fresh room joins it (REVIEW1 M5).
+        // Discarded while this tab was away: the room's lineage moved,
+        // and a fresh room joins it (REVIEW1 M5).
         if (fresh.room !== this.room) {
           this.moved();
           throw new Error('collaboration room moved');

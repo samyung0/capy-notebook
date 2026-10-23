@@ -3996,8 +3996,8 @@ step is reversed once; migration 0106 dropped `agent_edit_inverses`). The
 effect alternates: an edit is `edited`, its Undo `edit_undone`, the Undo of
 that `edited` again, each carrying its next step's ref. A step ends with its
 room: any unload (the last editor leaving, an epoch change or publication
-handoff, a discard, lineage compaction's eviction), a restart or an Office
-reset, so trash, rebase and compaction need no invalidation of their own. A
+handoff, a discard), a restart or an Office reset, so trash and rebase need
+no invalidation of their own. A
 step no room holds, or one with nothing of the edit left, answers 409
 `undo_unavailable` ("this edit can no longer be undone"). The Office
 maintenance pause refuses an Office Undo (`office_editing_paused`), in Go and

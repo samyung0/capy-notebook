@@ -576,9 +576,9 @@ and [material editor checks](../server/internal/store/share.go#L209).
   the effective nonmember grant; a share role is dormant while the workspace is
   private, so changing that role or widening privacy from private drains rather
   than discarding accepted edits. Restoration user events do not close
-  connections. Compaction uses the unload-and-reconnect durability drain. Material outbox
+  connections. Material outbox
   delivery resolves the current Yjs room epoch and rechecks it after eviction,
-  so an event enqueued beside compaction cannot acknowledge only an obsolete
+  so an event enqueued beside a discard cannot acknowledge only an obsolete
   room. A failed discard keeps the room blocked until a later retry verifies
   that unload succeeded. Within one eviction the room closes every channel
   and refuses joins and messages until it has unloaded (its task runs the

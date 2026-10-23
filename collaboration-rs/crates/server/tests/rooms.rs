@@ -3237,61 +3237,6 @@ async fn internal(port: u16, path: &str, body: &serde_json::Value) -> (u16, serd
     )
 }
 
-/// A room under the eviction lease (a compaction or a publication) refuses
-/// an agent edit and the replace-block command before anything applies,
-/// with the known 503 a room being reset answers (the report side:
-/// `http.rs` `a_room_being_reset_refuses_edits_without_a_report`).
-#[tokio::test]
-async fn an_edit_of_a_room_being_compacted_is_a_known_refusal() {
-    let Some(env) = env() else { return };
-    let server = start(&env).await;
-    let room = "material:compacting:schema:1";
-    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
-    let mut connection = redis
-        .get_multiplexed_async_connection()
-        .await
-        .expect("redis connection");
-    let lease = format!("capy:collaboration:evicting:{room}");
-    let _: () = redis::cmd("SET")
-        .arg(&lease)
-        .arg("test")
-        .arg("EX")
-        .arg(60)
-        .query_async(&mut connection)
-        .await
-        .expect("lease");
-    let edit = serde_json::json!({
-        "actorUserId": "u1",
-        "commands": [],
-        "operation": { "id": "op_compacting", "requestHash": "h1" },
-        "room": room,
-        "target": { "id": "compacting", "kind": "material" },
-    });
-    let command = serde_json::json!({
-        "type": "replace-block",
-        "actorUserId": "u1",
-        "materialId": "compacting",
-        "room": room,
-        "expectedBlock": {},
-        "replacementBlock": {},
-    });
-    let edited = internal(server.port, "/internal/documents/edit", &edit).await;
-    let commanded = internal(server.port, "/internal/commands", &command).await;
-    let _: i64 = redis::cmd("DEL")
-        .arg(&lease)
-        .query_async(&mut connection)
-        .await
-        .expect("release");
-    assert_eq!(
-        edited,
-        (
-            503,
-            serde_json::json!({ "code": "unavailable_target", "message": "collaboration room is being compacted" })
-        )
-    );
-    assert_eq!(commanded, edited);
-}
-
 #[tokio::test]
 async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_operation() {
     let Some(env) = env() else { return };
@@ -6963,108 +6908,6 @@ async fn a_quiz_holding_a_block_this_version_cannot_read_loads_both_rooms_read_o
     }
 }
 
-/// Compaction never rebuilds a quiz holding a block this version cannot read
-/// (the rebuild would drop it), and it checks before taking the eviction
-/// lease, so a reader on another instance stays connected; it then skips the
-/// quiz, so a note behind it in the queue still compacts (one room per pass
-/// here). Fails if the check follows the lease, or the quiz keeps its place
-/// at the head of the queue.
-#[tokio::test]
-async fn compaction_skips_an_unreadable_quiz_without_evicting_its_readers() {
-    let Some(env) = env() else { return };
-    let reader_server = start(&env).await;
-    let owner = user(&env).await;
-    let quiz = quiz_material(&env, &owner, "private").await;
-    let client = db(&env).await;
-    client
-        .execute(
-            "UPDATE materials SET content = jsonb_set(content,
-               '{value,0,children,0,question,stem}', '[{\"type\":\"timeline\",\"events\":[]}]')
-             WHERE id = $1",
-            &[&quiz],
-        )
-        .await
-        .expect("content");
-    // Opening seeds each document's row; readers store nothing, so both
-    // projections stay current.
-    let (author, note) = note(&env, "base").await;
-    {
-        let note_room = format!("material:{note}:schema:1");
-        let mut seed = Client::open(reader_server.port).await;
-        seed.joined(&note_room, &token(&note_room, &author, "read"))
-            .await;
-        assert!(seed.settle(|c| c.block_text() == "base").await);
-    }
-    wait_unloaded(reader_server.port).await;
-    let quiz_room = format!("material:{quiz}:schema:1");
-    let mut reader = Client::open(reader_server.port).await;
-    reader
-        .joined(&quiz_room, &token(&quiz_room, &owner, "read"))
-        .await;
-    // Both idle and grown (1 MiB of log stands in for a long history), the
-    // quiz first in line.
-    for (material, at) in [(&quiz, "2000-01-01"), (&note, "2000-01-02")] {
-        client
-            .execute(
-                "UPDATE material_yjs_documents SET updated_at = $2::text::timestamptz, log_bytes = 1048576
-                 WHERE material_id = $1",
-                &[material, &at],
-            )
-            .await
-            .expect("backdate");
-    }
-    // Servers the earlier tests killed stay listed for 60 s, and the note's
-    // lease would wait on their acks; the live ones list themselves again.
-    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
-    let mut connection = redis
-        .get_multiplexed_async_connection()
-        .await
-        .expect("redis connection");
-    let _: () = redis::cmd("DEL")
-        .arg("capy:collaboration:instances")
-        .query_async(&mut connection)
-        .await
-        .expect("instances");
-    let _compactor = start_configured(
-        &env,
-        env.api.as_deref(),
-        &[
-            ("COLLABORATION_COMPACTION_INTERVAL_MS", "200"),
-            ("COLLABORATION_COMPACTION_IDLE_MS", "86400000"),
-            ("COLLABORATION_COMPACTION_MAX_ROOMS", "1"),
-        ],
-    )
-    .await;
-    let schema = |material: String| {
-        let client = &client;
-        async move {
-            client
-                .query_one(
-                    "SELECT room_schema FROM material_yjs_documents WHERE material_id = $1",
-                    &[&material],
-                )
-                .await
-                .expect("schema")
-                .get::<_, i32>(0)
-        }
-    };
-    let mut compacted = false;
-    for _ in 0..100 {
-        if schema(note.clone()).await == 2 {
-            compacted = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    assert!(compacted, "the note behind the quiz was never compacted");
-    assert_eq!(schema(quiz.clone()).await, 1);
-    assert_eq!(
-        active_rooms(reader_server.port).await,
-        1,
-        "the quiz's reader was evicted"
-    );
-}
-
 #[tokio::test]
 async fn two_editors_converge_across_a_quizs_content_and_keys() {
     let Some(env) = env() else { return };
@@ -8256,18 +8099,25 @@ async fn a_draft_preflight_answers_an_allowed_origin_alone() {
 }
 
 /// Security regression (drafts-send REVIEW1 S2): a send is refused while a
-/// compaction or publication holds the room's eviction lease, also when its
-/// body arrives only after the lease was taken (the JOIN checks ran before).
+/// publication holds a source room's eviction lease, also when its body
+/// arrives only after the lease was taken (the JOIN checks ran before).
 #[tokio::test]
 async fn a_draft_send_is_refused_while_an_eviction_lease_is_held() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let Some(env) = env() else { return };
-    let server = start(&env).await;
-    let (user, material) = note(&env, "base").await;
-    let room = format!("material:{material}:schema:1");
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
     let drafts = {
-        let reader = synced(server.port, &room, &user, "base").await;
-        drafted(&reader.doc, typed_into_note(" late"))
+        let mut writer = Client::open(server.port).await;
+        assert_eq!(writer.joined(&room, &token(&room, &user, "write")).await, 1);
+        assert!(writer.settle(|c| source_text(c) == "hello").await);
+        drafted(&writer.doc, |doc| {
+            let text = doc.get_or_insert_text("source");
+            let mut txn = doc.transact_mut();
+            text.insert(&mut txn, 5, " late");
+        })
     };
     wait_unloaded(server.port).await;
     let write = token(&room, &user, "write");
@@ -8336,8 +8186,8 @@ async fn a_draft_send_is_refused_while_an_eviction_lease_is_held() {
     let rows: i64 = db(&env)
         .await
         .query_one(
-            "SELECT count(*) FROM material_yjs_updates WHERE material_id=$1",
-            &[&material],
+            "SELECT count(*) FROM source_document_updates WHERE file_id=$1",
+            &[&file],
         )
         .await
         .expect("rows")

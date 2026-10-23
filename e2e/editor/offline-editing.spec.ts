@@ -148,7 +148,7 @@ test('edits from a room that moved on open read-only for copying until Reload', 
     await page.evaluate(async () => {
       const path = '/src/mocks/collaboration.ts';
       const { moveMockMaterialRoom } = await import(path);
-      moveMockMaterialRoom('mock-scenario-note', true);
+      moveMockMaterialRoom('mock-scenario-note');
     });
     await setOnline(page, true);
   };

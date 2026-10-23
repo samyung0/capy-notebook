@@ -589,7 +589,7 @@ follows it (its providers leave the room while the browser is offline), and
 `setCollaborationReachable(false)` in `src/mocks/collaboration.ts` keeps the
 service unreachable across a reload, so a reopened editor waits for it.
 `moveMockMaterialRoom` moves a note's room to its next schema, as a discard
-or compaction does, for the lineage journey; public summary failures
+does, for the lineage journey; public summary failures
 require the site worker tests. Feature-flagged pages keep their existing gates.
 When the application suppresses an error or a parent guard handles it first,
 the journey explains that behavior instead of inventing an inner error state.

@@ -3897,8 +3897,7 @@ In one transaction it:
   `store.MaterialRoom`) is past every old name: browser drafts of the old
   lineage open copy-only recovery, and the collaboration server refuses to
   bootstrap a room below `1 + trash_restores`, so an old token cannot revive
-  the old name. Comment anchors fall back to their block and quote, as after
-  a lineage compaction;
+  the old name. Comment anchors fall back to their block and quote;
 - turns each pending quiz reference left in a note's `materials.content` into
   an empty paragraph with its id and bumps the note's revision (no document
   holds one since: every validator refuses `pending`, `openwiki/embeds.md`);
