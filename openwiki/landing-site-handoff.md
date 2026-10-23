@@ -116,7 +116,7 @@ There is no production dashboard yet. Before publishing a public call to action,
 
 Recommend a separate **Cloudflare Workers Static Assets** deployment serving Astro's `dist/` output. Cloudflare documents a fully prerendered Astro deployment with `assets.directory` and no Worker `main` entry point; no SSR adapter is required for that setup. Configure it explicitly because automatic framework setup can select server-capable configuration. See [Cloudflare's static Astro instructions](https://developers.cloudflare.com/workers/framework-guides/web-apps/astro/#if-you-have-a-static-site).
 
-Use a distinct website resource name and exact approved domains. Do not reuse the `capy-notebook-uat` app Worker or its deployment workflow. For the public-site release, no Coolify deploy, database migration or ingest restart is needed.
+Use a distinct website resource name and exact approved domains. Do not reuse the `capy-notebook-uat` app Worker or its deployment workflow. For the public-site release, no app deploy, database migration or ingest restart is needed.
 
 Recommended release sequence:
 

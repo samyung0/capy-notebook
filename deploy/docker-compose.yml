@@ -1,8 +1,8 @@
 # Dev stack for the Capy Notebook backend.
 #   docker compose -f deploy/docker-compose.yml up --build
 #
-# Production / Coolify: deploy/docker-compose.prod.yml
-# (MIGRATE=false, /migrate one-shot, no host ports). See
+# UAT and production: deploy/docker-compose.prod.yml
+# (MIGRATE=false, /migrate one-shot, CI-built images). See
 # openwiki/deployment-runbook.md §1.1.
 #
 # - db        : Postgres 16 + pgvector. The retrieval index lives in the same
@@ -27,8 +27,8 @@
 # Shared by every process that reports errors. LOG_FORMAT / LOG_LEVEL are
 # omitted on purpose: an empty string from compose interpolation would override
 # the code defaults (text in development, json otherwise).
-x-observability: &observability
-  # This stack is local development; the e2e and prod files name their own.
+x-observability:
+  &observability # This stack is local development; the e2e and prod files name their own.
   APP_ENV: development
   RELEASE_SHA: ${RELEASE_SHA:-}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}

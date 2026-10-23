@@ -1,32 +1,33 @@
-# Production stack for Coolify (or a VPS). Not for local development.
+# The UAT and production app stack. Not for local development.
 #
-# CLI (from the repo root, after copying .env.prod.example → .env.prod):
-#   docker compose -f deploy/docker-compose.prod.yml --project-directory . \
-#     --env-file deploy/.env.prod up -d --build
-#
-# Build contexts are relative to the repository root, matching how Coolify
-# invokes Compose, so every caller must pass --project-directory .
-#
-# Coolify: Git resource, build pack Docker Compose, file
-# deploy/docker-compose.prod.yml — see openwiki/deployment-runbook.md §1.1.
+# The deploy job sends this file and the rendered stack.env to the app host's
+# deploy command (scripts/deploy/app-host-deploy.sh), which runs it as Compose
+# project `capy` with the GHCR images CI built for RELEASE_SHA; see
+# openwiki/deployment-runbook.md §1.1, which also has root's commands for
+# redeploying a kept release by hand.
 #
 # Differences from docker-compose.yml:
 # - APP_ENV=production, no demo seed, AUTH_DISABLED off
 # - /migrate runs once per deploy; the API has MIGRATE=false
-# - no host port publishes (Coolify Traefik + the tunnel own the public path)
+# - prebuilt images, no build sections
+# - the gateway and collaboration publish on 127.0.0.1 for cloudflared;
+#   Postgres, Redis and the gateway also publish on the WireGuard address for
+#   the ingest host
 # - Postgres password comes from the environment
-# - Ops deploys separately using docker-compose.ops.yml
+# - Ops deploys separately using docker-compose.ops.yml, on this stack's
+#   `capy` network
 
 x-observability: &observability
   APP_ENV: production
-  RELEASE_SHA: ${SOURCE_COMMIT:-${RELEASE_SHA:-}}
+  # The same value tags the images, so the reported release is the image's.
+  RELEASE_SHA: ${RELEASE_SHA:?set RELEASE_SHA}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
   # The Sentry environment tag. Empty falls back to APP_ENV in code; UAT sets
   # it because its APP_ENV stays `production` to exercise production checks.
   SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
 
-# In-compose Postgres. Override DATABASE_URL in Coolify if you move to a
-# managed instance, and drop or stop the `db` service in that case.
+# In-compose Postgres. Moving to a managed instance means rendering another
+# DATABASE_URL and dropping the `db` service.
 x-database-url: &database-url ${DATABASE_URL:?set the derived container database URL}
 
 x-b2: &b2
@@ -40,8 +41,10 @@ x-b2: &b2
   B2_LINK_TTL: ${B2_LINK_TTL:-}
 
 services:
+  # Postgres and Redis are pinned by digest: a deploy pulls only the app
+  # images, so upgrading either is an explicit commit (Epo 2026-10-23).
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.7-pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
     environment:
       POSTGRES_USER: capy
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
@@ -49,7 +52,7 @@ services:
     volumes:
       - capy_pgdata:/var/lib/postgresql/data
     ports:
-      - "${CAPY_PRIVATE_BIND_ADDRESS:-127.0.0.1}:5432:5432"
+      - "${CAPY_PRIVATE_BIND_ADDRESS:?set CAPY_PRIVATE_BIND_ADDRESS}:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U capy -d capy"]
       interval: 5s
@@ -60,24 +63,19 @@ services:
     oom_score_adj: -500
     restart: unless-stopped
 
-  # Named for this stack: Coolify's own redis answers to the bare alias "redis"
-  # on the network both applications share, so that name resolves to either
-  # container and the gateway intermittently talks to the wrong, password-only
-  # one. Every hostname this stack publishes on that network must be unique.
   capy-redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 12
     ports:
-      - "${CAPY_PRIVATE_BIND_ADDRESS:-127.0.0.1}:6379:6379"
+      - "${CAPY_PRIVATE_BIND_ADDRESS:?set CAPY_PRIVATE_BIND_ADDRESS}:6379:6379"
     restart: unless-stopped
 
   migrate:
-    build:
-      context: ./server
+    image: ghcr.io/samyung0/capy-server:${RELEASE_SHA:?set RELEASE_SHA}
     entrypoint: ["/migrate"]
     environment:
       DATABASE_URL: *database-url
@@ -87,8 +85,7 @@ services:
     restart: "no"
 
   server:
-    build:
-      context: ./server
+    image: ghcr.io/samyung0/capy-server:${RELEASE_SHA:?set RELEASE_SHA}
     environment:
       <<: [*observability, *b2]
       DATABASE_URL: *database-url
@@ -140,15 +137,21 @@ services:
       CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:?set CAPY_PARSE_OCR_PAGE_CAP}
     expose:
       - "8080"
-    # The ingest host's import worker calls /api/internal/import/* over
-    # WireGuard, the same private address Postgres and Redis publish on.
+    # cloudflared reaches it on loopback. The ingest host's import worker
+    # calls /api/internal/import/* over WireGuard, the same private address
+    # Postgres and Redis publish on.
     ports:
-      - "${CAPY_PRIVATE_BIND_ADDRESS:-127.0.0.1}:8080:8080"
+      - "127.0.0.1:8080:8080"
+      - "${CAPY_PRIVATE_BIND_ADDRESS:?set CAPY_PRIVATE_BIND_ADDRESS}:8080:8080"
+    # A probe a second while it boots, so collaboration (which waits for it)
+    # starts about a second after the gateway is healthy.
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
       interval: 5s
       timeout: 3s
       retries: 12
+      start_period: 30s
+      start_interval: 1s
     depends_on:
       db:
         condition: service_healthy
@@ -161,9 +164,7 @@ services:
     restart: unless-stopped
 
   collaboration:
-    build:
-      context: .
-      dockerfile: collaboration-rs/Dockerfile
+    image: ghcr.io/samyung0/capy-collaboration:${RELEASE_SHA:?set RELEASE_SHA}
     environment:
       <<: *observability
       API_URL: http://server:8080
@@ -199,6 +200,9 @@ services:
       - capy_collaboration_sources:/var/lib/capy/sources
     expose:
       - "1234"
+    # cloudflared reaches it on loopback.
+    ports:
+      - "127.0.0.1:1234:1234"
     # Every client socket, gateway call and database connection is a
     # descriptor; Docker's default soft limit of 1024 held the server near
     # 1,000 connections (prod Phase B). The server also raises its soft limit
@@ -217,6 +221,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+      start_period: 30s
+      start_interval: 1s
     depends_on:
       db:
         condition: service_healthy
@@ -234,9 +240,7 @@ services:
     restart: unless-stopped
 
   retrieval:
-    build:
-      context: .
-      dockerfile: pipeline/Dockerfile
+    image: ghcr.io/samyung0/capy-pipeline:${RELEASE_SHA:?set RELEASE_SHA}
     environment:
       <<: [*observability, *b2]
       DATABASE_URL: *database-url
@@ -304,8 +308,7 @@ services:
   reconcile:
     profiles:
       - reconcile
-    build:
-      context: ./server
+    image: ghcr.io/samyung0/capy-server:${RELEASE_SHA:?set RELEASE_SHA}
     entrypoint: ["/app/reconcile"]
     environment:
       DATABASE_URL: *database-url
@@ -317,6 +320,13 @@ services:
       migrate:
         condition: service_completed_successfully
 
+# Fixed names, so neither depends on the project name; Ops joins the network.
+networks:
+  default:
+    name: capy
+
 volumes:
   capy_pgdata:
+    name: capy-pgdata
   capy_collaboration_sources:
+    name: capy-collaboration-sources
