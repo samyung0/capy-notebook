@@ -1462,6 +1462,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   its span `text`; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to 12 and
   `MIN_SOURCE` to 12; `MIN_MATERIAL` stays 7. Its deploy request names
   "client protocol 11 -> 12, source 11 -> 12".
+  The room swap (pin 86237e2c1: BetterOffice going read-only and a
+  document's first frame keep the view, reader actions still bring the caret
+  into view, a peer's change never does; Epo 2026-10-22, 2026-10-23) raised
+  `CLIENT_PROTOCOL` to 13 and `MIN_SOURCE` to 13; `MIN_MATERIAL` stays 7. Its
+  deploy request names "client protocol 12 -> 13, source 12 -> 13".
 
 #### When to bump
 
