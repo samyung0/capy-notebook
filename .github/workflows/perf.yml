@@ -235,6 +235,9 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
+      # The near-limit note is built by the app's own code, which imports the
+      # compiled messages (Vite compiles them for the app; nothing does here).
+      - run: pnpm email:compile
       # Exit 1: a failed check (convergence, lost updates, server errors);
       # exit 2: only the provisional latency budget missed.
       - name: Run collaboration stress test
@@ -268,6 +271,8 @@ jobs:
           if-no-files-found: ignore
           name: collaboration-stress-results
           path: bench/collaboration/.results/
+          # `.results` is a dot directory, which upload-artifact skips by default.
+          include-hidden-files: true
           retention-days: 90
 
   # Measures what UAT serves, not this checkout: Lighthouse runs against the

@@ -51,7 +51,7 @@ RUN apt-get update \
     && chmod 0711 /usr/bin/tini
 
 # RELEASE_SHA sits below every cacheable layer so a new commit rebuilds only the
-# source copy (Coolify must not inject build args above).
+# source copy; keep every build argument down here.
 ARG RELEASE_SHA
 RUN test "$(printf %s "$RELEASE_SHA" | wc -c)" -eq 40 \
     && ! printf %s "$RELEASE_SHA" | grep -q '[^0-9a-f]'

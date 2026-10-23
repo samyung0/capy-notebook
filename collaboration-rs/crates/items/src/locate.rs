@@ -98,6 +98,22 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
 
     /// The place of a new struct of the update.
     pub fn place(&mut self, start: &'a Item) -> Place {
+        // Place an item that overlaps the room's held clock, or sits next to a
+        // collected unit, where yrs integrates it (phase 0 review).
+        match self.incoming.landing(self.txn.store(), &self.state, start) {
+            ydoc::Landing::Gone => return Place::Gone,
+            ydoc::Landing::At(id) => {
+                let Some(held) = self.txn.store().get_item(&id) else {
+                    return Place::Unknown;
+                };
+                let (sub, branch) = (held.parent_sub().cloned(), held.parent_branch());
+                return match branch.and_then(|branch| self.branch_path(branch)) {
+                    Some(path) => Place::At { path, key: sub },
+                    None => Place::Unknown,
+                };
+            }
+            ydoc::Landing::Chain => {}
+        }
         self.place_at(start, 0)
     }
 
