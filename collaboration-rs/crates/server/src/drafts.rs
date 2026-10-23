@@ -61,6 +61,9 @@ pub enum Class {
     TooLarge,
     /// It needs content the room does not hold (a channel would resync).
     Unheld,
+    /// Structs under a client id not assigned to the sender's user: the
+    /// editor re-applies them under its own id (Epo 2026-10-24).
+    Unassigned,
     /// The room or a lookup is busy or failing: try at a later page load.
     Unavailable,
     /// The page's client protocol is outside its room family's (a stale
@@ -72,13 +75,14 @@ pub enum Class {
 }
 
 impl Class {
-    pub const ALL: [Class; 9] = [
+    pub const ALL: [Class; 10] = [
         Class::Lineage,
         Class::Limit,
         Class::Permission,
         Class::Malformed,
         Class::TooLarge,
         Class::Unheld,
+        Class::Unassigned,
         Class::Unavailable,
         Class::Outdated,
         Class::TooFast,
@@ -92,6 +96,7 @@ impl Class {
             Class::Malformed => "malformed",
             Class::TooLarge => "too_large",
             Class::Unheld => "unheld",
+            Class::Unassigned => "unassigned",
             Class::Unavailable => "unavailable",
             Class::Outdated => "outdated",
             Class::TooFast => "too_fast",
@@ -100,7 +105,7 @@ impl Class {
 
     fn status(self) -> StatusCode {
         match self {
-            Class::Lineage | Class::Unheld => StatusCode::CONFLICT,
+            Class::Lineage | Class::Unheld | Class::Unassigned => StatusCode::CONFLICT,
             Class::Limit => StatusCode::UNPROCESSABLE_ENTITY,
             Class::Permission => StatusCode::FORBIDDEN,
             Class::Malformed => StatusCode::BAD_REQUEST,

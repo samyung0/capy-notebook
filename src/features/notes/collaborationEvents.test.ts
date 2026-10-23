@@ -9,13 +9,13 @@ it('reads a refusal of edits under an unassigned client id', () => {
   const room = 'material:m:schema:1';
   expect(
     parse({
-      code: 'client_id',
+      code: 'unassigned',
       materialId: 'm',
       room,
       type: 'document-rejected',
     })
   ).toEqual({
-    code: 'client_id',
+    code: 'unassigned',
     materialId: 'm',
     metrics: null,
     room,

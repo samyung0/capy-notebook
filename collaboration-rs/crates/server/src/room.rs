@@ -2931,18 +2931,18 @@ impl Room {
                 user_id: Some(context.user_id.clone()),
             }],
         );
-        // `client_id`: the browser keeps the edits as refused, as they are,
-        // and opens a new document (Epo 2026-10-24).
+        // `unassigned`: the browser does not resend them as they are; it
+        // re-applies them under its assigned id (Epo 2026-10-24).
         let payload = match &self.kind {
             Kindly::Note(_) => json!({
-                "code": "client_id",
+                "code": "unassigned",
                 "materialId": self.material_id(),
                 "room": self.name,
                 "type": "document-rejected",
             }),
             Kindly::Source(source) => json!({
                 "checkpointIds": [],
-                "code": "client_id",
+                "code": "unassigned",
                 "epoch": source.room.epoch,
                 "fileId": source.room.file_id,
                 "recoverable": false,
@@ -2952,7 +2952,7 @@ impl Room {
         Outcome::Refused {
             payloads: vec![payload.to_string()],
             reason: client_ids::FOREIGN_UPDATE.into(),
-            class: Class::Malformed,
+            class: Class::Unassigned,
         }
     }
 

@@ -501,7 +501,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   /** Takes the client id a token offers, before the document is bound
    * (Q213): the document and its presence go under it. Edits made before
    * stay under the id Yjs drew; the room refuses them as they are
-   * (`client_id`, Epo 2026-10-24) and never binds that id. */
+   * (`unassigned`, Epo 2026-10-24) and never binds that id. */
   private adopt(clientId: number) {
     const { awareness, document } = this;
     this.adopted = true;

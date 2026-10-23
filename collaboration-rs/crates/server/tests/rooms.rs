@@ -2651,7 +2651,7 @@ async fn a_writer_cannot_write_under_another_writers_client_id() {
         String::from_utf8_lossy(&closed)
     );
     let (rejected, _) = forger.stateless("document-rejected").await;
-    assert_eq!(rejected["code"], "client_id");
+    assert_eq!(rejected["code"], "unassigned");
     victim.send(5, &sync(2, &pending)).await;
     victim.until(6).await.expect("ack");
     let mut reader = Client::open(server.port).await;
@@ -2665,10 +2665,10 @@ async fn a_writer_cannot_write_under_another_writers_client_id() {
 
 /// Epo 2026-10-24 (L3): edits made before a document had its assigned id,
 /// under an id nobody was assigned, are refused as they are with the
-/// `client_id` code, and the room is not left stuck: another session of the
-/// user joins and writes. The id is never recorded, and a JOIN naming it
-/// hears `collaboration-client-id-unheld`, so no retry binds it. Fails if
-/// such edits are admitted or the refusal loses its code.
+/// `unassigned` code, and the room is not left stuck: another session of
+/// the user joins and writes. The id is never recorded, and a JOIN naming it
+/// hears `collaboration-unassigned-id`, so no retry binds it. Fails if such
+/// edits are admitted or the refusal loses its code.
 #[tokio::test]
 async fn edits_under_an_unassigned_client_id_are_refused_with_their_own_code() {
     let Some(env) = env() else { return };
@@ -2685,7 +2685,7 @@ async fn edits_under_an_unassigned_client_id_are_refused_with_their_own_code() {
         String::from_utf8_lossy(&closed)
     );
     let (rejected, _) = early.stateless("document-rejected").await;
-    assert_eq!(rejected["code"], "client_id");
+    assert_eq!(rejected["code"], "unassigned");
     let mut next = Client::open(server.port).await;
     assert_eq!(next.joined(&room, &token(&room, &user, "write")).await, 1);
     assert!(next.settle(|c| c.block_text() == "base").await);
@@ -2714,14 +2714,14 @@ async fn edits_under_an_unassigned_client_id_are_refused_with_their_own_code() {
         )
         .await;
     let reason = text_payload(&retry.until(2).await.expect("refused"));
-    assert_eq!(reason, "collaboration-client-id-unheld");
+    assert_eq!(reason, "collaboration-unassigned-id");
 }
 
 /// Security regression (Q226, binding review M2): every JOIN guard of the
 /// client-id binding refuses: a JOIN naming an id stored as another user's,
 /// an id a live read channel holds, and a write token whose worker id is
 /// taken as `collaboration-client-id`, and an id its token does not offer
-/// that no user holds as `collaboration-client-id-unheld`. Fails if any of
+/// that no user holds as `collaboration-unassigned-id`. Fails if any of
 /// those guards is removed.
 #[tokio::test]
 async fn every_join_guard_refuses_a_client_id_it_may_not_bind() {
@@ -2754,7 +2754,7 @@ async fn every_join_guard_refuses_a_client_id_it_may_not_bind() {
     refused_as(
         join_payload_as(&room, &editors, Some(client_protocol()), fresh_client_id()),
         "an id the token does not offer",
-        "collaboration-client-id-unheld",
+        "collaboration-unassigned-id",
     )
     .await;
     // An id a live read channel holds, though a token offers it.
@@ -2965,7 +2965,7 @@ async fn unused_client_id_rows_clear_at_a_room_load_and_their_ids_stay_taken() {
         )
         .await;
     let reason = text_payload(&again.until(2).await.expect("refused"));
-    assert_eq!(reason, "collaboration-client-id-unheld");
+    assert_eq!(reason, "collaboration-unassigned-id");
 }
 
 /// A client id in the range reserved for override-seed copies (M5).
@@ -8782,8 +8782,8 @@ async fn a_draft_send_loads_an_unloaded_room_which_unloads_after_its_store() {
 /// rows, refused ones marked for the next open.
 /// Security regression (Q213): stored drafts under a client id nobody was
 /// assigned (a tab from before the binding, or a forged one) are refused as
-/// malformed, which the page marks refused (shown read-only at the next
-/// open) instead of sending them again, and the room keeps nothing of them.
+/// `unassigned` (409, Epo 2026-10-24), which the page does not send again,
+/// and the room keeps nothing of them.
 /// Fails if a draft send may write under any client id.
 #[tokio::test]
 async fn a_draft_under_a_client_id_nobody_was_assigned_is_refused() {
@@ -8811,7 +8811,7 @@ async fn a_draft_under_a_client_id_nobody_was_assigned_is_refused() {
     .await;
     assert_eq!(
         (status, answer["class"].as_str()),
-        (400, Some("malformed")),
+        (409, Some("unassigned")),
         "{answer}"
     );
     synced(server.port, &room, &user, "base").await;

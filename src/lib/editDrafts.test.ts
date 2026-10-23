@@ -1446,21 +1446,22 @@ describe('the draft sweep sending', () => {
   });
 
   it('leaves a group only the editor can send for its next open, without sending it again', async () => {
-    const keys = ['too_large', 'unheld', 'lineage'].map(
+    const keys = ['too_large', 'unheld', 'unassigned', 'lineage'].map(
       (_, index) => `u_waits:material:mat_${index}`
     );
     for (const key of keys) await leftRows(key);
     requests.length = 0;
     answer(413, 'too_large');
     answer(409, 'unheld');
+    answer(409, 'unassigned');
     answer(409, 'lineage');
     await sweepDrafts('u_waits', tokens(ROOM));
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(4);
     for (const key of keys)
       expect((await readDrafts(key)).every((row) => row.held)).toBe(true);
     const later = await nextPageLoad();
     await later.sweepDrafts('u_waits', tokens(ROOM));
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(4);
   });
 
   it('sends a group larger than a piece as pieces of at most 2 MiB, in order, and its rows go once the last is stored', async () => {

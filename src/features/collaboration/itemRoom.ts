@@ -305,8 +305,8 @@ export class ItemRoom {
           this.outdated();
           return;
         }
-        // The room holds this document's client id no more: no retry joins.
-        if (refusal === 'rejected') {
+        // The room holds this document's client id for no one: not retried.
+        if (refusal === 'unassigned') {
           this.refused();
           return;
         }

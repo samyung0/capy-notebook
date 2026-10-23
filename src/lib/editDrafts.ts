@@ -907,6 +907,7 @@ async function sendPiece(
       return 'refused';
     case 'lineage':
     case 'too_large':
+    case 'unassigned':
     case 'unheld':
       return 'waits';
     case 'outdated':

@@ -187,12 +187,12 @@ function CollaborativeNoteEditor({
   );
   const onDocumentRejected = useCallback(
     (
-      code: MaterialLimitCode | 'invalid_document' | 'client_id' | 'revoked',
+      code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked',
       edits: 'none' | 'kept' | 'lost'
     ) => {
       if (
         code !== 'invalid_document' &&
-        code !== 'client_id' &&
+        code !== 'unassigned' &&
         code !== 'revoked'
       )
         userToast({

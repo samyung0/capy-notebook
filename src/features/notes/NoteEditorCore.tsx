@@ -509,7 +509,7 @@ export function NoteEditorCore({
    * refused draft (the remount shows them for copying), or `lost` when this
    * device could not store them. */
   onDocumentRejected?: (
-    code: MaterialLimitCode | 'invalid_document' | 'client_id' | 'revoked',
+    code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked',
     edits: 'none' | 'kept' | 'lost'
   ) => void;
   /** The room cannot be reached and edits stay on this device (the banner to
@@ -752,7 +752,7 @@ export function NoteEditorCore({
   // merged back.
   const rejectDocument = useCallback(
     (
-      code: MaterialLimitCode | 'invalid_document' | 'client_id' | 'revoked'
+      code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked'
     ) => {
       if (rejected.current) return;
       rejected.current = true;
@@ -918,8 +918,8 @@ export function NoteEditorCore({
       tokenError.current = null;
       if (refusal === 'readOnly') readOnlyNow.current(true);
       else if (refusal === 'retry') reconnector.current?.refused();
-      // The room holds this document's client id no more: no retry joins.
-      else if (refusal === 'rejected') rejectDocument('client_id');
+      // The room holds this document's client id for no one: not retried.
+      else if (refusal === 'unassigned') rejectDocument('unassigned');
       else if (refusal === 'outdated') {
         // Capy was updated: only a page reload helps. The unsaved edits
         // stay stored (the reloaded editor applies them before it joins).

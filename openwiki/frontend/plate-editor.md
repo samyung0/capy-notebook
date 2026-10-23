@@ -1154,8 +1154,8 @@ account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) replace the editor with the
 file-missing or no-access panel, `collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
-`collaboration-client-id-unheld` refuses the document's edits and opens a new
-document (see [client ids](#client-ids)), and anything else (an expired token,
+`collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
+and anything else (an expired token,
 a room being reset or compacted, a client-id clash) is retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
 sync it turns the status red). A join, first or after a reload, has the same
@@ -1502,12 +1502,12 @@ Office and text files).
   naming an id recorded to another user, or a recorded id its token offers
   again, is refused as `collaboration-client-id` (two documents never share
   an id); a bound document retries with a fresh token naming its id. A JOIN
-  naming an id its token does not offer that no user holds (a bound
-  document whose row was cleared) is refused as
-  `collaboration-client-id-unheld`: no retry binds it, so the editor keeps
-  the document's unsent edits as refused and opens a new document (a note or
-  item remounts, a source session goes to recovery; `roomRefusal` reads it
-  as `rejected`). An
+  naming an id its token does not offer that no user holds (never assigned,
+  or a bound document whose row was cleared) is refused as
+  `collaboration-unassigned-id`: no retry binds it, so the editor does not
+  retry (`roomRefusal` reads it as `unassigned`; for now a note or item
+  keeps its unsent edits as refused and remounts, a source session goes to
+  recovery). An
   unrecorded id must be the one the token offers and held by nothing in the
   room: not in the document's history (its state vector, so an id whose row
   was cleared is never anyone's again), not a live channel's, not the room's
@@ -1551,11 +1551,11 @@ Office and text files).
   members who may edit the file (`client_ids::RESERVED`); every other room
   refuses them like any unassigned id.
 - **Refusal.** An update under another id goes the refused-on-entry way:
-  material rooms send `document-rejected` with code `client_id` (the editor
+  material rooms send `document-rejected` with code `unassigned` (the editor
   keeps its unsaved edits as a refused draft), source rooms
-  `source-checkpoint-failed` with `recoverable: false` and code `client_id`
-  (recovery), and a draft send answers `malformed` (the group is marked
-  refused, never sent again). Each is logged at warn and recorded as the edit
+  `source-checkpoint-failed` with `recoverable: false` and code `unassigned`
+  (recovery), and a draft send answers 409 `unassigned` (the group is held
+  for the editor, never sent again). Each is logged at warn and recorded as the edit
   incident `save_refused`/`client_id`. So after the server lost state a tab
   restores only its own user's unsaved edits; another user's are lost
   (accepted, Q213). Edits under an id the server never assigned (made before
@@ -1926,9 +1926,11 @@ class
   refuses it again and the editor keeps the whole document as its refused
   row; neither is sent again, so the room records the over-limit incident
   once per open, not per page load;
-- `unheld` (409, the room lacks the update's base), `too_large` (413) and
-  `lineage` (409, a token for another room, a schema or epoch that moved on,
-  another Office base): marked `held`, left for the editor;
+- `unheld` (409, the room lacks the update's base), `unassigned` (409,
+  structs under a client id not assigned to the user, Epo 2026-10-24),
+  `too_large` (413) and `lineage` (409, a token for another room, a schema
+  or epoch that moved on, another Office base): marked `held`, left for the
+  editor;
 - `outdated` (426, the page's client protocol is refused): kept unmarked,
   and no sweep runs again until the page reloads (see
   [Client protocol](#client-protocol-and-the-release-nudge));

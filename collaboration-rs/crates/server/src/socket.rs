@@ -232,7 +232,7 @@ async fn join_room(
             // id the room holds no more, opens a new document.
             Ok(Err(error))
                 if error == crate::client_ids::REFUSED_REASON
-                    || error == crate::client_ids::UNHELD_REASON =>
+                    || error == crate::client_ids::UNASSIGNED_REASON =>
             {
                 return Err(Refusal {
                     reason: error.clone(),

@@ -1,10 +1,10 @@
 import { isAccountForbiddenError, isApiError } from '@/api/client';
 import {
-  COLLABORATION_CLIENT_ID_UNHELD_REASON,
   COLLABORATION_FORBIDDEN_REASON,
   COLLABORATION_NOT_FOUND_REASON,
   COLLABORATION_OUTDATED_REASON,
   COLLABORATION_READ_ONLY_REASON,
+  COLLABORATION_UNASSIGNED_ID_REASON,
 } from './collaborationEvents';
 
 /** What an editor does with a refused room connection. */
@@ -13,7 +13,7 @@ export type RoomRefusal =
   | 'notFound'
   | 'forbidden'
   | 'outdated'
-  | 'rejected'
+  | 'unassigned'
   | 'retry';
 
 /**
@@ -25,7 +25,7 @@ export type RoomRefusal =
  */
 export function roomRefusal(reason: string, tokenError?: unknown): RoomRefusal {
   if (reason === COLLABORATION_OUTDATED_REASON) return 'outdated';
-  if (reason === COLLABORATION_CLIENT_ID_UNHELD_REASON) return 'rejected';
+  if (reason === COLLABORATION_UNASSIGNED_ID_REASON) return 'unassigned';
   // A read token on reconnect is thrown by the token function itself, so the
   // provider wraps the reason in its own text.
   if (reason.includes(COLLABORATION_READ_ONLY_REASON)) return 'readOnly';

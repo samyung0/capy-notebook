@@ -27,10 +27,10 @@ use crate::auth::{Access, Context, RoomName};
 pub const REFUSED_REASON: &str = "collaboration-client-id";
 
 /// Why a JOIN was refused: its id is not the one its token offers and the
-/// room holds it for no user, as for a bound Y.Doc whose row was cleared.
-/// No retry binds it: the browser keeps the document's unsent edits as
-/// refused and opens a new document (Epo 2026-10-24).
-pub const UNHELD_REASON: &str = "collaboration-client-id-unheld";
+/// room holds it for no user (never assigned, or a bound Y.Doc whose row was
+/// cleared). No retry binds it: the browser does not retry, and its edits
+/// under the id are re-applied under an assigned one (Epo 2026-10-24).
+pub const UNASSIGNED_REASON: &str = "collaboration-unassigned-id";
 
 /// Client ids reserved for derived override-seed copies (Epo 2026-10-24,
 /// M5): at or above 2^32 and below the PPTX bootstrap id (2^53 - 1). No
@@ -269,7 +269,7 @@ impl ClientIds {
             return Err(REFUSED_REASON.into());
         }
         if !offered {
-            return Err(UNHELD_REASON.into());
+            return Err(UNASSIGNED_REASON.into());
         }
         if taken(client) {
             return Err(REFUSED_REASON.into());
