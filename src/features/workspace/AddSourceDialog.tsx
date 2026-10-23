@@ -77,6 +77,7 @@ import {
   useMicrosoftLoginHint,
   useProviderConnect,
 } from '@/lib/useProviderConnect';
+import { readAudioDuration } from './audioDuration';
 import {
   ChapterSelect,
   chapterByName,
@@ -175,30 +176,6 @@ function formatSize(bytes: number, estimated = false) {
       ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
       : `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return estimated ? `~${value}` : value;
-}
-
-/** The length the browser reads from an audio file's metadata, or null when
- * it cannot. The worker measures it again and holds the two-hour limit. */
-function readAudioDuration(file: File): Promise<number | null> {
-  return new Promise((resolve) => {
-    const audio = document.createElement('audio');
-    const url = URL.createObjectURL(file);
-    const finish = (duration: number | null) => {
-      audio.removeAttribute('src');
-      audio.load();
-      URL.revokeObjectURL(url);
-      resolve(duration);
-    };
-    audio.preload = 'metadata';
-    audio.onloadedmetadata = () =>
-      finish(
-        Number.isFinite(audio.duration) && audio.duration > 0
-          ? audio.duration
-          : null
-      );
-    audio.onerror = () => finish(null);
-    audio.src = url;
-  });
 }
 
 /** Whether the browser read an audio file as longer than the upload limit. */
