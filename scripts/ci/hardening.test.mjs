@@ -214,6 +214,26 @@ test('the app host SSH secrets sit only on their own SSH step', () => {
   assert.equal(found, 4);
 });
 
+// The host runs a compose file only when it hashes to the anchor image's
+// label, and each image by digest; production runs the digests UAT ran
+// (security regression, review H1/M2).
+const COMPOSE_LABEL =
+  /^org\.capynotebook\.compose\.sha256=\$\{\{ steps\.compose\.outputs\.sha256 \}\}$/m;
+
+test('the deploy images carry their compose hash and production runs the digests UAT ran', () => {
+  for (const [file, name] of IMAGE_JOBS) {
+    const build = parse(read(file)).jobs[name].steps.find((step) =>
+      step.uses?.startsWith('docker/build-push-action@')
+    );
+    assert.match(build.with.labels, COMPOSE_LABEL, file);
+  }
+  const promotion = parse(read('.github/workflows/promote-production.yml'));
+  assert.equal(
+    promotion.jobs.deploy_production.with.image_digests,
+    `${EXPRESSION} needs.restage_uat.outputs.image_digests }}`
+  );
+});
+
 test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies, on every push and daily', () => {
   const audit = parse(read('.github/workflows/audit.yml'));
   assert.deepEqual(

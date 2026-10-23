@@ -470,12 +470,17 @@ per deploy and starts the API with `MIGRATE=false`.
 1. **Deploy UAT** or a promotion calls `deploy-environment.yml`. Its `build`
    job builds the SPA; in parallel, its `images` job builds `capy-server`,
    `capy-collaboration` and `capy-pipeline` for `linux/amd64`, labelled
-   `org.opencontainers.image.revision=<sha>`, and pushes them to private GHCR
-   packages tagged with the full SHA. A tag that already exists is not
-   rebuilt, so a promotion or a rollback to an earlier SHA builds nothing. The
-   layer cache is a GHCR registry cache (`:buildcache`, `mode=max`), plus
-   CI's `e2e-server` and `e2e-collaboration` Actions cache scopes read only:
-   a deploy right after a green CI usually builds from cache completely.
+   `org.opencontainers.image.revision=<sha>` and
+   `org.capynotebook.compose.sha256=<SHA-256 of deploy/docker-compose.prod.yml
+   at the SHA>`, and pushes them to private GHCR packages tagged with the
+   full SHA. A tag that already exists is not rebuilt, so a promotion or a
+   rollback to an earlier SHA builds nothing. Each image's digest (the one
+   pushed, or the one the existing tag names) is recorded as
+   `CAPY_*_IMAGE=ghcr.io/samyung0/<image>@sha256:<digest>`. The only layer
+   cache is a GHCR registry cache (`:buildcache`, `mode=max`) that only
+   deploy jobs write; CI's Actions cache scopes are never read, since jobs
+   running third-party install and build code also write them (Epo
+   2026-10-23).
 2. The `deploy` job (permissions `contents: read, packages: read`) renders
    `app.env` with `config.py render` and runs
    `scripts/deploy/app-host-release.sh` in two steps, each holding only its
@@ -484,19 +489,29 @@ per deploy and starts the API with `MIGRATE=false`.
    (`APP_HOST_KNOWN_HOSTS`) and an SSH config whose `ProxyCommand` is
    `cloudflared access ssh`. `deploy app` sends a tar of exactly three files on
    stdin, `compose.yml` (the compose file at the deploy SHA), `stack.env`
-   (`app.env`) and `ghcr-token` (the actor and the job's own token), to the
-   host's forced command `deploy app <sha>`, through the Access service token
-   in `TUNNEL_SERVICE_TOKEN_ID`/`_SECRET`. No secret is in an argument, a log
-   or an image.
+   (`app.env` plus the recorded `CAPY_*_IMAGE` digests) and `ghcr-token` (the
+   actor and the job's own token), to the host's forced command
+   `deploy app <sha>`, through the Access service token in
+   `TUNNEL_SERVICE_TOKEN_ID`/`_SECRET`. No secret is in an argument, a log or
+   an image. A promotion hands production the digests its UAT run deployed,
+   and production refuses to deploy without them, so it runs exactly what UAT
+   ran even if a tag has moved since.
 3. On the host, `capy-app-deploy` (`scripts/deploy/app-host-deploy.sh`, run as
    root through sudo) accepts only `deploy app|ops <full lowercase SHA>` and an
-   upload of at most 1 MiB holding exactly those three regular files, and
-   refuses a `stack.env` whose `RELEASE_SHA` is another SHA. It checks the
-   Compose configuration without printing it, logs in to GHCR with a
-   throwaway `DOCKER_CONFIG` under `/run`, pulls the app images only
-   (`migrate server collaboration retrieval`, or `ops`), deletes the login and
-   the token, and checks that every pulled image carries the deploy SHA's
-   revision label. Nothing has changed up to here.
+   upload of at most 1 MiB holding exactly those three regular files (no
+   links). `stack.env` must hold only literal `KEY='value'` lines, set no
+   `COMPOSE_*` or `DOCKER_*` variable, carry this SHA's `RELEASE_SHA` and
+   name each app image as its GHCR repository at a digest. Before any Compose
+   call it logs in to GHCR with a throwaway `DOCKER_CONFIG` under `/run`,
+   pulls the anchor image by a name built from the SHA alone
+   (`capy-server:<sha>`, or `capy-ops:<sha>-<environment>` for Ops), and
+   refuses a `compose.yml` whose SHA-256 is not the anchor's compose label,
+   and a `CAPY_SERVER_IMAGE` (`CAPY_OPS_IMAGE`) digest the anchor tag does not
+   name. It then checks the Compose configuration without printing it, pulls
+   the app images only (`migrate server collaboration retrieval`, or `ops`),
+   deletes the login and the token, and checks that every image is present at
+   its digest with the deploy SHA's revision label. Nothing has changed up to
+   here.
 4. It then stops `collaboration` and runs
    `docker compose up -d --wait --wait-timeout 600 --remove-orphans`, checks
    that every service runs the SHA (`migrate` exited 0, the others running
@@ -552,8 +567,13 @@ schema changes are new forward-only files.
 
 `restrict` turns off forwarding, PTYs and the agent; `from=` makes the key
 work only through the tunnel, while port 22 stays open for root
-administration (§3.1); the forced command means no shell, and getting past it
-gives the user nothing, since it is not in the `docker` group. Postgres and
+administration (§3.1); the forced command means no shell, and the user is not
+in the `docker` group. Root then runs only what CI built: the compose file
+whose hash CI put on the SHA's image, and CI's images by digest. So the deploy
+key with the Access service token can redeploy a release CI built, with an
+env file of its choosing (its values reach the containers' environment, the
+address the published ports bind and collaboration's `cpuset`), and nothing
+else (review H1, 2026-10-23). Postgres and
 Redis are pinned by digest in the compose file and are never pulled by a
 deploy, so an upstream republish never restarts Postgres; upgrading either is
 a commit (the next `up` pulls the new pin). The Compose plugin must be the
@@ -561,8 +581,8 @@ system package (`/usr/libexec/docker/cli-plugins`): the deploy runs it with a
 temporary `DOCKER_CONFIG`, which hides plugins under `~/.docker`.
 
 Each successful deploy prunes: it keeps the newest 3 release directories and
-the image tags of those SHAs, removes the other tags of the stack's images,
-and runs `docker image prune -f`. There is no build cache on a host and no
+the image tags and digests they name, removes the stack's other tags and
+digests, and runs `docker image prune -f`. There is no build cache on a host and no
 prune cron.
 
 **Deploy access, once per host** (the GitHub environment matches the host):

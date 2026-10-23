@@ -6,6 +6,13 @@
 # compose.yml, stack.env and ghcr-token (the registry user, then the deploy
 # job's own token, one per line). The exit status is the result; the script
 # prints one line per service and never prints logs or configuration values.
+#
+# Root runs only what CI built for the SHA: compose.yml must hash to the label
+# CI put on that SHA's anchor image (capy-server, or capy-ops for Ops), pulled
+# by a name built from the SHA alone, and every app image runs by the digest
+# in stack.env, labelled with the SHA. stack.env sets no Compose or Docker
+# variable, so a stolen key and Access token can redeploy a release CI built,
+# with a chosen env file, and nothing else.
 set -euo pipefail
 umask 077
 # Once started, a deploy finishes even if the runner goes away: a stack left
@@ -23,12 +30,17 @@ if [[ ! "${SSH_ORIGINAL_COMMAND:-}" =~ ^deploy\ (app|ops)\ ([0-9a-f]{40})$ ]]; t
 fi
 stack="${BASH_REMATCH[1]}"
 sha="${BASH_REMATCH[2]}"
+registry=ghcr.io/samyung0
 if [[ "$stack" == app ]]; then
   project=capy
   services=(migrate server collaboration retrieval)
+  # The variable stack.env names each image by, then its repository; the
+  # first is the anchor whose label vouches for compose.yml.
+  image_vars=(CAPY_SERVER_IMAGE:capy-server CAPY_COLLABORATION_IMAGE:capy-collaboration CAPY_PIPELINE_IMAGE:capy-pipeline)
 else
   project=capy-ops
   services=(ops)
+  image_vars=(CAPY_OPS_IMAGE:capy-ops)
 fi
 
 # The tests point these at a temporary directory; sudo never passes them.
@@ -53,29 +65,59 @@ for name in compose.yml stack.env ghcr-token; do
   [[ -f "$files/$name" && ! -L "$files/$name" && "$(stat -c %h "$files/$name")" == 1 ]] ||
     fail "$name must be a regular file"
 done
+
+# stack.env: the renderer's literal KEY='value' lines only, no Compose or
+# Docker setting (COMPOSE_FILE or DOCKER_HOST would replace what runs), this
+# SHA, and each app image as its repository at a digest.
+grep -qvE "^[A-Z][A-Z0-9_]*='.*'$" "$files/stack.env" && fail "stack.env holds a line that is not KEY='value'"
+grep -qE '^(COMPOSE|DOCKER)_' "$files/stack.env" && fail "stack.env may not set COMPOSE_* or DOCKER_* variables"
 grep -qxF "RELEASE_SHA='$sha'" "$files/stack.env" || fail "stack.env is not rendered for $sha"
+images=()
+for pair in "${image_vars[@]}"; do
+  ref="$(sed -n "s/^${pair%%:*}='\(.*\)'$/\1/p" "$files/stack.env")"
+  [[ "$ref" =~ ^${registry//./\\.}/${pair#*:}@sha256:[0-9a-f]{64}$ ]] ||
+    fail "${pair%%:*} must be $registry/${pair#*:}@sha256:<digest>"
+  images+=("$ref")
+done
+if [[ "$stack" == app ]]; then
+  anchor="$registry/capy-server:$sha"
+else
+  environment="$(sed -n "s/^SENTRY_ENVIRONMENT='\(uat\|production\)'$/\1/p" "$files/stack.env")"
+  [[ -n "$environment" ]] || fail "stack.env must name SENTRY_ENVIRONMENT uat or production"
+  anchor="$registry/capy-ops:$sha-$environment"
+fi
 
-# Compose's own output stays hidden: the resolved configuration holds secrets.
-dc() { docker compose -p "$project" -f "$files/compose.yml" --env-file "$files/stack.env" "$@"; }
-dc config --quiet >/dev/null 2>&1 || fail "compose.yml and stack.env do not make a valid configuration"
-mapfile -t images < <(dc config --images 2>/dev/null | grep '^ghcr\.io/' | LC_ALL=C sort -u)
-((${#images[@]} > 0)) || fail "compose.yml names no GHCR image"
-
-# Pull with a throwaway registry login; the job token dies with the job.
+# A throwaway registry login; the job token dies with the job.
 mapfile -t login <"$files/ghcr-token"
 [[ ${#login[@]} == 2 && "${login[0]}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?$ && -n "${login[1]}" ]] ||
   fail "ghcr-token must hold the registry user and the token"
 mkdir "$incoming/docker"
 printf '%s' "${login[1]}" | DOCKER_CONFIG="$incoming/docker" docker login ghcr.io -u "${login[0]}" --password-stdin >/dev/null 2>&1 ||
   fail "logging in to ghcr.io failed"
+
+# Before any Compose call: compose.yml is the file CI built this SHA with.
+DOCKER_CONFIG="$incoming/docker" docker pull --quiet "$anchor" >/dev/null 2>&1 || fail "pulling $anchor failed"
+label() { docker image inspect --format "{{ index .Config.Labels \"$1\" }}" "$2" 2>/dev/null; }
+[[ "$(label org.opencontainers.image.revision "$anchor")" == "$sha" ]] || fail "$anchor is not labelled $sha"
+compose_label="$(label org.capynotebook.compose.sha256 "$anchor")"
+compose_sha256="$(sha256sum <"$files/compose.yml")"
+[[ -n "$compose_label" && "$compose_label" == "${compose_sha256%% *}" ]] ||
+  fail "compose.yml is not the compose file CI built $sha with"
+# The anchor tag and the digest stack.env names are one image.
+repo_digests() { docker image inspect --format '{{ range .RepoDigests }}{{ println . }}{{ end }}' "$1" 2>/dev/null; }
+repo_digests "$anchor" | grep -qxF "${images[0]}" || fail "${images[0]%@*} at $sha is not the digest the deploy job recorded"
+
+# Compose's own output stays hidden: the resolved configuration holds secrets.
+dc() { docker compose -p "$project" -f "$files/compose.yml" --env-file "$files/stack.env" "$@"; }
+dc config --quiet >/dev/null 2>&1 || fail "compose.yml and stack.env do not make a valid configuration"
 # Only the app images: Postgres and Redis stay on their pinned local images.
 DOCKER_CONFIG="$incoming/docker" dc pull --quiet "${services[@]}" >/dev/null 2>&1 || fail "pulling the $stack images failed"
 rm -rf -- "$incoming/docker" "$files/ghcr-token"
 unset login
 for image in "${images[@]}"; do
-  revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image" 2>/dev/null)" ||
-    fail "$image is missing after the pull"
-  [[ "$revision" == "$sha" ]] || fail "$image is labelled ${revision:-without a revision}, not $sha"
+  repo_digests "$image" | grep -qxF "$image" || fail "$image is missing after the pull"
+  revision="$(label org.opencontainers.image.revision "$image")"
+  [[ "$revision" == "$sha" ]] || fail "${image%@*} is labelled ${revision:-without a revision}, not $sha"
 done
 
 # One line per service: name, state, health, exit code, image revision.
@@ -115,7 +157,7 @@ while read -r service state health code revision; do
 done <<<"$lines"
 
 # Keep this release for a manual redeploy, then prune: the newest three
-# releases (this one and two to roll back to) and their image tags stay.
+# releases (this one and two to roll back to) and their images stay.
 release="$home/releases/$sha"
 rm -rf -- "$release"
 mkdir "$release"
@@ -125,14 +167,20 @@ mapfile -t releases < <(ls -1t -- "$home/releases")
 for old in "${releases[@]:3}"; do
   if [[ "$old" =~ ^[0-9a-f]{40}$ ]]; then rm -rf -- "${home:?}/releases/$old"; fi
 done
-kept=" ${releases[*]:0:3} "
+kept_shas=" ${releases[*]:0:3} "
+kept_images="$(cat -- "$home"/releases/*/stack.env | sed -n "s/^CAPY_[A-Z]*_IMAGE='\(.*\)'$/\1/p")"
+remove() {
+  docker rmi -- "$1" >/dev/null 2>&1 || printf 'capy-app-deploy: could not remove %s\n' "$1" >&2
+}
 for image in "${images[@]}"; do
-  repository="${image%:*}"
-  while read -r tag; do
-    if [[ "$kept" != *" ${tag:0:40} "* ]] && ! docker rmi -- "$repository:$tag" >/dev/null 2>&1; then
-      printf 'capy-app-deploy: could not remove %s:%s\n' "$repository" "$tag" >&2
+  repository="${image%@*}"
+  listing="$(docker image ls --digests --format '{{.Tag}} {{.Digest}}' "$repository" || true)"
+  while read -r tag digest; do
+    if [[ "$tag" =~ ^[0-9a-f]{40} && "$kept_shas" != *" ${tag:0:40} "* ]]; then remove "$repository:$tag"; fi
+    if [[ "$digest" == sha256:* ]] && ! grep -qxF "$repository@$digest" <<<"$kept_images"; then
+      remove "$repository@$digest"
     fi
-  done < <(docker image ls --format '{{.Tag}}' "$repository" | grep -E '^[0-9a-f]{40}' || true)
+  done <<<"$listing"
 done
 docker image prune -f >/dev/null 2>&1 || printf 'capy-app-deploy: docker image prune failed\n' >&2
 

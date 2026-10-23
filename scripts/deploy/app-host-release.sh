@@ -7,12 +7,13 @@
 #     installs the pinned cloudflared and writes the SSH key, the pinned host
 #     key and an SSH config that reaches the host through Cloudflare Access.
 #
-#   app-host-release.sh deploy app|ops <compose file> <env file>
+#   app-host-release.sh deploy app|ops <compose file> <env file> <images file>
 #     DEPLOY_REVISION, GHCR_TOKEN (the job's own token, packages: read) and
 #     TUNNEL_SERVICE_TOKEN_ID/SECRET (the Access service token cloudflared
-#     reads): sends compose.yml, stack.env and ghcr-token as a tar on stdin to
-#     the host's forced command `deploy app|ops <sha>`. Secrets never appear
-#     in arguments or output.
+#     reads): appends the images file's CAPY_*_IMAGE=<image>@sha256:<digest>
+#     lines to the env file as stack.env, then sends compose.yml, stack.env
+#     and ghcr-token as a tar on stdin to the host's forced command
+#     `deploy app|ops <sha>`. Secrets never appear in arguments or output.
 set -euo pipefail
 
 CLOUDFLARED_VERSION=2026.10.0
@@ -60,8 +61,9 @@ EOF
     stack="${2:-}"
     compose="${3:-}"
     env_file="${4:-}"
+    images="${5:-}"
     [[ "$stack" == app || "$stack" == ops ]] || die "the stack must be app or ops"
-    [[ -f "$compose" && -f "$env_file" ]] || die "the compose and env files are required"
+    [[ -f "$compose" && -f "$env_file" && -f "$images" ]] || die "the compose, env and images files are required"
     [[ "${DEPLOY_REVISION:-}" =~ ^[0-9a-f]{40}$ ]] || die "DEPLOY_REVISION must be a lowercase full Git SHA"
     [[ -n "${GHCR_TOKEN:-}" && -n "${GITHUB_ACTOR:-}" ]] || die "GHCR_TOKEN and GITHUB_ACTOR are required"
     [[ -n "${TUNNEL_SERVICE_TOKEN_ID:-}" && -n "${TUNNEL_SERVICE_TOKEN_SECRET:-}" ]] ||
@@ -72,11 +74,16 @@ EOF
     trap 'rm -rf -- "$staging"' EXIT
     cp -- "$compose" "$staging/compose.yml"
     cp -- "$env_file" "$staging/stack.env"
+    while IFS= read -r line; do
+      [[ "$line" =~ ^(CAPY_[A-Z]+_IMAGE)=(ghcr\.io/samyung0/capy-[a-z]+@sha256:[0-9a-f]{64})$ ]] ||
+        die "the images file holds a line that is not CAPY_*_IMAGE=<image>@sha256:<digest>"
+      printf "%s='%s'\n" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" >>"$staging/stack.env"
+    done <"$images"
     printf '%s\n%s\n' "$GITHUB_ACTOR" "$GHCR_TOKEN" >"$staging/ghcr-token"
     tar -C "$staging" -cf - compose.yml stack.env ghcr-token |
       ssh -F "$ssh_dir/config" capy-app "deploy $stack $DEPLOY_REVISION"
     ;;
   *)
-    die "usage: app-host-release.sh configure | deploy app|ops <compose file> <env file>"
+    die "usage: app-host-release.sh configure | deploy app|ops <compose file> <env file> <images file>"
     ;;
 esac

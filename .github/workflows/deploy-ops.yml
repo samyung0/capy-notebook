@@ -57,6 +57,8 @@ jobs:
   # The Ops image per environment (capy-ops:<sha>-<environment>): its build
   # arguments are the environment's public variables, never secrets. It builds
   # on every run, since those variables can change between runs of one SHA.
+  # Labelled with the Ops compose file's hash, which the host checks, and
+  # deployed by the digest pushed here.
   image:
     needs: resolve_revision
     runs-on: ubuntu-24.04
@@ -65,6 +67,8 @@ jobs:
       contents: read
       packages: write
     environment: ${{ inputs.environment_name }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     env:
       DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
     steps:
@@ -83,8 +87,14 @@ jobs:
         env:
           GHCR_TOKEN: ${{ github.token }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Hash the compose file the host will run
+        id: compose
+        run: |
+          read -r sha256 _ < <(sha256sum deploy/docker-compose.ops.yml)
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ops/Dockerfile
@@ -94,6 +104,7 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ needs.resolve_revision.outputs.revision }}
             org.opencontainers.image.source=https://github.com/samyung0/capy-notebook
+            org.capynotebook.compose.sha256=${{ steps.compose.outputs.sha256 }}
           build-args: |
             VITE_CLERK_PUBLISHABLE_KEY=${{ vars.CLERK_PUBLISHABLE_KEY }}
             VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN_OPS }}
@@ -127,12 +138,15 @@ jobs:
           ref: ${{ needs.resolve_revision.outputs.revision }}
           fetch-depth: 0
       - name: Validate target and immutable revision
+        env:
+          OPS_DIGEST: ${{ needs.image.outputs.digest }}
         run: |
           [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$TARGET_ENVIRONMENT" == uat || "$TARGET_ENVIRONMENT" == production ]]
           [[ "$DEPLOY_REVISION" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$DEPLOY_REVISION" ]]
           git merge-base --is-ancestor "$DEPLOY_REVISION" origin/main
+          printf 'CAPY_OPS_IMAGE=ghcr.io/samyung0/capy-ops@%s\n' "$OPS_DIGEST" > "$RUNNER_TEMP/capy-images"
       - name: Require prior Ops UAT deployment
         if: inputs.environment_name == 'production'
         env:
@@ -172,7 +186,7 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
           TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.APP_HOST_ACCESS_CLIENT_ID }}
           TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.APP_HOST_ACCESS_CLIENT_SECRET }}
-        run: scripts/deploy/app-host-release.sh deploy ops deploy/docker-compose.ops.yml "$RUNNER_TEMP/capy-ops-config/ops.env"
+        run: scripts/deploy/app-host-release.sh deploy ops deploy/docker-compose.ops.yml "$RUNNER_TEMP/capy-ops-config/ops.env" "$RUNNER_TEMP/capy-images"
       - name: Remove runner configuration and SSH key
         if: always()
         run: rm -rf "$RUNNER_TEMP/capy-ops-config" "$RUNNER_TEMP/capy-ssh"
