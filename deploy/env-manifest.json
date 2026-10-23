@@ -430,7 +430,7 @@
     },
     "COLLABORATION_GC_COLLECT": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "COLLABORATION_INTERNAL_URL": {
       "kind": "variable",

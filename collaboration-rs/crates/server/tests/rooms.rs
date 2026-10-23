@@ -672,6 +672,24 @@ async fn windows(env: &Env, material: &str) -> i64 {
         .get(0)
 }
 
+/// Asks for a receipt and waits for the one naming `id` (other members'
+/// receipts reach every channel).
+async fn persisted(client: &mut Client, id: &str) {
+    let request = serde_json::json!({ "id": id, "type": "checkpoint-request" }).to_string();
+    let mut payload = Vec::new();
+    varbytes(&mut payload, request.as_bytes());
+    client.send(9, &payload).await;
+    loop {
+        let (receipt, _) = client.stateless("checkpoint-persisted").await;
+        if receipt["checkpointIds"]
+            .as_array()
+            .is_some_and(|ids| ids.iter().any(|known| known == id))
+        {
+            return;
+        }
+    }
+}
+
 /// Waits up to 5 s for a material's log to be folded (empty).
 async fn log_folded(env: &Env, material: &str) -> bool {
     let client = db(env).await;
@@ -715,9 +733,11 @@ async fn collected_in_base(env: &Env, material: &str, unit: yrs::ID) -> bool {
 /// The in-place collection at a room's folds (switch on, every store folds):
 /// the middle of a run of deleted text, typed by another writer and named by
 /// nothing, is collected from the stored state while the room stays open; a
-/// tab's Undo of its own deletion after those folds restores the text, the
-/// room's next load holds it, and the folds keep four window snapshots.
-/// Fails if the folds leave the run uncollected or the restored text is lost.
+/// tab's Undo of its own deletion after a fold whose window covers it
+/// restores the text, the room's next load holds it (the Undo names the
+/// deleted run's edge, which the fold kept), and the folds keep four window
+/// snapshots. Fails if the folds leave the run uncollected or the restored
+/// text is lost (as it is with the edge rule removed).
 #[tokio::test]
 async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
     let Some(env) = env() else { return };
@@ -758,7 +778,7 @@ async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
     };
     // B types " one", A " two", then B "MID" between "base" and " one".
     b.type_at(4, " one").await;
-    stored(&mut b, "one").await;
+    persisted(&mut b, "one").await;
     assert!(log_folded(&env, &material).await);
     assert!(a.settle(|c| c.block_text() == "base one").await);
     a.write(|doc| {
@@ -767,11 +787,11 @@ async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
         first_block(&root, &txn).insert(&mut txn, 8, " two");
     })
     .await;
-    stored(&mut a, "two").await;
+    persisted(&mut a, "two").await;
     assert!(log_folded(&env, &material).await);
     assert!(b.settle(|c| c.block_text() == "base one two").await);
     b.type_at(4, "MID").await;
-    stored(&mut b, "mid").await;
+    persisted(&mut b, "mid").await;
     assert!(log_folded(&env, &material).await);
     // B deletes "seMID o": a run of three items whose middle one ("MID")
     // nothing names. B's session then ends.
@@ -781,27 +801,28 @@ async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
         first_block(&root, &txn).remove_range(&mut txn, 2, 7);
     })
     .await;
-    stored(&mut b, "cut").await;
+    persisted(&mut b, "cut").await;
     assert!(log_folded(&env, &material).await);
     let mid = yrs::ID::new(b.doc.client_id(), 4);
     drop(b);
     assert!(a.settle(|c| c.block_text() == "bane two").await);
-    // A deletes its own " two", then types "!".
+    // A deletes its own " two" (one item, which nothing names), then types
+    // "!" at the start, so a later fold's window covers the deletion.
     a.write(|doc| {
         let root = doc.get_or_insert_text("content");
         let mut txn = doc.transact_mut_with("a");
         first_block(&root, &txn).remove_range(&mut txn, 4, 4);
     })
     .await;
-    stored(&mut a, "own").await;
+    persisted(&mut a, "own").await;
     assert!(log_folded(&env, &material).await);
     a.write(|doc| {
         let root = doc.get_or_insert_text("content");
         let mut txn = doc.transact_mut_with("a");
-        first_block(&root, &txn).insert(&mut txn, 4, "!");
+        first_block(&root, &txn).insert(&mut txn, 0, "!");
     })
     .await;
-    stored(&mut a, "bang").await;
+    persisted(&mut a, "bang").await;
     assert!(log_folded(&env, &material).await);
     // A later fold's window covers B's deletion: "MID" left the stored base
     // while the room is open.
@@ -809,14 +830,15 @@ async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
         collected_in_base(&env, &material, mid).await,
         "the run's middle stayed in the stored base"
     );
-    // A's Undo: "!" goes, then " two" comes back.
+    // A's Undo: "!" goes, then " two" comes back, naming its own first
+    // unit, which the fold kept as the edge of its deleted run.
     a.write(|_| {
         assert!(undo.undo_blocking());
         assert!(undo.undo_blocking());
     })
     .await;
     assert_eq!(a.block_text(), "bane two");
-    stored(&mut a, "undo").await;
+    persisted(&mut a, "undo").await;
     drop(a);
     // The room unloads and folds once more; its next load holds the text.
     assert!(log_folded(&env, &material).await);
