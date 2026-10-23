@@ -499,16 +499,22 @@ per deploy and starts the API with `MIGRATE=false`.
 3. On the host, `capy-app-deploy` (`scripts/deploy/app-host-deploy.sh`, run as
    root through sudo) accepts only `deploy app|ops <full lowercase SHA>` and an
    upload of at most 1 MiB holding exactly those three regular files (no
-   links). `stack.env` must hold only literal `KEY='value'` lines, set no
-   `COMPOSE_*` or `DOCKER_*` variable, carry this SHA's `RELEASE_SHA` and
-   name each app image as its GHCR repository at a digest. Before any Compose
+   links). `stack.env` must hold only literal `KEY='value'` lines whose
+   value has no single quote and does not end in a backslash (otherwise
+   Compose reads a second assignment out of the line, or runs the value on
+   into the next one; review R1, so `config.py` refuses such values rather
+   than escaping them), set no `COMPOSE_*` or `DOCKER_*` variable, carry this
+   SHA's `RELEASE_SHA` and name each app image as its GHCR repository at a
+   digest. Before any Compose
    call it logs in to GHCR with a throwaway `DOCKER_CONFIG` under `/run`,
    pulls the anchor image by a name built from the SHA alone
    (`capy-server:<sha>`, or `capy-ops:<sha>-<environment>` for Ops), and
    refuses a `compose.yml` whose SHA-256 is not the anchor's compose label,
    and a `CAPY_SERVER_IMAGE` (`CAPY_OPS_IMAGE`) digest the anchor tag does not
-   name. It then checks the Compose configuration without printing it, pulls
-   the app images only (`migrate server collaboration retrieval`, or `ops`),
+   name. It then checks the Compose configuration without printing it,
+   requires Compose's resolved images (`config --images`) to be exactly the
+   verified digests plus the digest-pinned images `compose.yml` names
+   (Postgres, Redis), pulls the app images only (`migrate server collaboration retrieval`, or `ops`),
    deletes the login and the token, and checks that every image is present at
    its digest with the deploy SHA's revision label. Nothing has changed up to
    here.

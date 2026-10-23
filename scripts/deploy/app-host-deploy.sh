@@ -68,8 +68,11 @@ done
 
 # stack.env: the renderer's literal KEY='value' lines only, no Compose or
 # Docker setting (COMPOSE_FILE or DOCKER_HOST would replace what runs), this
-# SHA, and each app image as its repository at a digest.
-grep -qvE "^[A-Z][A-Z0-9_]*='.*'$" "$files/stack.env" && fail "stack.env holds a line that is not KEY='value'"
+# SHA, and each app image as its repository at a digest. A value holds no
+# quote and does not end in a backslash, so Compose reads exactly one
+# assignment per line (it reads `A='x' B='y'` as two, and `\'` as an escaped
+# quote that runs on into the next line).
+grep -qvE "^[A-Z][A-Z0-9_]*='([^']*[^'\\])?'$" "$files/stack.env" && fail "stack.env holds a line that is not KEY='value'"
 grep -qE '^(COMPOSE|DOCKER)_' "$files/stack.env" && fail "stack.env may not set COMPOSE_* or DOCKER_* variables"
 grep -qxF "RELEASE_SHA='$sha'" "$files/stack.env" || fail "stack.env is not rendered for $sha"
 images=()
@@ -110,6 +113,12 @@ repo_digests "$anchor" | grep -qxF "${images[0]}" || fail "${images[0]%@*} at $s
 # Compose's own output stays hidden: the resolved configuration holds secrets.
 dc() { docker compose -p "$project" -f "$files/compose.yml" --env-file "$files/stack.env" "$@"; }
 dc config --quiet >/dev/null 2>&1 || fail "compose.yml and stack.env do not make a valid configuration"
+# Compose's own view of the images: exactly the verified ones plus the
+# literal (digest-pinned) ones compose.yml names.
+mapfile -t pinned < <(sed -n 's/^ *image: *\([^$ ]*\)$/\1/p' "$files/compose.yml")
+expected="$(printf '%s\n' "${images[@]}" "${pinned[@]}" | LC_ALL=C sort -u)"
+resolved="$(dc config --images 2>/dev/null | LC_ALL=C sort -u)" || fail "Compose could not list the images"
+[[ "$resolved" == "$expected" ]] || fail "Compose resolves other images than the verified ones"
 # Only the app images: Postgres and Redis stay on their pinned local images.
 DOCKER_CONFIG="$incoming/docker" dc pull --quiet "${services[@]}" >/dev/null 2>&1 || fail "pulling the $stack images failed"
 rm -rf -- "$incoming/docker" "$files/ghcr-token"

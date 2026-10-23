@@ -21,7 +21,9 @@ OLD = "b" * 40
 TOKEN = "ghs_job-token-never-printed"
 PASSWORD = "postgres-password-never-printed"
 REGISTRY = "ghcr.io/samyung0/"
-COMPOSE = b"services: {}\n"
+# One literal, digest-pinned image, as Postgres and Redis are.
+PINNED = "pgvector/pgvector:0.8.7-pg16@sha256:" + "7" * 64
+COMPOSE = f"services:\n  db:\n    image: {PINNED}\n".encode()
 APP_IMAGES = {
     "CAPY_SERVER_IMAGE": "capy-server",
     "CAPY_COLLABORATION_IMAGE": "capy-collaboration",
@@ -68,7 +70,13 @@ if args[0] == "compose":
     env = {key: value.strip("'") for key, value in (line.split("=", 1) for line in lines)}
     sha = env["RELEASE_SHA"]
     command = args[args.index("--env-file") + 2:]
-    if command[0] == "pull":
+    if command[:2] == ["config", "--images"]:
+        compose = pathlib.Path(args[args.index("-f") + 1]).read_text().splitlines()
+        literal = [line.split(":", 1)[1].strip() for line in compose if line.strip().startswith("image:") and "$" not in line]
+        resolved = [value for key, value in env.items() if key.startswith("CAPY_") and key.endswith("_IMAGE")]
+        # A test sets compose_images for what a Compose parser bug would resolve.
+        print("\n".join(state.get("compose_images", resolved + literal)))
+    elif command[0] == "pull":
         for key, value in env.items():
             if key.startswith("CAPY_") and key.endswith("_IMAGE"):
                 pull(value)
@@ -288,6 +296,43 @@ class AppHostDeployTest(unittest.TestCase):
                 )
                 self.assertIn(message, output)
                 self.assertEqual(self.calls(), [])
+
+    def test_refuses_lines_compose_reads_as_another_assignment(self):
+        """Security regression (review R1): Compose reads two assignments
+        from `A='x' B='y'`, and `\\'` as an escaped quote that runs into the
+        next line; either would set CAPY_SERVER_IMAGE where the line checks
+        never look."""
+        for extra in (
+            "FOO='x' CAPY_SERVER_IMAGE='alpine:3'\n",
+            "X='abc\\'\nY='CAPY_SERVER_IMAGE=alpine:3 #'\n",
+        ):
+            with self.subTest(extra=extra):
+                output = self.deploy(
+                    upload(stack_files(env=stack_env(extra=extra))), status=1
+                )
+                self.assertIn("not KEY='value'", output)
+                self.assertEqual(self.calls(), [])
+
+    def test_refuses_images_compose_resolves_other_than_the_verified_ones(self):
+        """Security regression (review R1): Compose's own resolved view is
+        judged too, so a parser difference cannot run another image."""
+        verified = [
+            f"{REGISTRY}{name}@{digest(REGISTRY + name, SHA)}"
+            for name in APP_IMAGES.values()
+        ]
+        for images in (
+            ["alpine:3", *verified[1:], PINNED],
+            [*verified, PINNED, "alpine:3"],
+            verified,
+        ):
+            with self.subTest(images=images):
+                self.write_state(
+                    {**self.state(), "calls": [], "compose_images": images}
+                )
+                output = self.deploy(upload(stack_files()), status=1)
+                self.assertIn("Compose resolves other images", output)
+                self.assertIsNone(self.compose("pull"))
+                self.assertIsNone(self.compose("up"))
 
     def test_refuses_an_image_not_named_by_its_repository_and_digest(self):
         for value in (
