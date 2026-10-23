@@ -49,8 +49,12 @@ jobs:
           }
           echo "revision=$CANDIDATE_REVISION" >> "$GITHUB_OUTPUT"
 
+  # A called workflow cannot raise the token scope: its images job pushes to GHCR.
   deploy:
     needs: resolve_revision
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment_name: uat
