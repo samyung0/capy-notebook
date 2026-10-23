@@ -145,7 +145,7 @@ func (a *api) materialResponse(
 	}
 	body.ImageMaxBytes = limits.EditorAssetBytes("image")
 	body.AudioMaxBytes = limits.EditorAssetBytes("audio")
-	if body.RemovedAssetIDs, err = a.s.RemovedEditorAssetIDs(ctx, material.ID, body.Content.EditorAssetIDs()); err != nil {
+	if body.RemovedAssetIDs, err = a.s.MissingEditorAssetIDs(ctx, body.Content.EditorAssetIDs()); err != nil {
 		return nil, hErr(err)
 	}
 	if store.RoleCanEdit(role) && !readOnly {

@@ -112,7 +112,7 @@ import {
   MaterialAttributionFooter,
   SourcesLine,
 } from './MaterialAttributionFooter';
-import { RemovedAssetsContext } from './MediaAssetView';
+import { RemovedAssetsContext, useRemovedAssets } from './MediaAssetView';
 import { MermaidMaterialView } from './MermaidMaterialView';
 import {
   type MaterialMode,
@@ -489,15 +489,16 @@ function LiveSetGrid({
   );
 }
 
-/** The material's view or editor. Every media block in it, an embedded quiz's
- * or set's too, knows the images and audio it shows that are gone (deleted by
- * their uploader, M16) and shows them as removed. */
+/** The material's view or editor. Every media block in it knows the images
+ * and audio it shows that are gone (deleted by their uploader, M16) and shows
+ * them as removed; an embedded quiz or set provides its own (AppEmbed). */
 export function MaterialContent(
   props: ComponentProps<typeof MaterialContentBody>
 ) {
-  const { data } = useMaterial(props.materialId, { errorBoundary: false });
-  const removedAssetIds = data?.removedAssetIds;
-  const removed = useMemo(() => new Set(removedAssetIds), [removedAssetIds]);
+  const { data, refetch } = useMaterial(props.materialId, {
+    errorBoundary: false,
+  });
+  const removed = useRemovedAssets(data?.removedAssetIds, refetch);
   return (
     <RemovedAssetsContext.Provider value={removed}>
       <MaterialContentBody {...props} />

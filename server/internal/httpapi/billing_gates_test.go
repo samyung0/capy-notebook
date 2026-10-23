@@ -386,8 +386,9 @@ func TestMaterialCarriesTheReadersEditorCaps(t *testing.T) {
 }
 
 // A member removed from a workspace finds the image it still pays for in the
-// owner's note on its Files page and deletes it there; nobody else can, and
-// the note then names it as removed to its readers (M16).
+// owner's note on its Files page and deletes it there; nobody else can. The
+// note then names it as removed to its readers, and an embedded quiz names its
+// own removed image in its own response (M16).
 func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 	fx := openBilling(t)
 	ctx := context.Background()
@@ -405,19 +406,32 @@ func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	cleanupMaterial(t, fx.store, note.ID)
-	_, upload, err := fx.store.CreateEditorAssetReservation(ctx, store.NewEditorAssetReservation{
-		AssetID: assetID, UploadID: assetID + "_up", WorkspaceID: fx.workspaceID, MaterialID: note.ID, CreatedBy: fx.actorID,
-		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/" + assetID + "/blob.png",
-		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
-	})
+	quiz, err := fx.store.CreateEmbeddedMaterial(ctx, fx.ownerID, note.ID, store.EmbeddedDraft{Kind: "quiz",
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fx.store.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+	quizAssetID := assetID + "_quiz"
+	quizContent, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[{"type":"image","image":{"assetId":"`+quizAssetID+`"},"width":10,"height":10,"description":"Figure"}],
+		"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`), nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fx.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, note.ID, content); err != nil {
-		t.Fatal(err)
+	for _, item := range []struct{ assetID, materialID, content string }{{assetID, note.ID, content}, {quizAssetID, quiz.ID, quizContent}} {
+		_, upload, err := fx.store.CreateEditorAssetReservation(ctx, store.NewEditorAssetReservation{
+			AssetID: item.assetID, UploadID: item.assetID + "_up", WorkspaceID: fx.workspaceID, MaterialID: item.materialID,
+			CreatedBy: fx.actorID, Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/" + item.assetID + "/blob.png",
+			ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fx.store.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fx.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, item.materialID, item.content); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := fx.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`,
 		fx.workspaceID, fx.actorID); err != nil {
@@ -430,21 +444,32 @@ func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &lost); err != nil {
 		t.Fatal(err)
 	}
-	if len(lost.Items) != 1 || lost.Items[0].ID != assetID || lost.Items[0].MaterialTitle != note.Title {
-		t.Fatalf("lost media = %+v, want the image under %q", lost.Items, note.Title)
+	if len(lost.Items) != 2 {
+		t.Fatalf("lost media = %+v, want both images", lost.Items)
 	}
-	path := "/api/editor-assets/" + assetID
-	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.ownerID, nil), http.StatusNotFound, "the owner deleting it")
-	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.actorID, nil), http.StatusNoContent, "its payer deleting it")
+	for _, item := range lost.Items {
+		if item.MaterialTitle != note.Title {
+			t.Fatalf("lost image %s is under %q, want the note's title %q", item.ID, item.MaterialTitle, note.Title)
+		}
+	}
+	for _, id := range []string{assetID, quizAssetID} {
+		path := "/api/editor-assets/" + id
+		expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.ownerID, nil), http.StatusNotFound, "the owner deleting it")
+		expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.actorID, nil), http.StatusNoContent, "its payer deleting it")
+	}
 
-	rec = doReq(t, fx.handler, http.MethodGet, "/api/materials/"+note.ID, fx.ownerID, nil)
-	expectStatus(t, rec, http.StatusOK, "the owner's read")
-	var read struct{ RemovedAssetIDs []string }
-	if err := json.Unmarshal(rec.Body.Bytes(), &read); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(read.RemovedAssetIDs, []string{assetID}) {
-		t.Fatalf("removedAssetIds = %v, want the deleted image", read.RemovedAssetIDs)
+	for _, read := range []struct{ path, want string }{
+		{"/api/materials/" + note.ID, assetID}, {"/api/quizzes/" + quiz.ID, quizAssetID},
+	} {
+		rec = doReq(t, fx.handler, http.MethodGet, read.path, fx.ownerID, nil)
+		expectStatus(t, rec, http.StatusOK, "the owner's read")
+		var body struct{ RemovedAssetIDs []string }
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(body.RemovedAssetIDs, []string{read.want}) {
+			t.Fatalf("%s removedAssetIds = %v, want only its own deleted image %s", read.path, body.RemovedAssetIDs, read.want)
+		}
 	}
 }
 

@@ -6,6 +6,8 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
+  useMemo,
   useState,
 } from 'react';
 import { Skeleton } from '@/components/ui/feedback';
@@ -53,20 +55,43 @@ export const AssetUrlContext = createContext<
   ((assetId: string) => string | undefined) | null
 >(null);
 
-/** The images and audio the open material shows that no longer exist (its
- * `removedAssetIds`): deleted by their uploader, or with the uploader's
- * account (M16). Each renders as removed instead of loading. */
-export const RemovedAssetsContext = createContext<ReadonlySet<string>>(
-  new Set()
-);
+/** The images and audio the open material (a note, or an embedded quiz or
+ * set) shows that no longer exist, its `removedAssetIds`: deleted by their
+ * uploader, or with the uploader's account (M16). Each renders as removed
+ * instead of loading. `recheck` refetches the list when a resolve fails, so
+ * one deleted while the material is open shows as removed too. */
+interface RemovedAssets {
+  ids: ReadonlySet<string>;
+  recheck?: () => void;
+}
+
+export const RemovedAssetsContext = createContext<RemovedAssets>({
+  ids: new Set(),
+});
+
+/** The RemovedAssetsContext value for a material's query result. */
+export function useRemovedAssets(
+  removedAssetIds: readonly string[] | null | undefined,
+  refetch: (options: { cancelRefetch: boolean }) => unknown
+): RemovedAssets {
+  return useMemo(
+    () => ({
+      ids: new Set(removedAssetIds),
+      // Several failed images in one material share one refetch.
+      recheck: () => void refetch({ cancelRefetch: false }),
+    }),
+    [removedAssetIds, refetch]
+  );
+}
 
 export function useResolvedAsset(assetId: string | undefined) {
   const [state, setState] = useState<AssetState>({ status: 'loading' });
   const [generation, setGeneration] = useState(0);
   const resolveUrl = useContext(AssetUrlContext);
   const override = assetId ? resolveUrl?.(assetId) : undefined;
-  const removedIds = useContext(RemovedAssetsContext);
-  const removed = !!assetId && removedIds.has(assetId);
+  const { ids, recheck } = useContext(RemovedAssetsContext);
+  const removed = !!assetId && ids.has(assetId);
+  const onFailure = useEffectEvent(() => recheck?.());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -92,6 +117,7 @@ export function useResolvedAsset(assetId: string | undefined) {
             kind: 'failed',
             status: 'error',
           });
+          onFailure();
         }
       });
     return () => controller.abort();

@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
@@ -87,6 +85,9 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 	if err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
+	if err := s.assertMaterialNotFullTx(ctx, tx, in.MaterialID); err != nil {
+		return EditorAsset{}, EditorAssetUpload{}, err
+	}
 	if err := s.reserveStorageTx(ctx, tx, ownerID, in.DeclaredSize); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
@@ -133,7 +134,26 @@ func (s *Store) AssertEditorAssetRoom(ctx context.Context, workspaceID, material
 	if err != nil {
 		return err
 	}
+	if err := s.assertMaterialNotFullTx(ctx, tx, materialID); err != nil {
+		return err
+	}
 	return s.gateStorageTx(ctx, tx, payerID, size)
+}
+
+// assertMaterialNotFullTx refuses a new image or audio clip for a material
+// that is view-only because its own payer is at its storage limit: its
+// content could not save the node, so nobody is charged for it (M16). The
+// scope lock refuses a frozen payer.
+func (s *Store) assertMaterialNotFullTx(ctx context.Context, tx pgx.Tx, materialID string) error {
+	var payerID string
+	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`, materialID).Scan(&payerID)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return s.storageFullErr(ctx, tx, payerID)
 }
 
 const editorAssetCols = `id, COALESCE(workspace_id,''), COALESCE(material_id,''), user_id, created_by, name, purpose, object_path,
@@ -668,29 +688,6 @@ func (s *Store) DeleteEditorAsset(ctx context.Context, payerID, assetID string) 
 		}
 		return err
 	})
-}
-
-// RemovedEditorAssetIDs returns the images and audio a material shows (own,
-// its content's references) or its live embedded quizzes and sets show that
-// no longer exist (MissingEditorAssetIDs). An embedded row whose content does
-// not parse shows nothing, so it adds none.
-func (s *Store) RemovedEditorAssetIDs(ctx context.Context, materialID string, own []string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT content FROM materials
-		WHERE parent_material_id=$1 AND trashed_at IS NULL`, materialID)
-	if err != nil {
-		return nil, err
-	}
-	contents, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return nil, err
-	}
-	ids := slices.Clone(own)
-	for _, content := range contents {
-		if embedded, err := materialdoc.EditorAssetIDs(content); err == nil {
-			ids = append(ids, embedded...)
-		}
-	}
-	return s.MissingEditorAssetIDs(ctx, ids)
 }
 
 // MissingEditorAssetIDs returns the ids, of those a material's content

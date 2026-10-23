@@ -1632,6 +1632,7 @@ export const ExploreQuizzesResponseItem = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -4857,6 +4858,7 @@ export const CreateQuizResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -4951,6 +4953,7 @@ export const GetQuizResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5073,6 +5076,7 @@ export const GetQuizForEditResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5158,6 +5162,7 @@ export const UpdateQuizMetadataResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5238,6 +5243,7 @@ export const UpdateQuizSharingResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),

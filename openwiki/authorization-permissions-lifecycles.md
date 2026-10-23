@@ -1178,13 +1178,16 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
   and deletes them from its Files page, where they are listed under a note it
   can no longer open; deleting its account deletes them. The note then shows
   each as removed by its uploader.
-- Nobody adds bytes to another user's bill, and charges never move: not on
-  leaving, removal, account deletion or an owner's transfer.
+- Nobody adds bytes to another user's bill, except the embedded quiz or set
+  row itself, charged to its note's payer; the images in it are the account's
+  that added them, pasted copies included. Charges never move: not on leaving,
+  removal, account deletion or an owner's transfer.
 - A frozen account edits nowhere, and nobody edits what a frozen account pays
   for. Nobody edits the content of an account at or over its limit either,
   though organizing it still works; the rest of the workspace stays editable.
   A material's view-only state follows only its own payer: an editor at its
-  limit just cannot add images or audio to it.
+  limit just cannot add images or audio to it, and nobody adds them to a
+  material whose payer is frozen or at its limit.
 
 ### What the gate checks
 

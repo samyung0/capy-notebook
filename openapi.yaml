@@ -4281,6 +4281,11 @@ components:
             additionalProperties: {}
             type: object
           type: array
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         revision:
           format: int64
           type: integer
@@ -4437,6 +4442,11 @@ components:
           items:
             additionalProperties: {}
             type: object
+          type: array
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
           type: array
         revision:
           format: int64

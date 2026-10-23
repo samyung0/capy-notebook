@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
 // Embedded materials are quiz and flashcards rows referenced from a note by a
@@ -101,12 +102,15 @@ type EmbeddedAdoption struct {
 // flashcard set, or whose note the actor cannot read, gets "". A trashed
 // source whose note is readable is copied: a cut's save may already have
 // trashed it. Like CreateEmbeddedMaterial the caller has checked edit access
-// on the note; a copy that does not fit the note's payer's quota gets "" and
-// refused is true.
+// on the note. A copy's row is charged to the note's payer (Sam 2026-10-19)
+// and its images to the actor, who pasted them, under the actor's plan caps
+// (limits; M16): an image over a cap is left out of the copy. A copy that does
+// not fit either quota gets "" and refused is true.
 func (s *Store) AdoptEmbeddedMaterials(
 	ctx context.Context,
 	actorID, noteID string,
 	blocks []EmbeddedAdoption,
+	limits planlimits.Limits,
 ) (adopted []string, refused bool, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -115,10 +119,10 @@ func (s *Store) AdoptEmbeddedMaterials(
 	defer tx.Rollback(ctx)
 	note := Material{ID: noteID}
 	var noteProvenance []byte
-	err = tx.QueryRow(ctx, `SELECT COALESCE(m.workspace_id,''), m.workspace_name, m.content, m.provenance, m.owner_user_id
+	err = tx.QueryRow(ctx, `SELECT COALESCE(m.workspace_id,''), m.workspace_name, m.content, m.provenance
 		FROM materials m
 		WHERE m.id=$1 AND m.kind='note' AND m.parent_material_id IS NULL AND m.trashed_at IS NULL`,
-		noteID).Scan(&note.WorkspaceID, &note.WorkspaceName, &note.Content, &noteProvenance, &note.OwnerUserID)
+		noteID).Scan(&note.WorkspaceID, &note.WorkspaceName, &note.Content, &noteProvenance)
 	if isNoRows(err) {
 		return nil, false, ErrNotFound
 	}
@@ -128,13 +132,12 @@ func (s *Store) AdoptEmbeddedMaterials(
 	if note.Provenance, err = decodeProvenance(noteProvenance); err != nil {
 		return nil, false, err
 	}
-	// The scope admits the actor and locks the note's payer, who pays for
-	// each copy, its images included (Sam 2026-10-19; a pasted image alone is
-	// the paster's, M16). The payer is set once at insert.
-	if _, err := s.lockEditorAssetScopeTx(ctx, tx, note.WorkspaceID, noteID, actorID); err != nil {
+	// The scope admits the actor, who pays for the copied images, and locks
+	// the note's payer, whom createMaterialTx charges for each row.
+	payerID, err := s.lockEditorAssetScopeTx(ctx, tx, note.WorkspaceID, noteID, actorID)
+	if err != nil {
 		return nil, false, err
 	}
-	payerID := note.OwnerUserID
 	sourceIDs := make([]string, len(blocks))
 	for i, block := range blocks {
 		sourceIDs[i] = block.SourceID
@@ -201,7 +204,7 @@ func (s *Store) AdoptEmbeddedMaterials(
 		if err != nil {
 			return nil, false, err
 		}
-		id, err := s.copyEmbeddedTx(ctx, copyTx, actorID, payerID, note, src)
+		id, err := s.copyEmbeddedTx(ctx, copyTx, actorID, payerID, note, src, limits)
 		var quota *QuotaExceededError
 		if errors.As(err, &quota) {
 			refused = true
@@ -225,12 +228,14 @@ func (s *Store) AdoptEmbeddedMaterials(
 }
 
 // copyEmbeddedTx copies src under note through the clone path: content with
-// fresh card ids, its images under fresh ids charged to payerID.
+// fresh card ids, its images under fresh ids charged to payerID, leaving out
+// one over limits' cap for its purpose.
 func (s *Store) copyEmbeddedTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	actorID, payerID string,
 	note, src Material,
+	limits planlimits.Limits,
 ) (string, error) {
 	content := src.Content
 	var err error
@@ -243,6 +248,14 @@ func (s *Store) copyEmbeddedTx(
 	if err != nil {
 		return "", err
 	}
+	assets = slices.DeleteFunc(assets, func(asset workspaceCloneAsset) bool {
+		over := asset.sizeBytes > limits.EditorAssetBytes(asset.purpose)
+		if over {
+			delete(assetIDs, asset.oldID)
+			assetBytes -= asset.sizeBytes
+		}
+		return over
+	})
 	if content, err = materialdoc.RewriteClonedEditorAssetIDs(content, assetIDs); err != nil {
 		return "", err
 	}

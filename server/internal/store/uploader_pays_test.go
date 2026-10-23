@@ -10,6 +10,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
 // Uploader pays (Sam 2026-10-18): what a member uploads, reserves or creates
@@ -631,7 +632,9 @@ func TestFullUploaderIsRefusedWhileTheNoteStaysEditable(t *testing.T) {
 // embedded set's included, and deletes them from its Files page, which lists
 // them under the note it can no longer open. Neither another editor nor the
 // note's owner deletes them, and a payer does not delete media in its own
-// notes there; the note then reads each deleted one as removed.
+// notes there. A suspended or deleting owner's note title is hidden from the
+// list, and the payer still deletes there (Sam 2026-10-19). The note, and the
+// set for its card image, then read each deleted one as removed.
 func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -690,20 +693,39 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	if err := s.DeleteEditorAsset(ctx, owner, ownImage.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("the owner deleting its own note's image = %v, want not found", err)
 	}
-	for _, asset := range []EditorAsset{image, cardImage} {
-		if err := s.DeleteEditorAsset(ctx, editor, asset.ID); err != nil {
-			t.Fatalf("the removed editor deleting its image = %v", err)
+	for _, step := range []struct {
+		lock, unlock string
+		asset        EditorAsset
+	}{
+		{`UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`,
+			`UPDATE users SET suspended_at=NULL, suspended_reason=NULL WHERE id=$1`, image},
+		{`UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1`,
+			`UPDATE users SET deletion_requested_at=NULL, purge_after=NULL WHERE id=$1`, cardImage},
+	} {
+		if _, err := s.pool.Exec(ctx, step.lock, owner); err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range lost(editor) {
+			if item.MaterialTitle != "" {
+				t.Fatalf("after %q the lost list shows %q, want the title hidden", step.lock, item.MaterialTitle)
+			}
+		}
+		if err := s.DeleteEditorAsset(ctx, editor, step.asset.ID); err != nil {
+			t.Fatalf("the removed editor deleting its image after %q = %v", step.lock, err)
+		}
+		if _, err := s.pool.Exec(ctx, step.unlock, owner); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if got := usage(editor); got.UsedBytes != 0 {
 		t.Fatalf("editor uses %d after deleting, want 0", got.UsedBytes)
 	}
-	// The note reads both as removed, its embedded set's card image too.
-	removed, err := s.RemovedEditorAssetIDs(ctx, note.ID, []string{image.ID, ownImage.ID})
-	want := []string{image.ID, cardImage.ID}
-	slices.Sort(want)
-	if err != nil || !slices.Equal(removed, want) {
-		t.Fatalf("removed = %v, %v; want the two deleted images %v", removed, err, want)
+	for _, check := range []struct {
+		refs, want []string
+	}{{[]string{image.ID, ownImage.ID}, []string{image.ID}}, {[]string{cardImage.ID}, []string{cardImage.ID}}} {
+		if removed, err := s.MissingEditorAssetIDs(ctx, check.refs); err != nil || !slices.Equal(removed, check.want) {
+			t.Fatalf("removed of %v = %v, %v; want %v", check.refs, removed, err, check.want)
+		}
 	}
 }
 
@@ -813,6 +835,89 @@ func TestEmbeddedSetStaysChargedToTheNotesPayer(t *testing.T) {
 	}
 	if got := usage(editor); got.UsedBytes != 0 || got.ReservedBytes != 0 {
 		t.Fatalf("editor usage = %+v, want nothing charged", got)
+	}
+}
+
+// A pasted embedded quiz or set keeps its row on the note's payer while its
+// images are the paster's, under the paster's image cap: an image over the cap
+// is left out of the copy (M16).
+func TestPastedEmbeddedImagesAreChargedToThePaster(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_m16_embpaste_owner")
+	editor := newBlobTestUser(t, s, "u_m16_embpaste_editor")
+	ws, source, usage := m16Note(t, s, owner, editor)
+	target, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := s.CreateEmbeddedMaterial(ctx, owner, source.ID, EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"front", "back"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := editorAssetFixture{t: t, s: s, ctx: ctx}.ready(owner, ws.ID, set.ID)
+	setCards(t, s, owner, set.ID, func(c []materialdoc.Card) []materialdoc.Card {
+		c[0].Image = &materialdoc.CardImage{AssetID: image.ID}
+		return c
+	})
+	paste := func(limits planlimits.Limits) (Material, []Flashcard) {
+		t.Helper()
+		adopted, refused, err := s.AdoptEmbeddedMaterials(ctx, editor, target.ID, []EmbeddedAdoption{{SourceID: set.ID}}, limits)
+		if err != nil || refused || len(adopted) != 1 || adopted[0] == "" {
+			t.Fatalf("paste = %v refused %v, %v", adopted, refused, err)
+		}
+		copied, err := s.GetMaterial(ctx, adopted[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		cards, err := s.ListCards(ctx, copied.ID)
+		if err != nil || len(cards) != 1 {
+			t.Fatalf("copied cards = %+v, %v", cards, err)
+		}
+		return copied, cards
+	}
+	editorBefore := usage(editor).UsedBytes
+	copied, cards := paste(mustPlanLimits(t, s, PlanFree))
+	if copied.OwnerUserID != owner || cards[0].Image == nil {
+		t.Fatalf("copy payer %s, card image %+v; want the note's payer and an image", copied.OwnerUserID, cards[0].Image)
+	}
+	copiedImage, err := s.GetEditorAsset(ctx, cards[0].Image.AssetID)
+	if err != nil || copiedImage.UserID != editor {
+		t.Fatalf("copied image = %+v, %v; want it charged to the paster %s", copiedImage, err, editor)
+	}
+	if got := usage(editor).UsedBytes - editorBefore; got != 100 {
+		t.Fatalf("paster charged %d, want the image's 100 bytes", got)
+	}
+	if _, cards := paste(planlimits.Limits{ImageBytes: 50, SourceFileBytes: 10 << 20}); cards[0].Image != nil {
+		t.Fatalf("a copy over the paster's image cap kept the image %+v", cards[0].Image)
+	}
+}
+
+// A note whose payer is at its storage limit is view-only, so it takes no new
+// image or audio clip from anyone, the ticket's check included: nobody is
+// charged for media its content could not save (M16).
+func TestViewOnlyNoteTakesNoNewMedia(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_m16_viewonly_owner")
+	editor := newBlobTestUser(t, s, "u_m16_viewonly_editor")
+	ws, note, _ := m16Note(t, s, owner, editor)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ($1, $2)
+		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`,
+		owner, mustPlanLimits(t, s, PlanFree).StorageBytes); err != nil {
+		t.Fatal(err)
+	}
+	var quota *QuotaExceededError
+	_, _, err := s.CreateEditorAssetReservation(ctx, NewEditorAssetReservation{
+		AssetID: uid("asset"), UploadID: uid("eau"), WorkspaceID: ws.ID, MaterialID: note.ID, CreatedBy: editor,
+		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/incoming/" + uid("blob"),
+		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if !errors.As(err, &quota) || quota.UserID != owner {
+		t.Fatalf("an image for a full payer's note = %v, want the payer's storage_quota_exceeded", err)
+	}
+	if err := s.AssertEditorAssetRoom(ctx, ws.ID, note.ID, editor, 100); !errors.As(err, &quota) || quota.UserID != owner {
+		t.Fatalf("the ticket for a full payer's note = %v, want the payer's storage_quota_exceeded", err)
 	}
 }
 

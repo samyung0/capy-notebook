@@ -89,11 +89,13 @@ inside someone else's note, quiz or set, uploaded, pasted or placed by the
 chat agent for it (Epo 2026-10-24, M16): `lockEditorAssetScopeTx` returns the
 actor, whose plan caps them. An embedded quiz or set row is charged to its
 note's payer instead (Sam 2026-10-19): `createMaterialTx` gives an embedded
-row its parent's, and a pasted embedded block's copy, its images included,
-goes to the note's payer as well (`AdoptEmbeddedMaterials`). A material's
-view-only state follows only its own payer: an uploader at its limit just
-cannot add more, and nobody adds media to a material whose payer is frozen. A
-workspace
+row its parent's, and a pasted embedded block's copy is the note's payer's
+too, while the images it copies are the paster's, under the paster's image
+cap (`AdoptEmbeddedMaterials`). A material's view-only state follows only its
+own payer: an uploader at its limit just cannot add more, and nobody adds
+media to a material whose payer is frozen, or at its limit
+(`assertMaterialNotFullTx`, so nobody pays for a node the material could not
+save). A workspace
 ownership transfer moves no charges (`TransferWorkspace` only swaps roles and
 still checks the recipient's owned-workspace and file caps). A member who
 leaves or is removed keeps paying for what it added; the items stay in the
@@ -115,15 +117,19 @@ for there (`lockWorkspacePayerTx`, which needs only the payer live; Sam
 2026-10-19). Images and audio it added to someone else's note, quiz or set
 that it can no longer open (`lostAccessSQL` on the workspace of the material,
 or of its note when embedded) have their own section on the Files tab
-(`GET /api/editor-assets/lost`, `ListLostEditorAssets`: name, size, added
-time and the note's title, blank once that workspace's owner is no longer
-live), with Delete only (`DELETE /api/editor-assets/{assetId}`,
+(`GET /api/editor-assets/lost`, `ListLostEditorAssets` on
+`editor_assets_payer_idx`, migration 0110: name, size, added time and the
+note's title, blank once that workspace's owner is no longer live), with
+Delete only (`DELETE /api/editor-assets/{assetId}`,
 `DeleteEditorAsset`, open to the payer of media in a material it does not pay
 for, whether or not it can open it). Deleting one is final, because a trashed
 asset would come back with the note's next save. The note keeps the node:
-the material response lists such ids in `removedAssetIds` (with those of its
-embedded quizzes and sets, `RemovedEditorAssetIDs`) and the app shows the
-block as removed by its uploader instead of loading it. Media in the payer's
+the material response lists the ids its own content references that no
+longer exist in `removedAssetIds` (`MissingEditorAssetIDs`), and an embedded
+quiz's or set's own response (quiz or material) lists its own. The app shows
+each such block as removed by its uploader instead of loading it; when a
+block fails to load while the material is open, it fetches the material's
+list again, so media deleted meanwhile read as removed too. Media in the payer's
 own materials go with their nodes and their material's trash instead.
 Deleting an account deletes everything it pays for, in other people's
 workspaces too (`PurgeUser`), its images and audio in other people's notes
