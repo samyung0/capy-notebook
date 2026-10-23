@@ -121,8 +121,9 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
       )}
     >
       {body ?? fallback}
+      {/* Top left: the grid card's ⋯ takes the top right. */}
       {pill && !small && (
-        <span className="absolute @min-[188px]:top-2 top-1.5 @min-[188px]:right-2 right-1.5 whitespace-nowrap rounded-full bg-tint-accent-1 @min-[188px]:px-[9px] px-[7px] @min-[188px]:py-1 py-[3px] font-bold @min-[188px]:text-[11px] text-[9.5px] text-tint-accent-1-fg leading-none">
+        <span className="absolute @min-[188px]:top-2 top-1.5 @min-[188px]:left-2 left-1.5 whitespace-nowrap rounded-full bg-tint-accent-1 @min-[188px]:px-[9px] px-[7px] @min-[188px]:py-1 py-[3px] font-bold @min-[188px]:text-[11px] text-[9.5px] text-tint-accent-1-fg leading-none">
           {pill}
         </span>
       )}
