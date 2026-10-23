@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..jobs import TerminalError
+from ..jobs import AUDIO_ROUTE, TerminalError
 
 VERSION = 2
 
@@ -15,7 +15,7 @@ STORE_ONLY = "store_only"
 RAW_TEXT = "raw_text"
 DELIMITED_TEXT = "delimited_text"
 IMAGE_CAPTION = "image_caption"
-AUDIO_TRANSCRIPTION = "audio_transcription"
+AUDIO_TRANSCRIPTION = AUDIO_ROUTE
 DOCUMENT_PARSE = "document_parse"
 
 ROUTES = frozenset(

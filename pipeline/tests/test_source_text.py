@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -8,10 +7,12 @@ import shutil
 import struct
 import subprocess
 import threading
+import time
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import httpx
 import pytest
 from PIL import Image
 
@@ -160,13 +161,6 @@ class _FakeFiletrans:
         self.transcript = (200, {"transcripts": []})
         self.url = ""
 
-    def succeeded(self) -> tuple[int, dict]:
-        result = {
-            "subtask_status": "SUCCEEDED",
-            "transcription_url": f"{self.url}/result.json",
-        }
-        return 200, {"output": {"task_status": "SUCCEEDED", "results": [result]}}
-
     def handler(self):
         fake = self
 
@@ -211,43 +205,21 @@ def filetrans(monkeypatch):
     monkeypatch.setattr(
         source_text.cfg, "alibaba_modelstudio_url", f"{fake.url}/compatible-mode/v1"
     )
-    monkeypatch.setattr(source_text, "_FILETRANS_POLL_S", 0)
-    # The fake serves the result itself, on 127.0.0.1 over http.
-    monkeypatch.setattr(source_text, "_transcript_url", lambda url: url)
     yield fake
     server.shutdown()
     server.server_close()
 
 
 @pytest.mark.asyncio
-async def test_filetrans_submits_polls_and_reads_the_transcript(filetrans) -> None:
-    filetrans.polls = [
-        (200, {"output": {"task_status": "RUNNING"}}),
-        filetrans.succeeded(),
-    ]
-    first = {
-        "begin_time": 0,
-        "end_time": 3900,
-        "text": " First  one. ",
-        "speaker_id": 0,
-    }
-    second = {"begin_time": 4200, "end_time": 6100, "text": "第二句", "speaker_id": 1}
-    blank = {"begin_time": 6100, "end_time": 6300, "text": "  "}
-    filetrans.transcript = (
-        200,
-        {"transcripts": [{"channel_id": 0, "sentences": [second, first, blank]}]},
-    )
+async def test_a_submit_carries_the_link_the_options_and_the_context(
+    filetrans, caplog
+) -> None:
+    caplog.set_level(logging.INFO)
     context = "Workspace: Bio\nFile: a.mp3"
 
-    sentences = await source_text._filetrans(_SOURCE_URL, context)
+    assert await source_text._submit(_SOURCE_URL, context) == "task-1"
 
-    assert sentences == [
-        {"start_ms": 0, "end_ms": 3900, "speaker": 0, "text": "First one."},
-        {"start_ms": 4200, "end_ms": 6100, "speaker": 1, "text": "第二句"},
-    ]
-    (method, path, headers, body), *polls, (_, result_path, result_headers, _) = (
-        filetrans.requests
-    )
+    ((method, path, headers, body),) = filetrans.requests
     assert (method, path) == ("POST", "/api/v1/services/audio/asr/transcription")
     assert headers["Authorization"] == "Bearer test-key"
     assert headers["X-DashScope-Async"] == "enable"
@@ -265,13 +237,56 @@ async def test_filetrans_submits_polls_and_reads_the_transcript(filetrans) -> No
             "diarization_enabled": True,
         },
     }
-    assert [poll[1] for poll in polls] == ["/api/v1/tasks/task-1"] * 2
-    assert all(poll[2]["Authorization"] == "Bearer test-key" for poll in polls)
-    # The result link is Alibaba's own signed URL: no API key goes with it.
-    assert result_path == "/result.json" and "Authorization" not in result_headers
+    # The submit is logged at INFO (a poll only at DEBUG, below).
+    logged = [record.getMessage() for record in caplog.records]
+    assert any("/api/v1/services/audio/asr/transcription" in line for line in logged)
 
 
-_SUBMIT = ("POST", "/api/v1/services/audio/asr/transcription")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("answer", "retryable"),
+    [
+        ((429, {"code": "Throttling.RateQuota"}), True),
+        ((503, {}), True),
+        ((400, {"code": "InvalidParameter"}), False),
+    ],
+)
+async def test_a_refused_submit_is_retryable_or_terminal(
+    filetrans, answer, retryable
+) -> None:
+    filetrans.submit = answer
+
+    with pytest.raises(source_text.FiletransError) as failure:
+        await source_text._submit(_SOURCE_URL, "context")
+
+    assert jobs.is_retryable(failure.value) is retryable
+    # Statuses and provider codes only: never the signed source link.
+    assert "Signature" not in str(failure.value)
+
+
+@pytest.mark.asyncio
+async def test_a_poll_reads_the_task_once_and_a_passing_error_is_no_answer(
+    filetrans, caplog
+) -> None:
+    caplog.set_level(logging.INFO)
+    filetrans.polls = [
+        (200, {"output": {"task_status": "RUNNING"}}),
+        (503, {}),
+        (429, {"code": "Throttling"}),
+        (401, {"code": "InvalidApiKey"}),
+    ]
+
+    assert await source_text._poll("task-1") == {"task_status": "RUNNING"}
+    assert await source_text._poll("task-1") is None
+    assert await source_text._poll("task-1") is None
+    with pytest.raises(source_text.FiletransTerminalError):
+        await source_text._poll("task-1")
+
+    assert all(
+        request[2]["Authorization"] == "Bearer test-key"
+        for request in filetrans.requests
+    )
+    assert not any("/api/v1/tasks/" in r.getMessage() for r in caplog.records)
 
 
 def test_the_transcript_link_is_read_over_https_from_alibabas_result_buckets():
@@ -298,209 +313,411 @@ def test_the_transcript_link_is_read_over_https_from_alibabas_result_buckets():
         assert "Signature" not in str(refused.value)
 
 
-@pytest.mark.asyncio
-async def test_a_redirected_transcript_link_is_not_followed(filetrans) -> None:
-    filetrans.polls = [filetrans.succeeded()]
+def test_a_transcript_download_takes_no_key_and_follows_no_redirect(
+    filetrans,
+) -> None:
     filetrans.transcript = (302, {})
 
     with pytest.raises(source_text.FiletransRetryableError) as failure:
-        await source_text._filetrans(_SOURCE_URL, "context")
+        source_text._download_transcript(f"{filetrans.url}/result.json")
 
     assert failure.value.status_code == 302
-    assert "/elsewhere.json" not in [request[1] for request in filetrans.requests]
+    ((_, path, headers, _),) = filetrans.requests
+    # The result link is Alibaba's own signed URL: no API key goes with it.
+    assert path == "/result.json" and "Authorization" not in headers
+
+
+def test_transcript_sentences_come_in_time_order_with_speakers() -> None:
+    first = {
+        "begin_time": 0,
+        "end_time": 3900,
+        "text": " First  one. ",
+        "speaker_id": 0,
+    }
+    second = {"begin_time": 4200, "end_time": 6100, "text": "第二句", "speaker_id": 1}
+    blank = {"begin_time": 6100, "end_time": 6300, "text": "  "}
+
+    assert source_text._sentences(
+        {"transcripts": [{"channel_id": 0, "sentences": [second, first, blank]}]}
+    ) == [
+        {"start_ms": 0, "end_ms": 3900, "speaker": 0, "text": "First one."},
+        {"start_ms": 4200, "end_ms": 6100, "speaker": 1, "text": "第二句"},
+    ]
+
+
+# ------------------------------------------------------- the claim cycle
+
+
+_SUCCEEDED = {
+    "task_status": "SUCCEEDED",
+    "results": [
+        {
+            "subtask_status": "SUCCEEDED",
+            "transcription_url": "https://dashscope-result-sgp.oss-ap-southeast-1"
+            ".aliyuncs.com/r.json",
+        }
+    ],
+}
+_RUNNING = {"task_status": "RUNNING"}
+_HELLO = {
+    "transcripts": [
+        {"sentences": [{"begin_time": 0, "end_time": 900, "text": "Hello."}]}
+    ]
+}
+
+
+def _failed(code: str) -> dict:
+    return {"task_status": "FAILED", "code": code}
+
+
+class _Flow:
+    """transcribe_audio_source with its database, bucket, gate and provider
+    faked. ``payload`` is the job's stored ``filetrans``; ``events`` what the
+    claims did, in order."""
+
+    def __init__(self, monkeypatch, *, duration: float = 60.2) -> None:
+        self.events: list[tuple] = []
+        self.payload: dict = {}
+        self.polls: list[dict | None] = []
+        self.transcripts: list = []
+        self.calls: dict[str, str] = {}
+        self.leases: set[str] = set()
+        self.cache: dict[str, bytes] = {}
+        self.gate_full = False
+        self.in_flight = False
+        events = self.events
+
+        @asynccontextmanager
+        async def no_lock(_identity):
+            yield
+
+        async def open_call(call_id, **kwargs):
+            if self.gate_full:
+                raise elitellm.ProviderBusy("gate full", retry_after=5.0)
+            self.calls[call_id] = "open"
+            self.leases.add(call_id)
+            events.append(("open", kwargs["capacity"], kwargs["provider_timeout_s"]))
+
+        async def renew_call(call_id, key, seconds):
+            events.append(("renew", key, seconds))
+            return self.calls.get(call_id, "")
+
+        async def release_lease(call_id):
+            self.leases.discard(call_id)
+            events.append(("release",))
+
+        async def abandon_call(call_id, exc=None):
+            self.calls[call_id] = "abandoned"
+            events.append(("abandon",))
+
+        async def settle_units(**kwargs):
+            self.calls[kwargs["call_id"]] = "applied"
+            events.append(
+                ("settle", kwargs["units"], kwargs["unit"], kwargs["credit_micros"])
+            )
+
+        def presign(key, expires):
+            events.append(("presign", key, expires))
+            return f"signed:{key}"
+
+        async def submit(url, _context):
+            events.append(("submit", url))
+            return f"task-{sum(event[0] == 'submit' for event in events)}"
+
+        async def poll(task_id):
+            events.append(("poll", task_id))
+            return self.polls.pop(0)
+
+        def download(_url):
+            answer = self.transcripts.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        def store(_job_id, attempt, state):
+            assert attempt == 1
+            self.payload = dict(state)
+
+        monkeypatch.setattr(source_text.cfg, "alibaba_modelstudio_key", "test-key")
+        monkeypatch.setattr(source_text, "_source_lock", no_lock)
+        monkeypatch.setattr(source_text.blobstore, "read_bytes", self.cache.get)
+        monkeypatch.setattr(
+            source_text.blobstore,
+            "write_bytes",
+            lambda key, data, _type: self.cache.__setitem__(key, bytes(data)),
+        )
+        monkeypatch.setattr(source_text.blobstore, "presign_get", presign)
+        monkeypatch.setattr(source_text, "audio_duration_seconds", lambda _p: duration)
+        monkeypatch.setattr(source_text, "_task_in_flight", lambda *_a: self.in_flight)
+        monkeypatch.setattr(source_text, "_store_state", store)
+        monkeypatch.setattr(source_text, "_submit", submit)
+        monkeypatch.setattr(source_text, "_poll", poll)
+        monkeypatch.setattr(source_text, "_download_transcript", download)
+        monkeypatch.setattr(source_text.accounting, "open_call", open_call)
+        monkeypatch.setattr(source_text.accounting, "renew_call", renew_call)
+        monkeypatch.setattr(source_text.accounting, "release_lease", release_lease)
+        monkeypatch.setattr(source_text.accounting, "abandon_call", abandon_call)
+        monkeypatch.setattr(source_text.accounting, "settle_units", settle_units)
+
+    async def claim(self):
+        """One job claim with the job's stored state."""
+        return await source_text.transcribe_audio_source(
+            job_id="job_1",
+            attempt=1,
+            stored=self.payload or None,
+            local_path="lecture.mp3",
+            source_sha256="ab" * 32,
+            blob_path="sources/lecture.mp3",
+            context="Workspace: Bio",
+            second_rate_micros=16_667,
+        )
+
+    async def run(self):
+        """Claims until the job ends; the re-pend delays they asked for."""
+        delays = []
+        while True:
+            try:
+                return await self.claim(), delays
+            except source_text.FiletransWait as wait:
+                delays.append(wait.delay_s)
+
+    def kinds(self) -> list[str]:
+        return [event[0] for event in self.events]
 
 
 @pytest.mark.asyncio
-async def test_a_transient_poll_error_keeps_polling_the_same_task(
-    filetrans, caplog
-) -> None:
-    caplog.set_level(logging.INFO)
-    filetrans.polls = [
-        (200, {"output": {"task_status": "RUNNING"}}),
-        (503, {}),
-        (429, {"code": "Throttling"}),
-        filetrans.succeeded(),
-    ]
-    spoken = {"begin_time": 0, "end_time": 900, "text": "Hello."}
-    filetrans.transcript = (200, {"transcripts": [{"sentences": [spoken]}]})
+async def test_a_first_claim_submits_stores_the_task_and_re_pends(monkeypatch):
+    flow = _Flow(monkeypatch)
 
-    sentences = await source_text._filetrans(_SOURCE_URL, "context")
+    with pytest.raises(source_text.FiletransWait) as wait:
+        await flow.claim()
+
+    assert wait.value.delay_s == 2
+    # One task under the 12-task gate, held for the hour its polls renew,
+    # with a source link for the ten minutes Alibaba has to fetch it.
+    assert flow.events == [
+        ("open", ("filetrans", 12), 3600),
+        ("presign", "sources/lecture.mp3", 600),
+        ("submit", "signed:sources/lecture.mp3"),
+    ]
+    assert flow.payload == {
+        "providerFailures": 0,
+        "taskId": "task-1",
+        "callId": next(iter(flow.calls)),
+        "submittedAt": flow.payload["submittedAt"],
+        "seconds": 60.2,
+        "sha256": "ab" * 32,
+        "polls": 0,
+    }
+    # The task runs: its lease stays.
+    assert flow.leases == {flow.payload["callId"]}
+
+
+@pytest.mark.asyncio
+async def test_a_running_task_re_pends_with_growing_delays_then_settles_once(
+    monkeypatch,
+):
+    flow = _Flow(monkeypatch)
+    flow.polls = [_RUNNING, None, _RUNNING, _SUCCEEDED]
+    flow.transcripts = [_HELLO]
+
+    (sentences, key, size), delays = await flow.run()
 
     assert [sentence["text"] for sentence in sentences] == ["Hello."]
-    # One task: the poll errors spent no retry and submitted nothing new.
-    assert [request[:2] for request in filetrans.requests].count(_SUBMIT) == 1
-    assert filetrans.polls == []
-    # The submit is logged at INFO, each poll only at DEBUG.
-    logged = [record.getMessage() for record in caplog.records]
-    assert any("/api/v1/services/audio/asr/transcription" in line for line in logged)
-    assert not any("/api/v1/tasks/" in line for line in logged)
+    assert key == f"derived-text/{'ab' * 32}/qwen-audio-3.1-filetrans.json"
+    assert size > 0 and key in flow.cache
+    # Submitted once; every poll claim renews the task's call and lease for
+    # the hour plus nothing more, and an unanswered poll is a running task.
+    assert delays == [2, 3, 4, 7]
+    assert flow.kinds().count("submit") == 1
+    assert flow.events.count(("renew", "filetrans", 3600)) == 4
+    # Charged ceil(60.2) seconds once, then the lease is freed.
+    assert flow.events[-2:] == [("settle", 61, "seconds", 61 * 16_667), ("release",)]
+    assert flow.leases == set()
+
+    # The cached transcript serves the next claim with no task or charge.
+    flow.payload = {}
+    assert await flow.claim() == (sentences, key, size)
+    assert flow.kinds().count("settle") == 1
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", ["CANCELED", "UNKNOWN", None])
-async def test_a_task_in_any_other_state_ends_the_poll_at_once(
-    filetrans, state
-) -> None:
-    filetrans.polls = [(200, {"output": {"task_status": state}})]
+async def test_a_claim_after_a_crash_polls_the_stored_task(monkeypatch):
+    """A worker that died mid-claim left the task stored: the job's next
+    claim polls it, with no new submit and no provider failure counted."""
+    flow = _Flow(monkeypatch)
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+    # The claim that would have polled died; the reclaimed job polls again.
+    flow.polls = [_SUCCEEDED]
+    flow.transcripts = [_HELLO]
 
-    async with asyncio.timeout(10):
-        with pytest.raises(source_text.FiletransRetryableError):
-            await source_text._filetrans(_SOURCE_URL, "context")
+    sentences, _key, _size = await flow.claim()
 
-    assert filetrans.polls == []
-    assert [request[:2] for request in filetrans.requests].count(_SUBMIT) == 1
+    assert sentences and flow.kinds().count("submit") == 1
+    assert flow.kinds().count("settle") == 1
+
+    # A crash after the settlement but before the job ended: the call is
+    # applied, the next claim reads the result again and settles the same
+    # receipt, which the database applies once.
+    flow.cache.clear()
+    flow.polls = [_SUCCEEDED]
+    flow.transcripts = [_HELLO]
+    await flow.claim()
+    settles = [event for event in flow.events if event[0] == "settle"]
+    assert settles == [("settle", 61, "seconds", 61 * 16_667)] * 2
+    assert flow.kinds().count("submit") == 1
 
 
-def _failed(code: str, subtask: bool = False) -> tuple[int, dict]:
-    if subtask:
-        result = {"subtask_status": "FAILED", "code": code}
-        return 200, {"output": {"task_status": "SUCCEEDED", "results": [result]}}
-    return 200, {"output": {"task_status": "FAILED", "code": code}}
+@pytest.mark.asyncio
+async def test_a_failed_task_is_submitted_once_more_then_fails_the_file(
+    monkeypatch,
+):
+    flow = _Flow(monkeypatch)
+    flow.polls = [_failed("InternalError.Timeout"), _failed("InternalError.Timeout")]
+
+    with pytest.raises(source_text.FiletransTerminalError) as failure:
+        await flow.run()
+
+    assert not jobs.is_retryable(failure.value)
+    assert "InternalError.Timeout" in str(failure.value)
+    # Two tasks, each abandoned uncharged with its lease freed.
+    assert flow.kinds().count("submit") == 2
+    assert flow.kinds().count("abandon") == 2
+    assert "settle" not in flow.kinds()
+    assert flow.leases == set()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("submit", "poll", "retryable"),
+    "ended",
     [
-        # Retried once by the ingest job, then terminal.
-        ((429, {"code": "Throttling.RateQuota"}), None, True),
-        ((503, {}), None, True),
-        (None, _failed("InternalError.Timeout"), True),
-        # Terminal at once: a refused request, a link or file the task cannot use.
-        ((400, {"code": "InvalidParameter"}), None, False),
-        (None, _failed("InvalidFile.DownloadFailed"), False),
-        (None, _failed("InvalidFile.AudioFormatUnsupported", subtask=True), False),
+        _failed("InternalError"),
+        {"task_status": "CANCELED"},
+        {"task_status": "UNKNOWN"},
+        {"task_status": "SUCCEEDED", "results": [{"subtask_status": "FAILED"}]},
     ],
 )
-async def test_filetrans_failures_retry_once_or_stop(
-    filetrans, submit, poll, retryable
-) -> None:
-    if submit is not None:
-        filetrans.submit = submit
-    if poll is not None:
-        filetrans.polls = [poll]
+async def test_a_task_ended_without_a_transcript_is_one_provider_failure(
+    monkeypatch, ended
+):
+    flow = _Flow(monkeypatch)
+    flow.payload = {
+        "taskId": "task-1",
+        "callId": "pc_1",
+        "submittedAt": time.time(),
+        "seconds": 60.2,
+        "providerFailures": 0,
+    }
+    flow.calls["pc_1"] = "open"
+    flow.polls = [ended]
 
-    with pytest.raises(source_text.FiletransError) as failure:
-        await source_text._filetrans(_SOURCE_URL, "context")
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
 
-    assert jobs.is_retryable(failure.value) is retryable
-    assert jobs.POLICIES["ingest"].max_attempts == 2
-    # Statuses and provider codes only: never the signed source link.
-    assert "Signature" not in str(failure.value)
-
-
-def _audio_flow(monkeypatch, *, duration: float = 60.2, transcribe=None):
-    """transcribe_audio_source with its database, bucket and provider faked.
-    Returns the list its accounting calls and Filetrans tasks land in."""
-    events: list[tuple] = []
-    cache: dict[str, bytes] = {}
-
-    @asynccontextmanager
-    async def no_lock(_identity):
-        yield
-
-    async def open_call(_call_id, **kwargs):
-        events.append(("open", kwargs["capacity"], kwargs["provider_timeout_s"]))
-
-    async def settle_units(**kwargs):
-        events.append(
-            ("settle", kwargs["units"], kwargs["unit"], kwargs["credit_micros"])
-        )
-
-    async def abandon_call(_call_id, exc=None):
-        events.append(("abandon", type(exc).__name__))
-
-    async def release_call(_call_id):
-        events.append(("release",))
-
-    async def filetrans(url, _context):
-        events.append(("task", url))
-        if transcribe is not None:
-            return transcribe()
-        return [{"start_ms": 0, "end_ms": 900, "speaker": 0, "text": "Hello."}]
-
-    def write(key, data, _content_type):
-        cache[key] = bytes(data)
-
-    def presign(key, expires):
-        events.append(("presign", key, expires))
-        return f"signed:{key}:{expires}"
-
-    monkeypatch.setattr(source_text.cfg, "alibaba_modelstudio_key", "test-key")
-    monkeypatch.setattr(source_text, "_source_lock", no_lock)
-    monkeypatch.setattr(source_text.blobstore, "read_bytes", cache.get)
-    monkeypatch.setattr(source_text.blobstore, "write_bytes", write)
-    monkeypatch.setattr(source_text.blobstore, "presign_get", presign)
-    monkeypatch.setattr(source_text, "audio_duration_seconds", lambda _path: duration)
-    monkeypatch.setattr(source_text, "_filetrans", filetrans)
-    monkeypatch.setattr(source_text.accounting, "open_call", open_call)
-    monkeypatch.setattr(source_text.accounting, "settle_units", settle_units)
-    monkeypatch.setattr(source_text.accounting, "abandon_call", abandon_call)
-    monkeypatch.setattr(source_text.accounting, "release_call", release_call)
-    return events
-
-
-async def _transcribe():
-    return await source_text.transcribe_audio_source(
-        local_path="lecture.mp3",
-        source_sha256="ab" * 32,
-        blob_path="sources/lecture.mp3",
-        context="Workspace: Bio",
-        second_rate_micros=16_667,
-    )
+    # Stored with the count and no task: the next claim submits a new one.
+    assert flow.payload == {"providerFailures": 1}
+    assert flow.kinds() == ["renew", "poll", "abandon", "release"]
 
 
 @pytest.mark.asyncio
-async def test_audio_settles_whole_seconds_once_then_reads_the_cache(monkeypatch):
-    events = _audio_flow(monkeypatch)
+async def test_a_file_the_task_cannot_use_fails_at_once(monkeypatch):
+    flow = _Flow(monkeypatch)
+    flow.polls = [_failed("InvalidFile.DownloadFailed")]
 
-    sentences, key, size = await _transcribe()
-    again = await _transcribe()
+    with pytest.raises(source_text.FiletransTerminalError):
+        await flow.run()
 
-    assert again == (sentences, key, size) and size > 0
-    assert key == f"derived-text/{'ab' * 32}/qwen-audio-3.1-filetrans.json"
-    # One task under the 12-task gate, its source link signed once admitted
-    # and living as long as the task may run, charged ceil(60.2) seconds; the
-    # cached rerun calls nothing.
-    assert events == [
-        ("open", ("filetrans", 12), 900),
-        ("presign", "sources/lecture.mp3", 900),
-        ("task", "signed:sources/lecture.mp3:900"),
-        ("settle", 61, "seconds", 61 * 16_667),
-        ("release",),
+    assert flow.kinds().count("submit") == 1
+    assert flow.leases == set()
+
+
+@pytest.mark.asyncio
+async def test_a_lost_task_counts_one_provider_failure(monkeypatch):
+    """A task past Alibaba's keeping, or whose call ran out unpolled, is
+    lost: one provider failure, and the job submits again."""
+    flow = _Flow(monkeypatch)
+    old = time.time() - source_text.FILETRANS_RESUME_S - 1
+    flow.payload = {
+        "taskId": "task-1",
+        "callId": "pc_1",
+        "submittedAt": old,
+        "seconds": 60.2,
+        "providerFailures": 0,
+    }
+    flow.calls["pc_1"] = "open"
+
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+    assert flow.payload == {"providerFailures": 1}
+    assert "poll" not in flow.kinds()
+
+    flow.payload = {
+        "taskId": "task-1",
+        "callId": "pc_gone",
+        "submittedAt": time.time(),
+        "seconds": 60.2,
+        "providerFailures": 1,
+    }
+    with pytest.raises(source_text.FiletransTerminalError, match="task lost"):
+        await flow.claim()
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_result_is_read_again_and_a_broken_one_is_a_failure(
+    monkeypatch,
+):
+    flow = _Flow(monkeypatch)
+    flow.payload = {
+        "taskId": "task-1",
+        "callId": "pc_1",
+        "submittedAt": time.time(),
+        "seconds": 60.2,
+        "providerFailures": 0,
+        "polls": 3,
+    }
+    flow.calls["pc_1"] = "open"
+    flow.polls = [_SUCCEEDED, _SUCCEEDED]
+    flow.transcripts = [
+        source_text.FiletransRetryableError(503),
+        {"transcripts": [{"sentences": [{"text": "no times"}]}]},
     ]
 
+    with pytest.raises(source_text.FiletransWait) as wait:
+        await flow.claim()
+    assert wait.value.delay_s == 10 and flow.payload["polls"] == 4
+    assert flow.payload["providerFailures"] == 0
 
-@pytest.mark.asyncio
-async def test_a_failed_audio_task_is_abandoned_uncharged_and_uncached(monkeypatch):
-    def fail():
-        raise source_text.FiletransRetryableError("InternalError")
-
-    events = _audio_flow(monkeypatch, transcribe=fail)
-
-    with pytest.raises(source_text.FiletransRetryableError):
-        await _transcribe()
-
-    assert [event[0] for event in events] == [
-        "open",
-        "presign",
-        "task",
-        "abandon",
-        "release",
-    ]
-    key = source_text.audio_artifact_key("ab" * 32)
-    assert source_text.blobstore.read_bytes(key) is None
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+    assert flow.payload == {"providerFailures": 1}
 
 
 @pytest.mark.asyncio
-async def test_audio_over_two_hours_is_an_index_limit_before_any_task(monkeypatch):
-    events = _audio_flow(monkeypatch, duration=2 * 60 * 60 + 0.5)
+@pytest.mark.parametrize(
+    ("refusal", "keeps_lease"),
+    [
+        (source_text.FiletransRetryableError(503), False),
+        (httpx.ConnectError("lost"), True),
+    ],
+)
+async def test_a_refused_submit_is_one_provider_failure(
+    monkeypatch, refusal, keeps_lease
+):
+    flow = _Flow(monkeypatch)
 
-    with pytest.raises(jobs.InputLimitError) as limit:
-        await _transcribe()
+    async def refused(_url, _context):
+        raise refusal
 
-    assert limit.value.code == "audio_duration_limit"
-    assert events == []
+    monkeypatch.setattr(source_text, "_submit", refused)
+
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+
+    assert flow.payload == {"providerFailures": 1}
+    assert "abandon" in flow.kinds()
+    # A lost answer may have made a task: its lease runs out on its own.
+    assert bool(flow.leases) is keeps_lease
 
 
 @pytest.mark.asyncio
@@ -508,53 +725,92 @@ async def test_a_recording_with_no_speech_is_ready_unindexed_and_free(monkeypatc
     """No speech is not a failure: the call settles at zero credits (not
     abandoned), nothing is cached, and the file ends ready and unindexed
     with its own reason."""
-    events = _audio_flow(monkeypatch, transcribe=list)
+    flow = _Flow(monkeypatch)
+    flow.polls = [_SUCCEEDED]
+    flow.transcripts = [{"transcripts": []}]
 
     with pytest.raises(jobs.InputLimitError) as outcome:
-        await _transcribe()
+        await flow.run()
 
     assert outcome.value.code == "no_speech"
-    assert not jobs.is_retryable(outcome.value)
-    assert events[-2:] == [("settle", 61, "seconds", 0), ("release",)]
-    assert not any(event[0] == "abandon" for event in events)
-    key = source_text.audio_artifact_key("ab" * 32)
-    assert source_text.blobstore.read_bytes(key) is None
+    assert flow.events[-2:] == [("settle", 61, "seconds", 0), ("release",)]
+    assert "abandon" not in flow.kinds() and not flow.cache
 
 
 @pytest.mark.asyncio
 async def test_speech_past_the_measured_length_is_billed_to_its_end(monkeypatch):
-    def long_speech():
-        return [{"start_ms": 0, "end_ms": 90_400, "speaker": 0, "text": "Hello."}]
+    flow = _Flow(monkeypatch)
+    flow.polls = [_SUCCEEDED]
+    late = {"begin_time": 0, "end_time": 90_400, "text": "Hello."}
+    flow.transcripts = [{"transcripts": [{"sentences": [late]}]}]
 
-    events = _audio_flow(monkeypatch, transcribe=long_speech)
-
-    await _transcribe()
+    await flow.run()
 
     # Measured 60.2 s, speech ends at 90.4 s: 91 seconds are charged.
-    assert ("settle", 91, "seconds", 91 * 16_667) in events
+    assert ("settle", 91, "seconds", 91 * 16_667) in flow.events
 
 
 @pytest.mark.asyncio
 async def test_speech_past_two_hours_is_the_index_limit_uncharged(monkeypatch):
-    def past_the_limit():
-        end = (2 * 60 * 60 + 1) * 1000
-        return [{"start_ms": 0, "end_ms": end, "speaker": 0, "text": "Hello."}]
-
-    events = _audio_flow(monkeypatch, transcribe=past_the_limit)
+    flow = _Flow(monkeypatch)
+    flow.polls = [_SUCCEEDED]
+    end = (2 * 60 * 60 + 1) * 1000
+    flow.transcripts = [
+        {
+            "transcripts": [
+                {"sentences": [{"begin_time": 0, "end_time": end, "text": "Hi."}]}
+            ]
+        }
+    ]
 
     with pytest.raises(jobs.InputLimitError) as limit:
-        await _transcribe()
+        await flow.run()
 
     assert limit.value.code == "audio_duration_limit"
-    assert [event[0] for event in events] == [
-        "open",
-        "presign",
-        "task",
-        "abandon",
-        "release",
-    ]
-    key = source_text.audio_artifact_key("ab" * 32)
-    assert source_text.blobstore.read_bytes(key) is None
+    assert "settle" not in flow.kinds() and "abandon" in flow.kinds()
+    assert flow.leases == set() and not flow.cache
+
+
+@pytest.mark.asyncio
+async def test_audio_over_two_hours_is_an_index_limit_before_any_task(monkeypatch):
+    flow = _Flow(monkeypatch, duration=2 * 60 * 60 + 0.5)
+
+    with pytest.raises(jobs.InputLimitError) as limit:
+        await flow.claim()
+
+    assert limit.value.code == "audio_duration_limit"
+    assert flow.events == []
+
+
+@pytest.mark.asyncio
+async def test_a_full_gate_or_another_jobs_task_waits_without_a_task(monkeypatch):
+    flow = _Flow(monkeypatch)
+    flow.gate_full = True
+    with pytest.raises(jobs.CapacityWait) as full:
+        await flow.claim()
+    assert not isinstance(full.value, source_text.FiletransWait)
+
+    # Another job is transcribing the same bytes: wait for its transcript.
+    flow.gate_full, flow.in_flight = False, True
+    with pytest.raises(source_text.FiletransWait) as wait:
+        await flow.claim()
+    assert wait.value.delay_s == 30
+    assert flow.events == [] and flow.payload == {}
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_transcription_fails_before_measuring(monkeypatch):
+    flow = _Flow(monkeypatch)
+    monkeypatch.setattr(source_text.cfg, "alibaba_modelstudio_key", "")
+
+    def measure(_path):
+        raise AssertionError("measured without a provider to send to")
+
+    monkeypatch.setattr(source_text, "audio_duration_seconds", measure)
+
+    with pytest.raises(TerminalError, match="not configured"):
+        await flow.claim()
+    assert flow.events == []
 
 
 # The pipeline image installs ffmpeg, and so does CI; elsewhere these skip.
@@ -635,50 +891,6 @@ def test_a_file_without_an_audio_stream_has_no_duration(tmp_path):
         source_text.audio_duration_seconds(source)
 
 
-@pytest.mark.asyncio
-async def test_a_task_that_may_still_run_keeps_its_lease(monkeypatch):
-    """A timed-out or cancelled task may still run at Alibaba: its lease is
-    left to expire with the receipt window, not freed."""
-
-    def timed_out():
-        raise TimeoutError
-
-    events = _audio_flow(monkeypatch, transcribe=timed_out)
-    with pytest.raises(jobs.RetryableError):
-        await _transcribe()
-    assert [event[0] for event in events] == ["open", "presign", "task", "abandon"]
-
-    started = asyncio.Event()
-
-    async def running(_url, _context):
-        started.set()
-        await asyncio.Event().wait()
-
-    events = _audio_flow(monkeypatch)
-    monkeypatch.setattr(source_text, "_filetrans", running)
-    attempt = asyncio.ensure_future(_transcribe())
-    await started.wait()
-    attempt.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await attempt
-    assert [event[0] for event in events] == ["open", "presign"]
-
-
-@pytest.mark.asyncio
-async def test_unconfigured_transcription_fails_before_measuring(monkeypatch):
-    events = _audio_flow(monkeypatch)
-    monkeypatch.setattr(source_text.cfg, "alibaba_modelstudio_key", "")
-
-    def measure(_path):
-        raise AssertionError("measured without a provider to send to")
-
-    monkeypatch.setattr(source_text, "audio_duration_seconds", measure)
-
-    with pytest.raises(TerminalError, match="not configured"):
-        await _transcribe()
-    assert events == []
-
-
 def test_the_model_studio_url_must_name_the_compatible_mode_base() -> None:
     config.require_modelstudio_url("")
     config.require_modelstudio_url(
@@ -691,20 +903,6 @@ def test_the_model_studio_url_must_name_the_compatible_mode_base() -> None:
     ]:
         with pytest.raises(ValueError, match="compatible-mode/v1"):
             config.require_modelstudio_url(url)
-
-
-@pytest.mark.asyncio
-async def test_a_full_task_gate_waits_for_capacity(monkeypatch):
-    events = _audio_flow(monkeypatch)
-
-    async def full(_call_id, **_kwargs):
-        raise elitellm.ProviderBusy("gate full", retry_after=5.0)
-
-    monkeypatch.setattr(source_text.accounting, "open_call", full)
-
-    with pytest.raises(jobs.CapacityWait):
-        await _transcribe()
-    assert events == []
 
 
 def test_transcript_chunks_hold_sentences_and_times_apart(monkeypatch) -> None:

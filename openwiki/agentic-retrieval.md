@@ -1314,14 +1314,18 @@ Image captions use the containing-resource associations described below.
 
 #### Audio transcription (Filetrans)
 
-`pipeline/ingest/source_text.py` transcribes one source per SHA under a
-session advisory lock (`filetrans:<sha>`), so identical uploads on two workers
-make one provider task while the other waits and reads the result. A cached
-transcript (`derived-text/<sha>/qwen-audio-3.1-filetrans.json`, registered as
-`derived_text` in `artifact_cache`, sentences with times and speakers) is
-reused with no task and no charge. Otherwise, in one ingest attempt (a
-worker without `ALIBABA_MODELSTUDIO_*` fails the file at once, before any of
-it):
+`pipeline/ingest/source_text.py` transcribes an audio ingest job over several
+short claims of the same job, never one claim that waits for the task. A
+cached transcript (`derived-text/<sha>/qwen-audio-3.1-filetrans.json`,
+registered as `derived_text` in `artifact_cache`, sentences with times and
+speakers) is reused with no task and no charge. Each claim holds a session
+advisory lock on the source SHA (`filetrans:<sha>`), and a job finds another
+live job's task for the same bytes (`payload->'filetrans'->>'sha256'`) before
+it submits: it then waits 30 s and reads that job's cached transcript, so
+identical uploads make one task. A worker without `ALIBABA_MODELSTUDIO_*`
+fails the file at once, before any of the steps below.
+
+**The claim with no stored task** submits one:
 
 1. ffmpeg measures the downloaded source under the decoder sandbox's policy
    (`decode.audio_seconds`, deployment-runbook §7.5): it copies every packet
@@ -1332,65 +1336,98 @@ it):
    Over two hours is the `audio_duration_limit` index limit, before any task
    or charge; a file ffmpeg cannot read fails at once.
 2. The call opens its `provider_calls` row (kind `audio`) under its own gate:
-   at most 12 tasks in flight across every ingest worker
-   (`provider_capacity_leases`, key `filetrans`, one unit a task). A full gate
-   is a `CapacityWait`: the job re-pends without spending an attempt and the
-   file stays pending ("waiting for provider capacity"). The receipt window
-   and lease last the wall budget plus the five-minute grace, and the ingest
-   job's timeout grows by the same budget.
+   at most 12 tasks in flight per environment (`provider_capacity_leases`,
+   key `filetrans`, one unit a task), counted across every worker and every
+   re-pended job. A full gate is a `CapacityWait`: the job re-pends without
+   spending an attempt ("waiting for provider capacity"). The call's receipt
+   window and its lease are held for an hour plus the five-minute grace
+   (`FILETRANS_HOLD_S`) and renewed by every poll claim, so a task's lease
+   lives from its submit to its end, and a job that died lets its lease go
+   within the hour. The hour is past the longest re-pend delay plus the
+   queue's wait for a free ingest worker (one claim may run
+   `CAPY_INGEST_TIMEOUT`, 20 minutes).
 3. Once admitted, the worker signs a GET link for that one source object,
-   valid as long as the task's wall budget (15 minutes); it is the only way
-   the task reads the audio.
+   valid for ten minutes (`FILETRANS_LINK_S`), the time Alibaba has to fetch
+   it; it is the only way the task reads the audio, and only a new submit
+   signs another.
 4. The task is submitted to `{host}/api/v1/services/audio/asr/transcription`
    (`X-DashScope-Async: enable`) with the link, `channel_id: [0]`,
    `keep_dialect: true` (Cantonese stays as spoken), `diarization_enabled:
    true`, and one `input_text` context message naming the workspace and the
    file. `{host}` is `ALIBABA_MODELSTUDIO_URL` without `/compatible-mode/v1`;
    the pipeline refuses to start with a URL not ending in that path.
-   The attempt polls `{host}/api/v1/tasks/{id}`, first after 2 s, each wait
-   half again as long as the last up to 10 s, and logs each poll's request
-   at DEBUG only (the submit stays at INFO). It then reads the result JSON
-   from the task's `transcription_url` (Alibaba's own signed link, fetched
-   without the API key and without logging its URL). The link must be on
-   Alibaba's result buckets (`dashscope-result-*.oss-*.aliyuncs.com`, no
-   port or user part) and is always fetched over https: tasks answer `http://`
-   links, which are upgraded, since OSS serves the same signed link on either
-   scheme. A redirect is not followed. Another host fails at once; a redirect
-   or any answer but 200 is retryable.
-5. Only a transcript with sentences is charged: whole seconds (ceil) of the
-   measured duration or the last sentence's end, whichever is later, at the
-   job's snapshotted `audio_transcription_second` rate, settled locally on the
-   ingest session with `units` / `unit = 'seconds'`. A transcript whose speech
-   ends past two hours is the `audio_duration_limit` index limit instead:
-   nothing is charged or cached, though the provider task ran.
-   A job pays for its audio once: a later call on the same session (a retry
-   whose cached transcript was lost) records its seconds at zero credits.
-   Then the transcript is cached (best effort, as below). The guard is per
-   job: when the cache write fails and the job then fails at a later stage,
-   the user's Retry is a new job on a new session, which transcribes and
-   charges again. This takes a failed write (after the bucket client's three
-   attempts) followed by a failure past transcription, so it is rare.
+5. The task is stored in the job's payload, `filetrans: {taskId, callId,
+   submittedAt, seconds, sha256, providerFailures, polls}`, merged in place
+   and only while this claim still holds the job, and committed. The job then
+   re-pends with its attempt handed back (`release_job_for_capacity`), the
+   file showing "transcribing" (processing, 20%), and the worker is free.
 
-Nothing about the task is stored between attempts. While a task runs, a poll
-answered 408, 429 or 5xx, or not answered, polls again: only the wall budget
-ends the wait, so a passing error never abandons a running task. A 408, 429 or
-5xx answer to the submit, a transport error on it, a task that failed for any
-reason but `InvalidFile.*`, a task in any state but `PENDING`, `RUNNING`,
-`SUCCEEDED` or `FAILED` (`CANCELED`, `UNKNOWN`; it ends the poll at once), or
-a task still running at the wall budget is retryable: the ingest job's one
-retry submits a new task, and a second failure fails the file. Any other refused
-request and `InvalidFile.*` (a link the task could not fetch, a file it could
-not decode) fail at once. A recording with no speech is not a failure: its
-call settles at zero credits as a successful call, nothing is cached, and the
-file ends ready and unindexed with `index_limit = 'no_speech'`, shown in the
-neutral not-indexed banner as "No speech was found in this recording." Every failed
-call is abandoned uncharged; a cancelled one stays open for its receipt
-window. The gate's lease is freed once Alibaba has answered for the task (a
-transcript, a failed or refused task); a task that may still be running there
-(timed out, cancelled, or a submit whose answer was lost) keeps its lease
-until the receipt window ends, so the tasks running at Alibaba stay within
-the gate. Log lines and errors name HTTP statuses and provider error codes only,
-never transcript text or a signed link.
+**Each later claim** polls the stored task once (`{host}/api/v1/tasks/{id}`)
+after renewing its call and lease for another hour:
+
+- `PENDING` or `RUNNING`, or a poll answered 408, 429 or 5xx, not answered,
+  or not JSON: the job re-pends again. The delays grow from 2 s by half each
+  time up to 30 s (2, 3, 4, 7, 10, 15, 23, 30, 30 s…), and the count is
+  stored with the task. A poll's request is logged at DEBUG only; the submit
+  stays at INFO.
+- `SUCCEEDED`: the claim reads the result JSON from the task's
+  `transcription_url` (Alibaba's own signed link, fetched without the API key
+  and without logging its URL) and goes on to chunk, index and settle in the
+  same claim. The link must be on Alibaba's result buckets
+  (`dashscope-result-*.oss-*.aliyuncs.com`, no port or user part) and is
+  always fetched over https: tasks answer `http://` links, which are
+  upgraded, since OSS serves the same signed link on either scheme. A
+  redirect is not followed. Another host fails at once; a redirect or any
+  answer but 200 re-pends the job to read the result again (Alibaba keeps it
+  a day), and a transcript that does not parse is a provider failure.
+- `FAILED` with `InvalidFile.*` (a link the task could not fetch, a file it
+  could not decode) fails the file at once. Any other `FAILED`, `CANCELED`,
+  `UNKNOWN` or a state this code does not know is a provider failure.
+- A task stored more than 12 hours ago (`FILETRANS_RESUME_S`; Alibaba keeps
+  results 24 hours), or whose call ran out unpolled, is lost: a provider
+  failure.
+
+**Counting.** A provider failure is a refused submit (408, 429, 5xx or an
+unanswered one), a task that ended without a transcript, or a lost task. It
+abandons the call uncharged and frees the lease (an unanswered submit keeps
+its lease until it expires, since a task may run), stores
+`providerFailures`, and re-pends the job, whose next claim submits a new
+task: the one retry. The second provider failure fails the file. Re-pends
+never spend an attempt. Attempts are spent only by a worker that died
+mid-claim (its lease expires, `reclaim_expired_leases` re-pends the job with
+the payload intact, and the next claim polls the stored task instead of
+submitting another) and by an ordinary retryable error (a database or
+embedding failure); an audio ingest job has three attempts (`POLICIES["audio"]`
+through `jobs.policy_key`), where any other ingest job has two. A job
+polling a stored task is never a first claim, so its credits are checked
+once, before its submit.
+
+**Billing.** Only a transcript with sentences is charged: whole seconds
+(ceil) of the measured duration or the last sentence's end, whichever is
+later, at the job's snapshotted `audio_transcription_second` rate, settled
+locally on the ingest session with `units` / `unit = 'seconds'`, on the
+stored call, before the lease is freed. A transcript whose speech ends past
+two hours is the `audio_duration_limit` index limit instead: nothing is
+charged or cached, though the task ran. A recording with no speech is not a
+failure: its call settles at zero credits as a successful call, nothing is
+cached, and the file ends ready and unindexed with `index_limit =
+'no_speech'`, shown in the neutral not-indexed banner as "No speech was
+found in this recording." A failed, refused or lost task is never charged. A
+worker that died after the settlement and before the job ended leaves the
+call applied: the next claim polls, reads the result again and settles the
+same receipt, which applies once. A job pays for its audio once: a later
+call on the same session (a retry whose cached transcript was lost) records
+its seconds at zero credits. Then the transcript is cached (best effort, as
+below). The guard is per job: when the cache write fails and the job then
+fails at a later stage, the user's Retry is a new job on a new session, which
+transcribes and charges again. This takes a failed write (after the bucket
+client's three attempts) followed by a failure past transcription, so it is
+rare.
+
+A job that ends while its task runs (its file deleted, a donor reused) leaves
+the task's call and lease to run out within the hour. Log lines and errors
+name HTTP statuses and provider error codes only, never transcript text or a
+signed link.
 
 Transcript chunks (`retrieval/chunking.py` `chunk_transcript`) hold whole
 sentences, one per line, with no overlap: `text`, `indexed_text` and the
@@ -5212,7 +5249,7 @@ current chunk, with full coverage in the large-document reduction path.
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
-| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION`, `ALIBABA_MODELSTUDIO_KEY`, `ALIBABA_MODELSTUDIO_URL` | Image decoding is capped at 100M pixels. Audio transcription needs both Alibaba values (all or none, and the URL ending in `/compatible-mode/v1`, checked at startup; unset fails an audio ingest terminally); its two-hour cap, 12-task gate and 15-minute task budget are code constants. |
+| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION`, `ALIBABA_MODELSTUDIO_KEY`, `ALIBABA_MODELSTUDIO_URL` | Image decoding is capped at 100M pixels. Audio transcription needs both Alibaba values (all or none, and the URL ending in `/compatible-mode/v1`, checked at startup; unset fails an audio ingest terminally); its two-hour cap, 12-task gate, hour-long task hold and ten-minute source link are code constants. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |
 | UAT scripted tool turns | `RETRIEVAL_UAT_SCRIPTED_TOOLS` | UAT only, exactly `true` or unset; a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`, and the renderer refuses it outside `uat`. With it on, a chat message starting `[uat-scripted-tools]` followed by JSON steps (`retrieval/scripted.py`) replaces the model's responses: each step's tool calls still run through `tools.run` with the role's operations, contract validation and the skills gate, and a string step is the answer. With it off the marker is plain text. The UAT chat journey uses it so tool coverage is deterministic and free. |

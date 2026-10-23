@@ -1900,11 +1900,13 @@ those services start.
    restricted to the `qwen-audio-3.1-asr-flash*` models. Both reach the
    production worker and each environment's queue workers (manifest targets
    `ingest-production`, `ingest-queue`); set both or neither, and without them
-   an audio upload fails terminally. The worker hands Alibaba a 15-minute
+   an audio upload fails terminally. The worker hands Alibaba a ten-minute
    signed GET link for the one source object, so nothing else needs bucket
-   access. Check the workspace's Filetrans quota before launch: the worker
-   runs at most 12 tasks across all workers, and Flash answered 429 from
-   about 20 requests in flight. Those calls
+   access. Check the workspace's Filetrans quota before launch: each
+   environment runs at most 12 tasks across its workers (a task holds its slot
+   while its job re-pends between polls), and Flash answered 429 from about
+   20 requests in flight. Audio needs no worker or service of its own: the
+   ingest workers submit and poll in short claims. Those calls
    happen on this ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The

@@ -19,14 +19,13 @@ from pipeline.ingest import worker
 from pipeline.parse import parser_client
 
 
-def test_audio_job_timeout_adds_the_transcription_budget():
-    audio_job = {
-        "type": "ingest",
-        "payload": {"processingPlan": {"route": ingest_plan.AUDIO_TRANSCRIPTION}},
-    }
+def test_an_audio_job_polling_its_task_is_not_a_first_claim():
+    """Its credits were checked before it submitted; a poll claim, whose
+    attempt the re-pend handed back, must not refuse it mid-task."""
+    job = {"attempts": 1, "provider_waits": 0}
 
-    assert worker._job_timeout(audio_job, 1_200) == 1_200 + 900
-    assert worker._job_timeout({"type": "ingest", "payload": {}}, 1_200) == 1_200
+    assert worker._first_claim(job, {})
+    assert not worker._first_claim(job, {"filetrans": {"taskId": "task-1"}})
 
 
 def test_source_refresh_publishes_only_its_ready_event(monkeypatch):
@@ -1348,6 +1347,106 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     assert yielded == ["job_wait", "job_wait"]
     assert downloads == 1
     assert parse_stub["descriptor"] is None
+    worker._cleanup_payload_source(job["payload"])
+
+
+async def test_a_running_transcription_task_re_pends_its_job_as_processing(
+    monkeypatch, tmp_path
+):
+    """While its task runs at Alibaba an audio job gives its claim back with
+    the attempt undone, after the task's poll delay, and its file shows
+    transcribing rather than queued."""
+    from pipeline.ingest import source_text
+
+    yields: list[tuple] = []
+
+    async def _pin(_ws):
+        return object()
+
+    async def _embed_pin(_ws):
+        return {
+            "embedding_dim": 2560,
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+            "embedding_model_version": 1,
+        }
+
+    async def _no_donor(**_k):
+        return None
+
+    async def _running(**kwargs):
+        assert kwargs["stored"] == {"taskId": "task-1"}
+        assert kwargs["attempt"] == 1
+        raise source_text.FiletransWait(7)
+
+    class FakeS3:
+        def get_object(self, **_kwargs):
+            return {"Body": io.BytesIO(b"audio")}
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _embed_pin)
+    monkeypatch.setattr(
+        worker.registry, "pins_from_payload", lambda *_a, **_k: object()
+    )
+    monkeypatch.setattr(worker.registry, "set_job_pins", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a, **_k: "lecture.mp3")
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_record_source_sha", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(worker.blobstore, "_s3_client", FakeS3)
+    monkeypatch.setattr(worker, "_remember_local_source", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.store, "find_ready_donor", _no_donor)
+    monkeypatch.setattr(worker, "_set_file_status", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_audio_context", lambda *_a: "Workspace: Bio")
+    monkeypatch.setattr(worker.source_text, "transcribe_audio_source", _running)
+    monkeypatch.setattr(
+        worker, "_yield_for_capacity", lambda *a, **k: yields.append((a, k))
+    )
+    payload = _ingest_payload(
+        kind="audio",
+        blobPath="sources/blob_1.mp3",
+        processingPlan={
+            "version": 2,
+            "format": "mp3",
+            "route": ingest_plan.AUDIO_TRANSCRIPTION,
+            "parserRoute": "",
+            "captionMode": "none",
+            "office": False,
+            "stages": [
+                "fetch_source",
+                "transcribe_audio",
+                "persist_derived_text",
+                "chunk",
+                "index",
+                "generate_derivatives",
+            ],
+            "resources": [
+                "object_storage_read",
+                "embedding_model",
+                "ingest_model",
+                "audio_transcription",
+                "object_storage_write",
+            ],
+        },
+        filetrans={"taskId": "task-1"},
+    )
+    payload["resourceRates"]["audio_transcription_second"] = {
+        "version": 2,
+        "unit": "second",
+        "creditMicrosPerUnit": 16_667,
+    }
+    for key in ("parseArtifact", "parseJobId"):
+        payload.pop(key)
+    job = {"id": "job_audio", "type": "ingest", "attempts": 1, "payload": payload}
+
+    with pytest.raises(source_text.FiletransWait):
+        await worker.process_ingest_job(job)
+
+    ((args, kwargs),) = yields
+    assert args[0] is job and args[7:10] == ("transcribing", 7, "capacity_wait")
+    assert kwargs == {"progress": ("transcribing", 20, "processing")}
     worker._cleanup_payload_source(job["payload"])
 
 

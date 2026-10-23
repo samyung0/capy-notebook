@@ -96,7 +96,32 @@ POLICIES: dict[str, JobPolicy] = {
         timeout_s=cfg.ingest_timeout,
         lease_s=180,
     ),
+    # An ingest job on the audio route (``policy_key``). It polls its
+    # transcription task over many short claims, each re-pended without
+    # spending an attempt, and counts the provider's failures apart
+    # (ingest/source_text.py), so attempts are spent only by a worker that
+    # died mid-claim or an ordinary retryable error: three allow two of them.
+    "audio": JobPolicy(
+        max_attempts=3,
+        backoff_base_s=30,
+        timeout_s=cfg.ingest_timeout,
+        lease_s=180,
+    ),
 }
+
+# The audio route's name (ingest/plan.py takes it from here, since it imports
+# this module).
+AUDIO_ROUTE = "audio_transcription"
+
+
+def policy_key(job_type: str, payload: dict | None) -> str:
+    """The ``POLICIES`` entry a job runs under: its type, or ``audio`` for an
+    ingest job on the audio route."""
+    plan = (payload or {}).get("processingPlan") or {}
+    if job_type == "ingest" and plan.get("route") == AUDIO_ROUTE:
+        return "audio"
+    return job_type
+
 
 # After this long a waiter starts trying to steal a processing rag_contents
 # claim. The job wall-clock timeout is the hard bound; this is only the

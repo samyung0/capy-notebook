@@ -460,9 +460,10 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   blob server answers its links the same way. The bank's public figures are
   not presigned and keep their server-detected type.
 - The ingest worker signs one other read link: a GET for the one audio source
-  object it is transcribing, valid for the 15-minute task budget, handed only
-  to that Alibaba Filetrans task. It is never stored, logged or shown; a
-  retried attempt signs a new one ([agentic-retrieval.md](agentic-retrieval.md)).
+  object it is transcribing, valid for the ten minutes Alibaba has to fetch
+  it, handed only to that Alibaba Filetrans task. It is never stored, logged
+  or shown; only a new submit signs a new one
+  ([agentic-retrieval.md](agentic-retrieval.md)).
 
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
 [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),

@@ -960,8 +960,10 @@ That exact call id remains settleable against a `settled` or `released` session
 until its `receipt_deadline_at`. Python sets the deadline from the longest a
 call can legitimately run, plus five minutes: the interactive stream backstop
 (`CAPY_INTERACTIVE_STREAM_MAX_S`, 10 minutes) for every interactive call, the
-ingest provider timeout (120 s) for ingest, and the 15-minute task budget for
-an audio transcription (`open_call(provider_timeout_s=…)`); direct SQL callers get the
+ingest provider timeout (120 s) for ingest, and an hour for an audio
+transcription task (`open_call(provider_timeout_s=…)`), renewed with its gate
+lease by each claim that polls the task (`accounting.renew_call`), so it spans
+the job's re-pends; direct SQL callers get the
 column's default 12-hour-five-minute window. The additional five minutes are
 receipt-only settlement grace.
 
@@ -1291,16 +1293,19 @@ Audio is priced per second. `audio_transcription_second` (uploads) and
 one credit a minute (`0109_audio_transcription.sql`, Epo's proposal of
 2026-10-23 at two to three times the standard markup because transcription
 capacity is capped). Uploads are version 2, since 0001 seeded a version 1 at
-another price that 0079 deleted; voice input is version 1. An upload's charge is whole seconds (ceil) of the
-worker's measured duration (ffmpeg reading every packet, not the container
-header) or the last sentence's end, whichever is later, at the job's
-snapshotted rate, settled only when the transcript has sentences; a failed or
-retried task is free, a task that heard no speech settles as a successful
-call at zero credits (`no_speech`), as is a transcript whose speech ends past two
-hours (`audio_duration_limit`), and a job
-pays for its audio once (a later call on the same session, after a lost cache,
-settles at zero; the user's Retry of a job that lost its cache and then failed
-later is a new job and pays again, a rare case). `GET /api/source-upload-policy` also returns
+another price that 0079 deleted; voice input is version 1. An upload's charge
+is whole seconds (ceil) of the worker's measured duration (ffmpeg reading
+every packet, not the container header) or the last sentence's end, whichever
+is later, at the job's snapshotted rate. It is settled on the task's call
+(opened by the claim that submitted it) by the claim that finds the task
+succeeded, only when the transcript has sentences. A failed, refused or lost
+task is free, and so is a transcript whose speech ends past two hours
+(`audio_duration_limit`); a task that heard no speech settles as a successful
+call at zero credits (`no_speech`). A job pays for its audio once: a claim
+after a worker died between the settlement and the job's end settles the same
+receipt, which applies once, and a later call on the same session (after a
+lost cache) settles at zero. The user's Retry of a job that lost its cache and
+then failed later is a new job and pays again, a rare case. `GET /api/source-upload-policy` also returns
 `audioSecondCreditMicros` and `audioMaxDurationSeconds` (7,200); the upload
 dialog shows the estimate from the length the browser reads, and the worker's
 measured duration remains authoritative. A file whose length the browser

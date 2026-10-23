@@ -57,6 +57,7 @@ from ..jobs import (
     backoff_s,
     is_retryable,
     policy_for,
+    policy_key,
     provider_wait_backoff_s,
 )
 from ..parse import caption_cache, parser_client
@@ -152,19 +153,6 @@ def _rate(resource_key: str) -> dict:
     if version <= 0 or micros < 0:
         raise TerminalError(f"ingest payload has invalid {resource_key} rate")
     return {**rate, "version": version, "creditMicrosPerUnit": micros}
-
-
-def _job_timeout(job: dict, default: int) -> int:
-    """An audio ingest gets its transcription task's budget on top of the
-    ordinary one, which still covers download, indexing and the summary."""
-    payload = job.get("payload") or {}
-    plan = payload.get("processingPlan") or {}
-    if (
-        job.get("type") == "ingest"
-        and plan.get("route") == ingest_plan.AUDIO_TRANSCRIPTION
-    ):
-        return default + source_text.FILETRANS_TIMEOUT_S
-    return default
 
 
 # ----------------------------------------------------------- sync DB helpers
@@ -935,12 +923,15 @@ def _first_claim(job: dict, payload: dict) -> bool:
     """True for the first attempt of a job that is not a parse continuation.
 
     Busy-provider and capacity re-pends hand the attempt back, so a re-claimed
-    job would look first again; the wait counter tells them apart.
+    job would look first again; the wait counter and a stored transcription
+    task tell them apart.
     """
     return (
         int(job.get("attempts") or 1) == 1
         and int(job.get("provider_waits") or 0) == 0
         and not payload.get("parseJobId")
+        # An audio job polling its transcription task was admitted before.
+        and not payload.get("filetrans")
     )
 
 
@@ -1170,14 +1161,18 @@ def _yield_for_capacity(
     backoff_s: int = YIELD_BACKOFF_S,
     outcome: str = "capacity_wait",
     count_provider_wait: bool = False,
+    progress: tuple[str, int, str] = ("queued", 5, "pending"),
 ) -> None:
-    """Give the slot back to the queue. File stays pending; attempt is undone.
+    """Give the slot back to the queue. The attempt is undone; the file shows
+    ``progress`` (stage, percent, status): pending and queued, or processing
+    while an audio job's transcription task runs.
 
     A provider that stayed busy is the same wait with its own counter, so the
     worker can cap how often one job comes back for the same model. A note
     index job (no ``file_id``) keeps its note's job pointer and sends no
     progress.
     """
+    stage, percent, file_status = progress
     attempt = int(job.get("attempts") or 1)
     payload = job.get("payload") or {}
     with db.connect() as conn, conn.cursor() as cur:
@@ -1190,7 +1185,7 @@ def _yield_for_capacity(
         else:
             db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
         if file_id:
-            db.set_file_status(cur, file_id, "pending")
+            db.set_file_status(cur, file_id, file_status)
         cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
         row = cur.fetchone()
         db.finish_job_attempt(
@@ -1207,9 +1202,9 @@ def _yield_for_capacity(
         _publish_progress(
             workspace_id,
             file_id,
-            "queued",
-            5,
-            status="pending",
+            stage,
+            percent,
+            status=file_status,
             message=f"{name}: {message}",
         )
     log.info("ingest %s %s", name, message)
@@ -1552,6 +1547,7 @@ async def _chunks_for(
     file_id: str,
     source_sha256: str,
     job_id: str | None = None,
+    attempt: int = 1,
     last_wait: bool = False,
 ) -> tuple[list[Chunk], list[int], bytes | None]:
     """Parse one source into chunks, the 1-based pages the VLM left unread,
@@ -1631,6 +1627,9 @@ async def _chunks_for(
                 derived_key,
                 derived_size,
             ) = await source_text.transcribe_audio_source(
+                job_id=str(job_id),
+                attempt=attempt,
+                stored=payload.get("filetrans"),
                 local_path=local_path,
                 source_sha256=source_sha256,
                 blob_path=str(payload["blobPath"]),
@@ -1914,6 +1913,24 @@ async def _process_ingest_job_bound(job: dict) -> None:
             job_stage=telemetry.current_stage(),
         )
         await _process_ingest_job(job, payload, file_id, ws, kind, processing_plan)
+    except source_text.FiletransWait as wait:
+        # The transcription task runs at Alibaba; the job polls it next claim.
+        name = await asyncio.to_thread(_read_name, file_id)
+        await asyncio.to_thread(
+            _yield_for_capacity,
+            job,
+            file_id,
+            ws,
+            name,
+            int(payload["sourceRevision"]),
+            str(payload.get("sourceETag") or ""),
+            str(payload.get("actorUserId") or ""),
+            "transcribing",
+            wait.delay_s,
+            "capacity_wait",
+            progress=("transcribing", 20, "processing"),
+        )
+        raise
     except CapacityWait:
         name = await asyncio.to_thread(_read_name, file_id)
         await asyncio.to_thread(
@@ -2520,6 +2537,7 @@ async def _process_ingest_job(
             file_id=file_id,
             source_sha256=source_sha256,
             job_id=job["id"],
+            attempt=attempt,
             last_wait=int(job.get("provider_waits") or 0) >= PROVIDER_WAITS_MAX,
         )
     except parser_client.ParserClientError:
@@ -2819,7 +2837,7 @@ async def main_async(job_type: str = "ingest") -> None:
                 heartbeat.start()
                 restart_after_failure = False
                 try:
-                    async with asyncio.timeout(_job_timeout(job, policy.timeout_s)):
+                    async with asyncio.timeout(policy.timeout_s):
                         await job_task
                     if claim_lost.is_set():
                         log.info("job %s stopped after losing its claim", job["id"])
@@ -2881,7 +2899,7 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
         await asyncio.to_thread(_settle_published_source_refresh, job["id"], payload)
         return
     job_type = (job.get("type") or "").strip()
-    policy = POLICIES.get(job_type)
+    policy = POLICIES.get(policy_key(job_type, payload))
     attempts = int(job.get("attempts") or 1)
     error_category, error_code, _provider_status = telemetry.classify_error(exc)
     if isinstance(exc, TimeoutError):

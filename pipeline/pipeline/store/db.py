@@ -22,7 +22,7 @@ from psycopg_pool import ConnectionPool
 
 from .. import plan_limits
 from ..config import cfg
-from ..jobs import TerminalError
+from ..jobs import TerminalError, policy_key
 
 _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
@@ -1149,12 +1149,75 @@ def release_provider_capacity(cur, lease_id: str) -> None:
     cur.execute("DELETE FROM provider_capacity_leases WHERE id=%s", (lease_id,))
 
 
+def renew_provider_call(cur, call_id: str, provider: str, seconds: int) -> str:
+    """Hold an open call's receipt window and its capacity lease (``provider``
+    key, one unit, id ``call_id``) for another ``seconds``, from a later job
+    claim than the one that opened it. Returns ``open`` when renewed,
+    ``applied`` when the call was settled already, and an empty string when it
+    is gone, abandoned or past its window; the lease is then left alone."""
+    cur.execute(
+        """
+        UPDATE provider_calls
+           SET receipt_deadline_at = now() + make_interval(secs => %s)
+         WHERE id=%s AND status='open' AND receipt_deadline_at > now()
+        """,
+        (seconds, call_id),
+    )
+    if cur.rowcount == 0:
+        cur.execute("SELECT status FROM provider_calls WHERE id=%s", (call_id,))
+        row = cur.fetchone()
+        return "applied" if row is not None and row[0] == "applied" else ""
+    # Inserted again if an admission swept it as expired: the task runs.
+    cur.execute(
+        """
+        INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
+        VALUES (%s,%s,1,now()+make_interval(secs => %s))
+        ON CONFLICT (id) DO UPDATE SET expires_at=EXCLUDED.expires_at
+        """,
+        (call_id, provider, seconds),
+    )
+    return "open"
+
+
+def set_job_filetrans(cur, job_id: str, attempt: int, state: dict[str, Any]) -> bool:
+    """Store an audio job's transcription task state in its payload while
+    this claim still holds the job. False when the claim was lost."""
+    cur.execute(
+        """
+        UPDATE jobs SET payload = payload || jsonb_build_object('filetrans', %s::jsonb),
+               updated_at = now()
+         WHERE id=%s AND status='running' AND attempts=%s
+        """,
+        (Jsonb(state), job_id, attempt),
+    )
+    return cur.rowcount == 1
+
+
+def filetrans_task_in_flight(cur, source_sha256: str, job_id: str) -> bool:
+    """Whether another live job has a transcription task running for these
+    bytes; its transcript will be cached for this one."""
+    cur.execute(
+        """
+        SELECT 1 FROM jobs
+         WHERE id <> %s AND type='ingest' AND status IN ('pending','running')
+           AND payload->'filetrans'->>'sha256' = %s
+           AND payload->'filetrans' ? 'taskId'
+         LIMIT 1
+        """,
+        (job_id, source_sha256),
+    )
+    return cur.fetchone() is not None
+
+
 def reclaim_expired_leases(
     cur, *, max_attempts: dict[str, int], backoff_base_s: dict[str, int]
 ) -> list[dict[str, Any]]:
     """Turn stale running rows back into pending (or failed) jobs.
 
-    A dead worker never finishes; lease_expires_at is the only signal.
+    A dead worker never finishes; lease_expires_at is the only signal. The
+    caps and backoffs are keyed by ``jobs.policy_key`` (an audio ingest job has
+    its own). The payload stays, so an audio job's stored transcription task
+    is polled again rather than submitted again.
     """
     cur.execute(
         """
@@ -1168,7 +1231,7 @@ def reclaim_expired_leases(
     reclaimed: list[dict[str, Any]] = []
     for job_id, job_type, payload, attempts, error in candidates:
         payload = payload or {}
-        cap = max_attempts.get(job_type)
+        cap = max_attempts.get(policy_key(job_type, payload))
         terminal_pipeline = job_type in {"parse", "ingest"} and (
             cap is None or attempts >= cap
         )
@@ -1222,7 +1285,7 @@ def reclaim_expired_leases(
                 "DELETE FROM rag_contents WHERE claim_job_id = %s AND status = 'processing'",
                 (job_id,),
             )
-        cap = max_attempts.get(job_type)
+        cap = max_attempts.get(policy_key(job_type, payload))
         note = (error or "lease expired").strip() or "lease expired"
         if "lease expired" not in note:
             note = f"{note}; lease expired"
@@ -1233,7 +1296,7 @@ def reclaim_expired_leases(
         elif attempts >= cap:
             set_job(cur, job_id, "failed", note[:500])
         else:
-            base = int(backoff_base_s[job_type])
+            base = int(backoff_base_s[policy_key(job_type, payload)])
             outcome = requeue_job(
                 cur,
                 job_id=job_id,

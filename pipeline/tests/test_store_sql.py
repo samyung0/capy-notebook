@@ -190,6 +190,141 @@ def test_provider_capacity_leases_enforce_weighted_limit(workspace):
         )
 
 
+def test_an_audio_job_keeps_its_task_across_re_pends_and_a_crash(workspace):
+    """A stored transcription task survives the re-pend (which hands the
+    attempt back) and a worker's death (lease reclaim, which spends one), so
+    the next claim polls it; an audio job has three attempts where any other
+    ingest job has two."""
+    import psycopg
+
+    from pipeline.jobs import AUDIO_ROUTE, POLICIES
+
+    caps = {name: policy.max_attempts for name, policy in POLICIES.items()}
+    bases = {name: policy.backoff_base_s for name, policy in POLICIES.items()}
+    task = {"taskId": "task-1", "callId": "pc_1", "providerFailures": 0}
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        audio, _attempt, _reservation = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=workspace.add_file("lecture.mp3"),
+            actor_user_id=workspace.user_id,
+        )
+        other, _attempt, _reservation = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=workspace.add_file("notes.pdf"),
+            actor_user_id=workspace.user_id,
+        )
+        cur.execute(
+            """UPDATE jobs SET payload = payload || jsonb_build_object(
+                 'processingPlan', jsonb_build_object('route', %s::text))
+               WHERE id=%s""",
+            (AUDIO_ROUTE, audio),
+        )
+        assert not db.set_job_filetrans(cur, audio, 2, task)  # not this claim
+        assert db.set_job_filetrans(cur, audio, 1, task)
+        db.release_job_for_capacity(cur, audio, 1, backoff_s=2)
+        conn.commit()
+        assert workspace.scalar("SELECT attempts FROM jobs WHERE id=%s", (audio,)) == 0
+
+        # Both are claimed again, and their workers die.
+        for job_id, attempts in ((audio, 1), (other, 1)):
+            cur.execute(
+                """UPDATE jobs SET status='running', attempts=%s,
+                     lease_expires_at=now()-interval '1 second' WHERE id=%s""",
+                (attempts, job_id),
+            )
+        db.reclaim_expired_leases(cur, max_attempts=caps, backoff_base_s=bases)
+        conn.commit()
+        for job_id in (audio, other):
+            cur.execute(
+                """UPDATE jobs SET status='running', attempts=2,
+                     lease_expires_at=now()-interval '1 second' WHERE id=%s""",
+                (job_id,),
+            )
+        db.reclaim_expired_leases(cur, max_attempts=caps, backoff_base_s=bases)
+        conn.commit()
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        rows = {
+            row[0]: row[1:]
+            for row in conn.execute(
+                "SELECT id, status, attempts, payload->'filetrans' FROM jobs "
+                "WHERE id IN (%s,%s)",
+                (audio, other),
+            )
+        }
+    assert rows[audio] == ("pending", 2, task)
+    assert rows[other][:2] == ("failed", 2)
+
+
+def test_the_filetrans_gate_holds_twelve_tasks_across_re_pends(workspace):
+    """A task's lease lives from its submit to its end, renewed by each poll
+    claim with its call's receipt window: a thirteenth task waits until one
+    ends or a dead job's lease expires."""
+    import psycopg
+
+    key = f"filetrans-test-{secrets.token_hex(4)}"
+
+    def admit(cur, call_id: str) -> bool:
+        return db.acquire_provider_capacity(
+            cur, lease_id=call_id, provider=key, units=1, capacity=12, lease_seconds=60
+        )
+
+    file_id = workspace.add_file("lecture.mp3")
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        _job, attempt_id, reservation = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        calls = [f"pc_{secrets.token_hex(6)}" for _ in range(14)]
+        for call_id in calls:
+            db.open_provider_call(
+                cur, reservation, call_id, "audio", "transcription", "",
+                job_attempt_id=attempt_id, receipt_timeout_seconds=60,
+            )  # fmt: skip
+        assert all(admit(cur, call_id) for call_id in calls[:12])
+        assert not admit(cur, calls[12])
+
+        # A poll claim renews the call and its lease past the queue's wait.
+        assert db.renew_provider_call(cur, calls[0], key, 3600) == "open"
+        expiry = conn.execute(
+            "SELECT expires_at - now() > interval '59 minutes' "
+            "FROM provider_capacity_leases WHERE id=%s",
+            (calls[0],),
+        ).fetchone()[0]
+        assert expiry
+        assert not admit(cur, calls[12])
+
+        # A task that ended frees its slot.
+        db.release_provider_capacity(cur, calls[1])
+        assert admit(cur, calls[12])
+        assert not admit(cur, calls[13])
+
+        # A dead job's lease frees itself; its call has run out too, so a
+        # late claim finds the task lost rather than taking the slot back.
+        cur.execute(
+            "UPDATE provider_capacity_leases SET expires_at=now()-interval '1 second' WHERE id=%s",
+            (calls[2],),
+        )
+        cur.execute(
+            "UPDATE provider_calls SET receipt_deadline_at=now() WHERE id=%s",
+            (calls[2],),
+        )
+        assert admit(cur, calls[13])
+        assert db.renew_provider_call(cur, calls[2], key, 3600) == ""
+
+        # A settled call is reported as such, for a claim after a crash.
+        cur.execute(
+            "UPDATE provider_calls SET status='applied' WHERE id=%s", (calls[3],)
+        )
+        assert db.renew_provider_call(cur, calls[3], key, 3600) == "applied"
+        conn.rollback()
+
+
 def test_model_capacity_changes_apply_to_each_admission(workspace):
     import psycopg
 

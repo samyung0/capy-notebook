@@ -420,6 +420,35 @@ async def release_call(call_id: str) -> None:
         log.warning("could not release capacity lease %s", call_id, exc_info=True)
 
 
+async def renew_call(call_id: str, capacity_key: str, provider_timeout_s: float) -> str:
+    """Hold an open call and its ``capacity_key`` lease as ``open_call`` did
+    with ``provider_timeout_s``, from a later job claim (an audio task polled
+    across re-pends). The call's state, as ``db.renew_provider_call``."""
+    if current() is None:
+        return "open"
+    seconds = max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
+    from ..store import db
+
+    def renew() -> str:
+        with db.connect() as conn, conn.cursor() as cur:
+            renewed = db.renew_provider_call(cur, call_id, capacity_key, seconds)
+            conn.commit()
+            return renewed
+
+    return await asyncio.to_thread(renew)
+
+
+async def release_lease(call_id: str) -> None:
+    """Free a call's capacity lease that an earlier job claim took. Best
+    effort: a lease that cannot be released expires on its own."""
+    if current() is None:
+        return
+    try:
+        await asyncio.to_thread(_release_lease_sync, call_id)
+    except Exception:
+        log.warning("could not release capacity lease %s", call_id, exc_info=True)
+
+
 async def abandon_call(call_id: str, exc: BaseException | None = None) -> None:
     """Mark an open stub that never produced usage. Best-effort."""
     state = current()

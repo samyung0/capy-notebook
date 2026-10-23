@@ -123,9 +123,10 @@ Pipeline (`pipeline/pipeline/ingest/`):
 - [x] `source_text.py`: Filetrans client. Mint a presigned B2 read link for
       the source (TTL long enough for the task), submit with
       `keep_dialect`, `diarization_enabled`, `channel_id: [0]` and context
-      (workspace title, file name), poll the task inside the attempt, read
-      `transcription_url`. No waiting state is stored between attempts
-      (revisits the 2026-09 "no polling" line, which assumed a sync provider).
+      (workspace title, file name), read `transcription_url`. Polling is
+      now between claims (review fixes below), with the task stored in the
+      job (revisits the 2026-09 "no polling" line, which assumed a sync
+      provider).
 - [x] Cache by source SHA (`derived-text/<sha>/qwen-audio-3.1-filetrans.json`,
       sentences with times and speakers) and the per-source lock, as before.
 - [x] Concurrency: a 12-slot cap across workers (reuse the provider-capacity
@@ -169,15 +170,14 @@ Review fixes (2026-10-24):
 - [x] Billing: whole seconds of the measured length or the last sentence's
       end, whichever is later; speech ending past 2 hours is
       `audio_duration_limit`, uncharged and uncached.
-- [x] Polling: a 408, 429, 5xx or lost answer on a poll keeps polling within
-      the wall budget; any state but PENDING/RUNNING/SUCCEEDED/FAILED ends
-      the poll as retryable; polls back off from 2 s to 10 s and log at
-      DEBUG.
+- [x] Polling: a 408, 429, 5xx or lost answer on a poll keeps polling;
+      any state but PENDING/RUNNING/SUCCEEDED/FAILED ends the task as a
+      provider failure; polls log at DEBUG.
 - [x] Result link: https only (http upgraded), on
       `dashscope-result-*.oss-*.aliyuncs.com`, no redirects.
 - [x] Pipeline Sentry breadcrumbs keep request URLs without their query.
-- [x] A task that may still run (timeout, cancel, lost submit answer) keeps
-      its gate lease until the receipt window ends.
+- [x] A task that may still run (cancel, lost submit answer) keeps its
+      gate lease until it expires.
 - [x] Config: `ALIBABA_MODELSTUDIO_URL` must end with `/compatible-mode/v1`
       (startup); unset settings fail before measuring; the link is signed
       after admission.
@@ -194,6 +194,18 @@ Review fixes (2026-10-24):
 - [x] No speech (Epo 2026-10-24, "ready"): the call settles at zero credits
       as a successful call and the file ends ready and unindexed with
       `index_limit = 'no_speech'`, shown neutral with its own message.
+- [x] Requeue between polls (Epo 2026-10-24, S4 and crash recovery): no
+      separate worker. One claim measures, takes the 12-task gate, signs a
+      10-minute link, submits and stores `filetrans` in the job payload,
+      then re-pends without spending an attempt; each later claim renews
+      the task's call and lease (1 h) and polls once, re-pending after
+      2 s rising to 30 s, until SUCCEEDED (chunk, index, settle once),
+      `InvalidFile*` (terminal) or a provider failure (a refused submit, a
+      failed or lost task; the first resubmits, the second is terminal). A
+      worker that dies mid-claim leaves the task stored and the next claim
+      polls it. Audio jobs have 3 attempts (`jobs.policy_key`), spent only
+      by crashes and ordinary errors. The 15-minute in-claim poll and the
+      job-timeout extension are gone.
 
 ## Part B: voice input (Flash)
 
@@ -220,10 +232,8 @@ Review fixes (2026-10-24):
 - Whether voice input works outside a workspace (no context to send).
 - Workspace quota for Singapore before launch; ask Alibaba for more if the
   observed ~20 in flight holds.
-- Filetrans gate size: 12 never binds with one job per ingest replica, and
-  audio can hold every replica; a smaller gate or a separate audio worker
-  (Epo). The gate is per environment database; whether the prod and UAT
-  keys share one Alibaba workspace quota.
+- The gate is per environment database; whether the prod and UAT keys
+  share one Alibaba workspace quota.
 - Migration number: 0109 on the branch, renumbered at landing.
 - Live checks from the ingest host: ffmpeg under the decoder sandbox in the
   deployed image, the result link's host shape and the `speaker_id` field
