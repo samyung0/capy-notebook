@@ -979,7 +979,7 @@ fn docx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
         (
             "format_text",
             command(serde_json::json!({
-                "type": "format_text", "targetId": first["id"], "expectedText": first["text"],
+                "type": "format_text", "targetId": first["id"], "text": first["text"],
                 "bold": true, "italic": true, "underline": true, "strikethrough": true,
                 "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
             })),
@@ -1048,7 +1048,7 @@ fn pptx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
         (
             "format_text",
             command(serde_json::json!({
-                "type": "format_text", "targetId": owner["id"], "expectedText": "launch code",
+                "type": "format_text", "targetId": owner["id"], "text": "launch code",
                 "bold": true, "italic": true, "underline": true, "strikethrough": true,
                 "color": "#1F4E79", "fontSize": 28, "fontFamily": "Georgia",
             })),
@@ -1412,7 +1412,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
             ),
         ];
         let mut format = serde_json::json!({
-            "type": "format_text", "targetId": id, "expectedText": text,
+            "type": "format_text", "targetId": id, "text": text,
             "bold": true, "italic": true, "underline": true, "strikethrough": true,
             "color": "#1F4E79", "fontSize": 14, "fontFamily": "Georgia",
         });
@@ -1540,7 +1540,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
     let (cost, change) = file.costed_edit(
         &room,
         &[command(serde_json::json!({
-            "type": "format_text", "targetId": id, "expectedText": "ab",
+            "type": "format_text", "targetId": id, "text": "ab",
             "bold": true, "italic": true, "underline": true, "strikethrough": true,
             "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
         }))],

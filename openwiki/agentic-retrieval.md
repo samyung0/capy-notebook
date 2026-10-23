@@ -3585,7 +3585,9 @@ PPTX by slide (its slides with their layouts and first shapes; one
 slide's shapes and paragraphs, paged together, with its speaker notes)
 and adds `set_shape_text`, `add_slide`, `delete_slide` (naming the
 notes), `move_slide` and `add_text_box`, with PPTX `format_text` and
-`set_alignment`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
+`set_alignment`. Version 39 (2026-10-23) names `format_text`'s span
+`text` (was `expected_text`) and lets `delete_table` take a table's short
+id. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -4134,7 +4136,18 @@ a table) after reading; every command now refuses an id that is not one as
 paraId (a table's slot `body:t0`: the table's id; a story id such as a cell's
 `body:t0:r0c0`: its first paragraph's) and telling the agent to copy ids whole from a read (`DocxSession::split`
 in `docx/agent.rs`), and an insert's anchor gets that refusal before the
-body-only one.
+body-only one. In the 2026-10-23 playground check the agent still sent
+`body:t0` for a table, so `delete_table`, the one command that takes a
+table, also takes a table's short id `<story>:t<n>` (Epo 2026-10-23): the
+slot its cells' stories name (`body:t0` for cell `body:t0:r0c0`), which
+cell stories carry whether or not the file has `w14:paraId`. It stands for
+the read's id of the story's one table with a cell in that slot; naming
+none, or several (a row added to a table names its cells from the table's
+place, docx-edit `table_base`, so a table inserted before another can
+share a slot with its new rows), it is refused like a paragraph command's
+short id, naming each table's read id. The same rule in `split` gives the
+paragraph commands' refusal its table id; paragraph ids still need their
+full form.
 
 Retries (Epo 2026-10-20, review finding 3): the retrieval service posts an
 Office edit again under the same operation id when its 10 s timeout passes
@@ -4251,7 +4264,7 @@ the toolbar buttons' `numPr` (the two `w:num` ids after the file's own, one
 bulleted and one numbered list per document, no restart), keeping each
 paragraph's level, or ends the list (`none` writes `numId` 0, which also
 ends a list the paragraph's style gives it). `format_text {target_id,
-expected_text, ...}` formats the one occurrence of its text in a paragraph
+text, ...}` formats the one occurrence of its `text` in a paragraph
 the read does not mark locked (bold, italic, underline, strikethrough, a hex
 colour, one of Word's highlight colours or `none`, a size of 1 to 1,638
 points, a font name), and `set_alignment {target_id, alignment}` sets
