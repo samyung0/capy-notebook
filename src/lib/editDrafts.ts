@@ -52,6 +52,11 @@ export interface EditDraft {
   /** `${actorId}:material:${id}` or `${actorId}:file:${id}`. */
   key: string;
   kind: 'state' | 'update';
+  /** The room answered late for these edits (a session older than its
+   * collection window, in-place GC): they may name units it collected, so
+   * they are never applied raw nor sent by a sweep; the next editor merges
+   * them (the late path). */
+  late?: true;
   lineage: string;
   /** A save refused for good: shown for copying, never merged back. */
   refused?: true;
@@ -285,7 +290,7 @@ export async function dropLostDrafts(
 function markDrafts(
   key: string,
   ids: string[],
-  flag: 'held' | 'refused' | 'reported'
+  flag: 'held' | 'late' | 'refused' | 'reported'
 ): Promise<void> {
   if (!(stored(key) && ids.length)) return Promise.resolve();
   return call({ flag, ids, key, op: 'mark' });
@@ -498,7 +503,7 @@ export function recordDrafts({
     kind: EditDraft['kind'],
     seq: number,
     data: Uint8Array,
-    refused?: true
+    flag?: 'late' | 'refused'
   ): EditDraft => ({
     data,
     id: kind === 'state' ? `${session}:state` : `${session}:${seq}`,
@@ -509,7 +514,7 @@ export function recordDrafts({
     seq,
     session,
     ...(base && { base: base.sha }),
-    ...(refused && { refused }),
+    ...(flag && { [flag]: true as const }),
   });
   // Rows go out in order once the base is in; until then a write waits for
   // it. A base that failed to download is not stored: the rows still are.
@@ -649,6 +654,18 @@ export function recordDrafts({
     ...(state ? [stateRow(state.seq)] : []),
     ...pendingAdopted,
   ];
+  // The whole document (or `data`) as one row flagged `flag` in place of
+  // every row this session wrote or adopted, and no more recording.
+  const keepAs = (
+    flag: 'late' | 'refused',
+    data = Y.encodeStateAsUpdate(doc)
+  ): DraftRef => {
+    const previous = ownRows();
+    stop();
+    const kept = row('state', sequence, data, flag);
+    void write(Promise.all([deleteDrafts(previous), putWithBase([kept])]));
+    return kept;
+  };
 
   return {
     connected() {
@@ -712,16 +729,17 @@ export function recordDrafts({
       stop();
       return done;
     },
-    /** A save refused for good: keep the whole document as one refused row
-     * (shown for copying, never merged) and stop recording. Returns that
-     * row, which a later delete (queued after the write) removes. */
-    refuse(): DraftRef {
-      const previous = ownRows();
-      const data = Y.encodeStateAsUpdate(doc);
-      stop();
-      const refused = row('state', sequence, data, true);
-      void write(Promise.all([deleteDrafts(previous), putWithBase([refused])]));
-      return refused;
+    /** The room answered late (in-place GC): keep the whole document as one
+     * late row, which the next editor merges, and stop recording. */
+    late(): DraftRef {
+      return keepAs('late');
+    },
+    /** A save refused for good: keep the whole document (or `data`, the
+     * document the edits are in) as one refused row (shown for copying,
+     * never merged) and stop recording. Returns that row, which a later
+     * delete (queued after the write) removes. */
+    refuse(data?: Uint8Array): DraftRef {
+      return keepAs('refused', data);
     },
     /** Local edits so far (1 for adopted rows): a checkpoint request
      * records it. */
@@ -802,23 +820,38 @@ function roomToken(
  *   open;
  * - `later`: the service answered something else (busy, failing, lost
  *   access): tried again at the next page load;
+ * - `late`: the rows grew from a state older than the room's collection
+ *   window (in-place GC): the editor merges them at the file's next open;
  * - `retry`: no answer (offline), the rows changed, or the user is in a
  *   timeout (`too_fast`, Epo 2026-10-18): tried at the next trigger;
  * - `outdated`: the service refuses this build's client protocol (Capy was
  *   updated): nothing more goes until the page reloads, and no row changes.
  */
-type Sent = 'sent' | 'refused' | 'waits' | 'later' | 'retry' | 'outdated';
+type Sent =
+  | 'sent'
+  | 'refused'
+  | 'waits'
+  | 'late'
+  | 'later'
+  | 'retry'
+  | 'outdated';
 
 // Set once a send was refused as outdated: sweeps stop for the page load.
 let outdated = false;
 
 /** A document's rows its room takes now: not refused, not left for the
- * editor (`held`), of the token's room, one group per lineage (an Office
- * file's rows of another base go apart). */
+ * editor (`held`, `late`), of the token's room, one group per lineage (an
+ * Office file's rows of another base go apart). */
 function sendableGroups(rows: DraftInfo[], room: string) {
   const groups = new Map<string, DraftRef[]>();
   for (const row of rows) {
-    if (row.refused || row.held || row.lineage.split('@')[0] !== room) continue;
+    if (
+      row.refused ||
+      row.held ||
+      row.late ||
+      row.lineage.split('@')[0] !== room
+    )
+      continue;
     const group = groups.get(row.lineage) ?? [];
     group.push({ id: row.id, key: row.key, seq: row.seq });
     groups.set(row.lineage, group);
@@ -909,6 +942,8 @@ async function sendPiece(
     case 'too_large':
     case 'unheld':
       return 'waits';
+    case 'late':
+      return 'late';
     case 'outdated':
       return 'outdated';
     case 'too_fast':
@@ -937,8 +972,9 @@ interface SweepOptions {
  * refused, to open read-only as the editor's refusals do, when it draws on
  * its own; one that needs the room's state, and a group only the editor can
  * send, are marked `held`: left for the editor's next open, never sent
- * again (a recovery of them is reported as any other). Resolves whether the
- * rows are settled for this page load.
+ * again (a recovery of them is reported as any other). A late group is
+ * marked `late`: the editor's next open merges it. Resolves whether the rows
+ * are settled for this page load.
  */
 async function sweepDocument(
   key: string,
@@ -988,6 +1024,12 @@ async function sweepDocument(
       return false;
     }
     if (sent === 'sent') await deleteDrafts(refs);
+    else if (sent === 'late')
+      await markDrafts(
+        key,
+        refs.map((row) => row.id),
+        'late'
+      );
     else if (sent === 'refused' || sent === 'waits') {
       const draws =
         sent === 'refused' &&

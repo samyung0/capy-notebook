@@ -805,6 +805,54 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     }
 }
 
+/// The late path's interface: a JOIN from a session older than the room's
+/// collection window is refused as `collaboration-late` (the tab merges its
+/// unsent edits in a new session), and that session's draft send answers
+/// `late` and is counted. Debug builds make every session of a
+/// `capy-it-late` note late until JOINs carry their version and the
+/// collection its window.
+#[tokio::test]
+async fn a_late_session_is_refused_and_its_drafts_wait_for_the_editor() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note_named(&env, "base", "capy-it-late").await;
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut client = Client::open(server.port).await;
+    client
+        .send(0, &join_payload(&room, &write, Some(client_protocol())))
+        .await;
+    let reason = text_payload(&client.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-late");
+
+    let draft = drafted(&Doc::new(), |doc| {
+        let root = doc.get_or_insert_text("content");
+        root.insert(&mut doc.transact_mut(), 0, "late");
+    });
+    let response = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{}/drafts", server.port))
+        .header("content-type", "application/octet-stream")
+        .header("x-capy-room", &room)
+        .header("x-capy-protocol", client_protocol().to_string())
+        .header("origin", ORIGIN)
+        .bearer_auth(&write)
+        .body(draft)
+        .send()
+        .await
+        .expect("draft send");
+    assert_eq!(response.status().as_u16(), 409);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.expect("answer"),
+        serde_json::json!({ "class": "late" })
+    );
+    let metrics = metrics_text(server.port).await;
+    let line = "capy_collaboration_draft_refusals_total{class=\"late\"} 1";
+    assert!(
+        metrics.lines().any(|known| known == line),
+        "{line} in {metrics}"
+    );
+}
+
 /// Security regression (Epo 2026-10-16): a suspended owner's note is not
 /// found for a reader or a workspace editor, as a deleted owner's is, even
 /// with tokens minted before the suspension, while the owner joining is

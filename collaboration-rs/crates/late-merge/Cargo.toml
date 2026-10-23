@@ -1,0 +1,26 @@
+[package]
+name = "late-merge"
+description = "The late merge of the in-place Yjs GC: a late tab's unsent edits placed onto the room's current document, natively and as the browser's WASM."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib for wasm-pack (scripts/build-late-merge.mjs), rlib for the tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+thiserror.workspace = true
+yrs.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+notes.workspace = true
+serde_json.workspace = true
+ydoc.workspace = true
+
+[lints]
+workspace = true

@@ -41,6 +41,7 @@ import {
   CollaborationHold,
   EditorHoldScope,
 } from '@/features/collaboration/CollaborationHold';
+import { mergeLate } from '@/features/collaboration/lateMerge/lateMerge';
 import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
 import '@/features/collaboration/platePlugin';
 import {
@@ -63,6 +64,7 @@ import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
 import { cn } from '@/lib/cn';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
+import { mergedRows } from '@/lib/draftStore';
 import {
   applyDrafts,
   type DraftRecorder,
@@ -123,6 +125,8 @@ import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
 const RESTORE_ORIGIN = Symbol('restore');
+/** The late merge's update: this session's edit, sent and stored as any. */
+const LATE_ORIGIN = Symbol('late');
 
 /** The save banner while the room cannot be reached. */
 export type NoteOfflineState = 'offline' | 'offline-unstored' | 'offline-limit';
@@ -471,12 +475,14 @@ export function NoteEditorCore({
   collaborationToken,
   draftKey,
   restored,
+  late,
   phase = 'live',
   onPainted,
   joinStartedAt,
   onEditorStatusChange,
   onPresenceChange,
   onDocumentRejected,
+  onLate,
   onOffline,
   onOutdated,
   onReadOnly,
@@ -497,8 +503,14 @@ export function NoteEditorCore({
   /** Where this editor's unsaved work is stored (editDrafts). */
   draftKey: string;
   /** Stored edits of this room's lineage (a reload, another tab): applied
-   * before the room connects, then synced and saved like any edit. */
+   * before the room connects, then synced and saved like any edit. Late
+   * ones (any row flagged `late`) are merged instead, as `late` is. */
   restored: EditDraft[];
+  /** The document of the editor this one replaces after the room answered
+   * late (in-place GC): with the restored rows it is the old document whose
+   * unsent edits the late merge places onto the room's current one, once
+   * this editor synced; nothing of it is applied raw. */
+  late?: Uint8Array;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   /** The room's other editors, for the header's avatar group (null once
    * the editor unmounts). */
@@ -509,9 +521,14 @@ export function NoteEditorCore({
    * refused draft (the remount shows them for copying), or `lost` when this
    * device could not store them. */
   onDocumentRejected?: (
-    code: MaterialLimitCode | 'invalid_document' | 'revoked',
+    code: MaterialLimitCode | 'invalid_document' | 'revoked' | 'late',
     edits: 'none' | 'kept' | 'lost'
   ) => void;
+  /** The room answered this editor's JOIN late (its session is older than
+   * the collection window): the caller replaces it, through the room swap,
+   * with a new editor (a new document, client id and empty Undo) given this
+   * one's document as `late`. */
+  onLate?: (state: Uint8Array) => void;
   /** The room cannot be reached and edits stay on this device (the banner to
    * show), or null once it syncs again. */
   onOffline?: (state: NoteOfflineState | null) => void;
@@ -542,7 +559,17 @@ export function NoteEditorCore({
   // service answers the first must not orphan the earlier request.
   // Each request's local edit count, so a receipt covers the stored drafts.
   const pendingCheckpoints = useRef(new Map<string, number>());
-  const unsavedChanges = useRef(restored.length > 0);
+  // The late path (in-place GC): the old document, merged once the room
+  // synced; until then the editor is not shown, so nothing is edited or
+  // saved (a receipt would cover the restored rows before their edits
+  // reached the room).
+  const [lateDocument] = useState<Uint8Array | null>(() => {
+    if (!(late || restored.some((row) => row.late))) return null;
+    const parts = restored.length ? [mergedRows(restored)] : [];
+    return Y.mergeUpdates(late ? [late, ...parts] : parts);
+  });
+  const [lateMerging, setLateMerging] = useState(!!lateDocument);
+  const unsavedChanges = useRef(restored.length > 0 && !lateDocument);
   const recorder = useRef<DraftRecorder | null>(null);
   // The room is unreachable: the editor keeps editing on this device.
   const offlineMode = useRef(false);
@@ -689,6 +716,7 @@ export function NoteEditorCore({
   const reportUnavailable = useRef(onUnavailable);
   const reportOffline = useRef(onOffline);
   const reportOutdated = useRef(onOutdated);
+  const reportLate = useRef(onLate);
   const showOffline = useCallback(() => {
     if (!offlineMode.current) return;
     reportOffline.current?.(
@@ -737,6 +765,41 @@ export function NoteEditorCore({
   const projectionStale = useRef(false);
   // The room turned read-only and the unsaved edits were discarded.
   const discarded = useRef(false);
+  // The late merge failed: the old document is kept as one refused row,
+  // which the remount shows read-only for copying, and the stored rows stay
+  // until then (no edit is dropped silently).
+  const failLate = useRef((_old: Uint8Array, _error: unknown) => {});
+  failLate.current = (old, error) => {
+    if (rejected.current) return;
+    rejected.current = true;
+    stale.current = true;
+    captureException(error, { tags: { component: 'late-merge' } });
+    roomProvider(editorRef.current)?.disconnect();
+    recorder.current?.refuse(old);
+    pendingCheckpoints.current.clear();
+    saveDelay.retain([]);
+    setStatus('error');
+    reportRejection.current?.('late', storageOk.current ? 'kept' : 'lost');
+  };
+  // Once synced, the old document's unsent edits are merged in a worker and
+  // applied as one edit of this session (sent, stored, its receipt covering
+  // the restored rows); then the note paints, and the swap shows it.
+  const mergeStarted = useRef(false);
+  const mergeNow = useRef(() => {});
+  mergeNow.current = () => {
+    if (!lateDocument || mergeStarted.current) return;
+    mergeStarted.current = true;
+    void mergeLate(lateDocument, Y.encodeStateAsUpdate(ydoc)).then(
+      (merged) => {
+        if (rejected.current || stale.current) return;
+        Y.applyUpdate(ydoc, merged, LATE_ORIGIN);
+        setLateMerging(false);
+        unsavedChanges.current = true;
+        saveNow.current();
+      },
+      (error: unknown) => failLate.current(lateDocument, error)
+    );
+  };
 
   useEffect(
     () => () => {
@@ -894,7 +957,23 @@ export function NoteEditorCore({
       tokenError.current = null;
       if (refusal === 'readOnly') readOnlyNow.current(true);
       else if (refusal === 'retry') reconnector.current?.refused();
-      else if (refusal === 'outdated') {
+      else if (refusal === 'late') {
+        if (stale.current) return;
+        // A new session is never late: a second answer is a failure.
+        if (lateDocument) {
+          failLate.current(
+            lateDocument,
+            new Error('The room answered a late merge late again')
+          );
+          return;
+        }
+        // Kept as one late row, which the next editor merges with the
+        // document handed to it.
+        stale.current = true;
+        roomProvider(editorRef.current)?.disconnect();
+        recorder.current?.late();
+        reportLate.current?.(Y.encodeStateAsUpdate(ydoc));
+      } else if (refusal === 'outdated') {
         // Capy was updated: only a page reload helps. The unsaved edits
         // stay stored (the reloaded editor applies them before it joins).
         if (stale.current) return;
@@ -966,6 +1045,7 @@ export function NoteEditorCore({
             // and restored edits have none yet.
             resendCheckpoints.current();
             if (unsavedChanges.current) saveNow.current();
+            mergeNow.current();
           },
           providers: [
             USE_MSW
@@ -1054,6 +1134,7 @@ export function NoteEditorCore({
     discussions,
     handleStatelessEvent,
     hasUnsavedWork,
+    lateDocument,
     markSlowed,
     material.id,
     material.workspaceId,
@@ -1089,7 +1170,7 @@ export function NoteEditorCore({
   // receipts that cover it. Restored edits go in first, before the room
   // connects (init waits a task), and count as unsaved.
   useEffect(() => {
-    applyDrafts(ydoc, restored, RESTORE_ORIGIN);
+    if (!lateDocument) applyDrafts(ydoc, restored, RESTORE_ORIGIN);
     const current = recordDrafts({
       adopted: restored,
       doc: ydoc,
@@ -1238,12 +1319,13 @@ export function NoteEditorCore({
   paintedChange.current = onPainted;
   const paintReported = useRef(false);
   useEffect(() => {
-    if (handshaking || !scrollArea || paintReported.current) return;
+    if (handshaking || lateMerging || !scrollArea || paintReported.current)
+      return;
     return afterPaint(() => {
       paintReported.current = true;
       paintedChange.current?.({ editor, scrollArea });
     });
-  }, [editor, handshaking, scrollArea]);
+  }, [editor, handshaking, lateMerging, scrollArea]);
 
   // Cursor awareness goes to every peer through the server: at most one per
   // 50 ms (withCursors installs sendCursorPosition when the editor is made).
@@ -1343,6 +1425,7 @@ export function NoteEditorCore({
     reportUnavailable.current = paused ? undefined : onUnavailable;
     reportOffline.current = paused ? undefined : onOffline;
     reportOutdated.current = paused ? undefined : onOutdated;
+    reportLate.current = paused ? undefined : onLate;
     let reported = paused;
     readOnlyNow.current = (refusedConnect = false, code?: ReadOnlyCode) => {
       if (reported) return;
@@ -1359,6 +1442,7 @@ export function NoteEditorCore({
     saveNow.current = saveImmediately;
   }, [
     onDocumentRejected,
+    onLate,
     onOffline,
     onOutdated,
     onReadOnly,
@@ -1401,7 +1485,7 @@ export function NoteEditorCore({
                      * than a healthy handshake still paints, otherwise a broken
                      * collaboration service would leave a readable note hidden
                      * behind a spinner. */}
-                    {handshaking ? (
+                    {handshaking || lateMerging ? (
                       <FileLoading
                         message={m.editor_connecting()}
                         slowed={slowed}

@@ -428,6 +428,11 @@ const IT_PANIC_LOAD: &str = "capy-it-panic-load";
 /// in a quiz's keys room, in debug builds only.
 #[cfg(debug_assertions)]
 pub const IT_REFUSE_KEYS_UNDO: &str = "capy-it-refuse-keys-undo";
+
+/// See `late`: every session of a note whose id holds this is late, in debug
+/// builds only.
+#[cfg(debug_assertions)]
+const IT_LATE: &str = "capy-it-late";
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -1228,6 +1233,14 @@ impl Room {
             base,
             reply,
         } = draft;
+        // The group's version goes here once `/drafts` sends its base's.
+        if self.late(None) {
+            let _ = reply.send(Err(Refused::new(
+                Class::Late,
+                "the drafts grew from a state older than the collection window",
+            )));
+            return;
+        }
         if let Kindly::Source(source) = &self.kind {
             // A publication handoff holds every writer read-only.
             let refused = if self.app.handoff().busy(&self.name) {
@@ -2200,6 +2213,25 @@ impl Room {
         self.look_again(wait);
     }
 
+    /// Whether a session older than the room's collection window sends this
+    /// JOIN or draft group: its document may name units a
+    /// collection discarded, so it must not sync raw. A late JOIN is refused
+    /// with `socket::LATE_REASON` and the tab merges its unsent edits in a new
+    /// session (src/features/collaboration/lateMerge); late drafts answer
+    /// `Class::Late` and wait for the editor. `version`: the stored version
+    /// the session holds. Never late until JOINs carry that version and the
+    /// in-place collection records its window: late is a version below the
+    /// latest collection's window.
+    fn late(&self, version: Option<u64>) -> bool {
+        let _ = version;
+        // Debug builds only: the integration tests' late note.
+        #[cfg(debug_assertions)]
+        if matches!(&self.kind, Kindly::Note(note) if note.material_id.contains(IT_LATE)) {
+            return true;
+        }
+        false
+    }
+
     fn join(
         &mut self,
         key: MemberKey,
@@ -2210,6 +2242,10 @@ impl Room {
     ) -> Result<(), String> {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
+        }
+        // The JOIN's version goes here once JOINs carry it.
+        if self.late(None) {
+            return Err(crate::socket::LATE_REASON.into());
         }
         let user = context.user_id.clone();
         // A writer of a document holding a block this version cannot edit

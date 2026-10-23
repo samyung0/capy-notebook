@@ -187,10 +187,10 @@ function CollaborativeNoteEditor({
   );
   const onDocumentRejected = useCallback(
     (
-      code: MaterialLimitCode | 'invalid_document' | 'revoked',
+      code: MaterialLimitCode | 'invalid_document' | 'revoked' | 'late',
       edits: 'none' | 'kept' | 'lost'
     ) => {
-      if (code !== 'invalid_document' && code !== 'revoked')
+      if (code !== 'invalid_document' && code !== 'revoked' && code !== 'late')
         userToast({
           description: m.editor_too_large_body({
             message: materialLimitMessage(code),
@@ -346,6 +346,20 @@ function CollaborativeNoteEditor({
       ? { drafts, key: wanted, token: collaborationTokenData }
       : null;
   const swap = useRoomSwap(ready, wanted, onEditorStatusChange);
+  // The room answered late (in-place GC): the paused editor's document goes
+  // to the next mount, which merges its unsent edits (NoteEditorCore `late`).
+  const [late, setLate] = useState<{ key: string; state: Uint8Array } | null>(
+    null
+  );
+  const room = collaborationTokenData?.room;
+  const onLate = useCallback(
+    (state: Uint8Array) => {
+      const next = editorGeneration + 1;
+      setLate({ key: `${room}:${next}`, state });
+      setEditorGeneration(next);
+    },
+    [editorGeneration, room]
+  );
   // The paused editor's banners went with its room: the next starts clean.
   useEffect(() => {
     if (!swap.pending) return;
@@ -439,9 +453,11 @@ function CollaborativeNoteEditor({
         discussions={discussionsData ?? NO_DISCUSSIONS}
         draftKey={storedKey}
         joinStartedAt={joinStart.current}
+        late={late?.key === mount.key ? late.state : undefined}
         material={material}
         onDocumentRejected={onDocumentRejected}
         onEditorStatusChange={onEditorStatusChange}
+        onLate={onLate}
         onOffline={setOffline}
         onOutdated={markOutdated}
         onPainted={(view) => swap.painted(mount.key, view)}

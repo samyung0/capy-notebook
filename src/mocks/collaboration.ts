@@ -35,7 +35,10 @@ import {
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
-import { COLLABORATION_OUTDATED_REASON } from '@/features/notes/collaborationEvents';
+import {
+  COLLABORATION_LATE_REASON,
+  COLLABORATION_OUTDATED_REASON,
+} from '@/features/notes/collaborationEvents';
 import { withoutBlanks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import {
@@ -686,6 +689,10 @@ const outdated = { reason: COLLABORATION_OUTDATED_REASON };
 // Set by refuseThisBuild(): a note room refuses every join until the page
 // reloads (the reloaded page is the new build).
 let buildRefused = false;
+// Notes collected past this tab's sessions (in-place GC): a session that
+// joined before is answered `collaboration-late` on every join, a new one
+// joins, unless every session is late (lateSessions).
+const lateMaterials = new Map<string, 'joined' | 'every'>();
 
 class MockCollaborationProvider implements UnifiedProvider {
   readonly awareness: UnifiedProvider['awareness'];
@@ -706,6 +713,8 @@ class MockCollaborationProvider implements UnifiedProvider {
   private leave?: () => void;
   // Connected unless disconnected on purpose: a lost service reconnects.
   private wanted = false;
+  /** This session joined its room before (`lateSessions`). */
+  private joined = false;
   private readonly onReachability = () => {
     if (!reachable()) this.drop();
     else if (this.wanted) this.connect();
@@ -755,6 +764,13 @@ class MockCollaborationProvider implements UnifiedProvider {
       return;
     }
     if (roomJoinsHeld) return;
+    const late = lateMaterials.get(this.options.materialId);
+    if (late === 'every' || (late === 'joined' && this.joined)) {
+      this.options.onAuthenticationFailed?.({
+        reason: COLLABORATION_LATE_REASON,
+      });
+      return;
+    }
     const room = materialRoom(this.options.name, this.options.initialValue);
     this.room = room;
     materialProviders.add(this);
@@ -766,6 +782,7 @@ class MockCollaborationProvider implements UnifiedProvider {
     });
     this.isConnected = true;
     this.isSynced = true;
+    this.joined = true;
     this.onConnect?.();
     this.onSyncChange?.(true);
     // As the collaboration server joins a writer of a document holding a
@@ -1041,6 +1058,14 @@ export function discardMockMaterialRoom(materialId: string) {
   moveMockMaterialRoom(materialId);
   for (const provider of providers) provider.evicted(materialId);
 }
+/** A collection left this tab's sessions of a note behind (in-place GC):
+ * from now on each answers its next join `collaboration-late`, and a new
+ * session joins as usual (`every`: a new one is late too, which the late path
+ * takes for a failure); null ends it. */
+export function lateSessions(materialId: string | null, every = false) {
+  if (materialId) lateMaterials.set(materialId, every ? 'every' : 'joined');
+  else lateMaterials.clear();
+}
 /** The room refuses an open note's update for good (over a limit): its
  * editors keep their unsaved edits as a refused draft. */
 export function rejectMockNoteUpdate(materialId: string) {
@@ -1100,6 +1125,7 @@ export function announceSourcePaused(fileId: string) {
 }
 export function resetScenarioRooms() {
   roomJoinsHeld = false;
+  lateMaterials.clear();
   sourceSessionsHeld = false;
   failedSourceSaves.clear();
   refusedSourceSaves.clear();

@@ -792,7 +792,9 @@ export function useSourceSession(
           const refusal = roomRefusal(reason, failedToken);
           tokenError = null;
           if (refusal === 'readOnly') replace('readOnly', true);
-          else if (refusal === 'retry') reconnect.refused();
+          // Source rooms are never collected in place, so never late.
+          else if (refusal === 'retry' || refusal === 'late')
+            reconnect.refused();
           else if (refusal === 'outdated') stale();
           else if (!cancelled) {
             cancelled = true;

@@ -1818,6 +1818,9 @@ class
 - `unheld` (409, the room lacks the update's base), `too_large` (413) and
   `lineage` (409, a token for another room, a schema or epoch that moved on,
   another Office base): marked `held`, left for the editor;
+- `late` (409, the rows grew from a state older than the room's collection
+  window): marked `late`, which no sweep sends; the editor's next open
+  merges them ([The late path](#the-late-path));
 - `outdated` (426, the page's client protocol is refused): kept unmarked,
   and no sweep runs again until the page reloads (see
   [Client protocol](#client-protocol-and-the-release-nudge));
@@ -2107,6 +2110,58 @@ All renderers share one react-dnd `DndProvider` in `NoteEditor`: two
 providers, each with an HTML5 backend, throw. `room-swap.spec.ts` covers a
 discard (`discardMockMaterialRoom`: the room moves on and its editors' channels
 close), a hidden tab, a phone and a refused update.
+
+### The late path
+
+The in-place Yjs collection (Developer Epo, 2026-10-23,
+[storage quota](../../human/backend-storage-quota.md)) discards tombstones no
+session inside its window can name. A session older than the window may name
+one, so its edits never sync raw: they are merged in the tab, by the Rust merge
+compiled to WASM, into one ordinary update the room admits like any edit.
+
+- **Detection** is the room's (`Room::late`, `crates/server/src/room.rs`): a
+  late JOIN is refused with `collaboration-late` (`socket::LATE_REASON`), and a
+  late `/drafts` group answers the class `late` (409) and is counted. Late
+  means a stored version below the latest collection's window; that condition
+  arrives with the session bookkeeping and the collection, and until then
+  nothing is late. A client from before this code retries the refusal, so it
+  ships with a client protocol bump.
+- **The tab** (`roomRefusal` gives `late`): the editor leaves its room, keeps
+  its document as one stored row flagged `late` (`recordDrafts().late()`) and
+  hands the document to a new mount through the room swap. The new editor (a
+  new Y.Doc, so a new client id and an empty Undo) joins with nothing
+  restored, keeps its loading pane, and once synced merges: the handed
+  document and every restored row are the old document, the synced one the
+  current, and `mergeLate` (`src/features/collaboration/lateMerge`) runs the
+  merge in a worker that is gone afterwards. Neither the worker nor the WASM is
+  in the main bundle; they load only here. The update is applied as this
+  session's edit (sent, stored, its receipt covering the restored rows); then
+  the note paints and swaps in. Until then the editor is not shown and asks
+  for no receipt, so a reload during the merge still finds the stored rows.
+- **Failure is explicit**: a failed merge, or a late answer to the new
+  session, keeps the old document as one refused row, shown read-only for
+  copying after the remount (the `refused` banner), and goes to Sentry
+  (`late-merge`). The stored rows stay until then; no edit is dropped.
+- **Stored drafts**: a sweep answered `late` marks the group's rows `late`.
+  Sweeps never send them, and an editor opening with any late row merges every
+  restored row the same way instead of applying them.
+- **The merge** (`collaboration-rs/crates/late-merge`, the prototype's
+  `rejoin::merge_unsent`): each unsent run goes right after the nearest unit on
+  its left, in the old document, that the current document still holds.
+  Tombstones count as neighbours, a run landing after a tombstone moves to the
+  end of its deleted run (as typing does), and a map value written over a
+  collected one follows the key's current value. Every item keeps the tab's
+  id. Units the current document holds are skipped, so sending or merging
+  again is a no-op, and the browser passes no acknowledged base: the
+  collection keeps every client's clock. Text the tab never saw is a tie.
+- **Build**: `scripts/build-late-merge.mjs`, run by `office:prepare`, builds
+  the crate with wasm-pack (profile `late-merge-wasm`: no unwinding, no debug
+  info) on the workspace's yrs, which is the pinned fork's, into the gitignored
+  `src/features/collaboration/lateMerge/generated/`. A fingerprint of the
+  crate, the fork's yrs, `Cargo.lock`, the script and the toolchain skips it
+  when nothing changed, and CI keeps it in the `cache-betteroffice` cache.
+- Notes take the late path. Item rooms and source rooms retry a late refusal
+  like any other.
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from

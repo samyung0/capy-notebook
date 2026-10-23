@@ -77,3 +77,12 @@ debug = "line-tables-only"
 # (room.rs on_sync) and survives it; with panic = "abort" every room would
 # go down instead. crates/server/src/main.rs refuses to build that way.
 panic = "unwind"
+
+# The late merge's browser WASM (scripts/build-late-merge.mjs): WASM has no
+# unwinding (the worker reports a trap as a failed merge), and no debug info.
+[profile.late-merge-wasm]
+inherits = "release"
+panic = "abort"
+debug = false
+lto = true
+codegen-units = 1

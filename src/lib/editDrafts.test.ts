@@ -990,6 +990,36 @@ describe('recording a note session', () => {
     ]);
   });
 
+  it('keeps a late session as one whole late document, which the next editor merges', async () => {
+    const key = 'u_1:material:late';
+    const { client, recorder } = noteRecorder(key, 'kept ');
+    client.getText('content').insert(5, 'late');
+    recorder.late();
+    // Recording stopped: later typing writes nothing.
+    client.getText('content').insert(0, 'x');
+    const rows = await readDrafts(key);
+    expect(rows.map((row) => [row.kind, row.late])).toEqual([['state', true]]);
+    expect(draftGroups(rows, ROOM).current).toEqual(rows);
+    const shown = new Y.Doc();
+    applyDrafts(shown, rows, 'late');
+    expect(shown.getText('content').toString()).toBe('kept late');
+  });
+
+  it('keeps a refused late merge as the document its edits are in', async () => {
+    const key = 'u_1:material:refused-late';
+    const { recorder } = noteRecorder(key, 'current');
+    const old = new Y.Doc();
+    old.getText('content').insert(0, 'old edits');
+    recorder.refuse(Y.encodeStateAsUpdate(old));
+    const rows = await readDrafts(key);
+    expect(rows.map((row) => [row.kind, row.refused])).toEqual([
+      ['state', true],
+    ]);
+    const shown = new Y.Doc();
+    applyDrafts(shown, rows, 'recovery');
+    expect(shown.getText('content').toString()).toBe('old edits');
+  });
+
   it('keeps a refused session as one whole refused document', async () => {
     const key = 'u_1:material:refused';
     const { client, recorder } = noteRecorder(key, 'kept ');
@@ -1461,6 +1491,26 @@ describe('the draft sweep sending', () => {
     const later = await nextPageLoad();
     await later.sweepDrafts('u_waits', tokens(ROOM));
     expect(requests).toHaveLength(3);
+  });
+
+  it('marks a late group late for the editor to merge, and sends it no more', async () => {
+    const key = 'u_late:material:mat_1';
+    await leftRows(key);
+    requests.length = 0;
+    answer(409, 'late');
+    const api = tokens(ROOM);
+    await sweepDrafts('u_late', api);
+    expect(requests).toHaveLength(1);
+    const rows = await readDrafts(key);
+    expect(rows.map((row) => [row.late, row.held])).toEqual([
+      [true, undefined],
+      [true, undefined],
+    ]);
+    const later = await nextPageLoad();
+    await later.sweepDrafts('u_late', api);
+    expect(requests).toHaveLength(1);
+    // The editor's next open takes them, as late rows.
+    expect(later.draftGroups(rows, ROOM).current).toHaveLength(2);
   });
 
   it('sends a group larger than a piece as pieces of at most 2 MiB, in order, and its rows go once the last is stored', async () => {

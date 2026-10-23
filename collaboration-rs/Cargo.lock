@@ -1739,6 +1739,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "late-merge"
+version = "0.1.0"
+dependencies = [
+ "notes",
+ "serde_json",
+ "thiserror",
+ "wasm-bindgen",
+ "ydoc",
+ "yrs",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.190"
 source = "registry+https://github.com/rust-lang/crates.io-index"

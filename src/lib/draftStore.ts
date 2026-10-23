@@ -43,7 +43,7 @@ export type DraftRequest =
       op: 'mark';
       key: string;
       ids: string[];
-      flag: 'held' | 'refused' | 'reported';
+      flag: 'held' | 'late' | 'refused' | 'reported';
     }
   /** Every document of an account with its row ids, read from the index
    * alone (no row is loaded). */
