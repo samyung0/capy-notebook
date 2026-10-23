@@ -62,10 +62,17 @@ The issuer allows a second key, so steps 1 to 5 never break a request.
 | `STRIPE_SECRET_KEY`                                                                                                          | Stripe ("Roll key" with a delay on the old one)                                       | yearly  |
 | `INGEST_HOST_SSH_PRIVATE_KEY`, `UAT_DB_SSH_PRIVATE_KEY`                                                                      | Our hosts: add the new public key to `authorized_keys` first, remove the old one last | yearly  |
 | `UAT_OPS_ACCESS_CLIENT_ID` + `UAT_OPS_ACCESS_CLIENT_SECRET`                                                                  | Cloudflare Access service token                                                       | yearly  |
+| `APP_HOST_ACCESS_CLIENT_ID` + `APP_HOST_ACCESS_CLIENT_SECRET`                                                                | Cloudflare Access service token `capy-deploy-github-uat` (expires 2027-10-23)         | yearly  |
+| `APP_HOST_SSH_PRIVATE_KEY`                                                                                                   | Our app host: one key only, see below                                                 | yearly  |
 
 Where the issuer supports an expiry (Cloudflare tokens, B2 keys, Access
 service tokens), set it about a month past the cadence, so a forgotten
 rotation fails loudly.
+
+The app host's playbook writes the deploy user's `authorized_keys` whole, so
+`APP_HOST_SSH_PRIVATE_KEY` cannot overlap: between deploys, put the new public
+half in the inventory's `app_deploy_ssh_public_key`, run the playbook with
+`--tags deploy`, then push the new private half and deploy once to check.
 
 ### B. Webhook signing secrets (a grace window)
 

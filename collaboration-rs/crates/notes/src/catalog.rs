@@ -7,6 +7,7 @@ pub const VERSION: u32 = 1;
 pub const HTML_EMBED_MAX_BYTES: usize = 65536;
 pub const HTML_EMBED_MAX_COUNT: usize = 10;
 pub const BLOCK_CAPTION_MAX: usize = 300;
+pub const MERMAID_SOURCE_MAX: usize = 50000;
 pub const MEDIA_WIDTH_MIN: usize = 20;
 pub const MEDIA_WIDTH_MAX: usize = 100;
 pub const LIST_INDENT_MAX: usize = 8;

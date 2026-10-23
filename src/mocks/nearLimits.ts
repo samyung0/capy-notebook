@@ -1,5 +1,6 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { FlashcardContent } from '@/features/materials/blocks';
+import { MERMAID_EDGES_MAX } from '@/features/materials/mermaidError';
 import type {
   ChartBlock,
   GraphBlock,
@@ -12,9 +13,10 @@ import nearLimitGraphSvg from './fixtures/near-limit-graph.svg?raw';
 
 /* Embeds at their limits for the "Near-limit" files in Biology 101: every
  * count sits at its cap and every text at its length cap. Byte caps are met
- * from just under, and Mermaid (which has no cap of ours that draws) sits
- * just under mermaid.js's own 50,000 characters and 500 edges. Opening them
- * is slow on purpose: the diagrams take seconds to draw. */
+ * from just under, and Mermaid sits just under the catalog's
+ * MERMAID_SOURCE_MAX (mermaid.js's own 50,000 characters) and mermaid.js's
+ * 500 edges. Opening them is slow on purpose: the diagrams take seconds to
+ * draw (in the worker). */
 
 const limits = EMBED_CATALOG.limits;
 const WORDS =
@@ -27,11 +29,6 @@ export function filled(prefix: string, length: number) {
     length
   );
 }
-
-/** mermaid.js's own caps (its `maxTextSize` and `maxEdges` defaults): past
- * either it draws an error instead of the diagram. */
-export const MERMAID_TEXT_MAX = 50_000;
-export const MERMAID_EDGES_MAX = 500;
 
 export function nearLimitFlowchart() {
   const nodes = 300;

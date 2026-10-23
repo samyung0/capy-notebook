@@ -1,8 +1,9 @@
 # Build the gateway as a small static binary.
 FROM golang:1.26.10-alpine3.24@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS build
 WORKDIR /src
-# Cache mounts keep compiled output across deploys even when the layer cache
-# misses (Coolify ARG injection must stay off, see the deployment runbook).
+# Cache mounts keep compiled output across builds even when the layer cache
+# misses. The image takes no build argument: the deploy's images job sets the
+# revision as a label, so a new commit never invalidates these layers.
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download

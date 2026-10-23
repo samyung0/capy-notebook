@@ -14,7 +14,9 @@ import {
   isMaterialRefElement,
   LIST_INDENT_MAX,
   type MaterialValue,
+  MERMAID_SOURCE_MAX,
   materialRefNode,
+  mermaidNode,
   normalizeMaterialValue,
   normalizeMaterialValueWithMetrics,
   parseMaterialDocument,
@@ -293,6 +295,19 @@ describe('Universal Plate material documents', () => {
     );
     expect(valid(chart, '40%')).toBe(true);
     expect(valid(chart, 300)).toBe(false);
+  });
+
+  // As Go and the collaboration server (Epo 2026-10-22): a Mermaid source
+  // stops at MERMAID_SOURCE_MAX UTF-16 units, an astral character two.
+  it('caps a Mermaid source at the catalog max', () => {
+    const diagram = (source: string) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [mermaidNode(source, '', 'm1')],
+      });
+    const full = `${'x'.repeat(MERMAID_SOURCE_MAX - 2)}😀`;
+    expect(diagram(full)).toBe(true);
+    expect(diagram(`${full}x`)).toBe(false);
   });
 
   // As Go and the collaboration server (Epo, 2026-10-10): no compatibility

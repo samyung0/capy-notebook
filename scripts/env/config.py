@@ -8,8 +8,6 @@ import os
 import re
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 from urllib.parse import quote
 
@@ -126,13 +124,16 @@ def private_write(path, text):
 
 
 def dotenv(values):
-    # Compose single quotes suppress $ interpolation, including passwords.
+    # Compose single quotes suppress $ interpolation, including passwords. A
+    # quote inside, or a backslash before the closing quote, lets Compose read
+    # another assignment out of the line, so the app host refuses such lines
+    # (review R1) and they are refused here rather than escaped.
     if any("\n" in value or "\r" in value for value in values.values()):
         fail("multiline values cannot be rendered as container dotenv")
-    return "".join(
-        f"{key}='" + value.replace("'", "\\'") + "'\n"
-        for key, value in sorted(values.items())
-    )
+    for key, value in values.items():
+        if "'" in value or value.endswith("\\"):
+            fail(f"{key} may not hold a single quote or end in a backslash")
+    return "".join(f"{key}='{value}'\n" for key, value in sorted(values.items()))
 
 
 def refuse_other_environments(values, environment):
@@ -173,7 +174,7 @@ def build_values(values, environment, revision):
 
 def render_build(values, environment, output, revision):
     """Only the SPA build's values: the build job runs third-party build code,
-    so the deploy job renders the Coolify and ingest configuration itself."""
+    so the deploy job renders the app host and ingest configuration itself."""
     output = private_output(output, revision)
     build = build_values(values, environment, revision)
     private_write(output / "build.json", json.dumps(build))
@@ -182,32 +183,32 @@ def render_build(values, environment, output, revision):
 
 def render(values, environment, output, revision):
     output = private_output(output, revision)
-    coolify = target_values(values, "coolify")
-    refuse_other_environments(coolify, environment)
+    # app.env: the env file the app host's Compose stack interpolates.
+    app = target_values(values, "app")
+    refuse_other_environments(app, environment)
     password = values.get("POSTGRES_PASSWORD", "")
     if not password:
         fail("POSTGRES_PASSWORD is required")
-    coolify["DATABASE_URL"] = (
+    app["DATABASE_URL"] = (
         f"postgres://capy:{quote(password, safe='')}@db:5432/capy?sslmode=disable"
     )
-    coolify["RELEASE_SHA"] = revision
+    # Tags the images and is checked by the host's deploy command.
+    app["RELEASE_SHA"] = revision
     # Production pins the collaboration service to cores 2-3 of its 4 vCPU
     # (cpuset in docker-compose.prod.yml), mainly so the Office engine worker
     # has its own core; UAT's 2 vCPU stay unpinned. Runbook §1.1.
-    coolify["COLLABORATION_CPUSET"] = "2,3" if environment == "production" else ""
+    app["COLLABORATION_CPUSET"] = "2,3" if environment == "production" else ""
     # Office engine child processes (save lane, background lane) and each
     # one's memory cap: production 2 + 1 at 4 GiB (the box has swap), UAT 1 + 1
     # at 3 GiB (Epo 2026-10-07).
     production = environment == "production"
-    coolify["COLLABORATION_ENGINE_SAVE_PROCESSES"] = "2" if production else "1"
-    coolify["COLLABORATION_ENGINE_BACKGROUND_PROCESSES"] = "1"
-    coolify["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"] = str(
-        (4 if production else 3) << 30
-    )
+    app["COLLABORATION_ENGINE_SAVE_PROCESSES"] = "2" if production else "1"
+    app["COLLABORATION_ENGINE_BACKGROUND_PROCESSES"] = "1"
+    app["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"] = str((4 if production else 3) << 30)
     # The source rooms' disk store cap: production 10 GiB, UAT 5 GiB
     # (Epo 2026-10-17).
-    coolify["COLLABORATION_SOURCE_DISK_BYTES"] = str((10 if production else 5) << 30)
-    private_write(output / "coolify.json", json.dumps(coolify))
+    app["COLLABORATION_SOURCE_DISK_BYTES"] = str((10 if production else 5) << 30)
+    private_write(output / "app.env", dotenv(app))
     build = build_values(values, environment, revision)
     private_write(output / "build.json", json.dumps(build))
     queue = target_values(values, "ingest-queue")
@@ -215,9 +216,16 @@ def render(values, environment, output, revision):
     address = values.get("CAPY_PRIVATE_BIND_ADDRESS", "")
     password = values.get("POSTGRES_PASSWORD", "")
     try:
-        address = str(ipaddress.IPv4Address(address))
+        parsed = ipaddress.IPv4Address(address)
     except ipaddress.AddressValueError:
         fail("CAPY_PRIVATE_BIND_ADDRESS must be a valid IPv4 address")
+    # Compose publishes Postgres, Redis and the gateway on it: 0.0.0.0 binds
+    # every interface, and loopback leaves the ingest host without them.
+    if parsed.is_unspecified or parsed.is_loopback:
+        fail(
+            "CAPY_PRIVATE_BIND_ADDRESS must be the WireGuard address, not unspecified or loopback"
+        )
+    address = str(parsed)
     if not password:
         fail("POSTGRES_PASSWORD is required for ingest")
     queue.update(
@@ -244,10 +252,11 @@ def render_ops(values, environment, output, revision):
     ops = target_values(values, "ops")
     if ops["OPS_INGEST_PRIMARY_ENVIRONMENT"] != environment:
         fail("OPS_INGEST_PRIMARY_ENVIRONMENT must match the deployment environment")
-    ops["VITE_CLERK_PUBLISHABLE_KEY"] = ops.pop("CLERK_PUBLISHABLE_KEY")
+    # Both name the image (capy-ops:<sha>-<environment>); the image job takes
+    # the public build values from the GitHub variables itself.
     ops["SENTRY_ENVIRONMENT"] = environment
     ops["RELEASE_SHA"] = revision
-    private_write(output / "ops.json", json.dumps(ops))
+    private_write(output / "ops.env", dotenv(ops))
     print(f"rendered {environment} Ops configuration; values redacted")
 
 
@@ -298,138 +307,6 @@ def push(values, environment, repo):
         print(f"{key}: {kind} {'set' if value else 'cleared'} (value redacted)")
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None
-
-
-def coolify_request(method, route, payload=None, *, application=True):
-    base = os.environ["COOLIFY_API_URL"].rstrip("/")
-    uuid = os.environ["COOLIFY_RESOURCE_UUID"]
-    if not base.startswith("https://") or not re.fullmatch("[A-Za-z0-9_-]+", uuid):
-        fail("invalid Coolify target")
-    request = urllib.request.Request(
-        base + ("/applications/" + uuid if application else "") + route,
-        data=json.dumps(payload).encode() if payload is not None else None,
-        method=method,
-        headers={
-            "Authorization": "Bearer " + os.environ["COOLIFY_API_TOKEN"],
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "Capy Notebook deployment",
-        },
-    )
-    try:
-        with urllib.request.build_opener(NoRedirect).open(
-            request, timeout=45
-        ) as response:
-            return json.load(response)
-    except (urllib.error.URLError, json.JSONDecodeError):
-        fail("Coolify configuration request failed (response redacted)")
-
-
-def verify_ops_target():
-    main_uuid = os.environ["COOLIFY_MAIN_RESOURCE_UUID"]
-    if not re.fullmatch("[A-Za-z0-9_-]+", main_uuid):
-        fail("invalid main Coolify application UUID")
-    if os.environ["COOLIFY_RESOURCE_UUID"] == main_uuid:
-        fail("Ops must use a separate Coolify application")
-    app = coolify_request("GET", "")
-    if (
-        app.get("docker_compose_location", "").lstrip("/")
-        != "deploy/docker-compose.ops.yml"
-    ):
-        fail("Ops application must use deploy/docker-compose.ops.yml")
-    main = coolify_request("GET", "/applications/" + main_uuid, application=False)
-    for resource in (app, main):
-        if not (resource.get("settings") or {}).get("connect_to_docker_network"):
-            fail("Enable Connect to Predefined Network on both Coolify applications")
-    if any(
-        app.get(key) is None or app.get(key) != main.get(key)
-        for key in ("destination_id", "destination_type")
-    ):
-        fail("Ops and the main stack must share a Coolify destination")
-    print("Verified separate Ops Coolify application")
-
-
-def coolify_payload(values):
-    # Verified against coollabsio/coolify v4.3.14 ApplicationsController::create_bulk_envs.
-    return {
-        "data": [
-            {
-                "key": key,
-                "value": value,
-                "is_literal": True,
-                "is_preview": False,
-                "is_shown_once": False,
-                "is_multiline": False,
-                "is_runtime": True,
-                "is_buildtime": True,
-            }
-            for key, value in sorted(values.items())
-        ]
-    }
-
-
-def apply_coolify(values):
-    payload = coolify_payload(values)
-    coolify_request("PATCH", "/envs/bulk", payload)
-    actual = coolify_request("GET", "/envs")
-    for wanted in payload["data"]:
-        rows = [
-            row
-            for row in actual
-            if row.get("key") == wanted["key"] and not row.get("is_preview")
-        ]
-        if len(rows) != 1:
-            fail(wanted["key"] + ": Coolify readback missing or duplicate")
-        row = rows[0]
-        for name, value in wanted.items():
-            # Laravel converts empty input strings to null; both clear the value.
-            observed = row.get(name)
-            if name == "value" and observed is None:
-                observed = ""
-            if observed != value:
-                fail(wanted["key"] + ": Coolify readback mismatch (values redacted)")
-    obsolete_keys = {
-        "EVO_" + key.removeprefix("CAPY_")
-        for key in values
-        if key.startswith("CAPY_")
-        and key in MANIFEST
-        and "coolify" in MANIFEST[key]["targets"]
-    } | {
-        "EVO_QUERY_MODEL",
-        "IMPORT_RELAY_ENQUEUE_URL",
-        "IMPORT_RELAY_SECRET",
-        # GLM left Relace for Z.AI (Epo 2026-10-20), then Z.AI for OpenRouter
-        # (Epo 2026-10-21): OPENROUTER_API_KEY replaces all three.
-        "RELACE_API_KEY",
-        "RELACE_INGEST_API_KEY",
-        "ZAI_API_KEY",
-    }
-    obsolete = [
-        row
-        for row in actual
-        if row.get("is_preview") or row.get("key") in obsolete_keys
-    ]
-    # Keep the previous names until every replacement has passed readback.
-    for row in obsolete:
-        uuid = row.get("uuid", "")
-        if not re.fullmatch("[A-Za-z0-9_-]+", uuid):
-            fail("invalid Coolify environment UUID")
-        coolify_request("DELETE", "/envs/" + uuid)
-    if obsolete:
-        remaining = coolify_request("GET", "/envs")
-        if any(
-            row.get("is_preview") or row.get("key") in obsolete_keys
-            for row in remaining
-        ):
-            fail("obsolete or preview Coolify variables remain after cleanup")
-    print(
-        f"Coolify: {len(values)} managed keys verified; preview disabled; values redacted"
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -440,8 +317,6 @@ def main():
             "render",
             "render-ops",
             "render-build",
-            "verify-ops-target",
-            "apply-coolify",
             "build",
         ],
     )
@@ -451,19 +326,12 @@ def main():
     parser.add_argument("--output")
     parser.add_argument("--revision")
     args = parser.parse_args()
-    if args.command == "verify-ops-target":
-        verify_ops_target()
-        return
-    if args.command in ("apply-coolify", "build"):
+    if args.command == "build":
         values = json.loads(read_file(args.file))
-        if args.command == "apply-coolify":
-            apply_coolify(values)
-        else:
-            result = subprocess.run(
-                ["pnpm", "build"], env={**os.environ, **values}, check=False
-            )
-            sys.exit(result.returncode)
-        return
+        result = subprocess.run(
+            ["pnpm", "build"], env={**os.environ, **values}, check=False
+        )
+        sys.exit(result.returncode)
     values = parse_dotenv(read_file(args.file)) if args.file else github_values()
     classify(values)
     if args.command == "check":

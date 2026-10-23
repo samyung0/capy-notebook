@@ -6,7 +6,7 @@ import {
   EditorSaveStatus,
   EditorStatusStoreContext,
 } from '@/features/materials/CenterContentHeader';
-import { HTML_EMBED_MAX_BYTES } from '@/features/materials/document';
+import { MERMAID_SOURCE_MAX } from '@/features/materials/document';
 import {
   MERMAID_TYPING_DELAY_MS,
   Mermaid,
@@ -40,8 +40,8 @@ export default function MermaidSourceDialog({
   const [code, setCode] = useState(() => text.toString());
   // The preview keeps the last diagram that parsed; the error shows in the source.
   const [failure, setFailure] = useState<MermaidFailure | null>(null);
-  // An edit past the HTML embed source's 64 KB bound was refused.
-  const [tooLarge, setTooLarge] = useState(false);
+  // An edit past the source cap (MERMAID_SOURCE_MAX) was refused.
+  const [tooLong, setTooLong] = useState(false);
   const [history] = useState(editorHistory);
   const status = useContext(EditorStatusStoreContext);
   const phone = useIsPhone();
@@ -70,20 +70,20 @@ export default function MermaidSourceDialog({
             className="h-72 overflow-hidden rounded-card border border-line bg-field [--code-editor-bg:var(--color-field)]"
             errorLine={failure?.line ?? null}
             label={m.editor_mermaid_source()}
-            maxBytes={HTML_EMBED_MAX_BYTES}
+            maxLength={MERMAID_SOURCE_MAX}
             onChange={(next) => {
               setCode(next);
-              setTooLarge(false);
+              setTooLong(false);
             }}
-            onRefused={() => setTooLarge(true)}
+            onRefused={() => setTooLong(true)}
             onView={history.attach}
             origin={DIALOG_EDIT}
             text={text}
             value={code}
           />
-          {tooLarge && (
+          {tooLong && (
             <p className="mt-1 font-semibold text-solid-error text-xs">
-              {m.html_embed_too_large()}
+              {mermaidFailureMessage({ line: null, reason: 'tooLong' })}
             </p>
           )}
           {/* A blamed line is marked in the source instead. */}

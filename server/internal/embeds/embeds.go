@@ -28,6 +28,10 @@ const (
 	HTMLEmbedMaxCount = 10
 	// BlockCaptionMax bounds an interactive block's caption (characters).
 	BlockCaptionMax = 300
+	// MermaidSourceMax bounds a Mermaid source in UTF-16 units (JavaScript's
+	// length), mermaid's own maxTextSize; every layer refuses more (Epo
+	// 2026-10-22).
+	MermaidSourceMax = 50_000
 	// A resizable block stores its width as a whole percentage in this range.
 	MediaWidthMin = 20
 	MediaWidthMax = 100
@@ -455,6 +459,7 @@ func Limits() []Limit {
 		{"HTML_EMBED_MAX_BYTES", HTMLEmbedMaxBytes},
 		{"HTML_EMBED_MAX_COUNT", HTMLEmbedMaxCount},
 		{"BLOCK_CAPTION_MAX", BlockCaptionMax},
+		{"MERMAID_SOURCE_MAX", MermaidSourceMax},
 		{"MEDIA_WIDTH_MIN", MediaWidthMin},
 		{"MEDIA_WIDTH_MAX", MediaWidthMax},
 		{"LIST_INDENT_MAX", ListIndentMax},

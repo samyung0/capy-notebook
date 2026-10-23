@@ -552,6 +552,29 @@ func TestFlashcardImagesAreFoundRewrittenAndChecked(t *testing.T) {
 	}
 }
 
+// A Mermaid source stops at the catalog's MermaidSourceMax UTF-16 units (Epo
+// 2026-10-22), as the browser and the collaboration server check; an astral
+// character counts two. Security regression: an unbounded source costs every
+// reader's browser a render that never ends.
+func TestMermaidSourceStopsAtTheCatalogMax(t *testing.T) {
+	diagram := func(source string) Envelope {
+		return Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{
+			"type": "mermaid", "id": "m1", "source": source,
+			"children": []any{textElement("mermaid_caption", "")},
+		}}}
+	}
+	full := "flowchart LR\n" + strings.Repeat("x", embeds.MermaidSourceMax-len("flowchart LR\n")-2) + "😀"
+	if err := Validate(diagram(full)); err != nil {
+		t.Fatalf("source at the cap: %v", err)
+	}
+	if err := Validate(diagram(full + "x")); err == nil || !strings.Contains(err.Error(), "over 50000 characters") {
+		t.Fatalf("source over the cap: %v", err)
+	}
+	if _, err := FromLegacyMarkdown("diagram", "```mermaid\n"+full+"x\n```"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("generated diagram over the cap: %v", err)
+	}
+}
+
 func TestDiagramContract(t *testing.T) {
 	raw, err := FromLegacyMarkdown("diagram", "```mermaid\nflowchart LR\nA-->B\n```")
 	if err != nil {

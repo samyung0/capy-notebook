@@ -6,7 +6,7 @@ all:
       ingest_hostname: capy-ingest-1
       ingest_wireguard_address: 10.77.0.2/32
       ingest_configure_wireguard: true
-      # The app/Coolify host whose database this ingest host reaches: its wg0
+      # The app host whose database this ingest host reaches: its wg0
       # public key (`wg show wg0 public-key`), public endpoint and wg0 address.
       # The template writes this one peer and replaces any other, so copy them
       # from the live app host rather than from an older inventory.
