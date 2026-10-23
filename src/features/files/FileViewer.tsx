@@ -3,7 +3,6 @@ import {
   lazy,
   type ReactNode,
   Suspense,
-  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -48,13 +47,10 @@ import {
   isImageFile,
   officeFormatOf,
 } from './fileUtils';
-import type {
-  OfficeCitation,
-  OfficeFormat,
-  OfficePosition,
-} from './officeProtocol';
+import type { OfficeCitation, OfficeFormat } from './officeProtocol';
+import { officeSwapPlaces } from './officeSwapPlaces';
 import { SourceTextView } from './SourceTextView';
-import { type OfficeViewPosition, officeRuntimeKey } from './useOfficeRuntime';
+import { officeRuntimeKey } from './useOfficeRuntime';
 import { pdfAnnotationsQuery } from './usePdfAnnotations';
 
 const PdfView = lazy(() => import('./PdfView'));
@@ -305,59 +301,21 @@ function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
   });
   const viewsRef = useRef(views);
   viewsRef.current = views;
-  // Each view's frame position calls; where the next view opens after an
-  // at-once swap, read before the replaced view went.
-  const positions = useRef(new Map<number, OfficeViewPosition>());
-  const carried = useRef<OfficePosition | null>(null);
-  const read = (generation: number) =>
-    positions.current.get(generation)?.read() ?? Promise.resolve(null);
-  const replaced = useCallback(async (generation: number) => {
-    const { next, shown } = viewsRef.current;
-    // The view building was itself replaced: the next one builds instead.
-    if (next === generation) {
-      setViews({ next: generation + 1, shown });
-      return;
-    }
-    if (shown !== generation || next !== null) return;
-    if (!(tabHidden() || onPhone())) {
-      setViews({ next: generation + 1, shown });
-      return;
-    }
-    carried.current = await read(generation);
-    if (viewsRef.current.shown === generation)
-      setViews({ next: null, shown: generation + 1 });
-  }, []);
-  const settled = useCallback(async (generation: number) => {
-    const { next, shown } = viewsRef.current;
-    if (next === generation) {
-      // The next view opens where the reader was, then takes the screen.
-      const position = await read(shown);
-      if (position) await positions.current.get(generation)?.show(position);
-      if (viewsRef.current.next !== generation) return;
-      carried.current = null;
-      setViews({ next: null, shown: generation });
-    } else if (shown === generation && carried.current) {
-      void positions.current.get(generation)?.show(carried.current);
-      carried.current = null;
-    }
-  }, []);
+  // Each view's frame position calls and the place an at-once swap carries.
+  const [places] = useState(() =>
+    officeSwapPlaces(() => viewsRef.current, setViews)
+  );
   const building = views.next;
   // A tab hidden during the build swaps at once: the reader's place goes
   // with it and is shown once the next view settles (review L2).
   useEffect(() => {
     if (building === null) return;
-    const hidden = async () => {
-      if (!tabHidden()) return;
-      const place = await read(viewsRef.current.shown);
-      // A build that settled meanwhile swapped with its own read: this one
-      // is dropped, never shown later (review r2 L2).
-      if (viewsRef.current.next !== building) return;
-      carried.current = place;
-      setViews({ next: null, shown: building });
+    const hidden = () => {
+      if (tabHidden()) void places.hidden(building);
     };
     document.addEventListener('visibilitychange', hidden);
     return () => document.removeEventListener('visibilitychange', hidden);
-  }, [building]);
+  }, [building, places]);
   const View =
     format === 'xlsx' ? SheetView : format === 'docx' ? DocxView : PptxView;
   const generations =
@@ -380,11 +338,12 @@ function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
               swap={{
                 building: role === 'next',
                 onPosition: (position) => {
-                  if (position) positions.current.set(generation, position);
-                  else positions.current.delete(generation);
+                  if (position) places.positions.set(generation, position);
+                  else places.positions.delete(generation);
                 },
-                onReplaced: () => void replaced(generation),
-                onSettled: () => void settled(generation),
+                onReplaced: () =>
+                  void places.replaced(generation, tabHidden() || onPhone()),
+                onSettled: () => void places.settled(generation),
               }}
             />
           </OfficeSlot>

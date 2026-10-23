@@ -1037,8 +1037,12 @@ unavailable panel with Retry instead of loading for ever; an editor not
 synced by then, a JOIN never answered on the open socket included, turns the
 status red, and after a reload that failing editor replaces the paused one.
 A slowed open and offline wait. A reload pauses only once its new token has
-answered, so a reload whose token hangs keeps the editor on screen as it
-is. A failed first token request shows the panel for its status (not found,
+answered, so a reload whose token hangs keeps the old editor on screen,
+unpaused and editable. With the real server the compaction evicted its room,
+so its own reconnect (whose token request hangs too) goes Offline at about
+30 s like any lost room, its edits kept on the device, and the swap runs
+once a token answers. The mock retires the old room without evicting it, so
+no e2e shows the Offline part. A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry). A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether

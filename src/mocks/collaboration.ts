@@ -608,17 +608,30 @@ export function setCollaborationSlowed(value: boolean) {
   window.dispatchEvent(new Event(REACHABILITY));
 }
 
-// A note whose collaboration-token requests hang (the join's 30 s, Epo
-// 2026-10-23); kept across page loads, so a first open starts held.
+// A note whose collaboration-token requests hang, or answer after `delayMs`
+// (the join's 30 s, Epo 2026-10-23); kept across page loads, so a first open
+// starts held.
 const TOKENS_HELD = 'capy.mock.collaboration.tokensHeld';
 
-export function holdNoteTokens(materialId: string | null) {
-  if (materialId) sessionStorage.setItem(TOKENS_HELD, materialId);
+export function holdNoteTokens(materialId: string | null, delayMs?: number) {
+  if (materialId)
+    sessionStorage.setItem(
+      TOKENS_HELD,
+      JSON.stringify({ delayMs: delayMs ?? null, materialId })
+    );
   else sessionStorage.removeItem(TOKENS_HELD);
 }
 
-export const noteTokenHeld = (materialId: string) =>
-  browser && sessionStorage.getItem(TOKENS_HELD) === materialId;
+/** How long a note's token request waits: null at once, Infinity for ever. */
+export function noteTokenDelay(materialId: string): number | null {
+  if (!browser) return null;
+  const held = JSON.parse(sessionStorage.getItem(TOKENS_HELD) ?? 'null') as {
+    delayMs: number | null;
+    materialId: string;
+  } | null;
+  if (held?.materialId !== materialId) return null;
+  return held.delayMs ?? Number.POSITIVE_INFINITY;
+}
 
 // A note's current room schema, as the service's material_yjs_documents
 // row names it (1 until a room moves).

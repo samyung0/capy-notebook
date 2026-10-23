@@ -345,21 +345,37 @@ export function useSourceSession(
     // request, the room's answer and an Office view's ready; a session that
     // has not joined by then errors as a first join does.
     let joined = false;
+    // The join's 30 s ran out before it finished (its error shows).
+    let timedOut = false;
     const reconnect = roomReconnector({
       // Reconnecting kept failing: edit on this device until it is back.
       onStuck: () => {
         if (cancelled || runtime.current?.recovery) return;
         if (joined) goOffline();
-        else setStatus('error');
+        else {
+          timedOut = true;
+          setStatus('error');
+        }
       },
       // A closed session never reconnects (replaced, paused, reset).
       provider: () =>
         cancelled || runtime.current?.recovery ? null : provider,
     });
     reconnect.started();
+    // Joined with the room synced (an Office view once its frame is ready
+    // too). A join that finishes past its 30 s gets its status back, as a
+    // note's late sync does (review r3 M1): an Office view's ready comes
+    // after the sync that set it.
     const join = () => {
+      const live = runtime.current;
+      if (!live?.synced) return;
       joined = true;
       reconnect.connected();
+      if (!timedOut) return;
+      timedOut = false;
+      setStatus(
+        live.sequence > 0 && !sourceChangesCovered(live) ? 'saving' : 'saved'
+      );
     };
     viewJoined.current = join;
     const report = editIncidentReporter('source_file', fileId);

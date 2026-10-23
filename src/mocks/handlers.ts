@@ -65,7 +65,7 @@ import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
 import {
   mockMaterialRoom,
-  noteTokenHeld,
+  noteTokenDelay,
   savedSourceState,
   sourceRoom,
   sourceRoomName,
@@ -2226,8 +2226,12 @@ export const handlers = [
     async ({ params, request }) => {
       const material = db.materials.find((item) => item.id === params.id);
       if (!material) return new HttpResponse(null, { status: 404 });
-      // A hung token request (`holdNoteTokens`): never answered.
-      if (noteTokenHeld(material.id)) await new Promise(() => {});
+      // A held token request (`holdNoteTokens`): late, or never answered.
+      const delay = noteTokenDelay(material.id);
+      if (delay !== null)
+        await new Promise((resolve) => {
+          if (Number.isFinite(delay)) setTimeout(resolve, delay);
+        });
       const body = (await request.json().catch(() => null)) as {
         access?: string;
         document?: string;

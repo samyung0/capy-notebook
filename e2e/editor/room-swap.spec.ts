@@ -190,6 +190,32 @@ test("a first open whose token request hangs ends at the join's 30 s", async ({
   await expect(page.locator('[data-note-mount]')).toHaveCount(0);
 });
 
+// A reload's join counts from its token request too (Epo 2026-10-23): a
+// token answering after 20 s leaves its editor about 10 s to join, not 30.
+test("a note reload's join counts its 30 s from the token request", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  await page.evaluate(async (id) => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdNoteTokens, holdRoomJoins } = await import(path);
+    holdNoteTokens(id, 20_000);
+    holdRoomJoins(true);
+  }, EDITOR_NOTE.id);
+  const requested = Date.now();
+  await compact(page, EDITOR_NOTE.id);
+  const paused = page.locator('[data-note-mount="paused"]');
+  await expect(paused).toBeVisible({ timeout: 30_000 });
+  // About 30 s after the request; counting from the editor's mount would
+  // take about 50.
+  await expect(paused).toHaveCount(0, {
+    timeout: requested + 38_000 - Date.now(),
+  });
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
+});
+
 test.describe('on a phone', () => {
   test.use({ viewport: { height: 740, width: 360 } });
 
