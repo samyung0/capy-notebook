@@ -14,7 +14,6 @@ import {
 } from 'react';
 import {
   type GroupImperativeHandle,
-  type PanelSize,
   useGroupRef,
 } from 'react-resizable-panels';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
@@ -121,27 +120,17 @@ function railSize(groupWidth: number) {
   );
 }
 
-/** A collapsible panel was dragged under its least width. Reopening a
- * collapsed panel also reports a zero size, which must not close it again. */
-function collapsedByDrag(size: PanelSize, previous: PanelSize | undefined) {
-  return size.inPixels === 0 && !!previous && previous.inPixels > 0;
-}
-
 /** A side panel. Closed, it collapses to nothing but stays mounted, so the
  * rail's chat keeps its thread, draft and stream. usePanelLayout places it;
- * dragging it under its least width closes it. */
+ * dragging it under its least width closes it on release. */
 function SidePanel({
   id,
-  open,
-  onCollapse,
   minSize,
   maxSize,
   className,
   children,
 }: {
   id: string;
-  open: boolean;
-  onCollapse: () => void;
   minSize: string;
   maxSize: string;
   className: string;
@@ -156,9 +145,6 @@ function SidePanel({
       id={id}
       maxSize={maxSize}
       minSize={minSize}
-      onResize={(next, _id, previous) => {
-        if (open && collapsedByDrag(next, previous)) onCollapse();
-      }}
     >
       {children}
     </ResizablePanel>
@@ -815,13 +801,26 @@ export default function WorkspaceOpen() {
       <div className="flex h-full min-h-0 flex-col gap-2.5">
         <ResizablePanelGroup
           className={cn(
-            'overflow-visible! flex min-h-0 flex-1',
-            // Collapsed, a side panel leaves no gap behind.
+            'group/panels overflow-visible! flex min-h-0 flex-1',
+            // Collapsed, a side panel leaves no gap or handle behind.
+            'data-files-collapsed:[&>#files]:hidden! data-rail-collapsed:[&>#rail]:hidden!',
             !leftOpen && '[&>#files]:hidden!',
             !rightOpen && '[&>#rail]:hidden!'
           )}
           elementRef={setPanelGroup}
           groupRef={panelGroupRef}
+          // A drag can collapse a panel before the pointer lets go. Marked on
+          // the group without a render, its gap and handle go in the same
+          // frame; it closes only on release, so dragging back reopens it.
+          onLayoutChange={(layout) => {
+            panelGroup?.toggleAttribute('data-files-collapsed', !layout.files);
+            panelGroup?.toggleAttribute('data-rail-collapsed', !layout.rail);
+          }}
+          onLayoutChanged={(layout, { isUserInteraction }) => {
+            if (!isUserInteraction) return;
+            if (leftOpen && layout.files === 0) setLeftOpen(false);
+            if (rightOpen && layout.rail === 0) setRightOpen(false);
+          }}
           orientation="horizontal"
         >
           {xl && (
@@ -831,20 +830,22 @@ export default function WorkspaceOpen() {
                 id="files"
                 maxSize="420px"
                 minSize={`${LEFT_MIN}px`}
-                onCollapse={() => setLeftOpen(false)}
-                open={leftOpen}
               >
                 {/* Unlike the rail's chat, nothing here needs to survive closing. */}
                 {leftOpen && leftPanel}
               </SidePanel>
-              <ResizableHandle disabled={!leftOpen} withHandle={leftOpen} />
+              <ResizableHandle
+                className="group-data-files-collapsed/panels:[&>div]:hidden"
+                disabled={!leftOpen}
+                withHandle={leftOpen}
+              />
             </>
           )}
           <ResizablePanel
             className={cn(
               'overflow-visible!',
-              leftShown && 'pl-1.5',
-              lg && rightOpen && 'pr-1.5'
+              leftShown && 'pl-1.5 group-data-files-collapsed/panels:pl-0',
+              lg && rightOpen && 'pr-1.5 group-data-rail-collapsed/panels:pr-0'
             )}
             id="viewer"
             minSize={oneColumnLayout ? undefined : `${VIEWER_MIN}px`}
@@ -882,14 +883,16 @@ export default function WorkspaceOpen() {
           </ResizablePanel>
           {lg && (
             <>
-              <ResizableHandle disabled={!rightOpen} withHandle={rightOpen} />
+              <ResizableHandle
+                className="group-data-rail-collapsed/panels:[&>div]:hidden"
+                disabled={!rightOpen}
+                withHandle={rightOpen}
+              />
               <SidePanel
                 className="pl-1.5"
                 id="rail"
                 maxSize="50%"
                 minSize={`${RAIL_MIN}px`}
-                onCollapse={() => setRightOpen(false)}
-                open={rightOpen}
               >
                 {railColumn}
               </SidePanel>
