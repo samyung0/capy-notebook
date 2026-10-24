@@ -1,6 +1,5 @@
 /// <reference lib="webworker" />
 
-import { baseLocale, overwriteGetLocale } from '@/i18n';
 import {
   fitImage,
   ImageTooLargeError,
@@ -8,10 +7,7 @@ import {
 } from '@/lib/fitImage';
 import type { FitRequest, FitResponse } from '@/lib/fitImageOffThread';
 
-// A worker has no localStorage to read the locale from; the page makes the
-// copy of each error from its code.
-overwriteGetLocale(() => baseLocale);
-
+// The page makes the copy of each error from its code.
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 const post = (message: FitResponse) => workerScope.postMessage(message);
 

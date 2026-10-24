@@ -1,10 +1,9 @@
 // The long side every image is resized within (Epo 2026-10-20, Q286), from
 // the gateway's header check (server/internal/imagecheck), which refuses a
 // larger one.
+// No copy here: the compression workers load this, and the page makes the
+// copy of each error where it shows it.
 import { IMAGE_MAX_SIDE } from '@/api/limits.generated';
-import { m } from '@/i18n';
-// Not errors.ts, which pulls in the API client: the Office runtime loads this.
-import { CopyError } from '@/lib/copyError';
 
 /** Bank figures' flat cap (server/internal/bank/assets.go); editor images take
  * the uploader's plan cap from the material (`imageMaxBytes`). */
@@ -43,27 +42,27 @@ export const imageLimit = (maxBytes: number) =>
   `${Math.round(maxBytes / 1024 ** 2)} MB`;
 
 /** A picked image that nothing it can be shrunk to fits under `maxBytes`. */
-export class ImageTooLargeError extends CopyError {
+export class ImageTooLargeError extends Error {
   readonly maxBytes: number;
   constructor(maxBytes: number) {
-    super(m.image_too_large({ limit: imageLimit(maxBytes) }));
+    super(`no compression of the image fits ${maxBytes} bytes`);
     this.maxBytes = maxBytes;
   }
 }
 
 /** A picked image no decoder reads (SVG, PSD, a corrupt file), so it cannot
  * be shrunk or re-encoded. */
-export class ImageUnreadableError extends CopyError {
+export class ImageUnreadableError extends Error {
   constructor() {
-    super(m.image_unreadable());
+    super('no decoder reads the image');
   }
 }
 
 /** An animated GIF source past the pixel limit: a canvas keeps one frame, so
  * it cannot be shrunk. */
-export class ImageTooManyPixelsError extends CopyError {
+export class ImageTooManyPixelsError extends Error {
   constructor() {
-    super(m.error_source_image_too_large_title());
+    super('the animated GIF is past the pixel limit');
   }
 }
 

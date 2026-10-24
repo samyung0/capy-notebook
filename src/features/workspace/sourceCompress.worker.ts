@@ -1,7 +1,6 @@
 /// <reference lib="webworker" />
 
 import { SOURCE_IMAGE_MAX_PIXELS } from '@/api/limits.generated';
-import { baseLocale, overwriteGetLocale } from '@/i18n';
 import {
   fitImage,
   ImageTooLargeError,
@@ -11,10 +10,7 @@ import {
 import { compressOfficeImages } from '@/lib/officeImages';
 import type { CompressRequest, CompressResponse } from './sourceCompress';
 
-// A worker has no localStorage to read the locale from. The copy of errors
-// made here is never shown: the page maps their codes to its own.
-overwriteGetLocale(() => baseLocale);
-
+// The page makes the copy of each error from its code.
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 const post = (message: CompressResponse) => workerScope.postMessage(message);
 

@@ -1,4 +1,6 @@
-import { ImageTooLargeError, ImageUnreadableError } from '@/lib/fitImage';
+import { m } from '@/i18n';
+import { CopyError } from '@/lib/copyError';
+import { imageLimit } from '@/lib/fitImage';
 
 export interface FitRequest {
   file: File;
@@ -11,7 +13,8 @@ export type FitResponse =
 
 /** fitImage for a note, quiz, flashcard or bank image in its own worker, so
  * a large photo's decode and colour scan stay off the main thread (Q348,
- * review N5). Throws what fitImage throws. */
+ * review N5). An image no decoder reads or no size fits is refused with its
+ * copy. */
 export function fitImageOffThread(file: File, maxBytes: number) {
   return new Promise<File>((resolve, reject) => {
     const worker = new Worker(
@@ -26,9 +29,9 @@ export function fitImageOffThread(file: File, maxBytes: number) {
       if ('file' in data) return resolve(data.file);
       reject(
         data.code === 'unreadable'
-          ? new ImageUnreadableError()
+          ? new CopyError(m.image_unreadable())
           : data.code === 'too_large'
-            ? new ImageTooLargeError(maxBytes)
+            ? new CopyError(m.image_too_large({ limit: imageLimit(maxBytes) }))
             : new Error('image compression failed')
       );
     };
