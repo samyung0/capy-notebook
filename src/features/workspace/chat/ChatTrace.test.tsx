@@ -117,3 +117,33 @@ it('ends with a warning icon whose tooltip names the commands left', () => {
   expect(text(undone)).toContain('Undid the edit to grades.xlsx');
   expect(undone).not.toContain('not applied');
 });
+
+// Q268: a turn waiting for the limiter or an AI slot says so in the trace.
+it('shows a waiting turn in the trace', () => {
+  for (const [phase, copy] of [
+    ['waiting_limit', 'Waiting for your chat limit'],
+    ['waiting_capacity', 'Waiting for a free AI slot'],
+  ] as const) {
+    const msg: ChatMessage = {
+      content: '',
+      createdAt: at(0),
+      id: 'm1',
+      phase,
+      role: 'assistant',
+      status: 'streaming',
+    };
+    for (const mode of ['verbose', 'normal'] as const) {
+      const html = renderToStaticMarkup(
+        <QueryClientProvider client={new QueryClient()}>
+          <ChatTrace
+            handlers={{ onUndoApplied: () => {}, onUndoRefused: () => {} }}
+            live
+            mode={mode}
+            msg={msg}
+          />
+        </QueryClientProvider>
+      );
+      expect(text(html)).toContain(copy);
+    }
+  }
+});

@@ -75,6 +75,8 @@ type Config struct {
 	// ShareReadSecret is SHARE_LINK_SECRET, which signs ShareReadHeader.
 	// Empty sends every signed-out read to the anonymous bucket.
 	ShareReadSecret []byte
+	// Clock is nil for real time; tests set one so waits take no time.
+	Clock Clock
 }
 
 // DefaultConfig is tuned for a single-seat free tier: generous enough that
@@ -169,7 +171,7 @@ func (l *Limiter) Allow(ctx context.Context, key string, rule Rule) (bool, time.
 
 	res, err := gcra.Run(ctx, l.rdb,
 		[]string{"capy:rl:" + key},
-		time.Now().UnixMilli(), interval, tolerance,
+		l.clock().Now().UnixMilli(), interval, tolerance,
 	).Int64Slice()
 	if err == nil && len(res) != 2 {
 		err = errors.New("ratelimit: unexpected script reply")

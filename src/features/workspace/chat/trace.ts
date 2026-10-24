@@ -1,6 +1,7 @@
 import { isApiError } from '@/api/client';
 import type {
   ActivityBlock,
+  ChatWaitingPhase,
   ResourceEffect,
   ResourceEffectOperation,
 } from '@/api/types';
@@ -23,7 +24,14 @@ export type StepState = 'running' | 'done' | 'failed' | 'unknown' | 'stopped';
 
 export type TraceRow =
   | { type: 'narration'; id: string; text: string }
-  | { type: 'thinking'; id: string; running: boolean; seconds?: number }
+  | {
+      type: 'thinking';
+      id: string;
+      running: boolean;
+      seconds?: number;
+      /** The live row of a turn waiting for the limiter or an AI slot. */
+      waiting?: ChatWaitingPhase;
+    }
   | { type: 'step'; id: string; tool: ToolBlock; state: StepState }
   /** Two or more finished calls of one tool in a row. */
   | { type: 'group'; id: string; name: string; tools: ToolBlock[] }
@@ -345,6 +353,8 @@ export interface TraceInput {
   stopped: boolean;
   /** The model is between steps (after the Thinking delay). */
   thinking: boolean;
+  /** The turn is waiting for the limiter or an AI slot. */
+  waiting?: ChatWaitingPhase;
 }
 
 /** Turns a message's activity into trace rows: thinking gaps from the step
@@ -355,6 +365,7 @@ export function buildTrace({
   live,
   stopped,
   thinking,
+  waiting,
   receipts = true,
 }: TraceInput): TraceRow[] {
   const tools = activity.filter(
@@ -438,7 +449,11 @@ export function buildTrace({
     }
     rows.push({ id: tool.id, state, tool, type: 'step' });
   }
-  if (thinking) rows.push({ id: 'thinking', running: true, type: 'thinking' });
+  if (waiting) {
+    rows.push({ id: 'waiting', running: true, type: 'thinking', waiting });
+  } else if (thinking) {
+    rows.push({ id: 'thinking', running: true, type: 'thinking' });
+  }
   return groupSteps(rows);
 }
 

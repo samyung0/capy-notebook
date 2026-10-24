@@ -729,6 +729,8 @@
   "chat_step_stopped": "Stopped while {step}",
   "chat_trace_thinking": "Thinking",
   "chat_trace_thought": "Thought",
+  "chat_trace_waiting_limit": "Waiting for your chat limit…",
+  "chat_trace_waiting_capacity": "Waiting for a free AI slot…",
   "chat_trace_thought_for": "Thought for {seconds}s",
   "chat_redo": "Redo",
   "chat_redo_pending": "Redoing…",

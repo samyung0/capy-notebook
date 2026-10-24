@@ -8,6 +8,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/ratelimit"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -271,44 +273,62 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		operations = append(operations, agenttools.OpLibraryRead)
 	}
 
-	streamErr := a.relayChat(pipeCtx, userID, operations, conv, turn, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
-		run.mu.Lock()
-		forward := run.state.hear(ev)
-		activity, toolEvidence := run.state.activity, run.state.toolEvidence
-		run.mu.Unlock()
-		switch ev.Type {
-		case "checkpoint":
-			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := a.s.PersistCheckpoint(cpCtx, conv.ID, store.ConversationCheckpoint{
-				ThroughMessageID: ev.ThroughMessageID,
-				Summary:          ev.Summary,
-				ProviderSlug:     ev.ProviderSlug,
-				ModelSlug:        ev.ModelSlug,
-				ModelVersion:     ev.ModelVersion,
-				EstimatedTokens:  ev.EstimatedTokens,
-			}); err != nil {
-				log.Printf("persist checkpoint conv=%s: %v", conv.ID, err)
+	// A send its AI buckets admit within ratelimit.MaxWait waits here, shown
+	// to the browser as the waiting_limit phase (a stop ends the wait); past
+	// the wait the turn ends with the limiter's refusal.
+	var streamErr error
+	if wait := ratelimit.PendingWait(r.Context()); wait != nil {
+		send(pipeChatEvent{Type: "phase", Phase: "waiting_limit"})
+		var refusal *ratelimit.Refusal
+		if err := wait(pipeCtx); errors.As(err, &refusal) {
+			streamErr = &chatEventError{
+				Code: refusal.Code, Message: "too many requests",
+				RetryAfterSeconds: max(int(math.Ceil(refusal.RetryAfter.Seconds())), 1),
 			}
-			cpCancel()
-		case "turn_checkpoint":
-			// Saved on the streaming row so a crash of this process keeps the
-			// turn so far too (Epo 2026-10-21).
-			cpCtx, cpCancel := obs.Detach(ctx, 5*time.Second)
-			if err := a.s.CheckpointAssistantMessage(cpCtx, assistant.ID, activity, toolEvidence); err != nil {
-				log.Printf("persist turn checkpoint msg=%s: %v", assistant.ID, err)
-			}
-			cpCancel()
-		case "pending_sources":
-			// Viewers never learn that sources have pending edits.
-			forward = access.canEdit
-			if ev.Omitted != nil && *ev.Omitted {
-				a.notifyPendingOverflow(ctx, wsID, ev.FileIDs)
-			}
+		} else if err != nil {
+			streamErr = err
 		}
-		if forward {
-			send(ev)
-		}
-	})
+	}
+	if streamErr == nil {
+		streamErr = a.relayChat(pipeCtx, userID, operations, conv, turn, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+			run.mu.Lock()
+			forward := run.state.hear(ev)
+			activity, toolEvidence := run.state.activity, run.state.toolEvidence
+			run.mu.Unlock()
+			switch ev.Type {
+			case "checkpoint":
+				cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := a.s.PersistCheckpoint(cpCtx, conv.ID, store.ConversationCheckpoint{
+					ThroughMessageID: ev.ThroughMessageID,
+					Summary:          ev.Summary,
+					ProviderSlug:     ev.ProviderSlug,
+					ModelSlug:        ev.ModelSlug,
+					ModelVersion:     ev.ModelVersion,
+					EstimatedTokens:  ev.EstimatedTokens,
+				}); err != nil {
+					log.Printf("persist checkpoint conv=%s: %v", conv.ID, err)
+				}
+				cpCancel()
+			case "turn_checkpoint":
+				// Saved on the streaming row so a crash of this process keeps the
+				// turn so far too (Epo 2026-10-21).
+				cpCtx, cpCancel := obs.Detach(ctx, 5*time.Second)
+				if err := a.s.CheckpointAssistantMessage(cpCtx, assistant.ID, activity, toolEvidence); err != nil {
+					log.Printf("persist turn checkpoint msg=%s: %v", assistant.ID, err)
+				}
+				cpCancel()
+			case "pending_sources":
+				// Viewers never learn that sources have pending edits.
+				forward = access.canEdit
+				if ev.Omitted != nil && *ev.Omitted {
+					a.notifyPendingOverflow(ctx, wsID, ev.FileIDs)
+				}
+			}
+			if forward {
+				send(ev)
+			}
+		})
+	}
 
 	saveCtx, cancel := obs.Detach(ctx, 10*time.Second)
 	defer cancel()

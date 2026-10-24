@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -197,7 +198,7 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 			// share link gets its own bucket instead of one shared by all.
 			if userID == "" {
 				if token, ok := shareReadToken(r, l.cfg.ShareReadSecret, time.Now()); ok {
-					if l.take(w, r, "share:"+token, l.cfg.SharePage, "rate_limited", false) {
+					if l.admitOrRefuse(w, r, []bucket{{key: "share:" + token, rule: l.cfg.SharePage, code: "rate_limited"}}, time.Time{}) {
 						next.ServeHTTP(w, r)
 					}
 					return
@@ -209,56 +210,98 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 				subject, scope = "user:"+userID, "user"
 				base = l.cfg.Authenticated
 			}
-			if !l.take(w, r, scope+":base:"+subject, base, "rate_limited", false) {
-				return
-			}
+			buckets := append([]bucket{{key: scope + ":base:" + subject, rule: base, code: "rate_limited"}},
+				l.classBuckets(routeClass, subject)...)
 
-			// The expensive classes carry a second, tighter budget on top of
-			// the general one rather than replacing it, so a caller cannot
-			// spend their whole general allowance on model calls. The AI and
-			// upload buckets refuse while Redis cannot count them.
-			ok := true
-			switch routeClass {
-			case classAI:
-				ok = l.take(w, r, "ai:"+subject, l.cfg.AI, "ai_rate_limited", true) &&
-					l.take(w, r, "ai-burst:"+subject, l.cfg.AIBurst, "ai_rate_limited", true)
-			case classEditor:
-				ok = l.take(w, r, "editor:"+subject, l.cfg.Editor, "ai_rate_limited", false)
-			case classUpload:
-				ok = l.take(w, r, "upload:"+subject, l.cfg.Upload, "upload_rate_limited", true)
-			case classImport:
-				ok = l.take(w, r, "upload:"+subject, l.cfg.Upload, "upload_rate_limited", true) &&
-					l.take(w, r, "integration:"+subject, l.cfg.Integration, "rate_limited", false)
-			case classIntegration:
-				ok = l.take(w, r, "integration:"+subject, l.cfg.Integration, "rate_limited", false)
-			case classIncident:
-				ok = l.take(w, r, "incident:"+subject, l.cfg.Incident, "rate_limited", false)
-			case classThumbnail:
-				ok = l.take(w, r, "thumbnail:"+subject, l.cfg.Thumbnail, "rate_limited", false)
+			switch {
+			case answerCheck(r.Method, r.URL.Path):
+				// An answer check waits behind its spinner, then is graded or
+				// refused.
+				if !l.admitOrRefuse(w, r, buckets, l.clock().Now().Add(MaxWait)) {
+					return
+				}
+			case chatSend(r.Method, r.URL.Path):
+				// A chat send whose AI buckets admit it within MaxWait waits
+				// in its stream, which shows the wait (PendingWait).
+				deadline := l.clock().Now().Add(MaxWait)
+				if !l.admitOrRefuse(w, r, buckets[:1], time.Time{}) {
+					return
+				}
+				rest, refusal, err := l.admit(r.Context(), buckets[1:], time.Time{})
+				switch {
+				case err != nil:
+					unavailable(w, r, err)
+					return
+				case refusal != nil && refusal.RetryAfter > MaxWait:
+					reject(w, r, refusal.RetryAfter, refusal.Code)
+					return
+				case refusal != nil:
+					wait := Wait(func(ctx context.Context) error {
+						_, refusal, err := l.admit(ctx, rest, deadline)
+						if err != nil {
+							return &Refusal{Code: "rate_limit_unavailable", RetryAfter: unavailableRetrySeconds * time.Second}
+						}
+						if refusal != nil {
+							return refusal
+						}
+						return nil
+					})
+					r = r.WithContext(context.WithValue(r.Context(), waitKey{}, wait))
+				}
+			default:
+				if !l.admitOrRefuse(w, r, buckets, time.Time{}) {
+					return
+				}
 			}
-			if ok {
-				next.ServeHTTP(w, r)
-			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// take spends one request of rule from key's bucket, or answers the refusal
-// and reports false. While Redis cannot decide, failClosed refuses with 503
-// and otherwise the request passes.
-func (l *Limiter) take(w http.ResponseWriter, r *http.Request, key string, rule Rule, code string, failClosed bool) bool {
-	ok, retry, err := l.Allow(r.Context(), key, rule)
-	if err != nil {
-		if !failClosed {
-			return true
+// classBuckets are the tighter budgets the expensive classes carry on top of
+// the general one rather than replacing it, so a caller cannot spend their
+// whole general allowance on model calls. The AI and upload buckets refuse
+// while Redis cannot count them.
+func (l *Limiter) classBuckets(routeClass class, subject string) []bucket {
+	switch routeClass {
+	case classAI:
+		return []bucket{
+			{key: "ai:" + subject, rule: l.cfg.AI, code: "ai_rate_limited", failClosed: true},
+			{key: "ai-burst:" + subject, rule: l.cfg.AIBurst, code: "ai_rate_limited", failClosed: true},
 		}
+	case classEditor:
+		return []bucket{{key: "editor:" + subject, rule: l.cfg.Editor, code: "ai_rate_limited"}}
+	case classUpload:
+		return []bucket{{key: "upload:" + subject, rule: l.cfg.Upload, code: "upload_rate_limited", failClosed: true}}
+	case classImport:
+		return []bucket{
+			{key: "upload:" + subject, rule: l.cfg.Upload, code: "upload_rate_limited", failClosed: true},
+			{key: "integration:" + subject, rule: l.cfg.Integration, code: "rate_limited"},
+		}
+	case classIntegration:
+		return []bucket{{key: "integration:" + subject, rule: l.cfg.Integration, code: "rate_limited"}}
+	case classIncident:
+		return []bucket{{key: "incident:" + subject, rule: l.cfg.Incident, code: "rate_limited"}}
+	case classThumbnail:
+		return []bucket{{key: "thumbnail:" + subject, rule: l.cfg.Thumbnail, code: "rate_limited"}}
+	}
+	return nil
+}
+
+// admitOrRefuse admits the request through buckets by deadline, or answers
+// the refusal (429, or 503 while a fail-closed bucket cannot be counted) and
+// reports false.
+func (l *Limiter) admitOrRefuse(w http.ResponseWriter, r *http.Request, buckets []bucket, deadline time.Time) bool {
+	_, refusal, err := l.admit(r.Context(), buckets, deadline)
+	switch {
+	case err != nil:
 		unavailable(w, r, err)
 		return false
+	case refusal != nil:
+		reject(w, r, refusal.RetryAfter, refusal.Code)
+		return false
 	}
-	if !ok {
-		reject(w, r, retry, code)
-	}
-	return ok
+	return true
 }
 
 func reject(w http.ResponseWriter, r *http.Request, retry time.Duration, code string) {

@@ -1545,6 +1545,29 @@ Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its
 /64 (`obs.ClientAddress`). `Retry-After` is rounded up, so a client that
 waits exactly that long gets through.
 
+**Waiting instead of an immediate 429** (Epo 2026-10-24, Q268;
+`ratelimit.MaxWait`, `server/internal/ratelimit/wait.go`). A refused bucket
+names its GCRA retry-after; two kinds of request wait for it when it ends
+within 10 s:
+
+- A chat send (`POST .../chat/stream`) whose AI or AI-burst bucket refuses
+  opens its stream, sends `{"type":"phase","phase":"waiting_limit"}` after
+  `start`, waits, takes the buckets and runs the turn
+  (`ratelimit.PendingWait` in `chatStream`). Past 10 s it answers 429 before
+  any stream; a wait that runs out (another request took the slot) ends the
+  turn with an in-stream `ai_rate_limited` error. A stop ends the wait. The
+  base bucket never waits.
+- An answer check (a quiz attempt, the review and bank checks, the
+  computation check, a signed-out grade) waits for every bucket it spends
+  behind its normal spinner, then is graded or answers 429.
+
+Every other limited route answers 429 at once, and nothing retries a 429
+automatically (L12; uploads keep their own retry). The pipeline's wait for an
+AI process slot is the other half of the contract: it sends
+`{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 30 s) and
+ends the stream with the in-stream `provider_busy` error when the wait runs
+out. The chat trace shows both phases as a waiting row.
+
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.
 They authenticate by signature and both providers apply their own delivery rate.

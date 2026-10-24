@@ -2704,7 +2704,10 @@ current pending changes applied. Embedded source instructions remain untrusted.
    generator, which marks the client: Python stops writing SSE but finishes
    the in-flight provider call, settles usage when it arrives, and does not
    start another planning step.
-9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
+9. SSE events: `phase` (`planning` | `running_tools` | `answering`, and the
+   waiting phases: `waiting_limit` from the API while a send waits for the
+   per-user limiter, `waiting_capacity` from the pipeline while it waits for an
+   AI process slot; [observability-metering.md](observability-metering.md)),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
    `tool_start` / `tool_progress` / `tool_end`, versioned `citations`
    (`final: true` on the answer's own list), `done` | `error`.

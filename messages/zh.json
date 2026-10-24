@@ -729,6 +729,8 @@
   "chat_step_stopped": "已停止：{step}",
   "chat_trace_thinking": "思考中",
   "chat_trace_thought": "已思考",
+  "chat_trace_waiting_limit": "正在等待聊天次数限制恢复…",
+  "chat_trace_waiting_capacity": "正在等待空闲的 AI 资源…",
   "chat_trace_thought_for": "思考了 {seconds} 秒",
   "chat_redo": "重做",
   "chat_redo_pending": "正在重做…",
