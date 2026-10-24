@@ -545,7 +545,6 @@
   "source_audio_too_long": "音频时长不能超过 {hours} 小时。",
   "source_upload_too_many": "此工作区还能再放入 {count} 个文件。",
   "source_queue_progress": "正在发送文件，还剩 {remaining} 个。",
-  "source_ingest_waiting": "正在等待解析名额空出。",
   "error_ingest_slots_title": "正在解析的文件太多",
   "error_ingest_slots_body": "等一部分文件解析完成后再试。",
   "source_workspace_file_capacity": "已使用 {used} / {limit} 个文件",

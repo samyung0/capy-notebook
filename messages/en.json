@@ -545,7 +545,6 @@
   "source_audio_too_long": "Audio must be {hours} hours or shorter.",
   "source_upload_too_many": "This workspace can take {count} more files.",
   "source_queue_progress": "Sending files. {remaining} still waiting.",
-  "source_ingest_waiting": "Waiting for ingest slots to free up.",
   "error_ingest_slots_title": "Too many files ingesting",
   "error_ingest_slots_body": "Wait for some uploads to finish indexing, then try again.",
   "source_workspace_file_capacity": "{used} of {limit} files used",
