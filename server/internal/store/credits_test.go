@@ -602,28 +602,6 @@ func TestBeginProviderSessionCapsOpenLeases(t *testing.T) {
 	}
 }
 
-// TestByokSessionsCountTowardTheActorCap (security regression: rate-limit
-// audit M13). Open BYOK sessions take places under the per-actor cap like
-// platform-paid ones: past it a session of either kind is refused.
-func TestByokSessionsCountTowardTheActorCap(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	userID := newCreditsTestUser(t, s)
-	llm, embed := platformSessionRates()
-	byok := TokenRates{Model: models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-byok"}, ModelVersion: 1}
-	for i := range ConcurrentLLMLeases {
-		if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByUser, byok, embed, ""); err != nil {
-			t.Fatalf("BYOK session %d: %v", i+1, err)
-		}
-	}
-	if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByUser, byok, embed, ""); !errors.Is(err, ErrTooManyLLMLeases) {
-		t.Fatalf("BYOK session past the cap: %v, want ErrTooManyLLMLeases", err)
-	}
-	if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, ""); !errors.Is(err, ErrTooManyLLMLeases) {
-		t.Fatalf("platform session past the cap: %v, want ErrTooManyLLMLeases", err)
-	}
-}
-
 // A voice clip's reserved session neither takes one of the LLM leases nor
 // counts against them: five open chat streams leave the microphone working,
 // and an open clip leaves room for five streams.

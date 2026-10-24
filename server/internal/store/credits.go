@@ -51,10 +51,9 @@ var ErrTerminalCallNotAllowed = errors.New("terminal provider call not allowed")
 // unknown kind or thinking level, negative usage); retrying it fails the same way.
 var ErrInvalidProviderCall = errors.New("invalid provider call")
 
-// ConcurrentLLMLeases caps open model sessions per actor, platform-paid and
-// BYOK alike (BYOK still uses platform retrieval and embeddings). Worst-case
-// overshoot is this many in-flight settlements. Ingest uses
-// ConcurrentIngestLeases instead.
+// ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
+// Worst-case overshoot is this many in-flight settlements. BYOK does not take
+// a lease. Ingest uses ConcurrentIngestLeases instead.
 const ConcurrentLLMLeases = 5
 
 // ConcurrentIngestLeases caps pending+running parse/ingest pipelines per actor.
@@ -499,6 +498,21 @@ func (s *Store) beginProviderSession(
 		if err := admit(ctx, tx, usage); err != nil {
 			return "", err
 		}
+		if reserveMicros == 0 {
+			// Reserved sessions (voice input) are left out: see
+			// BeginReservedSession.
+			var open int64
+			if err := tx.QueryRow(ctx, `
+				SELECT count(*) FROM provider_sessions
+				 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
+				   AND surface <> $2 AND paid_by = $3 AND reserved_micros = 0`,
+				actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
+				return "", err
+			}
+			if open >= ConcurrentLLMLeases {
+				return "", ErrTooManyLLMLeases
+			}
+		}
 		// SettleCredits, ReleaseCredits and the expiry sweep take the hold
 		// back off the counter.
 		if reserveMicros > 0 {
@@ -507,23 +521,6 @@ func (s *Store) beginProviderSession(
 				WHERE user_id = $1`, actorUserID, reserveMicros); err != nil {
 				return "", err
 			}
-		}
-	}
-	// Every open session but ingest takes one of the actor's leases, BYOK
-	// included (rate-limit audit M13). A reserved session (voice input) is
-	// bounded by its hold and neither takes nor counts as one: see
-	// BeginReservedSession.
-	if reserveMicros == 0 {
-		var open int64
-		if err := tx.QueryRow(ctx, `
-			SELECT count(*) FROM provider_sessions
-			 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-			   AND surface <> $2 AND reserved_micros = 0`,
-			actorUserID, SurfaceIngest).Scan(&open); err != nil {
-			return "", err
-		}
-		if open >= ConcurrentLLMLeases {
-			return "", ErrTooManyLLMLeases
 		}
 	}
 

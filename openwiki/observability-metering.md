@@ -1714,9 +1714,8 @@ large answer:
 **Concurrency, not just rate**, bounds chat abuse: one stream runs for minutes
 and drives an agent loop the whole time, so a requests-per-hour budget alone
 still allows arbitrary parallel spend. `BeginProviderSession` counts open
-non-ingest model sessions in Postgres (cap 5), platform-paid and BYOK alike
-(a BYOK turn still runs platform retrieval and embeddings). A replica that
-dies mid-stream leaves a row the sweeper releases after 30 minutes. Ingest
+non-ingest leases in Postgres (cap 5). A replica that dies mid-stream leaves a row the
+sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
 **Per-model outbound concurrency** bounds what reaches a provider.
