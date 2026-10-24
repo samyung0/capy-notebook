@@ -1,33 +1,37 @@
 // Package imagecheck reads image sizes from headers only, never decoding
-// pixels, for the upload checks of Epo's 2026-10-24 image lines (Q285,
-// Q286): an editor image or a picture inside an Office file at most the
-// plan image cap and MaxSide on its long side, an image file uploaded as a
-// source at most SourceMaxPixels, and no EMF or WMF picture in an Office
-// file. The browser compresses to these limits first (src/lib/fitImage.ts),
-// so a refusal is final.
+// pixels, for the upload checks of Epo's 2026-10-24 image lines (Q285, Q286,
+// Q344, Q348): an editor image at most MaxSide on either side, an image file
+// uploaded as a source at most SourceMaxPixels, and an Office file holding
+// only PNG, JPEG or GIF pictures within the plan image cap and MaxSide, no
+// EMF, WMF or SVG, inside bounded zip packages. The browser compresses to
+// these limits first (src/lib/fitImage.ts, src/lib/officeImages.ts) and the
+// import worker does the same (pipeline/pipeline/ingest/image_check.py), so a
+// refusal is final.
 package imagecheck
 
 import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/binary"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"image"
-	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"net/url"
 	"path"
+	"regexp"
+	"slices"
 	"strings"
 
-	_ "golang.org/x/image/bmp"
-	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 )
 
-// MaxSide is the long side of an editor image or a picture inside an Office
+// MaxSide bounds both sides of an editor image or a picture inside an Office
 // file (Epo 2026-10-24, Q286).
 const MaxSide = 2400
 
@@ -35,12 +39,33 @@ const MaxSide = 2400
 // 2026-10-24, replacing Q286's 40 megapixels).
 const SourceMaxPixels = 5_000_000
 
+// MaxEntries and MaxInflated bound an Office package (Q348), as the browser
+// and the import worker do: more entries, or more bytes inflated across its
+// parts while the check reads them, refuse it.
+const (
+	MaxEntries  = 4096
+	MaxInflated = 256 << 20
+)
+
 // headerBytes bounds what a header read may consume: a JPEG's frame header
 // follows its metadata segments, each at most 64 KiB.
 const headerBytes = 1 << 20
 
-// ErrUnreadable is a raster image whose size its header does not give.
-var ErrUnreadable = errors.New("image header unreadable")
+var (
+	// ErrUnknown is a format the check does not measure.
+	ErrUnknown = errors.New("image format not measured")
+	// ErrUnreadable is a known format whose header gives no size.
+	ErrUnreadable = errors.New("image header unreadable")
+)
+
+// The formats each check accepts (Q344): editor images as the editor-asset
+// reservation takes them, image sources as the browser re-saves them, and
+// Office pictures as older Word, PowerPoint and LibreOffice open them.
+var (
+	editorFormats = []string{"png", "jpeg", "gif", "webp", "avif"}
+	sourceFormats = []string{"png", "jpeg", "gif", "webp"}
+	officeFormats = []string{"png", "jpeg", "gif"}
+)
 
 // Refusal is a final refusal with the code the browser shows.
 type Refusal struct {
@@ -50,43 +75,9 @@ type Refusal struct {
 
 func (r *Refusal) Error() string { return r.Detail }
 
-// Size reads an image's width and height from its header: PNG, JPEG, GIF,
-// WebP, BMP and TIFF through image.DecodeConfig, HEIF, HEIC and AVIF from
-// their largest `ispe` property, JPEG 2000 from its `ihdr` box or SIZ
-// marker, and ICO from its directory. ok is false for a format it does not
-// know (SVG, anything else); err is ErrUnreadable for a known one whose
-// header does not parse.
-func Size(r io.Reader) (width, height int, ok bool, err error) {
-	reader := bufio.NewReaderSize(io.LimitReader(r, headerBytes), 64<<10)
-	head, _ := reader.Peek(32)
-	switch {
-	case isISOBMFF(head):
-		width, height, err = isoSize(reader)
-	case bytes.HasPrefix(head, []byte("\x00\x00\x00\x0cjP  \r\n\x87\n")):
-		width, height, err = jp2Size(reader)
-	case bytes.HasPrefix(head, []byte{0xff, 0x4f, 0xff, 0x51}):
-		width, height, err = sizMarker(head[4:])
-	case bytes.HasPrefix(head, []byte{0, 0, 1, 0}) && len(head) >= 8:
-		// ICO: each directory entry's side is one byte, 0 meaning 256.
-		width, height = 256, 256
-	default:
-		if Raster(head) == "" {
-			return 0, 0, false, nil
-		}
-		config, _, decodeErr := image.DecodeConfig(reader)
-		if decodeErr != nil {
-			return 0, 0, true, ErrUnreadable
-		}
-		width, height = config.Width, config.Height
-	}
-	if err != nil || width <= 0 || height <= 0 {
-		return 0, 0, true, ErrUnreadable
-	}
-	return width, height, true, nil
-}
-
-// Raster names a raster format by its signature, or "".
-func Raster(head []byte) string {
+// Format names an image format by its signature: png, jpeg, gif, webp, avif,
+// heic (any other HEIF brand) or "".
+func Format(head []byte) string {
 	has := func(prefix string) bool { return bytes.HasPrefix(head, []byte(prefix)) }
 	switch {
 	case has("\x89PNG\r\n\x1a\n"):
@@ -95,41 +86,94 @@ func Raster(head []byte) string {
 		return "jpeg"
 	case has("GIF87a"), has("GIF89a"):
 		return "gif"
-	case has("BM"):
-		return "bmp"
-	case has("II*\x00"), has("MM\x00*"):
-		return "tiff"
 	case len(head) >= 12 && has("RIFF") && string(head[8:12]) == "WEBP":
 		return "webp"
-	case isISOBMFF(head):
-		return "heif"
-	case has("\x00\x00\x00\x0cjP  \r\n\x87\n"), has("\xff\x4f\xff\x51"):
-		return "jp2"
+	case len(head) >= 12 && string(head[4:8]) == "ftyp":
+		switch string(head[8:12]) {
+		case "avif", "avis":
+			return "avif"
+		case "heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1":
+			return "heic"
+		}
 	}
 	return ""
 }
 
-// Vector reports an EMF or WMF picture, by name or signature (EMF's record 1
-// with " EMF" at byte 40; WMF's placeable or standard header).
-func Vector(name string, head []byte) bool {
-	switch strings.ToLower(path.Ext(name)) {
-	case ".emf", ".wmf", ".emz", ".wmz":
-		return true
+// Size reads an image's format, width and height from its header: PNG, JPEG
+// and WebP through image.DecodeConfig, GIF from its logical screen and first
+// frame (a frame may be larger than the screen it claims), and HEIF/AVIF from
+// their largest `ispe` property. err is ErrUnknown for any other format and
+// ErrUnreadable for a known one whose header does not parse.
+func Size(r io.Reader) (format string, width, height int, err error) {
+	reader := bufio.NewReaderSize(io.LimitReader(r, headerBytes), 64<<10)
+	head, _ := reader.Peek(32)
+	format = Format(head)
+	switch format {
+	case "":
+		return "", 0, 0, ErrUnknown
+	case "gif":
+		width, height, err = gifSize(reader)
+	case "avif", "heic":
+		width, height, err = isoSize(reader)
+	default:
+		config, _, decodeErr := image.DecodeConfig(reader)
+		width, height, err = config.Width, config.Height, decodeErr
 	}
-	return (bytes.HasPrefix(head, []byte{1, 0, 0, 0}) && len(head) >= 44 && string(head[40:44]) == " EMF") ||
-		bytes.HasPrefix(head, []byte{0xd7, 0xcd, 0xc6, 0x9a}) ||
-		(len(head) >= 4 && (head[0] == 1 || head[0] == 2) && head[1] == 0 && head[2] == 9 && head[3] == 0)
+	if err != nil || width <= 0 || height <= 0 {
+		return format, 0, 0, ErrUnreadable
+	}
+	return format, width, height, nil
 }
 
-func isISOBMFF(head []byte) bool {
-	if len(head) < 12 || string(head[4:8]) != "ftyp" {
-		return false
+// gifSize reads a GIF's logical screen and its first image descriptor, and
+// returns the larger extent of the two on each side.
+func gifSize(r *bufio.Reader) (int, int, error) {
+	header := make([]byte, 13)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return 0, 0, err
 	}
-	switch string(head[8:12]) {
-	case "heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1", "avif", "avis":
-		return true
+	width := int(binary.LittleEndian.Uint16(header[6:]))
+	height := int(binary.LittleEndian.Uint16(header[8:]))
+	if header[10]&0x80 != 0 {
+		if _, err := r.Discard(3 << (header[10]&7 + 1)); err != nil {
+			return 0, 0, err
+		}
 	}
-	return false
+	for {
+		kind, err := r.ReadByte()
+		if err != nil {
+			return 0, 0, err
+		}
+		switch kind {
+		case 0x2c:
+			frame := make([]byte, 8)
+			if _, err := io.ReadFull(r, frame); err != nil {
+				return 0, 0, err
+			}
+			left, top := int(binary.LittleEndian.Uint16(frame)), int(binary.LittleEndian.Uint16(frame[2:]))
+			return max(width, left+int(binary.LittleEndian.Uint16(frame[4:]))),
+				max(height, top+int(binary.LittleEndian.Uint16(frame[6:]))), nil
+		case 0x21:
+			// An extension: its label, then sub-blocks up to an empty one.
+			if _, err := r.ReadByte(); err != nil {
+				return 0, 0, err
+			}
+			for {
+				size, err := r.ReadByte()
+				if err != nil {
+					return 0, 0, err
+				}
+				if size == 0 {
+					break
+				}
+				if _, err := r.Discard(int(size)); err != nil {
+					return 0, 0, err
+				}
+			}
+		default:
+			return 0, 0, ErrUnreadable
+		}
+	}
 }
 
 // isoSize reads the largest `ispe` (image spatial extents) property of a
@@ -181,66 +225,53 @@ func isoSize(r io.Reader) (int, int, error) {
 	return int(width), int(height), nil
 }
 
-// jp2Size reads a JP2 file's `ihdr` box inside `jp2h` (height, then width).
-func jp2Size(r io.Reader) (int, int, error) {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return 0, 0, err
+// Vector reports an EMF or WMF picture, by name or signature (EMF's record 1
+// with " EMF" at byte 40; WMF's placeable or standard header).
+func Vector(name string, head []byte) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".emf", ".wmf", ".emz", ".wmz":
+		return true
 	}
-	at := bytes.Index(data, []byte("ihdr"))
-	if at < 4 || len(data) < at+12 {
-		// A codestream box holds the SIZ marker instead.
-		if c := bytes.Index(data, []byte{0xff, 0x4f, 0xff, 0x51}); c >= 0 {
-			return sizMarker(data[c+4:])
-		}
-		return 0, 0, ErrUnreadable
-	}
-	height := binary.BigEndian.Uint32(data[at+4:])
-	width := binary.BigEndian.Uint32(data[at+8:])
-	if width == 0 || height == 0 || width > 1<<30 || height > 1<<30 {
-		return 0, 0, ErrUnreadable
-	}
-	return int(width), int(height), nil
+	return (bytes.HasPrefix(head, []byte{1, 0, 0, 0}) && len(head) >= 44 && string(head[40:44]) == " EMF") ||
+		bytes.HasPrefix(head, []byte{0xd7, 0xcd, 0xc6, 0x9a}) ||
+		(len(head) >= 4 && (head[0] == 1 || head[0] == 2) && head[1] == 0 && head[2] == 9 && head[3] == 0)
 }
 
-// sizMarker reads a JPEG 2000 SIZ marker segment after its FF51 code:
-// length, capabilities, then the grid size and its offset.
-func sizMarker(body []byte) (int, int, error) {
-	if len(body) < 18 {
-		return 0, 0, ErrUnreadable
+// svgRoot finds an <svg> root after an XML declaration, comments or a
+// doctype.
+var svgRoot = regexp.MustCompile(`^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]`)
+
+// SVG reports an SVG picture, by name or by its root element.
+func SVG(name string, head []byte) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".svg", ".svgz":
+		return true
 	}
-	xsiz, ysiz := binary.BigEndian.Uint32(body[4:8]), binary.BigEndian.Uint32(body[8:12])
-	xoff, yoff := binary.BigEndian.Uint32(body[12:16]), binary.BigEndian.Uint32(body[16:20])
-	if xsiz <= xoff || ysiz <= yoff || xsiz-xoff > 1<<30 || ysiz-yoff > 1<<30 {
-		return 0, 0, ErrUnreadable
-	}
-	return int(xsiz - xoff), int(ysiz - yoff), nil
+	return svgRoot.Match(bytes.TrimPrefix(head, []byte("\xef\xbb\xbf")))
 }
 
 // CheckEditorImage refuses an editor image wider or taller than MaxSide, or
-// one whose size its header does not give.
+// one whose format the reservation does not take or whose size its header
+// does not give.
 func CheckEditorImage(r io.Reader) error {
-	width, height, ok, err := Size(r)
-	if err != nil || !ok {
+	format, width, height, err := Size(r)
+	if err != nil || !slices.Contains(editorFormats, format) {
 		return &Refusal{Code: "image_unreadable", Detail: "the image's size could not be read"}
 	}
-	if max(width, height) > MaxSide {
+	if width > MaxSide || height > MaxSide {
 		return &Refusal{Code: "image_too_large", Detail: fmt.Sprintf(
-			"the image is %dx%d; its long side may be at most %d px", width, height, MaxSide)}
+			"the image is %dx%d; each side may be at most %d px", width, height, MaxSide)}
 	}
 	return nil
 }
 
 // CheckSourceImage refuses an image file uploaded as a source over
-// SourceMaxPixels, or a raster one whose size its header does not give.
-// A format it does not know (SVG) passes.
+// SourceMaxPixels, or anything but a PNG, JPEG, GIF or WebP whose header
+// gives its size: the browser re-saves every other format (Q344).
 func CheckSourceImage(r io.Reader) error {
-	width, height, ok, err := Size(r)
-	if !ok {
-		return nil
-	}
-	if err != nil {
-		return &Refusal{Code: "image_unreadable", Detail: "the image's size could not be read"}
+	format, width, height, err := Size(r)
+	if err != nil || !slices.Contains(sourceFormats, format) {
+		return &Refusal{Code: "image_unreadable", Detail: "the image is not a PNG, JPEG, GIF or WebP whose size can be read"}
 	}
 	if int64(width)*int64(height) > SourceMaxPixels {
 		return &Refusal{Code: "source_image_too_large", Detail: fmt.Sprintf(
@@ -249,74 +280,274 @@ func CheckSourceImage(r io.Reader) error {
 	return nil
 }
 
-// CheckOffice reads an Office package's zip directory and the head of each
-// part that is not XML: an EMF or WMF picture is refused, and so is a raster
-// one over maxBytes (counted as it inflates, never trusting the directory)
-// or MaxSide, or whose size its header does not give. Other parts pass.
+// CheckOffice reads an Office package part by part, classifying each by its
+// content, not its name (Q348). It refuses a package it cannot read whole:
+// one that does not open, over MaxEntries, with overlapping entries, a part
+// that does not open, or over MaxInflated read in all. In any part it
+// refuses an EMF, WMF or SVG picture and a PNG, JPEG or GIF over maxBytes
+// (counted as it inflates, never trusting the directory) or MaxSide; a
+// picture part (an image relationship's target, or a media part nothing else
+// targets) must be one of those three. Other parts (XML, embedded objects,
+// fonts, audio and video) pass after their head is read.
 func CheckOffice(r io.ReaderAt, size, maxBytes int64) error {
 	archive, err := zip.NewReader(r, size)
 	if err != nil {
-		// Not a package the check can read: the parser decides.
-		return nil
+		return unreadablePackage("the file is not a zip package")
+	}
+	if len(archive.File) > MaxEntries {
+		return unreadablePackage(fmt.Sprintf("the package has more than %d entries", MaxEntries))
+	}
+	if err := overlapping(archive.File); err != nil {
+		return err
+	}
+	check := &officeCheck{maxBytes: maxBytes}
+	pictures, err := check.pictureParts(archive.File)
+	if err != nil {
+		return err
 	}
 	for _, file := range archive.File {
-		switch strings.ToLower(path.Ext(file.Name)) {
-		case ".xml", ".rels", ".vml":
+		if file.FileInfo().IsDir() || strings.HasSuffix(file.Name, ".rels") {
 			continue
 		}
-		if file.FileInfo().IsDir() {
-			continue
-		}
-		if err := checkPart(file, maxBytes); err != nil {
+		if err := check.part(file, pictures[file.Name]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkPart(file *zip.File, maxBytes int64) error {
+func unreadablePackage(detail string) error {
+	return &Refusal{Code: "office_unreadable", Detail: detail}
+}
+
+// overlapping refuses entries whose data share bytes: a bomb points many
+// directory records at one compressed stream.
+func overlapping(files []*zip.File) error {
+	type span struct{ start, end uint64 }
+	spans := make([]span, 0, len(files))
+	for _, file := range files {
+		start, err := file.DataOffset()
+		if err != nil || start < 0 {
+			return unreadablePackage(fmt.Sprintf("%s cannot be read", file.Name))
+		}
+		if file.CompressedSize64 > 0 {
+			spans = append(spans, span{uint64(start), uint64(start) + file.CompressedSize64})
+		}
+	}
+	slices.SortFunc(spans, func(a, b span) int { return cmp.Compare(a.start, b.start) })
+	for i := 1; i < len(spans); i++ {
+		if spans[i].start < spans[i-1].end {
+			return unreadablePackage("the package has overlapping entries")
+		}
+	}
+	return nil
+}
+
+// officeCheck holds one package's limits and what its reads inflated.
+type officeCheck struct {
+	maxBytes int64
+	inflated int64
+}
+
+// open opens a part behind a reader that refuses past MaxInflated.
+func (c *officeCheck) open(file *zip.File) (io.ReadCloser, error) {
 	part, err := file.Open()
 	if err != nil {
-		return nil
+		return nil, unreadablePackage(fmt.Sprintf("%s cannot be read", file.Name))
+	}
+	return &inflation{ReadCloser: part, check: c}, nil
+}
+
+var errInflated = &Refusal{Code: "office_unreadable", Detail: fmt.Sprintf("the package inflates past %d bytes", MaxInflated)}
+
+type inflation struct {
+	io.ReadCloser
+	check *officeCheck
+}
+
+func (i *inflation) Read(p []byte) (int, error) {
+	n, err := i.ReadCloser.Read(p)
+	i.check.inflated += int64(n)
+	if i.check.inflated > MaxInflated {
+		return n, errInflated
+	}
+	return n, err
+}
+
+// The relationship types whose targets are pictures: images (pictures, fills,
+// object previews, SVG) and HD Photo originals.
+const (
+	imageRelationship   = "/image"
+	hdPhotoRelationship = "/hdphoto"
+)
+
+var mediaFolder = regexp.MustCompile(`^(word|ppt|xl)/media/`)
+
+// pictureParts reads every relationships part and names the picture parts:
+// an image relationship's targets, and media parts no other relationship
+// targets (audio and video stay media).
+func (c *officeCheck) pictureParts(files []*zip.File) (map[string]bool, error) {
+	pictures := map[string]bool{}
+	other := map[string]bool{}
+	for _, file := range files {
+		if file.FileInfo().IsDir() || !strings.HasSuffix(file.Name, ".rels") {
+			continue
+		}
+		part, err := c.open(file)
+		if err != nil {
+			return nil, err
+		}
+		rels, err := relationships(file.Name, part)
+		part.Close()
+		if err != nil {
+			var refusal *Refusal
+			if errors.As(err, &refusal) {
+				return nil, err
+			}
+			return nil, unreadablePackage(fmt.Sprintf("%s cannot be read", file.Name))
+		}
+		for _, rel := range rels {
+			if strings.HasSuffix(rel.kind, imageRelationship) || strings.HasSuffix(rel.kind, hdPhotoRelationship) {
+				pictures[rel.part] = true
+			} else {
+				other[rel.part] = true
+			}
+		}
+	}
+	for _, file := range files {
+		if mediaFolder.MatchString(file.Name) && !other[file.Name] {
+			pictures[file.Name] = true
+		}
+	}
+	return pictures, nil
+}
+
+type relationship struct{ kind, part string }
+
+// relationships parses a relationships part into its internal targets as
+// part names (relative to the part it describes, or from the root).
+func relationships(name string, r io.Reader) ([]relationship, error) {
+	dir, base := path.Split(name)
+	source := path.Join(strings.TrimSuffix(dir, "_rels/"), strings.TrimSuffix(base, ".rels"))
+	sourceDir := path.Dir(source)
+	var out []relationship
+	decoder := xml.NewDecoder(r)
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		element, ok := token.(xml.StartElement)
+		if !ok || element.Name.Local != "Relationship" {
+			continue
+		}
+		var kind, target, mode string
+		for _, attr := range element.Attr {
+			switch attr.Name.Local {
+			case "Type":
+				kind = attr.Value
+			case "Target":
+				target = attr.Value
+			case "TargetMode":
+				mode = attr.Value
+			}
+		}
+		if mode == "External" {
+			continue
+		}
+		if decoded, err := url.PathUnescape(target); err == nil {
+			target = decoded
+		}
+		part := path.Join(sourceDir, target)
+		if strings.HasPrefix(target, "/") {
+			part = path.Clean(target)
+		}
+		out = append(out, relationship{kind: kind, part: strings.TrimPrefix(part, "/")})
+	}
+}
+
+// part checks one part by its content.
+func (c *officeCheck) part(file *zip.File, picture bool) error {
+	part, err := c.open(file)
+	if err != nil {
+		return err
 	}
 	defer part.Close()
-	reader := bufio.NewReaderSize(part, 64<<10)
-	head, _ := reader.Peek(64)
-	if Vector(file.Name, head) {
+	// A small buffer: a part that is neither a picture nor an image is
+	// inflated only this far.
+	reader := bufio.NewReaderSize(part, 4<<10)
+	head, err := reader.Peek(512)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
+		var refusal *Refusal
+		if errors.As(err, &refusal) {
+			return err
+		}
+		return unreadablePackage(fmt.Sprintf("%s cannot be read", file.Name))
+	}
+	unsupported := &Refusal{Code: "office_image_unsupported", Detail: fmt.Sprintf(
+		"%s is not a PNG, JPEG or GIF picture", file.Name)}
+	switch format := Format(head); {
+	case Vector(file.Name, head):
 		return &Refusal{Code: "office_vector_image", Detail: fmt.Sprintf(
 			"%s is an EMF or WMF picture, which Office files may not hold", file.Name)}
+	case SVG(file.Name, head):
+		return unsupported
+	case slices.Contains(officeFormats, format):
+		return c.raster(file.Name, reader)
+	case picture:
+		return unsupported
 	}
-	if Raster(head) == "" {
-		return nil
-	}
+	return nil
+}
+
+// raster checks a PNG, JPEG or GIF picture's size and its inflated bytes.
+func (c *officeCheck) raster(name string, reader *bufio.Reader) error {
 	counted := &countingReader{r: reader}
-	width, height, _, err := Size(counted)
+	_, width, height, err := Size(counted)
 	tooLarge := func(detail string) error {
 		return &Refusal{Code: "office_image_too_large", Detail: fmt.Sprintf(
-			"%s %s; pictures may be at most %d MB and %d px on their long side",
-			file.Name, detail, maxBytes>>20, MaxSide)}
+			"%s %s; pictures may be at most %d bytes and %d px on each side",
+			name, detail, c.maxBytes, MaxSide)}
+	}
+	var refusal *Refusal
+	if errors.As(err, &refusal) || errors.As(counted.err, &refusal) {
+		return refusal
 	}
 	if err != nil {
-		return tooLarge("has no readable size")
+		return &Refusal{Code: "office_image_unsupported", Detail: name + " has no readable size"}
 	}
-	if max(width, height) > MaxSide {
+	if width > MaxSide || height > MaxSide {
 		return tooLarge(fmt.Sprintf("is %dx%d", width, height))
 	}
-	rest, _ := io.Copy(io.Discard, io.LimitReader(reader, maxBytes+1-min(counted.n, maxBytes+1)))
-	if counted.n+rest > maxBytes {
+	rest, err := io.Copy(io.Discard, io.LimitReader(reader, c.maxBytes+1-min(counted.n, c.maxBytes+1)))
+	if errors.As(err, &refusal) {
+		return refusal
+	}
+	if err != nil {
+		return unreadablePackage(name + " cannot be read")
+	}
+	if counted.n+rest > c.maxBytes {
 		return tooLarge("is over the size limit")
 	}
 	return nil
 }
 
-// countingReader counts what the header read consumed from the part.
+// countingReader counts what the header read consumed from the part, and
+// keeps the read error it met (an inflation refusal).
 type countingReader struct {
-	r io.Reader
-	n int64
+	r   io.Reader
+	n   int64
+	err error
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
 	c.n += int64(n)
+	if err != nil && err != io.EOF {
+		c.err = err
+	}
 	return n, err
 }

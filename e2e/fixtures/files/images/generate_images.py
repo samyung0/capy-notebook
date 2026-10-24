@@ -3,7 +3,8 @@ both compressors must agree on (src/lib/fitImage.ts in the browser and
 pipeline/pipeline/ingest/images.py on the import worker), by format and size,
 not bytes. "office" is the Office rule (long side within 2,400 px, JPEG for
 photos, PNG for transparency or flat graphics); "source" is an image file
-uploaded as a source (at most 5 megapixels, kept as it is within that).
+uploaded as a source (at most 5 megapixels; a PNG, JPEG, GIF or WebP within
+that is kept as it is, anything else re-saved).
 
 Run: uv run python e2e/fixtures/files/images/generate_images.py
 (needs Pillow, and ffmpeg with libx265 for the HEIC).
@@ -149,6 +150,8 @@ def main():
         OUT / "tall.png", optimize=True
     )
     gradient(800, 600).save(OUT / "small.jpg", quality=60)
+    # Within 5 MP, but not a format servers measure: re-saved (Q344).
+    gradient(800, 600).save(OUT / "small.tif", compression="tiff_adobe_deflate")
     rows(3000, 2000).save(OUT / "photo.tif", compression="tiff_adobe_deflate")
     photo.save(OUT / "photo.jp2", quality_mode="rates", quality_layers=[200])
     heic(photo, OUT / "photo.heic")
@@ -172,6 +175,7 @@ def main():
             "photo.png": ["png", 2600, 1300],
             "alpha.png": ["png", 2600, 1300],
             "small.jpg": ["jpeg", 800, 600],
+            "small.tif": ["jpeg", 800, 600],
             "photo.tif": ["jpeg", *source],
             "photo.jp2": ["jpeg", *source],
             "photo.heic": ["jpeg", *source],

@@ -5,6 +5,7 @@ import { baseLocale, overwriteGetLocale } from '@/i18n';
 import {
   fitImage,
   ImageTooLargeError,
+  ImageTooManyPixelsError,
   ImageUnreadableError,
 } from '@/lib/fitImage';
 import { compressOfficeImages } from '@/lib/officeImages';
@@ -40,7 +41,9 @@ workerScope.onmessage = async ({ data }: MessageEvent<CompressRequest>) => {
           ? 'unreadable'
           : error instanceof ImageTooLargeError
             ? 'too_large'
-            : 'failed',
+            : error instanceof ImageTooManyPixelsError
+              ? 'too_many_pixels'
+              : 'failed',
       type: 'error',
     });
   }

@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -154,7 +155,7 @@ func TestOfficeEditReachesTheEngineNormalized(t *testing.T) {
 // it, and a replay that neither builds nor stores it again.
 func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	fx := openDeckFiles(t)
-	content := []byte("PK\x03\x04 a workbook")
+	content := deckPackage(pngSized(10, 10))
 	encoded, _ := json.Marshal(content)
 	authority := newOfficeAuthority(t, fx.st, map[string]string{
 		"/internal/documents/create": `{"content":` + string(encoded) + `}`,
@@ -280,7 +281,7 @@ func TestOfficeRetryWaitsForTheRunningAttempt(t *testing.T) {
 		<-release
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/internal/documents/create" {
-			_, _ = w.Write([]byte(`{"content":"UEsDBA=="}`))
+			_, _ = w.Write([]byte(`{"content":"` + base64.StdEncoding.EncodeToString(deckPackage(pngSized(10, 10))) + `"}`))
 			return
 		}
 		// The collaboration server commits an edit's receipt through Go's

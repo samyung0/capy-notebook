@@ -12,6 +12,7 @@
     "photo.png": ["png", 2600, 1300],
     "alpha.png": ["png", 2600, 1300],
     "small.jpg": ["jpeg", 800, 600],
+    "small.tif": ["jpeg", 800, 600],
     "photo.tif": ["jpeg", 2738, 1825],
     "photo.jp2": ["jpeg", 2738, 1825],
     "photo.heic": ["jpeg", 2738, 1825]

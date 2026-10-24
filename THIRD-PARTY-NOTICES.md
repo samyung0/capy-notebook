@@ -51,8 +51,8 @@ License: MIT. The full text is in each file's header.
 
 The site loads `libheif-js` 1.23.5 from npm
 (https://github.com/catdad-experiments/libheif-js) at runtime, only when an
-HEIC or HEIF image is picked as a source (`src/lib/decodeImage.ts`, Epo
-2026-10-24, Q294). Its `libheif-wasm/libheif-bundle.mjs` holds libheif
+HEIC or HEIF image is picked (`src/lib/decodeImage.ts`, Epo 2026-10-24, Q294,
+Q333). Its `libheif-wasm/libheif-bundle.mjs` holds libheif
 (https://github.com/strukturag/libheif) and its HEVC decoder libde265
 (https://github.com/strukturag/libde265) compiled to WebAssembly, at the
 versions its build script pins
@@ -63,8 +63,9 @@ so a compatible build can replace it.
 Copyright (c) struktur AG (libheif, libde265); Kiril Vatev (libheif-js).
 
 License: GNU Lesser General Public License, version 3 (libheif-js, libheif and
-libde265). The package ships the text (`LICENSE`); it is also at
-https://www.gnu.org/licenses/lgpl-3.0.html.
+libde265). The site serves this notice with the package's license texts at
+`/licenses/libheif-js.txt` (`public/licenses/libheif-js.txt`); the LGPL is also
+at https://www.gnu.org/licenses/lgpl-3.0.html.
 
 ---
 

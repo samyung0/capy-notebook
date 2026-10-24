@@ -546,6 +546,19 @@ def test_both_images_carry_the_one_launcher() -> None:
     assert not list((ROOT / "parser").rglob("capy_sandbox.py"))
 
 
+def test_the_pipeline_image_carries_heif_dec_without_an_encoder() -> None:
+    """Q353: libheif's decode-only tool and its libde265 plugin (LGPL-3.0),
+    installed without recommends, so no x265 (GPL) encoder plugin comes."""
+    pipeline = (ROOT / "pipeline/Dockerfile").read_text(encoding="utf-8")
+    line = next(
+        line
+        for line in pipeline.splitlines()
+        if "install" in line and "libheif" in line
+    )
+    assert "--no-install-recommends" in line and "libheif-plugin-libde265" in line
+    assert "x265" not in pipeline.replace("no x265", "")
+
+
 # The ingest outputs before the decodes moved into the helper (origin/main
 # df56b54a3, in-process MuPDF): chunks with their retained headings and
 # confidence, as JSON.
@@ -733,8 +746,6 @@ def test_a_decode_answer_past_its_cap_is_a_failed_decode(
         ("caption", b'{"jpeg": "not base64!"}'),
         ("thumbnail", b'{"webp": 7}'),
         ("page", b"[]"),
-        ("office", b'{"package": "AA==", "removed": -1}'),
-        ("office", b'{"unchanged": true, "removed": 0}'),
         ("source_image", b'{"image": "AA==", "format": "webp"}'),
         ("source_image", b'{"keep": true, "image": "AA=="}'),
     ],
@@ -757,7 +768,6 @@ def test_a_decode_answer_off_its_modes_shape_is_a_failed_decode(
         "caption": lambda: decode.caption_jpeg(source, max_edge=8, max_pixels=64),
         "thumbnail": lambda: decode.thumbnail_webp(source, "png", max_pixels=64),
         "page": lambda: decode.page_webp(b""),
-        "office": lambda: decode.office_images(b"", image_max_bytes=1, max_pixels=64),
         "source_image": lambda: decode.source_image(b"", max_bytes=1, max_pixels=64),
     }
     with pytest.raises(decode.DecodeFailed):
@@ -783,23 +793,57 @@ def test_a_pixel_limit_carries_the_workers_own_message(
         assert str(caught.value) == message
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [b'{"image": "AA==", "format": "webp"}', b'{"keep": true, "image": "AA=="}', b"[]"],
+)
+def test_an_office_picture_answer_off_its_shape_removes_the_picture(
+    monkeypatch: pytest.MonkeyPatch, answer: bytes
+) -> None:
+    """(security regression: S2 decode answers; Q347) A picture whose helper
+    answers off the mode's shape, or fails, is removed like an unreadable one."""
+    monkeypatch.setattr(
+        decode.capy_sandbox,
+        "run",
+        lambda argv, _policy, **_kwargs: subprocess.CompletedProcess(
+            argv, 0, answer, b""
+        ),
+    )
+    assert decode.office_picture(b"", image_max_bytes=1, max_pixels=64) == "unreadable"
+
+
+def test_each_office_picture_and_heic_gets_its_own_ten_seconds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """(security regression: Q347, Q353) One picture's helper, and libheif's
+    tool, run with 10 s of CPU and a 10 s deadline, not the file's 120 s."""
+    policies = []
+
+    def run(argv, policy, **_kwargs):
+        policies.append(policy)
+        if argv[-1].endswith("out.jpg"):
+            Path(argv[-1]).write_bytes(b"\xff\xd8\xff")
+        return subprocess.CompletedProcess(argv, 0, b'{"keep": true}', b"")
+
+    monkeypatch.setattr(decode.capy_sandbox, "run", run)
+    monkeypatch.setattr(decode.shutil, "which", lambda _name: "/usr/bin/heif-dec")
+    assert decode.office_picture(b"", image_max_bytes=1, max_pixels=64) == "keep"
+    assert decode.heic_jpeg(b"heic") == b"\xff\xd8\xff"
+    assert [(p.limits["CPU"], p.timeout_s) for p in policies] == [(10, 10), (10, 10)]
+    assert policies[1].limits["FSIZE"] > 0 and "/dev/null" in policies[1].write
+
+
 @linux
 def test_the_image_rules_run_in_the_helper() -> None:
-    """An imported Office file is compressed, and an image source shrunk to
-    5 megapixels, inside the decode helper (Epo 2026-10-24)."""
-    import io
-    import zipfile
-
+    """A picture of an imported Office file is compressed, and an image
+    source shrunk to 5 megapixels, inside the decode helper (Epo 2026-10-24)."""
     images = ROOT / "e2e/fixtures/files/images"
-    out = io.BytesIO()
-    with zipfile.ZipFile(out, "w") as archive:
-        archive.writestr("word/media/image1.jpg", (images / "photo.jpg").read_bytes())
-    package, removed = decode.office_images(
-        out.getvalue(), image_max_bytes=2 << 20, max_pixels=100_000_000
+    picture, kind = decode.office_picture(
+        (images / "photo.jpg").read_bytes(),
+        image_max_bytes=2 << 20,
+        max_pixels=100_000_000,
     )
-    assert removed == 0 and package is not None
-    with zipfile.ZipFile(io.BytesIO(package)) as archive:
-        assert archive.read("word/media/image1.jpg")[:3] == b"\xff\xd8\xff"
+    assert kind == "jpeg" and picture[:3] == b"\xff\xd8\xff"
     shrunk, kind = decode.source_image(
         (images / "photo.jpg").read_bytes(), max_bytes=30 << 20, max_pixels=100_000_000
     )

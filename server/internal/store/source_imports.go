@@ -57,13 +57,14 @@ type SourceImportJob struct {
 
 // ImportLanded is what an import attempt stored: its size, the name and type
 // it was stored under when the import worker changed its format (an image
-// source shrunk to JPEG or PNG), else empty, and the EMF and WMF pictures it
-// removed from an Office file.
+// source shrunk to JPEG or PNG), else empty, and the pictures it removed from
+// an Office file, nil when the attempt only completes an earlier one's upload
+// (whose count stays).
 type ImportLanded struct {
 	Size            int64
 	Name            string
 	ContentType     string
-	RemovedPictures int
+	RemovedPictures *int
 }
 
 type NewSourceImport struct {
@@ -596,11 +597,13 @@ func (s *Store) prepareSourceImportUpload(
 		job.UploadSessionID, actualSize, job.Name, job.ContentType); err != nil {
 		return job, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE source_import_jobs SET removed_pictures=$2 WHERE id=$1`,
-		jobID, landed.RemovedPictures); err != nil {
-		return job, err
+	if landed.RemovedPictures != nil {
+		if _, err := tx.Exec(ctx, `UPDATE source_import_jobs SET removed_pictures=$2 WHERE id=$1`,
+			jobID, *landed.RemovedPictures); err != nil {
+			return job, err
+		}
+		job.RemovedPictures = *landed.RemovedPictures
 	}
-	job.RemovedPictures = landed.RemovedPictures
 	if err := tx.Commit(ctx); err != nil {
 		return job, err
 	}

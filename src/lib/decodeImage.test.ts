@@ -47,8 +47,9 @@ describe('fitImage for a source', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it.each(['photo.heic', 'photo.tif', 'photo.jp2'])(
-    'shrinks %s to at most 5 megapixels as the manifest says',
+  // small.tif is within 5 megapixels but re-saved all the same (Q344).
+  it.each(['photo.heic', 'photo.tif', 'photo.jp2', 'small.tif'])(
+    'saves %s within 5 megapixels as JPEG or PNG as the manifest says',
     async (name) => {
       const [format, width, height] = manifest.source[name];
       const result = await fitImage(fixture(name), 30 << 20, {

@@ -309,11 +309,20 @@ func TestSourceImportLeaseAndFailureReleaseReservation(t *testing.T) {
 	); !errors.Is(err, ErrImportLeaseLost) {
 		t.Fatalf("stale prepare err=%v", err)
 	}
+	removed := 3
 	prepared, err := s.PrepareSourceImportUpload(
-		ctx, job.ID, claimed.LeaseToken, ImportLanded{Size: 400},
+		ctx, job.ID, claimed.LeaseToken, ImportLanded{Size: 400, RemovedPictures: &removed},
 	)
 	if err != nil || prepared.DeclaredSize != 400 {
 		t.Fatalf("prepared=%+v err=%v", prepared, err)
+	}
+	// A completion that only resumes the stored upload names no count and
+	// keeps the first attempt's (review S10).
+	if _, err := s.PrepareSourceImportUpload(ctx, job.ID, claimed.LeaseToken, ImportLanded{Size: 400}); err != nil {
+		t.Fatal(err)
+	}
+	if kept, err := s.GetSourceImportByID(ctx, job.ID); err != nil || kept.RemovedPictures != 3 {
+		t.Fatalf("removed pictures after a resumed completion = %+v, %v", kept, err)
 	}
 	usage, err := s.StorageUsage(ctx, owner)
 	if err != nil || usage.ReservedBytes != 400 {

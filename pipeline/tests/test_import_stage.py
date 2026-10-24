@@ -471,41 +471,61 @@ def _png_header(width, height):
     )
 
 
-def test_office_import_stores_the_compressed_file_and_reports_removed_pictures(
+def test_office_import_compresses_each_picture_and_reports_removed_pictures(
     monkeypatch,
 ):
-    compressed = _zip({"ppt/media/image1.png": _png_header(2400, 1600)})
-    seen = {}
+    """Q347: each picture goes to the helper on its own; one past its limit
+    answers "unreadable" and is removed, counted."""
+    seen = []
+    slow = _png_header(10, 11)
 
-    def office_images(data, *, image_max_bytes, max_pixels):
-        seen["cap"] = image_max_bytes
-        return compressed, 2
+    def office_picture(data, *, image_max_bytes, max_pixels):
+        seen.append((data == slow, image_max_bytes))
+        return "unreadable" if data == slow else "keep"
 
-    monkeypatch.setattr(import_stage.decode, "office_images", office_images)
-    stored = _image_run(
-        monkeypatch, "deck.pptx", "slides", _zip({"ppt/media/image99.emf": b"\0"})
+    monkeypatch.setattr(import_stage.decode, "office_picture", office_picture)
+    package = _zip(
+        {
+            "ppt/slides/slide1.xml": b'<p:sld><p:spTree><p:pic><p:blipFill><a:blip r:embed="rId1"/>'
+            b'</p:blipFill></p:pic><p:pic><p:blipFill><a:blip r:embed="rId2"/></p:blipFill></p:pic>'
+            b"</p:spTree></p:sld>",
+            "ppt/slides/_rels/slide1.xml.rels": b'<Relationships><Relationship Id="rId1" '
+            b'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+            b'Target="../media/image1.png"/><Relationship Id="rId2" '
+            b'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+            b'Target="../media/image2.png"/></Relationships>',
+            "ppt/media/image1.png": _png_header(2400, 1600),
+            "ppt/media/image2.png": slow,
+        }
     )
-    assert seen["cap"] == 2 << 20
-    assert stored["bytes"] == compressed
-    assert stored["complete"] == {
-        "jobId": "imp_1",
-        "attemptToken": "tok",
-        "actualSize": len(compressed),
-        "removedPictures": 2,
-    }
+    stored = _image_run(monkeypatch, "deck.pptx", "slides", package)
+    assert sorted(seen) == [(False, 2 << 20), (True, 2 << 20)]
+    assert stored["complete"]["removedPictures"] == 1
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(stored["bytes"])) as archive:
+        assert "ppt/media/image2.png" not in archive.namelist()
+        assert "ppt/media/image1.png" in archive.namelist()
 
 
 def test_office_import_still_breaking_the_rules_is_refused_finally(monkeypatch):
     monkeypatch.setattr(
-        import_stage.decode, "office_images", lambda *_a, **_k: (None, 0)
+        import_stage.decode, "office_picture", lambda *_a, **_k: "too_large"
     )
     for parts, code in (
-        ({"word/media/eq.wmf": b"\0\0"}, "office_vector_image"),
         ({"word/media/image1.png": _png_header(2401, 2)}, "office_image_too_large"),
+        ({"word/document.xml": b"<w:document/>"}, None),
     ):
+        if code is None:
+            _image_run(monkeypatch, "plan.docx", "doc", _zip(parts))
+            continue
         with pytest.raises(import_stage.ImportFailure) as failure:
             _image_run(monkeypatch, "plan.docx", "doc", _zip(parts))
         assert failure.value.code == code
+    with pytest.raises(import_stage.ImportFailure) as failure:
+        _image_run(monkeypatch, "plan.docx", "doc", b"PK\x03\x04 not a package")
+    assert failure.value.code == "office_unreadable"
 
 
 def test_image_source_import_is_shrunk_and_renamed(monkeypatch):
@@ -522,16 +542,46 @@ def test_image_source_import_is_shrunk_and_renamed(monkeypatch):
     assert stored["complete"]["contentType"] == "image/jpeg"
 
 
-def test_heic_import_this_pillow_cannot_shrink_is_kept_within_five_megapixels_only(
+def test_heic_import_converts_through_libheif_and_is_refused_when_it_cannot(
     monkeypatch,
 ):
-    from test_image_check import heic
+    """Q353: a HEIC goes through libheif's tool to a JPEG, then the source
+    rule; one the tool cannot convert is refused."""
+    from test_image_check import heif
 
-    monkeypatch.setattr(
-        import_stage.decode, "source_image", lambda *_a, **_k: "unreadable"
+    jpeg = (
+        b"\xff\xd8\xff\xc0\x00\x11\x08" + bytes([0x07, 0x00, 0x09, 0x00]) + b"\0" * 32
     )
-    small = heic(2000, 2000)
-    assert _image_run(monkeypatch, "IMG_1.HEIC", "image", small)["bytes"] == small
+    converted = []
+
+    def heic_jpeg(data):
+        converted.append(data)
+        if b"broken" in data:
+            raise import_stage.decode.DecodeFailed("heic decode exited 1")
+        return jpeg
+
+    monkeypatch.setattr(import_stage.decode, "heic_jpeg", heic_jpeg)
+    monkeypatch.setattr(
+        import_stage.decode,
+        "source_image",
+        lambda data, **_k: "keep" if data == jpeg else "unreadable",
+    )
+    stored = _image_run(monkeypatch, "IMG_1.HEIC", "image", heif(b"heic", 2000, 2000))
+    assert stored["bytes"] == jpeg
+    assert stored["complete"]["name"] == "IMG_1.jpg"
+    assert stored["complete"]["contentType"] == "image/jpeg"
     with pytest.raises(import_stage.ImportFailure) as failure:
-        _image_run(monkeypatch, "IMG_2.HEIC", "image", heic(4032, 3024))
+        _image_run(
+            monkeypatch, "IMG_2.HEIC", "image", heif(b"heic", 2000, 2000) + b"broken"
+        )
     assert failure.value.code == "image_unreadable"
+    assert len(converted) == 2
+
+
+def test_an_animated_gif_source_past_five_megapixels_names_the_pixel_limit(monkeypatch):
+    monkeypatch.setattr(
+        import_stage.decode, "source_image", lambda *_a, **_k: "too_many_pixels"
+    )
+    with pytest.raises(import_stage.ImportFailure) as failure:
+        _image_run(monkeypatch, "spin.gif", "image", b"GIF89a" + b"\0" * 20)
+    assert failure.value.code == "source_image_too_large"

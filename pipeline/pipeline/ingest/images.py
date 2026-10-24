@@ -2,19 +2,21 @@
 browser's src/lib/fitImage.ts and src/lib/officeImages.ts: both must agree on
 e2e/fixtures/files/images/manifest.json (output format and size, not bytes).
 
-- A picture inside an imported DOCX/PPTX/XLSX keeps its long side within
+- A picture inside an imported DOCX/PPTX/XLSX keeps both sides within
   IMAGE_MAX_SIDE and becomes JPEG at quality 85 (a photo) or PNG (transparent,
   or a flat graphic of at most 256 colours); the original stays when it needs
   no resize, is PNG/JPEG/GIF, fits the cap and is not larger than the result.
   A result over the cap is shrunk (a lossy one at 2,000 px with falling
-  quality, a transparent PNG at 2,000, 1,400 and 1,000 px). EMF and WMF
-  pictures are removed with the drawing or object that shows them.
-- An imported image source keeps at most SOURCE_IMAGE_MAX_PIXELS, as it is
-  within that, else shrunk with the same encodes.
+  quality, a transparent PNG at 2,000, 1,400 and 1,000 px). Pictures nothing
+  can show (EMF, WMF, SVG, other formats, ones that do not decode) are
+  removed with the drawing or object that shows them (Q337).
+- An imported image source keeps at most SOURCE_IMAGE_MAX_PIXELS: a PNG,
+  JPEG, GIF or WebP within that stays as it is, anything else is re-saved
+  with the same encodes (Q344).
 
-``compress`` and ``compress_office`` import Pillow and run only inside the
-sandboxed decode helper (decode.py); the worker itself imports only the
-signature reader ``picture_kind`` (image_check.py).
+``compress`` imports Pillow and runs only inside the sandboxed decode helper
+(decode.py), one picture per call. ``compress_office`` rewrites the package
+in the worker, which imports no decoder, handing each picture to the helper.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import posixpath
 import re
 import warnings
 import zipfile
+from collections.abc import Callable
 from urllib.parse import unquote
 
 from ..generated.limits import IMAGE_MAX_SIDE
@@ -39,10 +42,16 @@ FLAT_COLOURS = 256
 MAX_ENTRIES = 4096
 MAX_EXPANDED = 256 << 20
 OFFICE_FORMATS = {"PNG", "JPEG", "GIF"}
+SOURCE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
 
 class TooLarge(Exception):
     """No size the image can be shrunk to fits the cap."""
+
+
+class TooManyPixels(TooLarge):
+    """An animated GIF source past SOURCE_IMAGE_MAX_PIXELS: a canvas keeps one
+    frame, so it cannot be shrunk."""
 
 
 def _round(value: float) -> int:
@@ -92,12 +101,12 @@ def compress(
                 else fit_size(width, height, IMAGE_MAX_SIDE)
             )
             resized = target != (width, height)
-            if max_pixels and not resized:
+            if max_pixels and not resized and source.format in SOURCE_FORMATS:
                 return None
             if source.format == "GIF" and getattr(source, "is_animated", False):
                 if not resized and len(data) <= max_bytes:
                     return None
-                raise TooLarge
+                raise TooManyPixels if max_pixels else TooLarge
             original = source.format
             # Decoded at a reduced scale where the format allows (JPEG).
             source.draft("RGB", target[::-1] if turned else target)
@@ -108,7 +117,7 @@ def compress(
     full = image if not resized else image.resize(target, Image.Resampling.LANCZOS)
     kind = "png" if alpha or flat else "jpeg"
     encoded = _encode(full, kind)
-    keeps = original in OFFICE_FORMATS
+    keeps = original in (SOURCE_FORMATS if max_pixels else OFFICE_FORMATS)
     if not resized and keeps and len(data) <= max_bytes and len(encoded) >= len(data):
         return None
     if len(encoded) <= max_bytes:
@@ -139,24 +148,47 @@ def compress(
 
 # ------------------------------------------------------------ Office files
 
+# The picture formats the compressor tries (Pillow reads them); any other
+# picture is removed (Q337).
+_RASTER_SIGNATURES = (
+    b"\x89PNG",
+    b"\xff\xd8\xff",
+    b"GIF8",
+    b"BM",
+    b"II*\x00",
+    b"MM\x00*",
+)
+_SVG_ROOT = re.compile(
+    rb"^(?:\s|<\?[^>]*\?>|<!--.*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]", re.DOTALL
+)
 
-def picture_kind(data: bytes, path: str) -> str | None:
-    """ "vector" (EMF or WMF), "raster" (one Pillow may read), or None."""
-    ext = path.rsplit(".", 1)[-1].lower()
-    if (
-        ext in {"emf", "wmf", "emz", "wmz"}
+
+def is_vector(data: bytes, path: str) -> bool:
+    """An EMF or WMF picture, by name or signature."""
+    return (
+        path.rsplit(".", 1)[-1].lower() in {"emf", "wmf", "emz", "wmz"}
         or (data[:4] == b"\x01\x00\x00\x00" and data[40:44] == b" EMF")
         or data[:4] == b"\xd7\xcd\xc6\x9a"
         or (data[:2] in (b"\x01\x00", b"\x02\x00") and data[2:4] == b"\x09\x00")
-    ):
+    )
+
+
+def is_svg(data: bytes, path: str) -> bool:
+    """An SVG picture, by name or by its root element."""
+    if path.rsplit(".", 1)[-1].lower() in {"svg", "svgz"}:
+        return True
+    return _SVG_ROOT.match(data.removeprefix(b"\xef\xbb\xbf")) is not None
+
+
+def picture_kind(data: bytes, path: str) -> str | None:
+    """ "vector" (EMF or WMF), "svg", "raster" (a format the compressor
+    tries) or None (anything else)."""
+    if is_vector(data, path):
         return "vector"
-    if (
-        data[:4] == b"\x89PNG"
-        or data[:3] == b"\xff\xd8\xff"
-        or data[:4] == b"GIF8"
-        or data[:2] == b"BM"
-        or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
-        or data[:4] in (b"II*\x00", b"MM\x00*")
+    if is_svg(data, path):
+        return "svg"
+    if data.startswith(_RASTER_SIGNATURES) or (
+        data[:4] == b"RIFF" and data[8:12] == b"WEBP"
     ):
         return "raster"
     return None
@@ -176,6 +208,10 @@ def resolve_target(source_dir: str, target: str) -> str:
 
 
 _RELATIONSHIP = re.compile(r"<Relationship\b[^>]*>")
+_MEDIA = re.compile(r"^(word|ppt|xl)/media/")
+# The relationship types whose targets are pictures: images (pictures, fills,
+# object previews, SVG) and HD Photo originals; audio and video stay media.
+_PICTURE_TYPES = ("/image", "/hdphoto")
 
 
 def _attribute(element: str, name: str) -> str:
@@ -215,11 +251,31 @@ def _relationships(rels: str, xml: str) -> list[dict]:
     return out
 
 
+def picture_parts(paths: list[str], rels: dict[str, str]) -> set[str]:
+    """The parts a package shows as pictures: an image relationship's
+    targets, and media parts no other relationship targets. ``rels`` maps
+    each relationships part to its XML."""
+    pictures: set[str] = set()
+    other: set[str] = set()
+    for path, xml in rels.items():
+        for rel in _relationships(path, xml):
+            if not rel["part"]:
+                continue
+            if rel["type"].endswith(_PICTURE_TYPES):
+                pictures.add(rel["part"])
+            else:
+                other.add(rel["part"])
+    pictures.update(path for path in paths if _MEDIA.match(path) and path not in other)
+    return pictures
+
+
 def _containers(path: str) -> list[str] | None:
     if path.endswith(".vml"):
         return ["v:shape"]
     if not path.endswith(".xml"):
         return None
+    if re.match(r"^(word|ppt|xl)/(charts|diagrams)/", path):
+        return ["a:blipFill"]
     if path.startswith("word/"):
         return ["w:drawing", "w:pict", "w:object"]
     if path.startswith("ppt/"):
@@ -239,6 +295,12 @@ def _last(stack: list[str], name: str, before: int) -> int:
 
 
 def _pick(names: list[str], stack: list[str]) -> int:
+    # An SVG or HD Photo beside a picture's own blip: only the extension
+    # holding it goes, and the picture stays.
+    if stack[-1].endswith((":svgBlip", ":imgLayer")):
+        for index in range(len(stack) - 2, -1, -1):
+            if stack[index].endswith(":ext"):
+                return index
     at = next((i for i in range(len(stack) - 1, -1, -1) if stack[i] in names), -1)
     if at < 0:
         return -1
@@ -275,6 +337,7 @@ _MARKUP = re.compile(
     r"|<(/?)([A-Za-z_][\w.:-]*)((?:[^>\"']|\"[^\"]*\"|'[^']*')*?)(/?)>",
     re.DOTALL,
 )
+_EMPTY_EXTENSIONS = re.compile(r"<([\w.-]+:)?extLst\b[^>]*>\s*</\1extLst>")
 
 
 def _references(xml: str) -> list[str]:
@@ -284,7 +347,8 @@ def _references(xml: str) -> list[str]:
 def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str], int]:
     """The part without each container that refers to one of ``ids``, the
     ids the removed elements referred to, and how many were removed where
-    they show (none inside mc:Fallback or in a VML part)."""
+    they show (none inside mc:Fallback, in a VML part, or an extension beside
+    a picture that stays)."""
     names = _containers(path)
     if not names:
         return xml, [], 0
@@ -304,11 +368,16 @@ def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str],
         entry = {"counted": False, "name": name, "remove": False, "start": start}
         stack.append(entry)
         if any(ref in ids for ref in _references(attrs)):
-            at = _pick(names, [opened["name"] for opened in stack])
+            open_names = [opened["name"] for opened in stack]
+            at = _pick(names, open_names)
             if at >= 0:
                 stack[at]["remove"] = True
-                stack[at]["counted"] = not path.endswith(".vml") and not any(
-                    opened["name"] == "mc:Fallback" for opened in stack[:at]
+                stack[at]["counted"] = (
+                    not path.endswith(".vml")
+                    and not stack[at]["name"].endswith(":ext")
+                    and not any(
+                        opened["name"] == "mc:Fallback" for opened in stack[:at]
+                    )
                 )
         if self_closing:
             stack.pop()
@@ -327,17 +396,20 @@ def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str],
         cursor = end
     out.append(xml[cursor:])
     result = re.sub(r"<oleObjects>\s*</oleObjects>", "", "".join(out))
-    return result, refs, count
+    return _EMPTY_EXTENSIONS.sub("", result), refs, count
 
 
 def compress_office(
-    data: bytes, image_max_bytes: int, max_decoded: int
+    data: bytes, picture: Callable[[bytes], tuple[bytes, str] | str]
 ) -> tuple[bytes | None, int]:
-    """The package with its pictures compressed and its EMF and WMF pictures
-    removed, or None when nothing changed, and how many pictures were
-    removed where they show."""
-    from PIL import Image
-
+    """The package with its pictures compressed by ``picture`` (one picture's
+    bytes to (bytes, "png" or "jpeg"), or "keep", "unreadable" or
+    "too_large") and the pictures nothing can show removed with what shows
+    them (Q337): EMF, WMF, SVG (its PNG fallback stays), formats the
+    compressor does not try and pictures it cannot decode. Vector parts
+    nothing refers to and EMF/WMF document thumbnails go too, uncounted.
+    Returns None when nothing changed, and how many pictures were removed
+    where they show."""
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
         infos = archive.infolist()
@@ -367,72 +439,31 @@ def compress_office(
     def targeted(part: str) -> bool:
         return any(rel["part"] == part for listed in rels.values() for rel in listed)
 
-    pictures = [
-        path
-        for path in parts
-        if re.match(r"^(word|ppt|xl)/media/", path)
-        or any(
-            rel["part"] == path and rel["type"].endswith("/image")
-            for listed in rels.values()
-            for rel in listed
-        )
-    ]
+    pictures = picture_parts(
+        list(parts), {path: text(path) for path in parts if path.endswith(".rels")}
+    )
     kinds = {path: picture_kind(parts[path], path) for path in pictures}
     changed = False
     removed = 0
     deleted: set[str] = set()
 
-    vectors = {path for path in pictures if kinds[path] == "vector"}
-    if vectors:
-        dropped: list[str] = []
-        for rels_path, listed in list(rels.items()):
-            ids = {rel["id"] for rel in listed if rel["part"] in vectors}
-            source = _source_of(rels_path)
-            if not ids or source not in parts:
-                continue
-            xml, refs, count = remove_pictures(source, text(source), ids)
-            if xml == text(source):
-                continue
-            parts[source] = xml.encode()
-            removed += count
-            left = set(_references(xml))
-            gone = {ref for ref in refs if ref not in left}
-            rels_xml = text(rels_path)
-            kept = []
-            for rel in listed:
-                if rel["id"] in gone:
-                    rels_xml = rels_xml.replace(rel["element"], "", 1)
-                    if rel["part"]:
-                        dropped.append(rel["part"])
-                else:
-                    kept.append(rel)
-            rels[rels_path] = kept
-            parts[rels_path] = rels_xml.encode()
-            changed = True
-        for part in dropped:
-            if part in parts and not targeted(part):
-                deleted.add(part)
-                folder, base = posixpath.split(part)
-                own = posixpath.join(folder, "_rels", base + ".rels")
-                if own in parts:
-                    deleted.add(own)
-
+    # Rasters first: one the compressor cannot decode joins the removals.
+    gone = {
+        path
+        for path in parts
+        if (path in pictures and kinds[path] != "raster")
+        or (not path.endswith((".xml", ".rels")) and is_vector(parts[path], path))
+    }
     renames: dict[str, tuple[str, str]] = {}
-    for path in pictures:
-        if kinds[path] != "raster" or path in deleted:
+    for path in sorted(pictures):
+        if kinds[path] != "raster":
             continue
-        try:
-            result = compress(parts[path], image_max_bytes, max_decoded)
-        except (
-            TooLarge,
-            OSError,
-            ValueError,
-            RuntimeWarning,
-            Image.DecompressionBombError,
-        ):
-            # One it cannot read or fit stays as it is; the check decides.
-            result = None
-        if result is None:
+        result = picture(parts[path])
+        if result == "unreadable":
+            gone.add(path)
+            continue
+        if not isinstance(result, tuple):
+            # Kept, or one nothing fits: the check decides.
             continue
         encoded, kind = result
         parts[path] = encoded
@@ -449,6 +480,51 @@ def compress_office(
             renamed = f"{stem}-{number}.{wanted[0]}"
             number += 1
         renames[path] = (renamed, "image/png" if kind == "png" else "image/jpeg")
+
+    if gone:
+        dropped: list[str] = []
+        for rels_path, listed in list(rels.items()):
+            ids = {rel["id"] for rel in listed if rel["part"] in gone}
+            if not ids:
+                continue
+            source = _source_of(rels_path)
+            rels_xml = text(rels_path)
+            # Every relationship nothing refers to any more goes: those of the
+            # removed elements, and those of a removed picture no part shows
+            # (a document thumbnail's, uncounted, among them).
+            refs: list[str] = list(ids)
+            left: set[str] = set()
+            if source in parts:
+                xml, found, count = remove_pictures(source, text(source), ids)
+                if xml != text(source):
+                    parts[source] = xml.encode()
+                    removed += count
+                    changed = True
+                refs.extend(found)
+                left = set(_references(xml))
+            dead = {ref for ref in refs if ref not in left}
+            kept = []
+            for rel in listed:
+                if rel["id"] in dead:
+                    rels_xml = rels_xml.replace(rel["element"], "", 1)
+                    if rel["part"]:
+                        dropped.append(rel["part"])
+                else:
+                    kept.append(rel)
+            if dead:
+                rels[rels_path] = kept
+                parts[rels_path] = rels_xml.encode()
+                changed = True
+        for part in {*dropped, *gone}:
+            if part in parts and not targeted(part):
+                deleted.add(part)
+                folder, base = posixpath.split(part)
+                own = posixpath.join(folder, "_rels", base + ".rels")
+                if own in parts:
+                    deleted.add(own)
+                changed = True
+    for part in deleted:
+        renames.pop(part, None)
     if not changed:
         return None, 0
 

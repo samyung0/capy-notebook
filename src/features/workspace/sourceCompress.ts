@@ -15,12 +15,15 @@ export interface CompressRequest {
 export type CompressResponse =
   | { type: 'progress'; value: number }
   | { file: File; removed: number; type: 'done' }
-  | { code: 'unreadable' | 'too_large' | 'failed'; type: 'error' };
+  | {
+      code: 'unreadable' | 'too_large' | 'too_many_pixels' | 'failed';
+      type: 'error';
+    };
 
 /** Runs one source's compression in its own worker, which `signal` stops.
  * Resolves the file to upload (the picked one when nothing changed) and how
- * many EMF and WMF pictures were removed; an image no decoder reads or no
- * size fits is refused with its reason, final like the server's. */
+ * many pictures nothing can show were removed; an image no decoder reads or
+ * no size fits is refused with its reason, final like the server's. */
 export function compressSource(
   request: CompressRequest,
   onProgress: (value: number) => void,
@@ -53,7 +56,9 @@ export function compressSource(
             ? new CopyError(
                 m.image_too_large({ limit: imageLimit(request.maxBytes) })
               )
-            : new Error('source compression failed')
+            : data.code === 'too_many_pixels'
+              ? new CopyError(m.error_source_image_too_large_title())
+              : new Error('source compression failed')
       );
     };
     worker.onerror = () => {

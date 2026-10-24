@@ -123,7 +123,7 @@ func TestSourceUploadRecordsTheSHA256OfEveryKind(t *testing.T) {
 		name, ext, contentType string
 		body                   []byte
 	}{
-		{"plan.docx", ".docx", "application/octet-stream", []byte("PK\x03\x04 a small docx stand-in")},
+		{"plan.docx", ".docx", "application/octet-stream", docxHolding(t, "word/media/image1.png", pngSized(10, 10))},
 		{"Notes.PDF", ".pdf", "application/pdf", []byte("%PDF-1.7 stand-in")},
 		{"photo.png", ".png", "image/png", testPNG(64)},
 		{"odd.p df", "", "application/octet-stream", []byte("no plain extension")},
@@ -235,7 +235,7 @@ func TestSourceUploadStalledPutLeavesNothing(t *testing.T) {
 	bucket := &stallingPuts{Memory: blob.NewMemory(), stall: true}
 	th := openThumbnailHarnessWith(t, bucket)
 	ws := uploadWorkspace(t, th)
-	body := []byte("PK\x03\x04 a stalled docx")
+	body := docxHolding(t, "word/media/image1.png", pngSized(10, 10))
 	start := time.Now()
 	rec := postUpload(t, th.h, sourceUploads(ws), "u_owner",
 		sourceMeta("plan.docx", "application/octet-stream", len(body)), "application/octet-stream", body)

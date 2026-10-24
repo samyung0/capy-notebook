@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"hash/crc32"
 	"net/http"
 	"testing"
@@ -62,6 +63,10 @@ func TestUploadsRefuseImagesPastTheirLimitsFromTheirHeaders(t *testing.T) {
 		{"photo.png", "image/png", pngSized(2610, 1955), "source_image_too_large"},
 		{"plan.docx", docx, docxHolding(t, "word/media/image1.png", pngSized(2401, 10)), "office_image_too_large"},
 		{"visio.docx", docx, docxHolding(t, "word/media/image2.emf", emf), "office_vector_image"},
+		// Q344, Q348: other formats are refused by their content.
+		{"photo.png", "image/png", []byte("\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"), "image_unreadable"},
+		{"logo.docx", docx, docxHolding(t, "word/media/image3.png", []byte("<svg/>")), "office_image_unsupported"},
+		{"broken.docx", docx, []byte("PK\x03\x04 not a package"), "office_unreadable"},
 	} {
 		rec := postUpload(t, th.h, sourceUploads(ws), "u_owner",
 			sourceMeta(tc.name, tc.contentType, len(tc.body)), tc.contentType, tc.body)
@@ -101,4 +106,41 @@ func TestUploadsRefuseImagesPastTheirLimitsFromTheirHeaders(t *testing.T) {
 			t.Fatalf("editor image refused as %q", errorCode(t, rec))
 		}
 	}
+}
+
+// Security regression (Epo 2026-10-24, Q346; review S1): a file name holds no
+// control, bidi or path separator character, on upload and rename, and a
+// rename keeps the extension its upload checks were chosen by.
+func TestFileNamesRefuseUnsafeCharactersAndRenamesKeepTheirExtension(t *testing.T) {
+	th := openThumbnailHarnessWith(t, blob.NewMemory())
+	ws := uploadWorkspace(t, th)
+	pdf := []byte("%PDF-1.7 stand-in")
+	for _, name := range []string{"report\u202egnp.pdf", "a/b.pdf", "tab\there.pdf"} {
+		rec := postUpload(t, th.h, sourceUploads(ws), "u_owner",
+			sourceMeta(name, "application/pdf", len(pdf)), "application/pdf", pdf)
+		expectStatus(t, rec, http.StatusUnprocessableEntity, "upload "+name)
+		if code := errorCode(t, rec); code != "invalid_name" {
+			t.Fatalf("%q refused as %q", name, code)
+		}
+	}
+	rec := postUpload(t, th.h, sourceUploads(ws), "u_owner",
+		sourceMeta("deck", "application/octet-stream", len(pdf)), "application/octet-stream", pdf)
+	expectStatus(t, rec, http.StatusCreated, "upload a file with no extension")
+	var file struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &file); err != nil || file.ID == "" {
+		t.Fatalf("upload answered %s", rec.Body.String())
+	}
+	for name, code := range map[string]string{
+		"deck.pptx": "file_extension_changed", "deck\u2066": "invalid_name", "../deck": "invalid_name",
+	} {
+		rec := doReq(t, th.h, http.MethodPatch, "/api/files/"+file.ID, "u_owner", map[string]any{"name": name})
+		expectStatus(t, rec, http.StatusUnprocessableEntity, "rename to "+name)
+		if got := errorCode(t, rec); got != code {
+			t.Fatalf("rename to %q refused as %q, want %q", name, got, code)
+		}
+	}
+	rec = doReq(t, th.h, http.MethodPatch, "/api/files/"+file.ID, "u_owner", map[string]any{"name": "Deck notes"})
+	expectStatus(t, rec, http.StatusOK, "a rename keeping no extension")
 }

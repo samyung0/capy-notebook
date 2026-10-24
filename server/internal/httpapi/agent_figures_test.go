@@ -3,6 +3,8 @@ package httpapi_test
 import (
 	"bytes"
 	"encoding/json"
+	"image"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,9 +14,18 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// fakeJPEG passes the editor-asset JPEG signature check.
+// fakeJPEG is a small JPEG padded to about size bytes: it passes the
+// signature check and the header read.
 func fakeJPEG(size int) []byte {
-	return append([]byte{0xff, 0xd8, 0xff, 0xe0}, bytes.Repeat([]byte{7}, size)...)
+	return sizedJPEG(8, 8, size)
+}
+
+func sizedJPEG(width, height, size int) []byte {
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, image.NewGray(image.Rect(0, 0, width, height)), nil); err != nil {
+		panic(err)
+	}
+	return append(out.Bytes(), bytes.Repeat([]byte{7}, max(0, size-out.Len()))...)
 }
 
 func assetObjects(t *testing.T, mem *blob.Memory, assetID string) int {
@@ -97,7 +108,16 @@ func TestAgentNoteRefusesFiguresItCannotStore(t *testing.T) {
 	if rec.Code != http.StatusConflict || body.Code != "quota_rejected" {
 		t.Fatalf("over-cap figure status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	for _, call := range []string{"call_fig_missing", "call_fig_large"} {
+	// Security regression (Q348, review N2): a figure past the editors'
+	// 2,400 px limit is refused from its header.
+	wide := noteBody(msgID, "call_fig_wide", "Wide "+msgID, "# A\n\n![x](figure:fig_wide)")
+	wide["figures"] = []map[string]any{{"id": "fig_wide", "image": sizedJPEG(2401, 1, 0)}}
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, wide)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "invalid_input") ||
+		!strings.Contains(rec.Body.String(), "fig_wide") {
+		t.Fatalf("wide figure status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, call := range []string{"call_fig_missing", "call_fig_large", "call_fig_wide"} {
 		if _, err := st.GetMaterial(t.Context(), store.ChatMaterialID(msgID, call)); err == nil {
 			t.Fatalf("%s created a note", call)
 		}

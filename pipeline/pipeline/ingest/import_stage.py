@@ -8,9 +8,11 @@ enqueues the ordinary parse or ingest job. A parse or ingest job therefore only
 exists once the bytes are durably in B2.
 
 Before the bytes are stored (Epo 2026-10-24) an Office file has its pictures
-compressed and its EMF and WMF pictures removed, and an image source is shrunk
-to 5 megapixels, both in the sandboxed decode helper; then the header check
-(image_check.py) refuses what still breaks the image rules, finally.
+compressed, each in the sandboxed decode helper with its own 10 s (Q347), and
+the pictures nothing can show removed (Q337); an image source is shrunk to 5
+megapixels or re-saved as JPEG or PNG (Q344), a HEIC through libheif's tool
+first (Q353). Then the header check (image_check.py) refuses what still
+breaks the image rules, finally.
 
 Retry scheduling is the ``jobs`` row's; the gateway's attempt lease only fences
 stale callbacks. A retryable error releases that lease before the requeue so
@@ -29,7 +31,7 @@ import requests
 from ..config import cfg
 from ..jobs import CapacityWait, RetryableError, TerminalError
 from ..store import blobstore, db
-from . import decode, image_check, pinned_http, telemetry
+from . import decode, image_check, images, pinned_http, telemetry
 
 log = logging.getLogger("capy.import")
 
@@ -207,33 +209,44 @@ def _download(grant: dict, max_bytes: int) -> bytearray:
 
 def _prepare(data: bytes, acquired: dict) -> tuple[bytes, dict]:
     """The bytes to store and what the completion reports beside them: an
-    Office file compressed, an image source shrunk (with its new name and
-    type when its format changed), each checked from its headers."""
+    Office file with its pictures compressed one by one (Q347), an image
+    source shrunk or re-saved as JPEG or PNG (with its new name and type when
+    its format changed, Q344), each then checked from its headers. The
+    original was already refused past the per-file cap at the download
+    (Q345)."""
     name = str(acquired.get("name") or "")
     extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if extension in {"docx", "pptx", "xlsx"}:
         image_max_bytes = int(acquired.get("imageMaxBytes") or 0)
         if image_max_bytes <= 0:
             raise ImportRetry("acquire_invalid", "acquire response names no image cap")
-        try:
-            package, removed = decode.office_images(
-                data, image_max_bytes=image_max_bytes, max_pixels=cfg.image_max_pixels
-            )
-        except decode.DecodeFailed as exc:
-            # Stored as it is when the helper fails; the check decides.
-            log.warning("office images not compressed: %s", exc)
-            package, removed = None, 0
+        package, removed = images.compress_office(
+            data,
+            lambda picture: decode.office_picture(
+                picture,
+                image_max_bytes=image_max_bytes,
+                max_pixels=cfg.image_max_pixels,
+            ),
+        )
         stored = package if package is not None else data
         try:
             image_check.check_office(stored, image_max_bytes)
         except image_check.Refused as exc:
             raise ImportFailure(exc.code, str(exc)) from exc
         return stored, {"removedPictures": removed}
-    if acquired.get("kind") != "image" or extension == "svg":
+    if acquired.get("kind") != "image":
         return data, {}
+    source = data
+    if image_check.image_format(data[:32]) == "heic":
+        # Pillow has no HEIF decoder: libheif's tool makes a JPEG first
+        # (Q353); one it cannot convert is refused below.
+        try:
+            source = decode.heic_jpeg(data)
+        except decode.DecodeFailed as exc:
+            log.warning("heic source not converted: %s", exc)
     try:
         shrunk = decode.source_image(
-            data,
+            source,
             max_bytes=int(acquired.get("maxBytes") or 0),
             max_pixels=cfg.image_max_pixels,
         )
@@ -242,23 +255,26 @@ def _prepare(data: bytes, acquired: dict) -> tuple[bytes, dict]:
         shrunk = "unreadable"
     if shrunk == "too_large":
         raise ImportFailure("file_too_large", "no size of the image fits the file cap")
+    if shrunk == "too_many_pixels":
+        raise ImportFailure(
+            "source_image_too_large", "an animated GIF past 5 megapixels"
+        )
     landed: dict = {}
+    stem = name.rsplit(".", 1)[0] if "." in name else name
     if isinstance(shrunk, tuple):
         data, kind = shrunk
-        stem = name.rsplit(".", 1)[0] if "." in name else name
         landed = (
             {"name": f"{stem}.png", "contentType": "image/png"}
             if kind == "png"
             else {"name": f"{stem}.jpg", "contentType": "image/jpeg"}
         )
+    elif shrunk == "keep" and source is not data:
+        # A converted HEIC within 5 MP: the JPEG itself.
+        data, landed = source, {"name": f"{stem}.jpg", "contentType": "image/jpeg"}
     try:
         image_check.check_source(data)
     except image_check.Refused as exc:
-        # One this Pillow cannot decode (HEIC: pillow-heif bundles the GPL
-        # x265, so it is not used) is stored only within the limit; past it
-        # the user is asked to save it as JPEG or PNG (Editor, 2026-10-24).
-        code = "image_unreadable" if shrunk == "unreadable" else exc.code
-        raise ImportFailure(code, str(exc)) from exc
+        raise ImportFailure(exc.code, str(exc)) from exc
     return data, landed
 
 

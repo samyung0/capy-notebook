@@ -32,8 +32,12 @@ RUN uv venv --python /usr/local/bin/python3 /opt/ppt-master/.venv \
 FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/
 
+# heif-dec (libheif-examples) converts an imported HEIC to JPEG in the decode
+# sandbox (pipeline/ingest/decode.py, Epo 2026-10-24, Q353): libheif and its
+# libde265 decoder plugin are LGPL-3.0, and without recommends no x265
+# encoder comes with them.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg libheif-examples libheif-plugin-libde265 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

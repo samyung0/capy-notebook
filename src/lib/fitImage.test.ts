@@ -4,6 +4,7 @@ import {
   fitImage,
   fitSize,
   ImageTooLargeError,
+  ImageTooManyPixelsError,
   ImageUnreadableError,
   isAnimatedGif,
   pixelTraits,
@@ -54,6 +55,13 @@ describe('fitImage', () => {
     const note = await fitImage(photo, 2 * MB);
     expect(note.type).toBe('image/webp');
     expect(encodes).toEqual(['image/webp 2400x1600 0.85']);
+  });
+
+  it('resizes an image whose short side rounds to the same width', async () => {
+    // Review N1: 2x3000 fits as 2x2400, so the height decides.
+    const strip = picked('strip.png', 'image/png', 5000, 2, 3000, 'flat');
+    await fitImage(strip, 2 * MB, { office: true });
+    expect(encodes).toEqual(['image/png 2x2400 0.85']);
   });
 
   it('keeps a small image byte-identical when its re-encode is not smaller', async () => {
@@ -132,6 +140,11 @@ describe('fitImage', () => {
     const wide = picked('spin.gif', 'image/gif', 0, 3000, 300, 'flat', gif(3));
     await expect(fitImage(wide, 2 * MB)).rejects.toThrow(ImageTooLargeError);
     await expect(fitImage(small, 10)).rejects.toThrow(ImageTooLargeError);
+    // A source past 5 megapixels: the pixels are the problem, not the bytes.
+    const huge = picked('spin.gif', 'image/gif', 0, 3000, 2000, 'flat', gif(3));
+    await expect(
+      fitImage(huge, 30 * MB, { maxPixels: 5_000_000 })
+    ).rejects.toThrow(ImageTooManyPixelsError);
   });
 
   it('shrinks a source image past 5 megapixels by area and keeps a smaller one as it is', async () => {
@@ -140,8 +153,22 @@ describe('fitImage', () => {
     expect(shrunk.name).toBe('photo.jpg');
     expect(encodes).toEqual(['image/jpeg 2581x1936 0.85']);
     expect(2581 * 1936).toBeLessThanOrEqual(5_000_000);
-    const scan = picked('scan.bmp', 'image/bmp', 12 * MB, 2500, 2000);
+    const scan = picked('scan.png', 'image/png', 12 * MB, 2500, 2000);
     expect(await fitImage(scan, 30 * MB, { maxPixels: 5_000_000 })).toBe(scan);
+  });
+
+  it('re-saves a source the server does not keep even within 5 megapixels', async () => {
+    // Q344: by its bytes, so a BMP named .png is re-saved too.
+    for (const name of ['scan.bmp', 'scan.png']) {
+      const scan = new File(
+        [fakeImage('image/bmp', 2500, 2000, 'photo', 12 * MB)],
+        name,
+        { type: name.endsWith('.png') ? 'image/png' : 'image/bmp' }
+      );
+      const saved = await fitImage(scan, 30 * MB, { maxPixels: 5_000_000 });
+      expect(saved.type).toBe('image/jpeg');
+      expect(saved.name).toBe('scan.jpg');
+    }
   });
 
   it('refuses an image it cannot decode', async () => {

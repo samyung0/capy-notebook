@@ -12,6 +12,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -145,6 +146,11 @@ func (a *api) putAgentFigures(ctx context.Context, f *agentFigures, imageMaxByte
 		if !editorAssetSignatureAllowed("image", ".jpg", image) {
 			a.deleteAgentAssets(ctx, assets)
 			return nil, refusal(agenttools.ErrInvalidInput, "figure %s is not a JPEG image", ref)
+		}
+		// The editors' pixel limit (Q348): captures stay under it.
+		if err := imagecheck.CheckEditorImage(bytes.NewReader(image)); err != nil {
+			a.deleteAgentAssets(ctx, assets)
+			return nil, refusal(agenttools.ErrInvalidInput, "figure %s: %v", ref, err)
 		}
 		if meta.SizeBytes > imageMaxBytes {
 			a.deleteAgentAssets(ctx, assets)

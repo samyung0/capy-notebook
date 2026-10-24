@@ -156,7 +156,7 @@ test('a DOCX upload stores its large picture compressed and its WMF equation rem
     page.getByText(m.source_pictures_removed({ name: 'plan.docx' }))
   ).toBeVisible({ timeout: 120_000 });
   await expect(
-    page.getByText(m.source_pictures_removed_body({ count: 1 }))
+    page.getByText(m.source_pictures_removed_body_one())
   ).toBeVisible();
 
   const { bytes, link } = await stored(page, 'plan.docx');
@@ -187,7 +187,7 @@ test('a DOCX upload stores its large picture compressed and its WMF equation rem
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
 });
 
-test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 through their decoders, and a corrupt HEIC is refused', async ({
+test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 through their decoders and saved as JPEG even when small, and a corrupt HEIC is refused', async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -198,7 +198,13 @@ test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 
   await upload(page, [
     { buffer: photoJpeg, mimeType: 'image/jpeg', name: 'camera.jpg' },
     // Distinct stems, since each is stored as <stem>.jpg.
-    ...['photo.heic', 'photo.tif', 'photo.jp2', 'corrupt.heic'].map((name) => ({
+    ...[
+      'photo.heic',
+      'photo.tif',
+      'photo.jp2',
+      'small.tif',
+      'corrupt.heic',
+    ].map((name) => ({
       buffer: fixture(name),
       mimeType: 'application/octet-stream',
       name: name.replace(/^(\w+)\.(\w+)$/, '$2-$1.$2'),
@@ -208,7 +214,8 @@ test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 
   expect(await decoded(page, (await stored(page, 'camera.jpg')).bytes)).toBe(
     'ffd8ff 2581x1936'
   );
-  for (const name of ['photo.heic', 'photo.tif', 'photo.jp2']) {
+  // small.tif is within 5 megapixels, re-saved as JPEG all the same (Q344).
+  for (const name of ['photo.heic', 'photo.tif', 'photo.jp2', 'small.tif']) {
     const [, width, height] = manifest.source[name];
     const renamed = name.replace(/^(\w+)\.(\w+)$/, '$2-$1.jpg');
     expect(await decoded(page, (await stored(page, renamed)).bytes)).toBe(

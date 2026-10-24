@@ -98,16 +98,20 @@ pub enum Admission {
 }
 
 /// Admits a writer's update to a source room under its `cap`
-/// ([`crate::state_cap`]) less the write reserve ([`crate::admission_cap`]).
+/// ([`crate::state_cap`]) less the write reserve ([`crate::admission_cap`]),
+/// a Word or PowerPoint picture under `image_cap` ([`Loaded::image_cap`]).
 /// `estimate` is the room's running state size: the server adds each applied
 /// update's bytes (the load's included); crossing the limit measures exactly
 /// and resets it.
+///
+/// [`Loaded::image_cap`]: crate::Loaded::image_cap
 pub fn admit_update(
     doc: &Doc,
     format: SourceFormat,
     update: &[u8],
     estimate: &mut Estimate,
     cap: u64,
+    image_cap: u64,
 ) -> Admission {
     let decoded = match Update::decode_v1(update) {
         Ok(decoded) => decoded,
@@ -128,7 +132,7 @@ pub fn admit_update(
         SourceFormat::Text => None,
     };
     let unheld = match office {
-        Some(format) => match office_update_violation(&txn, &decoded, format) {
+        Some(format) => match office_update_violation(&txn, &decoded, format, image_cap) {
             Err(message) => return Admission::Refuse(Refusal::OfficeUpdate(message)),
             Ok(unheld) => unheld,
         },
@@ -195,11 +199,13 @@ fn fits_room(doc: &Doc, update: &[u8], estimate: &mut Estimate, cap: u64) -> Res
 /// one of the engine's document roots, in PPTX writes and deletions under
 /// pptx:meta must stay inside commentFlavor, as the engines require, no
 /// slide's speaker notes may grow past [MAX_SLIDE_NOTES_CHARS], and a picture
-/// added in Word or PowerPoint keeps the image limits ([crate::pictures]).
+/// added in Word or PowerPoint keeps the image limits ([crate::pictures]),
+/// `image_cap` its byte cap.
 pub fn office_update_violation<T: ReadTxn>(
     txn: &T,
     update: &Update,
     format: Format,
+    image_cap: u64,
 ) -> Result<bool, String> {
     let incoming = Incoming::new(update);
     let Inspection {
@@ -226,7 +232,7 @@ pub fn office_update_violation<T: ReadTxn>(
         notes_violation(txn, &incoming)?;
     }
     if matches!(format, Format::Docx | Format::Pptx) && !unheld {
-        crate::pictures::picture_violation(txn, &incoming)?;
+        crate::pictures::picture_violation(txn, &incoming, image_cap as usize)?;
     }
     let deletes = deletions(update);
     if format != Format::Pptx || deletes.is_empty() {
@@ -473,6 +479,9 @@ mod tests {
         encode(client, &before)
     }
 
+    /// The image cap on every plan today (`plan_limits.image_max_bytes`).
+    const IMAGE_CAP: u64 = 2 << 20;
+
     fn verdict(room: &Doc, format: SourceFormat, update: &[u8]) -> Admission {
         let mut estimate = Estimate::default();
         admit_update(
@@ -481,6 +490,7 @@ mod tests {
             update,
             &mut estimate,
             MAX_SOURCE_STATE_BYTES as u64,
+            IMAGE_CAP,
         )
     }
 
@@ -627,9 +637,10 @@ mod tests {
         ));
     }
 
-    // Security regression (Epo 2026-10-24, Q287): whatever client sends it, a
-    // picture a Word or PowerPoint edit adds is refused past 2,400 px on its
-    // long side, read from its header, or as EMF or WMF.
+    // Security regression (Epo 2026-10-24, Q287, Q344): whatever client sends
+    // it, a picture a Word or PowerPoint edit adds is refused past 2,400 px on
+    // its long side or the image cap passed in, read from its header, as EMF
+    // or WMF, and in any format but PNG, JPEG or GIF.
     #[test]
     fn a_picture_past_the_image_limits_is_refused_in_word_and_powerpoint() {
         use base64::Engine;
@@ -642,7 +653,7 @@ mod tests {
         };
         let room = Doc::with_client_id(1);
         let refused = Admission::Refuse(Refusal::OfficeUpdate(
-            "Office update adds a picture over 2 MiB or 2400 px".into(),
+            "Office update adds a picture over 2097152 bytes or 2400 px".into(),
         ));
         let docx = |client_id: u64, bytes: Vec<u8>| {
             let client = Doc::with_client_id(client_id);
@@ -698,6 +709,12 @@ mod tests {
             ),
             Admission::Refuse(Refusal::OfficeUpdate(
                 "Office update adds an EMF or WMF picture".into()
+            ))
+        );
+        assert_eq!(
+            verdict(&room, SourceFormat::Pptx, &pptx(7, b"<svg/>".to_vec())),
+            Admission::Refuse(Refusal::OfficeUpdate(
+                "Office update adds a picture that is not PNG, JPEG or GIF".into()
             ))
         );
     }
@@ -1047,14 +1064,28 @@ mod tests {
         });
         let mut estimate = Estimate::new(10);
         assert_eq!(
-            admit_update(&room, SourceFormat::Text, &typed, &mut estimate, cap),
+            admit_update(
+                &room,
+                SourceFormat::Text,
+                &typed,
+                &mut estimate,
+                cap,
+                IMAGE_CAP
+            ),
             Admission::Accept
         );
         assert_eq!(estimate.bytes, 10);
         // An estimate over the cap measures the room (and resets the estimate).
         let mut estimate = Estimate::new(cap);
         assert_eq!(
-            admit_update(&room, SourceFormat::Text, &typed, &mut estimate, cap),
+            admit_update(
+                &room,
+                SourceFormat::Text,
+                &typed,
+                &mut estimate,
+                cap,
+                IMAGE_CAP
+            ),
             Admission::Accept
         );
         let exact = encode(&room, &StateVector::default()).len() as u64;
@@ -1337,7 +1368,14 @@ mod tests {
         let exact = encode(&room, &StateVector::default()).len() as u64;
         let mut estimate = Estimate::new(exact);
         assert_eq!(
-            admit_update(&room, SourceFormat::Text, &typed, &mut estimate, exact + 8),
+            admit_update(
+                &room,
+                SourceFormat::Text,
+                &typed,
+                &mut estimate,
+                exact + 8,
+                IMAGE_CAP
+            ),
             Admission::Refuse(Refusal::StateBytes)
         );
         let reserve = crate::STATE_WRITE_RESERVE_BYTES;
@@ -1348,7 +1386,8 @@ mod tests {
                 SourceFormat::Text,
                 &typed,
                 &mut estimate,
-                exact + 1024 + reserve
+                exact + 1024 + reserve,
+                IMAGE_CAP,
             ),
             Admission::Accept
         );
@@ -1361,7 +1400,8 @@ mod tests {
                 SourceFormat::Text,
                 &typed,
                 &mut estimate,
-                exact + 1024
+                exact + 1024,
+                IMAGE_CAP,
             ),
             Admission::Refuse(Refusal::StateBytes)
         );

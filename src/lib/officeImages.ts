@@ -1,26 +1,29 @@
 import { unzipSync, type Zippable, zipSync } from 'fflate';
-import { fitImage } from '@/lib/fitImage';
+import { fitImage, ImageUnreadableError } from '@/lib/fitImage';
 
-/** A DOCX, PPTX or XLSX upload with its pictures compressed and its EMF and
- * WMF pictures removed (Epo 2026-10-24), and how many of those it removed
- * where they showed. `file` is the picked file itself when nothing changed.
- * The import worker does the same (pipeline/pipeline/ingest/images.py). */
+/** A DOCX, PPTX or XLSX upload with its pictures compressed and the pictures
+ * nothing can show removed with what shows them (Epo 2026-10-24, Q337):
+ * EMF, WMF, SVG (its PNG fallback stays), formats the compressor does not
+ * try and pictures it cannot decode; `removed` counts those removed where
+ * they showed. `file` is the picked file itself when nothing changed. The
+ * import worker does the same (pipeline/pipeline/ingest/images.py). */
 export interface OfficeImagesResult {
   file: File;
   removed: number;
 }
 
 /** The archive the browser opens at most, as the upload analysis probe
- * (sourceAnalysisCore.ts); a larger one uploads as it is and the server
- * check decides. */
+ * (sourceAnalysisCore.ts) and the server checks; a larger one is sent as it
+ * is and the server refuses it. */
 const MAX_ENTRIES = 4096;
 const MAX_EXPANDED = 256 << 20;
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 
-/** What a part's bytes are, by signature: a raster image the compressor may
- * read, an EMF or WMF picture, or anything else. */
+/** What a part's bytes are, by signature: an EMF or WMF picture, a raster
+ * format the compressor tries, or null for anything else (SVG, HD Photo,
+ * PICT, EPS...), which is removed. */
 export function pictureKind(bytes: Uint8Array, path: string) {
   const at = (offset: number, ...values: number[]) =>
     values.every((value, i) => bytes[offset + i] === value);
@@ -32,6 +35,8 @@ export function pictureKind(bytes: Uint8Array, path: string) {
     ((at(0, 1, 0) || at(0, 2, 0)) && at(2, 9, 0))
   )
     return 'vector';
+  // An SVG by name, whatever it holds (the checks refuse it by name).
+  if (['svg', 'svgz'].includes(ext)) return null;
   if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'image/png';
   if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
   if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif';
@@ -87,6 +92,11 @@ const RELS_EXT = /\.rels$/;
 const sourceOf = (rels: string) =>
   dirOf(rels).replace(RELS_DIR, '') + baseOf(rels).replace(RELS_EXT, '');
 
+/** The relationship types whose targets are pictures: images (pictures,
+ * fills, object previews, SVG) and HD Photo originals; audio and video stay
+ * media. */
+const PICTURE_TYPES = ['/image', '/hdphoto'];
+
 function relationships(rels: string, xml: string): Relationship[] {
   const sourceDir = dirOf(sourceOf(rels));
   return [...xml.matchAll(/<Relationship\b[^>]*>/g)].map(([element]) => {
@@ -108,10 +118,13 @@ function relationships(rels: string, xml: string): Relationship[] {
  * around a reference to a removed picture goes with it (widened by `pick`):
  * DOCX drawings, VML pictures and objects (with their OLE parts); PPTX
  * pictures, picture fills and OLE frames; XLSX drawing anchors and sheet OLE
- * objects; legacy VML shapes. */
+ * objects; chart and SmartArt picture fills; legacy VML shapes. */
+const CHART_OR_DIAGRAM = /^(word|ppt|xl)\/(charts|diagrams)\//;
+
 function containers(path: string): string[] | null {
   if (path.endsWith('.vml')) return ['v:shape'];
   if (!path.endsWith('.xml')) return null;
+  if (CHART_OR_DIAGRAM.test(path)) return ['a:blipFill'];
   if (path.startsWith('word/')) return ['w:drawing', 'w:pict', 'w:object'];
   if (path.startsWith('ppt/')) return ['p:pic', 'a:blipFill', 'p:graphicFrame'];
   if (path.startsWith('xl/drawings/'))
@@ -125,8 +138,14 @@ function containers(path: string): string[] | null {
  * that holds it (a DOCX object, a PPTX OLE frame, a slide background, or the
  * alternate content around an OLE frame or sheet object). */
 const ALTERNATE = /^mc:(Choice|Fallback)$/;
+const BESIDE_BLIP = /:(svgBlip|imgLayer)$/;
 
 function pick(names: string[], stack: string[]) {
+  // An SVG or HD Photo beside a picture's own blip: only the extension
+  // holding it goes, and the picture stays.
+  if (BESIDE_BLIP.test(stack.at(-1) ?? ''))
+    for (let i = stack.length - 2; i >= 0; i--)
+      if (stack[i].endsWith(':ext')) return i;
   let at = -1;
   for (let i = stack.length - 1; i >= 0 && at < 0; i--)
     if (names.includes(stack[i])) at = i;
@@ -161,11 +180,13 @@ const references = (xml: string) =>
   [...xml.matchAll(REFERENCE)].map((match) => match[1] ?? match[2]);
 const MARKUP =
   /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<[?!][\s\S]*?>|<(\/?)([A-Za-z_][\w.:-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
+const EMPTY_EXTENSIONS = /<([\w.-]+:)?extLst\b[^>]*>\s*<\/\1extLst>/g;
 
 /** Removes from a part's XML every container (`containers`) that refers to
  * one of `ids`. Returns the new XML, the ids the removed elements referred
  * to, and how many pictures were removed where they show (an element inside
- * mc:Fallback, or in a VML part, shows only beside one counted already). */
+ * mc:Fallback, or in a VML part, shows only beside one counted already, and
+ * an extension beside a picture that stays is not counted). */
 export function removePictures(path: string, xml: string, ids: Set<string>) {
   const names = containers(path);
   const empty = { count: 0, refs: [] as string[], xml };
@@ -198,6 +219,7 @@ export function removePictures(path: string, xml: string, ids: Set<string>) {
         stack[at].remove = true;
         stack[at].counted =
           !path.endsWith('.vml') &&
+          !stack[at].name.endsWith(':ext') &&
           !stack.slice(0, at).some((open) => open.name === 'mc:Fallback');
       }
     }
@@ -221,14 +243,18 @@ export function removePictures(path: string, xml: string, ids: Set<string>) {
     from = end;
   }
   out += xml.slice(from);
-  // A sheet's OLE list may not be empty.
-  out = out.replace(/<oleObjects>\s*<\/oleObjects>/g, '');
+  // A sheet's OLE list and an extension list may not be empty.
+  out = out
+    .replace(/<oleObjects>\s*<\/oleObjects>/g, '')
+    .replace(EMPTY_EXTENSIONS, '');
   return { count, refs, xml: out };
 }
 
 /** Compresses the raster pictures of an Office package with the Office insert
- * rules and removes its EMF and WMF pictures with what shows them; see
- * OfficeImagesResult. `onProgress` hears each picture compressed. */
+ * rules and removes the pictures nothing can show with what shows them; see
+ * OfficeImagesResult. EMF and WMF parts nothing refers to and document
+ * thumbnails in those formats go too, uncounted. `onProgress` hears each
+ * picture compressed. */
 export async function compressOfficeImages(
   file: File,
   imageMaxBytes: number,
@@ -258,72 +284,47 @@ export async function compressOfficeImages(
   const write = (path: string, xml: string) => {
     parts[path] = encoder.encode(xml);
   };
-  const relsPaths = Object.keys(parts).filter((path) => path.endsWith('.rels'));
+  const paths = Object.keys(parts);
   const rels = new Map(
-    relsPaths.map((path) => [path, relationships(path, text(path))])
+    paths
+      .filter((path) => path.endsWith('.rels'))
+      .map((path) => [path, relationships(path, text(path))])
   );
   const targeted = (part: string) =>
     [...rels.values()].some((list) => list.some((rel) => rel.part === part));
-  const pictures = Object.keys(parts).filter(
-    (path) =>
-      MEDIA.test(path) ||
-      [...rels.values()].some((list) =>
-        list.some((rel) => rel.part === path && rel.type.endsWith('/image'))
-      )
-  );
+  // An image relationship's targets, and media parts no other relationship
+  // targets.
+  const other = new Set<string>();
+  const pictures = new Set<string>();
+  for (const list of rels.values())
+    for (const rel of list)
+      if (rel.part)
+        (PICTURE_TYPES.some((type) => rel.type.endsWith(type))
+          ? pictures
+          : other
+        ).add(rel.part);
+  for (const path of paths)
+    if (MEDIA.test(path) && !other.has(path)) pictures.add(path);
   const kinds = new Map(
-    pictures.map((path) => [path, pictureKind(parts[path], path)])
+    paths.map((path) => [path, pictureKind(parts[path], path)])
   );
   let changed = false;
   let removed = 0;
   const deleted = new Set<string>();
-
-  // EMF and WMF: each element that shows one goes, then the relationships
-  // nothing refers to any more, then the parts nothing targets.
-  const vectors = new Set(
-    pictures.filter((path) => kinds.get(path) === 'vector')
-  );
-  if (vectors.size > 0) {
-    const dropped: string[] = [];
-    for (const [relsPath, list] of rels) {
-      const ids = new Set(
-        list
-          .filter((rel) => rel.part && vectors.has(rel.part))
-          .map((rel) => rel.id)
+  const gone = new Set(
+    paths.filter((path) => {
+      const kind = kinds.get(path);
+      return (
+        (pictures.has(path) && (!kind || kind === 'vector')) ||
+        (kind === 'vector' && !path.endsWith('.xml') && !path.endsWith('.rels'))
       );
-      const source = sourceOf(relsPath);
-      if (ids.size === 0 || !(source in parts)) continue;
-      const result = removePictures(source, text(source), ids);
-      if (result.xml === text(source)) continue;
-      write(source, result.xml);
-      removed += result.count;
-      const left = new Set(references(result.xml));
-      const gone = new Set(result.refs.filter((id) => !left.has(id)));
-      let relsXml = text(relsPath);
-      const kept = list.filter((rel) => {
-        if (!gone.has(rel.id)) return true;
-        relsXml = relsXml.replace(rel.element, '');
-        if (rel.part) dropped.push(rel.part);
-        return false;
-      });
-      rels.set(relsPath, kept);
-      write(relsPath, relsXml);
-      changed = true;
-    }
-    for (const part of dropped)
-      if (part in parts && !targeted(part)) {
-        deleted.add(part);
-        const ownRels = `${dirOf(part)}_rels/${baseOf(part)}.rels`;
-        if (ownRels in parts) deleted.add(ownRels);
-      }
-  }
+    })
+  );
 
-  // Rasters: each through the insert compressor; a format change renames the
-  // part, its relationships and its content type.
-  const rasters = pictures.filter((path) => {
-    const kind = kinds.get(path);
-    return kind && kind !== 'vector' && !deleted.has(path);
-  });
+  // Rasters first, each through the insert compressor: one it cannot decode
+  // joins the removals; a format change renames the part, its relationships
+  // and its content type.
+  const rasters = paths.filter((path) => pictures.has(path) && !gone.has(path));
   const renames = new Map<string, { path: string; type: string }>();
   for (const [index, path] of rasters.entries()) {
     const type = kinds.get(path)!;
@@ -334,8 +335,9 @@ export async function compressOfficeImages(
         imageMaxBytes,
         { office: true }
       );
-    } catch {
-      // One it cannot read or fit stays as it is; the server check decides.
+    } catch (error) {
+      // One nothing fits stays as it is; the server check decides.
+      if (error instanceof ImageUnreadableError) gone.add(path);
       onProgress?.(index + 1, rasters.length);
       continue;
     }
@@ -360,6 +362,50 @@ export async function compressOfficeImages(
     renames.set(path, { path: renamed, type: result.type });
     parts[path] = bytes;
   }
+
+  // Removals: each element that shows a removed picture goes, then every
+  // relationship nothing refers to any more (a thumbnail's, whose package
+  // shows it nowhere, among them), then the parts nothing targets.
+  const dropped: string[] = [];
+  for (const [relsPath, list] of rels) {
+    const ids = list
+      .filter((rel) => rel.part && gone.has(rel.part))
+      .map((rel) => rel.id);
+    if (ids.length === 0) continue;
+    const source = sourceOf(relsPath);
+    const refs = [...ids];
+    let left = new Set<string>();
+    if (source in parts) {
+      const result = removePictures(source, text(source), new Set(ids));
+      if (result.xml !== text(source)) {
+        write(source, result.xml);
+        removed += result.count;
+        changed = true;
+      }
+      refs.push(...result.refs);
+      left = new Set(references(result.xml));
+    }
+    const dead = new Set(refs.filter((id) => !left.has(id)));
+    if (dead.size === 0) continue;
+    let relsXml = text(relsPath);
+    const kept = list.filter((rel) => {
+      if (!dead.has(rel.id)) return true;
+      relsXml = relsXml.replace(rel.element, '');
+      if (rel.part) dropped.push(rel.part);
+      return false;
+    });
+    rels.set(relsPath, kept);
+    write(relsPath, relsXml);
+    changed = true;
+  }
+  for (const part of new Set([...dropped, ...gone]))
+    if (part in parts && !targeted(part)) {
+      deleted.add(part);
+      const ownRels = `${dirOf(part)}_rels/${baseOf(part)}.rels`;
+      if (ownRels in parts) deleted.add(ownRels);
+      changed = true;
+    }
+  for (const part of deleted) renames.delete(part);
   if (!changed) return unchanged;
 
   for (const [relsPath, list] of rels) {

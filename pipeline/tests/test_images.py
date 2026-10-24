@@ -1,6 +1,6 @@
 """The import worker's image rules (images.py): the shared fixture manifest
 the browser's compressor also meets, and an imported DOCX/PPTX/XLSX with its
-pictures compressed and its EMF and WMF pictures removed."""
+pictures compressed and the pictures nothing can show removed."""
 
 from __future__ import annotations
 
@@ -33,8 +33,8 @@ def test_office_rule_meets_the_shared_manifest(name):
     assert _shape(data if result is None else result[0]) == MANIFEST["office"][name]
 
 
-# Pillow here has no HEIF decoder (pillow-heif bundles the GPL x265): an
-# imported HEIC is kept within 5 MP and refused past it (import_stage.py).
+# Pillow has no HEIF decoder (pillow-heif bundles the GPL x265): an imported
+# HEIC goes through libheif's tool first (decode.heic_jpeg, Q353).
 @pytest.mark.parametrize("name", sorted(set(MANIFEST["source"]) - {"photo.heic"}))
 def test_source_rule_meets_the_shared_manifest(name):
     data = (FIXTURES / "images" / name).read_bytes()
@@ -69,6 +69,17 @@ def _jpeg(size) -> bytes:
     buffer = io.BytesIO()
     Image.open(io.BytesIO(_png(size))).save(buffer, "JPEG", quality=95)
     return buffer.getvalue()
+
+
+def _picture(data: bytes):
+    """The worker's per-picture call (decode.office_picture), run here."""
+    try:
+        result = images.compress(data, 2 * MB, DECODED)
+    except images.TooLarge:
+        return "too_large"
+    except (OSError, ValueError):
+        return "unreadable"
+    return "keep" if result is None else result
 
 
 EMF = b"\x01\x00\x00\x00" + b"\x00" * 36 + b" EMF" + b"\x00" * 64
@@ -138,7 +149,7 @@ def test_docx_photos_shrink_a_png_photo_turns_jpeg_and_a_wmf_equation_goes():
         )
 
     package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), 2 * MB, DECODED
+        _package("exchange-plan.docx", edit), _picture
     )
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
@@ -180,9 +191,7 @@ def test_pptx_emf_picture_goes_and_every_slide_follows_a_rename():
             _rel("rId100", "image", "../media/image99.emf"),
         )
 
-    package, removed = images.compress_office(
-        _package("lecture.pptx", edit), 2 * MB, DECODED
-    )
+    package, removed = images.compress_office(_package("lecture.pptx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "ppt/media/image99.emf" not in archive.namelist()
@@ -211,7 +220,7 @@ def test_xlsx_emf_anchor_goes():
         ).encode()
 
     package, removed = images.compress_office(
-        _package("course-guide.xlsx", edit), 2 * MB, DECODED
+        _package("course-guide.xlsx", edit), _picture
     )
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
@@ -227,9 +236,7 @@ def test_a_package_whose_pictures_cannot_shrink_is_kept():
         for name in ("image1", "image2", "image3"):
             parts[f"word/media/{name}.png"] = buffer.getvalue()
 
-    assert images.compress_office(
-        _package("exchange-plan.docx", edit), 2 * MB, DECODED
-    ) == (
+    assert images.compress_office(_package("exchange-plan.docx", edit), _picture) == (
         None,
         0,
     )
@@ -259,3 +266,146 @@ def test_resolve_target():
         == "ppt/media/a b.png"
     )
     assert images.resolve_target("xl/", "/xl/media/x.emf") == "xl/media/x.emf"
+
+
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
+
+
+def test_thumbnails_orphans_and_chart_fills_in_emf_or_wmf_go():
+    """Q348 (review B2, S7): an EMF document thumbnail goes with its package
+    relationship, uncounted; an EMF picture fill in a chart goes, counted; an
+    EMF nothing refers to goes, uncounted."""
+
+    def edit(parts):
+        parts["docProps/thumbnail.emf"] = EMF
+        parts["word/media/stray.emf"] = EMF
+        parts["word/media/fill.emf"] = EMF
+        _add(
+            parts,
+            "_rels/.rels",
+            "</Relationships>",
+            '<Relationship Id="rIdThumb" Type="http://schemas.openxmlformats.org/'
+            'package/2006/relationships/metadata/thumbnail" Target="docProps/thumbnail.emf"/>',
+        )
+        _add(
+            parts,
+            "[Content_Types].xml",
+            "</Types>",
+            '<Override PartName="/docProps/thumbnail.emf" ContentType="image/x-emf"/>',
+        )
+        _add(
+            parts,
+            "word/charts/chart1.xml",
+            "</c:chartSpace>",
+            '<c:spPr><a:blipFill><a:blip r:embed="rIdFill"/></a:blipFill></c:spPr>',
+        )
+        _add(
+            parts,
+            "word/charts/_rels/chart1.xml.rels",
+            "</Relationships>",
+            _rel("rIdFill", "image", "../media/fill.emf"),
+        )
+
+    package, removed = images.compress_office(
+        _package("exchange-plan.docx", edit), _picture
+    )
+    assert removed == 1
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        names = archive.namelist()
+        for gone in (
+            "docProps/thumbnail.emf",
+            "word/media/stray.emf",
+            "word/media/fill.emf",
+        ):
+            assert gone not in names
+        assert "thumbnail" not in archive.read("_rels/.rels").decode()
+        assert "thumbnail.emf" not in archive.read("[Content_Types].xml").decode()
+        chart = archive.read("word/charts/chart1.xml").decode()
+        assert "blipFill" not in chart and "<c:spPr></c:spPr>" in chart
+
+
+def test_svg_and_hd_photo_beside_a_blip_go_and_undecodable_pictures_are_removed():
+    """Q337: an SVG or HD Photo beside a picture's PNG goes with its extension,
+    uncounted, the picture staying; a picture that does not decode, or of a
+    format the compressor does not try, goes with what shows it, counted; a
+    video stays."""
+
+    shown = []
+
+    def edit(parts):
+        parts["word/media/logo.svg"] = SVG
+        parts["word/media/hdphoto1.wdp"] = b"II\xbc\x01" + b"\x00" * 40
+        parts["word/media/broken.png"] = _png((40, 40))[:60]
+        parts["word/media/scan.pct"] = b"\x00" * 512 + b"\x11\x01"
+        parts["word/media/clip.mp4"] = b"\x00\x00\x00\x18ftypmp42"
+        document = parts["word/document.xml"].decode()
+        drawing = re.search(r"<w:drawing>.*?</w:drawing>", document).group(0)
+        blip = re.search(r'<a:blip r:embed="(\w+)"', drawing).group(0)
+        shown.append((blip, document.count(blip) + 1))
+        with_extensions = drawing.replace(
+            blip,
+            blip + '><a:extLst><a:ext uri="{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}">'
+            '<a14:imgProps><a14:imgLayer r:embed="rIdHd"/></a14:imgProps></a:ext>'
+            '<a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip r:embed="rIdSvg"/></a:ext>'
+            "</a:extLst></a:blip",
+            1,
+        ).replace("</a:blip/>", "</a:blip>")
+        _add(
+            parts,
+            "word/document.xml",
+            "<w:sectPr",
+            "<w:p><w:r>"
+            + with_extensions
+            + "</w:r></w:p><w:p><w:r>"
+            + re.sub(r'r:embed="\w+"', 'r:embed="rIdBroken"', drawing)
+            + "</w:r></w:p><w:p><w:r>"
+            + re.sub(r'r:embed="\w+"', 'r:embed="rIdPict"', drawing)
+            + "</w:r></w:p>",
+        )
+        _add(
+            parts,
+            "word/_rels/document.xml.rels",
+            "</Relationships>",
+            _rel("rIdSvg", "image", "media/logo.svg")
+            + '<Relationship Id="rIdHd" Type="http://schemas.microsoft.com/office/2007/relationships/hdphoto" Target="media/hdphoto1.wdp"/>'
+            + _rel("rIdBroken", "image", "media/broken.png")
+            + _rel("rIdPict", "image", "media/scan.pct")
+            + _rel("rIdClip", "video", "media/clip.mp4"),
+        )
+
+    package, removed = images.compress_office(
+        _package("exchange-plan.docx", edit), _picture
+    )
+    assert removed == 2
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        names = archive.namelist()
+        for gone in (
+            "word/media/logo.svg",
+            "word/media/hdphoto1.wdp",
+            "word/media/broken.png",
+            "word/media/scan.pct",
+        ):
+            assert gone not in names
+        assert "word/media/clip.mp4" in names
+        document = archive.read("word/document.xml").decode()
+        assert "svgBlip" not in document and "imgLayer" not in document
+        assert "extLst" not in document
+        # The picture's own blip stays in each drawing that showed it.
+        blip, count = shown[0]
+        assert document.count(blip) == count
+        assert "rIdBroken" not in document and "rIdPict" not in document
+
+
+def test_a_picture_past_its_time_is_removed_like_an_unreadable_one():
+    """Q347: the worker's per-picture call answers "unreadable" for a picture
+    past its 10 s or memory, and the picture goes, counted."""
+
+    def edit(parts):
+        parts["ppt/media/image1.png"] = _png((300, 200))
+
+    package, removed = images.compress_office(
+        _package("lecture.pptx", edit), lambda _data: "unreadable"
+    )
+    assert removed >= 1
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        assert "ppt/media/image1.png" not in archive.namelist()

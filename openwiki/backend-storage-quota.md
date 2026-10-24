@@ -171,7 +171,7 @@ free, **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
 elsewhere. `GET /api/source-upload-policy` returns the caller's own cap, which
 the dialog enforces before it asks for a ticket; an Office file or an image
 the browser compresses is checked after compression instead, in its transfer
-row. The material response
+row, and refused in the dialog only past 256 MB (Q345). The material response
 carries the reader's own editor caps, since what it adds is charged to it
 (M16), as `imageMaxBytes` and `audioMaxBytes`, which
 `uploadEditorAsset` checks the same way (Epo 2026-10-22); the server keeps
@@ -574,8 +574,9 @@ PowerPoint, LibreOffice and Google Docs imports open only PNG, JPEG and GIF
 inside DOCX/PPTX, so every other type (WebP, AVIF, BMP, …) is re-encoded
 whatever its size. A refused image leaves the document as it was and Capy
 shows the "image too large" notice (the runtime's `image-too-large` notice);
-one the browser cannot decode to re-encode (TIFF, HEIC or SVG in Chrome) is
-refused the same way with "This image type can't be inserted." (`image-type`).
+one no decoder reads (SVG, or a file the lazy HEIC, TIFF and JPEG 2000
+decoders reject) is refused the same way with "This image type can't be
+inserted." (`image-type`).
 DOCX picture watermarks take the same path. The collaboration server checks
 each picture an edit adds (Server checks below).
 A note's audio is capped by the uploader's per-file cap (10 MiB Free, 30 MiB
@@ -700,11 +701,14 @@ clones release the fence, so a clone cannot leave an orphan counter behind.
 Every image Capy stores passes one compressor first (Epo 2026-10-20, Q285,
 Q286): a note, quiz, flashcard or bank image, a picture inserted in the Word or
 PowerPoint editor, every picture inside an uploaded DOCX, PPTX or XLSX, and an
-image file uploaded as a source. The browser runs `src/lib/fitImage.ts`; the
-import worker applies the same rules to imported files
-(`pipeline/pipeline/ingest/images.py`, inside the decoder sandbox). Both are
-tested against the shared fixtures and expected results in
-`e2e/fixtures/files/images/manifest.json`.
+image file uploaded as a source. The browser runs `src/lib/fitImage.ts` (note,
+quiz, flashcard and bank images in a worker of their own,
+`src/lib/fitImageOffThread.ts`, Q348); the import worker applies the same
+rules to imported files (`pipeline/pipeline/ingest/images.py`, inside the
+decoder sandbox). Both are tested against the shared fixtures and expected
+results in `e2e/fixtures/files/images/manifest.json`. Servers keep only the
+formats they can measure (Q344) and check every image they store by its
+header (Server checks below).
 
 - The long side is resized within 2,400 px (`IMAGE_MAX_SIDE`, generated from
   the gateway's `imagecheck.MaxSide`) and encoded at quality 0.85. An editor
@@ -712,20 +716,26 @@ tested against the shared fixtures and expected results in
   WebP encoder). A picture for an Office file becomes JPEG when it is a photo
   and PNG when it is transparent or a flat graphic (opaque, at most 256
   colours on a nearest-neighbour sample at the output size), never WebP.
-- The original is kept when it needs no resize, fits the image cap, is a type
-  its target takes (PNG, JPEG or GIF in an Office file; PNG, JPEG, WebP, GIF or
-  AVIF as an editor image) and the encode is not smaller.
+- The original is kept when it needs no resize (both sides compared), fits
+  the image cap, is a type its target takes (PNG, JPEG or GIF in an Office
+  file; PNG, JPEG, WebP, GIF or AVIF as an editor image) and the encode is not
+  smaller.
 - A result over the cap is shrunk further: a lossy one at 2,000 px with the
   quality falling from 0.85 to 0.4 (an opaque PNG turns into JPEG), a
   transparent PNG at 2,000, 1,400 then 1,000 px. When nothing fits, the image
   is refused ("image too large").
 - An animated GIF is kept within 2,400 px and the cap and refused past either,
-  since a canvas keeps one frame.
+  since a canvas keeps one frame (Q331).
 - An image file uploaded as a source is limited by area instead (Epo
-  2026-10-24): kept as it is within 5 megapixels (`SOURCE_IMAGE_MAX_PIXELS`),
-  else resized to fit 5 megapixels (rounding down) with the Office format
-  rules, so a PNG photo is stored as `<stem>.jpg`. The per-file source cap
-  applies to the result.
+  2026-10-24): a PNG, JPEG, GIF or WebP within 5 megapixels
+  (`SOURCE_IMAGE_MAX_PIXELS`) is kept as it is, judged by its bytes; any other
+  format (HEIC/HEIF, TIFF, JPEG 2000, BMP...) is re-saved with the Office
+  format rules even when small (Q344), and a larger image is resized to fit 5
+  megapixels (rounding down) with the same rules, so a PNG photo is stored as
+  `<stem>.jpg`. An animated GIF past 5 megapixels is refused with the
+  megapixel message. The per-file source cap applies to the result.
+- An image no decoder reads is refused before upload (Q333), after the lazy
+  decoders below.
 
 The image cap counts the compressed bytes.
 
@@ -734,55 +744,94 @@ The image cap counts the compressed bytes.
 `src/lib/officeImages.ts`) unzips the package (at most 4,096 entries and
 256 MiB expanded), compresses every raster picture with the Office rules and
 the uploader's image cap, and zips it again; the transfer row reads
-"Compressing images…". A picture whose format changes is renamed
-(`image1.png` to `image1.jpeg`, with a numeric suffix on a clash), and its
-relationship targets and `[Content_Types].xml` entries follow. Only the
-compressed file is sent, stored, charged and downloaded (Q267). PDFs stay as
-uploaded.
+"Preparing images…". A pick over 256 MB is refused in the add dialog before
+any of this (Q345). A picture whose format changes is renamed (`image1.png` to
+`image1.jpeg`, with a numeric suffix on a clash), and its relationship targets
+and `[Content_Types].xml` entries follow. Only the compressed file is sent,
+stored, charged and downloaded (Q267), and only when it is within the per-file
+cap, else the transfer row refuses it (Q345). PDFs stay as uploaded.
 
-EMF and WMF pictures are removed with what shows them (Epo 2026-10-24): in
-DOCX the `w:drawing`, `w:pict` or `w:object` (with its OLE part), in PPTX the
-`p:pic`, the OLE `p:graphicFrame` or a slide background's `p:bg`, in XLSX the
-drawing anchor and the sheet's `oleObject`; a markup-compatibility wrapper
-around one goes whole. The count (a fallback copy is not counted twice)
-reaches a warning toast after the upload.
+The picture parts are the targets of image and HD Photo relationships and the
+`word/`, `ppt/` and `xl/media/` parts no other relationship targets (audio and
+video stay). Pictures nothing can show are removed with what shows them (Epo
+2026-10-24, Q337): EMF and WMF, SVG, HD Photo (`.wdp`), PICT, EPS and any
+other format the compressor does not try (it tries PNG, JPEG, GIF, BMP, TIFF
+and WebP), and a picture it cannot decode. What goes is, in DOCX, the
+`w:drawing`, `w:pict` or `w:object` (with its OLE part); in PPTX the `p:pic`,
+the OLE `p:graphicFrame` or a slide background's `p:bg`; in XLSX the drawing
+anchor and the sheet's `oleObject`; in a chart or SmartArt part the
+`a:blipFill`; a markup-compatibility wrapper around one goes whole. An SVG or
+HD Photo beside a picture's own blip (`asvg:svgBlip`, `a14:imgLayer`) goes
+with only its `a:ext`, the PNG or JPEG staying and the removal uncounted. EMF
+and WMF parts nothing refers to, and document thumbnails in those formats
+(`docProps/thumbnail.emf` with its package relationship, Q348), go too,
+uncounted. Then every relationship nothing refers to any more goes, and the
+parts nothing targets. The count (a fallback copy is not counted twice)
+reaches a warning toast after the upload: "N pictures Capy can't show were
+removed".
 
-**Imported files.** The import worker compresses an imported Office file the
-same way and removes its EMF and WMF pictures, in the decoder sandbox
-(`decode.py` mode `office`), before storing it; the completion carries the
-count (`source_import_jobs.removed_pictures`, read back as `removedPictures`),
-which shows the same toast. An imported image source over 5 megapixels is
-shrunk the same way and stored as `<stem>.jpg` or `<stem>.png`. The worker's
-Pillow has no HEIF decoder, and pillow-heif is not used since its wheels
-bundle x265 (GPL): an imported HEIC/HEIF within 5 megapixels is stored as it
-is, and one over it is refused with `image_unreadable`.
+**Imported files.** An import whose original file is over the per-file cap is
+refused before the import host downloads or compresses it (the import request
+and the download are bounded by it). The import worker compresses an imported
+Office file the same way, one sandboxed call per picture with a 10 s CPU limit
+inside the 768 MiB sandbox (Q347, `decode.py` mode `picture`); a picture past
+its limit, or one Pillow cannot decode, is removed and counted like any other.
+The completion carries the count (`source_import_jobs.removed_pictures`, read
+back as `removedPictures`), which shows the same toast; a completion that only
+resumes an earlier attempt's upload names none and keeps the first count
+(S10). An imported image source that is not a PNG, JPEG, GIF or WebP, or is
+over 5 megapixels, is re-saved the same way and stored as `<stem>.jpg` or
+`<stem>.png`: what Pillow reads directly, and HEIC/HEIF through libheif's
+decode-only `heif-dec` from the image's Debian packages (`libheif-examples`
+and `libheif-plugin-libde265`, LGPL-3.0, no x265 encoder; Q353), run in the
+same sandbox with the same 10 s limit, which converts a 12 MP iPhone photo to
+JPEG in about 0.4 s. One that still does not decode is refused with
+`image_unreadable`.
 
-**Image sources the browser cannot decode.** HEIC/HEIF, TIFF and JPEG 2000
-sources go through decoders loaded only when such a file is picked (Q294,
+**Image files the browser cannot decode.** HEIC/HEIF, TIFF and JPEG 2000 go
+through decoders loaded only when such a file is picked (Q294, Q333,
 `src/lib/decodeImage.ts`): libheif-js for HEIC/HEIF (LGPL-3.0, loaded at
-runtime as its own unmodified module, never bundled), utif2 for TIFF (CCITT
-and PackBits included) and pdf.js's OpenJPEG decoder for JPEG 2000. A file
-they cannot decode is refused before upload, suggesting JPEG or PNG (or
-Safari for HEIC).
+runtime as its own unmodified module, never bundled; the site serves its
+licence texts at `/licenses/libheif-js.txt`), utif2 for TIFF (CCITT and
+PackBits included) and pdf.js's OpenJPEG decoder for JPEG 2000. A file they
+cannot decode is refused before upload, suggesting JPEG or PNG.
 
 **Server checks.** The gateway reads only image headers and an Office file's
-zip directory (`server/internal/imagecheck`, wired in
-`server/internal/httpapi/image_checks.go` and `editor_assets.go`); the import
-worker runs the same check before storing (`pipeline/pipeline/ingest/image_check.py`).
-A refusal is final: a 400 whose first error is the code below, shown in the
+zip directory and part heads (`server/internal/imagecheck`, wired in
+`server/internal/httpapi/image_checks.go`, `editor_assets.go`, the agent's
+figures in `agent_figures.go`, chat decks in `internal_files.go` and bank
+figures in `server/internal/bank/assets.go`, Q348); the import worker runs the
+same check before storing (`pipeline/pipeline/ingest/image_check.py`). A
+refusal is final: a 400 whose first error is the code below, shown in the
 transfer row, with no retry.
 
-| Upload or import | Refused when                                                                 | Code                                          |
-| ---------------- | ---------------------------------------------------------------------------- | --------------------------------------------- |
-| Editor image     | over 2,400 px on the long side, or its header gives no size                  | `image_too_large`, `image_unreadable`         |
-| Office file      | an EMF or WMF part; a raster part over the image cap (inflated) or 2,400 px | `office_vector_image`, `office_image_too_large` |
-| Image source     | over 5 megapixels, or a raster header that gives no size                     | `source_image_too_large`, `image_unreadable`  |
+| Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Editor image     | not PNG, JPEG, WebP, GIF or AVIF by its bytes, its header gives no size, or over 2,400 px on either side                                        | `image_unreadable`, `image_too_large`                                                        |
+| Office file      | not a zip, over 4,096 entries, overlapping entries, a part that does not read, or past 256 MiB inflated in all                                    | `office_unreadable`                                                                          |
+| Office file      | an EMF or WMF part (by name or signature); an SVG part; a picture part that is not PNG, JPEG or GIF by its bytes, or whose header gives no size   | `office_vector_image`, `office_image_unsupported`                                            |
+| Office file      | a PNG, JPEG or GIF part over the image cap (counted as it inflates) or 2,400 px                                                                    | `office_image_too_large`                                                                     |
+| Image source     | not PNG, JPEG, GIF or WebP by its bytes, or its header gives no size; over 5 megapixels                                                           | `image_unreadable`, `source_image_too_large`                                                 |
 
-The editor image's byte cap stays the reservation's check. The collaboration
-server refuses a Word or PowerPoint edit that adds a picture over 2 MiB or
-2,400 px, or an EMF or WMF one, read from the header of the picture's data URL
-or bytes (`collaboration-rs/crates/sources/src/pictures.rs`, Q287); pictures
-the room already holds pass.
+A GIF's size is its logical screen widened to its first frame. The editor
+image's byte cap stays the reservation's check; a bank figure keeps its flat
+4 MiB cap. The collaboration server refuses a Word or PowerPoint edit that
+adds a picture that is not a PNG, JPEG or GIF, is over the plan image cap
+(the largest `plan_limits.image_max_bytes`, read with the room's load) or
+2,400 px, read from the decoded bytes of the picture's data URL or from
+`pendingMedia` (`collaboration-rs/crates/sources/src/pictures.rs`, Q287,
+Q344, Q348). A string counts as a picture's data URL only when it names an
+image type or base64 data, so text such as alt text starting with "Data:"
+passes; pictures the room already holds pass.
+
+**File names.** Upload, import and rename refuse a name with control
+characters, bidi override or isolate characters (U+202A to U+202E, U+2066 to
+U+2069, as Q313 for comments) or a path separator, and one past 120
+characters (`fieldlimits.ValidFileName`, Q346); the 120-character bound and
+the trimmed empty-name check existed on all three before. A rename that
+changes the file's extension is refused (`file_extension_changed`), since the
+extension names the file's kind and the checks its upload passed. Upload and
+rename answer 422 `invalid_name`; an import is rejected with `invalid_name`.
 
 ## Yjs storage growth
 

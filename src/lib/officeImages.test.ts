@@ -46,6 +46,8 @@ beforeAll(() =>
 
 const MB = 1024 * 1024;
 const EMBED = /r:embed="\w+"/;
+const BLIP = /<a:blip r:embed="\w+"/;
+const REMOVED_MARKUP = /svgBlip|imgLayer|extLst|rIdBroken|rIdPict/;
 const fixture = (name: string) =>
   unzipSync(
     new Uint8Array(
@@ -117,10 +119,12 @@ function docx() {
 }
 
 /** lecture.pptx with image1.png (slides 2 and 4) a large PNG photo,
- * image4.jpg a large JPEG, image2.png transparent, image3.png small, and an
- * EMF picture added to slide 1. */
+ * image4.jpg a large JPEG, image2.png transparent, every other picture small
+ * (the stub decoder reads only fakes), and an EMF picture added to slide 1. */
 function pptx() {
   const parts = fixture('lecture.pptx');
+  for (const path of Object.keys(parts))
+    if (path.startsWith('ppt/media/')) parts[path] = smallPng();
   parts['ppt/media/image1.png'] = photoPng();
   parts['ppt/media/image4.jpg'] = photoJpeg();
   parts['ppt/media/image2.png'] = alphaPng();
@@ -177,6 +181,24 @@ function xlsx() {
   );
   return parts;
 }
+
+/** exchange-plan.docx with its pictures small, so nothing compresses. */
+function smallDocx() {
+  const parts = fixture('exchange-plan.docx');
+  for (const name of ['image1', 'image2', 'image3'])
+    parts[`word/media/${name}.png`] = smallPng();
+  return parts;
+}
+const add = (
+  parts: Record<string, Uint8Array>,
+  path: string,
+  before: string,
+  text: string
+) => {
+  parts[path] = strToU8(
+    strFromU8(parts[path]).replace(before, `${text}${before}`)
+  );
+};
 
 const pack = (parts: Record<string, Uint8Array>, name: string) =>
   new File([zipSync(parts)], name);
@@ -291,15 +313,139 @@ describe('compressOfficeImages', () => {
   }, 60_000);
 
   it('returns the picked file itself when nothing changes', async () => {
-    const parts = fixture('exchange-plan.docx');
-    for (const name of ['image1', 'image2', 'image3'])
-      parts[`word/media/${name}.png`] = smallPng();
-    const picked = pack(parts, 'plan.docx');
+    const picked = pack(smallDocx(), 'plan.docx');
     expect(await compressOfficeImages(picked, 2 * MB)).toEqual({
       file: picked,
       removed: 0,
     });
   });
+
+  it('removes an EMF thumbnail, an EMF nothing refers to and an EMF chart fill, counting only the fill', async () => {
+    // Security regression (Q348, review B2, S7): the checks refuse these.
+    const parts = smallDocx();
+    parts['docProps/thumbnail.emf'] = EMF;
+    parts['word/media/stray.emf'] = EMF;
+    parts['word/media/fill.emf'] = EMF;
+    add(
+      parts,
+      '_rels/.rels',
+      '</Relationships>',
+      '<Relationship Id="rIdThumb" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail" Target="docProps/thumbnail.emf"/>'
+    );
+    add(
+      parts,
+      '[Content_Types].xml',
+      '</Types>',
+      '<Override PartName="/docProps/thumbnail.emf" ContentType="image/x-emf"/>'
+    );
+    add(
+      parts,
+      'word/charts/chart1.xml',
+      '</c:chartSpace>',
+      '<c:spPr><a:blipFill><a:blip r:embed="rIdFill"/></a:blipFill></c:spPr>'
+    );
+    add(
+      parts,
+      'word/charts/_rels/chart1.xml.rels',
+      '</Relationships>',
+      rel('rIdFill', 'image', '../media/fill.emf')
+    );
+    const { file, removed } = await compressOfficeImages(
+      pack(parts, 'plan.docx'),
+      2 * MB
+    );
+    expect(removed).toBe(1);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const out = unzipSync(bytes);
+    for (const gone of [
+      'docProps/thumbnail.emf',
+      'word/media/stray.emf',
+      'word/media/fill.emf',
+    ])
+      expect(gone in out).toBe(false);
+    expect(strFromU8(out['_rels/.rels'])).not.toContain('thumbnail');
+    expect(strFromU8(out['[Content_Types].xml'])).not.toContain(
+      'thumbnail.emf'
+    );
+    const chart = strFromU8(out['word/charts/chart1.xml']);
+    expect(chart).not.toContain('blipFill');
+    expect(chart).toContain('<c:spPr></c:spPr>');
+    await expect(seedOffice('docx', bytes)).resolves.toBeTruthy();
+  }, 60_000);
+
+  it('removes an SVG or HD Photo beside a picture uncounted, keeping the picture, and an undecodable or unknown picture counted', async () => {
+    // Security regression (Q337, Q344): servers keep only PNG, JPEG and GIF.
+    const parts = smallDocx();
+    parts['word/media/logo.svg'] = strToU8(
+      '<svg xmlns="http://www.w3.org/2000/svg"/>'
+    );
+    parts['word/media/hdphoto1.wdp'] = new Uint8Array([
+      0x49,
+      0x49,
+      0xbc,
+      0x01,
+      ...new Array(40).fill(0),
+    ]);
+    // A PNG signature the decoder cannot read.
+    parts['word/media/broken.png'] = smallPng().subarray(0, 12);
+    const pict = new Uint8Array(514);
+    pict.set([0x11, 0x01], 512);
+    parts['word/media/scan.pct'] = pict;
+    parts['word/media/clip.mp4'] = new Uint8Array([
+      0,
+      0,
+      0,
+      0x18,
+      ...strToU8('ftypmp42'),
+    ]);
+    const document = strFromU8(parts['word/document.xml']);
+    const drawing = document.slice(
+      document.indexOf('<w:drawing>'),
+      document.indexOf('</w:drawing>') + '</w:drawing>'.length
+    );
+    const blip = BLIP.exec(drawing)![0];
+    const shown = document.split(blip).length;
+    const withExtensions = drawing
+      .replace(
+        blip,
+        `${blip}><a:extLst><a:ext uri="{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}"><a14:imgProps><a14:imgLayer r:embed="rIdHd"/></a14:imgProps></a:ext>` +
+          '<a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip r:embed="rIdSvg"/></a:ext></a:extLst></a:blip'
+      )
+      .replace('</a:blip/>', '</a:blip>');
+    const showing = (id: string) =>
+      `<w:p><w:r>${drawing.replace(EMBED, `r:embed="${id}"`)}</w:r></w:p>`;
+    add(
+      parts,
+      'word/document.xml',
+      '<w:sectPr',
+      `<w:p><w:r>${withExtensions}</w:r></w:p>${showing('rIdBroken')}${showing('rIdPict')}`
+    );
+    add(
+      parts,
+      'word/_rels/document.xml.rels',
+      '</Relationships>',
+      rel('rIdSvg', 'image', 'media/logo.svg') +
+        '<Relationship Id="rIdHd" Type="http://schemas.microsoft.com/office/2007/relationships/hdphoto" Target="media/hdphoto1.wdp"/>' +
+        rel('rIdBroken', 'image', 'media/broken.png') +
+        rel('rIdPict', 'image', 'media/scan.pct') +
+        rel('rIdClip', 'video', 'media/clip.mp4')
+    );
+    const { file, removed } = await compressOfficeImages(
+      pack(parts, 'plan.docx'),
+      2 * MB
+    );
+    expect(removed).toBe(2);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const out = unzipSync(bytes);
+    for (const gone of ['logo.svg', 'hdphoto1.wdp', 'broken.png', 'scan.pct'])
+      expect(`word/media/${gone}` in out).toBe(false);
+    expect('word/media/clip.mp4' in out).toBe(true);
+    const result = strFromU8(out['word/document.xml']);
+    expect(result).not.toMatch(REMOVED_MARKUP);
+    // The picture's own blip stays in each drawing that showed it.
+    expect(result.split(blip).length).toBe(shown + 1);
+    await expect(seedOffice('docx', bytes)).resolves.toBeTruthy();
+  }, 60_000);
 });
 
 describe('removePictures', () => {

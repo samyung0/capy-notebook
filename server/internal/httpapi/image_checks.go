@@ -28,6 +28,16 @@ func checkSourceImages(name, kind string, imageMaxBytes int64, spool io.ReaderAt
 	return nil
 }
 
+// invalidFileName answers a name with a control, bidi or path separator
+// character, or past the length (Q346).
+func invalidFileName() error {
+	return &huma.ErrorModel{
+		Status: http.StatusUnprocessableEntity, Title: http.StatusText(http.StatusUnprocessableEntity),
+		Detail: "file names may not hold control, bidi or path separator characters",
+		Errors: []*huma.ErrorDetail{{Message: "invalid_name"}},
+	}
+}
+
 // imageRefusal answers an image check's refusal as a 400 with its code.
 func imageRefusal(err error) error {
 	var refusal *imagecheck.Refusal

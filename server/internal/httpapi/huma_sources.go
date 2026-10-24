@@ -369,6 +369,9 @@ func (a *api) checkSourceUpload(
 		utf8.RuneCountInString(string(body.ChapterName)) > fieldlimits.ChapterName {
 		return "", "", huma.Error422UnprocessableEntity("validation failed")
 	}
+	if !fieldlimits.ValidFileName(string(body.Name)) {
+		return "", "", invalidFileName()
+	}
 	if err := a.openSourceBatch(ctx, wsID, "upload", body.BatchID, body.BatchTotal); err != nil {
 		return "", "", err
 	}
@@ -661,7 +664,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			continue
 		}
 		meta.Name = strings.TrimSpace(meta.Name)
-		if meta.Name == "" || utf8.RuneCountInString(meta.Name) > fieldlimits.FileName {
+		if !fieldlimits.ValidFileName(meta.Name) {
 			rejected = append(rejected, apimodel.SourceImportRejected{
 				FileID: ref.ID,
 				Code:   "invalid_name",

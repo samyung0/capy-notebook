@@ -30,8 +30,10 @@ type importCompleteReq struct {
 	// (Epo 2026-10-24): the stored name and type.
 	Name        string `json:"name"`
 	ContentType string `json:"contentType"`
-	// The EMF and WMF pictures it removed from an Office file.
-	RemovedPictures int `json:"removedPictures"`
+	// The pictures it removed from an Office file; absent when the attempt
+	// only completes an upload an earlier one stored (resumeComplete), which
+	// keeps that attempt's count (review S10).
+	RemovedPictures *int `json:"removedPictures"`
 }
 
 type importFailureReq struct {
@@ -317,7 +319,7 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 	}
 	var req importCompleteReq
 	if err := decode(r, &req); err != nil || req.JobID == "" ||
-		req.AttemptToken == "" || req.ActualSize < 0 || req.RemovedPictures < 0 {
+		req.AttemptToken == "" || req.ActualSize < 0 || (req.RemovedPictures != nil && *req.RemovedPictures < 0) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid completion"})
 		return
 	}

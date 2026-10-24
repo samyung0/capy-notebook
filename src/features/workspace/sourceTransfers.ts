@@ -177,7 +177,10 @@ export function sourceImportFailureReason(code: string) {
     case 'office_image_too_large':
       return m.error_office_image_too_large_title();
     case 'office_vector_image':
-      return m.error_office_vector_image_title();
+    case 'office_image_unsupported':
+      return m.error_office_picture_unsupported_title();
+    case 'office_unreadable':
+      return m.error_office_unreadable_title();
     case 'source_image_too_large':
       return m.error_source_image_too_large_title();
     case 'image_unreadable':
@@ -336,12 +339,15 @@ export function startSourceTransfer(start: StartTransfer) {
     if (!deferStorageRefusal(error)) toastFailure(name, reason);
   }
 
-  /** Tells the user how many EMF and WMF pictures left a file (Epo
-   * 2026-10-24). */
+  /** Tells the user how many pictures nothing can show left a file (Epo
+   * 2026-10-24, Q337). */
   function picturesRemovedToast(name: string, count: number) {
     if (count > 0)
       userToast({
-        description: m.source_pictures_removed_body({ count }),
+        description:
+          count === 1
+            ? m.source_pictures_removed_body_one()
+            : m.source_pictures_removed_body({ count }),
         title: m.source_pictures_removed({ name }),
         variant: 'warning',
       });

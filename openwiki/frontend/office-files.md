@@ -1035,8 +1035,9 @@ compresses it within 2,400 px and the payer's plan image cap, which the edit
 fails with the file error instead of loading), as JPEG or PNG
 (`fitImage` with `office`;
 [backend-storage-quota.md](../backend-storage-quota.md#image-compression-and-checks)).
-The collaboration server refuses an edit that adds a picture past 2 MiB or
-2,400 px, or an EMF or WMF one, so only a client that skipped this meets it.
+The collaboration server refuses an edit that adds a picture past the plan
+image cap or 2,400 px, or one that is not a PNG, JPEG or GIF by its bytes, so
+only a client that skipped this meets it.
 It also shrinks one
 into the room's growth budget: the edit read's `growthBudgetBytes` (Go's
 `SourceGrowthBudget`: the export cap (the largest plan source file) less the

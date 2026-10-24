@@ -51,12 +51,34 @@ export class ImageTooLargeError extends CopyError {
   }
 }
 
-/** A picked image the browser cannot decode (TIFF, HEIC or SVG in Chrome),
- * so it cannot be shrunk or re-encoded. */
+/** A picked image no decoder reads (SVG, PSD, a corrupt file), so it cannot
+ * be shrunk or re-encoded. */
 export class ImageUnreadableError extends CopyError {
   constructor() {
     super(m.image_unreadable());
   }
+}
+
+/** An animated GIF source past the pixel limit: a canvas keeps one frame, so
+ * it cannot be shrunk. */
+export class ImageTooManyPixelsError extends CopyError {
+  constructor() {
+    super(m.error_source_image_too_large_title());
+  }
+}
+
+/** A source's image type by its first bytes when it is one the server
+ * measures and keeps (Q344): PNG, JPEG, GIF or WebP. A source of any other
+ * format is re-saved even within the pixel limit. */
+function sourceType(head: Uint8Array) {
+  const at = (offset: number, ...values: number[]) =>
+    values.every((value, i) => head[offset + i] === value);
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'image/png';
+  if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif';
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50))
+    return 'image/webp';
+  return null;
 }
 
 /** True when a GIF holds more than one frame: each frame's graphic control
@@ -112,19 +134,19 @@ export function pixelTraits(rgba: Uint8ClampedArray) {
   return { alpha: false, flat };
 }
 
-/** The picked image as a bitmap. A source the browser cannot read
- * (HEIC/HEIF, TIFF, JPEG 2000) goes through a decoder loaded for it (Q294). */
-async function decode(file: File, source: boolean) {
+/** The picked image as a bitmap. One the browser cannot read (HEIC/HEIF,
+ * TIFF, JPEG 2000) goes through a decoder loaded for it (Q294, Q333). */
+async function decode(file: File) {
   const bitmap = await createImageBitmap(file).catch(() => null);
   if (bitmap) return bitmap;
-  const pixels = source ? await decodeSource(file) : null;
+  const pixels = await decodeLazily(file);
   if (!pixels) throw new ImageUnreadableError();
   return createImageBitmap(
     new ImageData(pixels.data, pixels.width, pixels.height)
   );
 }
 
-async function decodeSource(file: File) {
+async function decodeLazily(file: File) {
   const { decodeUncommon } = await import('@/lib/decodeImage');
   try {
     return await decodeUncommon(file);
@@ -144,9 +166,11 @@ async function decodeSource(file: File) {
  * side and the cap and refused past either, since a canvas keeps one frame.
  * Throws an ImageTooLargeError when nothing fits, an ImageUnreadableError
  * when the image cannot be decoded. With `maxPixels` (an image uploaded as a
- * source, Epo 2026-10-24) the area is the limit instead of the side, an image
- * within it is kept as it is, and a larger one takes the Office rules. The
- * import worker applies the same rules (pipeline/pipeline/ingest/images.py). */
+ * source, Epo 2026-10-24) the area is the limit instead of the side, a PNG,
+ * JPEG, GIF or WebP within it is kept as it is (Q344), anything else takes
+ * the Office rules, and an animated GIF past it throws an
+ * ImageTooManyPixelsError. The import worker applies the same rules
+ * (pipeline/pipeline/ingest/images.py). */
 export async function fitImage(
   file: File,
   maxBytes: number,
@@ -155,19 +179,27 @@ export async function fitImage(
     office = maxPixels > 0,
   }: { maxPixels?: number; office?: boolean } = {}
 ): Promise<File> {
-  const bitmap = await decode(file, maxPixels > 0);
+  const bitmap = await decode(file);
   try {
     const target = maxPixels
       ? fitArea(bitmap.width, bitmap.height, maxPixels)
       : fitSize(bitmap.width, bitmap.height, IMAGE_MAX_SIDE);
-    const resized = target.width !== bitmap.width;
-    if (maxPixels && !resized) return file;
+    const resized =
+      target.width !== bitmap.width || target.height !== bitmap.height;
+    if (
+      maxPixels &&
+      !resized &&
+      sourceType(new Uint8Array(await file.slice(0, 12).arrayBuffer()))
+    )
+      return file;
     if (
       file.type === 'image/gif' &&
       isAnimatedGif(new Uint8Array(await file.arrayBuffer()))
     ) {
       if (!resized && file.size <= maxBytes) return file;
-      throw new ImageTooLargeError(maxBytes);
+      throw maxPixels && resized
+        ? new ImageTooManyPixelsError()
+        : new ImageTooLargeError(maxBytes);
     }
     const draw = ({ height, width } = target, smooth = true) => {
       const canvas = new OffscreenCanvas(width, height);

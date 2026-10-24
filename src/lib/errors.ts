@@ -273,14 +273,31 @@ function codeCopy(code: string): ErrorDescription | null {
         title: m.error_office_image_too_large_title(),
       };
     case 'office_vector_image':
+    case 'office_image_unsupported':
       return {
-        description: m.error_office_vector_image_body(),
-        title: m.error_office_vector_image_title(),
+        description: m.error_office_picture_unsupported_body(),
+        title: m.error_office_picture_unsupported_title(),
+      };
+    case 'office_unreadable':
+      return {
+        description: m.error_office_unreadable_body(),
+        title: m.error_office_unreadable_title(),
       };
     case 'source_image_too_large':
       return {
         description: m.error_source_image_too_large_body(),
         title: m.error_source_image_too_large_title(),
+      };
+    // File names on upload and rename (Q346).
+    case 'invalid_name':
+      return {
+        description: m.error_invalid_name_body(),
+        title: m.error_invalid_name_title(),
+      };
+    case 'file_extension_changed':
+      return {
+        description: m.error_file_extension_changed_body(),
+        title: m.error_file_extension_changed_title(),
       };
     default:
       return null;
