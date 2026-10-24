@@ -68,9 +68,10 @@ type Config struct {
 	// StripeSession counts the Stripe Checkout and portal sessions one user's
 	// requests create; a reused open Checkout takes none.
 	StripeSession Rule
-	// SharePage applies, per share token, to the site Worker's reads of
-	// /api/public/ that carry a valid ShareReadHeader, instead of the
-	// anonymous per-address bucket every Worker read would otherwise share.
+	// SharePage applies per visitor and share token to every GET or HEAD
+	// under /api/public/{kind}/{token}/, from a browser or through the site
+	// Worker (whose ShareReadHeader signs the visitor's address), instead of
+	// the base bucket.
 	SharePage Rule
 	// ShareReadSecret is SHARE_LINK_SECRET, which signs ShareReadHeader.
 	// Empty sends every signed-out read to the anonymous bucket.
@@ -96,9 +97,8 @@ func DefaultConfig() Config {
 		Thumbnail:     Rule{Limit: 60, Window: time.Hour},
 		Integration:   Rule{Limit: 30, Window: time.Minute},
 		StripeSession: Rule{Limit: 10, Window: time.Hour},
-		// The signed-in base rate, so a share link buys no more API reads
-		// than its owner's account; it covers a cold page with a few hundred
-		// images, or a class opening one page at once.
+		// Per visitor and shared page (Epo 2026-10-24, Q244): a cold page
+		// with a few hundred images.
 		SharePage: Rule{Limit: 300, Window: time.Minute},
 	}
 }

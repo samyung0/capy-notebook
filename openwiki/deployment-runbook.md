@@ -1155,13 +1155,15 @@ blocks for 10 s, and the zone gets one rule. The one rule covers
 `/api/public/` on every host of both environments: 100 requests in 10 s from
 one address, then blocked for 10 s. `/api/public/` is the costliest path a
 signed-out caller reaches (grading calls Jev; a public note read is up to
-about 2 MiB). The gateway already holds a signed-out address to 60 a minute,
-so the rule fires only on traffic Go would refuse anyway and never on a class
-behind one NAT before Go's limit; it stops floods before the tunnel and
-Redis. The site Worker's own reads of `/api/public/` reach the origin without
+about 2 MiB). The gateway holds a signed-out address to 60 a minute on
+signed-out grading and to 300 a minute per shared page on share reads (Q244),
+so one address reading several shared pages at once can pass Go and still
+meet this rule; its value is still open with Epo. It stops floods before the
+tunnel and Redis. The site Worker's own reads of `/api/public/` reach the origin without
 passing the zone's rate-limit phase (a same-zone subrequest, the Worker has no
 `global_fetch_strictly_public`), so they are not counted against one address;
-Go counts them per share token instead
+the Worker signs the visitor's address into each read and Go counts it per
+visitor and shared page
 ([observability-metering.md](observability-metering.md#6-rate-limiting)).
 Everything else has no edge limit. A production-only or wider limit needs the
 Pro plan (host in the expression, blocks up to an hour, two rules). The rule

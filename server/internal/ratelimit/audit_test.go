@@ -94,75 +94,97 @@ func TestAnonymousBucketCountsIPv6By56(t *testing.T) {
 	from := func(ip string) func(*http.Request) {
 		return func(r *http.Request) { r.Header.Set("CF-Connecting-IP", ip) }
 	}
-	if rec := serve(handler, http.MethodGet, "/api/public/notes/n", from("2001:db8:7:900::1")); rec.Code != http.StatusNoContent {
+	if rec := serve(handler, http.MethodGet, "/api/me", from("2001:db8:7:900::1")); rec.Code != http.StatusNoContent {
 		t.Fatalf("first: status %d", rec.Code)
 	}
-	if rec := serve(handler, http.MethodGet, "/api/public/notes/n", from("2001:db8:7:9ff:ffff::2")); rec.Code != http.StatusTooManyRequests {
+	if rec := serve(handler, http.MethodGet, "/api/me", from("2001:db8:7:9ff:ffff::2")); rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("same /56: status %d, want 429", rec.Code)
 	}
 }
 
-func shareRead(secret []byte, path string, at time.Time) string {
+func shareRead(secret []byte, address, path string, at time.Time) string {
 	stamp := strconv.FormatInt(at.Unix(), 10)
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte("share-read:v1:" + stamp + ":" + path))
-	return stamp + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	mac.Write([]byte("share-read:v2:" + stamp + ":" + address + ":" + path))
+	return stamp + "." + address + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// TestShareReadsHaveTheirOwnBucketPerToken (security regression: rate-limit
-// audit H7). The site Worker's signed reads skip the anonymous bucket they
-// would all share and count per share token; an unsigned, forged or stale
-// header counts as an anonymous read.
-func TestShareReadsHaveTheirOwnBucketPerToken(t *testing.T) {
-	const pathA, pathB = "/api/public/notes/mat_a.sigA", "/api/public/workspaces/ws_b.sigB/summary"
-	rdb := testRedis(t, "share:mat_a.sigA", "share:ws_b.sigB", "ip:base:ip:192.0.2.80")
+// TestShareReadsCountPerVisitorAndPage (security regression: rate-limit audit
+// H7, Q244). Share reads count per visitor and shared page together: one
+// visitor on one page stops at the page budget, while another visitor on that
+// page, or the same visitor on another page, has their own; the site Worker's
+// reads count by the visitor address they sign, and a forged, stale,
+// other-path or unsigned claim counts by the request's own address.
+func TestShareReadsCountPerVisitorAndPage(t *testing.T) {
+	const pageA, pageB = "/api/public/notes/mat_a.sigA", "/api/public/workspaces/ws_b.sigB/summary"
+	const visitor, other, worker = "198.51.100.7", "198.51.100.8", "192.0.2.80"
+	rdb := testRedis(t,
+		"share:ip:"+visitor+":mat_a.sigA", "share:ip:"+visitor+":ws_b.sigB",
+		"share:ip:"+other+":mat_a.sigA", "share:user:u_reader:mat_a.sigA",
+		"share:ip:192.0.2.81:mat_a.sigA", "share:ip:192.0.2.82:mat_a.sigA",
+		"share:ip:192.0.2.83:mat_a.sigA", "share:ip:192.0.2.84:mat_a.sigA")
 	secret := []byte("share-link-secret-for-tests-0123456789")
-	handler := passthrough(New(rdb, Config{
-		Anonymous:       Rule{Limit: 1, Window: time.Hour},
+	limiter := New(rdb, Config{
+		Anonymous:       Rule{Limit: 1000, Window: time.Hour},
+		Authenticated:   Rule{Limit: 1000, Window: time.Hour},
 		SharePage:       Rule{Limit: 2, Window: time.Hour},
 		ShareReadSecret: secret,
-	}), "")
-	get := func(path, header string) int {
+	})
+	anonymous, signedIn := passthrough(limiter, ""), passthrough(limiter, "u_reader")
+	get := func(handler http.Handler, path, from, header string) int {
 		return serve(handler, http.MethodGet, path, func(r *http.Request) {
-			r.Header.Set("CF-Connecting-IP", "192.0.2.80")
+			r.Header.Set("CF-Connecting-IP", from)
 			if header != "" {
 				r.Header.Set(ShareReadHeader, header)
 			}
 		}).Code
 	}
 	now := time.Now()
-	if code := get(pathA, ""); code != http.StatusNoContent {
-		t.Fatalf("anonymous read: %d", code)
+	// The visitor's direct read and a Worker read signing their address
+	// share one budget for page A.
+	if code := get(anonymous, pageA, visitor, ""); code != http.StatusNoContent {
+		t.Fatalf("direct read of A: %d", code)
 	}
-	for i := range 2 {
-		if code := get(pathA, shareRead(secret, pathA, now)); code != http.StatusNoContent {
-			t.Fatalf("signed read %d of A: %d", i+1, code)
-		}
+	if code := get(anonymous, pageA, worker, shareRead(secret, visitor, pageA, now)); code != http.StatusNoContent {
+		t.Fatalf("Worker read of A for the visitor: %d", code)
 	}
-	if code := get(pathA, shareRead(secret, pathA, now)); code != http.StatusTooManyRequests {
-		t.Fatalf("third signed read of A: %d, want 429", code)
+	if code := get(anonymous, pageA, worker, shareRead(secret, visitor, pageA, now)); code != http.StatusTooManyRequests {
+		t.Fatalf("third read of A by the visitor: %d, want 429", code)
 	}
-	if code := get(pathB, shareRead(secret, pathB, now)); code != http.StatusNoContent {
-		t.Fatalf("signed read of B: %d", code)
+	if code := get(anonymous, pageB, worker, shareRead(secret, visitor, pageB, now)); code != http.StatusNoContent {
+		t.Fatalf("the visitor on page B: %d", code)
 	}
-	for name, header := range map[string]string{
-		"other path": shareRead(secret, pathA, now),
-		"stale":      shareRead(secret, pathB, now.Add(-2*time.Minute)),
-		"forged":     shareRead([]byte("another-secret-of-thirty-two-chars!!"), pathB, now),
+	if code := get(anonymous, pageA, worker, shareRead(secret, other, pageA, now)); code != http.StatusNoContent {
+		t.Fatalf("another visitor on page A: %d", code)
+	}
+	if code := get(signedIn, pageA, visitor, ""); code != http.StatusNoContent {
+		t.Fatalf("a signed-in reader from the visitor's address: %d", code)
+	}
+	// A claim that does not verify counts by the request's own address, not
+	// the visitor's spent budget for page A.
+	for i, claim := range []struct{ name, header string }{
+		{"other path", shareRead(secret, visitor, pageB, now)},
+		{"stale", shareRead(secret, visitor, pageA, now.Add(-2*time.Minute))},
+		{"forged", shareRead([]byte("another-secret-of-thirty-two-chars!!"), visitor, pageA, now)},
+		{"unsigned", ""},
 	} {
-		if code := get(pathB, header); code != http.StatusTooManyRequests {
-			t.Errorf("%s header: %d, want the spent anonymous bucket's 429", name, code)
+		if code := get(anonymous, pageA, "192.0.2."+strconv.Itoa(81+i), claim.header); code != http.StatusNoContent {
+			t.Errorf("%s claim: %d, want a read counted by its own address", claim.name, code)
 		}
+	}
+	get(anonymous, pageA, "192.0.2.81", "")
+	if code := get(anonymous, pageA, "192.0.2.81", ""); code != http.StatusTooManyRequests {
+		t.Fatalf("third read from the untrusted address: %d, want 429", code)
 	}
 }
 
 // The site Worker signs this same vector (workers/site/shareRead.test.ts).
 func TestShareReadHeaderMatchesTheWorker(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/public/quizzes/mat_0123456789.abc", nil)
-	r.Header.Set(ShareReadHeader, "1700000000.MHKSRYRDFEWQHrCPoR1XqkymJTrqaynfXU9zZNXv9Bs")
-	token, ok := shareReadToken(r, []byte("dev-share-link-secret-0123456789abcdef"), time.Unix(1700000000, 0))
-	if !ok || token != "mat_0123456789.abc" {
-		t.Fatalf("token %q (%v), want the Worker's header to verify", token, ok)
+	r.Header.Set(ShareReadHeader, "1700000000.2001:db8::1.6KvJLOKm7yRWTgnp0XDZW69jC4M7VfcFAO5DCi8NrNg")
+	address, ok := signedVisitor(r, []byte("dev-share-link-secret-0123456789abcdef"), time.Unix(1700000000, 0))
+	if !ok || address != "2001:db8::1" {
+		t.Fatalf("address %q (%v), want the Worker's header to verify", address, ok)
 	}
 }
 

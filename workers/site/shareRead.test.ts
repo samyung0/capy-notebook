@@ -9,8 +9,11 @@ const env = {
   ASSETS: { fetch: vi.fn(async () => new Response('<html></html>')) },
   SHARE_LINK_SECRET: DEV_SHARE_LINK_SECRET,
 };
+const VISITOR = '2001:db8::1';
 const request = (path: string) =>
-  new Request(`https://app.example.test${path}`);
+  new Request(`https://app.example.test${path}`, {
+    headers: { 'CF-Connecting-IP': VISITOR },
+  });
 
 // security regression: rate-limit audit H7
 describe('share-read header', () => {
@@ -21,13 +24,16 @@ describe('share-read header', () => {
     expect(
       await shareReadHeader(
         DEV_SHARE_LINK_SECRET,
+        VISITOR,
         '/api/public/quizzes/mat_0123456789.abc',
         1_700_000_000_000
       )
-    ).toBe('1700000000.MHKSRYRDFEWQHrCPoR1XqkymJTrqaynfXU9zZNXv9Bs');
+    ).toBe(
+      '1700000000.2001:db8::1.6KvJLOKm7yRWTgnp0XDZW69jC4M7VfcFAO5DCi8NrNg'
+    );
   });
 
-  it('rides on every Worker read of /api/public/', async () => {
+  it('rides on every Worker read of /api/public/ with the visitor address', async () => {
     const material = await shareToken(DEV_SHARE_LINK_SECRET, 'mat_0123456789');
     const workspace = await shareToken(DEV_SHARE_LINK_SECRET, 'ws_0123456789');
     const reads: Request[] = [];
@@ -49,7 +55,12 @@ describe('share-read header', () => {
       expect(pathname.startsWith('/api/public/')).toBe(true);
       expect(Math.abs(Date.now() / 1000 - stamp)).toBeLessThan(60);
       expect(header).toBe(
-        await shareReadHeader(DEV_SHARE_LINK_SECRET, pathname, stamp * 1000)
+        await shareReadHeader(
+          DEV_SHARE_LINK_SECRET,
+          VISITOR,
+          pathname,
+          stamp * 1000
+        )
       );
     }
   });

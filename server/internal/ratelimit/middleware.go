@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"math"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -138,27 +139,42 @@ func classify(method, path string) class {
 }
 
 // ShareReadHeader is the site Worker's proof on its reads of /api/public/:
-// "{unix seconds}.{base64url HMAC-SHA256 with SHARE_LINK_SECRET over
-// "share-read:v1:{unix seconds}:{path}"}" (workers/site/public.ts).
+// "{unix seconds}.{visitor address}.{base64url HMAC-SHA256 with
+// SHARE_LINK_SECRET over "share-read:v2:{unix seconds}:{address}:{path}"}"
+// (workers/site/shareRead.ts). The address is the visitor's CF-Connecting-IP,
+// which a same-zone Worker subrequest does not carry on its own.
 const ShareReadHeader = "X-Capy-Share-Read"
 
 // shareReadWindow is how far a header's time may be from the gateway's: a
 // header is good for one path and about a minute.
 const shareReadWindow = time.Minute
 
-// shareReadToken returns the share token of a GET or HEAD under /api/public/
-// that carries a valid ShareReadHeader.
-func shareReadToken(r *http.Request, secret []byte, now time.Time) (string, bool) {
-	if len(secret) == 0 || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+// publicShareToken returns the share token of a GET or HEAD read under
+// /api/public/{kind}/{token}/.
+func publicShareToken(r *http.Request) (string, bool) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return "", false
 	}
-	// /api/public/{kind}/{token}/...
 	parts := strings.SplitN(r.URL.Path, "/", 6)
 	if len(parts) < 5 || parts[1] != "api" || parts[2] != "public" || parts[4] == "" {
 		return "", false
 	}
-	stamp, mac, ok := strings.Cut(r.Header.Get(ShareReadHeader), ".")
-	if !ok {
+	return parts[4], true
+}
+
+// signedVisitor returns the visitor address a valid ShareReadHeader signs for
+// this path, within shareReadWindow of now.
+func signedVisitor(r *http.Request, secret []byte, now time.Time) (string, bool) {
+	if len(secret) == 0 {
+		return "", false
+	}
+	stamp, rest, ok := strings.Cut(r.Header.Get(ShareReadHeader), ".")
+	dot := strings.LastIndex(rest, ".")
+	if !ok || dot < 0 {
+		return "", false
+	}
+	address, mac := rest[:dot], rest[dot+1:]
+	if _, err := netip.ParseAddr(address); err != nil {
 		return "", false
 	}
 	seconds, err := strconv.ParseInt(stamp, 10, 64)
@@ -169,12 +185,12 @@ func shareReadToken(r *http.Request, secret []byte, now time.Time) (string, bool
 		return "", false
 	}
 	sum := hmac.New(sha256.New, secret)
-	sum.Write([]byte("share-read:v1:" + stamp + ":" + r.URL.Path))
+	sum.Write([]byte("share-read:v2:" + stamp + ":" + address + ":" + r.URL.Path))
 	want := base64.RawURLEncoding.EncodeToString(sum.Sum(nil))
 	if !hmac.Equal([]byte(want), []byte(mac)) {
 		return "", false
 	}
-	return parts[4], true
+	return address, true
 }
 
 // Middleware applies per-user (or per-address when anonymous) limits. It must
@@ -194,15 +210,26 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 			}
 
 			userID := userFunc(r)
-			// The site Worker's share reads carry no visitor address; each
-			// share link gets its own bucket instead of one shared by all.
-			if userID == "" {
-				if token, ok := shareReadToken(r, l.cfg.ShareReadSecret, time.Now()); ok {
-					if l.admitOrRefuse(w, r, []bucket{{key: "share:" + token, rule: l.cfg.SharePage, code: "rate_limited"}}, time.Time{}) {
-						next.ServeHTTP(w, r)
+			// Share reads count per visitor and shared page together (Epo
+			// 2026-10-24, Q244): a signed-in visitor by user, a signed-out one
+			// by address (IPv6 by its /56), the site Worker's reads by the
+			// visitor address they sign; an unsigned or forged claim counts by
+			// the request's own address. The bucket replaces the base one, so
+			// a read is charged once.
+			if token, ok := publicShareToken(r); ok {
+				visitor := "user:" + userID
+				if userID == "" {
+					address, signed := signedVisitor(r, l.cfg.ShareReadSecret, l.clock().Now())
+					if !signed {
+						address = obs.ClientIP(r)
 					}
-					return
+					visitor = "ip:" + obs.FoldAddress(address)
 				}
+				share := bucket{key: "share:" + visitor + ":" + token, rule: l.cfg.SharePage, code: "rate_limited"}
+				if l.admitOrRefuse(w, r, []bucket{share}, time.Time{}) {
+					next.ServeHTTP(w, r)
+				}
+				return
 			}
 			subject, scope := "ip:"+obs.ClientAddress(r), "ip"
 			base := l.cfg.Anonymous

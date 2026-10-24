@@ -720,7 +720,8 @@ carries the visitor's own address and takes the anonymous class (60/minute
 per address) rather than the AI class, whose 15/minute burst would stop a
 classroom sharing one IP. The site Worker's own reads of `/api/public/`
 carry no visitor address (a same-zone Worker subrequest reaches the origin
-without one); they are signed and counted per share token (§6).
+without one); they sign the visitor's address and count per visitor and
+shared page (§6).
 
 Ingest and captioning are pinned onto the job at enqueue (`ingestJobPayload`),
 because their defaults are hot-reloadable and a queued job may outlive one.
@@ -1516,7 +1517,7 @@ The rate-limit audit (Epo 2026-10-24) added these classes:
 | --- | --- | --- | --- |
 | Integration | `/api/integrations*` and `PATCH /api/me` (each reads Clerk, whose Backend API limit the whole instance shares) | 30/minute | user |
 | Stripe session | subscription Checkout, top-up, card setup, portal, portal cancel (`checkout_limit`) | 10/hour | user |
-| Share page | the site Worker's signed reads of `/api/public/` | 300/minute | share token |
+| Share page | every GET or HEAD under `/api/public/{kind}/{token}/`, direct or through the site Worker (instead of the base class) | 300/minute (Epo 2026-10-24, Q244) | visitor and share token |
 
 Question-bank comments have no class: they are stored and emailed as a
 digest every 4 hours ([question-bank.md](question-bank.md#comments)).
@@ -1532,13 +1533,21 @@ status read; a completed or expired page is dropped and a new one made), and
 invoice lists are cached for 60 s. Every top-up or card click takes the
 Stripe session bucket, the reused ones included.
 
-**Signed share reads.** The site Worker signs each read of `/api/public/` with
-`X-Capy-Share-Read: {unix}.{base64url HMAC-SHA256(SHARE_LINK_SECRET,
-"share-read:v1:{unix}:{path}")}` (`workers/site/shareRead.ts`). On a GET or
-HEAD whose header verifies within a minute of the gateway's clock, the
-request takes the share-page class keyed by its share token instead of the
-anonymous class keyed by address (`ratelimit.shareReadToken`). An unsigned,
-forged or stale header is an anonymous read. Workers Cache entries are
+**Share reads per visitor and page** (Epo 2026-10-24, Q244). A GET or HEAD
+under `/api/public/{kind}/{token}/` takes one bucket keyed by visitor and share
+token together, 300 a minute, in place of the base class (one charge per
+read): a signed-in visitor by user id, a signed-out one by address (IPv6 by
+its /56). The site Worker's reads reach the origin without the visitor's
+address, so the Worker signs it: `X-Capy-Share-Read: {unix}.{address}.
+{base64url HMAC-SHA256(SHARE_LINK_SECRET,
+"share-read:v2:{unix}:{address}:{path}")}`, the address being the visitor's
+`CF-Connecting-IP` (`workers/site/shareRead.ts`). Go trusts the address only
+when the header verifies for that path within a minute of its clock and the
+address parses as an IP (`ratelimit.signedVisitor`); an unsigned, forged,
+stale or other-path claim counts by the request's own address. A visitor's
+direct read and the Worker's read for them share the bucket. Signed-out
+grading posts keep the anonymous class and their daily caps. Shared page
+views get no Cloudflare challenge for now (Q272). Workers Cache entries are
 unchanged (each query string keeps its own).
 
 Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its

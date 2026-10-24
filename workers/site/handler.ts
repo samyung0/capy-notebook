@@ -1,7 +1,11 @@
 import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
 import type { ShareKind } from '../../src/share/state';
 import { handlePublicRequest, SHARED_CACHE } from './public';
-import { SHARE_READ_HEADER, shareReadHeader } from './shareRead';
+import {
+  SHARE_READ_HEADER,
+  shareReadHeader,
+  visitorAddress,
+} from './shareRead';
 import { pageClasses, usedCss } from './usedCss';
 
 type SharePagePieces = ReturnType<
@@ -324,6 +328,7 @@ export async function handleSiteRequest(
             Accept: 'application/json',
             [SHARE_READ_HEADER]: await shareReadHeader(
               env.SHARE_LINK_SECRET,
+              visitorAddress(request),
               path
             ),
           },
@@ -413,6 +418,7 @@ export async function handleSiteRequest(
           Accept: 'application/json',
           [SHARE_READ_HEADER]: await shareReadHeader(
             env.SHARE_LINK_SECRET,
+            visitorAddress(request),
             path
           ),
         },

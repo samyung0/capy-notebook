@@ -1,5 +1,9 @@
 import { verifiedShareToken } from '../../src/lib/shareLink';
-import { SHARE_READ_HEADER, shareReadHeader } from './shareRead';
+import {
+  SHARE_READ_HEADER,
+  shareReadHeader,
+  visitorAddress,
+} from './shareRead';
 
 /**
  * Images of shared standalone quizzes, flashcard sets and notes, and a shared
@@ -119,7 +123,11 @@ export async function handlePublicRequest(
     new Request(`${apiOrigin}${path}`, {
       headers: {
         Accept: 'application/json',
-        [SHARE_READ_HEADER]: await shareReadHeader(secret, path),
+        [SHARE_READ_HEADER]: await shareReadHeader(
+          secret,
+          visitorAddress(request),
+          path
+        ),
       },
       redirect: 'manual',
       signal: AbortSignal.timeout(10_000),
