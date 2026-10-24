@@ -521,7 +521,8 @@ async def _admitted_chat(req: ChatStreamReq, slot: _ChatSlot):
     """The stream starts at once. Past the turns in progress it says it is
     waiting and waits up to CHAT_SLOT_WAIT_S in arrival order (Epo 2026-10-24,
     Q268, inner-turn slots); a client that leaves gives up its place. Past the
-    wait it ends with the provider_busy event a busy model call sends. Each of
+    wait it ends with the provider_busy event a busy model call sends; given a
+    slot, it goes back to the phase it showed before the wait (Q359). Each of
     the turn's model calls then takes a call slot of its own (``agent``)."""
     slot.held = limits.TURN_SLOTS.take()
     if not slot.held:
@@ -530,6 +531,7 @@ async def _admitted_chat(req: ChatStreamReq, slot: _ChatSlot):
         if not slot.held:
             yield _sse(busy_error(_busy()))
             return
+        yield _sse(phase("planning"))
     async for chunk in _chat_events(req):
         yield chunk
 

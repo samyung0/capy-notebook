@@ -1633,12 +1633,14 @@ concurrency is the separate cap of 20 above, not this one.
 
 The retrieval process bounds itself behind those per-user caps (Epo
 2026-10-24): at most 64 model calls in flight, each holding its slot for its
-request and response only, so a turn running tools holds none; at most
-96 chat turns and generate requests in progress (48 on UAT), a ceiling from
-a memory measurement (Q338, Q343). Past either, a chat waits up to 60 s in arrival order (its stream
-sends the `waiting_capacity` phase on each wait, then the in-stream
-`provider_busy` error if the wait runs out) and a generate or editor AI request
-answers the existing 503 `provider_busy` with `Retry-After` at once. Model-call
+request, response and settlement only, so a turn running tools holds none; at
+most 96 chat turns and generate requests in progress (48 on UAT), a ceiling
+from a memory measurement (Q338, Q343). Past either, a chat waits up to 60 s
+in arrival order (its stream sends the `waiting_capacity` phase on each wait
+and the planning phase when the slot arrives, or the in-stream
+`provider_busy` error if the wait runs out) and a generate or editor AI
+request answers the existing 503 `provider_busy` with `Retry-After` at once,
+the editor routes before starting a response (Q359). Model-call
 admission holds the model-wide lock for one conditional insert, and a call's
 lease goes with its settlement. Deck scripts, renders and captures run on a
 pool of two threads of their own; one Office capture at a time

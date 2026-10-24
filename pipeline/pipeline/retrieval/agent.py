@@ -200,7 +200,8 @@ class ClientDrop:
     and settle, and the loop starts no other model or tool call. Only a dropped
     hop stops the stream: a stopped turn still sends Go what its running calls
     did. ``left`` is set by either, so a call waiting for its slot gives up its
-    place at once (``models.call_slot``).
+    place at once and no other call starts, the summarizer's included
+    (``models.call_slot``, Q359).
     """
 
     dropped: bool = False
@@ -223,14 +224,22 @@ def _client_gone(client: ClientDrop | None) -> bool:
 class _SlotWaits:
     """Where a turn's model call that waits for a call slot says so: the queue
     the turn drains at that moment, as the waiting status on each wait (Epo
-    2026-10-24, inner-turn slots)."""
+    2026-10-24, inner-turn slots), and the phase from before the wait the
+    moment the call gets its slot (Q359). A chat's model calls (the
+    checkpoint, a compaction, a response) all run in the planning phase."""
 
     def __init__(self) -> None:
         self.queue: asyncio.Queue[Any] | None = None
 
     def report(self) -> None:
+        self._put(events.phase("waiting_capacity"))
+
+    def granted(self) -> None:
+        self._put(events.phase("planning"))
+
+    def _put(self, event: dict[str, Any]) -> None:
         if self.queue is not None:
-            self.queue.put_nowait(events.phase("waiting_capacity"))
+            self.queue.put_nowait(event)
 
 
 async def _while_waiting(
@@ -361,7 +370,12 @@ async def run_agent(
     # arrival order with the waiting status (Epo 2026-10-24, inner-turn slots).
     waits = _SlotWaits()
     slots = bind_call_slots(
-        CallSlotPolicy(CHAT_SLOT_WAIT_S, waits.report, client.left if client else None)
+        CallSlotPolicy(
+            CHAT_SLOT_WAIT_S,
+            on_wait=waits.report,
+            left=client.left if client else None,
+            on_granted=waits.granted,
+        )
     )
     try:
         async for event in _run_turn(
@@ -393,11 +407,16 @@ async def run_agent(
                 )
             )
     finally:
-        reset_call_slots(slots)
-        # Before the await: a cancelled record must not leave the directory.
+        # Every step runs even if one fails (Q359). Before the await: a
+        # cancelled record must not leave the directory. The policy reset
+        # comes last: in another context (the generator finalized elsewhere)
+        # it raises.
         if ctx.deck_dir:
             shutil.rmtree(ctx.deck_dir, ignore_errors=True)
-        await _record_searches(ctx, [])  # a no-op once the answer recorded them
+        try:
+            await _record_searches(ctx, [])  # a no-op once the answer recorded them
+        finally:
+            reset_call_slots(slots)
 
 
 async def _run_turn(

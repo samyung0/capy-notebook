@@ -24,63 +24,96 @@ T = TypeVar("T")
 
 class Slots:
     """A process-wide cap on running work, used from the event loop only.
-    ``take`` answers at once; ``wait`` queues in arrival order. Every
-    successful take or wait is paired with one ``release``, which hands the
-    slot straight to the oldest waiter."""
+    ``take`` answers at once; ``wait`` queues in arrival order (``join`` then
+    ``wait_for``, for a caller that must be in the queue before it does
+    anything else). Every successful take or wait is paired with one
+    ``release``, which hands the slot straight to the oldest waiter."""
 
     def __init__(self, size: int) -> None:
         self.size = size
         self.used = 0
         self._waiters: deque[asyncio.Future[None]] = deque()
 
+    def full(self) -> bool:
+        return self.used >= self.size or bool(self._waiters)
+
     def take(self) -> bool:
-        if self.used >= self.size or self._waiters:
+        if self.full():
             return False
         self.used += 1
         return True
 
-    async def wait(self, budget_s: float) -> bool:
-        """Take a slot after the requests already waiting, or False once
-        ``budget_s`` runs out. A cancelled waiter (its client gone) leaves the
-        queue and passes on a slot handed to it as it left."""
-        if self.take():
-            return True
+    def join(self) -> asyncio.Future[None]:
+        """Queue behind the requests already waiting, from this moment on: a
+        slot freed before the caller first awaits is handed to it (Q359)."""
         waiter = asyncio.get_running_loop().create_future()
         self._waiters.append(waiter)
+        return waiter
+
+    async def wait(self, budget_s: float) -> bool:
+        """Take a slot after the requests already waiting, or False once
+        ``budget_s`` runs out."""
+        return self.take() or await self.wait_for(self.join(), budget_s)
+
+    async def wait_for(
+        self,
+        waiter: asyncio.Future[None],
+        budget_s: float,
+        left: asyncio.Event | None = None,
+    ) -> bool:
+        """Wait in the queue until ``waiter`` is handed a slot: True holding
+        it, False once ``budget_s`` runs out or ``left`` is set (the client is
+        gone). A request that leaves the queue, cancelled included, passes on a
+        slot handed to it as it left, so no slot is lost and the next waiter is
+        not skipped (Q340, Q359)."""
+        gone = asyncio.ensure_future(left.wait()) if left is not None else None
         try:
             async with asyncio.timeout(budget_s):
-                await waiter
+                await asyncio.wait(
+                    {waiter} if gone is None else {waiter, gone},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
         except TimeoutError:
             pass
         except BaseException:
-            if waiter.done() and not waiter.cancelled():
+            if self._leave(waiter):
                 self.release()
             raise
         finally:
-            if waiter in self._waiters:
-                self._waiters.remove(waiter)
+            if gone is not None:
+                gone.cancel()
+        held = self._leave(waiter)
+        if held and left is not None and left.is_set():
+            self.release()
+            return False
         # Handed a slot just as the budget ran out still counts.
-        return waiter.done() and not waiter.cancelled()
+        return held
+
+    def _leave(self, waiter: asyncio.Future[None]) -> bool:
+        """Take ``waiter`` out of the queue; True when it was handed a slot."""
+        if waiter in self._waiters:
+            self._waiters.remove(waiter)
+        return waiter.done()
 
     def release(self) -> None:
-        while self._waiters:
-            waiter = self._waiters.popleft()
-            if not waiter.done():
-                waiter.set_result(None)
-                return
+        if self._waiters:
+            self._waiters.popleft().set_result(None)
+            return
         self.used -= 1
 
 
 @dataclass(frozen=True)
 class CallSlotPolicy:
     """How a request's model calls take a CALL_SLOTS slot: ``wait_s`` 0
-    answers provider_busy at once; ``on_wait`` runs each time a call waits;
-    once ``left`` is set (the client is gone) a waiting call gives up its place
-    and starts nothing."""
+    answers provider_busy at once; ``on_wait`` runs each time a call starts
+    waiting and ``on_granted`` when a call that waited gets its slot; once
+    ``left`` is set (the client is gone) a call starts nothing, waiting or
+    not."""
 
     wait_s: float
     on_wait: Callable[[], None] | None = None
     left: asyncio.Event | None = None
+    on_granted: Callable[[], None] | None = None
 
 
 _call_slot_policy: contextvars.ContextVar[CallSlotPolicy | None] = (

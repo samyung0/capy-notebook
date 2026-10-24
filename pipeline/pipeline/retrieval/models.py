@@ -100,57 +100,46 @@ CALL_LIMIT_BUSY = "the AI process is at its model call limit"
 
 
 class CallNotStarted(Exception):
-    """A call that waited for its slot until its client left: nothing was sent."""
+    """A call whose client left (a Stop or a lost hop) before it started:
+    nothing was sent."""
 
 
 @asynccontextmanager
 async def call_slot():
     """One model call's process slot (Epo 2026-10-24, inner-turn slots), held
-    for its request and response, retries included, under the request's slot
-    policy (``limits.bind_call_slots``). Past a full CALL_SLOTS the call waits
-    in arrival order up to the policy's wait, or answers provider_busy at once;
-    with no policy bound the call takes no slot."""
+    for its request and response, retries included, and its settlement and
+    lease release (``_tracked_call``), under the request's slot policy
+    (``limits.bind_call_slots``). Past a full CALL_SLOTS the call waits in
+    arrival order up to the policy's wait, or answers provider_busy at once;
+    with no policy bound the call takes no slot. Once the client has left, no
+    call starts and no waiting status is sent (Q359)."""
     policy = limits.call_slot_policy()
     if policy is None:
         yield
         return
-    if not limits.CALL_SLOTS.take():
+    if policy.left is not None and policy.left.is_set():
+        raise CallNotStarted("the client left before the call started")
+    slots = limits.CALL_SLOTS
+    if not slots.take():
         if policy.wait_s <= 0:
             raise elitellm.ProviderBusy(
                 CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
             )
+        waiter = slots.join()  # in the queue from its refusal on (Q359)
         if policy.on_wait is not None:
             policy.on_wait()
-        if not await _wait_for_slot(policy):
+        if not await slots.wait_for(waiter, policy.wait_s, policy.left):
+            if policy.left is not None and policy.left.is_set():
+                raise CallNotStarted("the client left while the call waited")
             raise elitellm.ProviderBusy(
                 CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
             )
+        if policy.on_granted is not None:
+            policy.on_granted()
     try:
         yield
     finally:
-        limits.CALL_SLOTS.release()
-
-
-async def _wait_for_slot(policy: limits.CallSlotPolicy) -> bool:
-    """Wait for a call slot; a client that leaves meanwhile gives up its place
-    (the loop starts no call after a drop or a Stop, ``agent.ClientDrop``)."""
-    if policy.left is None:
-        return await limits.CALL_SLOTS.wait(policy.wait_s)
-    waiting = asyncio.ensure_future(limits.CALL_SLOTS.wait(policy.wait_s))
-    left = asyncio.ensure_future(policy.left.wait())
-    try:
-        await asyncio.wait({waiting, left}, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        left.cancel()
-        if not waiting.done():
-            waiting.cancel()  # leaves the queue, passing on a slot handed to it
-        await asyncio.wait({waiting})
-    got = not waiting.cancelled() and waiting.result()
-    if policy.left.is_set():
-        if got:
-            limits.CALL_SLOTS.release()
-        raise CallNotStarted("the client left while the call waited for its slot")
-    return got
+        slots.release()
 
 
 def _slotted(call):

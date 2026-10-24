@@ -3033,22 +3033,31 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   Epo 2026-10-24, inner-turn slots). Every model call (an agent response, the
   compaction summarizer, a generate or editor AI call) takes a slot for its
   request and response, retries included (`models.call_slot`), and gives it
-  back when the response ends, so while a turn runs tools another user's call
-  can use the slot. A chat turn's call that finds the slots full waits up to
-  60 s (`CHAT_SLOT_WAIT_S`, Q293) behind the calls already waiting, a freed
-  slot passing straight to the one waiting longest (`Slots.wait`), and the
-  stream sends `{"type":"phase","phase":"waiting_capacity"}` each time a call
-  waits: from the response step, or around the checkpoint and compaction for
-  the summarizer (`agent._while_waiting`). The SPA shows a waiting phase
-  until the next event of any kind, which puts back the phase from before the
-  wait (`chatStream.streamChat`, Q300). Past the 60 s the stream ends with
-  the in-stream `provider_busy` error a busy model call sends
-  (`retryAfterSeconds` 5). A call waiting when the Go hop drops or the user
-  presses Stop leaves the queue at once and starts nothing
-  (`ClientDrop.left`). Generate and the editor AI routes have no waiting
-  status (Q268): past the 64 their call answers the existing 503
-  `provider_busy` at once, before reaching the provider. Embedding and rerank
-  calls inside tools take no slot, and the ingest worker binds no slot policy.
+  back once the call is settled and its lease released (`_tracked_call`, Q359),
+  so while a turn runs tools another user's call can use the slot. A slow or
+  failing settlement keeps its call's slot until it ends, at most the receipt
+  deadline, and calls then queue behind settlements rather than provider
+  work. A chat turn's call that finds the slots full waits up to 60 s
+  (`CHAT_SLOT_WAIT_S`, Q293) behind the calls already waiting: it joins the
+  queue the moment it is refused (`Slots.join`, Q359), and a freed slot passes
+  straight to the one waiting longest (`Slots.wait_for`). The stream sends
+  `{"type":"phase","phase":"waiting_capacity"}` each time a call waits, and
+  `{"type":"phase","phase":"planning"}` the moment it gets its slot, before
+  anything of the call (Q359; a chat's model calls all run in the planning
+  phase): from the response step, or around the checkpoint and compaction for
+  the summarizer (`agent._while_waiting`). The SPA shows a waiting phase until
+  the next event; a non-phase event puts back the phase from before the wait,
+  for a wait that ends some other way (`chatStream.streamChat`, Q300). Past
+  the 60 s the stream ends with the in-stream `provider_busy` error a busy
+  model call sends (`retryAfterSeconds` 5). A call waiting when the Go hop
+  drops or the user presses Stop leaves the queue at once and starts nothing,
+  and after that no call starts, the summarizer's included, and no waiting
+  status is sent (`ClientDrop.left`, Q359). A waiting call cancelled as a slot
+  is handed to it passes the slot to the next waiter. Generate and the editor
+  AI routes have no waiting status (Q268): past the 64 their call answers the
+  existing 503 `provider_busy` at once, before reaching the provider. Embedding
+  and rerank calls inside tools take no slot, and the ingest worker binds no
+  slot policy.
 - **Turns in progress.** At most 96 chat turns and generate requests run
   at once in production and 48 on UAT (`TURN_SLOTS` from `CAPY_TURN_SLOTS`,
   which compose takes from the rendered `RETRIEVAL_TURN_SLOTS`; Q338, Q343): a
@@ -3059,10 +3068,14 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   5 s), which Go maps to the same retryable error as a busy model. A chat
   waits instead (Epo 2026-10-24, Q268; `service._admitted_chat`): its stream
   starts at once, sends the waiting phase and waits up to 60 s for a turn
-  slot in arrival order; a client that hangs up while waiting leaves the
-  queue, and past the 60 s the stream ends with the in-stream
-  `provider_busy` error. A stream holds its turn slot until its response
-  ends however it ends (`service._SlotStream`). The Go limits come first:
+  slot in arrival order, sending the planning phase when it gets one (Q359); a
+  client that hangs up while waiting leaves the queue, and past the 60 s the
+  stream ends with the in-stream `provider_busy` error. A stream holds its
+  turn slot until its response ends however it ends (`service._SlotStream`).
+  The editor AI routes are not turns (Q338) but check the ceiling: at it, or
+  with every call slot taken, `/plate-ai/command` and `/plate-ai/copilot`
+  answer the 503 `provider_busy` before starting a response
+  (`ai_adapter._refuse_past_capacity`, Q339, Q359). The Go limits come first:
   5 open chat sessions per user and the AI route class.
 - **Render pool.** Deck scripts (the checker and exporter), page renders,
   image and Office captures and capture downloads run on two threads of their
@@ -3074,7 +3087,8 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   above the idle process (a WebP; about 85 MiB for JPEG, PNG and TIFF), a
   2,400-pixel square image about 145 MiB; at Pillow's pixel limit
   (89 megapixels), which bounds sources until the 5-megapixel upload check is
-  live (captures check no pixel size of their own, Q342), a JPEG capture about 90 MiB, a PNG or TIFF 0.4 to 0.8 GiB, a WebP 1.3 GiB
+  live (captures check no pixel size of their own, Q342), a JPEG capture
+  about 90 MiB, a PNG or TIFF 0.4 to 0.8 GiB, a WebP 1.3 GiB
   (capture_page below).
 - **Office captures.** One at a time per process (`OFFICE_CAPTURE_SLOTS`; see
   `capture_page` under Tools).

@@ -22,7 +22,7 @@ from pipeline.retrieval import agent, capture, contract, limits, models, pending
 from pipeline.retrieval.stream import AssembledResponse, StreamEvent, ToolCall
 from pipeline.retrieval.tools import ToolContext, ToolResult
 from pipeline.retrieval.usage_extract import NormalizedUsage
-from pipeline.retrieve import service
+from pipeline.retrieve import ai_adapter, service
 
 SECRET = "s" * 32
 CHAT = {
@@ -150,6 +150,7 @@ async def test_page_renders_run_on_the_render_pool(monkeypatch, tmp_path):
 
 
 WAITING = {"type": "phase", "phase": "waiting_capacity"}
+PLANNING = {"type": "phase", "phase": "planning"}
 
 
 class _ChatStream:
@@ -204,8 +205,8 @@ def _chats(monkeypatch) -> list[str]:
 async def test_a_chat_past_the_slots_waits_and_takes_the_freed_slot(monkeypatch):
     """(security regression: rate-limit audit Q268, M13) Past the
     turns-in-progress ceiling a chat is not turned away: its stream says once
-    that it is waiting, then runs the turn when a turn slot frees, and gives
-    the slot back."""
+    that it is waiting, then, when a turn slot frees, goes back to its phase
+    from before the wait (Q359), runs the turn and gives the slot back."""
     runs = _chats(monkeypatch)
     chat = _ChatStream("waits")
     await _until(lambda: chat.frames)
@@ -214,7 +215,7 @@ async def test_a_chat_past_the_slots_waits_and_takes_the_freed_slot(monkeypatch)
     limits.TURN_SLOTS.release()
     await _until(chat.task.done)
     chat.task.result()
-    assert chat.frames == [WAITING, {"type": "done"}]
+    assert chat.frames == [WAITING, PLANNING, {"type": "done"}]
     assert runs == ["waits"]
     assert limits.TURN_SLOTS.used == 0
 
@@ -444,7 +445,9 @@ async def test_a_turns_next_call_queues_behind_the_running_call(monkeypatch):
 
 async def test_each_slot_wait_in_a_turn_sends_the_waiting_status(monkeypatch):
     """(security regression: rate-limit audit M13) A turn whose two model
-    calls both find the slots full says it is waiting before each of them."""
+    calls both find the slots full says it is waiting before each of them,
+    and goes back to the planning phase the moment each gets its slot, before
+    anything of the call (Q359)."""
     provider, tools_ran, gates = _turns(monkeypatch, {"A": [TOOL, ANSWER]})
     gates["A"] = asyncio.Event()
     assert limits.CALL_SLOTS.take()  # another call is running
@@ -468,6 +471,8 @@ async def test_each_slot_wait_in_a_turn_sends_the_waiting_status(monkeypatch):
     ]
     assert marks == ["waiting", "tool_start", "waiting", "done"]
     assert provider.calls == ["A1", "A2"]
+    granted = [a.events[i + 1] for i, event in enumerate(a.events) if event == WAITING]
+    assert granted == [PLANNING, PLANNING]
 
 
 async def test_the_compaction_summarizer_takes_a_call_slot(monkeypatch):
@@ -490,6 +495,7 @@ async def test_the_compaction_summarizer_takes_a_call_slot(monkeypatch):
     await _until(a.task.done)
     assert provider.calls == ["A1", "A2"]  # the summary, then the answer
     assert provider.slots_used == [1, 1]
+    assert a.events[a.events.index(WAITING) + 1] == PLANNING  # Q359
     assert a.events[-1]["type"] == "done"
     assert limits.CALL_SLOTS.used == 0
 
@@ -543,6 +549,183 @@ def test_a_generate_call_answers_busy_past_the_call_slots(monkeypatch):
     assert busy.headers["Retry-After"] == "5"
     assert busy.json()["code"] == "provider_busy"
     assert provider.calls == ["G1"]
+
+
+@pytest.mark.parametrize("ticks", [0, 1, 2])
+async def test_a_call_cancelled_as_its_slot_arrives_passes_the_slot_on(
+    monkeypatch, ticks
+):
+    """(security regression: rate-limit audit M13, Q359) A chat call handed
+    the freed slot just as it is cancelled gives the slot to the next waiting
+    call, so no slot is lost and the next waiter is not skipped (Q340)."""
+    monkeypatch.setattr(limits, "CALL_SLOTS", limits.Slots(1))
+    assert limits.CALL_SLOTS.take()  # another call is running
+    waits: list[str] = []
+    ran: list[str] = []
+
+    async def call(name: str) -> None:
+        policy = limits.CallSlotPolicy(60, lambda: waits.append(name), asyncio.Event())
+        limits.bind_call_slots(policy)
+        async with models.call_slot():
+            ran.append(name)
+
+    first = asyncio.create_task(call("first"))
+    await _until(lambda: waits == ["first"])
+    second = asyncio.create_task(call("second"))
+    await _until(lambda: waits == ["first", "second"])
+
+    limits.CALL_SLOTS.release()  # handed to the first
+    for _ in range(ticks):
+        await asyncio.sleep(0)
+    first.cancel()
+    await _until(second.done)
+    assert "second" in ran
+    assert limits.CALL_SLOTS.used == 0 and limits.CALL_SLOTS.take()
+
+
+async def test_a_slot_freed_as_a_call_is_refused_goes_to_that_call(monkeypatch):
+    """(security regression: rate-limit audit M13, Q359) A refused call is in
+    the queue from the moment it is refused: a slot freed then is handed to
+    it, not to a call that arrives after it."""
+    monkeypatch.setattr(limits, "CALL_SLOTS", limits.Slots(1))
+    assert limits.CALL_SLOTS.take()  # another call is running
+    later: list[bool] = []
+    ran: list[str] = []
+
+    def running_call_ends() -> None:
+        limits.CALL_SLOTS.release()
+        later.append(limits.CALL_SLOTS.take())  # a call arriving after it
+
+    limits.bind_call_slots(limits.CallSlotPolicy(1, running_call_ends))
+    async with models.call_slot():
+        ran.append("refused first")
+    assert later == [False] and ran == ["refused first"]
+    assert limits.CALL_SLOTS.used == 0
+
+
+@pytest.mark.parametrize("slots_full", [True, False])
+async def test_a_stopped_turn_starts_no_summarizer_and_says_no_wait(
+    monkeypatch, slots_full
+):
+    """(security regression: rate-limit audit M13, Q359) After Stop no model
+    call starts, the compaction summarizer's included, and no waiting status
+    is sent, whether a slot is free or not; the turn ends stopped."""
+    provider, _tools_ran, _gates = _turns(
+        monkeypatch, {"A": [_reply("Earlier: a question."), ANSWER]}
+    )
+    client = agent.ClientDrop()
+    folds = iter([True])  # the history is folded once, at the turn's start
+
+    def stop_then_fold(*_args, **_kwargs) -> bool:
+        client.stop()  # pressed as the history is about to be folded
+        return next(folds, False)
+
+    monkeypatch.setattr(agent.compact, "needs_compact", stop_then_fold)
+    if slots_full:
+        assert limits.CALL_SLOTS.take()  # another call is running
+    a = _Turn(
+        "A",
+        history=[{"id": "u1", "role": "user", "content": "earlier"}],
+        client=client,
+    )
+    await _until(a.task.done)
+    a.task.result()
+    assert provider.calls == [] and a.waits() == 0
+    assert a.events[-1]["type"] == "turn_checkpoint" and a.events[-1]["stopped"]
+
+
+@pytest.mark.parametrize("failing", ["record", "reset"])
+async def test_a_turns_cleanup_runs_every_step_when_one_fails(
+    monkeypatch, tmp_path, failing
+):
+    """(Q359) However a turn ends, its deck folder goes, its searches are
+    recorded and its call-slot policy is unbound, even when one of those steps
+    fails (the policy reset raises when the turn is finalized elsewhere)."""
+    _turns(monkeypatch, {"A": [ANSWER]})
+    done: list[str] = []
+    reset = agent.reset_call_slots
+
+    async def record(*_args) -> None:
+        done.append("record")
+        if failing == "record":
+            raise RuntimeError("record failed")
+
+    def reset_slots(token) -> None:
+        reset(token)
+        done.append("reset")
+        if failing == "reset":
+            raise ValueError("another context")
+
+    monkeypatch.setattr(agent, "_record_searches", record)
+    monkeypatch.setattr(agent, "reset_call_slots", reset_slots)
+    deck = tmp_path / "deck"
+    deck.mkdir()
+    ctx = ToolContext(workspace_id="ws_A", deck_dir=str(deck))
+    USER.set("A")
+
+    with pytest.raises((RuntimeError, ValueError)):
+        async for _event in agent.run_agent(
+            query="q", ctx=ctx, history=None, model=_model()
+        ):
+            pass
+    assert not deck.exists()
+    assert done[-2:] == ["record", "reset"]  # after the answer's own record
+    assert limits.call_slot_policy() is None
+
+
+def _editor_request(route: str) -> dict:
+    if route == "copilot":
+        return {"workspaceId": "ws_1", "thinking": "low", "prompt": "Hello"}
+    return {
+        "workspaceId": "ws_1",
+        "thinking": "low",
+        "messages": [
+            {"role": "user", "parts": [{"type": "text", "text": "Review this"}]}
+        ],
+        "ctx": {
+            "children": [{"id": "b1", "type": "p", "children": [{"text": "Hi"}]}],
+            "toolName": "comment",
+        },
+    }
+
+
+@pytest.mark.parametrize("route", ["copilot", "command"])
+def test_editor_ai_calls_take_a_call_slot_and_answer_busy_past_capacity(
+    monkeypatch, route
+):
+    """(security regression: rate-limit audit M13, Q339, Q359) An editor AI
+    call holds a call slot for its model call; with every call slot taken, or
+    at the turns-in-progress ceiling, /plate-ai/copilot and /plate-ai/command
+    answer the existing 503 provider_busy with Retry-After before starting a
+    response, never reaching the provider."""
+    monkeypatch.setattr(service.cfg, "pipeline_secret", SECRET)
+    monkeypatch.setattr(limits, "CALL_SLOTS", limits.Slots(1))
+    monkeypatch.setattr(limits, "TURN_SLOTS", limits.Slots(1))
+    slots_used: list[int] = []
+
+    async def provider(*_args, **_kwargs):
+        slots_used.append(limits.CALL_SLOTS.used)
+        return _reply("[]")
+
+    monkeypatch.setattr(models, "_stream_via_adapter", provider)
+    monkeypatch.setattr(ai_adapter, "_editor_spec", lambda _req: _model())
+    monkeypatch.setattr(ai_adapter, "_ensure_provider", lambda _spec: None)
+    http = TestClient(service.app)  # no lifespan: no database
+    headers = {"X-Pipeline-Secret": SECRET}
+    path, body = f"/plate-ai/{route}", _editor_request(route)
+
+    assert http.post(path, json=body, headers=headers).status_code == 200
+    assert slots_used == [1]
+    assert limits.CALL_SLOTS.used == 0
+
+    for full in (limits.CALL_SLOTS, limits.TURN_SLOTS):
+        assert full.take()  # another call, or another turn, is running
+        busy = http.post(path, json=body, headers=headers)
+        assert busy.status_code == 503
+        assert busy.headers["Retry-After"] == "5"
+        assert busy.json()["detail"]["code"] == "provider_busy"
+        full.release()
+    assert slots_used == [1]
 
 
 def _jpeg(shade: str) -> bytes:

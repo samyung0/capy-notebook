@@ -123,6 +123,20 @@ def _busy_http_exception(exc: elitellm.ProviderBusy) -> HTTPException:
     )
 
 
+def _refuse_past_capacity() -> None:
+    """Editor AI calls never wait (Q268) and are not turns (Q338): at the
+    turns-in-progress ceiling or with every call slot taken they answer 503
+    provider_busy before starting a response (Q339, Q359). The call still
+    takes its own slot (``bind_call_slots``), answering busy if another call
+    took the last one meanwhile."""
+    if limits.TURN_SLOTS.full() or limits.CALL_SLOTS.full():
+        raise _busy_http_exception(
+            elitellm.ProviderBusy(
+                models.CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        )
+
+
 def _editor_spec(req: PlateCommandReq | PlateCopilotReq):
     registry.bind_request_llm(req.userId, req.paidBy, req.thinking)
     return models.resolve_query_model(
@@ -712,6 +726,7 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
 
 @router.post("/command")
 async def plate_command(req: PlateCommandReq, request: Request):
+    _refuse_past_capacity()
     try:
         spec = _editor_spec(req)
         _ensure_provider(spec)
@@ -744,6 +759,7 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
             'If no meaningful continuation is possible, return "0".'
         )
     )
+    _refuse_past_capacity()
     token = accounting.bind(req.spendSessionId) if req.spendSessionId else None
     slots = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
     try:
