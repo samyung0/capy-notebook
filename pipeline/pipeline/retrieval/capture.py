@@ -34,7 +34,7 @@ import requests
 
 from ..config import cfg
 from ..store import blobstore
-from . import limits, store
+from . import accounting, limits, store
 
 log = logging.getLogger("capy.retrieval.capture")
 
@@ -396,6 +396,7 @@ def inject_images(
     messages: list[dict[str, Any]],
     images: dict[str, tuple[str, str]],
     provider_slug: str = "",
+    tokens: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Attach captured images after the tool-result block that produced them.
 
@@ -405,39 +406,65 @@ def inject_images(
     (prompts/sources.py) after its label. Live compaction only folds exchanges
     into the turn note, so the captures of folded exchanges ride right after
     the note: every capture stays until the answer (Epo 2026-10-21).
+
+    ``tokens`` (call id -> the capture's pixel estimate) keeps each built
+    message's estimate on it, so a request built for every model call does not
+    decode its images again to measure them (Q238).
     """
     if not images:
         return messages
     live = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
-    folded = [image for call_id, image in images.items() if call_id not in live]
+    folded = [call_id for call_id in images if call_id not in live]
     out: list[dict[str, Any]] = []
-    pending: list[tuple[str, str]] = []
+    pending: list[str] = []
     for i, message in enumerate(messages):
         out.append(message)
         if message.get("_kind") == "turn_note" and folded:
             out.append(
                 _images_message(
-                    "the tool calls this note folded", folded, provider_slug
+                    "the tool calls this note folded",
+                    folded,
+                    images,
+                    tokens,
+                    provider_slug,
                 )
             )
         if message.get("role") == "tool" and message.get("tool_call_id") in images:
-            pending.append(images[message["tool_call_id"]])
+            pending.append(message["tool_call_id"])
         following = messages[i + 1] if i + 1 < len(messages) else None
         if pending and (following is None or following.get("role") != "tool"):
-            out.append(_images_message("the tool calls above", pending, provider_slug))
+            out.append(
+                _images_message(
+                    "the tool calls above", pending, images, tokens, provider_slug
+                )
+            )
             pending = []
     return out
 
 
 def _images_message(
-    source: str, images: list[tuple[str, str]], provider_slug: str
+    source: str,
+    call_ids: list[str],
+    images: dict[str, tuple[str, str]],
+    tokens: dict[str, int] | None,
+    provider_slug: str,
 ) -> dict[str, Any]:
-    content: list[dict[str, Any]] = [{"type": "text", "text": f"Images from {source}:"}]
-    for label, url in images:
-        content.append({"type": "text", "text": f"{label}\n<source>"})
-        content.append(image_part(url, provider_slug))
-        content.append({"type": "text", "text": "</source>"})
-    return {"role": "user", "content": content}
+    text: list[dict[str, Any]] = [{"type": "text", "text": f"Images from {source}:"}]
+    content = list(text)
+    for call_id in call_ids:
+        label, url = images[call_id]
+        labelled = {"type": "text", "text": f"{label}\n<source>"}
+        closing = {"type": "text", "text": "</source>"}
+        content += [labelled, image_part(url, provider_slug), closing]
+        text += [labelled, closing]
+    message = {"role": "user", "content": content}
+    if tokens is not None and all(call_id in tokens for call_id in call_ids):
+        accounting.keep_tokens(
+            message,
+            accounting.estimate_context_value({**message, "content": text})
+            + sum(tokens[call_id] for call_id in call_ids),
+        )
+    return message
 
 
 def _image_bytes(part: dict[str, Any]) -> bytes | None:

@@ -603,6 +603,7 @@ async def _run_turn(
                 messages,
                 ctx.pending_images,
                 spec.provider_slug,
+                {c["callId"]: int(c["estimatedImageTokens"]) for c in ctx.captures},
             )
             budget.estimated_input_tokens += compact.request_context(
                 request_messages, spec, schemas=active_schemas

@@ -43,7 +43,7 @@ class Slots:
 # The retrieval service is one uvicorn process (Epo 2026-10-24, rate-limit
 # audit; openwiki/agentic-retrieval.md "Process capacity"): chat and generate
 # requests running at once, past which a request answers provider_busy;
-REQUEST_SLOTS = Slots(32)
+REQUEST_SLOTS = Slots(64)
 # Office captures in flight to the parser, whose queue ingest shares;
 OFFICE_CAPTURE_SLOTS = Slots(1)
 # and threads for deck scripts, page renders and capture downloads, so they

@@ -203,14 +203,10 @@ def estimate_tokens(text: str) -> int:
     """
     if not text:
         return 0
-    cjk = 0
-    other = 0
-    for ch in text:
-        if _is_cjk(ch):
-            cjk += 1
-        else:
-            other += 1
-    return cjk + (other + 3) // 4
+    # The CJK runs found in C, not one Python step per character: the same
+    # count, cheap enough for every request (Epo 2026-10-24, Q238).
+    cjk = sum(map(len, CJK_RUN_RE.findall(text)))
+    return cjk + (len(text) - cjk + 3) // 4
 
 
 def clip_to_tokens(text: str, budget: int) -> str:

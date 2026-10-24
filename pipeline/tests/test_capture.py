@@ -392,6 +392,56 @@ def _jpeg(width: int, height: int) -> bytes:
     return buffer.getvalue()
 
 
+def test_injected_captures_keep_their_estimate_without_a_decode(monkeypatch):
+    """(security regression: rate-limit audit Q238) The request built for a
+    model call carries its capture images with their recorded pixel estimate,
+    so measuring it decodes no image; the estimate equals the decoded one."""
+    from pipeline.registry import ModelConfig
+    from pipeline.retrieval import models
+
+    decoded: list = []
+    real = capture._image_bytes
+    monkeypatch.setattr(
+        capture, "_image_bytes", lambda part: decoded.append(part) or real(part)
+    )
+    spec = ModelConfig(
+        version=1,
+        provider_name="Z.ai",
+        model_name="GLM",
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        platform_enabled=True,
+        byok_enabled=False,
+        thinking_levels=("low", "high"),
+        default_thinking="high",
+    )
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "capture_page", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "c1", "content": "Captured page 1."},
+    ]
+    images = {"c1": ("capture_page result 1", capture.data_url(_jpeg(560, 280)))}
+
+    kept = capture.inject_images(
+        messages, images, "zai", {"c1": capture.patch_tokens(560, 280)}
+    )
+    measured = models.measure_request_context(kept, model=spec)
+    assert decoded == []
+
+    fresh = capture.inject_images(messages, images, "zai")
+    assert models.measure_request_context(fresh, model=spec) == measured
+    assert decoded
+
+
 def test_context_measurement_counts_images_by_pixels_not_base64():
     """A 1568 px JPEG is ~300 KB of base64, which the JSON counter would read
     as ~100k tokens; the request is measured with the patch estimate instead."""
