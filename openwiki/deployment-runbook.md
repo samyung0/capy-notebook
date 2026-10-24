@@ -239,8 +239,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    parent origins in GitHub. `workers/office` stages the runtime HTML and assets
    from the same build as the SPA, replaces inherited headers, and publishes
    before the SPA. UAT uses `uat-office.capynotebook.com` and allows
-   `https://uat-app.capynotebook.com,https://app.uat.capynotebook.com,https://uat.capynotebook.com,https://local.uat.capynotebook.com`
-   during the hostname transition. Remove the old app parents only after §1.0.2.
+   `https://uat.capynotebook.com,https://local.uat.capynotebook.com`.
    Production uses the `office.capynotebook.com` custom domain configured in
    `wrangler.office.jsonc` and permits only `https://app.capynotebook.com`. The Worker
    handles runtime HTML with `no-store`, supplies the matching `frame-ancestors`
@@ -311,20 +310,17 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
 
 ### 1.0.1 UAT API routing without Workers
 
-The browser uses `https://uat-app.capynotebook.com/api/*`; the edge sends these
+The browser uses `https://uat.capynotebook.com/api/*`; the edge sends these
 requests directly to `capy-uat` and its tunnel to Go. Static assets and workspace
 summary renders keep using the existing `capy-notebook-uat` deployment.
 
 | Setting | UAT value |
 | --- | --- |
-| Proxied `uat-app` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
-| Worker Route | `uat-app.capynotebook.com/*` → `capy-notebook-uat` |
-| More-specific zone route | `uat-app.capynotebook.com/api/*` → **None**, no script |
-| More-specific Worker Route | `uat-app.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`; the old hosts have the same) |
-| Tunnel ingress | Host `uat-app.capynotebook.com`, path `^/api/`, service `http://127.0.0.1:8080` |
-
-The old app hosts `app.uat` and `uat` keep the same five entries until §1.0.2
-retires them.
+| Proxied `uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
+| Worker Route | `uat.capynotebook.com/*` → `capy-notebook-uat` |
+| More-specific zone route | `uat.capynotebook.com/api/*` → **None**, no script |
+| More-specific Worker Route | `uat.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`) |
+| Tunnel ingress | Host `uat.capynotebook.com`, path `^/api/`, service `http://127.0.0.1:8080` |
 
 The ingress goes straight to the gateway's loopback port; Go never reads the
 Host header, so no `httpHostHeader` override is needed. Keep this ingress
@@ -346,7 +342,7 @@ transition both match the old and new UAT hosts as well as the production
 app host:
 
 ```text
-http.host in {"app.capynotebook.com" "uat-app.capynotebook.com" "app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
+http.host in {"app.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
 ```
 
 - **Cache Rule** `capy_app_api_bypass_cache`: bypass cache (`cache: false`).
@@ -380,10 +376,12 @@ and a browser sign-in were not started.
 
 ### 1.0.2 App hostname transition
 
-The approved UAT app is `https://uat-app.capynotebook.com` (Q291, 2026-10-24). It
-is one level under the zone, so Universal SSL covers it; it replaces
-`app.uat.capynotebook.com`, which needed the advanced `*.uat` certificate and
-had itself replaced `uat.capynotebook.com` in 2026-09. Production is prepared
+The approved UAT app is `https://uat.capynotebook.com` (Q291, 2026-10-24). It
+is the UAT Clerk instance's primary domain and one level under the zone, so
+Universal SSL covers it. It replaces `app.uat.capynotebook.com`, which needed
+the advanced `*.uat` certificate (and had itself replaced `uat` in 2026-09).
+A sibling host such as `uat-app` does not work: Clerk accepts application URLs
+only on its primary domain and that domain's subdomains. Production is prepared
 for `https://app.capynotebook.com`, with `capynotebook.com` and `www` reserved for
 a separate public deployment. Astro with fully static output is the preliminary
 choice; building that site is deferred. See the [landing-site handoff](landing-site-handoff.md).
@@ -395,10 +393,9 @@ stays on the app Worker.
    DNS, routes, tunnel ingress and edge rules for rollback. Finish existing UAT
    journey cleanup before changing targets; saved run manifests bind to their
    original app URL and must not be rewritten to bypass cleanup checks.
-2. Universal SSL covers `uat-app`. Keep the advanced `*.uat.capynotebook.com`
-   certificate's renewal until `app.uat` is retired; it covers only that old
-   host. Add the new DNS, ingress, Worker route, scriptless API exclusion and
-   edge rules from §1.0.1 while retaining the old hosts. Exclude every UAT app
+2. Universal SSL covers `uat`; no UAT host needs an advanced certificate.
+   Add the new DNS, ingress, Worker route, scriptless API exclusion and edge
+   rules from §1.0.1 while retaining the old hosts. Exclude every UAT app
    host from search indexing at the edge; production's public summaries retain
    their existing visibility rules.
 3. Before sending users to the new app, add its origin to CORS, collaboration
@@ -408,15 +405,14 @@ stays on the app Worker.
 
    | Setting | Transition value |
    | --- | --- |
-   | `APP_URL`, `DEPLOYMENT_APP_URL`, `UAT_APP_URL` | `https://uat-app.capynotebook.com` |
-   | `UAT_ALLOWED_HOSTS` | `uat-app.capynotebook.com,app.uat.capynotebook.com,uat-api.capynotebook.com,uat-collab.capynotebook.com,uat-ops.capynotebook.com` |
-   | `CORS_ALLOWED_ORIGINS` | `https://uat-app.capynotebook.com,https://app.uat.capynotebook.com,https://uat.capynotebook.com` |
-   | `COLLABORATION_ALLOWED_ORIGINS`, `OFFICE_ALLOWED_PARENT_ORIGINS` | `https://uat-app.capynotebook.com,https://app.uat.capynotebook.com,https://uat.capynotebook.com,https://local.uat.capynotebook.com` |
+   | `APP_URL`, `DEPLOYMENT_APP_URL`, `UAT_APP_URL` | `https://uat.capynotebook.com` |
+   | `UAT_ALLOWED_HOSTS` | `uat.capynotebook.com,uat-api.capynotebook.com,uat-collab.capynotebook.com,uat-ops.capynotebook.com` |
+   | `CORS_ALLOWED_ORIGINS` | `https://uat.capynotebook.com` |
+   | `COLLABORATION_ALLOWED_ORIGINS`, `OFFICE_ALLOWED_PARENT_ORIGINS` | `https://uat.capynotebook.com,https://local.uat.capynotebook.com` |
 
    `VITE_APP_URL` and Worker `APP_ORIGIN` derive from `DEPLOYMENT_APP_URL`; rebuild
-   rather than editing generated assets. UAT B2's `https://*.uat.capynotebook.com`
-   entry does not cover `uat-app`: apply the checked-in CORS file, which lists
-   every app origin during overlap.
+   rather than editing generated assets. UAT B2's checked-in CORS file
+   lists every app origin during overlap; apply it after changing them.
    Production B2, CORS, collaboration and Office parents use only the production
    app origin. The future public site has no app API or blob permissions.
 4. Keep UAT Clerk's primary domain, FAPI, account portal, keys and issuer. Update
@@ -426,7 +422,7 @@ stays on the app Worker.
    origin. Google and Microsoft sign-in callbacks remain on
    `https://clerk.uat.capynotebook.com/v1/oauth_callback`; retain the existing
    development callbacks too. The separate OneDrive FilePicker SPA registration
-   needs `https://uat-app.capynotebook.com/msal-redirect.html` before UAT cutover
+   needs `https://uat.capynotebook.com/msal-redirect.html` before UAT cutover
    and the production app equivalent before launch, keeping old entries during
    overlap. Add `local.uat` separately if local OneDrive use is wanted.
 5. Deploy backend/collaboration configuration and rebuild the SPA and Office
@@ -457,12 +453,13 @@ requests with HTTP 302 and preserves path/query. `/api` and `/api/*` are
 excluded; the old API routing and overlap origins remain. Disable this one rule
 to restore old-host page access without removing the API routes.
 
-For the Q291 move (Epo, Q304–Q306), `app.uat` keeps serving pages until a full
-uat-quality passes on `uat-app`. Its page navigations then get the same
-temporary 302 for 7 days. After that, `app.uat` is retired (DNS, site, assets
-and scriptless routes, ingress, rules entries, and its overlap origins), the
-`dev-sam.uat` record is deleted, and Epo cancels the advanced certificate.
-`inbox.uat` (MX only) and `local.uat` (no public DNS) stay; neither uses it.
+The Q291 move (Epo, Q304–Q306, Q336) finished on 2026-10-25: the 2026-09
+redirect above was removed so `uat` serves the app again, a full uat-quality
+passed there, and `app.uat` was then retired without waiting out its 7-day 302
+(Epo: no one used it). Its DNS, routes, ingress, rules entries and origins are
+gone, `dev-sam.uat` is deleted, and the advanced `*.uat` certificate is
+cancelled. `inbox.uat` (MX only) and `local.uat` (no public DNS) stay; neither
+needs it.
 
 Rollback restores the saved canonical app values, Clerk return paths and page
 routing together, then rebuilds/redeploys so generated origins agree. DNS alone
@@ -665,7 +662,7 @@ Compose does not bind:
 | `uat-api` / `api` | `http://127.0.0.1:8080` |
 | `uat-collab` / `collab` | `http://127.0.0.1:1234` |
 | `uat-ops` / `ops` (Access, §2.1) | `http://127.0.0.1:8082` |
-| `uat-app` / `app`, path `^/api/` (§1.0.1; the old `app.uat` and `uat` too until §1.0.2) | `http://127.0.0.1:8080` |
+| `uat` / `app`, path `^/api/` (§1.0.1) | `http://127.0.0.1:8080` |
 | `uat-deploy` / `deploy` (Access, service token only) | `ssh://127.0.0.1:22` |
 | anything else | `http_status:404` |
 
@@ -2944,7 +2941,7 @@ web app.
 1. Authentication. Platform **Single-page application**. Redirect URIs are
    `{SPA origin}/msal-redirect.html`, for example
    `http://localhost:5173/msal-redirect.html`,
-   `https://uat-app.capynotebook.com/msal-redirect.html`, and
+   `https://uat.capynotebook.com/msal-redirect.html`, and
    `https://app.capynotebook.com/msal-redirect.html`. Leave **Implicit grant and hybrid
    flows** unchecked: `@azure/msal-browser` v5 uses auth code + PKCE, and the
    SPA platform already enables the CORS-enabled token endpoint.
@@ -3042,10 +3039,10 @@ authentication strategy.
 3. Create a separate private B2 bucket and bucket-scoped key. Apply
    `deploy/b2-cors.uat.json` and `deploy/b2-lifecycle.uat.json` (§4). Do not
    point UAT at the production bucket.
-4. Use `uat-app.capynotebook.com` for the app, next to `uat-api`, `uat-collab`,
-   `uat-office` and `uat-ops`. Every proxied UAT host is one level under the
-   zone, so Universal SSL's `*.capynotebook.com` covers it; a host under
-   `*.uat.capynotebook.com` would need an advanced certificate. Configure DNS, tunnel routing,
+4. Use `uat.capynotebook.com`, the Clerk primary domain, for the app, next to
+   `uat-api`, `uat-collab`, `uat-office` and `uat-ops`. Every proxied UAT host is
+   one level under the zone, so Universal SSL's `*.capynotebook.com` covers it; a
+   host under `*.uat.capynotebook.com` would need an advanced certificate. Configure DNS, tunnel routing,
    origin lockdown, cache bypass, WebSocket support, and `/api` using §§1–3.
    Review tooling uses exact hosts, never a wildcard. Existing deployments
    follow the transition steps in §1.0.2.
@@ -3112,7 +3109,7 @@ required by §1.3.
 In the Clerk dashboard:
 
 1. Activate the UAT application's Production instance with primary domain
-   `uat.capynotebook.com`. The browser app runs at `uat-app.capynotebook.com`;
+   `uat.capynotebook.com`. The browser app runs at that primary domain;
    keep FAPI `clerk.uat.capynotebook.com`, account portal
    `accounts.uat.capynotebook.com`, and their existing keys and DNS records.
 2. Enable the same sign-in methods, session lifetime, organization settings,
@@ -3752,7 +3749,7 @@ subscription webhook for a user it has not admitted yet: rerun a minute later.
 The environment file needs a `sk_test_` `STRIPE_SECRET_KEY` for
 `UAT_STRIPE_ACCOUNT_ID`. The free account never subscribes.
 
-Sign in to any seeded account at `https://uat-app.capynotebook.com` with its
+Sign in to any seeded account at `https://uat.capynotebook.com` with its
 email and Clerk's fixed test code `424242` (no mail is sent). Automated journeys
 do not use these long-lived accounts; they create their own per run.
 
