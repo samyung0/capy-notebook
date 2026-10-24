@@ -68,6 +68,7 @@ vi.mock('@/api/client', async (load) => ({
 
 import {
   applyDrafts,
+  DRAFT_SEND_TIMEOUT_MS,
   deleteDocumentDrafts,
   deleteDrafts,
   draftBytes,
@@ -567,7 +568,7 @@ describe('lineage', () => {
       draft('old-1', { lineage: 'material:mat_1:schema:1' }),
       draft('refused', { refused: true }),
       draft('old-2', { lineage: 'material:mat_1:schema:1' }),
-      draft('live', { lineage: 'material:mat_1:schema:2' }),
+      draft('live', { accepted: true, lineage: 'material:mat_1:schema:2' }),
     ];
     const opened = draftGroups(rows, 'material:mat_1:schema:2');
     expect(opened.current.map((row) => row.id)).toEqual(['live']);
@@ -585,7 +586,7 @@ describe('lineage', () => {
   it('keeps same-epoch text drafts current across published base hashes', () => {
     const text = sameSourceLineage('text');
     const rows = [
-      draft('old-hash', { lineage: 'source:t:epoch:2@old' }),
+      draft('old-hash', { accepted: true, lineage: 'source:t:epoch:2@old' }),
       draft('older-epoch', { lineage: 'source:t:epoch:1@old' }),
     ];
     const opened = draftGroups(rows, 'source:t:epoch:2@new', text);
@@ -637,7 +638,10 @@ function noteRecorder(
 describe('recording a note session', () => {
   it('keeps offline edits across a reload and syncs them into the same room', async () => {
     const key = 'u_1:material:reload';
-    const { client, recorder, room } = noteRecorder(key, 'shared ');
+    // The session's token goes with its rows (Q288).
+    const { client, recorder, room } = noteRecorder(key, 'shared ', {
+      token: () => grant(1),
+    });
     // A remote update is the room's own: never recorded.
     Y.applyUpdate(client, Y.encodeStateAsUpdate(room), REMOTE);
     expect(recorder.sequence).toBe(0);
@@ -1035,6 +1039,23 @@ describe('recording a note session', () => {
     expect(report.mock.calls.map(([kind, reason]) => [kind, reason])).toEqual([
       ['draft_storage_failed', 'quota'],
       ['offline_episode', 'unreachable'],
+    ]);
+  });
+
+  it('reports no offline episode for a draft send hold, even with the browser offline in it (Q360)', async () => {
+    const key = 'u_1:material:held-episode';
+    const report = vi.fn();
+    const { client, recorder } = noteRecorder(key, '', { report });
+    recorder.disconnected(true);
+    recorder.disconnected();
+    client.getText('content').insert(0, 'held');
+    await readDrafts(key);
+    recorder.connected();
+    // The next episode is an editing one again.
+    recorder.disconnected();
+    recorder.connected();
+    expect(report.mock.calls.map(([kind]) => kind)).toEqual([
+      'offline_episode',
     ]);
   });
 
@@ -1748,20 +1769,32 @@ describe('the draft sweep sending', () => {
     expect(await readDrafts(key)).toHaveLength(2);
   });
 
-  it("splits an opening editor's rows: accepted ones apply, never-accepted ones with a token send, the rest are held (Q326)", async () => {
-    const key = 'u_split:material:mat_1';
-    const accepted = draft('a:1', { accepted: true, key });
-    const sent = draft('b:1', { grants: [grant(7)], key });
-    const bare = draft('c:1', { key });
-    await putDrafts([accepted, sent, bare]);
-    const { apply, send } = splitOpenDrafts(key, [accepted, sent, bare]);
-    expect(apply).toEqual([accepted]);
-    expect(send).toEqual([sent]);
-    await vi.waitFor(async () =>
-      expect(
-        (await readDrafts(key)).find((row) => row.id === 'c:1')?.held
-      ).toBe(true)
-    );
+  it("splits an opening editor's rows: accepted ones apply, never-accepted ones with a token send, held or tokenless ones open copy-only when they draw, else apply (Q326, Q360)", () => {
+    const doc = new Y.Doc();
+    doc.getText('content').insert(0, 'base');
+    const whole = Y.encodeStateAsUpdate(doc);
+    const before = Y.encodeStateVector(doc);
+    doc.getText('content').insert(4, ' typed');
+    const typed = Y.encodeStateAsUpdate(doc, before);
+    const accepted = draft('a:1', { accepted: true, held: true });
+    const sent = draft('b:1', { grants: [grant(7)] });
+    const held = draft('c:1', { data: whole, grants: [grant(8)], held: true });
+    const bare = draft('d:1', { data: whole, kind: 'state' });
+    const drawn = draftGroups([accepted, sent, held, bare], ROOM);
+    expect(drawn.recovery).toEqual([held, bare]);
+    expect(drawn.refused).toBe(true);
+    expect(splitOpenDrafts(drawn.current)).toEqual({
+      apply: [accepted],
+      send: [sent],
+    });
+    // Steps that need the room's document: the editor applies them.
+    const needsBase = draft('e:1', { data: typed, held: true });
+    const applied = draftGroups([accepted, sent, needsBase], ROOM);
+    expect(applied.recovery).toEqual([]);
+    expect(splitOpenDrafts(applied.current)).toEqual({
+      apply: [accepted, needsBase],
+      send: [sent],
+    });
   });
 
   it("sends a closed offline tab's never-accepted rows with its stored token under the tab's id, until stored or held (Q319, Q326)", async () => {
@@ -1790,6 +1823,7 @@ describe('the draft sweep sending', () => {
       else storeNext();
       const sender = draftSender(key, async () => editor);
       await sender.settled;
+      expect(sender.kept).toBe(!!refusal);
       expect(requests).toHaveLength(1);
       const [sent] = requests;
       expect(sent.headers.get('authorization')).toBe('Bearer editor-token');
@@ -1802,51 +1836,109 @@ describe('the draft sweep sending', () => {
       ).toBe(true);
       const left = (await readDrafts(key)).filter((row) => !row.accepted);
       if (refusal) {
-        // Still refused under that id: held for the merge view.
+        // Still refused under that id: held, so the next open shows it
+        // copy-only (Q360).
         expect(left.length).toBeGreaterThan(0);
         expect(left.every((row) => row.held)).toBe(true);
+        expect(draftGroups(left, ROOM).recovery).toEqual(left);
       } else expect(left).toEqual([]);
     }
   });
 
+  const roomToken = async () => ({
+    access: 'write' as const,
+    room: ROOM,
+    token: 'room-token',
+    url: 'wss://collab.test',
+  });
+
   // Q328: a send whose answer was lost goes again, at once when the browser
   // is back online; the room takes the old steps again as a no-op (Q321).
-  it('sends again after a lost answer, at once when the browser comes back online, and settles on the next answer', async () => {
+  it('sends again after a lost answer, at once when the browser came back online during the try, and settles on the next answer (Q360)', async () => {
     const key = 'u_lost:material:mat_1';
     await putDrafts(
       (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
     );
     requests.length = 0;
-    fetchDrafts.mockImplementationOnce(async () => {
-      throw new TypeError('Failed to fetch');
-    });
+    const calls = fetchDrafts.mock.calls.length;
+    let lose = () => {};
+    fetchDrafts.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          lose = () => reject(new TypeError('Failed to fetch'));
+        })
+    );
     // The page's online event (this vitest has no window).
     const page = new EventTarget();
     Object.assign(globalThis, {
       addEventListener: page.addEventListener.bind(page),
       removeEventListener: page.removeEventListener.bind(page),
     });
-    const sender = draftSender(key, async () => ({
-      access: 'write' as const,
-      room: ROOM,
-      token: 'room-token',
-      url: 'wss://collab.test',
-    }));
-    await vi.waitFor(() => expect(fetchDrafts).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sender.done).toBe(false);
-    expect(await readDrafts(key)).toHaveLength(2);
+    const sender = draftSender(key, roomToken);
+    await vi.waitFor(() =>
+      expect(fetchDrafts).toHaveBeenCalledTimes(calls + 1)
+    );
+    // Online while the lost try is out: the next goes as it ends.
+    page.dispatchEvent(new Event('online'));
     storeNext();
-    // Online once the lost try is over: a try in flight is never doubled.
-    await vi.waitFor(() => {
-      page.dispatchEvent(new Event('online'));
-      expect(requests).toHaveLength(1);
-    });
+    lose();
     await sender.settled;
     Reflect.deleteProperty(globalThis, 'addEventListener');
     Reflect.deleteProperty(globalThis, 'removeEventListener');
     expect(requests).toHaveLength(1);
     expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it('sends at once when asked during its backoff, a reconnect while steps are held (Q360)', async () => {
+    const key = 'u_now:material:mat_1';
+    await putDrafts(
+      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
+    );
+    requests.length = 0;
+    const calls = fetchDrafts.mock.calls.length;
+    fetchDrafts.mockImplementationOnce(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const sender = draftSender(key, roomToken);
+    await vi.waitFor(() =>
+      expect(fetchDrafts).toHaveBeenCalledTimes(calls + 1)
+    );
+    storeNext();
+    sender.now();
+    await sender.settled;
+    expect(requests).toHaveLength(1);
+  });
+
+  it('fails a send that takes past its time limit as a try (Q360)', async () => {
+    const key = 'u_slow:material:mat_1';
+    await putDrafts(
+      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
+    );
+    requests.length = 0;
+    const calls = fetchDrafts.mock.calls.length;
+    const limit = new AbortController();
+    const timeout = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockReturnValue(limit.signal);
+    fetchDrafts.mockImplementationOnce(
+      (_input, init) =>
+        new Promise((_, reject) =>
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('timed out', 'TimeoutError'))
+          )
+        )
+    );
+    const sender = draftSender(key, roomToken);
+    await vi.waitFor(() =>
+      expect(fetchDrafts).toHaveBeenCalledTimes(calls + 1)
+    );
+    expect(timeout).toHaveBeenCalledWith(DRAFT_SEND_TIMEOUT_MS);
+    storeNext();
+    limit.abort();
+    sender.now();
+    await sender.settled;
+    timeout.mockRestore();
+    expect(requests).toHaveLength(1);
   });
 
   it("presents the group's stored room tokens, newest first, one per client id (Q288, Q322)", async () => {

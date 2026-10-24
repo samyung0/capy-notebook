@@ -49,12 +49,15 @@ vi.mock('@/api/hooks', () => ({
 // The draft send of never-accepted stored steps: settled by `release`.
 const sending = vi.hoisted(() => ({
   done: false,
+  kept: false,
+  nows: 0,
   release: () => {},
 }));
 const drafts = vi.hoisted(() => ({
   adopted: [] as unknown[],
   discarded: 0,
   disposed: 0,
+  held: [] as boolean[],
   onStorage: undefined as ((ok: boolean) => void) | undefined,
   refused: 0,
   rows: [] as unknown[],
@@ -69,10 +72,14 @@ vi.mock('@/lib/editDrafts', () => ({
   draftGroups: (
     rows: { lineage: string; refused?: boolean }[],
     room: string
-  ) => ({
-    current: rows.filter((row) => !row.refused && row.lineage === room),
-    recovery: rows.filter((row) => row.refused || row.lineage !== room),
-  }),
+  ) => {
+    const recovery = rows.filter((row) => row.refused || row.lineage !== room);
+    return {
+      current: rows.filter((row) => !row.refused && row.lineage === room),
+      recovery,
+      refused: !!recovery[0]?.refused,
+    };
+  },
   draftKey: (actor: string, kind: string, id: string) =>
     `${actor}:${kind}:${id}`,
   draftSender: vi.fn(() => {
@@ -85,6 +92,12 @@ vi.mock('@/lib/editDrafts', () => ({
     return {
       get done() {
         return sending.done;
+      },
+      get kept() {
+        return sending.kept;
+      },
+      now() {
+        sending.nows += 1;
       },
       settled,
       stop() {},
@@ -104,7 +117,9 @@ vi.mock('@/lib/editDrafts', () => ({
       discard: async () => {
         drafts.discarded += 1;
       },
-      disconnected() {},
+      disconnected(held = false) {
+        drafts.held.push(held);
+      },
       dispose: async () => {
         drafts.disposed += 1;
       },
@@ -119,10 +134,7 @@ vi.mock('@/lib/editDrafts', () => ({
   },
   recoveryDocument: () => new Y.Doc(),
   // Rows with a stored token and no accepted mark go through the send.
-  splitOpenDrafts: (
-    _key: string,
-    rows: { accepted?: true; grants?: string[] }[]
-  ) => ({
+  splitOpenDrafts: (rows: { accepted?: true; grants?: string[] }[]) => ({
     apply: rows.filter((row) => row.accepted || !row.grants),
     send: rows.filter((row) => !row.accepted && row.grants),
   }),
@@ -145,6 +157,9 @@ beforeEach(() => {
   drafts.rows = [];
   drafts.adopted = [];
   sending.done = false;
+  sending.kept = false;
+  sending.nows = 0;
+  drafts.held = [];
   drafts.refused = 0;
   drafts.discarded = 0;
   drafts.disposed = 0;
@@ -329,6 +344,12 @@ it('joins while its stored steps are in the draft send, view-only until it settl
 it('takes its stored steps after 30 s, joins only once the send settles, and a refusal then opens recovery', async () => {
   const row = { grants: ['t'], lineage: 'material:q:schema:1' };
   drafts.rows = [row];
+  // The page's offline event (this vitest has no window).
+  const page = new EventTarget();
+  Object.assign(globalThis, {
+    addEventListener: page.addEventListener.bind(page),
+    removeEventListener: page.removeEventListener.bind(page),
+  });
   const { onReplace, room } = await started();
   providers[0].config.onSynced?.({ state: true });
   await vi.advanceTimersByTimeAsync(30_000);
@@ -340,7 +361,16 @@ it('takes its stored steps after 30 s, joins only once the send settles, and a r
     status: 'syncing',
   });
   expect(itemEditingStopped(room.getSnapshot())).toBe(false);
+  // The hold is no editing incident (Q360).
+  expect(drafts.held).toEqual([true]);
+  // A reconnect meanwhile sends at once (Q328, Q360).
   expect(providers[0].config.beforeJoin?.()).toBeInstanceOf(Promise);
+  expect(sending.nows).toBe(1);
+  // No channel is open: a browser that goes offline shows offline (Q360).
+  page.dispatchEvent(new Event('offline'));
+  expect(room.getSnapshot().status).toBe('offline');
+  Reflect.deleteProperty(globalThis, 'addEventListener');
+  Reflect.deleteProperty(globalThis, 'removeEventListener');
   sending.release();
   await vi.advanceTimersByTimeAsync(0);
   expect(providers[0].config.beforeJoin?.()).toBeUndefined();
@@ -350,6 +380,46 @@ it('takes its stored steps after 30 s, joins only once the send settles, and a r
   expect(drafts.refused).toBe(1);
   await vi.advanceTimersByTimeAsync(0);
   expect(onReplace).toHaveBeenCalledTimes(1);
+  room.destroy();
+});
+
+// Q360: a first sync after the 30 s still takes the held steps.
+it('takes its stored steps at a first sync that comes after 30 s', async () => {
+  const row = { grants: ['t'], lineage: 'material:q:schema:1' };
+  drafts.rows = [row];
+  const { room } = await started();
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(applyDrafts).not.toHaveBeenCalledWith(
+    room.doc,
+    [row],
+    expect.anything()
+  );
+  providers[0].config.onSynced?.({ state: true });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(applyDrafts).toHaveBeenCalledWith(room.doc, [row], expect.anything());
+  expect(room.getSnapshot()).toMatchObject({
+    sending: false,
+    status: 'syncing',
+  });
+  room.destroy();
+});
+
+// Q360: a send that settles before the 30 s with a group the room did not
+// take: a fresh room opens it copy-only, the steps never applied here.
+it('opens a fresh room when its send settles with a group kept', async () => {
+  const row = { grants: ['t'], lineage: 'material:q:schema:1' };
+  drafts.rows = [row];
+  const { onReplace, room } = await started();
+  providers[0].config.onSynced?.({ state: true });
+  sending.kept = true;
+  sending.release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(onReplace).toHaveBeenCalledTimes(1);
+  expect(applyDrafts).not.toHaveBeenCalledWith(
+    room.doc,
+    [row],
+    expect.anything()
+  );
   room.destroy();
 });
 

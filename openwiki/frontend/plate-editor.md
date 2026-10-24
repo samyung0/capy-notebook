@@ -1612,31 +1612,43 @@ from any page.
   channel (`ClientIds::grantable`). The write records them. So the drafts
   of a closed tab whose edits never reached the room go in from any page. A
   group still refused `unassigned` (a token over 7 days old, an id recorded
-  to another user) is held for the merge view. Stored drafts and their
+  to another user) is held and opens copy-only (see opening with stored
+  drafts). Stored drafts and their
   short-lived tokens stay in the browser through sign-out and an account
   switch, as the drafts always did; an expired token grants nothing, and a
   grant needs the sender's own user.
 - **Opening with stored drafts** (Epo 2026-10-24, Q319, Q326, Q327, Q328).
   The recorder marks a session's rows `accepted` once a receipt covers one
   of its own edits (`covered > start`: adopted rows do not count), since
-  the room then recorded the session's id. On open (`splitOpenDrafts`) a
-  note, item room or source session applies accepted rows and syncs them
-  over its live channel; rows of a never-accepted session with a stored
-  token go through the draft send (`draftSender`) while the editor joins;
-  the rest are marked held for the merge view. Until the send settles (every
-  group stored or held) the editor shows the syncing status and is
-  view-only: notes lock the content and toolbar, items set `sending`
-  (`itemEditingStopped`), sources return `draftsSending`. A send that fails
-  goes again 30 s later, doubling to 5 minutes, and at once on the browser's
-  `online` event, never twice at once. Not settled 30 s after the open
-  (`DRAFT_SEND_WAIT_MS`) with the room synced, the editor closes its channel,
-  applies those rows, adds them to its recorder's adopted rows and edits on:
-  every edit is stored as a draft and nothing goes live, since the room
-  would refuse the old steps on the channel. Its provider's `beforeJoin`
-  then holds every JOIN until the send settles (reconnects included, and a
-  socket closed at the 10 s join deadline joins again into the same wait).
-  Once a send is accepted the editor joins and continues; one the room
-  refused leaves the steps in the document, so the live sync is refused
+  the room then recorded the session's id. On open (`draftGroups`,
+  `splitOpenDrafts`) a note, item room or source session applies accepted
+  rows and syncs them over its live channel; rows of a never-accepted
+  session with a stored token go through the draft send (`draftSender`)
+  while the editor joins. Never-accepted rows no send delivers (held after
+  one, or with no stored token) open copy-only with the refused rows when
+  they draw on their own, as Q237 and Q251 say until the merge view exists
+  (Epo 2026-10-25, Q360); ones that need the room's document are applied,
+  and the room's live refusal of them opens the whole document copy-only.
+  Until the send settles (every group stored or held) the editor shows the
+  syncing status and is view-only: notes lock the content and toolbar,
+  items set `sending` (`itemEditingStopped`), sources return
+  `draftsSending`. Each request has 30 s (`DRAFT_SEND_TIMEOUT_MS`); one that
+  fails or times out goes again 30 s later, doubling to 5 minutes, and at
+  once on the browser's `online` event or a reconnect's ask (`now`, from the
+  `beforeJoin` hooks), never twice at once: one asked during a try goes as
+  it ends. A send that settles before the hold with a group the room did not
+  take opens it copy-only at once (a note remounts, an item room is
+  replaced, a source session opens again). Not settled 30 s after the open
+  (`DRAFT_SEND_WAIT_MS`) with the room synced, or at a first sync after
+  that, the editor closes its channel, applies those rows, adds them to its
+  recorder's adopted rows and edits on: every edit is stored as a draft and
+  nothing goes live, since the room would refuse the old steps on the
+  channel. Its provider's `beforeJoin` then holds every JOIN until the send
+  settles, and no socket opens for the room meanwhile. The hold shows
+  syncing and is no editing incident (the recorder's `disconnected(true)`
+  reports no `offline_episode`); a browser that goes offline in it shows
+  offline. Once a send is accepted the editor joins and continues; one the
+  room refused leaves the steps in the document, so the live sync is refused
   `unassigned` and the edits open in the copy-only recovery. Before a first
   sync the join's own 30 s connection error stands. A live refusal has no
   automatic fallback: an accepted session is refused only once its record
@@ -1644,17 +1656,22 @@ from any page.
 - **Duplicate draft sends** (Epo 2026-10-24, Q321). A draft send whose
   update the room already holds in full (`ydoc::contains_changes` is false
   over the room's state vector and delete set) is accepted as a no-op on the
-  room's task, before the allowance is charged: no charge, no store and no
-  gateway checkpoint. So the page sweep, an opening editor and other tabs
-  may send one group without a lock, a resend after a lost answer costs
-  nothing, and simultaneous duplicates count once since a room handles
-  writes in order.
+  room's task, before the allowance is charged: no charge, and no new store
+  or gateway checkpoint. Its answer still waits for the store that holds
+  the group when one is due or running (Epo 2026-10-25, Q360), since the
+  browser deletes its rows on it. So the page sweep, an opening editor and
+  other tabs may send one group without a lock, a resend after a lost answer
+  costs nothing, and simultaneous duplicates count once since a room handles
+  writes in order. Draft sends count against their own limit of 60 a minute
+  per user instead (see the draft sweep).
 - **Refusal.** An update under another id goes the refused-on-entry way:
   material rooms send `document-rejected` with code `unassigned` (the editor
   keeps its unsaved edits as a refused draft), source rooms
   `source-checkpoint-failed` with `recoverable: false` and code `unassigned`
-  (recovery), and a draft send answers 409 `unassigned` (the group is held
-  for the editor, never sent again). Each is logged at warn and recorded as
+  (recovery), and a draft send answers 409 `unassigned` (the group is held,
+  never sent again: its next open shows it copy-only, or applies it when it
+  needs the room's document, which the live refusal then opens copy-only).
+  Each is logged at warn and recorded as
   the edit incident `save_refused`/`client_id`. So after the server lost
   state a tab restores only its own user's unsaved edits; another user's are
   lost (accepted, Q213). Edits under an id the server never assigned (made
@@ -2018,20 +2035,25 @@ the group's rows become one row of the pieces not sent (the worker's
 `unsent`), which the answer below applies to and recovery shows (Epo
 2026-10-18).
 
-The service runs a channel's JOIN checks (origin, token, access, the room's
-eviction and pause state), refuses a read-only token, checks the note's
-current schema, refuses the send while the user is in a timeout (checked
-right after the token, before any lookup), reads the body within 8 MiB (a
-larger one answers `too_large`, which the page leaves to the editor, and
-times the user out) and a note's 4 MiB sync cap, takes it from the user's update allowance (the one their sockets take
-from), checks the eviction lease and a local
-reset again (the body may have arrived after them), and hands the update to
-the room, loading it if need be: the same writer admission and apply as a
-channel's update (`admit_update` in `room.rs`, a read token's draft as a
-read channel's), so open editors receive it live, then a store at once. A
-source send counts as joining its room meanwhile. It answers only after that
-store, and that answer is the receipt for every row the request carried:
-only then are the rows deleted. A source room takes no send during a
+The service counts the send against the user's draft sends once its token
+checks out, at most 60 in any minute apart from the update allowance (Epo
+2026-10-25, Q360; `take_draft` in `rate.rs`; over it answers `too_fast`
+before any lookup, with no timeout). It runs a channel's JOIN checks
+(origin, token, access, the room's eviction and pause state), refuses a
+read-only token, checks the note's current schema, refuses the send while
+the user is in a timeout (checked right after the token, before any
+lookup), reads the body within 8 MiB (a larger one answers `too_large`,
+which the page leaves to the editor, and times the user out) and a note's
+4 MiB sync cap, checks the eviction lease and a local reset again (the body
+may have arrived after them), and hands the update to the room, loading it
+if need be. There a group the room holds in full is a no-op (see duplicate
+draft sends); any other takes from the user's update allowance (the one
+their sockets take from) and goes through the same writer admission and
+apply as a channel's update (`admit_update` in `room.rs`, a read token's
+draft as a read channel's), so open editors receive it live, then a store
+at once. A source send counts as joining its room meanwhile. It answers
+only after the store that holds the update, and that answer is the receipt
+for every row the request carried: only then are the rows deleted. A source room takes no send during a
 publication handoff, and an Office file's only over the room's base. A room
 whose load failed answers the failure (one load per send). A successful send
 is silent: the edits just appear for everyone.
@@ -2053,13 +2075,15 @@ class
   structs under a client id not assigned to the user, Epo 2026-10-24),
   `too_large` (413) and `lineage` (409, a token for another room, a schema
   or epoch that moved on, another Office base): marked `held`, left for the
-  editor;
+  editor's next open, which applies a held group of an accepted session and
+  shows any other copy-only (see opening with stored drafts, Q360);
 - `outdated` (426, the page's client protocol is refused): kept unmarked,
   and no sweep runs again until the page reloads (see
   [Client protocol](#client-protocol-and-the-release-nudge));
 - `permission` (403), `unavailable` (503) and any other answer: kept, and
   not sent again until the next page load;
-- `too_fast` (429, the user is in a timeout), no answer (offline) or rows
+- `too_fast` (429, the user is in a timeout or sent 60 drafts in the last
+  minute), no answer (offline, or none within the request's 30 s) or rows
   that changed meanwhile: kept for the next trigger.
 
 `held` is the sweep's own mark: a held group that enters recovery at the

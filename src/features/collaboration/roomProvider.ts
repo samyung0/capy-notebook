@@ -30,7 +30,8 @@ export interface RoomProviderConfig {
   awareness?: Awareness | null;
   /** What a JOIN waits for first, when anything (Q327): the draft send of
    * stored steps the room never accepted, which must reach it before the
-   * document syncs. Undefined joins at once. */
+   * document syncs. Meanwhile no socket opens for the room (Q360). Undefined
+   * joins at once. */
   beforeJoin?: () => Promise<void> | undefined;
   document: Y.Doc;
   name: string;
@@ -157,6 +158,8 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private readonly socket: CollabSocket;
   private channel: number | null = null;
   private wanted = false;
+  /** The draft send a connect waits on before it attaches (`beforeJoin`). */
+  private waiting: Promise<void> | null = null;
   private destroyed = false;
   /** A note's room: the seat its embeds join inside. */
   private noteSeat: NoteSeat | null = null;
@@ -203,6 +206,22 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     if (this.destroyed || this.wanted || this.stopped) return;
     this.wanted = true;
     this.config.parent?.add(this);
+    const before = this.config.beforeJoin?.();
+    if (!before) {
+      this.attach();
+      return;
+    }
+    // The room's socket waits for the draft send too: one that sent no JOIN
+    // would close at the server's join deadline and open again (Q360).
+    this.waiting = before;
+    void before.then(() => {
+      if (this.waiting !== before) return;
+      this.waiting = null;
+      if (this.wanted && !this.destroyed) this.attach();
+    });
+  }
+
+  private attach() {
     this.socket.attach(this);
     if (this.socket.status === 'connected') void this.join();
   }
@@ -210,6 +229,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   disconnect() {
     if (!this.wanted) return;
     this.wanted = false;
+    this.waiting = null;
     this.config.parent?.delete(this);
     this.unpark();
     const joined = this.channel !== null;

@@ -139,6 +139,53 @@ test('offline edits outlive a reload and save once the room is back', async ({
   );
 });
 
+// Q327, Q328: a closed session's never-accepted steps go through the draft
+// send while the note opens view-only; not delivered 30 s on (the mock
+// serves no `/drafts`), the synced note takes them itself and edits on,
+// syncing, with nothing of them live until the send settles.
+test('a note takes the stored steps its draft send has not delivered 30 s on, and edits on', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openNote(page);
+  await setOnline(page, false);
+  await type(page, ' Held steps.');
+  await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
+  // Back online with the service down, so the room never took them, and
+  // away from the note (its last whole row is written as the page goes).
+  await setReachable(page, false);
+  await setOnline(page, true);
+  await page.goto('/workspaces/ws_scenarios');
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  // As a real session's rows, they carry its stored token (the mock's
+  // provider takes none, so its rows would open copy-only).
+  await page.evaluate(async () => {
+    const draftsPath = '/src/lib/editDrafts.ts';
+    const dbPath = '/src/mocks/db.ts';
+    const { draftKey, putDrafts, readDrafts } = await import(draftsPath);
+    const { user } = await import(dbPath);
+    const key = draftKey(user.id, 'material', 'mock-scenario-note');
+    const rows: { grants?: string[] }[] = await readDrafts(key);
+    await putDrafts(rows.map((row) => ({ ...row, grants: ['stored-token'] })));
+  });
+  await page.goto(note);
+  await setReachable(page, true);
+  const content = page.locator('[data-slate-editor]').first();
+  await expect(content).toContainText(seed, { timeout: 30_000 });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'syncing'
+  );
+  await expect(content).toHaveAttribute('contenteditable', 'false');
+  await expect(content).not.toContainText('Held steps.');
+  await expect(content).toContainText('Held steps.', { timeout: 45_000 });
+  await expect(content).toHaveAttribute('contenteditable', 'true');
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'syncing'
+  );
+});
+
 test('edits from a room that moved on open read-only for copying until Reload', async ({
   page,
 }) => {

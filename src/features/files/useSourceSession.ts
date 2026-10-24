@@ -358,6 +358,10 @@ export function useSourceSession(
     let sender: DraftSender | null = null;
     let heldSteps = false;
     let heldEpisode = false;
+    // Takes the pending steps once DRAFT_SEND_WAIT_MS passed and the room
+    // synced, whichever comes last; its timer clears on teardown.
+    let hold = () => {};
+    let holdTimer: ReturnType<typeof setTimeout> | undefined;
     // The join (Epo 2026-10-23): one 30 s watch from here over the session
     // request, the room's answer and an Office view's ready; a session that
     // has not joined by then errors as a first join does.
@@ -489,7 +493,11 @@ export function useSourceSession(
       if (session.format === 'text')
         applySavedSource(shared, session, RESTORE_ORIGIN);
       const lineage = sourceLineage(session);
-      const { current: restoredDrafts, recovery: found } = draftGroups(
+      const {
+        current: restoredDrafts,
+        recovery: found,
+        refused,
+      } = draftGroups(
         storedDrafts ?? [],
         lineage,
         sameSourceLineage(session.format)
@@ -502,7 +510,7 @@ export function useSourceSession(
       if (draft && opened && typeof opened === 'object') {
         // Recovery shows the edits over their own base.
         controller.abort();
-        reportRecoveryGroup(found, report);
+        if (!refused) reportRecoveryGroup(found, report);
         recoveryDrafts = found;
         shared.destroy();
         const recovered = opened.doc;
@@ -522,7 +530,7 @@ export function useSourceSession(
         });
         setStatus('recovery');
         setDirty(true);
-        setBanner(draft.refused ? 'refused' : 'changed');
+        setBanner(refused ? 'refused' : 'changed');
         // No room joins: recovery is its answer.
         reconnect.dispose();
         return;
@@ -556,10 +564,7 @@ export function useSourceSession(
       // Accepted sessions' rows apply here, in one update (a long session
       // leaves a row per edit); never-accepted ones with stored tokens go
       // through the draft send (Q326).
-      const { apply, send: pendingDrafts } = splitOpenDrafts(
-        draftKey,
-        restoredDrafts
-      );
+      const { apply, send: pendingDrafts } = splitOpenDrafts(restoredDrafts);
       applyDrafts(shared, apply, RESTORE_ORIGIN);
       if (apply.length) setDirty(true);
       let initialToken: SourceCollaborationToken | null = credentials;
@@ -804,8 +809,13 @@ export function useSourceSession(
       provider = createSourceProvider({
         // A publication's first refusal never gets here (sourceProvider.ts).
         // While its never-accepted steps are held, a JOIN waits for the
-        // draft send to take them (Q327).
-        beforeJoin: () => (heldSteps ? sender?.settled : undefined),
+        // draft send to take them (Q327), and a reconnect sends at once
+        // (Q328, Q360).
+        beforeJoin: () => {
+          if (!heldSteps) return;
+          sender?.now();
+          return sender?.settled;
+        },
         document: shared,
         name: session.room,
         onAuthenticationFailed: ({ reason }) => {
@@ -1032,6 +1042,9 @@ export function useSourceSession(
             setWorkerClientId(provider?.workerClientId);
             setSynced(true);
             checkpoint(true);
+            // A first sync after DRAFT_SEND_WAIT_MS still takes the held
+            // steps (Q360).
+            queueMicrotask(() => hold());
           }
         },
         onUnsyncedChanges: ({ number }) => {
@@ -1125,27 +1138,37 @@ export function useSourceSession(
         );
         sender = current;
         setDraftsSending(true);
-        const wait = setTimeout(() => {
-          if (cancelled || current.done || !everSynced || active.recovery)
-            return;
+        let waitOver = false;
+        hold = () => {
+          if (!(waitOver && everSynced) || current.done || heldSteps) return;
+          if (cancelled || sender !== current || active.recovery) return;
           heldSteps = true;
           heldEpisode = true;
           provider?.disconnect();
-          recorder?.disconnected();
+          recorder?.disconnected(true);
           applyDrafts(shared, pendingDrafts, RESTORE_ORIGIN);
           recorder?.adopt(pendingDrafts);
           setDirty(true);
           setDraftsSending(false);
           setDraftsHeld(true);
           provider?.connect();
+        };
+        holdTimer = setTimeout(() => {
+          waitOver = true;
+          hold();
         }, DRAFT_SEND_WAIT_MS);
         void current.settled.then(() => {
-          clearTimeout(wait);
+          clearTimeout(holdTimer);
           if (cancelled || sender !== current) return;
+          const held = heldSteps;
           sender = null;
           heldSteps = false;
           setDraftsSending(false);
           setDraftsHeld(false);
+          // A group the room did not take, its steps not applied here: the
+          // reopen shows it copy-only (Q360). Held ones the JOIN's refusal
+          // takes.
+          if (current.kept && !held) setGeneration((value) => value + 1);
         });
       }
       shared.on('update', (_update: Uint8Array, origin: unknown) => {
@@ -1171,6 +1194,7 @@ export function useSourceSession(
       cancelled = true;
       disposed = true;
       sender?.stop();
+      clearTimeout(holdTimer);
       controller.abort();
       clearTimeout(timer);
       delay.dispose();

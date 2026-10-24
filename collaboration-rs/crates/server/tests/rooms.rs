@@ -1784,6 +1784,85 @@ async fn a_draft_group_the_room_holds_is_stored_and_charged_once() {
     assert_eq!(rows().await, before + 1, "stored once");
 }
 
+/// Epo 2026-10-25 (Q360, r4 B1): a duplicate draft send answers only once
+/// the room's pending store of that group committed, since the browser
+/// deletes its rows on the answer. With the updates table locked, neither of
+/// two back-to-back sends of a group answers; once the lock goes both do,
+/// stored once. Fails if the duplicate's no-op answers before the store.
+#[tokio::test]
+async fn a_duplicate_draft_send_answers_only_after_the_store_commits() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, editor) = writer(&env, server.port, "drafts").await;
+    let material = material_of(&room).to_owned();
+    let rows = || async {
+        db(&env)
+            .await
+            .query_one(
+                "SELECT count(*) FROM material_yjs_updates WHERE material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("rows")
+            .get::<_, i64>(0)
+    };
+    let before = rows().await;
+    let group = drafted(&editor.doc, typed_into_note(" held"));
+    let mut lock = db(&env).await;
+    let held = lock.transaction().await.expect("transaction");
+    held.batch_execute("LOCK TABLE material_yjs_updates IN EXCLUSIVE MODE")
+        .await
+        .expect("lock");
+    let send = || {
+        let (room, write, body) = (room.clone(), token(&room, &user, "write"), group.clone());
+        let port = server.port;
+        tokio::spawn(
+            async move { send_drafts(port, &room, Some(&write), Some(ORIGIN), body).await },
+        )
+    };
+    let (first, second) = (send(), send());
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(
+        !first.is_finished() && !second.is_finished(),
+        "no answer before the store commits"
+    );
+    held.rollback().await.expect("release");
+    let (first, second) = (first.await.expect("first"), second.await.expect("second"));
+    assert_eq!((first.0, second.0), (200, 200), "{} {}", first.1, second.1);
+    assert_eq!(rows().await, before + 1, "stored once");
+}
+
+/// Security regression (Epo 2026-10-25, Q360, r4 S2): a user's draft sends
+/// are limited to 60 a minute apart from the byte charge, which a group the
+/// room holds skips (Q321): the 61st send of one group within the minute is
+/// answered 429 `too_fast` before any lookup. Fails if the request limit is
+/// removed (every send would go in as a no-op).
+#[tokio::test]
+async fn a_users_61st_draft_send_in_a_minute_is_refused_too_fast() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, editor) = writer(&env, server.port, "drafts").await;
+    let group = drafted(&editor.doc, typed_into_note(" again"));
+    let write = token(&room, &user, "write");
+    for sent in 0..60 {
+        let (status, answer) = send_drafts(
+            server.port,
+            &room,
+            Some(&write),
+            Some(ORIGIN),
+            group.clone(),
+        )
+        .await;
+        assert_eq!(status, 200, "send {sent}: {answer}");
+    }
+    let (status, answer) = send_drafts(server.port, &room, Some(&write), Some(ORIGIN), group).await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (429, Some("too_fast")),
+        "{answer}"
+    );
+}
+
 /// Security regression (Epo 2026-10-18): no room takes an update over 8 MiB;
 /// its sender is timed out. A socket sending one hears the timeout (and stays
 /// open) before the room reads it, and a text source's draft send over it is

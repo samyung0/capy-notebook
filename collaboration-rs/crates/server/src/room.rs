@@ -1315,25 +1315,45 @@ impl Room {
                 return;
             }
         }
-        // A group the room already holds in full (the sweep, an opening
-        // editor and another tab may all send it) is accepted as a no-op:
-        // no allowance charge and no store (Epo 2026-10-24, Q321). The room
-        // handles writes in order, so back-to-back duplicates count once.
-        if let Ok(decoded) = ydoc::decode(&update)
-            && !ydoc::contains_changes(&self.doc.transact(), &decoded)
+        let answer = match self.admit_draft(&context, &update, &granted) {
+            // Held in full, or admitted: the receipt waits for the store.
+            Ok(None | Some(Outcome::Admitted)) => Ok(self.durable().await),
+            Ok(Some(Outcome::Unheld)) => Err(Refused::new(
+                Class::Unheld,
+                "the update needs content the room does not hold",
+            )),
+            Ok(Some(Outcome::Refused { reason, class, .. })) => Err(Refused::new(class, reason)),
+            Err(refusal) => Err(refusal),
+        };
+        let _ = reply.send(answer);
+    }
+
+    /// A draft's admission, decoding it once (no await: a decoded update
+    /// may not cross one). None for a group the room already holds in full
+    /// (the sweep, an opening editor and another tab may all send it): a
+    /// no-op, with no allowance charge and no new store (Epo 2026-10-24,
+    /// Q321), whose answer still waits for the store that holds the group
+    /// (Q360), since the browser deletes its rows on it. The room handles
+    /// writes in order, so back-to-back duplicates count once.
+    fn admit_draft(
+        &mut self,
+        context: &Context,
+        update: &[u8],
+        granted: &[u64],
+    ) -> Result<Option<Outcome>, Refused> {
+        let decoded = ydoc::decode(update).ok();
+        if decoded
+            .as_ref()
+            .is_some_and(|decoded| !ydoc::contains_changes(&self.doc.transact(), decoded))
         {
-            let (done, durable) = oneshot::channel();
-            let _ = done.send(Ok(()));
-            let _ = reply.send(Ok(durable));
-            return;
+            return Ok(None);
         }
         let verdict = self
             .app
             .allowances
             .take(&context.user_id, update.len(), Instant::now());
         if let Some(refusal) = Refused::timed_out(&self.app, &context.user_id, verdict) {
-            let _ = reply.send(Err(refusal));
-            return;
+            return Err(refusal);
         }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
         let read_only = context.access != Access::Write;
@@ -1343,30 +1363,25 @@ impl Room {
             if update == IT_PANIC_UPDATE {
                 panic!("integration test panic");
             }
-            self.admit_update(None, &context, read_only, &update, &granted)
+            self.admit_update(None, context, read_only, update, decoded, granted)
         }));
-        let outcome = checked.unwrap_or_else(|_| {
+        Ok(Some(checked.unwrap_or_else(|_| {
             self.update_panicked(None, update.len());
             Outcome::refused(Class::Malformed, "update cannot be checked")
-        });
-        let answer = match outcome {
-            Outcome::Admitted => {
-                let (done, durable) = oneshot::channel();
-                if self.nothing_to_store() {
-                    let _ = done.send(Ok(()));
-                } else {
-                    self.store.waiters.push(done);
-                    self.start_store().await;
-                }
-                Ok(durable)
-            }
-            Outcome::Unheld => Err(Refused::new(
-                Class::Unheld,
-                "the update needs content the room does not hold",
-            )),
-            Outcome::Refused { reason, class, .. } => Err(Refused::new(class, reason)),
-        };
-        let _ = reply.send(answer);
+        })))
+    }
+
+    /// A draft's receipt: answered once nothing is left to store, so after
+    /// the store that holds what the room took.
+    async fn durable(&mut self) -> Durable {
+        let (done, durable) = oneshot::channel();
+        if self.nothing_to_store() {
+            let _ = done.send(Ok(()));
+        } else {
+            self.store.waiters.push(done);
+            self.start_store().await;
+        }
+        durable
     }
 
     /// Starts the next waiting children pass: the update's child writes as
@@ -2637,7 +2652,7 @@ impl Room {
             return;
         };
         let (context, read_only) = (member.context.clone(), member.read_only);
-        match self.admit_update(Some(key), &context, read_only, bytes, &[]) {
+        match self.admit_update(Some(key), &context, read_only, bytes, None, &[]) {
             Outcome::Admitted => {}
             Outcome::Unheld => self.resync(key, step2, &context),
             Outcome::Refused {
@@ -2656,6 +2671,7 @@ impl Room {
         context: &Context,
         read_only: bool,
         bytes: &[u8],
+        decoded: Option<yrs::Update>,
         granted: &[u64],
     ) -> Outcome {
         if self.app.evictions.blocks(&self.name, false) {
@@ -2664,7 +2680,8 @@ impl Room {
         if context.expires_at <= crate::auth::now_seconds() {
             return Outcome::refused(Class::Permission, "collaboration token expired");
         }
-        let Ok(update) = ydoc::decode(bytes) else {
+        // A draft send decoded its update already (the no-op check).
+        let Some(update) = decoded.or_else(|| ydoc::decode(bytes).ok()) else {
             return Outcome::refused(Class::Malformed, "malformed update");
         };
         let changes = ydoc::contains_changes(&self.doc.transact(), &update);

@@ -24,8 +24,13 @@
 //! [TIMEOUT_MIN], the least doubled for each further timeout within
 //! [REPEAT_WINDOW] of the last one's end, at most [TIMEOUT_MAX]. No update
 //! may be larger than the byte burst, so every update fits a full allowance.
+//!
+//! Apart from all of it, the user's draft sends (`POST /drafts`): at most
+//! [DRAFT_REQUESTS] a minute (Epo 2026-10-25, Q360), since a send of a group
+//! the room holds is charged nothing (Q321). One over it is refused, with no
+//! timeout.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -62,6 +67,10 @@ impl Limits {
         self.open_bytes as f64 / self.open_refill_seconds as f64
     }
 }
+
+/// A user's draft sends in any minute (Q360).
+pub const DRAFT_REQUESTS: usize = 60;
+const DRAFT_WINDOW: Duration = Duration::from_secs(60);
 
 /// How long an allowance is kept after its last use (and until it has
 /// refilled): a reconnect within it goes on from what was left.
@@ -100,6 +109,8 @@ struct Allowance {
     updates: f64,
     bytes: f64,
     open: f64,
+    /// The user's draft sends of the last [DRAFT_WINDOW], oldest first.
+    drafts: VecDeque<Instant>,
     at: Instant,
     /// The end of the user's last timeout.
     until: Option<Instant>,
@@ -115,6 +126,7 @@ impl Allowance {
             updates: limits.burst_updates as f64,
             bytes: limits.burst_bytes as f64,
             open: limits.open_bytes as f64,
+            drafts: VecDeque::new(),
             at: now,
             until: None,
             repeats: 0,
@@ -194,6 +206,10 @@ impl Allowance {
                 >= limits.burst_updates as f64
             && self.bytes + seconds * limits.bytes_per_second as f64 >= limits.burst_bytes as f64
             && self.open + seconds * limits.open_per_second() >= limits.open_bytes as f64
+            && self
+                .drafts
+                .back()
+                .is_none_or(|last| now >= *last + DRAFT_WINDOW)
             && self.until.is_none_or(|end| now >= end + REPEAT_WINDOW)
             && !self.turn
     }
@@ -266,6 +282,25 @@ impl Allowances {
             allowance.take(&self.limits, bytes, now)
         });
         self.announce(user, verdict, now)
+    }
+
+    /// One draft send of `user`'s, unless they sent [DRAFT_REQUESTS] in the
+    /// last minute.
+    pub fn take_draft(&self, user: &str, now: Instant) -> bool {
+        self.with(user, now, |allowance| {
+            let drafts = &mut allowance.drafts;
+            while drafts
+                .front()
+                .is_some_and(|sent| now >= *sent + DRAFT_WINDOW)
+            {
+                drafts.pop_front();
+            }
+            let taken = drafts.len() < DRAFT_REQUESTS;
+            if taken {
+                drafts.push_back(now);
+            }
+            taken
+        })
     }
 
     /// An update over the cap: a timeout of the least length begins, unless
@@ -396,6 +431,28 @@ mod tests {
             remaining,
             started: true,
         }
+    }
+
+    /// Q360: 60 draft sends in any minute, apart from the allowance; each
+    /// comes back a minute after it went, and none times the user out.
+    #[test]
+    fn a_user_sends_60_drafts_in_any_minute() {
+        let start = Instant::now();
+        let allowances = Allowances::new(LIMITS, start);
+        let sent = (0..61)
+            .take_while(|index| allowances.take_draft("a", start + secs(0.5) * *index))
+            .count();
+        assert_eq!(sent, 60);
+        assert!(
+            allowances.take_draft("b", start + secs(30.0)),
+            "another user's own"
+        );
+        assert!(!allowances.take_draft("a", start + secs(59.9)));
+        assert!(
+            allowances.take_draft("a", start + secs(60.0)),
+            "the first came back"
+        );
+        assert_eq!(allowances.remaining("a", start + secs(60.0)), None);
     }
 
     #[test]

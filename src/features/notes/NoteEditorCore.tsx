@@ -637,6 +637,9 @@ export function NoteEditorCore({
   const sendingNow = useRef(pending.length > 0);
   const heldSteps = useRef(false);
   const sender = useRef<DraftSender | null>(null);
+  // Takes the pending steps once DRAFT_SEND_WAIT_MS passed and the room
+  // synced, whichever comes last.
+  const holdSteps = useRef<(() => void) | null>(null);
   const report = useCallback((saveState: NoteEditorStatus['saveState']) => {
     const shown =
       phaseNow.current === 'standby'
@@ -1022,6 +1025,9 @@ export function NoteEditorCore({
             // and restored edits have none yet.
             resendCheckpoints.current();
             if (unsavedChanges.current) saveNow.current();
+            // A first sync after DRAFT_SEND_WAIT_MS still takes the held
+            // steps (Q360).
+            queueMicrotask(() => holdSteps.current?.());
           },
           providers: [
             USE_MSW
@@ -1044,8 +1050,12 @@ export function NoteEditorCore({
                   options: {
                     // While its never-accepted steps are held, a JOIN waits
                     // for the draft send to take them (Q327).
-                    beforeJoin: () =>
-                      heldSteps.current ? sender.current?.settled : undefined,
+                    beforeJoin: () => {
+                      if (!heldSteps.current) return;
+                      // A reconnect meanwhile sends at once (Q328, Q360).
+                      sender.current?.now();
+                      return sender.current?.settled;
+                    },
                     name: collaborationToken.room,
                     onAuthenticationFailed,
                     onClose: () => {
@@ -1269,34 +1279,49 @@ export function NoteEditorCore({
     let active = true;
     void current.settled.then(() => {
       if (!active) return;
+      const held = heldSteps.current;
       sendingNow.current = false;
       heldSteps.current = false;
       setDraftsSending(false);
+      // A group the room did not take, its steps not applied here: the
+      // remount opens it copy-only (Q360). Held ones the JOIN's refusal
+      // takes there.
+      if (current.kept && !held) {
+        reportRejection.current?.('unassigned', 'kept');
+        return;
+      }
       if (reportedStatus.current) report(reportedStatus.current);
     });
     // Not settled in time: the note takes the steps itself and edits on,
     // every edit stored and nothing live until the room took them. Before
-    // a first sync the join's own 30 s error stands.
-    const timer = setTimeout(() => {
-      if (!active || current.done || !hasSynced.current) return;
-      if (rejected.current || stale.current) return;
+    // a first sync the join's own 30 s error stands; the hold waits for it.
+    let waitOver = false;
+    const hold = () => {
+      if (!(active && waitOver && hasSynced.current) || current.done) return;
+      if (heldSteps.current || rejected.current || stale.current) return;
       const room = roomProvider(editor)?.provider;
       heldSteps.current = true;
       heldEpisode.current = true;
       room?.disconnect();
-      recorder.current?.disconnected();
+      recorder.current?.disconnected(true);
       applyDrafts(ydoc, pending, RESTORE_ORIGIN);
       recorder.current?.adopt(pending);
       sendingNow.current = false;
       setDraftsSending(false);
       report('syncing');
       void room?.connect();
+    };
+    holdSteps.current = hold;
+    const timer = setTimeout(() => {
+      waitOver = true;
+      hold();
     }, DRAFT_SEND_WAIT_MS);
     return () => {
       active = false;
       clearTimeout(timer);
       current.stop();
       if (sender.current === current) sender.current = null;
+      if (holdSteps.current === hold) holdSteps.current = null;
     };
   }, [draftKey, editor, material.id, pending, report, ydoc]);
 

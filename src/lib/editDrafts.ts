@@ -22,6 +22,7 @@ import {
   type DraftRef,
   type DraftReply,
   type DraftRequest,
+  drawsAlone,
   grantsOf,
   MERGE_RUN,
   mergedRows,
@@ -312,8 +313,16 @@ export function markDraftsReported(key: string, ids: string[]): Promise<void> {
 /**
  * Split a document's rows against the room it opens: `current` merges into
  * the live document; `recovery` is one group (refused rows, or one other
- * lineage) to show read-only first. Further groups wait for the next open.
- * `same` compares lineages (text sources ignore the base).
+ * lineage) to show read-only first, `refused` saying which. Further groups
+ * wait for the next open. `same` compares lineages (text sources ignore the
+ * base).
+ *
+ * Rows of this lineage from a session the room never accepted that no draft
+ * send delivers (held after one, or with no stored token) open copy-only
+ * with the refused ones when they draw on their own (Epo 2026-10-25, Q360:
+ * Q237 and Q251 until the merge view). Ones that need the room's document
+ * stay current: the editor applies them, and the room's refusal of them
+ * opens its whole document copy-only.
  */
 export function draftGroups(
   rows: EditDraft[],
@@ -321,17 +330,35 @@ export function draftGroups(
   same: (left: string, right: string) => boolean = (left, right) =>
     left === right
 ) {
-  const first = rows.find((row) => row.refused || !same(row.lineage, lineage));
+  const unsendable = (row: EditDraft) =>
+    same(row.lineage, lineage) &&
+    !row.refused &&
+    !row.accepted &&
+    (!!row.held || !row.grants?.length);
+  const held = rows.filter(unsendable);
+  const shown = held.length > 0 && drawsOnItsOwn(held);
+  const refused = (row: EditDraft) =>
+    !!row.refused || (shown && unsendable(row));
+  const first = rows.find((row) => refused(row) || !same(row.lineage, lineage));
   return {
-    current: rows.filter((row) => !row.refused && same(row.lineage, lineage)),
+    current: rows.filter((row) => !refused(row) && same(row.lineage, lineage)),
     recovery: first
       ? rows.filter(
           (row) =>
-            same(row.lineage, first.lineage) &&
-            !!row.refused === !!first.refused
+            same(row.lineage, first.lineage) && refused(row) === refused(first)
         )
       : [],
+    refused: !!first && refused(first),
   };
+}
+
+/** Whether rows draw with no base (a malformed row does not). */
+function drawsOnItsOwn(rows: EditDraft[]) {
+  try {
+    return drawsAlone(mergedRows(rows));
+  } catch {
+    return false;
+  }
 }
 
 /** The bytes a group of rows holds (edit_incidents sizes). */
@@ -496,6 +523,8 @@ export function recordDrafts({
   let retry: ReturnType<typeof setTimeout> | undefined;
   let lastWhole = Number.NEGATIVE_INFINITY;
   let offline = false;
+  // The offline episode is a draft send's hold (`disconnected(true)`).
+  let quiet = false;
   // A receipt covered one of this session's own edits (Q326).
   let accepted = false;
   // How the current offline episode started (its incident reason).
@@ -680,8 +709,10 @@ export function recordDrafts({
     connected() {
       heldStorageReport?.();
       heldStorageReport = null;
-      if (offline) report?.('offline_episode', offlineReason, heldBytes());
+      if (offline && !quiet)
+        report?.('offline_episode', offlineReason, heldBytes());
       offline = false;
+      quiet = false;
       snapshotDue = false;
       if (over) {
         over = false;
@@ -732,8 +763,12 @@ export function recordDrafts({
       return write(deleteDrafts(previous));
     },
     /** The room is unreachable: edits from now on are what this device alone
-     * holds, so the whole document is written once and the bound applies. */
-    disconnected() {
+     * holds, so the whole document is written once and the bound applies.
+     * `held`: stored steps wait for the draft send (Q327), an episode that
+     * is no editing incident, even if the browser goes offline in it
+     * (Q360). */
+    disconnected(held = false) {
+      if (!offline) quiet = held;
       offline = true;
       offlineReason =
         navigator.onLine === false ? 'browser_offline' : 'unreachable';
@@ -922,6 +957,9 @@ async function sendGroup(
   return { refs: group.refs, sent: 'sent' };
 }
 
+/** How long one `/drafts` request may take (Epo 2026-10-25, Q360). */
+export const DRAFT_SEND_TIMEOUT_MS = 30_000;
+
 /** What a draft send waiting for the allowance holds the tab back with. */
 const DRAFT_PACING = {};
 
@@ -951,9 +989,16 @@ async function sendPiece(
   if (group.grants.length) headers['x-capy-grants'] = group.grants.join(',');
   let response: Response;
   try {
+    // A send that stalls (a captive portal, a half-open connection) fails
+    // as a try after DRAFT_SEND_TIMEOUT_MS (Q360).
     response = await fetch(
       new URL('/drafts', token.url.replace(WEBSOCKET_SCHEME, 'http')),
-      { body, headers, method: 'POST' }
+      {
+        body,
+        headers,
+        method: 'POST',
+        signal: AbortSignal.timeout(DRAFT_SEND_TIMEOUT_MS),
+      }
     );
   } catch {
     return 'retry';
@@ -998,9 +1043,10 @@ interface SweepOptions {
  * room, and rows go only after their receipt. A refused group is marked
  * refused, to open read-only as the editor's refusals do, when it draws on
  * its own; one that needs the room's state, and a group only the editor can
- * send, are marked `held`: left for the editor's next open, never sent
- * again (a recovery of them is reported as any other). Resolves whether the
- * rows are settled for this page load.
+ * send, are marked `held`, never sent again: the editor's next open applies
+ * a held group of an accepted session and shows any other copy-only
+ * (`draftGroups`, Q360). Resolves whether the rows are settled for this
+ * page load.
  */
 async function sweepDocument(
   key: string,
@@ -1080,27 +1126,17 @@ async function sendGroups(
 }
 
 /**
- * An opening editor's stored rows (Epo 2026-10-24, Q326): those of sessions
- * the room accepted a write from are applied and sync over the live channel
- * (`apply`); those of never-accepted sessions that carry a stored token go
- * through the draft send while the editor joins (`send`, Q319); the rest
- * are held for the merge view (marked, applied by no one).
+ * An opening editor's current rows (`draftGroups`, Epo 2026-10-24, Q326):
+ * those of never-accepted sessions with a stored token go through the draft
+ * send while the editor joins (`send`, Q319); the others are applied and
+ * sync over the live channel (`apply`): accepted sessions', and held ones
+ * that need the room's document (Q360).
  */
-export function splitOpenDrafts(key: string, rows: EditDraft[]) {
-  const apply = rows.filter((row) => row.accepted);
+export function splitOpenDrafts(rows: EditDraft[]) {
   const send = rows.filter(
     (row) => !(row.accepted || row.held) && !!row.grants?.length
   );
-  const unmarked = rows.filter(
-    (row) => !(row.accepted || row.held || send.includes(row))
-  );
-  if (unmarked.length)
-    void markDrafts(
-      key,
-      unmarked.map((row) => row.id),
-      'held'
-    ).catch((error) => console.warn('Draft storage failed:', error));
-  return { apply, send };
+  return { apply: rows.filter((row) => !send.includes(row)), send };
 }
 
 /** How long an opening editor waits, view-only, for the draft send of its
@@ -1126,6 +1162,9 @@ const DRAFT_SEND_RETRY_MAX_MS = 5 * 60_000;
 export function draftSender(key: string, token: () => Promise<RoomToken>) {
   let done = false;
   let stopped = false;
+  let kept = false;
+  // Asked again during a try: the next one goes as it ends (Q360).
+  let rerun = false;
   let flight: Promise<void> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let delay = DRAFT_SEND_RETRY_MS;
@@ -1138,7 +1177,12 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
     globalThis.removeEventListener?.('online', online);
   };
   const attempt = () => {
-    if (done || stopped || flight) return;
+    if (done || stopped) return;
+    if (flight) {
+      rerun = true;
+      return;
+    }
+    rerun = false;
     clearTimeout(timer);
     flight = (async () => {
       let again = true;
@@ -1154,6 +1198,9 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
                 (row) => !row.accepted
               )
             : [];
+        kept ||= !!answers?.some(
+          (sent) => sent === 'refused' || sent === 'waits'
+        );
         again =
           !stopped &&
           !outdated &&
@@ -1163,6 +1210,10 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
       }
       flight = null;
       if (stopped) return;
+      if (again && rerun) {
+        attempt();
+        return;
+      }
       if (again) {
         timer = setTimeout(attempt, delay);
         delay = Math.min(delay * 2, DRAFT_SEND_RETRY_MAX_MS);
@@ -1181,6 +1232,13 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
     get done() {
       return done;
     },
+    /** Whether a group was left for recovery (held or refused). */
+    get kept() {
+      return kept;
+    },
+    /** A try now, or as the one in flight ends: a reconnect while steps
+     * are held (Q328, Q360). */
+    now: attempt,
     get settled() {
       return settled;
     },

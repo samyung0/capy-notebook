@@ -226,6 +226,11 @@ export class ItemRoom {
   private heldSteps = false;
   /** The next sync ends the stored-only episode the held steps began. */
   private heldEpisode = false;
+  /** Takes the pending steps once DRAFT_SEND_WAIT_MS passed and the room
+   * synced, whichever comes last. */
+  private hold: (() => void) | null = null;
+  /** Clears its timer and its offline watch, at the send's end or teardown. */
+  private stopHold: (() => void) | null = null;
 
   constructor(materialId: string, options: ItemRoomOptions = {}) {
     this.materialId = materialId;
@@ -322,7 +327,12 @@ export class ItemRoom {
     this.provider = createItemProvider({
       // While its never-accepted steps are held, a JOIN waits for the draft
       // send to take them (Q327).
-      beforeJoin: () => (this.heldSteps ? this.sender?.settled : undefined),
+      beforeJoin: () => {
+        if (!this.heldSteps) return;
+        // A reconnect meanwhile sends at once (Q328, Q360).
+        this.sender?.now();
+        return this.sender?.settled;
+      },
       document: this.doc,
       name: first.room,
       onAuthenticationFailed: ({ reason }) => {
@@ -401,6 +411,9 @@ export class ItemRoom {
           });
           this.markUnsent();
           this.requestReceipt();
+          // A first sync after DRAFT_SEND_WAIT_MS still takes the held
+          // steps (Q360).
+          queueMicrotask(() => this.hold?.());
           return;
         }
         if (this.snapshot.status !== 'offline')
@@ -460,25 +473,48 @@ export class ItemRoom {
     );
     this.sender = sender;
     this.set({ sending: true });
-    const timer = setTimeout(() => {
-      if (this.sender !== sender || sender.done || !this.snapshot.synced)
-        return;
+    let waitOver = false;
+    this.hold = () => {
+      if (!(waitOver && this.snapshot.synced) || this.sender !== sender) return;
+      if (sender.done || this.heldSteps) return;
       if (this.ended || this.destroyed || this.stale) return;
       this.heldSteps = true;
       this.heldEpisode = true;
       this.provider?.disconnect();
-      this.recorder?.disconnected();
+      this.recorder?.disconnected(true);
       applyDrafts(this.doc, pending, RESTORE_ORIGIN);
       this.recorder?.adopt(pending);
       this.set({ sending: false, status: 'syncing' });
       this.provider?.connect();
+    };
+    const timer = setTimeout(() => {
+      waitOver = true;
+      this.hold?.();
     }, DRAFT_SEND_WAIT_MS);
-    void sender.settled.then(() => {
+    // No channel is open while the steps are held: a browser that goes
+    // offline meanwhile shows offline (Q360).
+    const offline = () => {
+      if (this.heldSteps) this.goOffline();
+    };
+    globalThis.addEventListener?.('offline', offline);
+    this.stopHold = () => {
       clearTimeout(timer);
+      globalThis.removeEventListener?.('offline', offline);
+    };
+    void sender.settled.then(() => {
       if (this.sender !== sender) return;
+      this.stopHold?.();
+      const held = this.heldSteps;
       this.sender = null;
+      this.hold = null;
       this.heldSteps = false;
       this.set({ sending: false });
+      // A group the room did not take, its steps not applied here: a fresh
+      // room opens it copy-only (Q360). Held ones the JOIN's refusal takes.
+      if (sender.kept && !held) {
+        this.moved();
+        return;
+      }
       if (this.snapshot.synced && this.snapshot.status !== 'offline')
         this.set({ status: this.live() });
     });
@@ -521,12 +557,12 @@ export class ItemRoom {
     });
     for (;;) {
       if (this.destroyed) return false;
-      const { current, recovery } = draftGroups(rows, this.room);
+      const { current, recovery, refused } = draftGroups(rows, this.room);
       if (recovery.length) {
         const doc = recoveryDocument(recovery);
         if (doc) {
           this.set({
-            recovery: { doc, refused: !!recovery[0].refused, rows: recovery },
+            recovery: { doc, refused, rows: recovery },
             status: 'saved',
             synced: true,
           });
@@ -539,7 +575,7 @@ export class ItemRoom {
       }
       // Accepted sessions' rows apply here; never-accepted ones with stored
       // tokens go through the draft send (Q326).
-      const { apply, send } = splitOpenDrafts(key, current);
+      const { apply, send } = splitOpenDrafts(current);
       applyDrafts(this.doc, apply, RESTORE_ORIGIN);
       this.recorder = recordDrafts({
         adopted: apply,
@@ -700,6 +736,7 @@ export class ItemRoom {
 
   private end() {
     this.sender?.stop();
+    this.stopHold?.();
     markUnsent(this, false);
     this.options.seat?.attach(null);
     this.provider?.destroy();
@@ -763,6 +800,7 @@ export class ItemRoom {
   destroy() {
     this.destroyed = true;
     this.sender?.stop();
+    this.stopHold?.();
     this.waiting?.();
     this.reconnector.dispose();
     markUnsent(this, false);

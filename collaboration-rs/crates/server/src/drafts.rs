@@ -4,19 +4,21 @@
 //! grew from (`X-Capy-Room`), its client protocol (`X-Capy-Protocol`, the
 //! JOIN's) and, for a source, their base (`X-Capy-Base`), and the merged rows
 //! as one Yjs update; the URL is the same for every
-//! document, so one preflight covers a sweep. The request runs a channel's
-//! JOIN checks (refused while the user is in a timeout, before any lookup),
-//! reads the body within `ydoc::MAX_UPDATE_BYTES` (a larger one is too large,
-//! which the page leaves to the editor, and times the user out) and a note's
-//! sync cap, takes it from the user's update allowance (the one their
-//! sockets take from, `rate.rs`), checks the eviction lease again,
-//! and goes through the room's writer admission (the room loads if need be
-//! and unloads when idle, as usual), so open editors receive the update live;
-//! the answer waits for the store that holds it and is the receipt for every
-//! row the request carried. The page sends a large group as pieces of at most
-//! 2 MiB, one request each, in order. A refusal answers its class alone (a
-//! timeout also the time it has left, `remainingMs`); its detail is logged
-//! and counted by class.
+//! document, so one preflight covers a sweep. The request counts against the
+//! user's draft sends (60 a minute, `rate.rs`, Q360) once its token checks
+//! out, runs a channel's JOIN checks (refused while the user is in a timeout,
+//! before any lookup), reads the body within `ydoc::MAX_UPDATE_BYTES` (a
+//! larger one is too large, which the page leaves to the editor, and times
+//! the user out) and a note's sync cap, checks the eviction lease again, and
+//! goes to the room. There a group the room holds in full is a no-op (Q321);
+//! any other is taken from the user's update allowance (the one their
+//! sockets take from) and goes through the room's writer admission (the room
+//! loads if need be and unloads when idle, as usual), so open editors receive
+//! the update live. Either answer waits for the store that holds it and is
+//! the receipt for every row the request carried. The page sends a large
+//! group as pieces of at most 2 MiB, one request each, in order. A refusal
+//! answers its class alone (a timeout also the time it has left,
+//! `remainingMs`); its detail is logged and counted by class.
 
 use axum::body::{Body, Bytes};
 use axum::extract::State;
@@ -283,6 +285,21 @@ async fn checked_and_stored(
         .and_then(|value| value.strip_prefix("Bearer "))
         .ok_or_else(|| Refused::new(Class::Permission, "a room token is required"))?;
     let protocol = header_text(headers, PROTOCOL_HEADER).and_then(|value| value.parse().ok());
+    // The user's draft sends, counted before any lookup (Q360); a bad token
+    // is refused below as for a JOIN.
+    if let Ok(claims) =
+        crate::auth::verify(token, &app.config.secret, room, crate::auth::now_seconds())
+        && !app.allowances.take_draft(&claims.sub, Instant::now())
+    {
+        return Err(Refused::new(
+            Class::TooFast,
+            format!(
+                "{} sent {} drafts this minute",
+                claims.sub,
+                crate::rate::DRAFT_REQUESTS
+            ),
+        ));
+    }
     let (name, context) =
         crate::socket::authenticate(app.clone(), room.to_owned(), token.to_owned(), protocol)
             .await

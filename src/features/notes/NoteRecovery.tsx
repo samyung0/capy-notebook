@@ -61,10 +61,10 @@ export function useNoteDrafts(
         return [] as EditDraft[];
       });
       for (;;) {
-        const { current, recovery } = draftGroups(rows, room);
+        const { current, recovery, refused } = draftGroups(rows, room);
         if (!recovery.length) {
           if (!active) return;
-          const { apply, send } = splitOpenDrafts(key, current);
+          const { apply, send } = splitOpenDrafts(current);
           setDrafts({
             current: apply,
             for: `${room}:${generation}`,
@@ -75,13 +75,13 @@ export function useNoteDrafts(
         }
         const doc = recoveryDocument(recovery);
         if (doc) {
-          reportRecoveryGroup(recovery, report);
+          if (!refused) reportRecoveryGroup(recovery, report);
           if (active)
             setDrafts({
               current,
               for: `${room}:${generation}`,
               pending: [],
-              recovery: { doc, refused: !!recovery[0].refused, rows: recovery },
+              recovery: { doc, refused, rows: recovery },
             });
           return;
         }

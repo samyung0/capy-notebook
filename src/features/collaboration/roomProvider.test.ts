@@ -159,7 +159,7 @@ async function joined(
 
 // Q327: while an editor holds stored steps the room never accepted, its JOIN
 // waits for the draft send to take them; with nothing held it joins at once.
-it('waits for the before-join promise before each JOIN, and joins at once without one', async () => {
+it('opens no socket while the before-join promise holds, joins once it settles, and at once without one (Q327, Q360)', async () => {
   let release = () => {};
   let held: Promise<void> | undefined = new Promise<void>((resolve) => {
     release = resolve;
@@ -173,13 +173,15 @@ it('waits for the before-join promise before each JOIN, and joins at once withou
     token: asked,
     url: `wss://collab.test/${url++}`,
   });
+  const sockets = FakeSocket.instances.length;
   provider.connect();
-  const socket = FakeSocket.instances.at(-1) as FakeSocket;
-  socket.open();
   await flush();
-  expect(socket.take(MessageKind.Join)).toHaveLength(0);
+  expect(FakeSocket.instances).toHaveLength(sockets);
   expect(asked).not.toHaveBeenCalled();
   release();
+  await flush();
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
   await flush();
   expect(socket.take(MessageKind.Join)).toHaveLength(1);
   // Nothing held: a rejoin waits for nothing.

@@ -68,7 +68,7 @@ const { createSourceProvider, recorder, sending, takeSourceOpen } = vi.hoisted(
       sequence: 0,
     },
     // The draft send of never-accepted stored steps: settled by `release`.
-    sending: { done: false, release: () => {} },
+    sending: { done: false, kept: false, nows: 0, release: () => {} },
     takeSourceOpen: vi.fn(),
   })
 );
@@ -93,6 +93,12 @@ vi.mock('@/lib/editDrafts', async (load) => ({
     return {
       get done() {
         return sending.done;
+      },
+      get kept() {
+        return sending.kept;
+      },
+      now() {
+        sending.nows += 1;
       },
       settled,
       stop() {},
@@ -166,6 +172,8 @@ async function open() {
 beforeEach(() => {
   hooks.reset();
   sending.done = false;
+  sending.kept = false;
+  sending.nows = 0;
   viewReady = undefined;
   createSourceProvider.mockReset();
   createSourceProvider.mockReturnValue({
@@ -275,10 +283,44 @@ describe('an edit session opening with stored drafts', () => {
     expect(options.beforeJoin?.()).toBeUndefined();
     vi.advanceTimersByTime(30_000);
     expect(recorder.adopt).toHaveBeenCalledWith([pending]);
+    // The hold is no editing incident (Q360).
+    expect(recorder.disconnected).toHaveBeenLastCalledWith(true);
     expect(render()).toMatchObject({ draftsSending: false, status: 'saving' });
+    // A reconnect meanwhile sends at once (Q328, Q360).
     expect(options.beforeJoin?.()).toBeInstanceOf(Promise);
+    expect(sending.nows).toBe(1);
     sending.release();
     await vi.advanceTimersByTimeAsync(0);
     expect(options.beforeJoin?.()).toBeUndefined();
+  });
+
+  // Q360: settled before the 30 s with a group the room did not take, the
+  // session opens again, which shows the group copy-only.
+  it('opens again when its send settles with a group kept, the steps never applied', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', { onLine: true });
+    const pending: EditDraft = {
+      base: SESSION.baseSourceSHA256,
+      data: Y.encodeStateAsUpdate(new Y.Doc()),
+      grants: ['t'],
+      id: 'b:1',
+      key: 'u_1:file:f_1',
+      kind: 'update',
+      lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
+      savedAt: 0,
+      seq: 1,
+      session: 'b',
+    };
+    vi.mocked(readDrafts).mockResolvedValueOnce([pending]);
+    recorder.adopt.mockClear();
+    takeSourceOpen.mockClear();
+    const { options } = await open();
+    options.onSynced?.({ state: true });
+    sending.kept = true;
+    sending.release();
+    await vi.advanceTimersByTimeAsync(0);
+    render();
+    await vi.waitFor(() => expect(takeSourceOpen).toHaveBeenCalledTimes(2));
+    expect(recorder.adopt).not.toHaveBeenCalled();
   });
 });

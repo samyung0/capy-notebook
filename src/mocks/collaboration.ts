@@ -691,7 +691,11 @@ let buildRefused = false;
 class MockCollaborationProvider implements UnifiedProvider {
   readonly awareness: UnifiedProvider['awareness'];
   readonly document: Y.Doc;
+  // The room channel the editor reaches through the wrapper, as the capy
+  // provider's (a held draft send closes and reopens it, Q327).
   readonly provider = {
+    connect: () => this.connect(),
+    disconnect: () => this.disconnect(),
     sendStateless: (payload: string) => this.handleStateless(payload),
   };
   readonly type = 'mock';
