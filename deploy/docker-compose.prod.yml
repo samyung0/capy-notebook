@@ -308,6 +308,11 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # Bounds a runaway turn, render or deck export so the gateway, Postgres and
+    # collaboration keep their share of the host (scripts/env/config.py render
+    # sets them per environment, Epo 2026-10-24).
+    mem_limit: ${RETRIEVAL_MEM_LIMIT:?set RETRIEVAL_MEM_LIMIT}
+    cpus: ${RETRIEVAL_CPUS:?set RETRIEVAL_CPUS}
     restart: unless-stopped
 
   reconcile:

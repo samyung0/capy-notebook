@@ -30,7 +30,7 @@ if str(PARSER_DIR) not in sys.path:
 os.environ.setdefault("CAPY_PARSE_WORKERS", "1")
 os.environ.setdefault("CAPY_PARSE_MAX_PAGES", "1400")
 # The module takes it out of the environment at import.
-os.environ.setdefault("PARSER_TOKEN", "test-parser-token")
+os.environ.setdefault("PARSER_TOKEN", "test-parser-token-of-thirty-two-chars")
 
 spec = importlib.util.spec_from_file_location("app", PARSER_DIR / "app.py")
 assert spec is not None and spec.loader is not None
@@ -914,6 +914,24 @@ async def test_the_parser_holds_its_token_out_of_every_childs_reach(
     monkeypatch.setattr(parser_app, "PARSER_TOKEN", "")
     assert not parser_app._authorized(Request("Bearer "))
     with pytest.raises(RuntimeError, match="PARSER_TOKEN"):
+        async with parser_app.lifespan(parser_app.app):
+            pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("app_env", ["production", None])
+async def test_the_parser_refuses_a_short_token_outside_development(
+    app_env: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(security regression: rate-limit audit M4) A token under 32 characters
+    stops the parser unless APP_ENV is development or e2e; a missing APP_ENV
+    is checked."""
+    monkeypatch.setattr(parser_app, "PARSER_TOKEN", "t" * 31)
+    if app_env is None:
+        monkeypatch.delenv("APP_ENV", raising=False)
+    else:
+        monkeypatch.setenv("APP_ENV", app_env)
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
         async with parser_app.lifespan(parser_app.app):
             pass
 

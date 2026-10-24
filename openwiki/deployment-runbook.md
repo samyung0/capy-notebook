@@ -711,6 +711,32 @@ and agent markdown's V8 (~0.8 GiB, its heap capped). Production has
 7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
 lean on swap; they bound a runaway call, not the expected footprint.
 
+The retrieval container has `mem_limit` and `cpus` (Epo 2026-10-24, rate-limit
+audit): production 3 GiB and 2 CPUs, UAT 1.5 GiB and 1 CPU, rendered by
+`scripts/env/config.py` as `RETRIEVAL_MEM_LIMIT` and `RETRIEVAL_CPUS`. Measured
+in the retrieval image: the idle service holds about 85 MiB; a 12-slide deck
+export runs about 4 s of CPU in ppt-master subprocesses of about 75 MiB; a
+page render adds about 25 MiB. An image capture decodes reduced only from a
+JPEG (Q239): at Pillow's pixel limit (89 megapixels) a JPEG capture adds about
+90 MiB, a PNG, GIF or TIFF 0.4 to 0.8 GiB and a WebP 1.3 GiB; a 12-megapixel
+photo about 55 MiB. A full-length chat turn (a 250,000-token history with 16
+captures) holds about 11 MiB. Two render threads (`retrieval/limits.py`) bound
+the decodes running at once, and 64 request slots the turns: production's
+worst case, 64 full-length turns beside two 89-megapixel WebP captures, is
+about 3.4 GiB, over its 3 GiB only then (with PNG or JPEG captures about
+2.3 GiB); UAT's 1.5 GiB holds one worst-case WebP capture beside the idle
+service, not beside many full-length turns. Docker lets a container with
+`mem_limit` and no `memswap_limit` use as much swap again, so the kill comes
+later than the RAM figure. A container over its limit is killed and restarted
+(`restart: unless-stopped`), failing only its own streams. Check after a
+deploy that changes them:
+
+```bash
+docker inspect -f '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}}' $(docker ps -qf name=retrieval)
+```
+
+It prints `3221225472 2000000000` in production and `1610612736 1000000000` on UAT.
+
 The collaboration service runs with `MALLOC_ARENA_MAX=2`,
 `MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
 (`docker-compose.prod.yml`, UAT and production; the engine processes
@@ -1288,6 +1314,15 @@ gateway API to the ingest host, not only `/api/internal/`; the host is trusted
 infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
 gateway disables new imports with `503` instead of creating stranded
 reservations.
+
+Every pipeline process (retrieval, the ingest, parse and import workers) refuses
+to start with a `PIPELINE_SECRET` or `PARSER_TOKEN` set shorter than 32
+characters, and the parser with a shorter `PARSER_TOKEN`, unless `APP_ENV` is
+`development` or `e2e`; a missing `APP_ENV` is checked (`pipeline/config.py`
+`secret`, `parser/app.py`; Epo 2026-10-24, the gateway's own rule). UAT, the
+shared non-production parser and production all run with `APP_ENV=production`,
+so their values must be at least 32 characters (`openssl rand -hex 32`) before a
+release with this rule deploys; local development keeps `dev-pipeline-secret`.
 
 Retry scheduling lives on the `jobs` row (three attempts, 30 s doubling
 backoff, `CAPY_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
@@ -2425,7 +2460,8 @@ the host:
   at startup (`prctl(PR_SET_DUMPABLE, 0)`), so its children, which run as the
   same user, can neither trace it nor read its memory or environment. It holds
   `PARSER_TOKEN` in a constant, removes it from its environment at import,
-  before any child starts, and refuses to start, or a request, without one;
+  before any child starts, and refuses to start, or a request, without one
+  (or to start with one under 32 characters outside development and e2e);
   its children run under the decoder sandbox (§7.5). The
   playbook also sets `kernel.yama.ptrace_scope=1`
   (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own
