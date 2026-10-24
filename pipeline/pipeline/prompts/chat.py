@@ -91,6 +91,20 @@ SEND_BACK_TOOL = (
     "learner's input before you can answer, call AskUser again with the same "
     "question."
 )
+# The same two for a learner who cannot write: the answer alone, since no
+# note or deck can be made for them (Editor 2026-10-24).
+SEND_BACK_READ_ONLY = (
+    "Your reply holds only a question and no answer. Write the answer to the "
+    "learner's message, with no offer to make a note or a deck: this workspace "
+    "does not let you write. If you need the learner's input before you can "
+    "answer, send the same question again."
+)
+SEND_BACK_TOOL_READ_ONLY = (
+    "Not shown yet: your reply has this question but no answer text. Write the "
+    "answer to the learner's message as text now, with no offer to make a note or "
+    "a deck: this workspace does not let you write. If you need the learner's "
+    "input before you can answer, call AskUser again with the same question."
+)
 
 # For a learner who cannot write in the workspace: no write tool is offered.
 READ_ONLY_RULE = (

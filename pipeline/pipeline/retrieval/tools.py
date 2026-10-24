@@ -245,6 +245,9 @@ class ToolContext:
     web_searches: int = 0
     web_failures: int = 0
     web_running: int = 0
+    # This message's answered searches by query: the same query again reuses
+    # them, neither charged nor counted (Editor 2026-10-24).
+    web_answers: dict[str, list[websearch.WebResult]] = field(default_factory=dict)
     # Decks this turn outlined (deck.py records, by deck id) and the working
     # directory their figures and exports go to; the agent removes it at turn end.
     decks: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -1106,10 +1109,33 @@ def _searches_left(ctx: ToolContext) -> str:
     return f"Searches left for this message: {WEB_SEARCH_CAP - ctx.web_searches}."
 
 
+def _web_result(results: list[websearch.WebResult], ctx: ToolContext) -> ToolResult:
+    if not results:
+        return _result(f"No web results for this query. {_searches_left(ctx)}")
+    passages = [
+        Passage(
+            chunk_id="web:" + result.url,
+            file_id=result.url,
+            file_name=result.title,
+            chunk_idx=0,
+            section_path=result.site,
+            text=result.summary,
+            hit_text=result.snippet,
+            published=result.date,
+            kind="web",
+        )
+        for result in results
+    ]
+    return _result(f"{WEB_DATA_NOTE} {_searches_left(ctx)}", passages=passages)
+
+
 async def _search_web(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     query = str(args.get("query") or "").strip()
     if not query:
         return _refused("search_web needs a query.")
+    same = " ".join(query.casefold().split())
+    if same in ctx.web_answers:
+        return _web_result(ctx.web_answers[same], ctx)
     # Calls of one response run together: a running call holds its place.
     if ctx.web_searches + ctx.web_running >= WEB_SEARCH_CAP:
         return _refused(
@@ -1143,25 +1169,16 @@ async def _search_web(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     finally:
         ctx.web_running -= 1
+    ctx.web_answers[same] = results
+    try:
+        await accounting.settle_web_search(call_id, results=len(results))
+    except Exception:
+        # The results stand; an unsettled search is neither charged nor
+        # counted (Editor 2026-10-24), and the receipt sweep closes its row.
+        log.warning("search_web settlement failed", exc_info=True)
+        return _web_result(results, ctx)
     ctx.web_searches += 1
-    await accounting.settle_web_search(call_id, results=len(results))
-    if not results:
-        return _result(f"No web results for this query. {_searches_left(ctx)}")
-    passages = [
-        Passage(
-            chunk_id="web:" + result.url,
-            file_id=result.url,
-            file_name=result.title,
-            chunk_idx=0,
-            section_path=result.site,
-            text=result.summary,
-            hit_text=result.snippet,
-            published=result.date,
-            kind="web",
-        )
-        for result in results
-    ]
-    return _result(f"{WEB_DATA_NOTE} {_searches_left(ctx)}", passages=passages)
+    return _web_result(results, ctx)
 
 
 def _library_ready(ctx: ToolContext) -> bool:
@@ -3344,7 +3361,27 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         name = schema["function"]["name"]
         if name in extra:
             schema["function"]["description"] += extra[name]
-    return schemas
+    # The switch never changes the list (cache rule); a library that is not
+    # ready does, as its tools drop out too.
+    return schemas if _library_ready(ctx) else [without_excerpts(s) for s in schemas]
+
+
+def without_excerpts(schema: dict[str, Any]) -> dict[str, Any]:
+    """A write tool without excerpt_ids, for a turn without the library: the
+    model otherwise fills it with workspace passage ids."""
+    parameters = schema["function"]["parameters"]
+    if "excerpt_ids" not in parameters.get("properties", {}):
+        return schema
+    properties = {
+        k: v for k, v in parameters["properties"].items() if k != "excerpt_ids"
+    }
+    return {
+        **schema,
+        "function": {
+            **schema["function"],
+            "parameters": {**parameters, "properties": properties},
+        },
+    }
 
 
 def spec_for(name: str) -> ToolSpec | None:

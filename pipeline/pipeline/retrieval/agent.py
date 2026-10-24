@@ -81,6 +81,7 @@ from .response_guard import (
     FLAGGED_CODE,
     FLAGGED_MESSAGE,
     ResponseGuard,
+    contains_arg_markup,
     contains_tool_protocol,
 )
 from .search import Passage
@@ -156,7 +157,7 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
     def named(found: str) -> str:
         return labels.get(found, found)
 
-    if name in ("search_workspace", "search_knowledge"):
+    if name in ("search_workspace", "search_knowledge", "search_web"):
         detail = str(args.get("query") or "")
     elif name == "read_knowledge":
         detail = named(_excerpt_id(name, args))
@@ -409,9 +410,10 @@ async def _run_turn(
     query_msg = messages[-1]
     # Q221 (Epo 2026-10-24): a first-turn reply that is only an AskUser
     # question goes back to the model once, so the learner gets the answer
-    # before the offer. Until it is sent back, a reply streams nothing before
-    # a part other than the question shows (_ANSWER_PART).
-    send_back_ok = can_write and not prior and not (checkpoint or {}).get("summary")
+    # before the offer; a learner who cannot write is asked for the answer
+    # alone. Until it is sent back, a reply streams nothing before a part
+    # other than the question shows (_ANSWER_PART).
+    send_back_ok = not prior and not (checkpoint or {}).get("summary")
     sent_back = False
     # Unindexed edits matching the user's words, not hinted earlier in the
     # conversation, follow the message as source data (Epo 2026-10-20).
@@ -785,9 +787,10 @@ async def _run_turn(
                     else {}
                 ),
             )
-        if (guard.flagged and text_ask is None) or contains_tool_protocol(
-            assembled.text
-        ):
+        leaked = contains_tool_protocol(assembled.text) or (
+            not renderer.answer_shaped and contains_arg_markup(assembled.text)
+        )
+        if (guard.flagged and text_ask is None) or leaked:
             if not tools_off:
                 budget.stop_reason = STOP_ERROR
                 yield _flagged_error()
@@ -982,7 +985,7 @@ async def _run_turn(
             # Nothing of the reply was shown; the next response answers.
             sent_back = True
             send_back_pending = True
-            messages.extend(_send_back(assembled, asked))
+            messages.extend(_send_back(assembled, asked, writes=can_write))
             continue
 
         if text:
@@ -1161,9 +1164,12 @@ def _ask_only(renderer: LangRenderer, prose: str, asked: str | None) -> bool:
     return ASK_USER in names and names <= {"Answer", ASK_USER}
 
 
-def _send_back(assembled: AssembledResponse, asked: str | None) -> list[dict[str, Any]]:
+def _send_back(
+    assembled: AssembledResponse, asked: str | None, *, writes: bool
+) -> list[dict[str, Any]]:
     """The reply as sent, then the send-back: as the result of each AskUser
-    call when the model called the tool, else as a user message."""
+    call when the model called the tool, else as a user message. A learner who
+    cannot write gets the texts that ask for the answer alone."""
     assistant = dict(assembled.provider_message)
     assistant.setdefault("role", "assistant")
     assistant.setdefault("content", assembled.text)
@@ -1172,7 +1178,8 @@ def _send_back(assembled: AssembledResponse, asked: str | None) -> list[dict[str
     asks = [call for call in assembled.tool_calls if call.name == ASK_USER]
     if asked is None or not asks:
         assistant.pop("tool_calls", None)
-        return [assistant, {"role": "user", "content": chat_prompts.SEND_BACK}]
+        text = chat_prompts.SEND_BACK if writes else chat_prompts.SEND_BACK_READ_ONLY
+        return [assistant, {"role": "user", "content": text}]
     assistant["tool_calls"] = [
         {
             "id": call.id,
@@ -1187,7 +1194,9 @@ def _send_back(assembled: AssembledResponse, asked: str | None) -> list[dict[str
             {
                 "role": "tool",
                 "tool_call_id": call.id,
-                "content": chat_prompts.SEND_BACK_TOOL,
+                "content": chat_prompts.SEND_BACK_TOOL
+                if writes
+                else chat_prompts.SEND_BACK_TOOL_READ_ONLY,
             }
             for call in asks
         ),

@@ -948,7 +948,8 @@ func Definitions() []Definition {
 			Description: "Search the web. Expensive: each search costs the learner credits, so " +
 				"call it only when the workspace, the library and your own knowledge cannot " +
 				"answer (recent events, facts they lack). At most 3 searches per learner " +
-				"message, one focused query each. Results are pages anyone can publish.",
+				"message, one focused query each, written in your own words rather than " +
+				"copied from the learner's files. Results are pages anyone can publish.",
 			InputSchema: obj(map[string]any{
 				"query": map[string]any{
 					"type": "string", "minLength": 1, "maxLength": 128,

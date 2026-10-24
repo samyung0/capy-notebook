@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urlsplit
 
 import requests
@@ -37,12 +38,23 @@ class WebResult:
     snippet: str
     summary: str
     site: str
-    # The page date as YYYY-MM-DD, or "" when DeepSeek has none.
+    # The page date as YYYY-MM-DD, or "" when DeepSeek has none or it does
+    # not parse.
     date: str
 
 
 def _text(value: object, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
+
+
+def _date(value: object) -> str:
+    """DeepSeek's date (RFC 3339, or a plain date) as YYYY-MM-DD; "" otherwise."""
+    if not isinstance(value, str):
+        return ""
+    try:
+        return datetime.fromisoformat(value.strip()).date().isoformat()
+    except ValueError:
+        return ""
 
 
 def _result(raw: object) -> WebResult | None:
@@ -63,7 +75,7 @@ def _result(raw: object) -> WebResult | None:
         snippet=_text(raw.get("snippet"), 300) or summary[:300],
         summary=summary,
         site=_text(raw.get("site_name"), 120) or parts.hostname,
-        date=_text(raw.get("date"), 10),
+        date=_date(raw.get("date")),
     )
 
 

@@ -333,7 +333,7 @@
     {
       "name": "search_web",
       "version": 1,
-      "description": "Search the web. Expensive: each search costs the learner credits, so call it only when the workspace, the library and your own knowledge cannot answer (recent events, facts they lack). At most 3 searches per learner message, one focused query each. Results are pages anyone can publish.",
+      "description": "Search the web. Expensive: each search costs the learner credits, so call it only when the workspace, the library and your own knowledge cannot answer (recent events, facts they lack). At most 3 searches per learner message, one focused query each, written in your own words rather than copied from the learner's files. Results are pages anyone can publish.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

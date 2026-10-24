@@ -48,7 +48,7 @@ import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
 import { useVoiceInput, VoiceButton } from './chat/VoiceInput';
 import { insertTranscript } from './chat/voiceRecording';
-import { sourceEntryId, webHref, webMeta } from './chat/webCitation';
+import { sourceEntryId, webHref } from './chat/webCitation';
 import type { TabAction } from './PanelTabRow';
 import { toChatMessage, useChatStream } from './useChatStream';
 import { useProcessFileChanges } from './useProcessFileChanges';
@@ -77,40 +77,56 @@ function Citations({
     <div className="mt-2 flex flex-wrap gap-1.5">
       {msg.citations.map((c, i) => {
         if (c.kind === 'web') {
-          // A web result: its title links to the page, in a new tab.
+          // A web result on its own row: its title links to the page in a
+          // new tab beside its site and date, its snippet under them. A long
+          // site name truncates within the row; the date always shows.
           const href = webHref(c.url);
-          const meta = webMeta(c);
           const body = (
             <>
               <span className="text-fg-muted">{i + 1}</span>
-              <span className="truncate underline">{c.fileName}</span>
-              {meta ? <span className="text-fg-muted">{meta}</span> : null}
-              {href ? <Icon className="size-3" name="externalLink" /> : null}
+              <span className="min-w-0 truncate underline">{c.fileName}</span>
+              {c.siteName ? (
+                <span className="min-w-0 max-w-[40%] shrink-0 truncate text-fg-muted">
+                  {c.siteName}
+                </span>
+              ) : null}
+              {c.published ? (
+                <span className="shrink-0 text-fg-muted">{c.published}</span>
+              ) : null}
+              {href ? (
+                <Icon className="size-3 shrink-0" name="externalLink" />
+              ) : null}
             </>
           );
           return (
-            <Badge
-              asChild
-              className="max-w-full font-medium hover:bg-page-hover"
+            <div
+              className="flex min-w-0 basis-full flex-col gap-0.5"
               key={`${c.chunkId}:${i}`}
-              size="sm"
             >
-              {href ? (
-                <a
-                  href={href}
-                  id={sourceEntryId(msg.id, i)}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                  title={c.snippet}
-                >
-                  {body}
-                </a>
-              ) : (
-                <span id={sourceEntryId(msg.id, i)} title={c.snippet}>
-                  {body}
-                </span>
-              )}
-            </Badge>
+              <Badge
+                asChild
+                className="max-w-full self-start font-medium hover:bg-page-hover"
+                size="sm"
+              >
+                {href ? (
+                  <a
+                    href={href}
+                    id={sourceEntryId(msg.id, i)}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {body}
+                  </a>
+                ) : (
+                  <span id={sourceEntryId(msg.id, i)}>{body}</span>
+                )}
+              </Badge>
+              {c.snippet ? (
+                <p className="line-clamp-2 px-2.25 text-fg-muted text-xs">
+                  {c.snippet}
+                </p>
+              ) : null}
+            </div>
           );
         }
         const page = pageLabel(c);

@@ -104,8 +104,10 @@ Agent tool descriptions come from the shared contract
 (`retrieval/contract.py`) alone; `tools.schemas_for` only appends the
 library's subject list to `search_knowledge` and the skill list to
 `read_skill`, and drops
-`excerpt_ids` from the write tools when the library is not a source this turn
-(the model otherwise fills it with workspace passage ids). Curate mode's prompt module
+`excerpt_ids` from the write tools when the library is not ready this turn
+(not configured, down or empty, as its tools drop out; the model otherwise
+fills it with workspace passage ids). The Workspace only switch never changes
+the list. Curate mode's prompt module
 (`prompts/curate.py`) was deleted on 2026-10-04. Almost nothing model-facing is
 written in `retrieval/`: `LANG_RULE` lives in `chat.py`, and `retrieval/`
 keeps tool results and refusal strings, which the model reads as data rather
@@ -2933,7 +2935,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    The chat panel shows a turn's work as trace rows
    (`src/features/workspace/chat/ChatTrace.tsx`, logic in `trace.ts`). Each
    row is an 18px CSS-animated icon chosen by tool family (`ActivityIcon.tsx`:
-   hourglass for thinking, a lens over a book for searches, a page turn for
+   hourglass for thinking, a lens over a book for searches (a web search
+   too, quoting its query like the others; its copy, `chat_step_search_web_*`,
+   is a draft for Epo's review), a page turn for
    reads and inspect, a viewfinder for captures, fanned files for listings, a
    pen for anything that edits, creates or adds, pacman for trash and restore,
    ldrs bouncy for any other tool) and a sentence: present tense while
@@ -3707,7 +3711,7 @@ materials are sources.
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading; a material other than a note is refused ("… is a quiz, which has no passages to read; inspect_document reads it.") |
 | `search_knowledge` | none | Offered when the library answered its subject list; answers as not available while Workspace only is on. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | As `search_knowledge`. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
-| `search_web` | none | DeepSeek's web search (`retrieval/websearch.py`, `POST https://api.deepseek.com/v1/tools/search` on the platform `DEEPSEEK_API_KEY`): one focused query of at most 128 characters, 5 results, no retry; only the query is sent (never the learner's question or IP). Each result is a `Passage(kind="web")` (`chunk_id` `web:<url>`, the link in `file_id`, title, site, date, DeepSeek's summary as the text and its snippet for display) in one source block, numbered like passages, with a data-not-instructions note and the searches left. A user message gets 3 searches: an empty one counts and is free, a failed one (an error, a timeout, a non-2xx answer or a body without a results list) is free and the first 2 failures do not count, so at most 5 calls run (Epo 2026-10-24); results that miss the point are an ordinary search the model judges, since DeepSeek answers even a nonsense query with 5 results (2026-10-24 probe); the parser keeps only title, url, snippet, summary, site_name and date; calls of one response hold their places while they run. A search with results costs 1.8 credits ([observability-metering.md](observability-metering.md)). Answers as not available while Workspace only is on. Retains cited results, which replay from their saved copy |
+| `search_web` | none | DeepSeek's web search (`retrieval/websearch.py`, `POST https://api.deepseek.com/v1/tools/search` on the platform `DEEPSEEK_API_KEY`): one focused query of at most 128 characters, 5 results, no retry; only the query is sent (never the learner's question or IP), and the description asks for it in the model's own words rather than copied from the learner's files (Epo 2026-10-24, Q289). Each result is a `Passage(kind="web")` (`chunk_id` `web:<url>`, the link in `file_id`, title, site, the date parsed from DeepSeek's RFC 3339 value to YYYY-MM-DD and left out when it does not parse, DeepSeek's summary as the text and its snippet for display) in one source block, numbered like passages, with a data-not-instructions note and the searches left. A user message gets 3 searches: an empty one counts and is free, a failed one (an error, a timeout, a non-2xx answer or a body without a results list) is free and the first 2 failures do not count, so at most 5 calls run (Epo 2026-10-24); results that miss the point are an ordinary search the model judges, since DeepSeek answers even a nonsense query with 5 results (2026-10-24 probe); the parser keeps only title, url, snippet, summary, site_name and date; calls of one response hold their places while they run. The same query again in one message (compared without case or extra spaces) reuses that message's answer, neither charged nor counted; a search whose settlement fails keeps its results and is neither charged nor counted, its call row left to the receipt sweep (Editor 2026-10-24). A search with results costs 1.8 credits ([observability-metering.md](observability-metering.md)). Answers as not available while Workspace only is on. Retains cited results, which replay from their saved copy |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `capture_knowledge_page` | none | As `search_knowledge`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
@@ -4856,7 +4860,12 @@ Raised `k` markers come from
 the message's citation list by `n` and follow the last paragraph of the text
 they back (Streamdown's root is `display: contents` so that paragraph can run
 inline); tables and charts put their sources under the block, and the
-message's sources are neutral badges under the model name.
+message's sources are neutral badges under the model name. A web result's
+entry takes a row of its own: the page title links to the page in a new tab
+(http(s) only, `chat/webCitation.ts`) beside its site, which truncates within
+the row, and its date, with the snippet as a muted line under them, clamped
+to two lines; the result's raised number moves to that entry
+(`sourceEntryId`).
 The prompt reserves `AskUser` for required user input and excludes simple follow-up questions,
 with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
 write): on the first message of a chat, an explanation or summary request is
@@ -4883,13 +4892,18 @@ exhausted credits and a question in the same turn. The prose of a tool-called
 `Md`'s `passages` (`agent._cited`). GLM also writes the call as text in its own
 markup (`AskUser<arg_key>question</arg_key><arg_value>…`); for the `zai` pin
 only, `agent.text_ask_user` reads that back as the call it meant, and the text
-before it is the prose.
+before it is the prose. That markup is checked on a prose answer once the
+response ends (`response_guard.contains_arg_markup`): recovered for `zai`,
+flagged for any other model. Inside an answer program it is no turn error:
+the program streams as written and the browser drops the statement it cannot
+parse, as before the check.
 
 **Q221 send-back** (Epo 2026-10-24). A first-turn reply (no history and no
-checkpoint, for a learner who can write) whose answer holds only `AskUser`
-questions goes back to the model once: after an answer program as a user
-message (`chat_prompts.SEND_BACK`), after a tool-called `AskUser` as each
-call's tool result (`SEND_BACK_TOOL`). Until it has been sent back, a reply
+checkpoint) whose answer holds only `AskUser` questions goes back to the model
+once: after an answer program as a user message (`chat_prompts.SEND_BACK`),
+after a tool-called `AskUser` as each call's tool result (`SEND_BACK_TOOL`).
+A learner who cannot write gets the texts that ask for the answer alone, with
+no note or deck offer (`SEND_BACK_READ_ONLY`, `SEND_BACK_TOOL_READ_ONLY`). Until it has been sent back, a reply
 streams nothing before a statement of another part shows
 (`agent._ANSWER_PART`), so an offer-only reply never reaches the browser. The
 response after the send-back runs even past the planning cap, with tools off
@@ -4906,7 +4920,7 @@ as read-only "Asked:" lines and are never re-asked.
 
 Before rendering, `retrieval/response_guard.py` holds partial protocol markers across
 stream chunks and detects known tool-call envelopes, including DSML, XML tool calls,
-GLM's `<arg_key>`/`</arg_value>` argument markup and JSON `tool_calls` fields. A match drains the current provider call for usage,
+and JSON `tool_calls` fields (GLM's argument markup is checked on prose answers only, above). A match drains the current provider call for usage,
 stops the turn without executing its tools or making a repair request, clears the
 current answer and citations, and returns `response_flagged`. The UI shows
 "Response flagged due to safety concern"; the error code is persisted in message

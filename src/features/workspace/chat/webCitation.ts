@@ -1,5 +1,3 @@
-import type { Citation } from '@/api/types';
-
 /** A web citation's link: an http(s) address only, since the page that
  * supplied it is anyone's. */
 export function webHref(url: string | undefined): string | undefined {
@@ -10,11 +8,6 @@ export function webHref(url: string | undefined): string | undefined {
       ? parsed.href
       : undefined;
   } catch {}
-}
-
-/** The site and date under a web citation's title. */
-export function webMeta(citation: Citation): string {
-  return [citation.siteName, citation.published].filter(Boolean).join(', ');
 }
 
 /** The element id of a message's sources-list entry, which a web citation's

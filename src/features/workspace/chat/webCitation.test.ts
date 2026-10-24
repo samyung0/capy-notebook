@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { webHref, webMeta } from './webCitation';
+import { webHref } from './webCitation';
 
 describe('web citations', () => {
   it('link only to http and https pages', () => {
@@ -11,13 +11,5 @@ describe('web citations', () => {
     expect(webHref('data:text/html,hi')).toBeUndefined();
     expect(webHref('not a url')).toBeUndefined();
     expect(webHref(undefined)).toBeUndefined();
-  });
-
-  it('name the site and the date when known', () => {
-    const base = { fileId: '', fileName: 'Title', snippet: 's' };
-    expect(
-      webMeta({ ...base, published: '2025-05-12', siteName: 'example.org' })
-    ).toBe('example.org, 2025-05-12');
-    expect(webMeta({ ...base, siteName: 'example.org' })).toBe('example.org');
   });
 });

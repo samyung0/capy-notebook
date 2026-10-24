@@ -21,7 +21,10 @@ from pipeline.retrieval import (
     tools,
     websearch,
 )
-from pipeline.retrieval.response_guard import ResponseGuard, contains_tool_protocol
+from pipeline.retrieval.response_guard import (
+    contains_arg_markup,
+    contains_tool_protocol,
+)
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.stream import AssembledResponse, StreamEvent, ToolCall
 from pipeline.retrieval.tools import ToolContext
@@ -71,7 +74,7 @@ def _ctx(**kwargs) -> ToolContext:
 
 
 def _writer(monkeypatch, **kwargs) -> ToolContext:
-    """A learner who can write: the send-back applies to their first turn."""
+    """A learner who can write: the send-back keeps the note offer."""
     monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
     return _ctx(**kwargs)
 
@@ -169,6 +172,25 @@ async def test_workspace_only_answers_the_outside_tools_as_not_available(monkeyp
         assert result.text() == tools.NOT_AVAILABLE.format(tool=name)
 
 
+def _excerpts_offered(ctx: ToolContext) -> bool:
+    schema = next(
+        s for s in tools.schemas_for(ctx) if s["function"]["name"] == "create_material"
+    )
+    return "excerpt_ids" in schema["function"]["parameters"]["properties"]
+
+
+def test_write_tools_name_excerpts_only_with_the_library(monkeypatch):
+    monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
+    monkeypatch.setattr(tools.library, "enabled", lambda: True)
+    assert _excerpts_offered(_ctx(library_catalog=CATALOG))
+    # The switch leaves the list alone (cache rule); a library that is not
+    # ready drops the parameter with its tools.
+    assert _excerpts_offered(_ctx(library_catalog=CATALOG, workspace_only=True))
+    assert not _excerpts_offered(_ctx(library_catalog=[]))
+    monkeypatch.setattr(tools.library, "enabled", lambda: False)
+    assert not _excerpts_offered(_ctx(library_catalog=CATALOG))
+
+
 # ------------------------------------------------------------- search_web
 
 
@@ -241,6 +263,35 @@ async def test_two_failures_are_free_and_a_message_runs_at_most_five(monkeypatch
     assert len(abandoned) == 3 and settled == [1, 1]
 
 
+async def test_the_same_query_again_reuses_its_results_uncounted(monkeypatch):
+    settled, _ = _searches(monkeypatch, [[_web()], [], []])
+    ctx = _ctx()
+    first = await tools.run("search_web", {"query": "Berlin airlift"}, ctx)
+    again = await tools.run("search_web", {"query": " berlin  AIRLIFT "}, ctx)
+    assert again.passages == first.passages
+    assert again.text() == first.text()
+    assert settled == [1] and ctx.web_searches == 1
+    # An empty answer is reused too; neither repeat took a place.
+    await tools.run("search_web", {"query": "nothing"}, ctx)
+    await tools.run("search_web", {"query": "nothing"}, ctx)
+    assert settled == [1, 0] and ctx.web_searches == 2
+
+
+async def test_an_unsettled_search_keeps_its_results_uncounted(monkeypatch):
+    _searches(monkeypatch, [[_web()]])
+
+    async def settle(_call_id, *, results):
+        del results
+        raise accounting.SettlementError("gateway refused")
+
+    monkeypatch.setattr(accounting, "settle_web_search", settle)
+    ctx = _ctx()
+    result = await tools.run("search_web", {"query": "a"}, ctx)
+    assert not result.failed and [p.kind for p in result.passages] == ["web"]
+    assert "gateway refused" not in result.text()
+    assert ctx.web_searches == 0
+
+
 async def test_searches_running_together_hold_their_places(monkeypatch):
     release = asyncio.Event()
 
@@ -302,6 +353,12 @@ def test_search_keeps_only_http_results_and_sends_the_query_alone(monkeypatch):
                         "summary": "S",
                         "date": "2025-05-12T10:00",
                     },
+                    {
+                        "title": "U",
+                        "url": "https://ok.org/q",
+                        "summary": "S",
+                        "date": "May 12, 2025",
+                    },
                     {"title": "Bad", "url": "javascript:alert(1)", "summary": "S"},
                     {"title": "", "url": "https://no-title.org", "summary": "S"},
                 ]
@@ -315,13 +372,22 @@ def test_search_keeps_only_http_results_and_sends_the_query_alone(monkeypatch):
     monkeypatch.setattr(websearch, "platform_api_key", lambda _slug: "sk-test")
     monkeypatch.setattr(requests, "post", post)
     results = asyncio.run(websearch.search("q" * 200))
-    assert [r.url for r in results] == ["https://ok.org/p"]
+    assert [r.url for r in results] == ["https://ok.org/p", "https://ok.org/q"]
     assert results[0].site == "ok.org" and results[0].date == "2025-05-12"
+    assert results[1].date == ""
     assert sent == [{"url": websearch.SEARCH_URL, "query": "q" * 128, "count": 5}]
 
     Response.status_code = 500
     with pytest.raises(websearch.SearchFailed):
         asyncio.run(websearch.search("q"))
+
+
+def test_a_date_is_parsed_or_left_out():
+    assert websearch._date("2025-05-12T23:30:00+02:00") == "2025-05-12"
+    assert websearch._date("2025-05-12T10:00:00Z") == "2025-05-12"
+    assert websearch._date("2025-05-12") == "2025-05-12"
+    for unreadable in ("May 12, 2025", "2025-13-40", "", None, 20250512):
+        assert websearch._date(unreadable) == ""
 
 
 def _web_passage() -> Passage:
@@ -423,6 +489,38 @@ async def test_a_later_turn_is_not_sent_back(monkeypatch):
     assert len(seen) == 1
 
 
+async def test_a_read_only_first_reply_goes_back_for_the_answer_alone(monkeypatch):
+    clarify = 'AskUser("Which chapter do you mean?", ["Chapter 1", "Chapter 2"])'
+    stream, seen = _script(
+        [
+            AssembledResponse(text=_program(clarify)),
+            AssembledResponse(text=_program('Md("The answer.")')),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    viewer = _ctx()
+    assert not any(
+        s["function"]["name"] in agent.WRITE_TOOLS for s in tools.schemas_for(viewer)
+    )
+    events = await _collect("Explain the airlift", viewer, _model())
+    assert len(seen) == 2
+    assert seen[1]["messages"][-2]["content"] == chat_prompts.SEND_BACK_READ_ONLY
+    assert "The answer." in events[-1]["answer"]
+
+    ask = ToolCall(
+        id="ask_1",
+        name="AskUser",
+        arguments=json.dumps({"question": "Which chapter?", "choices": ["1"]}),
+    )
+    stream, seen = _script(
+        [AssembledResponse(tool_calls=[ask]), AssembledResponse(text="The answer.")]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    await _collect("Explain the airlift", _ctx(), _model("zai"))
+    tool_result = next(m for m in seen[1]["messages"] if m.get("role") == "tool")
+    assert tool_result["content"] == chat_prompts.SEND_BACK_TOOL_READ_ONLY
+
+
 async def test_glm_gets_the_tool_form_send_back(monkeypatch):
     ask = ToolCall(
         id="ask_1",
@@ -450,12 +548,12 @@ async def test_glm_gets_the_tool_form_send_back(monkeypatch):
 # ------------------------------------------------------------- GLM slips
 
 
-def test_the_guard_catches_glm_argument_markup():
-    assert contains_tool_protocol("Done.AskUser<arg_key>question</arg_key>")
-    assert contains_tool_protocol("x</arg_value><arg_key>plain")
-    guard = ResponseGuard()
-    assert guard.push("The answer.<arg_k") == "The answer."
-    assert guard.push("ey>question") == "" and guard.flagged
+def test_glm_argument_markup_is_recognized():
+    # Checked on a prose answer once it ends (the next two tests show both
+    # outcomes); an answer program streams, so the streaming guard passes it.
+    assert contains_arg_markup("Done.AskUser<arg_key>question</arg_key>")
+    assert contains_arg_markup("x</arg_value><arg_key>plain")
+    assert not contains_tool_protocol("Done.AskUser<arg_key>question</arg_key>")
 
 
 async def test_glm_text_askuser_is_read_back_as_the_call_it_meant(monkeypatch):
@@ -479,6 +577,20 @@ async def test_glm_text_askuser_is_read_back_as_the_call_it_meant(monkeypatch):
         assert "arg_key" not in events[-1]["answer"]
 
 
+async def test_glm_markup_inside_an_answer_program_is_no_turn_error(monkeypatch):
+    text = (
+        _program('Md("The blockade began in June 1948.")')
+        + "AskUser<arg_key>question</arg_key><arg_value>Shall I make a note?"
+        "</arg_value>\n"
+    )
+    stream, _ = _script([AssembledResponse(text=text)])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    events = await _collect("When did it begin?", _ctx(), _model("zai"))
+    assert not any(e["type"] == "error" for e in events)
+    assert events[-1]["type"] == "done"
+    assert "The blockade began in June 1948." in events[-1]["answer"]
+
+
 def test_a_tool_called_askuser_keeps_its_prose_citations():
     ask = ToolCall(
         id="a", name="AskUser", arguments='{"question": "More?", "choices": []}'
@@ -492,3 +604,56 @@ def test_a_tool_called_askuser_keeps_its_prose_citations():
     intro = next(c for c in openui.walk(program) if c.name == "Md")
     assert intro.prop("text") == "It began in 1948 and ended. See [9]."
     assert intro.prop("passages") == [1, 2, 3]
+
+
+# ------------------------------------------------------------- the note pick
+
+
+async def test_the_note_pick_builds_the_note(monkeypatch):
+    """Phase 2: an explanation gets an answer, not materials; the learner's pick
+    of its note offer is a new request that builds the note."""
+    question = "Explain how the Truman Doctrine and the Marshall Plan worked together."
+    answer = _program('Md("Containment, then recovery.")', OFFER)
+    stream, seen = _script([AssembledResponse(text=answer)])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    first = await _collect(question, _writer(monkeypatch), _model())
+    assert len(seen) == 1, "an answer with its offer is not sent back"
+    system = seen[0]["messages"][0]["content"]
+    assert (
+        "A question, or a request to explain or summarise, gets an answer with "
+        "citations, not materials." in system
+    )
+    assert "Shall I make a note" in first[-1]["answer"]
+
+    ran: list[str] = []
+
+    async def _run(name, args, ctx):
+        del args, ctx
+        ran.append(name)
+        return tools.ToolResult(text_parts=["Created the note m_1."])
+
+    build = ToolCall(
+        id="c1",
+        name="create_material",
+        arguments=json.dumps({"kind": "note", "title": "Containment"}),
+    )
+    stream, seen = _script(
+        [
+            AssembledResponse(tool_calls=[build]),
+            AssembledResponse(text=_program('Md("I made the note.")')),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    history = [
+        {"id": "u1", "role": "user", "content": question, "workspaceOnly": False},
+        {"id": "a1", "role": "assistant", "content": answer},
+    ]
+    # The question panel sends the offer and the pick (chat/questions.ts).
+    pick = "Shall I make a note of this?\nMake a note"
+    events = await _collect(pick, _writer(monkeypatch), _model(), history=history)
+    offered = {t["function"]["name"] for t in seen[0]["tools"]}
+    assert "create_material" in offered
+    assert seen[0]["messages"][-2]["content"].endswith(pick)
+    assert ran == ["create_material"]
+    assert events[-1]["type"] == "done" and "I made the note." in events[-1]["answer"]
