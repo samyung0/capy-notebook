@@ -757,3 +757,24 @@ until Epo's go.
 - **Correction to "AI-edit Undo storage" above:** `RebuildSource` releases the
   inverses (`source_rebased`). Only text publications, and rooms that never
   empty, keep them.
+
+## Background engine lane: interactive calls ahead of rebuilds and exports (2026-10-24)
+
+The collaboration server's background engine lane (collaboration-rs/crates/sources/src/engine/mod.rs) runs one call at a time per process, first in first out, with an unbounded queue (mod.rs:259, 368). Production runs 1 background process, UAT 1 (scripts/env/config.py:205-207). Interactive calls a chat user waits on share that queue with background work nobody waits on:
+
+- interactive: inspectOfficeScoped (office.rs:361; the agent's reads, and Q240's pictures query), applyOfficeCommands (:405; agent edits, 10 s x 3 attempts, each retry re-queues), resolveAsset (:427; image source changes), createOffice (:379);
+- background: rebaseOffice (:309; rebuild after publication or room unload, spawned per unload so they arrive in bursts) and exportOffice (:332; publication scheduler, at most 2 jobs per 5 s tick).
+
+Measured (release build, Ryzen 3700X under load, median of 3; production's 2.0 GHz Zen 2 is roughly 1.3-2x slower):
+
+| File | Rebase | Export | Read (open) | 1 edit |
+|---|---|---|---|---|
+| DOCX ~50 pages | 1.9 s, 181 MiB | 0.38 s | 0.15 s | 0.17 s |
+| DOCX ~300 pages | 10.7 s, 441 MiB | 1.68 s | 0.37 s | 0.57 s |
+| PPTX 24 MB, 84 slides | 2.5 s, 319 MiB | 0.23 s | 0.16 s | 0.17 s |
+| XLSX gradebook 8x2,000 | 12.3 s, 1.0 GiB | 2.68 s | 2.24 s | 2.62 s |
+| XLSX rows-50k | 24.2 s, 1.9 GiB | 4.10 s | 3.16 s | 5.62 s |
+
+So an agent read or edit queued behind one rebuild of a large workbook waits 12-24 s locally (about 18-36 s on production), past the pipeline's 10-15 s and Go's 20 s; the caller gives up while its call stays queued and still runs (mod.rs:543-548).
+
+Change (Editor's call, 2026-10-24): interactive calls go ahead of rebuild rebases and exports on the background lane. Order only; no call is refused or changes its result. Separate from Q240. Tests: a queued read starts before an earlier-queued rebase; a rebase still runs once the interactive queue is empty; exports keep their scheduler order among themselves.

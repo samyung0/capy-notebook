@@ -2,7 +2,7 @@ import { expect, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
 import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
 import { m } from '../i18n';
-import { openEditorNote } from './helpers';
+import { clickTextEnd, openEditorNote } from './helpers';
 
 // A room reload swaps renderers (Epo 2026-10-22): the note or file on screen
 // stays paused while the next room's renderer builds, then takes over at the
@@ -10,6 +10,8 @@ import { openEditorNote } from './helpers';
 const shots = process.env.ROOM_SWAP_SCREENSHOTS;
 const MATRIX = 'mat_note_bio_feature_matrix';
 const SCENARIO_SEED = 'A note for trying application errors.';
+const PNG_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 async function shot(page: Page, name: string) {
   if (shots) await page.screenshot({ path: `${shots}/${name}.png` });
@@ -190,6 +192,69 @@ test("a first open whose token request hangs ends at the join's 30 s", async ({
   await expect(failed).toHaveCount(0);
   await expect(failed).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-note-mount]')).toHaveCount(0);
+});
+
+// CAPY-WEB-7: a first open whose token answers after the join's 30 s paints
+// the note before its room syncs. A caret placed then, and Plate binding the
+// editor to the still empty document after 5 s, threw "Path doesn't match
+// yText" on every change and the next media insert never uploaded. The
+// editor binds at the room's sync instead and keeps working.
+test('a note painted before its room synced binds at the sync and takes edits and media', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(`/workspaces/${EDITOR_WORKSPACE_ID}`);
+  await page.evaluate(async (id) => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdNoteTokens, setCollaborationSlowed } = await import(path);
+    holdNoteTokens(id, 31_000);
+    setCollaborationSlowed(true);
+  }, EDITOR_NOTE.id);
+  await page.goto(
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}&mode=edit`
+  );
+  const editor = page.locator('[contenteditable="true"]').first();
+  const third = editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true });
+  // The token's 31 s, plus a reload if the dev server optimizes then.
+  await expect(third).toBeVisible({ timeout: 90_000 });
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
+  await clickTextEnd(third);
+  // Past Plate's 5 s wait for the sync: the note is still shown.
+  await page.waitForTimeout(6000);
+  await expect(third).toBeVisible();
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdNoteTokens, setCollaborationSlowed } = await import(path);
+    holdNoteTokens(null);
+    setCollaborationSlowed(false);
+  });
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  // The room's four blocks, and no paragraph only the editor holds.
+  await expect(
+    editor.locator('[data-block-id]:not([data-block-id] *)')
+  ).toHaveCount(4);
+  await clickTextEnd(third);
+  await page.keyboard.type(' bound');
+  await expect(
+    editor.getByText(`${EDITOR_NOTE.thirdParagraph} bound`, { exact: true })
+  ).toBeVisible();
+  await page.keyboard.press('Enter');
+  await editor.evaluate((element, b64) => {
+    const transfer = new DataTransfer();
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    transfer.items.add(new File([bytes], 'bound.png', { type: 'image/png' }));
+    element.dispatchEvent(
+      new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: transfer,
+      })
+    );
+  }, PNG_B64);
+  await expect(editor.getByRole('img', { name: 'bound.png' })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 // A reload's join counts from its token request too (Epo 2026-10-23): a

@@ -23,6 +23,8 @@ export interface PublicQuiz {
   privacy: Privacy;
   provenance?: Provenance;
   questions: PublicQuizQuestionsItem[];
+  /** @nullable */
+  removedAssetIds?: string[] | null;
   revision: number;
   sharePath?: string;
   workspaceId: string;

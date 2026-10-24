@@ -5770,3 +5770,152 @@ async def test_office_edits_and_creates_reach_their_routes(monkeypatch):
         [write],
     )
     assert "Created file 'Grades.xlsx' (id f_new)." in created.text()
+
+
+def _office_edit(rid: str) -> dict:
+    return {
+        "operation": "edited",
+        "operationId": f"op_{rid}",
+        "resource": {"kind": "source_file", "id": rid, "title": f"{rid}.xlsx"},
+    }
+
+
+def _office_turn(monkeypatch, results: dict[str, ToolResult], files: list[str]):
+    """A turn of one edit_office_document call per response, on these files,
+    each answered by its call id's result, then an answer."""
+    stream, _ = _script_stream(
+        [
+            _assembled(
+                "",
+                [_call("edit_office_document", json.dumps({"file_id": f}), f"c{n}")],
+            )
+            for n, f in enumerate(files, 1)
+        ]
+        + [_assembled(_answer(("Done.", [])))]
+    )
+
+    async def _run(_name, args, _ctx):
+        return results[args["_tool_call_id"]]
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+
+
+def _frames(events: list[dict]) -> list[tuple]:
+    return [
+        (e["type"], e["callId"], e.get("applied"), e.get("total"))
+        for e in events
+        if e["type"] in ("tool_start", "tool_progress", "tool_end")
+    ]
+
+
+async def test_a_cut_office_edit_stays_open_until_the_next_edit_of_its_file(
+    monkeypatch,
+):
+    """Epo 2026-10-23, Q171: the cut call's row stays in progress, applied of
+    total, and closes as done after the next landed edit of the same file; an
+    edit of another file in between leaves it open."""
+    cut = ToolResult(
+        text_parts=["Edited."], effects=[_office_edit("f_1")], progress=(30, 32)
+    )
+    _office_turn(
+        monkeypatch,
+        {
+            "c1": cut,
+            "c2": ToolResult(effects=[_office_edit("f_2")]),
+            "c3": ToolResult(refused=True, error="stale", error_code="stale_target"),
+            "c4": ToolResult(effects=[_office_edit("f_1")]),
+        },
+        ["f_1", "f_2", "f_1", "f_1"],
+    )
+    # As the SSE writer serializes them, at once.
+    events = [
+        json.loads(json.dumps(e))
+        async for e in agent.run_agent(
+            query="q", ctx=_build_ctx(), history=None, model=_model()
+        )
+    ]
+
+    assert _frames(events) == [
+        ("tool_start", "c1", None, None),
+        ("tool_progress", "c1", 30, 32),
+        ("tool_start", "c2", None, None),
+        ("tool_end", "c2", None, None),
+        ("tool_start", "c3", None, None),
+        ("tool_end", "c3", None, None),
+        ("tool_start", "c4", None, None),
+        ("tool_end", "c4", None, None),
+        ("tool_end", "c1", None, None),
+    ]
+    closed = [e for e in events if e["type"] == "tool_end" and e["callId"] == "c1"]
+    assert closed[0]["outcome"] == "succeeded" and closed[0]["effects"] == [
+        _office_edit("f_1")
+    ]
+    # A checkpoint before the follow-up keeps the counts; the turn's record
+    # ends as a plain edit.
+    checkpoint = next(e for e in events if e["type"] == "turn_checkpoint")
+    assert (
+        checkpoint["activity"][0]["applied"],
+        checkpoint["activity"][0]["total"],
+    ) == (
+        30,
+        32,
+    )
+    first = events[-1]["activity"][0]
+    assert first["callId"] == "c1" and first["outcome"] == "succeeded"
+    assert "applied" not in first and "total" not in first
+
+
+async def test_a_turn_ending_with_commands_unapplied_closes_the_row_with_them(
+    monkeypatch,
+):
+    cut = ToolResult(effects=[_office_edit("f_1")], progress=(30, 32))
+    _office_turn(monkeypatch, {"c1": cut}, ["f_1"])
+    events = await _collect("q", _build_ctx())
+
+    assert _frames(events) == [
+        ("tool_start", "c1", None, None),
+        ("tool_progress", "c1", 30, 32),
+        ("tool_end", "c1", 30, 32),
+    ]
+    assert events[-1]["type"] == "done"
+    block = events[-1]["activity"][0]
+    assert (block["outcome"], block["applied"], block["total"]) == ("succeeded", 30, 32)
+
+
+async def test_an_office_edit_reads_what_the_engine_left_unapplied(monkeypatch):
+    """The engine alone counts the limits (Epo 2026-10-22): its notice's first
+    unapplied index is how many commands it applied, a create counting."""
+    notices = iter(
+        [
+            (
+                "Not applied: the commands at indexes 30 to 31 (counting from 0), "
+                "past the limit of 30 formatted spans a call; send them in another call."
+            ),
+            (
+                "Not applied: the command at index 50 (counting from 0), past the "
+                "limit of 50 commands a call; send them in another call."
+            ),
+            "",
+        ]
+    )
+
+    def _post(url, **_kwargs):
+        body = _receipt(
+            "created" if url.endswith("/create") else "edited", "source_file", "f_1"
+        )
+        body["notice"] = next(notices)
+        return _JsonResp(body)
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    span = {"type": "format_text", "target_id": "p1", "text": "a", "bold": True}
+
+    def edit(call, **args):
+        return tools.run("edit_office_document", {**args, "_tool_call_id": call}, ctx)
+
+    edited = await edit("c1", file_id="f_1", commands=[span] * 32)
+    assert edited.progress == (30, 32)
+    create = {"type": "create", "format": "docx", "title": "Notes"}
+    created = await edit("c2", commands=[create] + [span] * 50)
+    assert created.progress == (50, 51)
+    assert (await edit("c3", file_id="f_1", commands=[span])).progress is None

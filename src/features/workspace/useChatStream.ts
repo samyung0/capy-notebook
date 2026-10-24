@@ -476,10 +476,12 @@ export function useChatStream(workspaceId: string) {
                       block.kind === 'tool' && block.callId === callId
                         ? {
                             ...block,
+                            applied: result.applied,
                             effects: result.effects,
                             endedAt,
                             error: result.error,
                             outcome: result.outcome,
+                            total: result.total,
                           }
                         : block
                     ),
@@ -487,6 +489,21 @@ export function useChatStream(workspaceId: string) {
                 })
               );
             },
+            onToolProgress: (callId, { applied, total }) =>
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === currentId
+                    ? {
+                        ...msg,
+                        activity: (msg.activity ?? []).map((block) =>
+                          block.kind === 'tool' && block.callId === callId
+                            ? { ...block, applied, total }
+                            : block
+                        ),
+                      }
+                    : msg
+                )
+              ),
             onToolStart: (callId, name, detail, startedAt) => {
               const tool: ToolBlock = {
                 callId,

@@ -77,6 +77,7 @@ import {
   useMicrosoftLoginHint,
   useProviderConnect,
 } from '@/lib/useProviderConnect';
+import { audioLengthOrRefuse } from './audioDuration';
 import {
   ChapterSelect,
   chapterByName,
@@ -149,6 +150,10 @@ export interface PendingSource {
   analysisProgress?: SourceAnalysisProgress;
   analysisResult?: SourceAnalysisResult;
   analysisStatus: SourceAnalysisStatus;
+  /** Set while the browser reads a local audio file's length. */
+  audioDurationPending?: boolean;
+  /** The length the browser read. A file it cannot read is refused. */
+  audioDurationSeconds?: number;
   chapterId: string | null;
   chapterName: string | null;
   contentType: string;
@@ -171,6 +176,17 @@ function formatSize(bytes: number, estimated = false) {
       ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
       : `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return estimated ? `~${value}` : value;
+}
+
+/** Whether the browser read an audio file as longer than the upload limit. */
+function audioTooLong(
+  source: Pick<PendingSource, 'audioDurationSeconds'>,
+  policy: SourceUploadPolicy
+): boolean {
+  return (
+    source.audioDurationSeconds != null &&
+    source.audioDurationSeconds > policy.audioMaxDurationSeconds
+  );
 }
 
 function workspaceFileRoom(
@@ -316,6 +332,7 @@ function localRows(
         input ?? undefined,
         policy
       ),
+      audioDurationPending: kind === 'audio',
       chapterId: null,
       chapterName: null,
       contentType: file.type || 'application/octet-stream',
@@ -362,12 +379,22 @@ function setConnectResume(
   }
 }
 
-/** Expected cost of one source at the policy rates: fast-parsed documents
- * by text-layer and vision-read page count, everything else free. */
+/** Expected cost of one source at the policy rates: audio by whole seconds,
+ * fast-parsed documents by text-layer and vision-read page count, everything
+ * else free. */
 function sourceCreditEstimate(
-  source: Pick<PendingSource, 'analysisResult' | 'kind' | 'parseMode'>,
+  source: Pick<
+    PendingSource,
+    'analysisResult' | 'audioDurationSeconds' | 'kind' | 'parseMode'
+  >,
   uploadPolicy: SourceUploadPolicy
 ): number {
+  if (source.kind === 'audio') {
+    return (
+      Math.ceil(source.audioDurationSeconds ?? 0) *
+      uploadPolicy.audioSecondCreditMicros
+    );
+  }
   // An image caption bills its tokens; one text-less page read by the VLM is
   // the closest rate to show for it.
   if (source.kind === 'image') return uploadPolicy.vlmIngestPageCreditMicros;
@@ -480,8 +507,20 @@ function useSourceBatch(
   const inspectSource = useCallback(
     (source: PendingSource) => {
       enqueueAnalysis(source);
+      if (source.kind === 'audio' && source.file) {
+        void audioLengthOrRefuse(source.file).then((duration) =>
+          duration == null
+            ? setSources((current) =>
+                current.filter((item) => item.key !== source.key)
+              )
+            : patchSource(source.key, {
+                audioDurationPending: false,
+                audioDurationSeconds: duration,
+              })
+        );
+      }
     },
-    [enqueueAnalysis]
+    [enqueueAnalysis, patchSource]
   );
 
   useEffect(() => {
@@ -541,6 +580,26 @@ function useSourceBatch(
     take,
     updateParseMode,
   };
+}
+
+/** What an audio row says about its length: still reading, over the limit,
+ * or its minutes and expected cost. */
+function audioDurationNote(
+  source: PendingSource,
+  policy: SourceUploadPolicy
+): string {
+  if (source.audioDurationPending || source.audioDurationSeconds == null) {
+    return m.source_audio_reading_duration();
+  }
+  if (audioTooLong(source, policy)) {
+    return m.source_audio_too_long({
+      hours: policy.audioMaxDurationSeconds / 3600,
+    });
+  }
+  return m.source_audio_estimate({
+    cost: (sourceCreditEstimate(source, policy) / 1_000_000).toLocaleString(),
+    minutes: Math.ceil(source.audioDurationSeconds / 60),
+  });
 }
 
 function SourceList({
@@ -704,6 +763,15 @@ function SourceList({
                   </div>
                 )
               ))}
+            {source.kind === 'audio' && source.origin === 'local' && (
+              <p
+                className={cn('t-meta text-fg-muted', {
+                  'text-tint-error-fg': audioTooLong(source, uploadPolicy),
+                })}
+              >
+                {audioDurationNote(source, uploadPolicy)}
+              </p>
+            )}
           </li>
         ))}
       </ul>
@@ -747,6 +815,8 @@ function SourceFooter({
     !uploadPolicy ||
     sources.some(
       (source) =>
+        source.audioDurationPending ||
+        audioTooLong(source, uploadPolicy) ||
         sourceAnalysisBlocksSubmit(source, uploadPolicy) ||
         source.analysisStatus === 'error' ||
         nameTooLong(source.name)
@@ -952,6 +1022,10 @@ export function AddSourceDialog({
                 {
                   chapterId: source.chapterId,
                   chapterName: source.chapterName,
+                  durationSeconds:
+                    source.audioDurationSeconds == null
+                      ? undefined
+                      : Math.ceil(source.audioDurationSeconds),
                   estimatedCreditMicros: sourceCreditEstimate(
                     source,
                     uploadPolicy

@@ -67,7 +67,7 @@ func (s *turnState) hear(ev pipeChatEvent) bool {
 	case "citations":
 		s.citations = ev.Citations
 		return true
-	case "phase", "tool_start", "tool_end":
+	case "phase", "tool_start", "tool_progress", "tool_end":
 		return true
 	case "done", "error":
 		if ev.Type == "error" {

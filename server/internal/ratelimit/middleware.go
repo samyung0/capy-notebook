@@ -23,6 +23,7 @@ const (
 	classUpload
 	classIncident
 	classThumbnail
+	classVoice
 )
 
 // aiSuffixes are the model-backed routes. Matching by suffix rather than exact
@@ -89,6 +90,9 @@ func classify(path string) class {
 	}
 	if strings.HasPrefix(path, "/api/files/") && strings.HasSuffix(path, "/thumbnail") {
 		return classThumbnail
+	}
+	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/voice-transcriptions") {
+		return classVoice
 	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -173,6 +177,11 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 			case classThumbnail:
 				if ok, retry := l.Allow(ctx, "thumbnail:"+subject, l.cfg.Thumbnail); !ok {
 					reject(w, r, retry, "rate_limited")
+					return
+				}
+			case classVoice:
+				if ok, retry := l.Allow(ctx, "voice:"+subject, l.cfg.Voice); !ok {
+					reject(w, r, retry, "ai_rate_limited")
 					return
 				}
 			}

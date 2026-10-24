@@ -11,6 +11,7 @@ import type { ResourceEffect } from './resourceEffect.ts';
 import type { ToolError } from './toolError.ts';
 
 export interface ActivityBlock {
+  applied?: number;
   callId?: string;
   capture?: ActivityCapture;
   detail?: string;
@@ -24,4 +25,5 @@ export interface ActivityBlock {
   outcome?: ActivityBlockOutcome;
   startedAt?: string;
   text?: string;
+  total?: number;
 }

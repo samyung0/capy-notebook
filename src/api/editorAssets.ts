@@ -33,8 +33,8 @@ export interface ResolvedEditorAsset {
   url: string;
 }
 
-/** A workspace material's assets belong to (and bill) the workspace owner; a
- * standalone material's belong to its owner. The server picks the scope. */
+/** An asset belongs to the material it is added to and bills its uploader
+ * (M16). The server picks the scope. */
 const uploadsPath = (materialId: string) =>
   `/materials/${encodeURIComponent(materialId)}/editor-assets/uploads`;
 
@@ -43,8 +43,8 @@ export interface EditorAssetUploadOptions {
   signal?: AbortSignal;
 }
 
-/** The plan cap, by purpose, of the account paying for the material's
- * assets. The editors already hold the material, so this reads the cache. */
+/** The reader's plan cap, by purpose: what they add is charged to them. The
+ * editors already hold the material, so this reads the cache. */
 async function editorAssetMaxBytes(
   materialId: string,
   purpose: EditorAssetPurpose
@@ -55,7 +55,7 @@ async function editorAssetMaxBytes(
   return purpose === 'image' ? imageMaxBytes : audioMaxBytes;
 }
 
-/** The plan image cap of the account paying for the material's assets. */
+/** The reader's plan image cap for the material's assets. */
 export function editorImageMaxBytes(materialId: string) {
   return editorAssetMaxBytes(materialId, 'image');
 }

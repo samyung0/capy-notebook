@@ -42,3 +42,27 @@ export function normalizeCitationRegions(
     return [{ bottom, left, page: region.page, right, sourceIndex, top }];
   });
 }
+
+const AUDIO_REGION_SPACE = 'audio-ms';
+
+/** Where a cited transcript passage starts in its recording, in
+ * milliseconds; undefined for any other citation. */
+export function audioStartMs(
+  regions: readonly Region[] | null | undefined
+): number | undefined {
+  const start = regions?.find(
+    (region) => region.space === AUDIO_REGION_SPACE
+  )?.start_ms;
+  return start !== undefined && start >= 0 ? start : undefined;
+}
+
+/** A recording position as m:ss, or h:mm:ss past the first hour. */
+export function formatClock(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const seconds = String(total % 60).padStart(2, '0');
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
+    : `${minutes}:${seconds}`;
+}

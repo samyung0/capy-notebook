@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stripe/stripe-go/v82"
+
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -121,5 +123,24 @@ func TestReloadGivenUpWhileChargingIsVoidedOnItsRetry(t *testing.T) {
 				t.Fatalf("status = %q voided = %q, want the retry voided", got, *voided)
 			}
 		})
+	}
+}
+
+// Security: only a card earns the starter credits. A Link method has no card
+// key, so it grants nothing and nothing from its email is kept.
+func TestPaymentMethodInfoKeysOnlyCards(t *testing.T) {
+	card := PaymentMethodInfo(&stripe.PaymentMethod{
+		ID: "pm_card", Type: stripe.PaymentMethodTypeCard,
+		Card: &stripe.PaymentMethodCard{Fingerprint: "fp_1", Last4: "4242"},
+	})
+	if card.CardKey != "card:fp_1" {
+		t.Fatalf("card key = %q, want card:fp_1", card.CardKey)
+	}
+	link := PaymentMethodInfo(&stripe.PaymentMethod{
+		ID: "pm_link", Type: stripe.PaymentMethodTypeLink,
+		Link: &stripe.PaymentMethodLink{Email: "someone@example.test"},
+	})
+	if link.CardKey != "" {
+		t.Fatalf("a Link method got card key %q", link.CardKey)
 	}
 }

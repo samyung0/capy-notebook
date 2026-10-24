@@ -137,14 +137,17 @@ func (a *api) materialResponse(
 			return nil, hErr(err)
 		}
 	}
-	// The payer's plan: an image or audio file added to the material is
-	// charged to its payer, whoever adds it (Sam 2026-10-19).
-	limits, err := a.s.PayerPlanLimits(ctx, material.OwnerUserID)
+	// The reader's plan: an image or audio file they add is charged to them
+	// (M16).
+	limits, err := a.s.PayerPlanLimits(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
 	body.ImageMaxBytes = limits.EditorAssetBytes("image")
 	body.AudioMaxBytes = limits.EditorAssetBytes("audio")
+	if body.RemovedAssetIDs, err = a.s.MissingEditorAssetIDs(ctx, body.Content.EditorAssetIDs()); err != nil {
+		return nil, hErr(err)
+	}
 	if store.RoleCanEdit(role) && !readOnly {
 		body.StorageFull = store.FullBy(full, material.OwnerUserID, userID(ctx))
 	}

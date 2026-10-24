@@ -33,6 +33,8 @@ patchedDependencies:
   # plot's or graph's `block` is a Y.Map edited entry by entry (Epo 2026-10-17).
   # A position that falls on an inline element (an inline equation, a link)
   # resolves to the text beside it, so a co-editor's caret there is drawn.
+  # History maps the selection onto the room only once the editor is bound
+  # to it (before that it holds the note's last projection).
   "@slate-yjs/core@1.0.2": patches/@slate-yjs__core@1.0.2.patch
   # Capy patch: Yjs has no option to skip its after-transaction formatting
   # cleanup; a doc built with `meta: { formattingCleanup: false }` skips it.
@@ -52,6 +54,8 @@ patchedDependencies:
 #   no sprintf-js. Both packages load argparse only in their command-line tools
 #   (bin/mammoth, bin/js-yaml.js), which nothing here runs and which argparse 2
 #   no longer serves; their libraries never import it.
+# - fast-uri below 3.1.9 (URI parsing advisories under ajv via @hookform/resolvers):
+#   ajv's range allows 3.1.9, but the lockfile kept 3.1.8 on update.
 # - KaTeX below 0.18.2 (settings prototype pollution, GHSA-238p-pmpm-9mq7)
 #   stays under mermaid 11 (^0.16.47; mermaid 12 moves to 0.18) and
 #   micromark-extension-math 3.1.0 (^0.16.0, its last release) via remark-math.
@@ -62,6 +66,7 @@ overrides:
   "argparse@<2": 2.0.1
   "katex@<0.18.2": 0.19.0
   "dompurify@<3.4.17": 3.4.17
+  "fast-uri@<3.1.9": 3.1.9
 
 # `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
 # here. Each entry says why it waits.

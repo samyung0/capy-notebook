@@ -109,6 +109,7 @@ import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
 import { remoteCursorRangesForEntry, useRemotePeers } from './RemoteCursors';
+import { bindSyncedRoom, roomBindingPlugin } from './roomBinding';
 import {
   type RoomReconnector,
   refusalDropsDrafts,
@@ -1056,6 +1057,8 @@ export function NoteEditorCore({
           },
           onSyncChange: ({ isSynced }) => {
             roomSynced.current = isSynced;
+            // A bind Plate tried before the first sync happens now.
+            if (isSynced) bindSyncedRoom(editorRef.current);
             if (!isSynced || rejected.current) return;
             markSlowed(false);
             hasSynced.current = true;
@@ -1148,6 +1151,8 @@ export function NoteEditorCore({
           ydoc,
         },
       }),
+      // Binds to the room at its first sync (onSyncChange above).
+      roomBindingPlugin,
       ...buildPlugins({
         allowExternalAssets,
         currentUserId,

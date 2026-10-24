@@ -81,6 +81,11 @@ inline, not as a toast, so the draft and its context stay on screen:
 - Such a mutation opts out of the global toast (`errorToast: false`), so the
   failure is reported once.
 
+A file's trash confirmation (`TrashConfirmDialog` from `ContentActions`)
+follows the same rule: it stays open with a spinner while the delete runs
+and shows a refusal in its `FormAlert` (`trashErrorMessage`), such as an
+audio file still being transcribed (`audio_transcribing`).
+
 ## Input length limits
 
 Limits come from the backend (`server/internal/fieldlimits`, generated into

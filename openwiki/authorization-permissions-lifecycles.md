@@ -439,6 +439,10 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   30 days; the current workspace owner and the item's payer list, restore or
   permanently delete trash, whoever trashed it. A payer who left the workspace
   still trashes and purges what it pays for but cannot open or restore it.
+  An audio file whose transcription task was submitted cannot be trashed
+  until its job ends (409 `audio_transcribing`, Epo 2026-10-24); deletion
+  cascades still cancel the job and free its provider slot
+  ([agentic-retrieval.md](agentic-retrieval.md#audio-transcription-filetrans)).
 - Viewers can read files when workspace visibility permits, but cannot mutate
   workspace structure or files.
 - Upload reservations and finalized bytes are charged to the editor who
@@ -459,6 +463,11 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   links carry no overrides ([thumbnails.md](thumbnails.md)). The e2e stack's
   blob server answers its links the same way. The bank's public figures are
   not presigned and keep their server-detected type.
+- The ingest worker signs one other read link: a GET for the one audio source
+  object it is transcribing, valid for the ten minutes Alibaba has to fetch
+  it, handed only to that Alibaba Filetrans task. It is never stored, logged
+  or shown; only a new submit signs a new one
+  ([agentic-retrieval.md](agentic-retrieval.md)).
 
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
 [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
@@ -1170,11 +1179,24 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
 
 - Every file, editor asset, upload, and material is charged to the account that
   uploaded, imported, cloned or created it, in any workspace (uploader pays,
-  Sam 2026-10-18; see backend-storage-quota.md).
-- Nobody adds bytes to another user's bill, and an owner's transfer moves none.
+  Sam 2026-10-18; see backend-storage-quota.md). That includes the images and
+  audio an editor adds inside someone else's note, quiz or set: uploaded,
+  pasted or placed by the chat agent for it (Epo 2026-10-24, M16). An embedded
+  quiz or set row is the exception: it is charged to its note's payer.
+- A member who leaves or is removed keeps paying for those images and audio
+  and deletes them from its Files page, where they are listed under a note it
+  can no longer open; deleting its account deletes them. The note then shows
+  each as removed by its uploader.
+- Nobody adds bytes to another user's bill, except the embedded quiz or set
+  row itself, charged to its note's payer; the images in it are the account's
+  that added them, pasted copies included. Charges never move: not on leaving,
+  removal, account deletion or an owner's transfer.
 - A frozen account edits nowhere, and nobody edits what a frozen account pays
   for. Nobody edits the content of an account at or over its limit either,
   though organizing it still works; the rest of the workspace stays editable.
+  A material's view-only state follows only its own payer: an editor at its
+  limit just cannot add images or audio to it, and nobody adds them to a
+  material whose payer is frozen or at its limit.
 
 ### What the gate checks
 
@@ -1315,7 +1337,7 @@ Physical deletion is coordinated through `pending_blob_deletions`, a durable
 database outbox. Reference-count triggers cover source objects, parsed objects,
 editor assets, upload-session paths, source collaboration bases and refresh candidates,
 and file thumbnails (`files.thumbnail_key`: a new capture releases the old key;
-[thumbnails.md](thumbnails.md)). Image-caption payloads are owned by `image_caption_associations`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
+[thumbnails.md](thumbnails.md)). Image-caption payloads are owned by `image_caption_associations`; audio transcripts (`derived-text/<sha>/…`) use `artifact_cache`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
 foreign-key cascades, so deleting a file, deleting a workspace, or purging an
 account all reach the same cleanup path without relying on an HTTP handler to
 enumerate bucket keys.
@@ -1414,6 +1436,14 @@ never appear in either. Past reviews and notifications keep the caller's
 history but blank the live workspace (and chapter) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
+The Files tab also lists, in a section of their own, the images and audio the
+caller pays for in other accounts' notes, quizzes and sets in workspaces it can
+no longer reach (`GET /api/editor-assets/lost`): name, size, added time and
+the note's title (blank once that workspace's owner is no longer live), never
+opened or restored. Delete there (`DELETE /api/editor-assets/{assetId}`) is
+final, since a trashed asset would come back with the note's next save; only
+the asset's payer may delete it, and only in a material it does not pay for
+itself (M16).
 
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),
@@ -1529,15 +1559,21 @@ standalone materials, planner/history data,
 memberships, invitations, notification data, credentials, and other
 product-content rows are deleted atomically with the account tombstone, as is
 the account's job history (job and attempt rows whose payload names its
-workspaces; billing rows keep theirs with the attempt link cleared). A job it
-ran in another owner's workspace stays with that file, without its id.
+workspaces; billing rows keep theirs with the attempt link cleared). What it
+pays for in other people's workspaces goes too: its uploads, materials, and
+the images and audio it added to their notes, which then read as removed by
+their uploader (M16). A job it ran in another owner's workspace stays with
+that file, without its id.
 Remaining cross-account attribution is anonymized. Profile PII is scrubbed;
 pseudonymous billing, usage, provider, storage, and audit ledgers may remain
 under their own retention requirements. The account's editing incidents
 (`edit_incidents`, see
 [observability-metering.md](observability-metering.md#editing-incidents)) are
 deleted with it; incidents that name no user, or another user, keep the
-purged account's file ids until their 90 days pass. A purged account and the 30-day deleted
+purged account's file ids until their 90 days pass. `starter_grants` keeps
+the user id and the card's Stripe fingerprint through purge, so the same card
+cannot claim the starter credits again on a new account (see
+[observability-metering.md](observability-metering.md#purchased-credits-top-ups-and-auto-reload)). A purged account and the 30-day deleted
 data cannot be restored.
 
 Deletion requests, support cancellation, purge, Clerk `user.deleted` handling

@@ -1167,6 +1167,15 @@ A first open whose token has not answered by then shows the collaboration
 unavailable panel with Retry instead of loading for ever; an editor not
 synced by then, a JOIN never answered on the open socket included, turns the
 status red, and after a reload that failing editor replaces the paused one.
+The editor binds to the room's document (`YjsEditor.connect`) only at the
+room's first sync (`roomBinding.ts`, CAPY-WEB-7). Plate's init binds after
+waiting at most 5 s; bound to a document the room had not filled, the editor
+showed it empty and kept a paragraph the document never got, which broke
+every later Yjs mapping. Until it binds, an editor painted early (red because
+its join ran out first) shows the projection. Binding replaces that tree and
+keeps a caret placed on it by block id where its text still exists, else
+drops it; history maps the selection onto the room only once bound (the
+@slate-yjs/core patch).
 Item rooms (quizzes, flashcard sets, standalone diagrams and mindmaps) have
 the same 30 s from their token request (`ItemRoom.start`); one not synced by
 then goes offline, the room's connection error (Epo 2026-10-23).
@@ -1604,6 +1613,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   a collected unit, as Yjs does; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to
   14 and `MIN_SOURCE` to 14; `MIN_MATERIAL` stays 7. Its deploy request names
   "client protocol 13 -> 14, source 13 -> 14".
+  The Office agent's short paragraph ids and malformed-id refusals (pin
+  faacf7887: a DOCX paraId alone names its one paragraph, and a malformed
+  slide, shape, paragraph or table id is refused as malformed, showing the
+  read's form; Epo 2026-10-24, Q222 and Q223) raised `CLIENT_PROTOCOL` to 15
+  and `MIN_SOURCE` to 15; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 14 -> 15, source 14 -> 15".
 
 #### When to bump
 

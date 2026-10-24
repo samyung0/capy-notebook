@@ -497,9 +497,9 @@ func TestShareHTTPMaterialEditorAssetUploads(t *testing.T) {
 	}
 }
 
-// An editor who does not pay for a note uploads an image into it, and the
-// note's payer is charged (Sam 2026-10-18/19).
-func TestEditorUploadsAnImageIntoAnotherPayersNote(t *testing.T) {
+// An editor who does not pay for a note uploads an image into it and pays for
+// the image itself (M16).
+func TestEditorPaysForTheImageItUploadsIntoAnotherPayersNote(t *testing.T) {
 	h, st, mem := openInternalHTTPWithBlob(t)
 	ctx := context.Background()
 	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", WorkspaceID: "ws_e2e_private",
@@ -536,8 +536,8 @@ func TestEditorUploadsAnImageIntoAnotherPayersNote(t *testing.T) {
 	if got, _, ok := mem.Object(stored.ObjectPath); !ok || !bytes.Equal(got, image) {
 		t.Fatalf("stored object at %q holds %d bytes", stored.ObjectPath, len(got))
 	}
-	if owner, editor := usage("u_owner")-ownerBefore, usage("u_editor")-editorBefore; owner != int64(len(image)) || editor != 0 {
-		t.Fatalf("charged owner %d editor %d, want the image's %d bytes on the owner", owner, editor, len(image))
+	if owner, editor := usage("u_owner")-ownerBefore, usage("u_editor")-editorBefore; owner != 0 || editor != int64(len(image)) {
+		t.Fatalf("charged owner %d editor %d, want the image's %d bytes on the editor", owner, editor, len(image))
 	}
 }
 

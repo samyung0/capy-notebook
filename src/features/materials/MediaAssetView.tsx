@@ -6,9 +6,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
+  useMemo,
   useState,
 } from 'react';
 import { Skeleton } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { onChildrenReady } from '@/features/notes/childrenReady';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -43,7 +46,7 @@ type AssetState =
       contentType: string;
       materialId?: string;
     }
-  | { status: 'error'; kind: 'missing' | 'failed' };
+  | { status: 'error'; kind: 'missing' | 'failed' | 'removed' };
 
 /** Overrides where an editor asset loads from: shared pages use the site
  * Worker's share route, and the quiz editor shows images picked but not yet
@@ -52,15 +55,47 @@ export const AssetUrlContext = createContext<
   ((assetId: string) => string | undefined) | null
 >(null);
 
+/** The images and audio the open material (a note, or an embedded quiz or
+ * set) shows that no longer exist, its `removedAssetIds`: deleted by their
+ * uploader, or with the uploader's account (M16). Each renders as removed
+ * instead of loading. `recheck` refetches the list when a resolve fails, so
+ * one deleted while the material is open shows as removed too. */
+interface RemovedAssets {
+  ids: ReadonlySet<string>;
+  recheck?: () => void;
+}
+
+export const RemovedAssetsContext = createContext<RemovedAssets>({
+  ids: new Set(),
+});
+
+/** The RemovedAssetsContext value for a material's query result. */
+export function useRemovedAssets(
+  removedAssetIds: readonly string[] | null | undefined,
+  refetch: (options: { cancelRefetch: boolean }) => unknown
+): RemovedAssets {
+  return useMemo(
+    () => ({
+      ids: new Set(removedAssetIds),
+      // Several failed images in one material share one refetch.
+      recheck: () => void refetch({ cancelRefetch: false }),
+    }),
+    [removedAssetIds, refetch]
+  );
+}
+
 export function useResolvedAsset(assetId: string | undefined) {
   const [state, setState] = useState<AssetState>({ status: 'loading' });
   const [generation, setGeneration] = useState(0);
   const resolveUrl = useContext(AssetUrlContext);
   const override = assetId ? resolveUrl?.(assetId) : undefined;
+  const { ids, recheck } = useContext(RemovedAssetsContext);
+  const removed = !!assetId && ids.has(assetId);
+  const onFailure = useEffectEvent(() => recheck?.());
 
   useEffect(() => {
     const controller = new AbortController();
-    if (override) return;
+    if (override || removed) return;
     if (!assetId) {
       setState({ kind: 'missing', status: 'error' });
       return () => controller.abort();
@@ -82,16 +117,44 @@ export function useResolvedAsset(assetId: string | undefined) {
             kind: 'failed',
             status: 'error',
           });
+          onFailure();
         }
       });
     return () => controller.abort();
-  }, [assetId, generation, override]);
+  }, [assetId, generation, override, removed]);
 
   const reload = useCallback(() => setGeneration((value) => value + 1), []);
-  const ready: AssetState | undefined = override
-    ? { contentType: '', name: '', status: 'ready', url: override }
-    : undefined;
-  return [ready ?? state, reload] as const;
+  const known: AssetState | undefined = removed
+    ? { kind: 'removed', status: 'error' }
+    : override
+      ? { contentType: '', name: '', status: 'ready', url: override }
+      : undefined;
+  return [known ?? state, reload] as const;
+}
+
+/** An image or audio clip its uploader deleted (M16), in the look of an empty
+ * media block. */
+export function RemovedMedia({
+  audio = false,
+  className,
+}: {
+  audio?: boolean;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex min-h-18 items-center gap-3 rounded-card border border-line border-dashed bg-surface-hover-bg px-4 py-3 text-fg-muted text-sm',
+        className
+      )}
+      role="note"
+    >
+      <Icon className="size-5 shrink-0" name={audio ? 'fileAudio' : 'image'} />
+      <p className="min-w-0">
+        {audio ? m.media_audio_removed() : m.media_image_removed()}
+      </p>
+    </div>
+  );
 }
 
 /** Signed when clicked, not when rendered: open the tab first so the
@@ -140,7 +203,7 @@ export function MediaAssetView({
   }, [assetId, ownerId, reload]);
   const waiting =
     !!ownerId &&
-    (asset.status === 'error' ||
+    ((asset.status === 'error' && asset.kind !== 'removed') ||
       (asset.status === 'ready' &&
         !!asset.materialId &&
         asset.materialId !== ownerId));
@@ -166,7 +229,10 @@ export function MediaAssetView({
       {(asset.status === 'loading' || waiting) && (
         <Skeleton className="h-24 w-full rounded-card" />
       )}
-      {asset.status === 'error' && !waiting && (
+      {asset.status === 'error' && asset.kind === 'removed' && (
+        <RemovedMedia audio={element.type === 'audio'} />
+      )}
+      {asset.status === 'error' && asset.kind !== 'removed' && !waiting && (
         <div className="rounded-card border border-solid-error/30 bg-tint-error px-3 py-4 text-sm text-solid-error">
           {asset.kind === 'missing'
             ? m.material_missing_asset()
