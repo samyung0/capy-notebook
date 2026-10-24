@@ -649,9 +649,10 @@ export type Material = Omit<GenMaterial, 'content'> & {
 
 /* Owner-scoped, paginated listings behind the Create and Files pages. */
 export type {
+  EditorAssetItem,
+  EditorAssetPage,
   FileKind,
-  LostEditorAsset,
-  LostEditorAssetPage,
+  ListEditorAssetsAccess as EditorAssetAccess,
 } from './gen/model';
 /** Pages whose rows carry the narrowed preview types above. */
 export type FilePage = Omit<GenFilePage, 'items'> & { items: SourceFile[] };

@@ -367,6 +367,10 @@ type FlashcardSet struct {
 	IsOwner        bool `json:"isOwner"`
 	CanEdit        bool `json:"canEdit"`
 	CanEditContent bool `json:"canEditContent"`
+	// RemovedAssetIDs are its card images that no longer exist: deleted by
+	// their uploader, or with the uploader's account (M16). Study shows each
+	// as removed instead of loading it.
+	RemovedAssetIDs []string `json:"removedAssetIds,omitempty"`
 }
 
 type Flashcard struct {

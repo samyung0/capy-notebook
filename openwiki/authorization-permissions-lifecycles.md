@@ -1211,9 +1211,9 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
   pasted or placed by the chat agent for it (Epo 2026-10-24, M16). An embedded
   quiz or set row is the exception: it is charged to its note's payer.
 - A member who leaves or is removed keeps paying for those images and audio
-  and deletes them from its Files page, where they are listed under a note it
-  can no longer open; deleting its account deletes them. The note then shows
-  each as removed by its uploader.
+  and deletes them from its Files page's Embeds tab, where they are listed
+  under a note it can no longer open; deleting its account deletes them. The
+  note, and study screens, then show each as removed by its uploader.
 - Nobody adds bytes to another user's bill, except the embedded quiz or set
   row itself, charged to its note's payer; the images in it are the account's
   that added them, pasted copies included. Charges never move: not on leaving,
@@ -1463,14 +1463,17 @@ never appear in either. Past reviews and notifications keep the caller's
 history but blank the live workspace (and chapter) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
-The Files tab also lists, in a section of their own, the images and audio the
-caller pays for in other accounts' notes, quizzes and sets in workspaces it can
-no longer reach (`GET /api/editor-assets/lost`): name, size, added time and
-the note's title (blank once that workspace's owner is no longer live), never
-opened or restored. Delete there (`DELETE /api/editor-assets/{assetId}`) is
-final, since a trashed asset would come back with the note's next save; only
-the asset's payer may delete it, and only in a material it does not pay for
-itself (M16).
+The Embeds tab lists every image and audio clip the caller pays for
+(`GET /api/editor-assets`), under its note's current title, marked
+`lostAccess` when the caller can no longer reach the note's workspace
+(`lostAccessSQL`; title and workspace name blank once that workspace's owner
+is no longer live). One in a note the caller can open opens that note; one it
+cannot is never opened or restored. Its payer deletes any of them
+(`DELETE /api/editor-assets/{assetId}`, Q273), wherever it sits and whatever
+it may still do in that note, a frozen payer included: the note keeps the node
+and shows it as removed, the delete edits nothing in it. Deleting is final,
+since a trashed asset would come back with the note's next save. Nobody else
+deletes it (M16).
 
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),
