@@ -314,8 +314,7 @@ func (s *Store) CreditBalance(ctx context.Context, userID string) (CreditUsage, 
 	usage.PlanTier = tier
 	usage.LimitMicros = limits.CreditMicros
 	if purchased == nil {
-		// No counter row yet: the account still holds its starter grant.
-		usage.PurchasedMicros = StarterGrantMicros
+		// No counter row yet: nothing purchased or granted.
 		usage.PeriodStart = monthStart()
 		return usage, nil
 	}
@@ -360,8 +359,8 @@ func (s *Store) unlockedGateUsage(ctx context.Context, userID string) (CreditUsa
 	return usage, err
 }
 
-// StarterGrantMicros is the one-off 800 credits every account starts with in
-// its purchased balance (the column default of user_credits.purchased_micros).
+// StarterGrantMicros is the one-off 800 credits an account's first saved card
+// adds to its purchased balance (GrantStarterCredits).
 const StarterGrantMicros = 800 * MicrosPerCredit
 
 // The estimate headroom lets one admitted job overrun what is available by

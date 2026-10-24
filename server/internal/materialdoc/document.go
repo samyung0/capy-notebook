@@ -1276,7 +1276,12 @@ func EditorAssetIDs(raw string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return editorAssetIDs(doc.Value), nil
+	return doc.EditorAssetIDs(), nil
+}
+
+// EditorAssetIDs is EditorAssetIDs for a parsed document.
+func (e Envelope) EditorAssetIDs() []string {
+	return editorAssetIDs(e.Value)
 }
 
 func editorAssetIDs(nodes []map[string]any) []string {

@@ -39,9 +39,9 @@ Record each in `human/` when the code lands.
 
 - Built in `C:/WEB/capy-worktrees/audio` (branch `audio`), Part A then B.
   The Editor session reviews and pushes; agents never push.
-- Migration: **0110** was reserved for audio, but the test database needs
-  contiguous numbers, so the branch uses **0109** (as do the Editor's
-  client-id binding and the billing session). Whichever lands later renumbers.
+- Migration: **0111**. 0110 was reserved first, but the test database needs
+  contiguous numbers and billing (0109) and the editor-assets index (0110)
+  landed first. Renumber again only if another migration lands before audio.
 - The Office session's `capy/office-trace-progress` touches ChatTrace and the
   pipeline's chat relay: check it before editing ChatTrace or the chat
   stream code.
@@ -147,7 +147,7 @@ Server (Go):
       the upload policy.
 - [x] Credits: `KindAudio` provider calls with second units, the rate key,
       `CreditsForAudioSeconds`.
-- [x] Migration 0109 (0110 was reserved; renumber at landing if taken): rate rows, `files.index_limit` value, `provider_calls`
+- [x] Migration 0111 (renumbered at landing after billing's 0109 and 0110): rate rows, `files.index_limit` value, `provider_calls`
       units/unit.
 
 Frontend:
@@ -219,7 +219,7 @@ Second review fixes (2026-10-24):
       the task succeeded. The same-bytes wait comes before the length is
       measured.
 - [x] Poll re-pends are their own attempt outcome, `transcription_poll`
-      (0109 adds it to the status check), and count as queued from their
+      (0111 adds it to the status check), and count as queued from their
       due time, not as queue latency.
 - [x] Failed reads of the result link are counted (`downloadFailures`);
       the fifth is a provider failure.
@@ -229,7 +229,7 @@ Second review fixes (2026-10-24):
       with 409 `audio_transcribing` until the job ends, shown inline, and
       Delete is disabled while an audio file processes. Cascades still end
       the job; any job end with a task stored frees its lease and abandons
-      its call at once (0109 trigger `jobs_end_filetrans_call`).
+      its call at once (0111 trigger `jobs_end_filetrans_call`).
 - [x] Imported audio (Epo 2026-10-24, "check before submit"): before any
       task the worker holds the measured cost to the browser upload's
       credit gate (0.3x the monthly limit past what is available), which
@@ -279,7 +279,7 @@ Second review fixes (2026-10-24):
   observed ~20 in flight holds.
 - The gate is per environment database; whether the prod and UAT keys
   share one Alibaba workspace quota.
-- Migration number: 0109 on the branch, renumbered at landing.
+- Migration number: 0111 after merging main on 2026-10-24; renumber again only if another lands first.
 - Live checks from the ingest host: ffmpeg under the decoder sandbox in the
   deployed image, the result link's host shape and the `speaker_id` field
   on a real Singapore task. From the app host: that a Flash answer carries

@@ -905,7 +905,8 @@ export const GetBillingResponse = zod.object({
   "reloadAmountCents": zod.int(),
   "reloadThresholdMicros": zod.int(),
   "spendingLimitCents": zod.int().optional(),
-  "spentThisMonthCents": zod.int()
+  "spentThisMonthCents": zod.int(),
+  "starterAvailable": zod.boolean()
 }),
   "creditsCarriedMicros": zod.int(),
   "creditsLimitMicros": zod.int(),
@@ -1220,6 +1221,7 @@ export const ListMessagesParams = zod.object({
 
 export const ListMessagesResponseItem = zod.object({
   "activity": zod.array(zod.object({
+  "applied": zod.int().optional(),
   "callId": zod.string().optional(),
   "capture": zod.object({
   "bbox": zod.array(zod.int()).nullable(),
@@ -1261,7 +1263,8 @@ export const ListMessagesResponseItem = zod.object({
   "name": zod.string().optional(),
   "outcome": zod.enum(['succeeded', 'refused', 'failed', 'cancelled', 'outcome_unknown']).optional(),
   "startedAt": zod.iso.datetime({"offset":true}).optional(),
-  "text": zod.string().optional()
+  "text": zod.string().optional(),
+  "total": zod.int().optional()
 })).nullish(),
   "citations": zod.array(zod.object({
   "chunkId": zod.string().optional(),
@@ -1368,6 +1371,43 @@ export const ReportEditIncidentBody = zod.object({
 })
 
 export const ReportEditIncidentResponse = zod.void()
+
+
+/**
+ * @summary List the images and audio the caller pays for in materials it can no longer open
+ */
+export const listLostEditorAssetsQueryLimitDefault = 40;
+export const listLostEditorAssetsQueryLimitMax = 100;
+
+
+
+export const ListLostEditorAssetsQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listLostEditorAssetsQueryLimitMax).default(listLostEditorAssetsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListLostEditorAssetsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "assetId": zod.string(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "materialTitle": zod.string(),
+  "name": zod.string(),
+  "purpose": zod.enum(['image', 'audio']),
+  "sizeBytes": zod.int()
+})),
+  "nextCursor": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete an image or audio clip the caller pays for in another account's material
+ */
+export const DeleteEditorAssetParams = zod.object({
+  "assetId": zod.string()
+})
+
+export const DeleteEditorAssetResponse = zod.void()
 
 
 /**
@@ -1597,6 +1637,7 @@ export const ExploreQuizzesResponseItem = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -3106,6 +3147,7 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3262,6 +3304,7 @@ export const GetMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3413,6 +3456,7 @@ export const CloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3678,6 +3722,7 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3859,6 +3904,7 @@ export const UpdateMaterialSharingResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -4817,6 +4863,7 @@ export const CreateQuizResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -4911,6 +4958,7 @@ export const GetQuizResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5033,6 +5081,7 @@ export const GetQuizForEditResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5118,6 +5167,7 @@ export const UpdateQuizMetadataResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5198,6 +5248,7 @@ export const UpdateQuizSharingResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -6929,6 +6980,7 @@ export const CreateMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),

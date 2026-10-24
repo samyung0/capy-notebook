@@ -96,6 +96,11 @@ type ActivityBlock struct {
 	// service's clock), so "Worked for 14s" survives a reload.
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	// Applied of Total commands, only on a call that ended with commands
+	// unapplied: an Office edit the engine cut at a per-call limit that the
+	// turn's next edit of the file did not follow (Epo 2026-10-23, Q171).
+	Applied *int `json:"applied,omitempty"`
+	Total   *int `json:"total,omitempty"`
 }
 
 // ActivityCapture is what a successful capture_page call rendered: the page,

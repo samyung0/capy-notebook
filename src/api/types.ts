@@ -527,6 +527,9 @@ export type UndoStatus = UndoRefStatus;
 export type ActivityBlock =
   | { id: string; kind: 'narration'; text: string }
   | {
+      /** Commands applied of `total`: a running call's tool_progress, or a
+       * call that ended with some unapplied (Epo 2026-10-23, Q171). */
+      applied?: number;
       callId: string;
       capture?: ActivityCapture;
       /** The row's human label: a title, a query, "page 4". */
@@ -540,6 +543,7 @@ export type ActivityBlock =
       name: string;
       outcome?: ToolOutcome;
       startedAt?: string;
+      total?: number;
     };
 
 export type WireMessage = Omit<GenMessage, 'citations'> & {
@@ -651,7 +655,11 @@ export type Material = Omit<GenMaterial, 'content'> & {
 };
 
 /* Owner-scoped, paginated listings behind the Create and Files pages. */
-export type { FileKind } from './gen/model';
+export type {
+  FileKind,
+  LostEditorAsset,
+  LostEditorAssetPage,
+} from './gen/model';
 /** Pages whose rows carry the narrowed preview types above. */
 export type FilePage = Omit<GenFilePage, 'items'> & { items: SourceFile[] };
 export type MaterialPage = Omit<GenMaterialPage, 'items'> & {

@@ -76,6 +76,7 @@ import type {
   ItemAttempts,
   Label,
   LearningProgress,
+  LostEditorAssetPage,
   Material,
   MaterialCollaborationToken,
   MaterialComment,
@@ -1205,6 +1206,37 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
     ...ownedFilesQuery(params),
     placeholderData: keepPreviousData,
   });
+
+/** The images and audio the caller pays for in other accounts' notes, quizzes
+ * and sets it can no longer open (M16), newest first: the Files page lists
+ * them for deletion only. */
+export const useLostMedia = () =>
+  useInfiniteQuery({
+    getNextPageParam: (last: LostEditorAssetPage) =>
+      last.nextCursor || undefined,
+    initialPageParam: '',
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<LostEditorAssetPage>(
+        `/editor-assets/lost${listSearch({}, pageParam)}`
+      ),
+    queryKey: qk.lostMedia,
+  });
+
+/** Deletes one of them at once: nothing restores it, and the note shows it as
+ * removed by its uploader. */
+export function useDeleteLostMedia() {
+  const qc = useQueryClient();
+  return useMutation({
+    // Its confirmation shows the failure.
+    meta: { errorToast: false },
+    mutationFn: (assetId: string) =>
+      api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.lostMedia });
+      qc.invalidateQueries({ queryKey: qk.usage });
+    },
+  });
+}
 
 /** The dashboard recents: newest files across every workspace the caller is
  * a member of. The first page covers the card, which shows 20 items. */

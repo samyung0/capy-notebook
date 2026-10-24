@@ -13,8 +13,9 @@ import (
 
 // AgentAsset is an image the chat agent put in a note: a library figure the
 // retrieval service rendered, already stored at ObjectPath. It becomes a ready
-// editor asset of the note, charged to the note's payer like an upload, and
-// from then on follows every editor-asset rule (pruning, trash, clone).
+// editor asset of the note, charged to the chatting actor like an upload
+// (M16), and from then on follows every editor-asset rule (pruning, trash,
+// clone).
 type AgentAsset struct {
 	ID          string
 	Name        string
@@ -32,13 +33,14 @@ func ChatAssetID(assistantMessageID, key string) string {
 
 // insertAgentAssetsTx admits the assets' bytes against the payer's quota and
 // inserts them as ready assets of the material. The caller holds the
-// material's scope (workspace editor lock or the standalone owner's).
-func (s *Store) insertAgentAssetsTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, ownerID, actorID string, assets []AgentAsset) error {
+// material's scope (workspace editor lock or the standalone owner's) and
+// passes the actor as payerID.
+func (s *Store) insertAgentAssetsTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, payerID, actorID string, assets []AgentAsset) error {
 	var total int64
 	for _, asset := range assets {
 		total += asset.SizeBytes
 	}
-	if err := s.gateStorageTx(ctx, tx, ownerID, total); err != nil {
+	if err := s.gateStorageTx(ctx, tx, payerID, total); err != nil {
 		return err
 	}
 	for _, asset := range assets {
@@ -46,7 +48,7 @@ func (s *Store) insertAgentAssetsTx(ctx context.Context, tx pgx.Tx, workspaceID,
 			(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path,
 			 content_type, size_bytes, status, completed_at)
 			VALUES ($1,$2,$3,$4,$5,$6,'image',$7,$8,$9,'ready',now())`,
-			asset.ID, nullStr(workspaceID), materialID, ownerID, actorID, asset.Name,
+			asset.ID, nullStr(workspaceID), materialID, payerID, actorID, asset.Name,
 			asset.ObjectPath, asset.ContentType, asset.SizeBytes); err != nil {
 			return err
 		}
@@ -71,7 +73,7 @@ func (s *Store) EnsureAgentAssets(ctx context.Context, actorID, materialID strin
 		if err != nil {
 			return err
 		}
-		ownerID, err := s.lockEditorAssetScopeTx(ctx, tx, workspaceID, materialID, actorID)
+		payerID, err := s.lockEditorAssetScopeTx(ctx, tx, workspaceID, materialID, actorID)
 		if err != nil {
 			return err
 		}
@@ -98,7 +100,7 @@ func (s *Store) EnsureAgentAssets(ctx context.Context, actorID, materialID strin
 		if len(fresh) == 0 {
 			return nil
 		}
-		return s.insertAgentAssetsTx(ctx, tx, workspaceID, materialID, ownerID, actorID, fresh)
+		return s.insertAgentAssetsTx(ctx, tx, workspaceID, materialID, payerID, actorID, fresh)
 	})
 	if err != nil {
 		return nil, err

@@ -3,7 +3,7 @@ import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
 
 /** Bank figures' flat cap (server/internal/bank/assets.go); editor images take
- * the payer's plan cap from the material (`imageMaxBytes`). */
+ * the uploader's plan cap from the material (`imageMaxBytes`). */
 export const BANK_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
 /** The image types the server stores as editor images (no SVG). */
 export const IMAGE_ACCEPT =

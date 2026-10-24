@@ -119,13 +119,15 @@ type api struct {
 	stripeGetCheckout    func(sessionID string) (billing.CheckoutSession, error)
 	stripeExpireCheckout func(sessionID string) error
 	// Credit top-up and auto-reload calls, replaced by tests.
-	stripeTopUpMethod   func(string) (store.PaymentMethod, error)
-	stripeSetupMethod   func(string) (store.PaymentMethod, error)
-	stripeVoidInvoice   func(string) error
-	stripeReloadOutcome func(string) (billing.ReloadResult, error)
-	streamMu            sync.Mutex
-	streamByUser        map[string]int
-	streamTotal         int
+	stripeTopUpMethod func(string) (store.PaymentMethod, error)
+	stripeSetupMethod func(string) (store.PaymentMethod, error)
+	// The card a Pro Checkout saved, for the starter grant.
+	stripeSubscriptionMethod func(string) (store.PaymentMethod, error)
+	stripeVoidInvoice        func(string) error
+	stripeReloadOutcome      func(string) (billing.ReloadResult, error)
+	streamMu                 sync.Mutex
+	streamByUser             map[string]int
+	streamTotal              int
 	// uploads admits the gateway uploads (upload_queue.go).
 	uploads *uploadQueue
 	// undos run the requests for one chat Undo step one at a time
@@ -172,11 +174,12 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeGetCheckout:    billing.GetCheckoutSession,
 		stripeExpireCheckout: billing.ExpireCheckoutSession,
 
-		stripeTopUpMethod:   billing.TopUpPaymentMethod,
-		stripeSetupMethod:   billing.SetupPaymentMethod,
-		stripeVoidInvoice:   billing.VoidInvoice,
-		stripeReloadOutcome: billing.ReloadOutcome,
-		streamByUser:        make(map[string]int),
+		stripeTopUpMethod:        billing.TopUpPaymentMethod,
+		stripeSetupMethod:        billing.SetupPaymentMethod,
+		stripeSubscriptionMethod: billing.SubscriptionPaymentMethod,
+		stripeVoidInvoice:        billing.VoidInvoice,
+		stripeReloadOutcome:      billing.ReloadOutcome,
+		streamByUser:             make(map[string]int),
 	}
 	a.uploads = newUploadQueue(func(batch string, removed bool) {
 		if removed {

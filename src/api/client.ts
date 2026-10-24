@@ -369,6 +369,8 @@ export const qk = {
   learningProgress: ['learning', 'progress'] as const,
   /** Everything under Learning: progress and plans. */
   learningRoot: ['learning'] as const,
+  /** The caller's images and audio in notes it can no longer open. */
+  lostMedia: ['editor-assets', 'lost'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,

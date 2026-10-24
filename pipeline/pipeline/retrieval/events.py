@@ -40,6 +40,19 @@ def tool_start(
     }
 
 
+def tool_progress(call_id: str, applied: int, total: int) -> dict[str, Any]:
+    """How many of a running call's commands are applied, out of how many: a
+    call sends any number of these between its tool_start and tool_end. An
+    Office edit the engine cut at a per-call limit sends one and stays open
+    (Epo 2026-10-23, Q171)."""
+    return {
+        "type": "tool_progress",
+        "callId": call_id,
+        "applied": applied,
+        "total": total,
+    }
+
+
 def tool_end(
     call_id: str,
     outcome: str,
@@ -47,7 +60,11 @@ def tool_end(
     error: dict[str, str] | None = None,
     effects: list[dict[str, Any]] | None = None,
     ended_at: str,
+    applied: int | None = None,
+    total: int | None = None,
 ) -> dict[str, Any]:
+    """``applied`` of ``total`` only for a call that ended with commands
+    unapplied."""
     event: dict[str, Any] = {
         "type": "tool_end",
         "callId": call_id,
@@ -58,6 +75,8 @@ def tool_end(
         event["error"] = error
     if effects:
         event["effects"] = effects
+    if applied is not None and total is not None:
+        event["applied"], event["total"] = applied, total
     return event
 
 
