@@ -329,7 +329,7 @@ export class ItemRoom {
       // send to take them (Q327).
       beforeJoin: () => {
         if (!this.heldSteps) return;
-        // A reconnect meanwhile sends at once (Q328, Q360).
+        // The hold's connect asks for a send at once (Q328, Q360).
         this.sender?.now();
         return this.sender?.settled;
       },
@@ -492,14 +492,20 @@ export class ItemRoom {
       this.hold?.();
     }, DRAFT_SEND_WAIT_MS);
     // No channel is open while the steps are held: a browser that goes
-    // offline meanwhile shows offline (Q360).
+    // offline meanwhile shows offline, and syncing again once back (Q360).
     const offline = () => {
       if (this.heldSteps) this.goOffline();
     };
+    const online = () => {
+      if (this.heldSteps && this.snapshot.status === 'offline')
+        this.set({ offline: null, status: 'syncing' });
+    };
     globalThis.addEventListener?.('offline', offline);
+    globalThis.addEventListener?.('online', online);
     this.stopHold = () => {
       clearTimeout(timer);
       globalThis.removeEventListener?.('offline', offline);
+      globalThis.removeEventListener?.('online', online);
     };
     void sender.settled.then(() => {
       if (this.sender !== sender) return;

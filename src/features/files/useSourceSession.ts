@@ -353,6 +353,8 @@ export function useSourceSession(
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let goOffline = () => {};
+    // Back online while the steps are held: saving again (Q328, Q360).
+    let backOnline = () => {};
     // The draft send of never-accepted stored steps, and whether the steps
     // are held here (every JOIN waits for the send, Q327).
     let sender: DraftSender | null = null;
@@ -413,7 +415,9 @@ export function useSourceSession(
       delay.disconnected();
       goOffline();
     };
+    const online = () => backOnline();
     window.addEventListener('offline', offline);
+    window.addEventListener('online', online);
     const rejectWaiters = (reason: Error) => {
       for (const waiter of flushWaiters.current.splice(0))
         waiter.reject(reason);
@@ -510,7 +514,7 @@ export function useSourceSession(
       if (draft && opened && typeof opened === 'object') {
         // Recovery shows the edits over their own base.
         controller.abort();
-        if (!refused) reportRecoveryGroup(found, report);
+        reportRecoveryGroup(found, report, refused);
         recoveryDrafts = found;
         shared.destroy();
         const recovered = opened.doc;
@@ -623,6 +627,12 @@ export function useSourceSession(
         setStatus('offline');
         recorder?.disconnected();
         showOffline();
+      };
+      backOnline = () => {
+        if (cancelled || !heldSteps || !offlineMode) return;
+        offlineMode = false;
+        setBanner((current) => (isRecoveryBanner(current) ? current : null));
+        setStatus('saving');
       };
       // Back to the last saved version with nothing unsaved worth keeping:
       // this session's drafts go. Lost access or a file gone (`lostAccess`)
@@ -1199,6 +1209,7 @@ export function useSourceSession(
       clearTimeout(timer);
       delay.dispose();
       window.removeEventListener('offline', offline);
+      window.removeEventListener('online', online);
       void recorder?.dispose();
       runtime.current = null;
       discardHandler.current = null;

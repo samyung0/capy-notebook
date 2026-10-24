@@ -72,6 +72,82 @@ async function typeSaved(page: Page, text: string) {
   await expect.poll(() => storedDrafts(page), { timeout: 15_000 }).toBe(0);
 }
 
+type Peer = ReturnType<
+  typeof import('../../src/mocks/collaboration').mockNotePeer
+>;
+type DraftsAnswer = 'fail' | 'store' | 'unassigned';
+const DRAFTS_ANSWER = 'e2e.drafts.answer';
+const DRAFTS_SENT = 'e2e.drafts.sent';
+
+/** The service's `/drafts` for this tab (the mock token's URL is not
+ * fetchable): it fails as a service that is down, or answers as
+ * `answerDrafts` set. The page's sweep, which sends with the document's lock
+ * held exclusively, always meets a down service, so only the editor's sends
+ * get the answer and are counted (`draftSends`). */
+async function serveDrafts(page: Page) {
+  await page.addInitScript(
+    ([answerKey, sentKey]) => {
+      const original = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (!url.endsWith('/drafts')) return original(input, init);
+        const { held = [] } = await navigator.locks.query();
+        const sweep = held.some(
+          (lock) =>
+            lock.mode === 'exclusive' && lock.name?.startsWith('capy-drafts:')
+        );
+        const answer = sweep ? 'fail' : sessionStorage.getItem(answerKey);
+        if (!sweep)
+          sessionStorage.setItem(
+            sentKey,
+            String(Number(sessionStorage.getItem(sentKey) ?? 0) + 1)
+          );
+        if (answer === 'store') return new Response(null, { status: 200 });
+        if (answer === 'unassigned')
+          return Response.json({ class: 'unassigned' }, { status: 409 });
+        throw new TypeError('Failed to fetch');
+      };
+    },
+    [DRAFTS_ANSWER, DRAFTS_SENT]
+  );
+}
+
+async function answerDrafts(page: Page, answer: DraftsAnswer) {
+  await page.evaluate(
+    ([key, value]) => sessionStorage.setItem(key, value),
+    [DRAFTS_ANSWER, answer]
+  );
+}
+
+const draftSends = (page: Page) =>
+  page.evaluate((key) => Number(sessionStorage.getItem(key) ?? 0), DRAFTS_SENT);
+
+/** Leaves the note with steps the room never took, as a closed session's
+ * with its stored token, on the workspace page with the service down. */
+async function leaveHeldSteps(page: Page) {
+  await openNote(page);
+  await setOnline(page, false);
+  await type(page, ' Held steps.');
+  await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
+  // Back online with the service down, so the room never took them, and
+  // away from the note (its last whole row is written as the page goes).
+  await setReachable(page, false);
+  await setOnline(page, true);
+  await page.goto('/workspaces/ws_scenarios');
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  // As a real session's rows, they carry its stored token (the mock's
+  // provider takes none, so its rows would open copy-only).
+  await page.evaluate(async () => {
+    const draftsPath = '/src/lib/editDrafts.ts';
+    const dbPath = '/src/mocks/db.ts';
+    const { draftKey, putDrafts, readDrafts } = await import(draftsPath);
+    const { user } = await import(dbPath);
+    const key = draftKey(user.id, 'material', 'mock-scenario-note');
+    const rows: { grants?: string[] }[] = await readDrafts(key);
+    await putDrafts(rows.map((row) => ({ ...row, grants: ['stored-token'] })));
+  });
+}
+
 /** What the browser reported to POST /api/edit-incidents (the MSW store). */
 async function reportedIncidents(page: Page) {
   return page.evaluate(async () => {
@@ -139,51 +215,128 @@ test('offline edits outlive a reload and save once the room is back', async ({
   );
 });
 
-// Q327, Q328: a closed session's never-accepted steps go through the draft
-// send while the note opens view-only; not delivered 30 s on (the mock
-// serves no `/drafts`), the synced note takes them itself and edits on,
-// syncing, with nothing of them live until the send settles.
+// Q327, Q328, Q360: a closed session's never-accepted steps go through the
+// draft send while the note opens view-only; not delivered 30 s on, the
+// synced note takes them itself and edits on, syncing, with nothing of them
+// live (a peer in the room sees none) until the send settles. An offline
+// blip meanwhile shows offline, then syncing again once back.
 test('a note takes the stored steps its draft send has not delivered 30 s on, and edits on', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
-  await openNote(page);
-  await setOnline(page, false);
-  await type(page, ' Held steps.');
-  await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
-  // Back online with the service down, so the room never took them, and
-  // away from the note (its last whole row is written as the page goes).
-  await setReachable(page, false);
-  await setOnline(page, true);
-  await page.goto('/workspaces/ws_scenarios');
-  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
-  // As a real session's rows, they carry its stored token (the mock's
-  // provider takes none, so its rows would open copy-only).
-  await page.evaluate(async () => {
-    const draftsPath = '/src/lib/editDrafts.ts';
-    const dbPath = '/src/mocks/db.ts';
-    const { draftKey, putDrafts, readDrafts } = await import(draftsPath);
-    const { user } = await import(dbPath);
-    const key = draftKey(user.id, 'material', 'mock-scenario-note');
-    const rows: { grants?: string[] }[] = await readDrafts(key);
-    await putDrafts(rows.map((row) => ({ ...row, grants: ['stored-token'] })));
-  });
+  test.setTimeout(150_000);
+  await serveDrafts(page);
+  await leaveHeldSteps(page);
   await page.goto(note);
   await setReachable(page, true);
   const content = page.locator('[data-slate-editor]').first();
+  const saveState = page.getByTestId('editor-save-state');
   await expect(content).toContainText(seed, { timeout: 30_000 });
-  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
-    'data-save-state',
-    'syncing'
-  );
+  await expect(saveState).toHaveAttribute('data-save-state', 'syncing');
   await expect(content).toHaveAttribute('contenteditable', 'false');
   await expect(content).not.toContainText('Held steps.');
+  // Another editor in the note's room, once the note joined it.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const modulePath = '/src/mocks/collaboration.ts';
+        const { mockNotePeer } = (await import(
+          modulePath
+        )) as typeof import('../../src/mocks/collaboration');
+        try {
+          Object.assign(window, { peer: mockNotePeer('mock-scenario-note') });
+          return true;
+        } catch {
+          return false;
+        }
+      })
+    )
+    .toBe(true);
+  const peerText = () =>
+    page.evaluate(() =>
+      String((window as unknown as { peer: Peer }).peer.document.get('content'))
+    );
   await expect(content).toContainText('Held steps.', { timeout: 45_000 });
   await expect(content).toHaveAttribute('contenteditable', 'true');
+  await expect(saveState).toHaveAttribute('data-save-state', 'syncing');
+  expect(await peerText()).not.toContain('Held steps.');
+  await setOnline(page, false);
+  await expect(
+    page.locator('[data-connection-status="offline"]')
+  ).toBeVisible();
+  await setOnline(page, true);
+  await expect(saveState).toHaveAttribute('data-save-state', 'syncing');
+  expect(await peerText()).not.toContain('Held steps.');
+  // The room takes them at the next try (the browser back online again):
+  // the note joins and saves.
+  await answerDrafts(page, 'store');
+  await setOnline(page, false);
+  await setOnline(page, true);
+  await expect.poll(peerText, { timeout: 15_000 }).toContain('Held steps.');
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 15_000,
+  });
+});
+
+// Q360: a note whose room first syncs only after the send's 30 s takes the
+// steps then, and the hold's connect sends again at once.
+test('a note whose room syncs after 30 s takes its stored steps then, and sends again at once', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await serveDrafts(page);
+  await leaveHeldSteps(page);
+  await page.goto(note);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdRoomJoins } = await import(path);
+    holdRoomJoins(true);
+  });
+  await setReachable(page, true);
+  const content = page.locator('[data-slate-editor]').first();
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
-    'syncing'
+    'error',
+    { timeout: 60_000 }
   );
+  // The send's first try and its retry 30 s on: the wait is over.
+  await expect.poll(() => draftSends(page), { timeout: 30_000 }).toBe(2);
+  await expect(content).not.toContainText('Held steps.');
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdRoomJoins } = await import(path);
+    holdRoomJoins(false);
+  });
+  await setReachable(page, true);
+  await expect(content).toContainText('Held steps.', { timeout: 15_000 });
+  await expect(content).toHaveAttribute('contenteditable', 'true');
+  // The next retry is a minute out.
+  await expect.poll(() => draftSends(page), { timeout: 10_000 }).toBe(3);
+});
+
+// Q360: a send that settles before the 30 s with its group not taken (the
+// room never assigned its ids) opens the steps copy-only instead of letting
+// them vanish, reported once as held.
+test('a note whose draft send leaves its group opens the steps copy-only', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await serveDrafts(page);
+  await leaveHeldSteps(page);
+  await answerDrafts(page, 'unassigned');
+  await page.goto(note);
+  await setReachable(page, true);
+  const recovery = page.getByTestId('note-recovery');
+  await expect(recovery).toContainText('Held steps.', { timeout: 25_000 });
+  await expect(recovery.locator('[contenteditable="true"]')).toHaveCount(0);
+  await expect
+    .poll(() => reportedIncidents(page))
+    .toContainEqual(
+      expect.objectContaining({
+        fileId: 'mock-scenario-note',
+        kind: 'other_epoch_draft',
+        reason: 'held',
+      })
+    );
 });
 
 test('edits from a room that moved on open read-only for copying until Reload', async ({

@@ -1820,8 +1820,32 @@ async fn a_duplicate_draft_send_answers_only_after_the_store_commits() {
             async move { send_drafts(port, &room, Some(&write), Some(ORIGIN), body).await },
         )
     };
+    let started = std::time::Instant::now();
     let (first, second) = (send(), send());
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    // The admitted send's store waits on the lock; the other send, started
+    // with it, has had as long again to reach the room (r5 N7).
+    let deadline = started + Duration::from_secs(30);
+    loop {
+        let waiting = db(&env)
+            .await
+            .query_one(
+                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' \
+                 AND query ILIKE '%material_yjs_updates%'",
+                &[],
+            )
+            .await
+            .expect("activity")
+            .get::<_, i64>(0);
+        if waiting > 0 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the store never reached the lock"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(started.elapsed().max(Duration::from_millis(500))).await;
     assert!(
         !first.is_finished() && !second.is_finished(),
         "no answer before the store commits"

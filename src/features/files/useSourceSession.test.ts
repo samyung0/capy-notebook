@@ -286,9 +286,19 @@ describe('an edit session opening with stored drafts', () => {
     // The hold is no editing incident (Q360).
     expect(recorder.disconnected).toHaveBeenLastCalledWith(true);
     expect(render()).toMatchObject({ draftsSending: false, status: 'saving' });
-    // A reconnect meanwhile sends at once (Q328, Q360).
+    // Its connect asks for a send at once (Q328, Q360).
     expect(options.beforeJoin?.()).toBeInstanceOf(Promise);
     expect(sending.nows).toBe(1);
+    // An offline blip meanwhile shows offline, then saving again once back.
+    const page = (type: string) =>
+      vi
+        .mocked(window.addEventListener)
+        .mock.calls.filter(([name]) => name === type)
+        .at(-1)?.[1] as () => void;
+    page('offline')();
+    expect(render().status).toBe('offline');
+    page('online')();
+    expect(render()).toMatchObject({ banner: null, status: 'saving' });
     sending.release();
     await vi.advanceTimersByTimeAsync(0);
     expect(options.beforeJoin?.()).toBeUndefined();

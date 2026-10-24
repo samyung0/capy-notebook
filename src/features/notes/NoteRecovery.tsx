@@ -41,8 +41,9 @@ export interface NoteDrafts {
  * generation, so a remount reads what the old mount wrote), split by who
  * sends them (`splitOpenDrafts`, Q326). A recovery group
  * nothing can draw is dropped with a toast and the next one is read. Both
- * are reported (edit_incidents): a group of another lineage once
- * (reportRecoveryGroup), a dropped group once per page load.
+ * are reported (edit_incidents): a group of another lineage or held rows
+ * shown copy-only once (reportRecoveryGroup), a dropped group once per page
+ * load.
  */
 export function useNoteDrafts(
   materialId: string,
@@ -75,7 +76,7 @@ export function useNoteDrafts(
         }
         const doc = recoveryDocument(recovery);
         if (doc) {
-          if (!refused) reportRecoveryGroup(recovery, report);
+          reportRecoveryGroup(recovery, report, refused);
           if (active)
             setDrafts({
               current,

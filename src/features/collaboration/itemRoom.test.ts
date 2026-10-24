@@ -363,12 +363,18 @@ it('takes its stored steps after 30 s, joins only once the send settles, and a r
   expect(itemEditingStopped(room.getSnapshot())).toBe(false);
   // The hold is no editing incident (Q360).
   expect(drafts.held).toEqual([true]);
-  // A reconnect meanwhile sends at once (Q328, Q360).
+  // Its connect asks for a send at once (Q328, Q360).
   expect(providers[0].config.beforeJoin?.()).toBeInstanceOf(Promise);
   expect(sending.nows).toBe(1);
   // No channel is open: a browser that goes offline shows offline (Q360).
   page.dispatchEvent(new Event('offline'));
   expect(room.getSnapshot().status).toBe('offline');
+  // Back online, syncing again while the send goes on (Q328, Q360).
+  page.dispatchEvent(new Event('online'));
+  expect(room.getSnapshot()).toMatchObject({
+    offline: null,
+    status: 'syncing',
+  });
   Reflect.deleteProperty(globalThis, 'addEventListener');
   Reflect.deleteProperty(globalThis, 'removeEventListener');
   sending.release();

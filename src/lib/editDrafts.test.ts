@@ -306,7 +306,7 @@ describe('the draft store', () => {
     const report = vi.fn();
     const group = () =>
       readDrafts(key).then((rows) => draftGroups(rows, ROOM).recovery);
-    reportRecoveryGroup(await group(), report);
+    reportRecoveryGroup(await group(), report, false);
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'other_epoch_draft',
       'reopen',
@@ -318,15 +318,24 @@ describe('the draft store', () => {
     expect(reopened.every((row) => row.reported)).toBe(true);
     reportRecoveryGroup(
       reopened.map((row) => ({ ...row, id: `${row.id}:next-load` })),
-      report
+      report,
+      false
     );
     expect(report).toHaveBeenCalledOnce();
     // A refused group was recorded by the service.
-    reportRecoveryGroup(
-      [draft('refused', { key, lineage: ROOM, refused: true })],
-      report
-    );
+    const refused = draft('refused', { key, lineage: ROOM, refused: true });
+    reportRecoveryGroup([refused], report, true);
     expect(report).toHaveBeenCalledOnce();
+    // Held rows shown copy-only beside it were never sent (Q360).
+    const held = draft('held', {
+      data: new Uint8Array(4),
+      held: true,
+      key,
+      lineage: ROOM,
+    });
+    reportRecoveryGroup([refused, held], report, true);
+    expect(report).toHaveBeenLastCalledWith('other_epoch_draft', 'held', 4);
+    expect(report).toHaveBeenCalledTimes(2);
   });
 
   it('fails a request whose database open is blocked instead of waiting for it', async () => {
@@ -832,6 +841,36 @@ describe('recording a note session', () => {
     expect(await readDrafts(key)).toEqual([]);
   });
 
+  it('reports adopted rows the room cannot place before a receipt deletes them (Q237, Q360)', async () => {
+    const key = 'u_1:material:unplaceable';
+    const { client: elsewhere } = syncedClient('base');
+    let update: Uint8Array = new Uint8Array();
+    elsewhere.on('update', (next: Uint8Array) => {
+      update = next;
+    });
+    elsewhere.getText('content').insert(4, ' typed');
+    const held = draft('earlier:1', { data: update, key, session: 'earlier' });
+    await putDrafts([held]);
+    // The room never had the base those steps grew from.
+    const { client } = syncedClient('other');
+    applyDrafts(client, [held], 'restore');
+    const report = vi.fn();
+    const recorder = recordDrafts({
+      adopted: [held],
+      doc: client,
+      ignore: (origin) => origin === REMOTE,
+      key,
+      limitBytes: 1024 * 1024,
+      lineage: ROOM,
+      report,
+    });
+    await recorder.covered(recorder.sequence);
+    expect(await readDrafts(key)).toEqual([]);
+    expect(report.mock.calls).toEqual([
+      ['draft_unrestorable', 'base_missing', draftBytes([held])],
+    ]);
+  });
+
   it('writes the whole document at unmount only when unsaved work outgrew it', async () => {
     const key = 'u_1:material:unmount';
     const { client, recorder } = noteRecorder(key, 'a');
@@ -1231,7 +1270,8 @@ describe('recording a source session', () => {
     const report = vi.fn();
     reportRecoveryGroup(
       draftGroups(await readDrafts(key), MOVED).recovery,
-      report
+      report,
+      false
     );
     expect(report).not.toHaveBeenCalled();
   });
@@ -1268,7 +1308,7 @@ describe('recording a source session', () => {
       true,
     ]);
     const report = vi.fn();
-    reportRecoveryGroup(group, report);
+    reportRecoveryGroup(group, report, false);
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'other_epoch_draft',
       'reopen',
@@ -1709,7 +1749,7 @@ describe('the draft sweep sending', () => {
     ).recovery;
     expect(group).toHaveLength(2);
     const report = vi.fn();
-    reportRecoveryGroup(group, report);
+    reportRecoveryGroup(group, report, false);
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'other_epoch_draft',
       'reopen',

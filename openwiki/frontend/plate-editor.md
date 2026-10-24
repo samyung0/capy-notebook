@@ -1567,7 +1567,7 @@ from any page.
 - **The record.** `material_yjs_client_ids` (material, document `content` or
   `keys`, id) and `source_document_client_ids` (file, id), each row naming
   the user (indexed) and deleted with its document and by the account purge
-  (migration 0114). A room loads its rows once and keeps them in memory, so
+  (migration 0115). A room loads its rows once and keeps them in memory, so
   reconnects and update checks read no database. An update accepted and
   applied (after admission, the validator and the limits) records the ids it
   wrote under as the writer's user's the first time in a room's life, and
@@ -1619,26 +1619,33 @@ from any page.
   grant needs the sender's own user.
 - **Opening with stored drafts** (Epo 2026-10-24, Q319, Q326, Q327, Q328).
   The recorder marks a session's rows `accepted` once a receipt covers one
-  of its own edits (`covered > start`: adopted rows do not count), since
-  the room then recorded the session's id. On open (`draftGroups`,
+  of its own edits (`covered > start`: adopted rows do not count), since the
+  room then recorded the session's id. On open (`draftGroups`,
   `splitOpenDrafts`) a note, item room or source session applies accepted
   rows and syncs them over its live channel; rows of a never-accepted
   session with a stored token go through the draft send (`draftSender`)
   while the editor joins. Never-accepted rows no send delivers (held after
   one, or with no stored token) open copy-only with the refused rows when
   they draw on their own, as Q237 and Q251 say until the merge view exists
-  (Epo 2026-10-25, Q360); ones that need the room's document are applied,
-  and the room's live refusal of them opens the whole document copy-only.
-  Until the send settles (every group stored or held) the editor shows the
-  syncing status and is view-only: notes lock the content and toolbar,
-  items set `sending` (`itemEditingStopped`), sources return
+  (Epo 2026-10-25, Q360), reported once as the edit incident
+  `other_epoch_draft`/`held` (never sent, so no service log has them); ones
+  that need the room's document are applied, and the room's live refusal of
+  them opens the whole document copy-only. Restored rows the room's document
+  cannot place either (their base is gone) go at the first receipt, reported
+  `draft_unrestorable`/`base_missing` as recovery reports a group nothing
+  can draw. Until the send settles (every group stored or held) the editor
+  shows the syncing status and is view-only: notes lock the content and
+  toolbar, items set `sending` (`itemEditingStopped`), sources return
   `draftsSending`. Each request has 30 s (`DRAFT_SEND_TIMEOUT_MS`); one that
   fails or times out goes again 30 s later, doubling to 5 minutes, and at
-  once on the browser's `online` event or a reconnect's ask (`now`, from the
-  `beforeJoin` hooks), never twice at once: one asked during a try goes as
-  it ends. A send that settles before the hold with a group the room did not
-  take opens it copy-only at once (a note remounts, an item room is
-  replaced, a source session opens again). Not settled 30 s after the open
+  once on the browser's `online` event or when the room connects (`now`,
+  from the `beforeJoin` hooks), never twice at once: one asked during a try
+  goes as it ends. While steps are held no socket is open, so a server that
+  comes back is noticed only by the next try: the hold's own connect, the
+  browser's `online` event and the backoff are its triggers. A send that
+  settles before the hold with a group the room did not take opens it
+  copy-only at once (a note remounts, an item room is replaced, a source
+  session opens again). Not settled 30 s after the open
   (`DRAFT_SEND_WAIT_MS`) with the room synced, or at a first sync after
   that, the editor closes its channel, applies those rows, adds them to its
   recorder's adopted rows and edits on: every edit is stored as a draft and
@@ -1647,12 +1654,13 @@ from any page.
   settles, and no socket opens for the room meanwhile. The hold shows
   syncing and is no editing incident (the recorder's `disconnected(true)`
   reports no `offline_episode`); a browser that goes offline in it shows
-  offline. Once a send is accepted the editor joins and continues; one the
-  room refused leaves the steps in the document, so the live sync is refused
-  `unassigned` and the edits open in the copy-only recovery. Before a first
-  sync the join's own 30 s connection error stands. A live refusal has no
-  automatic fallback: an accepted session is refused only once its record
-  and its tokens are past 7 days.
+  offline, and syncing (a source saving) again once back online. Once a send
+  is accepted the editor joins and continues; one the room refused leaves
+  the steps in the document, so the live sync is refused `unassigned` and
+  the edits open in the copy-only recovery. Before a first sync the join's
+  own 30 s connection error stands. A live refusal has no automatic
+  fallback: an accepted session is refused only once its record and its
+  tokens are past 7 days.
 - **Duplicate draft sends** (Epo 2026-10-24, Q321). A draft send whose
   update the room already holds in full (`ydoc::contains_changes` is false
   over the room's state vector and delete set) is accepted as a no-op on the

@@ -674,6 +674,8 @@ export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
 }
 
 interface MockCollaborationOptions {
+  /** As the room provider's: no JOIN until it settles (Q360). */
+  beforeJoin?: () => Promise<void> | undefined;
   initialValue: MaterialValue;
   materialId: string;
   name: string;
@@ -711,6 +713,8 @@ class MockCollaborationProvider implements UnifiedProvider {
   private leave?: () => void;
   // Connected unless disconnected on purpose: a lost service reconnects.
   private wanted = false;
+  // The page's beforeJoin holding the JOIN (a held draft send, Q360).
+  private waiting: Promise<void> | null = null;
   private readonly onReachability = () => {
     if (!reachable()) this.drop();
     else if (this.wanted) this.connect();
@@ -742,7 +746,20 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   connect = () => {
     this.wanted = true;
-    if (this.isConnected || !reachable()) return;
+    if (this.isConnected || this.waiting) return;
+    // As the room provider: the JOIN waits until it settles, and a connect
+    // meanwhile asks nothing more.
+    const before = this.options.beforeJoin?.();
+    if (before) {
+      this.waiting = before;
+      void before.then(() => {
+        if (this.waiting !== before) return;
+        this.waiting = null;
+        if (this.wanted) this.connect();
+      });
+      return;
+    }
+    if (!reachable()) return;
     if (buildRefused) {
       this.options.onAuthenticationFailed?.(outdated);
       return;
@@ -787,6 +804,7 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   disconnect = () => {
     this.wanted = false;
+    this.waiting = null;
     this.drop();
   };
 

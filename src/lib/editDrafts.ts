@@ -367,24 +367,28 @@ export function draftBytes(rows: readonly EditDraft[]) {
 }
 
 /**
- * Reports a recovery group of another lineage entering recovery, once: its
- * rows are marked `reported`, so an open in a later page load shows it
- * without reporting it again (Reload deletes them, mark and all). A group
- * with an unmarked row is a new episode (a marked row the epoch kept, then
- * newer edits) and is reported. A refused group was recorded when the
- * service refused it.
+ * Reports a recovery group entering recovery, once: its rows are marked
+ * `reported`, so an open in a later page load shows it without reporting it
+ * again (Reload deletes them, mark and all). A group with an unmarked row is
+ * a new episode (a marked row the epoch kept, then newer edits) and is
+ * reported. A group of another lineage is `reopen`. This lineage's copy-only
+ * group (`refused` from draftGroups) reports only its held rows (`held`,
+ * Q360): they were never sent, so no service log has them, while refused
+ * rows were recorded when the service refused them.
  */
 export function reportRecoveryGroup(
   group: EditDraft[],
-  report: EditIncidentReporter
+  report: EditIncidentReporter,
+  refused: boolean
 ) {
-  const [first] = group;
-  if (!first || first.refused || group.every((row) => row.reported)) return;
+  const rows = group.filter((row) => !row.refused);
+  const [first] = rows;
+  if (!first || rows.every((row) => row.reported)) return;
   reportOnce(first.id, () => {
-    report('other_epoch_draft', 'reopen', draftBytes(group));
+    report('other_epoch_draft', refused ? 'held' : 'reopen', draftBytes(rows));
     void markDraftsReported(
       first.key,
-      group.map((row) => row.id)
+      rows.map((row) => row.id)
     ).catch((error) => console.warn('Draft storage failed:', error));
   });
 }
@@ -724,6 +728,18 @@ export function recordDrafts({
     covered(seq: number) {
       if (seq <= covered) return Promise.resolve();
       covered = Math.min(seq, sequence);
+      // Restored steps the room's document cannot place (their base is
+      // gone) are reported before they go, never dropped silently (Q237,
+      // Q360).
+      if (
+        pendingAdopted.length &&
+        (doc.store.pendingStructs || doc.store.pendingDs)
+      )
+        report?.(
+          'draft_unrestorable',
+          'base_missing',
+          draftBytes(pendingAdopted)
+        );
       const done: DraftRef[] = [...pendingAdopted];
       pendingAdopted = [];
       updates = updates.filter((item) => {

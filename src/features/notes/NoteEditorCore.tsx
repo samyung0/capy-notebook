@@ -977,6 +977,14 @@ export function NoteEditorCore({
         reportUnavailable.current?.(refusal);
       }
     };
+    // While its never-accepted steps are held, a JOIN waits for the draft
+    // send to take them (Q327), and the hold's connect asks for a send at
+    // once (Q328, Q360).
+    const beforeJoin = () => {
+      if (!heldSteps.current) return;
+      sender.current?.now();
+      return sender.current?.settled;
+    };
     return [
       YjsPlugin.configure({
         options: {
@@ -1033,6 +1041,7 @@ export function NoteEditorCore({
             USE_MSW
               ? ({
                   options: {
+                    beforeJoin,
                     initialValue,
                     materialId: material.id,
                     name: collaborationToken.room,
@@ -1048,14 +1057,7 @@ export function NoteEditorCore({
                 } as never)
               : ({
                   options: {
-                    // While its never-accepted steps are held, a JOIN waits
-                    // for the draft send to take them (Q327).
-                    beforeJoin: () => {
-                      if (!heldSteps.current) return;
-                      // A reconnect meanwhile sends at once (Q328, Q360).
-                      sender.current?.now();
-                      return sender.current?.settled;
-                    },
+                    beforeJoin,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
                     onClose: () => {
@@ -1388,6 +1390,14 @@ export function NoteEditorCore({
     // back from the provider's own state; a dropped one reconnects by itself.
     const online = () => {
       if (stale.current || reportedStatus.current !== 'offline') return;
+      // Steps held for the draft send: syncing again while it goes on, the
+      // episode still unreported (Q328, Q360).
+      if (heldSteps.current) {
+        offlineMode.current = false;
+        reportOffline.current?.(null);
+        setStatus('syncing');
+        return;
+      }
       if (roomProvider(editor)?.isSynced)
         setStatus(hasUnsavedWork() ? 'syncing' : 'saved');
       // Offline mode lasts until the room syncs again.

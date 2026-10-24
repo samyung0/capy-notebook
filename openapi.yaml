@@ -4701,6 +4701,7 @@ components:
         reason:
           enum:
             - reopen
+            - held
             - epoch_changed
             - paused
             - base_missing
