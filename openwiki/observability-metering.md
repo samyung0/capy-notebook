@@ -1613,12 +1613,16 @@ sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
 The retrieval process bounds itself behind those per-user caps (Epo
-2026-10-24): at most 64 chat and generate requests at once, past which a
-generate request answers the existing 503 `provider_busy` with `Retry-After`
-and a chat waits up to 60 s in arrival order (its stream sends the
-`waiting_capacity` phase, then the in-stream `provider_busy` error if the wait
-runs out); deck scripts, renders and captures on a pool of two threads of their
-own; one Office capture at a time
+2026-10-24): at most 64 model calls in flight, each holding its slot for its
+request and response only, so a turn running tools holds none; at most
+96 chat turns and generate requests in progress, a ceiling from a memory
+measurement. Past either, a chat waits up to 60 s in arrival order (its stream
+sends the `waiting_capacity` phase on each wait, then the in-stream
+`provider_busy` error if the wait runs out) and a generate or editor AI request
+answers the existing 503 `provider_busy` with `Retry-After` at once. Model-call
+admission holds the model-wide lock for one conditional insert, and a call's
+lease goes with its settlement. Deck scripts, renders and captures run on a
+pool of two threads of their own; one Office capture at a time
 ([agentic-retrieval.md](agentic-retrieval.md#process-capacity)).
 
 **Per-model outbound concurrency** bounds what reaches a provider.
