@@ -120,23 +120,24 @@ async def call_slot():
     if policy.left is not None and policy.left.is_set():
         raise CallNotStarted("the client left before the call started")
     slots = limits.CALL_SLOTS
+    granted = None
     if not slots.take():
         if policy.wait_s <= 0:
             raise elitellm.ProviderBusy(
                 CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
             )
         waiter = slots.join()  # in the queue from its refusal on (Q359)
-        if policy.on_wait is not None:
-            policy.on_wait()
-        if not await slots.wait_for(waiter, policy.wait_s, policy.left):
+        if not await slots.wait_for(waiter, policy.wait_s, policy.left, policy.on_wait):
             if policy.left is not None and policy.left.is_set():
                 raise CallNotStarted("the client left while the call waited")
             raise elitellm.ProviderBusy(
                 CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
             )
-        if policy.on_granted is not None:
-            policy.on_granted()
+        granted = policy.on_granted
+    # Both callbacks run where a failure still gives the slot back.
     try:
+        if granted is not None:
+            granted()
         yield
     finally:
         slots.release()

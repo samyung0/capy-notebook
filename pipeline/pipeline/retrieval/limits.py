@@ -60,14 +60,18 @@ class Slots:
         waiter: asyncio.Future[None],
         budget_s: float,
         left: asyncio.Event | None = None,
+        on_wait: Callable[[], None] | None = None,
     ) -> bool:
         """Wait in the queue until ``waiter`` is handed a slot: True holding
         it, False once ``budget_s`` runs out or ``left`` is set (the client is
-        gone). A request that leaves the queue, cancelled included, passes on a
-        slot handed to it as it left, so no slot is lost and the next waiter is
-        not skipped (Q340, Q359)."""
+        gone); ``on_wait`` runs first. A request that leaves the queue,
+        cancelled or failing included, passes on a slot handed to it as it
+        left, so no slot is lost and the next waiter is not skipped (Q340,
+        Q359)."""
         gone = asyncio.ensure_future(left.wait()) if left is not None else None
         try:
+            if on_wait is not None:
+                on_wait()
             async with asyncio.timeout(budget_s):
                 await asyncio.wait(
                     {waiter} if gone is None else {waiter, gone},

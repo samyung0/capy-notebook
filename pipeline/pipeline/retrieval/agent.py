@@ -243,11 +243,12 @@ class _SlotWaits:
 
 
 async def _while_waiting(
-    task: asyncio.Future[Any], waits: _SlotWaits
+    task: asyncio.Future[Any], waits: _SlotWaits, client: ClientDrop | None
 ) -> AsyncIterator[dict[str, Any]]:
     """Await ``task``, a step whose model calls run outside the response
     stream (a checkpoint or compaction summary), passing on each slot wait it
-    reports. Leaving early cancels the step, as awaiting it directly would."""
+    reports until the client leaves (Q359), as the response stream does.
+    Leaving early cancels the step, as awaiting it directly would."""
     queue: asyncio.Queue[Any] = asyncio.Queue()
     waits.queue = queue
     try:
@@ -257,7 +258,7 @@ async def _while_waiting(
                 await asyncio.wait({task, getter}, return_when=asyncio.FIRST_COMPLETED)
             finally:
                 getter.cancel()
-            if getter.done() and not getter.cancelled():
+            if getter.done() and not getter.cancelled() and not _client_gone(client):
                 yield getter.result()
     except BaseException:
         task.cancel()
@@ -523,7 +524,7 @@ async def _run_turn(
                 query_msg=query_msg,
             )
         )
-        async for waiting in _while_waiting(admitted, waits):
+        async for waiting in _while_waiting(admitted, waits, client):
             yield waiting
         messages, replacement = admitted.result()
     except pending.SourceChanged as exc:
@@ -675,7 +676,7 @@ async def _run_turn(
                     allow_summary=not terminal_call,
                 )
             )
-            async for waiting in _while_waiting(compacting, waits):
+            async for waiting in _while_waiting(compacting, waits, client):
                 yield waiting
             messages = compacting.result()
             state = accounting.current()
@@ -698,7 +699,7 @@ async def _run_turn(
                         extra=outside,
                     )
                 )
-                async for waiting in _while_waiting(compacting, waits):
+                async for waiting in _while_waiting(compacting, waits, client):
                     yield waiting
                 messages = compacting.result()
             if _client_gone(client):

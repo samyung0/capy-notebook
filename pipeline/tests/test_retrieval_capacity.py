@@ -634,6 +634,71 @@ async def test_a_stopped_turn_starts_no_summarizer_and_says_no_wait(
     assert a.events[-1]["type"] == "turn_checkpoint" and a.events[-1]["stopped"]
 
 
+@pytest.mark.parametrize("raising", ["on_wait", "on_granted"])
+async def test_a_failing_slot_callback_gives_the_slot_back(monkeypatch, raising):
+    """(security regression: rate-limit audit M13, Q359) A call whose waiting
+    or granted callback raises still gives back, or passes on, the slot it
+    was queued for or handed: none is lost."""
+    monkeypatch.setattr(limits, "CALL_SLOTS", limits.Slots(1))
+    assert limits.CALL_SLOTS.take()  # another call is running
+    waited: list[bool] = []
+
+    def fail() -> None:
+        raise RuntimeError("callback failed")
+
+    callbacks = {"on_wait": lambda: waited.append(True), "on_granted": lambda: None}
+    callbacks[raising] = fail
+
+    async def call() -> None:
+        limits.bind_call_slots(limits.CallSlotPolicy(60, **callbacks))
+        async with models.call_slot():
+            pass
+
+    task = asyncio.create_task(call())
+    await _until(task.done if raising == "on_wait" else lambda: waited)
+    limits.CALL_SLOTS.release()  # the running call ends
+    await _until(task.done)
+    with pytest.raises(RuntimeError):
+        task.result()
+    assert limits.CALL_SLOTS.used == 0 and limits.CALL_SLOTS.take()
+
+
+async def test_a_slot_granted_as_the_user_stops_sends_no_phase(monkeypatch):
+    """(Q359) When Stop lands just after the summarizer's call gets its slot,
+    the planning phase that call queued is not sent: the turn ends stopped
+    with nothing after the wait but the stopped checkpoint."""
+    provider, _tools_ran, _gates = _turns(
+        monkeypatch, {"A": [_reply("Earlier: a question."), ANSWER]}
+    )
+    folds = iter([True])  # the history is folded once, at the turn's start
+    monkeypatch.setattr(
+        agent.compact, "needs_compact", lambda *_a, **_k: next(folds, False)
+    )
+    client = agent.ClientDrop()
+    granted = agent._SlotWaits.granted
+
+    def granted_then_stop(self) -> None:
+        granted(self)
+        client.stop()
+
+    monkeypatch.setattr(agent._SlotWaits, "granted", granted_then_stop)
+    assert limits.CALL_SLOTS.take()  # another call is running
+    a = _Turn(
+        "A",
+        history=[{"id": "u1", "role": "user", "content": "earlier"}],
+        client=client,
+    )
+    await _until(lambda: a.waits() == 1)
+
+    limits.CALL_SLOTS.release()
+    await _until(a.task.done)
+    a.task.result()
+    after = a.events[a.events.index(WAITING) + 1 :]
+    assert PLANNING not in after
+    assert after[-1]["type"] == "turn_checkpoint" and after[-1]["stopped"]
+    assert provider.calls == ["A1"]  # the summary already running finishes
+
+
 @pytest.mark.parametrize("failing", ["record", "reset"])
 async def test_a_turns_cleanup_runs_every_step_when_one_fails(
     monkeypatch, tmp_path, failing

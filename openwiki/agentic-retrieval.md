@@ -3051,8 +3051,8 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   the 60 s the stream ends with the in-stream `provider_busy` error a busy
   model call sends (`retryAfterSeconds` 5). A call waiting when the Go hop
   drops or the user presses Stop leaves the queue at once and starts nothing,
-  and after that no call starts, the summarizer's included, and no waiting
-  status is sent (`ClientDrop.left`, Q359). A waiting call cancelled as a slot
+  and after that no call starts, the summarizer's included, and no slot phase
+  is sent (`ClientDrop.left`, Q359). A waiting call cancelled as a slot
   is handed to it passes the slot to the next waiter. Generate and the editor
   AI routes have no waiting status (Q268): past the 64 their call answers the
   existing 503 `provider_busy` at once, before reaching the provider. Embedding
