@@ -1561,7 +1561,7 @@
   "error_comment_limit_title": "Comment limit reached",
   "error_comment_limit_body": "This note holds as many comments as it can. Delete some to add more.",
   "error_annotation_limit_title": "Annotation limit reached",
-  "error_annotation_limit_body": "You've added as many annotations to this file as you can. Delete some to add more.",
+  "error_annotation_limit_body": "This file holds as many annotations as it can. Delete some of yours to add more.",
   "error_event_limit_title": "Schedule full",
   "error_event_limit_body": "Your schedule holds as many events as it can. Delete some to add more.",
   "error_checkout_limit_title": "Billing pages opened too often",

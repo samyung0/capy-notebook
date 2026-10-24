@@ -1561,7 +1561,7 @@
   "error_comment_limit_title": "评论数量已达上限",
   "error_comment_limit_body": "此笔记的评论已达上限。删除部分评论后可继续添加。",
   "error_annotation_limit_title": "批注数量已达上限",
-  "error_annotation_limit_body": "你在此文件中的批注已达上限。删除部分批注后可继续添加。",
+  "error_annotation_limit_body": "此文件的批注已达上限。删除你的部分批注后可继续添加。",
   "error_event_limit_title": "日程已满",
   "error_event_limit_body": "你的日程中的事件已达上限。删除部分事件后可继续添加。",
   "error_checkout_limit_title": "账单页面打开过于频繁",
