@@ -200,7 +200,7 @@ img.capture {
       <label>Quality file <span class="muted" id="quality">none</span></label>
     </div>
     <div class="row">
-      <label><input id="library" type="checkbox"> Library</label>
+      <label><input id="workspaceOnly" type="checkbox"> Workspace only</label>
       <label>Open <select id="openFile"><option value="">nothing</option></select></label>
       <span class="muted">materials are written as JSON files under the run</span>
     </div>
@@ -496,7 +496,7 @@ function setConfig(c, resetDrafts = false) {
   });
   $('models').value = modelOption?.value || '';
   $('workspaces').value = c.workspace_id || state.defaults.workspace_id;
-  $('library').checked = c.library !== false;
+  $('workspaceOnly').checked = c.workspace_only === true;
   const prefs = { ...PREF_DEFAULTS, ...(c.study_preferences || {}) };
   $('prefWriting').value = prefs.writingStyle;
   $('prefQuiz').value = prefs.quiz;

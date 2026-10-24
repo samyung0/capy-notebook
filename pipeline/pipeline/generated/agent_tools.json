@@ -1,5 +1,5 @@
 {
-  "version": 39,
+  "version": 40,
   "operations": [
     "source.read",
     "material.read",
@@ -329,6 +329,36 @@
         "library.read"
       ],
       "retention": "none"
+    },
+    {
+      "name": "search_web",
+      "version": 1,
+      "description": "Search the web. Expensive: each search costs the learner credits, so call it only when the workspace, the library and your own knowledge cannot answer (recent events, facts they lack). At most 3 searches per learner message, one focused query each, written in your own words rather than copied from the learner's files. Results are pages anyone can publish.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "One focused query. site:, -site:, lang:, after: and before: narrow it.",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ],
+      "retention": "cited_passages"
     },
     {
       "name": "read_skill",

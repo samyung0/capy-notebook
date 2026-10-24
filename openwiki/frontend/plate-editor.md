@@ -1567,7 +1567,7 @@ from any page.
 - **The record.** `material_yjs_client_ids` (material, document `content` or
   `keys`, id) and `source_document_client_ids` (file, id), each row naming
   the user (indexed) and deleted with its document and by the account purge
-  (migration 0112). A room loads its rows once and keeps them in memory, so
+  (migration 0113). A room loads its rows once and keeps them in memory, so
   reconnects and update checks read no database. An update accepted and
   applied (after admission, the validator and the limits) records the ids it
   wrote under as the writer's user's the first time in a room's life, and
