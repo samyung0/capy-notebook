@@ -318,7 +318,7 @@ test('the republication wait fails on any failed refresh and needs a second auto
 test('recorded cleanup ownership tolerates clock skew but never an identity mismatch', () => {
   const email = 'journeys+uat-owned+clerk_test@example.test';
   const manifest: Manifest = {
-    appUrl: 'https://app.uat.capynotebook.com',
+    appUrl: 'https://uat-app.capynotebook.com',
     bucket: 'capy-uat',
     id: 'owned-run',
     resources: [
@@ -376,7 +376,7 @@ test('cleanup requires the original target and exact run-owned registration inte
   const id = randomUUID();
   const email = `${actorEmailPrefix(id)}owner-12345678+clerk_test@example.test`;
   const manifest: Manifest = {
-    appUrl: 'https://app.uat.capynotebook.com',
+    appUrl: 'https://uat-app.capynotebook.com',
     bucket: 'capy-uat',
     id,
     resources: [
@@ -590,7 +590,7 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
     STRIPE_SECRET_KEY: 'sk_test_fixture',
     UAT_ACTOR_EMAIL_DOMAIN: 'example.test',
     UAT_API_URL: 'https://uat-api.capynotebook.com',
-    UAT_APP_URL: 'https://app.uat.capynotebook.com',
+    UAT_APP_URL: 'https://uat-app.capynotebook.com',
     UAT_CLERK_TEST_MODE: 'true',
     UAT_COLLAB_URL: 'wss://uat-collab.capynotebook.com',
     UAT_DATABASE_NAME: 'capy',
@@ -633,7 +633,7 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
         { headers: { 'X-Capy-Release': revision } }
       );
     if (
-      url.hostname === 'app.uat.capynotebook.com' ||
+      url.hostname === 'uat-app.capynotebook.com' ||
       url.hostname === 'uat-office.capynotebook.com'
     )
       return new Response(`<meta name="capy-release" content="${revision}">`);
@@ -641,11 +641,12 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
   };
   try {
     Object.assign(process.env, environment);
-    assert.equal(loadEnvironment().appUrl, 'https://app.uat.capynotebook.com');
+    assert.equal(loadEnvironment().appUrl, 'https://uat-app.capynotebook.com');
     for (const appUrl of [
       'https://uat.capynotebook.com',
       'https://app.capynotebook.com',
-      'https://app.uat.capynotebook.com/another-path',
+      'https://app.uat.capynotebook.com',
+      'https://uat-app.capynotebook.com/another-path',
     ]) {
       process.env.UAT_APP_URL = appUrl;
       assert.throws(() => loadEnvironment(), /UAT_APP_URL must select/);
