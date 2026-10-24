@@ -14,15 +14,17 @@ import (
 type digestRecorder struct {
 	mu   sync.Mutex
 	sent map[string][][]string
+	more map[string][]int
 }
 
-func (r *digestRecorder) send(_ context.Context, recipient string, bodies []string) error {
+func (r *digestRecorder) send(_ context.Context, recipient string, bodies []string, more int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.sent == nil {
-		r.sent = map[string][][]string{}
+		r.sent, r.more = map[string][][]string{}, map[string][]int{}
 	}
 	r.sent[recipient] = append(r.sent[recipient], bodies)
+	r.more[recipient] = append(r.more[recipient], more)
 	return nil
 }
 
@@ -133,12 +135,12 @@ func TestBankCommentDigestRunsOnceAcrossReplicas(t *testing.T) {
 	sending, release := make(chan struct{}), make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.SendBankCommentDigests(ctx, func(ctx context.Context, recipient string, bodies []string) error {
+		_, err := s.SendBankCommentDigests(ctx, func(ctx context.Context, recipient string, bodies []string, more int) error {
 			if recipient == reviewers {
 				close(sending)
 				<-release
 			}
-			return r.send(ctx, recipient, bodies)
+			return r.send(ctx, recipient, bodies, more)
 		})
 		done <- err
 	}()
@@ -197,5 +199,33 @@ func TestSentBankCommentNoticesArePrunedAfter30Days(t *testing.T) {
 	}
 	if !slices.Equal(left, []string{"recent"}) {
 		t.Fatalf("notices left = %v, want [recent]", left)
+	}
+}
+
+// TestBankCommentDigestListsAtMost200 (security regression: rate-limit audit
+// r2 N-8, Q314). One digest email lists at most 200 comments and counts the
+// rest, and every notice of the batch is marked sent.
+func TestBankCommentDigestListsAtMost200(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	user := newBlobTestUser(t, s, "u_bank_notice_many")
+	recipient := uid("many") + "@example.test"
+	if _, err := s.pool.Exec(ctx, `INSERT INTO bank_comment_notices (id, user_id, recipient, body)
+		SELECT 'bcn_many_' || n, $1, $2, 'comment ' || n FROM generate_series(1, $3::int) n`,
+		user, recipient, BankDigestComments+5); err != nil {
+		t.Fatal(err)
+	}
+	var r digestRecorder
+	if _, err := s.SendBankCommentDigests(ctx, r.send); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.emails(recipient); len(got) != 1 || len(got[0]) != BankDigestComments || r.more[recipient][0] != 5 {
+		t.Fatalf("emails %d, first listing %d with %v more; want one listing 200 and 5 more", len(got), len(got[0]), r.more[recipient])
+	}
+	if _, err := s.SendBankCommentDigests(ctx, r.send); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.emails(recipient); len(got) != 1 {
+		t.Fatalf("a second batch sent %d more emails, want none: all were marked sent", len(got)-1)
 	}
 }

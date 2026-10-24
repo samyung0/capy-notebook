@@ -16,9 +16,14 @@ func (s *Store) AddBankCommentNotice(ctx context.Context, userID, recipient, bod
 	return err
 }
 
-// SendBankCommentDigests calls send once per recipient with all of its unsent
-// notices, oldest first, and marks the notices of each successful send as
-// sent. A failed send leaves its notices for the next run.
+// BankDigestComments is the most comments one digest email lists; the rest
+// are counted as "and N more" (Epo 2026-10-24, Q314).
+const BankDigestComments = 200
+
+// SendBankCommentDigests calls send once per recipient with its oldest
+// BankDigestComments unsent notices and the count of the rest, and marks all
+// of them sent when the send succeeds. A failed send leaves its notices for
+// the next run.
 //
 // The notices stay row-locked until the commit and a concurrent run skips
 // locked rows, so two API replicas never send one notice twice; a notice goes
@@ -26,7 +31,7 @@ func (s *Store) AddBankCommentNotice(ctx context.Context, userID, recipient, bod
 // author has requested account deletion is held, and the purge deletes it.
 func (s *Store) SendBankCommentDigests(
 	ctx context.Context,
-	send func(ctx context.Context, recipient string, bodies []string) error,
+	send func(ctx context.Context, recipient string, bodies []string, more int) error,
 ) (int, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -64,7 +69,8 @@ func (s *Store) SendBankCommentDigests(
 	sent := 0
 	var sendErrs []error
 	for _, recipient := range recipients {
-		if err := send(ctx, recipient, bodies[recipient]); err != nil {
+		listed := bodies[recipient][:min(len(bodies[recipient]), BankDigestComments)]
+		if err := send(ctx, recipient, listed, len(bodies[recipient])-len(listed)); err != nil {
 			sendErrs = append(sendErrs, err)
 			continue
 		}

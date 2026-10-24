@@ -35,6 +35,7 @@ const (
 	classIncident
 	classThumbnail
 	classVoice
+	classBankComment
 )
 
 // aiSuffixes are the model-backed routes. Matching by suffix rather than exact
@@ -114,6 +115,9 @@ func classify(method, path string) class {
 	}
 	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/voice-transcriptions") {
 		return classVoice
+	}
+	if method == http.MethodPost && strings.HasPrefix(path, "/api/bank/questions/") && strings.HasSuffix(path, "/comments") {
+		return classBankComment
 	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -327,6 +331,8 @@ func (l *Limiter) classBuckets(routeClass class, subject string) []bucket {
 		// Each recording is a paid transcription, so it refuses like the AI
 		// class while Redis cannot count it.
 		return []bucket{{key: "voice:" + subject, rule: l.cfg.Voice, code: "ai_rate_limited", failClosed: true}}
+	case classBankComment:
+		return []bucket{{key: "bank-comment:" + subject, rule: l.cfg.BankComment, code: "rate_limited"}}
 	}
 	return nil
 }

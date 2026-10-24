@@ -244,6 +244,28 @@ func TestShareReadHeaderMatchesTheWorker(t *testing.T) {
 	}
 }
 
+// TestBankCommentsStopAfterABurstOf20 (security regression: rate-limit audit
+// r2 N-8, Q314). Question-bank comment posts take a per-user class of 120 an
+// hour with a burst of 20, while other bank routes and discussion comments
+// pass.
+func TestBankCommentsStopAfterABurstOf20(t *testing.T) {
+	rdb := testRedis(t, "user:base:user:u_bank", "bank-comment:user:u_bank")
+	handler := passthrough(New(rdb, DefaultConfig()), "u_bank")
+	for i := 1; i <= 20; i++ {
+		if rec := serve(handler, http.MethodPost, "/api/bank/questions/q_1/comments", nil); rec.Code != http.StatusNoContent {
+			t.Fatalf("comment %d: status %d", i, rec.Code)
+		}
+	}
+	if rec := serve(handler, http.MethodPost, "/api/bank/questions/q_2/comments", nil); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("comment 21: status %d, want 429", rec.Code)
+	}
+	for _, path := range []string{"/api/bank/questions/q_2/review", "/api/discussions/d_1/comments"} {
+		if rec := serve(handler, http.MethodPost, path, nil); rec.Code != http.StatusNoContent {
+			t.Fatalf("%s: status %d", path, rec.Code)
+		}
+	}
+}
+
 // TestIntegrationRoutesStopAt30AMinute (security regression: rate-limit audit
 // M12). The Clerk-backed routes share one per-user bucket of 30 a minute.
 func TestIntegrationRoutesStopAt30AMinute(t *testing.T) {
