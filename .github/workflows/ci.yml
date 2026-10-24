@@ -275,7 +275,11 @@ jobs:
       - run: pnpm office:prepare
       - run: pnpm run e2e:install
       # The live note View spec reads in WebKit too (live-items REVIEW5 M1).
-      - run: pnpm exec playwright install --with-deps webkit
+      # A slow uncached apt download fails here instead of hanging; rerun it.
+      - uses: ./.github/actions/playwright-browsers
+        timeout-minutes: 10
+        with:
+          browsers: webkit
       - run: pnpm run e2e
         env:
           E2E_PREBUILT_IMAGES: "true"
@@ -354,7 +358,10 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps firefox webkit
+      - uses: ./.github/actions/playwright-browsers
+        timeout-minutes: 10
+        with:
+          browsers: firefox webkit
       - run: pnpm run e2e:msw:mermaid-engines
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -398,6 +405,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen --extra test
+      # The audio probe's tests run ffmpeg, as the pipeline image installs it.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: uv run --extra test pytest
       # The knowledge-base builder's tests, its security regressions included.
       - run: uv run --extra test pytest lab/knowledge/tests -q

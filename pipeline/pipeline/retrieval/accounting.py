@@ -24,6 +24,7 @@ import requests
 from .. import elitellm, obs, registry
 from ..config import cfg
 from ..registry import ModelConfig
+from .lang import CJK_RUN_RE
 from .usage_extract import NormalizedUsage
 
 log = logging.getLogger("capy.accounting")
@@ -33,6 +34,8 @@ KIND_EMBEDDING = "embedding"
 # A search rerank: zero credits like a query embedding, labeled with the
 # reranker row it called.
 KIND_RERANK = "rerank"
+# Transcribed seconds, priced per second by a resource rate.
+KIND_AUDIO = "audio"
 
 PURPOSE_AGENT = "agent"
 PURPOSE_TERMINAL = "terminal"
@@ -44,8 +47,9 @@ _SETTLE_TIMEOUT_S = 10
 _RECEIPT_SETTLEMENT_GRACE_S = 300
 # Suggested client wait when the model's gate never opened within the budget.
 BUSY_RETRY_AFTER_S = 5.0
-CONTEXT_COUNTING_METHOD = "provider_shape_cjk_chars_latin_chars_div3"
-CONTEXT_COUNTING_VERSION = 2
+# Version 3 (Q238): each message estimated once, as the loop holds it, and summed.
+CONTEXT_COUNTING_METHOD = "message_cjk_chars_latin_chars_div3"
+CONTEXT_COUNTING_VERSION = 3
 
 
 class AccountingError(RuntimeError):
@@ -145,27 +149,36 @@ def estimate_context_value(value: Any) -> int:
     )
     if not serialized:
         return 0
-    from .chunking import _is_cjk
-
-    cjk = sum(1 for char in serialized if _is_cjk(char))
+    cjk = sum(map(len, CJK_RUN_RE.findall(serialized)))
     latin = len(serialized) - cjk
     return cjk + (latin + 2) // 3
 
 
-def measure_components(
-    system: Any,
-    conversation: Any,
-    tools: Any,
-    *,
-    window_tokens: int = 0,
-) -> ContextComposition:
-    """Measure fields after the provider-specific request transformation."""
-    return ContextComposition(
-        system_tokens=estimate_context_value(system),
-        tool_tokens=estimate_context_value(tools),
-        conversation_tokens=estimate_context_value(conversation),
-        window_tokens=max(0, int(window_tokens)),
+# A message's estimate is kept on the message under this private key
+# (provider_messages drops "_" keys) with the field lengths it was computed
+# from, so a request sums kept estimates and an edited message is counted again.
+_KEPT_TOKENS = "_tokens"
+
+
+def _lengths(message: dict[str, Any]) -> tuple:
+    return tuple(
+        (key, len(value) if isinstance(value, (str, list, dict)) else value)
+        for key, value in message.items()
+        if not str(key).startswith("_")
     )
+
+
+def kept_tokens(message: dict[str, Any]) -> int | None:
+    """The estimate kept on ``message``, unless it changed since."""
+    kept = message.get(_KEPT_TOKENS)
+    if kept is not None and kept[0] == _lengths(message):
+        return kept[1]
+    return None
+
+
+def keep_tokens(message: dict[str, Any], tokens: int) -> int:
+    message[_KEPT_TOKENS] = (_lengths(message), tokens)
+    return tokens
 
 
 @dataclass
@@ -274,6 +287,7 @@ async def open_call(
     model: str = "",
     deadline: float | None = None,
     capacity: tuple[str, int] | None = None,
+    provider_timeout_s: float | None = None,
 ) -> None:
     """Insert the pending row before the provider HTTP call.
 
@@ -281,7 +295,10 @@ async def open_call(
     database cannot prove the stub exists, so it must not call the provider.
     A gated model takes its capacity lease in the same transaction as the row;
     while the gate is full this polls until ``deadline`` (a monotonic instant)
-    and then raises ProviderBusy without inserting anything.
+    and then raises ProviderBusy without inserting anything. A call with no
+    catalog model is gated only by its own ``capacity``. ``provider_timeout_s``
+    replaces the mode's provider timeout for a call that runs longer (an
+    audio transcription task); the receipt window and lease follow it.
     """
     state = current()
     if state is None:
@@ -294,19 +311,22 @@ async def open_call(
     if spec is not None:
         provider = provider or spec.provider_slug
         model = model or spec.model_slug
-    if state.settlement_mode == "ingest":
-        provider_timeout_s = cfg.ingest_provider_timeout_s
-    else:
-        # Interactive streams are bounded by the backstop, not the idle timer.
-        provider_timeout_s = cfg.interactive_stream_max_s
+    if provider_timeout_s is None:
+        provider_timeout_s = (
+            cfg.ingest_provider_timeout_s
+            if state.settlement_mode == "ingest"
+            # Interactive streams are bounded by the backstop, not the idle timer.
+            else cfg.interactive_stream_max_s
+        )
     receipt_timeout_s = (
         max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
     )
-    admission_mode = (
-        state.settlement_mode
-        if spec is not None and registry.current_request_llm().paid_by != "user"
-        else None
+    gated = (
+        capacity is not None
+        if spec is None
+        else registry.current_request_llm().paid_by != "user"
     )
+    admission_mode = state.settlement_mode if gated else None
     while True:
         admission = asyncio.ensure_future(
             asyncio.to_thread(
@@ -405,6 +425,35 @@ async def release_call(call_id: str) -> None:
     if state is None or call_id not in state.leased_calls:
         return
     state.leased_calls.discard(call_id)
+    try:
+        await asyncio.to_thread(_release_lease_sync, call_id)
+    except Exception:
+        log.warning("could not release capacity lease %s", call_id, exc_info=True)
+
+
+async def renew_call(call_id: str, capacity_key: str, provider_timeout_s: float) -> str:
+    """Hold an open call and its ``capacity_key`` lease as ``open_call`` did
+    with ``provider_timeout_s``, from a later job claim (an audio task polled
+    across re-pends). The call's state, as ``db.renew_provider_call``."""
+    if current() is None:
+        return "open"
+    seconds = max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
+    from ..store import db
+
+    def renew() -> str:
+        with db.connect() as conn, conn.cursor() as cur:
+            renewed = db.renew_provider_call(cur, call_id, capacity_key, seconds)
+            conn.commit()
+            return renewed
+
+    return await asyncio.to_thread(renew)
+
+
+async def release_lease(call_id: str) -> None:
+    """Free a call's capacity lease that an earlier job claim took. Best
+    effort: a lease that cannot be released expires on its own."""
+    if current() is None:
+        return
     try:
         await asyncio.to_thread(_release_lease_sync, call_id)
     except Exception:
@@ -628,6 +677,44 @@ def _finish_background_settlement(task: asyncio.Task[Any]) -> None:
         )
 
 
+async def settle_units(
+    *,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    provider: str,
+    model: str,
+    units: int,
+    unit: str,
+    credit_micros: int,
+) -> None:
+    """Settle an ingest call measured in non-token units (audio seconds) at
+    the credits the caller priced from its snapshotted rate."""
+    state = current()
+    if state is None:
+        return
+    if state.settlement_mode != "ingest":
+        raise AccountingError("unit settlement is ingest-only")
+    if units < 0 or not unit or credit_micros < 0:
+        raise AccountingError("provider units and credits must be non-negative")
+    await _finish_known_receipt(
+        _retry_local_settlement(
+            _settle_ingest_units_sync,
+            state.session_id,
+            call_id,
+            kind,
+            purpose,
+            provider,
+            model,
+            units,
+            unit,
+            credit_micros,
+            deadline=state.receipt_deadlines.get(call_id),
+        )
+    )
+    state.settled_calls += 1
+
+
 async def _retry_local_settlement(
     function: Any,
     *args: Any,
@@ -734,6 +821,43 @@ def _settle_ingest_call_sync(
                 model_version=spec.version,
                 usage=usage,
                 credit_micros=credit_micros,
+            )
+        conn.commit()
+        if result == "expired":
+            raise db.ProviderReceiptExpired("provider receipt deadline elapsed")
+
+
+def _settle_ingest_units_sync(
+    session_id: str,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    provider: str,
+    model: str,
+    units: int,
+    unit: str,
+    credit_micros: int,
+) -> None:
+    from ..store import db
+
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            result = db.settle_ingest_provider_call(
+                cur,
+                session_id=session_id,
+                call_id=call_id,
+                kind=kind,
+                purpose=purpose,
+                thinking="",
+                provider=provider,
+                model=model,
+                catalog_provider_slug="",
+                catalog_model_slug="",
+                model_version=0,
+                usage=NormalizedUsage(),
+                credit_micros=credit_micros,
+                units=units,
+                unit=unit,
             )
         conn.commit()
         if result == "expired":

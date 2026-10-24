@@ -96,6 +96,11 @@ type ActivityBlock struct {
 	// service's clock), so "Worked for 14s" survives a reload.
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	// Applied of Total commands, only on a call that ended with commands
+	// unapplied: an Office edit the engine cut at a per-call limit that the
+	// turn's next edit of the file did not follow (Epo 2026-10-23, Q171).
+	Applied *int `json:"applied,omitempty"`
+	Total   *int `json:"total,omitempty"`
 }
 
 // ActivityCapture is what a successful capture_page call rendered: the page,
@@ -156,11 +161,16 @@ type ConversationPrompt struct {
 // Region locates one source block inside its page. Stored and shipped ahead of
 // the highlight overlay that will consume it; Space names the coordinate
 // convention ('page-1000-topleft': origin top-left, both axes scaled to
-// 0..1000) so a renderer never has to infer it.
+// 0..1000) so a renderer never has to infer it. An audio transcript's region
+// ('audio-ms') is one sentence's span in the recording instead, with its
+// speaker when the transcript has speaker labels; its page is 0.
 type Region struct {
-	Page  int       `json:"page"`
-	BBox  []float64 `json:"bbox"`
-	Space string    `json:"space"`
+	Page    int       `json:"page"`
+	BBox    []float64 `json:"bbox"`
+	Space   string    `json:"space"`
+	StartMs *int64    `json:"start_ms,omitempty"`
+	EndMs   *int64    `json:"end_ms,omitempty"`
+	Speaker *int      `json:"speaker,omitempty"`
 }
 
 // msgMetadata is the on-disk (jsonb) shape of a message's metadata column.
@@ -739,4 +749,20 @@ func (s *Store) ChatOpenResource(ctx context.Context, wsID, kind, id string) (ti
 		return "", false, nil
 	}
 	return title, err == nil, err
+}
+
+// VoiceContext is what voice input sends ahead of a recording so course
+// vocabulary comes out right: the workspace's title and its newest sources'
+// names, at most limit of them.
+func (s *Store) VoiceContext(ctx context.Context, wsID string, limit int) (title string, sources []string, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT w.name, ARRAY(
+		  SELECT f.name FROM files f
+		   WHERE f.workspace_id = w.id AND f.trashed_at IS NULL
+		   ORDER BY f.added_at DESC LIMIT $2)
+		  FROM workspaces w WHERE w.id = $1`, wsID, limit).Scan(&title, &sources)
+	if isNoRows(err) {
+		return "", nil, ErrNotFound
+	}
+	return title, sources, err
 }

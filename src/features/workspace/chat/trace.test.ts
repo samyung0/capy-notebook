@@ -6,9 +6,11 @@ import {
   foldSegments,
   foldTrace,
   latestStep,
+  stepProgress,
   stepTitle,
   type ToolBlock,
   toolIcon,
+  unappliedWarning,
   undoAction,
   undoRefused,
 } from './trace';
@@ -175,6 +177,82 @@ describe('buildTrace', () => {
       'thinking',
       'created',
       'edited',
+      'edited',
+    ]);
+  });
+});
+
+describe('an Office edit cut at a per-call limit (Epo 2026-10-23, Q171)', () => {
+  const sheet: ResourceEffect = {
+    operation: 'edited',
+    resource: { id: 'f_1', kind: 'source_file', title: 'grades.xlsx' },
+    undo: { operationId: 'op_1', status: 'available' },
+  };
+  const office = (id: string, more: Partial<ToolBlock>) =>
+    tool(id, 'edit_office_document', [1, 2], {
+      detail: 'grades.xlsx',
+      ...more,
+    });
+  const steps = (rows: ReturnType<typeof buildTrace>) =>
+    rows.flatMap((row) =>
+      row.type === 'step'
+        ? [[row.state, stepProgress(row.tool, row.state)]]
+        : row.type === 'edited'
+          ? [['edited', unappliedWarning(row.tool)]]
+          : []
+    );
+
+  it('stays running with its count while the next edit runs', () => {
+    const rows = buildTrace({
+      ...base,
+      activity: [
+        office('a', { applied: 30, outcome: undefined, total: 32 }),
+        office('b', { outcome: undefined }),
+      ],
+      live: true,
+    });
+    expect(steps(rows)).toEqual([
+      ['running', '30 of 32'],
+      ['running', undefined],
+    ]);
+  });
+
+  it('closes as a plain edit once the next edit of its file lands', () => {
+    const rows = buildTrace({
+      ...base,
+      activity: [
+        office('a', { effects: [sheet] }),
+        office('b', { effects: [{ ...sheet, operationId: 'op_2' }] }),
+      ],
+    });
+    expect(steps(rows)).toEqual([
+      ['edited', undefined],
+      ['edited', undefined],
+    ]);
+  });
+
+  it('ends showing the commands the turn left unapplied', () => {
+    const rows = buildTrace({
+      ...base,
+      activity: [office('a', { applied: 30, effects: [sheet], total: 32 })],
+    });
+    expect(steps(rows)).toEqual([['edited', '2 commands not applied']]);
+    const one = office('a', { applied: 31, total: 32 });
+    expect(unappliedWarning(one)).toBe('1 command not applied');
+  });
+
+  it('keeps the count of an edit to a file the turn created', () => {
+    const created = { ...sheet, operation: 'created' as const };
+    const rows = buildTrace({
+      ...base,
+      activity: [
+        office('a', { effects: [created] }),
+        office('b', { applied: 20, effects: [sheet], total: 22 }),
+      ],
+    });
+    expect(rows.map((row) => row.type)).toEqual([
+      'thinking',
+      'created',
       'edited',
     ]);
   });

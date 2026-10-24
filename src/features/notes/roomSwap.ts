@@ -36,7 +36,7 @@ export interface NotePosition {
  * would break the order the search relies on. */
 const TOP_BLOCKS = '[data-block-id]:not([data-block-id] *)';
 
-function blockPoint(
+export function blockPoint(
   editor: PlateEditor,
   point: { path: number[]; offset: number }
 ): BlockPoint | null {
@@ -89,7 +89,7 @@ export function captureNotePosition(view: NoteView): NotePosition {
   };
 }
 
-function pointIn(editor: PlateEditor, point: BlockPoint) {
+export function pointIn(editor: PlateEditor, point: BlockPoint) {
   const index = editor.children.findIndex(
     (node) => (node as { id?: unknown }).id === point.block
   );

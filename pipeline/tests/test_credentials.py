@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -47,3 +51,34 @@ def test_chat_stop_needs_the_pipeline_secret(monkeypatch):
     assert wrong.status_code == 401
     right = http.post("/chat/stop", json=body, headers={"X-Pipeline-Secret": "abc"})
     assert right.status_code == 404  # no such running turn
+
+
+def _boot(key: str, value: str, app_env: str | None) -> int:
+    """Exit code of a pipeline process loading its configuration."""
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"APP_ENV", "PIPELINE_SECRET", "PARSER_TOKEN"}
+    }
+    env[key] = value
+    if app_env is not None:
+        env["APP_ENV"] = app_env
+    return subprocess.run(
+        [sys.executable, "-c", "import pipeline.config"],
+        env=env,
+        capture_output=True,
+        check=False,
+    ).returncode
+
+
+@pytest.mark.parametrize("key", ["PIPELINE_SECRET", "PARSER_TOKEN"])
+def test_a_short_shared_secret_refuses_to_boot_outside_development(key):
+    """(security regression: rate-limit audit M4) A set secret under 32
+    characters stops the process unless APP_ENV is development or e2e; a
+    missing APP_ENV is checked."""
+    short = "s" * 31
+    assert _boot(key, short, "production") != 0
+    assert _boot(key, short, None) != 0
+    assert _boot(key, "s" * 32, "production") == 0
+    assert _boot(key, short, "development") == 0
+    assert _boot(key, short, "e2e") == 0

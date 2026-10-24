@@ -5,6 +5,14 @@
       "kind": "variable",
       "targets": ["local"]
     },
+    "ALIBABA_MODELSTUDIO_KEY": {
+      "kind": "secret",
+      "targets": ["app", "ingest-production", "ingest-queue"]
+    },
+    "ALIBABA_MODELSTUDIO_URL": {
+      "kind": "variable",
+      "targets": ["app", "ingest-production", "ingest-queue"]
+    },
     "ANTHROPIC_API_KEY": {
       "kind": "secret",
       "targets": ["app", "ingest-production", "ingest-queue", "ops"]

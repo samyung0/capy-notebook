@@ -22,18 +22,13 @@ from psycopg_pool import ConnectionPool
 
 from .. import plan_limits
 from ..config import cfg
-from ..jobs import TerminalError
+from ..jobs import TerminalError, policy_key
 
 _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
 _telemetry_maintenance_lock = threading.Lock()
 _telemetry_maintenance_at = 0.0
 log = logging.getLogger(__name__)
-
-# The one-off starter grant every account's purchased balance starts with
-# (user_credits.purchased_micros default).
-STARTER_GRANT_MICROS = 800_000_000
-
 
 # The worker binds one source candidate for its task. asyncio.to_thread copies
 # this context, while heartbeats pass their durable job payload explicitly.
@@ -379,7 +374,13 @@ def uid(prefix: str) -> str:
 
 
 def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
-    """Claim one due pending job of exactly ``job_type`` atomically."""
+    """Claim one due pending job of exactly ``job_type`` atomically.
+
+    Round-robin by actor (Epo 2026-10-24, rate-limit audit): the job whose
+    actor has the fewest jobs of this type running goes first, the oldest
+    among those, so one account's backlog never queues everyone else's. Jobs
+    without an ``actorUserId`` count as one shared actor.
+    """
     cur.execute(
         """
         UPDATE jobs SET
@@ -389,15 +390,23 @@ def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
             attempts=attempts+1,
             lease_expires_at = now() + make_interval(secs => %s)
         WHERE id = (
-            SELECT id FROM jobs
-            WHERE status='pending'
-              AND type=%s
-              AND (not_before IS NULL OR not_before <= now())
-            ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
+            SELECT j.id FROM jobs j
+            LEFT JOIN (
+                SELECT COALESCE(payload->>'actorUserId', '') AS actor,
+                       count(*) AS running
+                FROM jobs
+                WHERE status='running' AND type=%s
+                GROUP BY 1
+            ) r ON r.actor = COALESCE(j.payload->>'actorUserId', '')
+            WHERE j.status='pending'
+              AND j.type=%s
+              AND (j.not_before IS NULL OR j.not_before <= now())
+            ORDER BY COALESCE(r.running, 0), j.created_at
+            FOR UPDATE OF j SKIP LOCKED LIMIT 1
         )
         RETURNING id, type, payload, attempts, queued_at, provider_waits
         """,
-        (lease_s, job_type),
+        (lease_s, job_type, job_type),
     )
     row = cur.fetchone()
     if not row:
@@ -1009,12 +1018,15 @@ def requeue_job(
     return "pending"
 
 
-def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) -> None:
+def release_job_for_capacity(
+    cur, job_id: str, attempt: int, *, backoff_s: int, poll: bool = False
+) -> None:
     """Put a running job back to pending without spending an attempt.
 
     Used when every parser slot is taken. ``claim_job`` already incremented
     ``attempts``; undoing that is what keeps a long queue from looking like
-    repeated failures.
+    repeated failures. ``poll``: an audio job waiting to poll its task again,
+    whose delay is intended, so it counts as queued from when it is due.
     """
     cur.execute(
         """
@@ -1024,11 +1036,12 @@ def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) 
             error=NULL,
             not_before=now() + make_interval(secs => %s),
             lease_expires_at=NULL,
-            queued_at=now(),
+            queued_at=CASE WHEN %s THEN now() + make_interval(secs => %s)
+                           ELSE now() END,
             updated_at=now()
         WHERE id=%s AND status='running' AND attempts=%s
         """,
-        (backoff_s, job_id, attempt),
+        (backoff_s, poll, backoff_s, job_id, attempt),
     )
 
 
@@ -1039,8 +1052,8 @@ def release_job_for_provider_busy(
 
     Like ``release_job_for_capacity`` the attempt is handed back; the re-pend is
     counted on ``provider_waits`` so the worker can cap it. ``created_at`` is
-    untouched, so the claim order puts the job ahead of anything newer once
-    ``not_before`` passes.
+    untouched, so once ``not_before`` passes the claim order puts the job
+    ahead of anything newer from actors with as many jobs running.
     """
     cur.execute(
         """
@@ -1149,12 +1162,75 @@ def release_provider_capacity(cur, lease_id: str) -> None:
     cur.execute("DELETE FROM provider_capacity_leases WHERE id=%s", (lease_id,))
 
 
+def renew_provider_call(cur, call_id: str, provider: str, seconds: int) -> str:
+    """Hold an open call's receipt window and its capacity lease (``provider``
+    key, one unit, id ``call_id``) for another ``seconds``, from a later job
+    claim than the one that opened it. Returns ``open`` when renewed,
+    ``applied`` when the call was settled already, and an empty string when it
+    is gone, abandoned or past its window; the lease is then left alone."""
+    cur.execute(
+        """
+        UPDATE provider_calls
+           SET receipt_deadline_at = now() + make_interval(secs => %s)
+         WHERE id=%s AND status='open' AND receipt_deadline_at > now()
+        """,
+        (seconds, call_id),
+    )
+    if cur.rowcount == 0:
+        cur.execute("SELECT status FROM provider_calls WHERE id=%s", (call_id,))
+        row = cur.fetchone()
+        return "applied" if row is not None and row[0] == "applied" else ""
+    # Inserted again if an admission swept it as expired: the task runs.
+    cur.execute(
+        """
+        INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
+        VALUES (%s,%s,1,now()+make_interval(secs => %s))
+        ON CONFLICT (id) DO UPDATE SET expires_at=EXCLUDED.expires_at
+        """,
+        (call_id, provider, seconds),
+    )
+    return "open"
+
+
+def set_job_filetrans(cur, job_id: str, attempt: int, state: dict[str, Any]) -> bool:
+    """Store an audio job's transcription task state in its payload while
+    this claim still holds the job. False when the claim was lost."""
+    cur.execute(
+        """
+        UPDATE jobs SET payload = payload || jsonb_build_object('filetrans', %s::jsonb),
+               updated_at = now()
+         WHERE id=%s AND status='running' AND attempts=%s
+        """,
+        (Jsonb(state), job_id, attempt),
+    )
+    return cur.rowcount == 1
+
+
+def filetrans_task_in_flight(cur, source_sha256: str, job_id: str) -> bool:
+    """Whether another live job has a transcription task running for these
+    bytes; its transcript will be cached for this one."""
+    cur.execute(
+        """
+        SELECT 1 FROM jobs
+         WHERE id <> %s AND type='ingest' AND status IN ('pending','running')
+           AND payload->'filetrans'->>'sha256' = %s
+           AND payload->'filetrans' ? 'taskId'
+         LIMIT 1
+        """,
+        (job_id, source_sha256),
+    )
+    return cur.fetchone() is not None
+
+
 def reclaim_expired_leases(
     cur, *, max_attempts: dict[str, int], backoff_base_s: dict[str, int]
 ) -> list[dict[str, Any]]:
     """Turn stale running rows back into pending (or failed) jobs.
 
-    A dead worker never finishes; lease_expires_at is the only signal.
+    A dead worker never finishes; lease_expires_at is the only signal. The
+    caps and backoffs are keyed by ``jobs.policy_key`` (an audio ingest job has
+    its own). The payload stays, so an audio job's stored transcription task
+    is polled again rather than submitted again.
     """
     cur.execute(
         """
@@ -1168,7 +1244,7 @@ def reclaim_expired_leases(
     reclaimed: list[dict[str, Any]] = []
     for job_id, job_type, payload, attempts, error in candidates:
         payload = payload or {}
-        cap = max_attempts.get(job_type)
+        cap = max_attempts.get(policy_key(job_type, payload))
         terminal_pipeline = job_type in {"parse", "ingest"} and (
             cap is None or attempts >= cap
         )
@@ -1222,7 +1298,7 @@ def reclaim_expired_leases(
                 "DELETE FROM rag_contents WHERE claim_job_id = %s AND status = 'processing'",
                 (job_id,),
             )
-        cap = max_attempts.get(job_type)
+        cap = max_attempts.get(policy_key(job_type, payload))
         note = (error or "lease expired").strip() or "lease expired"
         if "lease expired" not in note:
             note = f"{note}; lease expired"
@@ -1233,7 +1309,7 @@ def reclaim_expired_leases(
         elif attempts >= cap:
             set_job(cur, job_id, "failed", note[:500])
         else:
-            base = int(backoff_base_s[job_type])
+            base = int(backoff_base_s[policy_key(job_type, payload)])
             outcome = requeue_job(
                 cur,
                 job_id=job_id,
@@ -2064,11 +2140,15 @@ def settle_ingest_provider_call(
     model_version: int,
     usage: Any,
     credit_micros: int,
+    units: int = 0,
+    unit: str = "tokens",
 ) -> str:
     """Atomically apply one post-paid ingest provider attempt.
 
     A ``system`` session (the maintenance republish) records the usage at
-    zero credits against its actor.
+    zero credits against its actor. A job pays for its audio once: a retry
+    that transcribes again (its cached transcript was lost) records the
+    seconds at zero credits.
     """
     cur.execute(
         """
@@ -2090,6 +2170,18 @@ def settle_ingest_provider_call(
     ) = reservation
     if paid_by == "system":
         credit_micros = 0
+    if kind == "audio":
+        cur.execute(
+            """
+            SELECT 1 FROM provider_calls
+             WHERE reservation_id = %s AND id <> %s AND kind = 'audio'
+               AND status = 'applied' AND credit_micros > 0
+             LIMIT 1
+            """,
+            (session_id, call_id),
+        )
+        if cur.fetchone() is not None:
+            credit_micros = 0
     if surface != "ingest" or reservation_status not in {
         "open",
         "settled",
@@ -2105,7 +2197,7 @@ def settle_ingest_provider_call(
                receipt_deadline_at <= now(), provider, model,
                input_tokens, output_tokens, cached_read_tokens,
                cache_write_tokens, reasoning_tokens, cache_anomaly,
-               credit_micros
+               units, unit, credit_micros
           FROM provider_calls
          WHERE id = %s FOR UPDATE
         """,
@@ -2139,6 +2231,8 @@ def settle_ingest_provider_call(
             usage.cache_write_tokens,
             usage.reasoning_tokens,
             usage.anomaly,
+            units,
+            unit,
             credit_micros,
         )
         expected_event = (
@@ -2153,8 +2247,8 @@ def settle_ingest_provider_call(
             model_version,
             usage.input_tokens,
             usage.output_tokens,
-            0,
-            "tokens",
+            units,
+            unit,
             credit_micros,
             _ingest_provider_metadata(call_id, purpose, kind, usage, paid_by),
         )
@@ -2201,7 +2295,8 @@ def settle_ingest_provider_call(
         model_version=model_version,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
-        unit="tokens",
+        units=units,
+        unit=unit,
         credit_micros=credit_micros,
         reservation_id=session_id,
         provider_call_id=call_id,
@@ -2215,7 +2310,7 @@ def settle_ingest_provider_call(
           input_tokens = %s, output_tokens = %s,
           cached_read_tokens = %s, cache_write_tokens = %s,
           reasoning_tokens = %s, cache_anomaly = %s,
-          credit_micros = %s,
+          units = %s, unit = %s, credit_micros = %s,
           received_at = now(), applied_at = now()
         WHERE id = %s AND reservation_id = %s AND status = 'open'
         """,
@@ -2228,6 +2323,8 @@ def settle_ingest_provider_call(
             usage.cache_write_tokens,
             usage.reasoning_tokens,
             usage.anomaly,
+            units,
+            unit,
             credit_micros,
             call_id,
             session_id,
@@ -2443,13 +2540,22 @@ def _credit_limit_micros(cur, user_id: str) -> int:
     return int(cur.fetchone()[0])
 
 
-def actor_has_credits(cur, user_id: str) -> bool:
+# The upload estimate's headroom: a job may land at most this share of the
+# monthly limit past what is available (creditHeadroomNumerator and
+# creditHeadroomDenominator in server/internal/store/credits.go).
+_CREDIT_HEADROOM = (3, 10)
+
+
+def actor_has_credits(cur, user_id: str, estimate_micros: int = 0) -> bool:
     """Unlocked lifecycle and credits check for ingest claim time.
 
     Available is the monthly allowance left plus the purchased balance minus
     reservations; at zero, work is still admitted during a started auto-reload's
     60-second window, or when this claim starts an armed one
-    (claim_credit_reload).
+    (claim_credit_reload). ``estimate_micros`` (an audio task's measured cost)
+    adds the browser upload's estimate gate (Go ``AssertCreditsForEstimate``):
+    refused when the cost would land more than 30% of the monthly limit past
+    what is available.
     """
     if not user_id:
         return False
@@ -2461,13 +2567,13 @@ def actor_has_credits(cur, user_id: str) -> bool:
                COALESCE(c.used_micros, 0),
                COALESCE(c.reserved_micros, 0),
                c.period_start,
-               COALESCE(c.purchased_micros, %s),
+               COALESCE(c.purchased_micros, 0),
                credit_reload_pending(u.id)
           FROM users u
           LEFT JOIN user_credits c ON c.user_id = u.id
          WHERE u.id = %s
         """,
-        (STARTER_GRANT_MICROS, user_id),
+        (user_id,),
     )
     row = cur.fetchone()
     if not row:
@@ -2496,7 +2602,13 @@ def actor_has_credits(cur, user_id: str) -> bool:
         # Mirrors roll_user_credits: owed credits come off the new allowance.
         used = min(max(-purchased, 0), limit)
         purchased += used
-    if max(limit - used, 0) + purchased - reserved > 0 or reload_pending:
-        return True
-    cur.execute("SELECT claim_credit_reload(%s)", (user_id,))
-    return bool(cur.fetchone()[0])
+    available = max(limit - used, 0) + purchased - reserved
+    if available <= 0 and not reload_pending:
+        cur.execute("SELECT claim_credit_reload(%s)", (user_id,))
+        if not cur.fetchone()[0]:
+            return False
+    numerator, denominator = _CREDIT_HEADROOM
+    return (
+        estimate_micros <= 0
+        or (estimate_micros - available) * denominator <= limit * numerator
+    )

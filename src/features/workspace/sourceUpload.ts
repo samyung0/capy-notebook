@@ -95,6 +95,7 @@ export function needsIngestJob(
     kind === 'md' ||
     kind === 'json' ||
     kind === 'image' ||
+    kind === 'audio' ||
     ext === 'csv' ||
     ext === 'tsv' ||
     mode !== 'none'

@@ -143,7 +143,13 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `secrets.required`. Changing it invalidates every shared link, including
    quiz and flashcard links, and resets the anonymous grading IP hashes.
    `JEV_TYPESAFE_API_KEY` (manifest secret, target `app`) is the typesafe.ai
-   key that grades open quiz parts; without it grading answers 503. Both app environments use exact Worker Routes in `wrangler.jsonc`,
+   key that grades open quiz parts; without it grading answers 503.
+   `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
+   (variable) also reach the app target for chat voice input, which the API
+   calls itself (the same Singapore workspace and key as uploaded audio,
+   below); without both, voice input answers 503 `voice_unavailable`, and
+   with only one, or a URL not ending in `/compatible-mode/v1`, the API
+   refuses to start. Both app environments use exact Worker Routes in `wrangler.jsonc`,
    with DNS pointing at their tunnel. Do not attach either app as a Worker
    Custom Domain; that would replace the tunnel destination. The apex and
    `www` remain reserved for the future public site, whose implementation is
@@ -704,6 +710,32 @@ the engines (production 2 save + 1 background at 4 GiB each, UAT 1 + 1 at
 and agent markdown's V8 (~0.8 GiB, its heap capped). Production has
 7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
 lean on swap; they bound a runaway call, not the expected footprint.
+
+The retrieval container has `mem_limit` and `cpus` (Epo 2026-10-24, rate-limit
+audit): production 3 GiB and 2 CPUs, UAT 1.5 GiB and 1 CPU, rendered by
+`scripts/env/config.py` as `RETRIEVAL_MEM_LIMIT` and `RETRIEVAL_CPUS`. Measured
+in the retrieval image: the idle service holds about 85 MiB; a 12-slide deck
+export runs about 4 s of CPU in ppt-master subprocesses of about 75 MiB; a
+page render adds about 25 MiB. An image capture decodes reduced only from a
+JPEG (Q239): at Pillow's pixel limit (89 megapixels) a JPEG capture adds about
+90 MiB, a PNG, GIF or TIFF 0.4 to 0.8 GiB and a WebP 1.3 GiB; a 12-megapixel
+photo about 55 MiB. A full-length chat turn (a 250,000-token history with 16
+captures) holds about 11 MiB. Two render threads (`retrieval/limits.py`) bound
+the decodes running at once, and 64 request slots the turns: production's
+worst case, 64 full-length turns beside two 89-megapixel WebP captures, is
+about 3.4 GiB, over its 3 GiB only then (with PNG or JPEG captures about
+2.3 GiB); UAT's 1.5 GiB holds one worst-case WebP capture beside the idle
+service, not beside many full-length turns. Docker lets a container with
+`mem_limit` and no `memswap_limit` use as much swap again, so the kill comes
+later than the RAM figure. A container over its limit is killed and restarted
+(`restart: unless-stopped`), failing only its own streams. Check after a
+deploy that changes them:
+
+```bash
+docker inspect -f '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}}' $(docker ps -qf name=retrieval)
+```
+
+It prints `3221225472 2000000000` in production and `1610612736 1000000000` on UAT.
 
 The collaboration service runs with `MALLOC_ARENA_MAX=2`,
 `MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
@@ -1282,6 +1314,15 @@ gateway API to the ingest host, not only `/api/internal/`; the host is trusted
 infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
 gateway disables new imports with `503` instead of creating stranded
 reservations.
+
+Every pipeline process (retrieval, the ingest, parse and import workers) refuses
+to start with a `PIPELINE_SECRET` or `PARSER_TOKEN` set shorter than 32
+characters, and the parser with a shorter `PARSER_TOKEN`, unless `APP_ENV` is
+`development` or `e2e`; a missing `APP_ENV` is checked (`pipeline/config.py`
+`secret`, `parser/app.py`; Epo 2026-10-24, the gateway's own rule). UAT, the
+shared non-production parser and production all run with `APP_ENV=production`,
+so their values must be at least 32 characters (`openssl rand -hex 32`) before a
+release with this rule deploys; local development keeps `dev-pipeline-secret`.
 
 Retry scheduling lives on the `jobs` row (three attempts, 30 s doubling
 backoff, `CAPY_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
@@ -1892,8 +1933,27 @@ those services start.
    and `pnpm env:check` fail with "unknown configuration keys: ZAI_API_KEY":
    delete the line, and put the OpenRouter key in `OPENROUTER_API_KEY`. The
    `production` environment needs `OPENROUTER_API_KEY` before a production
-   deploy, since the renderer writes an empty key without it. Those calls
-   happen on this ingest host after it
+   deploy, since the renderer writes an empty key without it. Uploaded audio
+   needs `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
+   (variable, the workspace's `…/compatible-mode/v1` URL with no trailing
+   slash; the pipeline refuses to start with any other ending) from an Alibaba
+   Model Studio workspace in Singapore (`ap-southeast-1`), with the key
+   restricted to the `qwen-audio-3.1-asr-flash*` models. Both reach the
+   production worker and each environment's queue workers (manifest targets
+   `ingest-production`, `ingest-queue`) and the app host's API for chat voice
+   input (target `app`); set both or neither, and without them an audio
+   upload fails terminally and voice input answers 503. Production needs
+   both in its GitHub environment before a deploy whose API serves voice
+   input; local development reads them from `deploy/.env` like any app key.
+   The worker hands Alibaba a ten-minute signed GET link for the one source
+   object, so nothing else needs bucket access. Check the workspace's
+   Filetrans quota before launch: each environment runs at most 12 tasks
+   across its workers (a task holds its slot while its job re-pends between
+   polls), and Flash answered 429 from about 20 requests in flight (chat voice
+   input calls Flash from the app host, one request a recording, at most 60
+   an hour per user). Audio needs no worker or service of its own: the ingest
+   workers submit and poll in short claims. Filetrans calls happen on this
+   ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
    parser is OpenDataLoader 2.5.7 plus the refined repairs (`parser/odl/`);
@@ -2400,7 +2460,8 @@ the host:
   at startup (`prctl(PR_SET_DUMPABLE, 0)`), so its children, which run as the
   same user, can neither trace it nor read its memory or environment. It holds
   `PARSER_TOKEN` in a constant, removes it from its environment at import,
-  before any child starts, and refuses to start, or a request, without one;
+  before any child starts, and refuses to start, or a request, without one
+  (or to start with one under 32 characters outside development and e2e);
   its children run under the decoder sandbox (§7.5). The
   playbook also sets `kernel.yama.ptrace_scope=1`
   (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own
@@ -2465,11 +2526,12 @@ child confines itself right after its `setsid`.
 | Parse child (persistent) | the API's, without `PARSER_TOKEN` | 2 GiB soft address space | none (600 s per document) | 256 | 512 MiB | `setsid` | reads its code, the system trees and Java's jars; writes its slot folder |
 | LibreOffice (`soffice.bin`) | `PATH`, `LANG`, `HOME` and `TMPDIR` (its job folder), `MALLOC_ARENA_MAX=2` | the parse child's, inherited | 180 s | 256 | 256 MiB | `setsid`, `setpgid`, new processes | reads the system trees; writes its job folder, its IPC pipe included |
 | Java (OpenDataLoader) | `PATH`, `HOME`, `LANG`, `MALLOC_ARENA_MAX=2`; `-XX:ActiveProcessorCount` from the container's CPU quota | 2 GiB data, address space lifted | 2,400 s behind the 600 s deadline | 256 | 512 MiB | `setsid`, `setpgid`, new processes | reads the system trees, its jars and its PDF; writes its output folder |
-| Ingest decode helper (`pipeline/ingest/decode.py`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
+| Ingest decode helper (`pipeline/ingest/decode.py`), and ffmpeg measuring an audio upload (`decode.audio_seconds`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB; ffmpeg's progress report at most 1 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
 
 Core dumps are off for all of them. The ingest worker never imports MuPDF or
 Pillow: PDF page text and heading evidence, image captions and card thumbnails
-all come from the helper. The helper has no network through seccomp; the
+all come from the helper, and an audio upload's length from ffmpeg under the
+helper's policy. The helper has no network through seccomp; the
 worker's uid gets no nftables rule, which would cut the worker's own traffic.
 The parser's uid-10001 rule (§7.4) stays as its outer layer. The sandboxed JVM
 reads neither `/sys` nor `/proc`, so the parser reads the container's CPU quota
@@ -3211,7 +3273,7 @@ enabled payment methods. The reload worker runs only where
 Plan credit limits are data, not migrations: the Free monthly allowance is
 200 credits (`UPDATE plan_limits SET credit_limit_micros = 200000000 WHERE
 plan_tier = 'free';`, Epo 2026-10-16), and the one-off 800-credit starter grant
-is the `user_credits` column default from migration 0088. A database built from
+comes with the first saved card (migration 0109, no setting). A database built from
 migrations still seeds the older values, so set the row by hand in each
 environment, **before** the deploy that restarts the API and the ingest worker:
 both read `plan_limits` once at startup (or restart them after the change).

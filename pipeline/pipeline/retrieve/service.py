@@ -30,6 +30,7 @@ from ..retrieval import (
     compact,
     contract,
     library,
+    limits,
     models,
     pending,
     scripted,
@@ -40,11 +41,14 @@ from ..retrieval.agent import (
     CLIENT_ERROR,
     CLIENT_ERROR_CODE,
     ClientDrop,
+    busy_error,
+    close_cut_edits,
     run_agent,
     with_turn_state,
 )
 from ..retrieval.chunking import estimate_tokens
 from ..retrieval.events import error as client_error
+from ..retrieval.events import phase
 from ..retrieval.tools import ToolContext
 from .ai_adapter import router as plate_ai_router
 
@@ -464,6 +468,8 @@ async def _chat_events(req: ChatStreamReq):
         log.exception("chat stream failed")
         event = obs.reported_event(client_error(CLIENT_ERROR, CLIENT_ERROR_CODE), exc)
         if not client.dropped:
+            for frame in close_cut_edits(ctx):
+                yield _sse(frame)
             yield _sse(with_turn_state(event, ctx))
     finally:
         if _running.get(turn_id) is client:
@@ -472,10 +478,66 @@ async def _chat_events(req: ChatStreamReq):
             accounting.reset(accounting_token)
 
 
+def _busy() -> elitellm.ProviderBusy:
+    return elitellm.ProviderBusy(
+        "the retrieval service is at its request limit",
+        retry_after=accounting.BUSY_RETRY_AFTER_S,
+    )
+
+
+def _take_request_slot() -> None:
+    """Admit a generate request, or answer the existing 503 provider_busy with
+    Retry-After when the process is full."""
+    if not limits.REQUEST_SLOTS.take():
+        raise _busy()
+
+
+class _ChatSlot:
+    """A chat stream's process slot: taken inside the stream, given back when
+    the response ends, however it ends (``_SlotStream``)."""
+
+    held = False
+
+    def release(self) -> None:
+        if self.held:
+            self.held = False
+            limits.REQUEST_SLOTS.release()
+
+
+class _SlotStream(StreamingResponse):
+    def __init__(self, content, slot: _ChatSlot, **kwargs) -> None:
+        super().__init__(content, **kwargs)
+        self.slot = slot
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.slot.release()
+
+
+async def _admitted_chat(req: ChatStreamReq, slot: _ChatSlot):
+    """The stream starts at once. Past the process's slots it says it is
+    waiting, once, and waits up to CHAT_SLOT_WAIT_S in arrival order (Epo
+    2026-10-24, Q268); a client that leaves gives up its place. Past the wait
+    it ends with the provider_busy event a busy model call sends."""
+    slot.held = limits.REQUEST_SLOTS.take()
+    if not slot.held:
+        yield _sse(phase("waiting_capacity"))
+        slot.held = await limits.REQUEST_SLOTS.wait(limits.CHAT_SLOT_WAIT_S)
+        if not slot.held:
+            yield _sse(busy_error(_busy()))
+            return
+    async for chunk in _chat_events(req):
+        yield chunk
+
+
 @app.post("/chat/stream")
 async def chat_stream(req: ChatStreamReq):
-    return StreamingResponse(
-        _chat_events(req),
+    slot = _ChatSlot()
+    return _SlotStream(
+        _admitted_chat(req, slot),
+        slot,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -491,15 +553,19 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
     The usage envelope is attached here rather than inside each workflow so
     every generate kind reports it the same way.
     """
-    accounting_token = _bind_accounting(req.spendSessionId)
+    _take_request_slot()
     try:
-        payload = await _generate(req)
-        usage = obs.current_usage()
-        if usage is not None and not usage.is_empty():
-            payload["usage"] = usage.as_dict()
-        return payload
+        accounting_token = _bind_accounting(req.spendSessionId)
+        try:
+            payload = await _generate(req)
+            usage = obs.current_usage()
+            if usage is not None and not usage.is_empty():
+                payload["usage"] = usage.as_dict()
+            return payload
+        finally:
+            _reset_accounting(accounting_token)
     finally:
-        _reset_accounting(accounting_token)
+        limits.REQUEST_SLOTS.release()
 
 
 async def _generate(req: GenerateReq) -> dict[str, Any]:

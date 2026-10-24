@@ -905,7 +905,8 @@ export const GetBillingResponse = zod.object({
   "reloadAmountCents": zod.int(),
   "reloadThresholdMicros": zod.int(),
   "spendingLimitCents": zod.int().optional(),
-  "spentThisMonthCents": zod.int()
+  "spentThisMonthCents": zod.int(),
+  "starterAvailable": zod.boolean()
 }),
   "creditsCarriedMicros": zod.int(),
   "creditsLimitMicros": zod.int(),
@@ -1220,6 +1221,7 @@ export const ListMessagesParams = zod.object({
 
 export const ListMessagesResponseItem = zod.object({
   "activity": zod.array(zod.object({
+  "applied": zod.int().optional(),
   "callId": zod.string().optional(),
   "capture": zod.object({
   "bbox": zod.array(zod.int()).nullable(),
@@ -1261,7 +1263,8 @@ export const ListMessagesResponseItem = zod.object({
   "name": zod.string().optional(),
   "outcome": zod.enum(['succeeded', 'refused', 'failed', 'cancelled', 'outcome_unknown']).optional(),
   "startedAt": zod.iso.datetime({"offset":true}).optional(),
-  "text": zod.string().optional()
+  "text": zod.string().optional(),
+  "total": zod.int().optional()
 })).nullish(),
   "citations": zod.array(zod.object({
   "chunkId": zod.string().optional(),
@@ -1274,8 +1277,11 @@ export const ListMessagesResponseItem = zod.object({
   "pageStart": zod.int().optional(),
   "regions": zod.array(zod.object({
   "bbox": zod.array(zod.number()).nullable(),
+  "end_ms": zod.int().optional(),
   "page": zod.int(),
-  "space": zod.string()
+  "space": zod.string(),
+  "speaker": zod.int().optional(),
+  "start_ms": zod.int().optional()
 })).nullish(),
   "snippet": zod.string()
 })).nullish(),
@@ -1365,6 +1371,47 @@ export const ReportEditIncidentBody = zod.object({
 })
 
 export const ReportEditIncidentResponse = zod.void()
+
+
+/**
+ * @summary List the images and audio the caller pays for, each marked when its note can no longer be opened
+ */
+export const listEditorAssetsQueryLimitDefault = 40;
+export const listEditorAssetsQueryLimitMax = 100;
+
+
+
+export const ListEditorAssetsQueryParams = zod.object({
+  "access": zod.enum(['open', 'lost']).optional().describe('Only media in notes the caller can open, or only those it cannot'),
+  "limit": zod.int().min(1).max(listEditorAssetsQueryLimitMax).default(listEditorAssetsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListEditorAssetsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "assetId": zod.string(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "lostAccess": zod.boolean(),
+  "materialId": zod.string().optional(),
+  "materialTitle": zod.string(),
+  "name": zod.string(),
+  "purpose": zod.enum(['image', 'audio']),
+  "sizeBytes": zod.int(),
+  "workspaceName": zod.string()
+})),
+  "nextCursor": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete an image or audio clip the caller pays for in a note it can no longer open
+ */
+export const DeleteEditorAssetParams = zod.object({
+  "assetId": zod.string()
+})
+
+export const DeleteEditorAssetResponse = zod.void()
 
 
 /**
@@ -1523,6 +1570,7 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -1594,6 +1642,7 @@ export const ExploreQuizzesResponseItem = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -1687,7 +1736,7 @@ export const ListOwnedFilesResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -1786,7 +1835,7 @@ export const GetFileResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -1874,7 +1923,7 @@ export const UpdateFileResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -2162,7 +2211,7 @@ export const CloneFileResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -2436,6 +2485,7 @@ export const CreateFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2511,6 +2561,7 @@ export const GetFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2615,6 +2666,7 @@ export const UpdateFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2694,6 +2746,7 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -3111,6 +3164,7 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3267,6 +3321,7 @@ export const GetMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3418,6 +3473,7 @@ export const CloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3688,6 +3744,7 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3869,6 +3926,7 @@ export const UpdateMaterialSharingResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -4827,6 +4885,7 @@ export const CreateQuizResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -4921,6 +4980,7 @@ export const GetQuizResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5043,6 +5103,7 @@ export const GetQuizForEditResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5128,6 +5189,7 @@ export const UpdateQuizMetadataResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5208,6 +5270,7 @@ export const UpdateQuizSharingResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5449,6 +5512,7 @@ export const ResumeReviewSessionResponse = zod.object({
   "question": zod.record(zod.string(), zod.unknown()).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "total": zod.int()
 })
 
@@ -5574,6 +5638,8 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "accept": zod.string(),
   "allowNoExtension": zod.boolean(),
+  "audioMaxDurationSeconds": zod.int(),
+  "audioSecondCreditMicros": zod.int(),
   "digitalParsePageCreditMicros": zod.int(),
   "kinds": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
@@ -6587,7 +6653,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -6937,6 +7003,7 @@ export const CreateMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -7011,7 +7078,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -7155,6 +7222,7 @@ export const GetWorkspaceReviewResponse = zod.object({
   "question": zod.record(zod.string(), zod.unknown()).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "total": zod.int()
 })
 
@@ -7645,6 +7713,19 @@ export const TransferWorkspaceResponse = zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(transferWorkspaceResponseTagsItemValueMax)
 }))
+})
+
+
+/**
+ * @summary Transcribe a chat voice recording for the composer
+ */
+export const TranscribeVoiceParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const TranscribeVoiceResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "text": zod.string()
 })
 
 

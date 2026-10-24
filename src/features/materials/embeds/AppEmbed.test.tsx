@@ -33,7 +33,9 @@ const question = {
       marks: 1,
     },
   ],
-  stem: [],
+  stem: [
+    { height: 10, image: { assetId: 'asset_quiz' }, type: 'image', width: 10 },
+  ],
 };
 
 vi.mock('@/api/hooks', () => ({
@@ -50,6 +52,7 @@ vi.mock('@/api/hooks', () => ({
                   { children: [{ text: 'Back' }], type: 'p' },
                 ],
                 id: 'c1',
+                image: { assetId: 'asset_card' },
                 type: 'flashcard',
               },
             ],
@@ -60,6 +63,7 @@ vi.mock('@/api/hooks', () => ({
       },
       id: 'set',
       provenance: credit('Set source book'),
+      removedAssetIds: ['asset_card'],
       revision: 1,
     },
     isError: false,
@@ -72,6 +76,7 @@ vi.mock('@/api/hooks', () => ({
       id: 'quiz',
       provenance: credit('Quiz source book'),
       questions: [question],
+      removedAssetIds: ['asset_quiz'],
     },
     isError: false,
     isPending: false,
@@ -130,6 +135,16 @@ describe('embed credits', () => {
       )
     ).toBe(true);
   });
+});
+
+// An embedded quiz or set names the images its uploader deleted in its own
+// response, not the note's (M16), and shows them as removed.
+it("shows an embed's own removed images as removed", () => {
+  for (const kind of ['quiz', 'flashcards'] as const) {
+    expect(render(<AppEmbedView materialId={kind} refKind={kind} />)).toContain(
+      m.media_image_removed()
+    );
+  }
 });
 
 // Every item kind the embed catalog lists draws as itself in View and Edit;

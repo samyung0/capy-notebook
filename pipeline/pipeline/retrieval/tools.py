@@ -41,6 +41,7 @@ from . import (
     contract,
     deck,
     library,
+    limits,
     pending,
     pending_hints,
     questions,
@@ -80,6 +81,9 @@ class ToolResult:
     pending: str = ""
     # A search's documents with unindexed edits, by id: their passages say so.
     unindexed: dict[str, int] = field(default_factory=dict)
+    # An Office edit the engine cut at a per-call limit: (applied, total) of
+    # the call's commands.
+    progress: tuple[int, int] | None = None
 
     @property
     def outcome(self) -> str:
@@ -251,6 +255,10 @@ class ToolContext:
     # material title, or book and chapter), learned from this turn's results
     # so a row names its target without a lookup per call.
     labels: dict[str, str] = field(default_factory=dict)
+    # The activity blocks of Office edits the engine cut at a per-call limit,
+    # by file id: each row stays in progress until the turn's next edit of
+    # that file lands, or the turn ends (agent._office_frames).
+    cut_edits: dict[str, dict[str, Any]] = field(default_factory=dict)
     _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
 
 
@@ -1849,7 +1857,7 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
             change_id=change_id,
             checkpoint=checkpoint,
         )
-        jpeg, box, size = await asyncio.to_thread(
+        jpeg, box, size = await limits.render_thread(
             capture.image_jpeg, io.BytesIO(raw), None, cfg.capture_max_edge
         )
     except capture.CaptureUnavailable as exc:
@@ -2380,6 +2388,9 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 # One edit_office_document call's commands at most, as compact JSON (Epo
 # 2026-10-20); a larger call is refused before it leaves.
 OFFICE_COMMANDS_MAX_BYTES = 256 * 1024
+# The engine's notice on the commands a per-call limit left unapplied; the
+# first one's index is how many it applied, a create command counting.
+_NOT_APPLIED = re.compile(r"Not applied: the commands? at index(?:es)? (\d+) ")
 
 
 def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
@@ -2724,6 +2735,8 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             failure="edit the file",
             explain=explain,
         )
+    if result.effects and (cut := _NOT_APPLIED.search(result.text())):
+        result.progress = (int(cut[1]), len(commands))
     if result.effects:
         ctx._scope_outline = None
         changed = (result.effects[0].get("resource") or {}).get("id") or ""
@@ -3030,7 +3043,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if not ctx.deck_dir:
         ctx.deck_dir = tempfile.mkdtemp(prefix="capy-deck-")
     project = Path(ctx.deck_dir) / rid
-    problem = await asyncio.to_thread(
+    problem = await limits.render_thread(
         deck.write, record, args, problems, figures, project
     )
     if problem:
@@ -3041,7 +3054,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if not deck.complete(record):
         return _result(outline)
     pptx = project / "deck.pptx"
-    problem = await asyncio.to_thread(deck.save, record, project, pptx)
+    problem = await limits.render_thread(deck.save, record, project, pptx)
     if problem:
         return _result(
             f"{outline}\n\nThe export failed; rewrite the slide it names: {problem}"
@@ -3339,7 +3352,7 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
     if numbered and result.paged:
         body = "\n\n".join(
             source_block(
-                f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.text}"
+                f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.reading_text()}"
             )
             for number, passage in numbered
         )

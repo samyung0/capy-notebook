@@ -44,6 +44,8 @@ export interface ChatStreamHandlers {
   onPhase?: (phase: ChatPhase) => void;
   onStart?: (e: StreamStart) => void;
   onToolEnd?: (callId: string, result: ToolEndEvent) => void;
+  /** A running call's commands applied so far, of all. */
+  onToolProgress?: (callId: string, progress: ToolProgress) => void;
   /** `startedAt` is the retrieval service's clock (RFC 3339). */
   onToolStart?: (
     callId: string,
@@ -53,8 +55,14 @@ export interface ChatStreamHandlers {
   ) => void;
 }
 
-/** Terminal result of one tool call, in the shared agent-tool contract shape. */
-export interface ToolEndEvent {
+export interface ToolProgress {
+  applied: number;
+  total: number;
+}
+
+/** Terminal result of one tool call, in the shared agent-tool contract shape;
+ * `applied` of `total` only when it ended with commands unapplied. */
+export interface ToolEndEvent extends Partial<ToolProgress> {
   effects?: ResourceEffect[];
   /** The retrieval service's clock (RFC 3339). */
   endedAt?: string;
@@ -191,6 +199,7 @@ export async function streamChat(
       .join('\n');
     if (!data) return;
     let ev: {
+      applied?: number;
       fileIds?: string[];
       omitted?: boolean;
       blockId?: string;
@@ -217,6 +226,7 @@ export async function streamChat(
       status?: ChatStatus;
       text?: string;
       tokenCount?: number;
+      total?: number;
       type: string;
       version?: number;
     };
@@ -271,13 +281,27 @@ export async function streamChat(
           );
         }
         break;
+      case 'tool_progress':
+        if (
+          ev.callId &&
+          typeof ev.applied === 'number' &&
+          typeof ev.total === 'number'
+        ) {
+          handlers.onToolProgress?.(ev.callId, {
+            applied: ev.applied,
+            total: ev.total,
+          });
+        }
+        break;
       case 'tool_end':
         if (ev.callId && TOOL_OUTCOMES.includes(ev.outcome as ToolOutcome)) {
           handlers.onToolEnd?.(ev.callId, {
+            applied: ev.applied,
             effects: Array.isArray(ev.effects) ? ev.effects : undefined,
             endedAt: ev.endedAt,
             error: ev.error,
             outcome: ev.outcome as ToolOutcome,
+            total: ev.total,
           });
         }
         break;

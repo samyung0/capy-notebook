@@ -57,6 +57,13 @@ export function fileIsIngesting(status?: string) {
   return status === 'pending' || status === 'processing';
 }
 
+/** An audio file being processed: its transcription task is running (or about
+ * to be), which the provider bills whatever happens, so the server refuses to
+ * trash it (`audio_transcribing`) until its job ends. */
+export function fileIsTranscribing(file: { kind: string; status?: string }) {
+  return file.kind === 'audio' && file.status === 'processing';
+}
+
 /** Whether Clone is offered on a file (the workspace's canClone aside): a
  * processed file, or a partial one (failed but still indexed, a part
  * missing), which copies as partial so its new owner can retry it (parts
@@ -66,10 +73,13 @@ export function fileCanClone(file: Pick<SourceFile, 'status' | 'indexed'>) {
 }
 
 /** Why a ready file is not searchable: its content is over an ingest limit,
- * or it was stored without processing. */
+ * a recording has no speech, or it was stored without processing. */
 export function notIndexedMessage(file: Pick<SourceFile, 'indexLimit'>) {
   if (file.indexLimit === 'element_limit') {
     return m.files_not_indexed_too_many_elements();
+  }
+  if (file.indexLimit === 'no_speech') {
+    return m.files_not_indexed_no_speech();
   }
   return file.indexLimit
     ? m.files_not_indexed_too_large()

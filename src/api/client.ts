@@ -310,6 +310,14 @@ export const api = {
       body: body === undefined ? undefined : JSON.stringify(body),
       method: 'POST',
     }),
+  /** A raw body sent as its own type, such as a recorded clip. */
+  postBlob: <T>(path: string, body: Blob, options?: RequestOptions) =>
+    request<T>(path, {
+      ...options,
+      body,
+      headers: { 'Content-Type': body.type },
+      method: 'POST',
+    }),
   put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, {
       ...options,
@@ -340,6 +348,11 @@ export const qk = {
   conversations: (wsId: string) =>
     ['workspace', wsId, 'conversations'] as const,
   deletionPreflight: ['account', 'deletion'] as const,
+  /** The images and audio the caller pays for (the Embeds tab), all or one
+   * access filter. */
+  editorAssets: (access?: string) =>
+    ['editor-assets', access ?? 'all'] as const,
+  editorAssetsRoot: ['editor-assets'] as const,
   eventStream: ['event-stream'] as const,
   events: ['events'] as const,
   exploreFlashcardSets: ['explore', 'flashcardSets'] as const,

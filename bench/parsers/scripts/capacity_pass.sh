@@ -30,7 +30,8 @@ trap 'exit 130' INT TERM
 cleanup
 mkdir -p "$OUT"
 umask 077
-token=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
+# 48 hex characters: the parser refuses a token under 32.
+token=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
 watch=$(docker ps --format '{{.Names}}' | grep -v "^$NAME\$" | paste -sd, -)
 
 docker volume create "$SPOOL" >/dev/null

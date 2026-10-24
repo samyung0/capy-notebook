@@ -23,6 +23,7 @@ func TestMapHTTPErrorCodes(t *testing.T) {
 		{store.ErrSubscriptionExists, http.StatusConflict, "subscription_exists"},
 		{fmt.Errorf("clone: %w", store.ErrCloneSourceChanged), http.StatusConflict, "clone_source_changed"},
 		{store.ErrTitleTaken, http.StatusConflict, "title_taken"},
+		{store.ErrAudioTranscribing, http.StatusConflict, "audio_transcribing"},
 		{store.ErrInvalidPDFAnnotation, http.StatusBadRequest, ""},
 	} {
 		var model *huma.ErrorModel

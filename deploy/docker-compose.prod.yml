@@ -98,6 +98,9 @@ services:
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:?set COLLABORATION_SECRET}
       SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:?set SHARE_LINK_SECRET}
       JEV_TYPESAFE_API_KEY: ${JEV_TYPESAFE_API_KEY:?set JEV_TYPESAFE_API_KEY}
+      # Chat voice input: Alibaba Model Studio (Singapore). Unset answers 503.
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       COLLABORATION_URL: ${COLLABORATION_URL:?set COLLABORATION_URL}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       CAPY_PARSER: ${CAPY_PARSER:-opendataloader}
@@ -305,6 +308,11 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # Bounds a runaway turn, render or deck export so the gateway, Postgres and
+    # collaboration keep their share of the host (scripts/env/config.py render
+    # sets them per environment, Epo 2026-10-24).
+    mem_limit: ${RETRIEVAL_MEM_LIMIT:?set RETRIEVAL_MEM_LIMIT}
+    cpus: ${RETRIEVAL_CPUS:?set RETRIEVAL_CPUS}
     restart: unless-stopped
 
   reconcile:
