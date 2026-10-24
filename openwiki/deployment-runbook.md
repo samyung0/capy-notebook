@@ -1190,13 +1190,19 @@ The addresses come from:
 - Stripe: <https://stripe.com/files/ips/ips_webhooks.json> (`WEBHOOKS`)
 - Svix: <https://docs.svix.com/webhook-ips.json> (every region's list)
 
-Refresh them when either provider announces a change, and at least every
-quarter: fetch both files, replace the `ip.src in {...}` set at the end of
-the rule's expression with their union (addresses and CIDRs separated by
-spaces), run `python3 scripts/deploy/test_cloudflare_rules.py`, commit, and
-apply. A provider address missing from the set shows up as challenged or
-blocked webhook deliveries in the provider's dashboard and in Security →
-Events.
+**Refresh at each deploy.** Before applying the rules, run
+`python3 scripts/deploy/webhook_ranges.py`. It reads both published lists
+and compares their union with the rule's `ip.src in {...}` set: exit 0 in
+sync, 1 when they differ (each missing or extra address printed, then the
+whole published union), 2 when a list cannot be read (retry; do not apply on
+a guess). On a difference, replace the set at the end of the rule's
+expression with the printed union (addresses and CIDRs separated by
+spaces), run `python3 scripts/deploy/test_webhook_ranges.py` and
+`python3 scripts/deploy/test_cloudflare_rules.py` (update the fixture lists
+in the first to the new published lists), commit, and apply. Do the same
+when either provider announces a change. A provider address missing from the
+set shows up as challenged or blocked webhook deliveries in the provider's
+dashboard and in Security → Events.
 
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
