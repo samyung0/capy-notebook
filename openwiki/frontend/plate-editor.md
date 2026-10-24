@@ -2172,8 +2172,10 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   any other: a later `late` answer keeps its document (the edits since
   included) as one late row for the next mount to merge.
 - **Failure is explicit**: a failed merge, one that has not answered 10 s
-  after its WASM loaded (`LATE_MERGE_DEADLINE_MS`; the worker posts `ready`
-  once loaded, so a slow download is not merge time; the worker is stopped),
+  after its WASM loaded (`LATE_MERGE_DEADLINE_MS`, Developer Epo, 2026-10-24,
+  Q281, [error handling](../../human/frontend/error-handling.md); the worker
+  posts `ready` once loaded, so a slow download is not merge time; the worker
+  is stopped),
   or a late answer to the new session before its merge applied keeps the old
   document as one refused row, shown read-only for copying after the remount
   (the `refused` banner), and goes to Sentry (`late-merge`). The stored rows
