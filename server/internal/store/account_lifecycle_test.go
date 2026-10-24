@@ -1266,3 +1266,27 @@ func TestPurgeDeletesCheckoutsAndDailyCounters(t *testing.T) {
 		t.Fatalf("%d checkout or counter rows survived the purge", left)
 	}
 }
+
+// A job the account requested in another owner's workspace stays, without its
+// id (Q315; security regression: rate-limit audit r3 N-3).
+func TestPurgeStripsTheAccountFromJobsItRequested(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	leaver := newBlobTestUser(t, s, "u_purge_requested")
+	job := uid("job")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1, 'source_refresh', $2)`,
+		job, map[string]any{"workspaceId": uid("ws_other"), "requestedBy": leaver}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(context.Background(), `DELETE FROM jobs WHERE id=$1`, job) })
+	if _, err := s.RequestAccountDeletion(ctx, leaver, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeUser(ctx, leaver); err != nil {
+		t.Fatal(err)
+	}
+	var named bool
+	if err := s.pool.QueryRow(ctx, `SELECT payload ? 'requestedBy' FROM jobs WHERE id=$1`, job).Scan(&named); err != nil || named {
+		t.Fatalf("job still names the purged account: %v %v", named, err)
+	}
+}

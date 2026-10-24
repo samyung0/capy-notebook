@@ -277,6 +277,11 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		WHERE payload->>'actorUserId'=$1`, userID); err != nil {
 		return err
 	}
+	// A refresh it requested of another owner's file keeps no id (Q315).
+	if _, err := tx.Exec(ctx, `UPDATE jobs SET payload=payload-'requestedBy'
+		WHERE payload->>'requestedBy'=$1`, userID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM user_llm_credentials WHERE user_id=$1`, userID); err != nil {
 		return err
 	}

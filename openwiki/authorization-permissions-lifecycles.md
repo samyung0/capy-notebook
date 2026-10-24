@@ -1597,8 +1597,9 @@ the account's job history (job and attempt rows whose payload names its
 workspaces; billing rows keep theirs with the attempt link cleared). What it
 pays for in other people's workspaces goes too: its uploads, materials, and
 the images and audio it added to their notes, which then read as removed by
-their uploader (M16). A job it ran in another owner's workspace stays with
-that file, without its id.
+their uploader (M16). A job it ran or requested in another owner's workspace
+stays with that file, without its id (`actorUserId` and `requestedBy` are
+stripped from the payload).
 Remaining cross-account attribution is anonymized. Profile PII is scrubbed;
 pseudonymous billing, usage, provider, storage, and audit ledgers may remain
 under their own retention requirements. The account's editing incidents
