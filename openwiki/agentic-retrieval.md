@@ -2641,8 +2641,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    clipping. The target is 4,000 to 10,000 tokens with a hard 12,000-token output
    limit. Empty or oversized output does not advance the checkpoint.
 
-   Before every agent model call, live admission measures the provider-shaped
-   request against the selected model's input budget. The system prompt, tool
+   Before every agent model call, live admission sums the request's kept
+   per-message estimates ([Process capacity](#process-capacity)) against the
+   selected model's input budget. The system prompt, tool
    schemas, current query, and the last two tool exchanges of the turn (an
    assistant `tool_calls` message with its tool results, provider continuity
    items included) remain exact. Compaction starts only when the request would
@@ -2837,36 +2838,75 @@ The retrieval service is one uvicorn process for chat, generate and the editor
 AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
 `retrieval/limits.py`):
 
-- **Requests.** At most 32 `/chat/stream` and `/generate` requests run at once
-  (`REQUEST_SLOTS`). Past that a request is answered before any work with the
-  existing 503 `provider_busy` (`retryAfterSeconds` and `Retry-After` 5 s),
-  which Go maps to the same retryable error as a busy model. A stream holds
-  its slot until its response ends however it ends
-  (`service._SlotStream`). The Go limits come first: 5 open chat sessions per
-  user and the AI route class.
+- **Requests.** At most 64 `/chat/stream` and `/generate` requests run at once
+  (`REQUEST_SLOTS`). Past that a generate request is answered before any work
+  with the existing 503 `provider_busy` (`retryAfterSeconds` and `Retry-After`
+  5 s), which Go maps to the same retryable error as a busy model. A chat
+  waits instead (Epo 2026-10-24, Q268; `service._admitted_chat`): its stream
+  starts at once, sends `{"type":"phase","phase":"waiting_capacity"}` once, and
+  waits up to 30 s (`CHAT_SLOT_WAIT_S`) for a slot. Waiters take slots in
+  arrival order, a freed slot passing straight to the one waiting longest
+  (`Slots.wait`), and a client that hangs up while waiting leaves the queue.
+  Past the 30 s the stream ends with the in-stream `provider_busy` error a
+  busy model call sends (`retryAfterSeconds` 5); after a slot it carries on
+  as any turn. A stream holds its slot until its response ends however it
+  ends (`service._SlotStream`). The Go limits come first: 5 open chat
+  sessions per user and the AI route class.
 - **Render pool.** Deck scripts (the checker and exporter), page renders,
   image and Office captures and capture downloads run on two threads of their
   own (`render_thread`), never on the default executor, where every model
   call's accounting admission and settlement run: a slow export or a large
   decode queues behind its own kind and never delays another user's next
-  model call. Two threads also bound side-by-side image decodes, about 1 GiB
-  each at Pillow's pixel limit.
+  model call. Two threads also bound side-by-side image decodes: at Pillow's
+  pixel limit (89 megapixels) a JPEG capture peaks about 90 MiB above the
+  idle process, a PNG or TIFF 0.4 to 0.8 GiB, a WebP 1.3 GiB (capture_page
+  below).
 - **Office captures.** One at a time per process (`OFFICE_CAPTURE_SLOTS`; see
   `capture_page` under Tools).
+
+A request's context estimate is kept per message (Epo 2026-10-24, Q238): a
+message's provider-shaped estimate is computed once, when it enters the
+loop's history (`models.message_tokens`, kept on the message by
+`accounting.keep_tokens` and counted again if the message changes), a request
+sums them with its tool schemas, a capture image counts by its recorded pixel
+estimate, and CJK runs are found by one regular expression instead of a
+Python step per character. Before, every model call walked its whole context
+about three times on the event loop (the compaction check, the turn's
+telemetry, the call's own measurement): about 0.1 s of loop time per step at
+80,000 characters and 0.8 to 0.9 s with a 750,000-character history and 16
+attached captures. Now a step's measuring takes 0.2 to 0.7 ms.
 
 The numbers come from a local measurement of the real provider-call path
 (accounting admission, the model gate and settlement against Postgres, the
 provider stream faked) on four cores with the deployed pools (sync 4, async 8)
-and an 8-thread default executor, as on the 4-vCPU production host. What limits
-the process is its event loop: measuring a request's context costs about 0.5 ms
-of loop time per 1,000 characters (41 ms at 80,000, 0.4 s at a 250,000-token
-history), and every model call pays it. At 32 turns making a model call every
-3 s with 80,000-character requests, admission's p95 was 1.0 s and turns took
-1.4 times their unloaded length; at 64, 2.3 s and 1.7 times; at 128, 4.3 s and
-2.6 times; no request failed. A sync pool of 8 instead of 4 lowered the p95
-only above 32 turns (0.34 s against 0.77 s at 64), so the pools keep their
-defaults. Real responses take longer than 3 s, so 32 leaves headroom except for
-many full-length histories at once. Eight 24-second blocking jobs on the
+and an 8-thread default executor, as on the 4-vCPU production host. N turns
+start together, each making four model calls 3 s apart, every turn's history
+built before the clock starts. Model-call admission p95:
+
+| Turns at once | 80,000 chars, before | after | 750,000 chars + 16 captures, before | after |
+| ------------- | -------------------- | ----- | ----------------------------------- | ----- |
+| 4             | 0.32 s               | 0.06 s | 3.3 s                              | 0.07 s |
+| 8             | 0.97 s               | 0.37 s | 10.8 s                             | 0.11 s |
+| 16            | 1.6 s                | 0.08 s | 15.8 s                             | 0.34 s |
+| 32            | 4.2 s                | 0.22 s | 31.6 s (9 of 128 calls over 30 s)  | 0.86 s |
+| 64            | 7.6 s                | 0.49 s |                                    | 0.81 s |
+| 96            |                      |        |                                    | 1.26 s |
+| 128           | 16.6 s               | 0.55 s |                                    |        |
+| 192           |                      | 0.93 s |                                    |        |
+| 256           |                      | 1.24 s |                                    |        |
+
+The request cap is 64, where full-length turns pass about 1 s; turns of
+typical length stay under 1 s up to 192. After the change no admission took
+30 s at any load. Past the cap chats wait (above). With the cap at 64, turns
+of four 3-second calls (about 13 s each) arriving 128 or 192 at once all got a
+slot (the last waiting 25 s; 29 s at full length); 256 at once, 128 waited out
+their 30 s. Turns of three 10-second calls (about 32 s, longer than the wait)
+arriving 96 or 128 at once: every chat past the 64 timed out (32 and 64), so
+with real turn lengths a burst past the cap mostly ends busy rather than
+queueing. A full-length turn holds about 11 MiB of the process (64 of them
+about 0.7 GiB), a typical one well under 1 MiB. Before the change a sync pool of
+8 instead of 4 lowered the p95 only past the point where the loop saturated,
+so the pools keep their defaults. Eight 24-second blocking jobs on the
 default executor, as parallel deck exports were, held every admission for
 their whole length (p95 24 s); on the render pool admission was unaffected
 (p95 0.12 s).
@@ -3536,13 +3576,20 @@ Image captures download the published bytes the same way and normalise them
 with Pillow (EXIF orientation, crop to the box, shrunk to the max edge, alpha
 flattened on white, first frame only, Pillow's decompression-bomb limit bounding the
 decode); SVG and formats the Pillow build lacks refuse
-with `unsupported_format`, and the caption still covers them.
+with `unsupported_format`, and the caption still covers them. A capture decodes
+no larger than its box needs (Epo 2026-10-24, Q239; `capture._decoded`): a JPEG
+at a reduced DCT scale while it decodes, any other format whole in its own
+mode and then reduced by a whole factor before any full-size copy or colour
+conversion. The box and the capture's size are still computed from the
+full-size image, so the capture is the size it was before.
 PDF and Office routes render `CAPY_CAPTURE_MAX_EDGE` (1568 px); the image route
 crops at native resolution and only shrinks to that edge, which the tool
 description says may not help on a low-resolution image. All are JPEG q80. Images are billed
 through the ordinary LLM usage path. Context telemetry and the compaction
 budget count each attached image by its 28-px patch estimate
-(`capture.patch_tokens`), not by its base64; the captures ride outside the
+(`capture.patch_tokens`), not by its base64, taken from the capture's record
+(`estimatedImageTokens`) rather than by decoding the image for every call
+(Q238); the captures ride outside the
 compacted history, so their estimate is passed to compaction as extra weight.
 A capture is attached after its own tool result, and every capture stays
 attached until the turn's answer (Epo 2026-10-21): once live compaction folds
