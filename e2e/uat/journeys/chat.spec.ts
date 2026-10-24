@@ -6,9 +6,10 @@
 // scripted calls run as a model's would, under the owner's operations and the
 // contract's validation, against the real workspace, index and gateway.
 //
-// Not called: the Library switch's tools (search_knowledge, read_knowledge,
-// capture_knowledge_page), because UAT has no knowledge library and the
-// switch is off; create_deck and write_slide, because a stored deck enqueues a paid
+// Not called: the library tools (search_knowledge, read_knowledge,
+// capture_knowledge_page), because UAT has no knowledge library, and
+// search_web, which charges per search, so Workspace only is on; create_deck
+// and write_slide, because a stored deck enqueues a paid
 // parse and index; resolve_source_change, which needs pending Office images.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -118,13 +119,13 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
 
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await showPanelView(page, m.workspace_tab_chat());
-  const library = page.getByRole('button', {
+  const workspaceOnly = page.getByRole('button', {
     exact: true,
-    name: m.chat_library(),
+    name: m.chat_workspace_only(),
   });
-  if ((await library.getAttribute('aria-pressed')) === 'true')
-    await library.click();
-  await expect(library).toHaveAttribute('aria-pressed', 'false');
+  if ((await workspaceOnly.getAttribute('aria-pressed')) !== 'true')
+    await workspaceOnly.click();
+  await expect(workspaceOnly).toHaveAttribute('aria-pressed', 'true');
 
   // The real turn: the content is the model's own; only the route is checked.
   const chat = await slotDefault(run, 'chat');

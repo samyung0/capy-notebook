@@ -1892,6 +1892,8 @@ def open_provider_call(
         raise RuntimeError("provider session is closed")
     if purpose == "terminal" and (kind != "llm" or exhausted_at is None):
         raise RuntimeError("terminal provider call is not allowed")
+    if kind == "web_search" and exhausted_at is not None:
+        raise RuntimeError("web search is not allowed after credits run out")
     if kind == "llm" and exhausted_at is not None:
         if purpose != "terminal":
             raise RuntimeError("only a terminal provider call is allowed")

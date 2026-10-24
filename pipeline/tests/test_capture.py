@@ -236,7 +236,7 @@ async def test_two_knowledge_captures_side_by_side_at_fifteen_attach_one(
 
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
-    ctx = ToolContext(workspace_id="ws_1", library=True, images_taken=15)
+    ctx = ToolContext(workspace_id="ws_1", images_taken=15)
     results = await asyncio.gather(
         *(
             tools._capture_knowledge_page(
@@ -542,7 +542,7 @@ async def test_knowledge_capture_refuses_a_withheld_page_as_withheld(monkeypatch
 
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
-    ctx = ToolContext(workspace_id="ws_1", library=True)
+    ctx = ToolContext(workspace_id="ws_1")
     refused = await tools._capture_knowledge_page(
         {"excerpt_id": "e_1", "page": 339, "_tool_call_id": "a"}, ctx
     )
@@ -566,7 +566,7 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
 
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
-    ctx = ToolContext(workspace_id="ws_1", library=True)
+    ctx = ToolContext(workspace_id="ws_1")
 
     outside = await tools._capture_knowledge_page(
         {"excerpt_id": "e_1", "page": 400, "_tool_call_id": "a"}, ctx

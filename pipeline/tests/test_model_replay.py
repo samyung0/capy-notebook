@@ -78,6 +78,10 @@ def _spec(provider_slug: str, model_id: str) -> ModelConfig:
     elif provider_slug == "zai":
         levels = ("low", "high", "max")
         default = "max"
+    elif provider_slug == "openrouter":
+        # MiniMax 3.1 Flash's catalog levels (migration 0111).
+        levels = ("low", "mid", "high")
+        default = "high"
     else:
         levels = ("instant", "low", "mid", "high", "max")
         default = "instant"
@@ -170,6 +174,7 @@ LIVE_ROUTE_HOSTS = {
     "deepseek": {DEEPSEEK_CHAT_URL.split("/")[2]},
     "openai": {OPENAI_CHAT_URL.split("/")[2], OPENAI_RESPONSES_URL.split("/")[2]},
     "zai": {OPENROUTER_CHAT_URL.split("/")[2]},
+    "openrouter": {OPENROUTER_CHAT_URL.split("/")[2]},
 }
 
 
@@ -249,6 +254,24 @@ def test_certified_request_shape(provider_slug: str, model_id: str):
         assert body["model"] == f"z-ai/{model_id}"
         assert body["reasoning"] == {"effort": "max"}
         assert "thinking" not in body
+        assert body["stream"] is True
+        return
+    if spec.provider_slug == "openrouter":
+        assert uses_responses(spec, tools=True) is False
+        body = openrouter_request(
+            spec,
+            [{"role": "user", "content": "q"}],
+            temperature=0.0,
+            tools=[SEARCH_TOOL],
+            response_format=None,
+            max_tokens=4096,
+            thinking=spec.default_thinking,
+            stream=True,
+            tool_choice="auto",
+        )
+        assert body["model"] == model_id
+        assert body["provider"]["allow_fallbacks"] is False
+        assert "effort" in body["reasoning"]
         assert body["stream"] is True
         return
     assert spec.provider_slug == "deepseek"

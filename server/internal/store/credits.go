@@ -201,6 +201,9 @@ type ProviderCallUsage struct {
 	// ServedBy is the provider OpenRouter routed the call to, kept in the
 	// usage event's metadata only.
 	ServedBy string
+	// Units are a web search's charged units (1 with results, 0 empty); zero
+	// for every token-priced kind.
+	Units int64
 }
 
 type ProviderCallSettlement struct {
@@ -216,6 +219,9 @@ const (
 	KindLLM       = "llm"
 	KindEmbedding = "embedding"
 	KindRerank    = "rerank" // zero credits like a query embedding, labeled with the reranker row called
+	// A search_web call: a search with results is one unit at the web_search
+	// resource rate; an empty one settles at zero units.
+	KindWebSearch = "web_search"
 	KindParse     = "parse"
 	KindEmail     = "email"
 )
@@ -538,8 +544,18 @@ func (s *Store) SettleProviderCall(
 	if sessionID == "" || call.CallID == "" {
 		return out, fmt.Errorf("%w: session id and provider call id are required", ErrInvalidProviderCall)
 	}
-	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank {
+	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank &&
+		call.Kind != KindWebSearch {
 		return out, fmt.Errorf("%w: kind %q", ErrInvalidProviderCall, call.Kind)
+	}
+	if call.Kind == KindWebSearch {
+		if call.Thinking != "" || call.Units < 0 || call.Units > 1 ||
+			call.InputTokens != 0 || call.OutputTokens != 0 || call.CachedReadTokens != 0 ||
+			call.CacheWriteTokens != 0 || call.ReasoningTokens != 0 {
+			return out, fmt.Errorf("%w: a web search settles 0 or 1 units and no tokens", ErrInvalidProviderCall)
+		}
+	} else if call.Units != 0 {
+		return out, fmt.Errorf("%w: only a web search settles units", ErrInvalidProviderCall)
 	}
 	if (call.Kind == KindEmbedding || call.Kind == KindRerank) && call.Thinking != "" {
 		return out, fmt.Errorf("%w: embedding and rerank calls cannot have thinking", ErrInvalidProviderCall)
@@ -644,7 +660,8 @@ func (s *Store) settleProviderCallAtomic(
 			       COALESCE((metadata->>'reasoningTokens')::bigint, 0),
 			       COALESCE(metadata->>'cacheAnomaly', ''),
 			       CASE WHEN kind = 'rerank' THEN model_version ELSE 0 END,
-			       COALESCE(metadata->>'servedBy', '')
+			       COALESCE(metadata->>'servedBy', ''),
+			       CASE WHEN kind = 'web_search' THEN units ELSE 0 END
 			FROM usage_events
 			WHERE reservation_id = $1 AND provider_call_id = $2`,
 			sessionID, call.CallID,
@@ -653,7 +670,7 @@ func (s *Store) settleProviderCallAtomic(
 			&recorded.InputTokens, &recorded.OutputTokens,
 			&recorded.CachedReadTokens, &recorded.CacheWriteTokens,
 			&recorded.ReasoningTokens, &recorded.CacheAnomaly, &recorded.ModelVersion,
-			&recorded.ServedBy,
+			&recorded.ServedBy, &recorded.Units,
 		); err != nil {
 			return settlement, err
 		}
@@ -734,6 +751,18 @@ func (s *Store) settleProviderCallAtomic(
 			call.CachedReadTokens,
 		)
 	}
+	unit := "tokens"
+	if call.Kind == KindWebSearch {
+		// Priced by the search, not by a catalog row.
+		unit, catalogModel, modelVersion = "search", models.Ref{}, 0
+		if call.Units > 0 && out.paidBy == models.PaidByPlatform {
+			rate, err := activeResourceRates(ctx, tx, []string{ResourceWebSearch})
+			if err != nil {
+				return settlement, err
+			}
+			out.credits = call.Units * rate[ResourceWebSearch].CreditMicrosPerUnit
+		}
+	}
 	var balance CreditUsage
 	if out.credits > 0 && out.paidBy == models.PaidByPlatform {
 		balance, err = s.lockedCreditUsageTx(ctx, tx, out.actorUserID)
@@ -761,7 +790,7 @@ func (s *Store) settleProviderCallAtomic(
 	if call.ServedBy != "" {
 		meta["servedBy"] = call.ServedBy
 	}
-	if call.InputTokens == 0 && call.OutputTokens == 0 {
+	if call.Kind != KindWebSearch && call.InputTokens == 0 && call.OutputTokens == 0 {
 		meta["usageMissing"] = true
 	}
 	event := UsageEvent{
@@ -775,7 +804,8 @@ func (s *Store) settleProviderCallAtomic(
 		Thinking:       call.Thinking,
 		InputTokens:    call.InputTokens,
 		OutputTokens:   call.OutputTokens,
-		Unit:           "tokens",
+		Units:          call.Units,
+		Unit:           unit,
 		CreditMicros:   out.credits,
 		CatalogModel:   catalogModel,
 		ModelVersion:   modelVersion,

@@ -71,7 +71,11 @@ async def test_history_reuses_current_passages_and_preserves_tool_notes(monkeypa
     # Cited again this turn, it is saved with the same count (re-review N3).
     assert evidence.pack(ctx, [2])["passages"][0]["unindexed"] == 2
     messages = chat.chat_messages(
-        locale="en", checkpoint=None, history=history, query="Explain it"
+        locale="en",
+        checkpoint=None,
+        history=history,
+        query="Explain it",
+        workspace_only=False,
     )
     assert messages[-1]["_kind"] == "query"
     summary = chat.checkpoint_messages(

@@ -257,8 +257,8 @@ class ChatStreamReq(LLMPin):
     spendSessionId: str
     # Account locale from the gateway (users.locale). Do not trust a browser field.
     locale: str | None = None
-    # The per-turn Library switch: the shared knowledge library is a source.
-    library: bool = False
+    # The per-message Workspace only switch: on, only the workspace is a source.
+    workspaceOnly: bool = False
     # The file or material the learner has open: {"id", "kind", "title"}.
     openResource: dict | None = None
     # The requester's saved study preferences; missing fields take defaults.
@@ -432,7 +432,7 @@ async def _chat_events(req: ChatStreamReq):
         operations=frozenset(req.operations),
         file_ids=None if req.fileIds is None else list(req.fileIds),
         assistant_message_id=req.assistantMessageId or "",
-        library=req.library,
+        workspace_only=req.workspaceOnly,
         open_resource=dict(req.openResource or {}),
         study_preferences=dict(req.studyPreferences or {}),
         study_progress=req.studyProgress,

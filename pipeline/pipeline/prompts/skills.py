@@ -31,13 +31,13 @@ _EDITING = f"""How to write to the workspace: build study materials, add to them
 
 Plan:
 - Ask before building only when the request lacks the learning scope or the learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question. Otherwise build directly, following the study preferences.
-- Survey first with read-only tools: list_sources, and the library when it is a source this turn.
-- Search where the need is: the workspace for the learner's own material, the library for textbook explanations, examples and exercises.
+- Survey first with read-only tools: list_sources, then the library when Workspace only is off and the workspace leaves a gap.
+- Search the workspace first; with Workspace only off, use the library for textbook explanations, examples and exercises the workspace lacks.
 
 What to build:
 - Each chapter gets one main explainer, a note or a deck as the output-files preference says; note_building or deck_building says how to write it.
 - Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id in the turn context.
-- Make other materials, a standalone mindmap or diagram included, as the study preferences and what teaching the chapter needs say.
+- For a request to learn a chapter or topic, make other materials, a standalone mindmap or diagram included, as the study preferences and what teaching it needs say. A request that names one material (a short note, a quiz) gets only that, with the knowledge checks the preferences put inside notes.
 - Follow the study preferences in the turn context unless the request says otherwise.
 
 Budget:
@@ -106,24 +106,24 @@ Note format (create_material content, edit_document insert_markdown and replace_
 
 _BUILDING_LIBRARY = """
 
-Practice from the library:
+Practice from the library (Workspace only off):
 - Use one primary excerpt per section, and keep one book's notation unless another fills a gap you can name.
 - To show a figure read_knowledge listed this turn, put `![caption](figure:<figure id>)` on its own line in a note: the note stores the picture with its printed credit and credits its book. Any other image URL becomes a plain link.
 - Reuse library exercises and worked examples before writing new questions. Keep a worked example's question, givens, model and solution together, and never splice numbers from different examples. Label adapted or new practice as such; call it a source exercise only when the source asks it."""
 
 
-def editing(*, library: bool) -> str:
-    return _EDITING + (_EDITING_LIBRARY if library else "")
+def editing() -> str:
+    """The same text in both modes of the Workspace only switch, so a skill
+    replayed from history never changes with it."""
+    return _EDITING + _EDITING_LIBRARY
 
 
 def office_building() -> str:
     return _OFFICE_BUILDING
 
 
-def note_building(formats: dict[str, str], *, library: bool) -> str:
-    return _NOTE_BUILDING.format(note=formats["note"]) + (
-        _BUILDING_LIBRARY if library else ""
-    )
+def note_building(formats: dict[str, str]) -> str:
+    return _NOTE_BUILDING.format(note=formats["note"]) + _BUILDING_LIBRARY
 
 
 def deck_rules(viewbox: str) -> str:

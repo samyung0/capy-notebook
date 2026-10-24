@@ -262,7 +262,7 @@ async def test_condensing_drops_every_hint(monkeypatch):
     monkeypatch.setattr(compact, "needs_compact", needs)
     folded.clear()
     messages = chat_prompts.chat_messages(
-        locale="en", checkpoint=None, history=prior, query="next"
+        locale="en", checkpoint=None, history=prior, query="next", workspace_only=False
     )
     with pytest.raises(compact.ContextTooLarge):
         await compact.compact_messages(messages, _spec())

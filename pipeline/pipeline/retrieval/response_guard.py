@@ -19,6 +19,9 @@ _OPENERS = (
     "<function=",
     "<invoke ",
     "[tool_calls]",
+    # GLM's argument markup (AskUser<arg_key>question</arg_key><arg_value>...).
+    "<arg_key",
+    "</arg_value",
 )
 _JSON_KEYS = ('"tool_calls"', '"function_call"')
 _JSON_CALL = re.compile(r'"(?:tool_calls|function_call)"\s*:', re.IGNORECASE)

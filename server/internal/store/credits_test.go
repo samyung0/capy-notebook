@@ -316,6 +316,69 @@ func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
 	}
 }
 
+// A search_web call is priced by the web_search rate (1.8 credits): a search
+// with results is one unit, an empty one is free, and only a search settles
+// units (decision 2026-10-24).
+func TestWebSearchChargesOnlyASearchWithResults(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	sessionID := mustBeginPlatformSession(t, ctx, s, userID)
+	before := mustBalance(t, s, userID)
+	found := ProviderCallUsage{
+		CallID: "pc_web_found", Kind: KindWebSearch, Purpose: "agent",
+		Provider: "deepseek", Model: "search", Units: 1,
+	}
+	empty := found
+	empty.CallID, empty.Units = "pc_web_empty", 0
+	for _, call := range []ProviderCallUsage{found, empty} {
+		mustInsertProviderCall(t, s, sessionID, call)
+		if _, err := s.SettleProviderCall(ctx, sessionID, call); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if replay, err := s.SettleProviderCall(ctx, sessionID, found); err != nil || !replay.Duplicate {
+		t.Fatalf("replay = %#v, %v", replay, err)
+	}
+	changed := found
+	changed.Units = 0
+	if _, err := s.SettleProviderCall(ctx, sessionID, changed); !errors.Is(err, ErrProviderCallConflict) {
+		t.Fatalf("a replay with other units settled: %v", err)
+	}
+	for _, bad := range []ProviderCallUsage{
+		{CallID: "pc_web_two", Kind: KindWebSearch, Purpose: "agent", Units: 2},
+		{CallID: "pc_web_tokens", Kind: KindWebSearch, Purpose: "agent", Units: 1, InputTokens: 5},
+		{CallID: "pc_llm_units", Kind: KindLLM, Purpose: "agent", Thinking: "high", Units: 1},
+	} {
+		if _, err := s.SettleProviderCall(ctx, sessionID, bad); !errors.Is(err, ErrInvalidProviderCall) {
+			t.Fatalf("%s settled: %v", bad.CallID, err)
+		}
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT provider_call_id, units, unit, credit_micros FROM usage_events
+		 WHERE reservation_id=$1 ORDER BY provider_call_id`, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var id, unit string
+		var units, credits int64
+		if err := rows.Scan(&id, &units, &unit, &credits); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, fmt.Sprintf("%s %d %s %d", id, units, unit, credits))
+	}
+	want := []string{"pc_web_empty 0 search 0", "pc_web_found 1 search 1800000"}
+	if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		t.Fatalf("usage = %v, want %v", got, want)
+	}
+	if spent := mustBalance(t, s, userID).UsedMicros - before.UsedMicros; spent != 1_800_000 {
+		t.Fatalf("spent %d micros, want 1800000", spent)
+	}
+}
+
 func TestListUsageEventsPagesNewestFirst(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
