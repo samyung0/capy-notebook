@@ -89,7 +89,7 @@ def message(
         HEADER,
         _open_line(ctx.open_resource, ctx.chapters, ctx.role),
         *_chapter_lines(ctx.chapters),
-        "\nStudy preferences:",
+        "\nStudy preferences (a request that names one material gets only that material):",
     ]
     lines.extend(f"- {line}" for line in preferences.lines(ctx.study_preferences))
     # One line per excerpt: a second page of the same excerpt is the same input,

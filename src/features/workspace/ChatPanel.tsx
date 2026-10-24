@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import { flushSync } from 'react-dom';
-import { chatTurn, LIBRARY_DEFAULT } from '@/api/chatStream';
+import { chatTurn, WORKSPACE_ONLY_DEFAULT } from '@/api/chatStream';
 import { useConversations, useMe, useMessages } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
 import type {
@@ -48,6 +48,7 @@ import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
 import { useVoiceInput, VoiceButton } from './chat/VoiceInput';
 import { insertTranscript } from './chat/voiceRecording';
+import { sourceEntryId, webHref } from './chat/webCitation';
 import type { TabAction } from './PanelTabRow';
 import { toChatMessage, useChatStream } from './useChatStream';
 import { useProcessFileChanges } from './useProcessFileChanges';
@@ -75,6 +76,59 @@ function Citations({
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
       {msg.citations.map((c, i) => {
+        if (c.kind === 'web') {
+          // A web result on its own row: its title links to the page in a
+          // new tab beside its site and date, its snippet under them. A long
+          // site name truncates within the row; the date always shows.
+          const href = webHref(c.url);
+          const body = (
+            <>
+              <span className="text-fg-muted">{i + 1}</span>
+              <span className="min-w-0 truncate underline">{c.fileName}</span>
+              {c.siteName ? (
+                <span className="min-w-0 max-w-[40%] shrink-0 truncate text-fg-muted">
+                  {c.siteName}
+                </span>
+              ) : null}
+              {c.published ? (
+                <span className="shrink-0 text-fg-muted">{c.published}</span>
+              ) : null}
+              {href ? (
+                <Icon className="size-3 shrink-0" name="externalLink" />
+              ) : null}
+            </>
+          );
+          return (
+            <div
+              className="flex min-w-0 basis-full flex-col gap-0.5"
+              key={`${c.chunkId}:${i}`}
+            >
+              <Badge
+                asChild
+                className="max-w-full self-start font-medium hover:bg-page-hover"
+                size="sm"
+              >
+                {href ? (
+                  <a
+                    href={href}
+                    id={sourceEntryId(msg.id, i)}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {body}
+                  </a>
+                ) : (
+                  <span id={sourceEntryId(msg.id, i)}>{body}</span>
+                )}
+              </Badge>
+              {c.snippet ? (
+                <p className="line-clamp-2 px-2.25 text-fg-muted text-xs">
+                  {c.snippet}
+                </p>
+              ) : null}
+            </div>
+          );
+        }
         const page = pageLabel(c);
         return (
           <Badge
@@ -116,6 +170,18 @@ function AssistantBubble({
   // trace until its block ends and the trace takes it.
   const draft = msg.phase === 'answering' ? msg.currentBlockText : undefined;
   const answer = msg.content || draft || '';
+  // A web citation's raised number moves to its sources-list entry; a file
+  // or note citation opens its passage.
+  const openCitation = (citation: Citation) => {
+    if (citation.kind !== 'web') {
+      onOpenCitation?.(citation);
+      return;
+    }
+    const index = msg.citations?.indexOf(citation) ?? -1;
+    const entry = document.getElementById(sourceEntryId(msg.id, index));
+    entry?.scrollIntoView({ block: 'nearest' });
+    entry?.focus();
+  };
   return (
     <div className="py-2.5">
       <ChatTrace handlers={handlers} live={live} mode={mode} msg={msg} />
@@ -136,7 +202,7 @@ function AssistantBubble({
           complete={msg.status === 'complete'}
           content={answer}
           latest={latest}
-          onOpenCitation={onOpenCitation}
+          onOpenCitation={openCitation}
           streaming={live}
         />
       ) : null}
@@ -261,8 +327,8 @@ export function ChatPanel({
   const overLimit = textLength(text) > CHAT_CHARACTER_LIMIT;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectId, setSelectId] = useState<string | null>(null);
-  // The Library switch applies per turn; it stays where the learner left it.
-  const [library, setLibrary] = useState(LIBRARY_DEFAULT);
+  // Workspace only applies per message; it stays where the learner left it.
+  const [workspaceOnly, setWorkspaceOnly] = useState(WORKSPACE_ONLY_DEFAULT);
   const { data: history } = useMessages(selectId, { errorBoundary: false });
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -338,7 +404,7 @@ export function ChatPanel({
     const trimmed = text.trim();
     if (!trimmed || streaming || overLimit) return;
     setText('');
-    void send(trimmed, chatTurn(library, openResource));
+    void send(trimmed, chatTurn(workspaceOnly, openResource));
   }
 
   function openNew() {
@@ -376,7 +442,7 @@ export function ChatPanel({
     withViewTransition(() => {
       openNew();
       setText('');
-      void send(trimmed, chatTurn(library, openResource));
+      void send(trimmed, chatTurn(workspaceOnly, openResource));
       setPageOpen(true);
       setBackShown(false);
     });
@@ -480,7 +546,7 @@ export function ChatPanel({
             key={last.id}
             onDismiss={() => setDismissedId(last.id)}
             onSend={(answer) =>
-              void send(answer, chatTurn(library, openResource))
+              void send(answer, chatTurn(workspaceOnly, openResource))
             }
             questions={questions}
           />
@@ -517,22 +583,24 @@ export function ChatPanel({
                   <TooltipTrigger
                     render={
                       <Button
-                        aria-pressed={library}
+                        aria-pressed={workspaceOnly}
                         className={cn(
                           'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
-                          library &&
+                          workspaceOnly &&
                             'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
                         )}
-                        iconLeft="book"
-                        onClick={() => setLibrary((value) => !value)}
+                        iconLeft="lock"
+                        onClick={() => setWorkspaceOnly((value) => !value)}
                         size="sm"
                         variant="outline"
                       >
-                        {m.chat_library()}
+                        {m.chat_workspace_only()}
                       </Button>
                     }
                   />
-                  <TooltipContent>{m.chat_library_hint()}</TooltipContent>
+                  <TooltipContent>
+                    {m.chat_workspace_only_hint()}
+                  </TooltipContent>
                 </Tooltip>
                 <span className="ml-auto" />
                 <CharCount
@@ -593,7 +661,7 @@ export function ChatPanel({
         )}
         {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}
         <p className="mt-2 text-center text-[11px] text-fg-muted">
-          {library ? m.chat_grounded_library() : m.chat_grounded()}
+          {workspaceOnly ? m.chat_grounded() : m.chat_grounded_outside()}
         </p>
       </div>
     </>

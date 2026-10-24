@@ -129,7 +129,12 @@ import (
 // delete_slide names (Epo 2026-10-22).
 // v39: format_text names its span text, not expected_text, and delete_table
 // takes a table's short id (body:t0) that names one table (Epo 2026-10-23).
-const ContractVersion = 39
+// v40: search_web searches the web, its cited results kept like passages; the
+// stream request carries workspaceOnly instead of library, library.read is
+// granted with every chat, and the library tools and search_web stay offered
+// whatever the switch says, answering as unavailable while it is on (Epo
+// 2026-10-24).
+const ContractVersion = 40
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -936,6 +941,24 @@ func Definitions() []Definition {
 			}, "excerpt_id", "page"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "search_web",
+			Retention: RetainCitedPassages,
+			Description: "Search the web. Expensive: each search costs the learner credits, so " +
+				"call it only when the workspace, the library and your own knowledge cannot " +
+				"answer (recent events, facts they lack). At most 3 searches per learner " +
+				"message, one focused query each, written in your own words rather than " +
+				"copied from the learner's files. Results are pages anyone can publish.",
+			InputSchema: obj(map[string]any{
+				"query": map[string]any{
+					"type": "string", "minLength": 1, "maxLength": 128,
+					"description": "One focused query. site:, -site:, lang:, after: and " +
+						"before: narrow it.",
+				},
+			}, "query"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
 			Name:      "read_skill",

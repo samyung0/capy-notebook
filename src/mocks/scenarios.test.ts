@@ -124,7 +124,7 @@ describe('mock user scenarios', () => {
     server.use(...getMockScenarioHandlers('chat-pending-sources'));
     await streamChat(
       'ws_bio',
-      { library: false, text: 'Preview' },
+      { text: 'Preview', workspaceOnly: false },
       { onBlockDelta, onError, onPendingSources }
     );
     expect(onPendingSources).toHaveBeenCalledWith({
@@ -138,7 +138,7 @@ describe('mock user scenarios', () => {
     server.use(...getMockScenarioHandlers('chat-undo-refused'));
     await streamChat(
       'ws_bio',
-      { library: false, text: 'Preview' },
+      { text: 'Preview', workspaceOnly: false },
       { onError, onToolEnd }
     );
     expect(onToolEnd).toHaveBeenCalledWith(

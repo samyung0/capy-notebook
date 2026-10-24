@@ -15,7 +15,10 @@ export interface Citation {
   n?: number;
   pageEnd?: number;
   pageStart?: number;
+  published?: string;
   /** @nullable */
   regions?: Region[] | null;
+  siteName?: string;
   snippet: string;
+  url?: string;
 }

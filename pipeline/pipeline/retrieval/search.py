@@ -34,7 +34,10 @@ RERANK_CANDIDATES = 20
 class Passage:
     chunk_id: str
     # The resource the chunk belongs to: a file, or a note when kind is
-    # "material" (file_id then holds the material id and file_name its title).
+    # "material" (file_id then holds the material id and file_name its title),
+    # or a web page when kind is "web" (search_web: file_id holds the page's
+    # link, file_name its title, section_path its site, text DeepSeek's summary
+    # and hit_text its display snippet).
     file_id: str
     file_name: str
     chunk_idx: int
@@ -60,6 +63,8 @@ class Passage:
     confidence: float | None = None
     confidence_reasons: list[str] = field(default_factory=list)
     kind: str = "file"
+    # A web page's date (YYYY-MM-DD), when the search knows it.
+    published: str = ""
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Passage:
@@ -87,6 +92,11 @@ class Passage:
         )
 
     def location(self) -> str:
+        if self.kind == "web":
+            meta = ", ".join(
+                part for part in (self.section_path, self.published) if part
+            )
+            return f"Web: {self.file_name}" + (f" ({meta})" if meta else "")
         parts = [self.file_name]
         if self.section_path:
             parts.append(self.section_path)
@@ -138,6 +148,11 @@ class Passage:
         the passage (outside its source block, which holds only source data),
         so the agent reads the document before answering from a passage that
         may be out of date (Epo 2026-10-20). No edit text."""
+        if self.kind == "web":
+            # The title, link and summary are the page's words: all inside.
+            return source_block(
+                f"[{index}] {self.location()}\n{self.file_id}\n{self.text}"
+            )
         block = source_block(f"[{index}] {self.location()}\n{self.reading_text()}")
         if not unindexed:
             return block
@@ -149,6 +164,18 @@ class Passage:
         )
 
     def as_citation(self) -> dict[str, Any]:
+        if self.kind == "web":
+            # Shown as the page title linking to the page (Epo 2026-10-24).
+            return {
+                "kind": "web",
+                "fileId": "",
+                "chunkId": self.chunk_id,
+                "fileName": self.file_name,
+                "url": self.file_id,
+                "siteName": self.section_path,
+                "published": self.published,
+                "snippet": (self.hit_text or self.text)[:400],
+            }
         citation: dict[str, Any] = {
             "fileId": "" if self.kind == "material" else self.file_id,
             "chunkId": self.chunk_id,

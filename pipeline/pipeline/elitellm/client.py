@@ -46,6 +46,11 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "order": ["DigitalOcean", "Z.AI"],
         "allow_fallbacks": False,
     },
+    # A chat choice (decision 2026-10-24, Q224): Together only.
+    "minimax/minimax-m3.1-flash": {
+        "order": ["together"],
+        "allow_fallbacks": False,
+    },
 }
 # The zai pin keeps its catalog identity; OpenRouter names the model with an
 # org prefix.
@@ -230,10 +235,21 @@ def deepseek_thinking_body(thinking: str) -> dict[str, Any]:
     return {"thinking": {"type": "enabled"}, "reasoning_effort": effort}
 
 
+# OpenRouter's effort for each thinking level a MiniMax row offers.
+MINIMAX_EFFORTS = {
+    "minimax/minimax-m3.1-flash": {"low": "low", "mid": "medium", "high": "high"},
+}
+
+
 def openrouter_reasoning(spec: ModelConfig, thinking: str) -> dict[str, Any]:
     """GLM cannot turn reasoning off, and a request without an effort reasons
     as at max, so every GLM request names its effort (decision 2026-10-21).
-    The DeepSeek pins run with reasoning off."""
+    MiniMax reasons at the chat pin's effort too. The DeepSeek pins run with
+    reasoning off."""
+    if spec.model_slug in MINIMAX_EFFORTS:
+        if thinking not in MINIMAX_EFFORTS[spec.model_slug]:
+            raise RegistryError("MiniMax supports only low, mid, or high reasoning")
+        return {"effort": MINIMAX_EFFORTS[spec.model_slug][thinking]}
     if spec.provider_slug != "zai":
         return {"enabled": False}
     if thinking not in ("low", "high", "max"):

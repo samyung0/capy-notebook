@@ -36,6 +36,11 @@ KIND_EMBEDDING = "embedding"
 KIND_RERANK = "rerank"
 # Transcribed seconds, priced per second by a resource rate.
 KIND_AUDIO = "audio"
+# A search_web call (DeepSeek's search), priced per search with results by
+# the gateway's web_search rate; an empty search settles at zero units.
+KIND_WEB_SEARCH = "web_search"
+WEB_SEARCH_PROVIDER = "deepseek"
+WEB_SEARCH_MODEL = "search"
 
 PURPOSE_AGENT = "agent"
 PURPOSE_TERMINAL = "terminal"
@@ -656,6 +661,30 @@ async def settle(
         state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
     state.settled_calls += 1
     return state
+
+
+async def settle_web_search(call_id: str, *, results: int) -> None:
+    """Settle a search_web call: one charged unit when it returned results,
+    none when it was empty (decision 2026-10-24)."""
+    state = current()
+    if state is None:
+        return
+    payload = {
+        "sessionId": state.session_id,
+        "callId": call_id,
+        "kind": KIND_WEB_SEARCH,
+        "purpose": PURPOSE_AGENT,
+        "thinking": "",
+        "provider": WEB_SEARCH_PROVIDER,
+        "model": WEB_SEARCH_MODEL,
+        "units": 1 if results > 0 else 0,
+        **NormalizedUsage().as_dict(),
+    }
+    deadline = state.receipt_deadlines.get(call_id)
+    response = await _finish_known_receipt(_post_settlement(payload, deadline=deadline))
+    state.credits_exhausted = bool(response.get("creditsExhausted"))
+    state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
+    state.settled_calls += 1
 
 
 def settle_in_background(**receipt: Any) -> asyncio.Task[Any] | None:

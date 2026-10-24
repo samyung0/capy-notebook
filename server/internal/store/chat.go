@@ -38,7 +38,10 @@ func scanConversation(row pgx.Row) (Conversation, error) {
 // assistant grounded its answer on (persisted in the metadata jsonb column).
 type Message struct {
 	// Private prompt evidence is not returned by the browser message API.
-	ToolEvidence     json.RawMessage `json:"-"`
+	ToolEvidence json.RawMessage `json:"-"`
+	// WorkspaceOnly is the switch a user message was sent with, replayed as
+	// its mode line; nil on messages saved before the switch existed.
+	WorkspaceOnly    *bool           `json:"-"`
 	ID               string          `json:"id"`
 	ConversationID   string          `json:"conversationId"`
 	Role             string          `json:"role"`
@@ -62,7 +65,9 @@ type Message struct {
 // with no layout).
 type Citation struct {
 	// Kind is "material" when the passage came from an indexed note; then
-	// MaterialID names the note and FileID is empty.
+	// MaterialID names the note and FileID is empty. It is "web" for a
+	// search_web result; then URL, SiteName and Published (YYYY-MM-DD, when
+	// known) describe the page and FileID is empty.
 	Kind       string `json:"kind,omitempty"`
 	MaterialID string `json:"materialId,omitempty"`
 	FileID     string `json:"fileId"`
@@ -75,6 +80,9 @@ type Citation struct {
 	PageStart *int     `json:"pageStart,omitempty"`
 	PageEnd   *int     `json:"pageEnd,omitempty"`
 	Regions   []Region `json:"regions,omitempty"`
+	URL       string   `json:"url,omitempty"`
+	SiteName  string   `json:"siteName,omitempty"`
+	Published string   `json:"published,omitempty"`
 }
 
 // ActivityBlock is one completed narration or tool-display item persisted on
@@ -185,6 +193,7 @@ type msgMetadata struct {
 	ModelSlug        string          `json:"modelSlug,omitempty"`
 	ModelVersion     int             `json:"modelVersion,omitempty"`
 	ModelDisplayName string          `json:"modelDisplayName,omitempty"`
+	WorkspaceOnly    *bool           `json:"workspaceOnly,omitempty"`
 }
 
 /* --------------------------------------------------------- conversations */
@@ -477,7 +486,11 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 
 // AddUserMessage persists an incoming user message and bumps the conversation's
 // updated_at so it sorts to the top of the list.
-func (s *Store) AddUserMessage(ctx context.Context, userID, convID, content string) (Message, error) {
+func (s *Store) AddUserMessage(ctx context.Context, userID, convID, content string, workspaceOnly bool) (Message, error) {
+	meta, err := json.Marshal(msgMetadata{WorkspaceOnly: &workspaceOnly})
+	if err != nil {
+		return Message{}, err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Message{}, err
@@ -497,10 +510,10 @@ func (s *Store) AddUserMessage(ctx context.Context, userID, convID, content stri
 	id := uid("m")
 	var m Message
 	err = tx.QueryRow(ctx,
-		`INSERT INTO messages (id, conversation_id, role, content, status)
-		   VALUES ($1,$2,'user',$3,'complete')
+		`INSERT INTO messages (id, conversation_id, role, content, status, metadata)
+		   VALUES ($1,$2,'user',$3,'complete',$4)
 		   RETURNING id, conversation_id, role, content, status, created_at`,
-		id, convID, content).
+		id, convID, content, meta).
 		Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &m.Status, &m.CreatedAt)
 	if err != nil {
 		return Message{}, err
@@ -688,6 +701,7 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 		_ = json.Unmarshal(raw, &meta)
 		m.Citations = meta.Citations
 		m.ToolEvidence = meta.ToolEvidence
+		m.WorkspaceOnly = meta.WorkspaceOnly
 		history = append(history, m)
 	}
 	if err := rows.Err(); err != nil {
