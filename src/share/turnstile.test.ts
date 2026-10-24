@@ -7,10 +7,18 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 interface FakeOptions {
   callback: (token: string) => void;
   'expired-callback': () => void;
+  'refresh-expired'?: string;
 }
 
 let options: FakeOptions[];
 let resets: number;
+
+/** A token's expiry as Turnstile handles it: the widget solves again by
+ * itself unless rendered with `'refresh-expired': 'never'`. */
+function expire(widget: FakeOptions) {
+  widget['expired-callback']();
+  if (widget['refresh-expired'] !== 'never') widget.callback('token-refreshed');
+}
 
 beforeEach(() => {
   vi.resetModules();
@@ -61,7 +69,7 @@ it('does not solve again when a token expires, only at the next check', async ()
   await vi.waitFor(() => expect(options).toHaveLength(1));
   options[0].callback('token-1');
   await expect(first).resolves.toBe('token-1');
-  options[0]['expired-callback']();
+  expire(options[0]);
   expect(resets).toBe(0);
   const next = takeTurnstileToken();
   await vi.waitFor(() => expect(resets).toBe(1));

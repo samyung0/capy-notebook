@@ -16,6 +16,7 @@ interface Turnstile {
       callback: (token: string) => void;
       'error-callback': () => void;
       'expired-callback': () => void;
+      'refresh-expired': 'never';
       sitekey: string;
     }
   ): string;
@@ -45,7 +46,8 @@ function loadTurnstile(): Promise<Turnstile> {
 
 // One widget serves the whole shared page, however many quizzes it holds
 // (Q309). It renders at the first signed-out check and solves again only
-// when a check asks for a token; an expired token is dropped, not re-solved.
+// when a check asks for a token; an expired token is dropped, and the widget
+// is told never to re-solve it in the background (Q350).
 let widget: Promise<{ turnstile: Turnstile; id: string }> | undefined;
 let token: string | undefined;
 let solving = false;
@@ -75,6 +77,7 @@ function mount(siteKey: string) {
       'expired-callback': () => {
         token = undefined;
       },
+      'refresh-expired': 'never',
       sitekey: siteKey,
     });
     return { id, turnstile };
