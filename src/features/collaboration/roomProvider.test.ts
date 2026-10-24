@@ -157,6 +157,40 @@ async function joined(
   return { document, events, join, provider, socket };
 }
 
+// Q327: while an editor holds stored steps the room never accepted, its JOIN
+// waits for the draft send to take them; with nothing held it joins at once.
+it('waits for the before-join promise before each JOIN, and joins at once without one', async () => {
+  let release = () => {};
+  let held: Promise<void> | undefined = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const asked = vi.fn(async () => token('token-1'));
+  const document = new Y.Doc();
+  const provider = new RoomProvider({
+    beforeJoin: () => held,
+    document,
+    name: 'material:m1:schema:1',
+    token: asked,
+    url: `wss://collab.test/${url++}`,
+  });
+  provider.connect();
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(0);
+  expect(asked).not.toHaveBeenCalled();
+  release();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
+  // Nothing held: a rejoin waits for nothing.
+  held = undefined;
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
+  provider.destroy();
+});
+
 it('joins with its token, syncs both ways and counts unacknowledged updates', async () => {
   const { document, events, join, provider, socket } = await joined();
   const reader = new Reader(join.payload);

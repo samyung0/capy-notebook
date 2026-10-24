@@ -268,6 +268,20 @@ pub fn granted_ids(token: &str, secret: &str, room: &str, user: &str, now: i64) 
     }
 }
 
+/// The most stored tokens one draft send presents (a page sends one per
+/// session).
+pub const MAX_GRANTS: usize = 16;
+
+/// The client ids a draft send's stored tokens (comma-separated, the first
+/// [MAX_GRANTS] read) grant `user` in `room` (Q288).
+pub fn granted_by(header: &str, secret: &str, room: &str, user: &str, now: i64) -> Vec<u64> {
+    header
+        .split(',')
+        .take(MAX_GRANTS)
+        .flat_map(|stored| granted_ids(stored.trim(), secret, room, user, now))
+        .collect()
+}
+
 fn checked(
     token: &str,
     secret: &str,
@@ -481,6 +495,55 @@ mod tests {
                 "{client:?} {worker:?}"
             );
         }
+    }
+
+    /// Security regression (Q288, Q322 N5): a stored draft token grants its
+    /// ids only with our signature, for the same room and user, issued at
+    /// most 7 days ago (its expiry ignored), and a send's first 16 tokens
+    /// alone are read. Fails with any of these checks removed.
+    #[test]
+    fn a_stored_token_grants_its_ids_only_for_its_room_and_user_within_7_days() {
+        let now = 1_800_000_000;
+        let week = 7 * 24 * 60 * 60;
+        let stored = |secret: &str, room: &str, user: &str, issued: i64, client: u64| {
+            let mut claims = claims_for(room, user, Access::Write, issued, 300);
+            claims.client_id = Some(client);
+            claims.worker_client_id = Some(client + 1);
+            mint(secret, &claims)
+        };
+        let granted = |token: &str| granted_ids(token, "secret", ROOM, "u_1", now);
+        // Expired, issued within 7 days: both ids.
+        assert_eq!(
+            granted(&stored("secret", ROOM, "u_1", now - 3600, 7)),
+            [7, 8]
+        );
+        assert_eq!(
+            granted(&stored("secret", ROOM, "u_1", now - week, 7)),
+            [7, 8]
+        );
+        for (token, case) in [
+            (
+                stored("secret", ROOM, "u_1", now - week - 1, 7),
+                "over 7 days old",
+            ),
+            (stored("secret", ROOM, "u_2", now, 7), "another user's"),
+            (
+                stored("secret", "keys:mat_1:schema:2", "u_1", now, 7),
+                "another room's",
+            ),
+            (stored("other", ROOM, "u_1", now, 7), "forged"),
+            ("a.b".to_owned(), "malformed"),
+        ] {
+            assert!(granted(&token).is_empty(), "{case}");
+        }
+        // The 17th token is not read.
+        let tokens: Vec<String> = (0..17)
+            .map(|index| stored("secret", ROOM, "u_1", now, 10 + 2 * index))
+            .collect();
+        let header = tokens.join(",");
+        let ids = granted_by(&header, "secret", ROOM, "u_1", now);
+        assert_eq!(ids.len(), 2 * MAX_GRANTS);
+        assert!(!ids.contains(&(10 + 2 * 16)));
     }
 
     #[test]

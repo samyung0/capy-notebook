@@ -1743,6 +1743,47 @@ async fn a_draft_send_takes_from_the_users_allowance() {
     );
 }
 
+/// Epo 2026-10-24 (Q321): a draft group the room already holds in full is
+/// accepted as a no-op, with no allowance charge and no store, so the page
+/// sweep, an opening editor and other tabs may send it without a lock. With
+/// an allowance of five messages, the writer's join takes three: the same
+/// group sent back to back and then again goes in every time, as one row.
+/// Fails if a held group is charged (the third send would be refused as too
+/// fast) or stored again.
+#[tokio::test]
+async fn a_draft_group_the_room_holds_is_stored_and_charged_once() {
+    let Some(env) = env() else { return };
+    let allowance = [
+        ("COLLABORATION_UPDATE_BURST", "5"),
+        ("COLLABORATION_UPDATES_PER_SECOND", "1"),
+    ];
+    let server = start_configured(&env, env.api.as_deref(), &allowance).await;
+    let (user, room, editor) = writer(&env, server.port, "drafts").await;
+    let material = material_of(&room).to_owned();
+    let rows = || async {
+        db(&env)
+            .await
+            .query_one(
+                "SELECT count(*) FROM material_yjs_updates WHERE material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("rows")
+            .get::<_, i64>(0)
+    };
+    let before = rows().await;
+    let group = drafted(&editor.doc, typed_into_note(" once"));
+    let send = || {
+        let (room, write, body) = (room.clone(), token(&room, &user, "write"), group.clone());
+        async move { send_drafts(server.port, &room, Some(&write), Some(ORIGIN), body).await }
+    };
+    let (first, second) = tokio::join!(send(), send());
+    assert_eq!((first.0, second.0), (200, 200), "{} {}", first.1, second.1);
+    let (again, answer) = send().await;
+    assert_eq!(again, 200, "a held group is charged nothing: {answer}");
+    assert_eq!(rows().await, before + 1, "stored once");
+}
+
 /// Security regression (Epo 2026-10-18): no room takes an update over 8 MiB;
 /// its sender is timed out. A socket sending one hears the timeout (and stays
 /// open) before the room reads it, and a text source's draft send over it is
@@ -2668,6 +2709,46 @@ async fn a_refused_update_records_no_client_id() {
     later.until(6).await.expect("ack");
     assert!(id_rows_reach(&env, &room, later.id(), 1).await);
     assert_eq!(id_rows(&env, &room, refused.id()).await, 0);
+}
+
+/// r2 S3 (Q322 N1): a client-id row write the database refuses is tried
+/// again: the first insert fails once (a trigger on this note's rows) and
+/// the row lands on the retry. Fails if the room writes its rows once.
+#[tokio::test]
+async fn a_client_id_row_write_that_fails_lands_on_its_retry() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, room, mut session) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    let tag = material.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+    let admin = db(&env).await;
+    admin
+        .batch_execute(&format!(
+            "CREATE SEQUENCE once_{tag};
+             CREATE FUNCTION once_{tag}() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN
+               IF NEW.material_id = '{material}' AND nextval('once_{tag}') = 1 THEN
+                 RAISE EXCEPTION 'refused once';
+               END IF;
+               RETURN NEW;
+             END $$;
+             CREATE TRIGGER once_{tag} BEFORE INSERT ON material_yjs_client_ids
+               FOR EACH ROW EXECUTE FUNCTION once_{tag}();"
+        ))
+        .await
+        .expect("trigger");
+    session.type_text("-a").await;
+    session.until(6).await.expect("ack");
+    let landed = id_rows_reach(&env, &room, session.id(), 1).await;
+    admin
+        .batch_execute(&format!(
+            "DROP TRIGGER once_{tag} ON material_yjs_client_ids;
+             DROP FUNCTION once_{tag}();
+             DROP SEQUENCE once_{tag};"
+        ))
+        .await
+        .expect("cleanup");
+    assert!(landed, "the row landed on its retry");
 }
 
 /// r2 S3: a room writes its client-id rows in order and unloads only once

@@ -5,7 +5,10 @@ import type { MaterialCollaborationToken } from '@/api/types';
 import { tabAllowance } from '@/features/collaboration/allowance';
 import { setHeld } from '@/features/collaboration/held';
 import { MAX_UPDATE_BYTES } from '@/features/collaboration/pieces';
-import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
+import {
+  CLIENT_PROTOCOL,
+  tokenClientIds,
+} from '@/features/collaboration/protocol';
 import { markUpdateAvailable } from '@/lib/appRelease';
 import {
   type EditIncidentReporter,
@@ -40,6 +43,10 @@ import {
  * document; they open read-only for copying.
  */
 export interface EditDraft {
+  /** The room accepted a write of its session: a receipt covered one of the
+   * session's own edits, so the room recorded its client id, and an opening
+   * editor applies the row and syncs it over its live channel (Q326). */
+  accepted?: true;
   /** A source's base (`bases` store), which recovery opens the edits over. */
   base?: string;
   data: Uint8Array;
@@ -291,7 +298,7 @@ export async function dropLostDrafts(
 function markDrafts(
   key: string,
   ids: string[],
-  flag: 'held' | 'refused' | 'reported'
+  flag: 'accepted' | 'held' | 'refused' | 'reported'
 ): Promise<void> {
   if (!(stored(key) && ids.length)) return Promise.resolve();
   return call({ flag, ids, key, op: 'mark' });
@@ -489,6 +496,8 @@ export function recordDrafts({
   let retry: ReturnType<typeof setTimeout> | undefined;
   let lastWhole = Number.NEGATIVE_INFINITY;
   let offline = false;
+  // A receipt covered one of this session's own edits (Q326).
+  let accepted = false;
   // How the current offline episode started (its incident reason).
   let offlineReason: 'browser_offline' | 'unreachable' = 'unreachable';
   // A storage failure while offline, reported once the room is back.
@@ -510,6 +519,7 @@ export function recordDrafts({
     refused?: true
   ): EditDraft => ({
     ...grantsOf(token?.()),
+    ...(accepted && { accepted }),
     data,
     id: kind === 'state' ? `${session}:state` : `${session}:${seq}`,
     key,
@@ -661,6 +671,12 @@ export function recordDrafts({
   ];
 
   return {
+    /** Rows an opening editor applied after it began recording (a draft
+     * send that has not settled in time, Q327): they go with this
+     * session's own rows, as rows adopted at its start do. */
+    adopt(rows: EditDraft[]) {
+      pendingAdopted = [...pendingAdopted, ...rows];
+    },
     connected() {
       heldStorageReport?.();
       heldStorageReport = null;
@@ -694,6 +710,17 @@ export function recordDrafts({
         gap = false;
         clearTimeout(retry);
         retry = undefined;
+      }
+      // The room took one of this session's own edits, so it recorded the
+      // session's id: its rows apply over the live channel at a later open
+      // (Q326). Adopted rows (edit 1) are other sessions'.
+      if (!accepted && covered > start) {
+        accepted = true;
+        const kept = updates.map((item) => updateRow(item.seq).id);
+        if (state) kept.push(stateRow(state.seq).id);
+        return write(
+          Promise.all([deleteDrafts(done), markDrafts(key, kept, 'accepted')])
+        );
       }
       return write(deleteDrafts(done));
     },
@@ -825,6 +852,24 @@ let outdated = false;
 /** The most stored tokens one send presents (the service reads as many). */
 const MAX_GRANTS = 16;
 
+/** A group's stored tokens, newest first, one per client id they offer (a
+ * session's refreshed tokens all offer its id, Q322 N4), at most
+ * MAX_GRANTS. A token that offers none is left out. */
+function groupGrants(group: DraftInfo[]) {
+  const byId = new Map<number, string>();
+  for (const row of [...group].sort((a, b) => b.savedAt - a.savedAt))
+    for (const token of [...(row.grants ?? [])].reverse()) {
+      let id: number;
+      try {
+        id = tokenClientIds(token).clientId;
+      } catch {
+        continue;
+      }
+      if (!byId.has(id)) byId.set(id, token);
+    }
+  return [...byId.values()].slice(0, MAX_GRANTS);
+}
+
 /** A document's rows its room takes now: not refused, not left for the
  * editor (`held`), of the token's room, one group per lineage (an Office
  * file's rows of another base go apart), with the newest of their stored
@@ -837,13 +882,7 @@ function sendableGroups(rows: DraftInfo[], room: string) {
   }
   return [...groups.values()].map((group) => ({
     base: group[0].base,
-    grants: [
-      ...new Set(
-        [...group]
-          .sort((a, b) => b.savedAt - a.savedAt)
-          .flatMap((row) => [...(row.grants ?? [])].reverse())
-      ),
-    ].slice(0, MAX_GRANTS),
+    grants: groupGrants(group),
     refs: group.map(({ id, key, seq }) => ({ id, key, seq })),
   }));
 }
@@ -999,28 +1038,32 @@ async function sweepDocument(
     } catch {
       return true;
     }
-  return sendGroups(key, token, current);
+  const sent = await sendGroups(key, token, current);
+  return sent !== null && !sent.includes('retry');
 }
 
-/** Sends a document's groups its room takes now, as `sweepDocument` says
- * (sent rows go, a refused group or one only the editor can send is marked).
- * Resolves whether the rows are settled for this page load. */
+/** Sends a document's groups its room takes now (`only`: of these rows), as
+ * `sweepDocument` says: sent rows go, a refused group or one only the editor
+ * can send is marked. Resolves each group's answer, or null when stopped
+ * (`current` false, or refused as outdated). */
 async function sendGroups(
   key: string,
   token: RoomToken,
-  current: () => boolean
-): Promise<boolean> {
-  let settled = true;
+  current: () => boolean,
+  only: (row: DraftInfo) => boolean = () => true
+): Promise<Sent[] | null> {
+  const answers: Sent[] = [];
   const rows = await call<DraftInfo[]>({ key, op: 'rows' });
-  for (const group of sendableGroups(rows, token.room)) {
-    if (!current()) return false;
+  for (const group of sendableGroups(rows.filter(only), token.room)) {
+    if (!current()) return null;
     const { refs, sent } = await sendGroup(token, group);
-    if (!current()) return false;
+    if (!current()) return null;
     if (sent === 'outdated') {
       outdated = true;
       markUpdateAvailable();
-      return false;
+      return null;
     }
+    answers.push(sent);
     if (sent === 'sent') await deleteDrafts(refs);
     else if (sent === 'refused' || sent === 'waits') {
       const draws =
@@ -1031,29 +1074,125 @@ async function sendGroups(
         refs.map((row) => row.id),
         draws ? 'refused' : 'held'
       );
-    } else if (sent === 'retry') settled = false;
+    }
   }
-  return settled;
+  return answers;
 }
 
 /**
- * Before an editor joins its room (Epo 2026-10-24, Q288): the document's rows
- * the room takes now go through `/drafts` with their stored tokens, as a
- * sweep sends them, since the editor's live channel presents none. So a
- * closed tab's drafts under an id the room never recorded go in under it.
- * Sent rows are deleted; a group refused, or one only the editor can send
- * (still refused as `unassigned` among them: held for the catch-up merge),
- * is marked as a sweep marks it; anything else leaves the rows as they were.
- * Never throws: the editor opens either way.
+ * An opening editor's stored rows (Epo 2026-10-24, Q326): those of sessions
+ * the room accepted a write from are applied and sync over the live channel
+ * (`apply`); those of never-accepted sessions that carry a stored token go
+ * through the draft send while the editor joins (`send`, Q319); the rest
+ * are held for the merge view (marked, applied by no one).
  */
-export async function sendBeforeJoin(key: string, token: RoomToken) {
-  if (USE_MSW || outdated || token.access !== 'write') return;
-  try {
-    await sendGroups(key, token, () => true);
-  } catch (error) {
-    console.warn('Drafts cannot be sent:', error);
-  }
+export function splitOpenDrafts(key: string, rows: EditDraft[]) {
+  const apply = rows.filter((row) => row.accepted);
+  const send = rows.filter(
+    (row) => !(row.accepted || row.held) && !!row.grants?.length
+  );
+  const unmarked = rows.filter(
+    (row) => !(row.accepted || row.held || send.includes(row))
+  );
+  if (unmarked.length)
+    void markDrafts(
+      key,
+      unmarked.map((row) => row.id),
+      'held'
+    ).catch((error) => console.warn('Draft storage failed:', error));
+  return { apply, send };
 }
+
+/** How long an opening editor waits, view-only, for the draft send of its
+ * never-accepted stored steps before it takes them itself and edits on with
+ * nothing live (Epo 2026-10-24, Q327). */
+export const DRAFT_SEND_WAIT_MS = 30_000;
+
+/** The draft send's first retry, doubling each time up to its cap (Epo
+ * 2026-10-24, Q328). */
+const DRAFT_SEND_RETRY_MS = 30_000;
+const DRAFT_SEND_RETRY_MAX_MS = 5 * 60_000;
+
+/**
+ * Sends a document's stored rows of never-accepted sessions through
+ * `/drafts`, each group with its stored tokens, until the room takes or
+ * holds them (Epo 2026-10-24, Q319, Q327, Q328): at once, again 30 s after
+ * a failed try, doubling to 5 minutes, and at once when the browser comes
+ * back online. A try reads the rows anew, so edits stored meanwhile go too,
+ * and a try in flight is never doubled. `settled` resolves once every group
+ * was stored or held (or the page was refused as outdated); `stop` ends the
+ * tries.
+ */
+export function draftSender(key: string, token: () => Promise<RoomToken>) {
+  let done = false;
+  let stopped = false;
+  let flight: Promise<void> | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let delay = DRAFT_SEND_RETRY_MS;
+  let settle = () => {};
+  const settled = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  const end = () => {
+    clearTimeout(timer);
+    globalThis.removeEventListener?.('online', online);
+  };
+  const attempt = () => {
+    if (done || stopped || flight) return;
+    clearTimeout(timer);
+    flight = (async () => {
+      let again = true;
+      try {
+        const room = await token();
+        // The MSW mock service has no `/drafts`; a read token sends nothing
+        // (the editor turns read-only).
+        const answers =
+          USE_MSW || room.access !== 'write'
+            ? []
+            : await sendGroups(
+                key,
+                room,
+                () => !stopped,
+                (row) => !row.accepted
+              );
+        again =
+          !stopped &&
+          !outdated &&
+          !!answers?.some((sent) => sent === 'later' || sent === 'retry');
+      } catch (error) {
+        console.warn('Drafts cannot be sent:', error);
+      }
+      flight = null;
+      if (stopped) return;
+      if (again) {
+        timer = setTimeout(attempt, delay);
+        delay = Math.min(delay * 2, DRAFT_SEND_RETRY_MAX_MS);
+        return;
+      }
+      done = true;
+      end();
+      settle();
+    })();
+  };
+  const online = () => attempt();
+  globalThis.addEventListener?.('online', online);
+  attempt();
+  return {
+    /** Whether every group was stored or held. */
+    get done() {
+      return done;
+    },
+    get settled() {
+      return settled;
+    },
+    stop() {
+      stopped = true;
+      end();
+    },
+  };
+}
+
+export type DraftSender = ReturnType<typeof draftSender>;
 
 // Documents whose rows a sweep settled, by key, as the row ids it saw: they
 // are skipped while those stay the same, for this page load.

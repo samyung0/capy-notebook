@@ -33,6 +33,8 @@ export interface SourceProvider {
 }
 
 export interface SourceProviderConfig {
+  /** What a JOIN waits for first (`RoomProvider`, Q327). */
+  beforeJoin?: () => Promise<void> | undefined;
   document: Y.Doc;
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;

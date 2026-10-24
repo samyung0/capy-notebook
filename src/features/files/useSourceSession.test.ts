@@ -55,16 +55,23 @@ vi.mock('react', async (load) => ({
   },
 }));
 
-const { createSourceProvider, recorder, takeSourceOpen } = vi.hoisted(() => ({
-  createSourceProvider: vi.fn(),
-  recorder: {
-    covered: vi.fn(),
-    discard: vi.fn(async () => {}),
-    dispose: vi.fn(async () => {}),
-    sequence: 0,
-  },
-  takeSourceOpen: vi.fn(),
-}));
+const { createSourceProvider, recorder, sending, takeSourceOpen } = vi.hoisted(
+  () => ({
+    createSourceProvider: vi.fn(),
+    recorder: {
+      adopt: vi.fn(),
+      connected: vi.fn(),
+      covered: vi.fn(),
+      discard: vi.fn(async () => {}),
+      disconnected: vi.fn(),
+      dispose: vi.fn(async () => {}),
+      sequence: 0,
+    },
+    // The draft send of never-accepted stored steps: settled by `release`.
+    sending: { done: false, release: () => {} },
+    takeSourceOpen: vi.fn(),
+  })
+);
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
@@ -76,12 +83,29 @@ vi.mock('./sourceProvider', async (load) => ({
 }));
 vi.mock('@/lib/editDrafts', async (load) => ({
   ...(await load<typeof import('@/lib/editDrafts')>()),
+  draftSender: vi.fn(() => {
+    const settled = new Promise<void>((resolve) => {
+      sending.release = () => {
+        sending.done = true;
+        resolve();
+      };
+    });
+    return {
+      get done() {
+        return sending.done;
+      },
+      settled,
+      stop() {},
+    };
+  }),
   readDrafts: vi.fn(async () => []),
   recordDrafts: vi.fn(() => recorder),
 }));
 
+import * as Y from 'yjs';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import { COLLABORATION_OUTDATED_REASON } from '@/features/notes/collaborationEvents';
+import { type EditDraft, readDrafts, recordDrafts } from '@/lib/editDrafts';
 import type { SourceProviderConfig } from './sourceProvider';
 import { useSourceSession } from './useSourceSession';
 
@@ -141,9 +165,11 @@ async function open() {
 
 beforeEach(() => {
   hooks.reset();
+  sending.done = false;
   viewReady = undefined;
   createSourceProvider.mockReset();
   createSourceProvider.mockReturnValue({
+    connect: vi.fn(),
     destroy: vi.fn(),
     disconnect: vi.fn(),
     hasUnsyncedChanges: false,
@@ -206,5 +232,53 @@ describe("an Office view whose frame is ready after its join's 30 s", () => {
     viewReady = true;
     render();
     expect(render().status).toBe('saved');
+  });
+});
+
+// Q319, Q326, Q327: on open an accepted session's rows apply here, a
+// never-accepted one's go through the draft send while the room joins
+// (view-only, saving); not settled 30 s on, the synced session takes them
+// itself, edits on, and every JOIN waits for the send until it settles.
+describe('an edit session opening with stored drafts', () => {
+  it('applies accepted rows, sends the others while joining, and past 30 s takes them with every JOIN waiting', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', { onLine: true });
+    const row = {
+      base: SESSION.baseSourceSHA256,
+      data: Y.encodeStateAsUpdate(new Y.Doc()),
+      key: 'u_1:file:f_1',
+      kind: 'update',
+      lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
+      savedAt: 0,
+      seq: 1,
+    } as const;
+    const accepted: EditDraft = {
+      ...row,
+      accepted: true,
+      id: 'a:1',
+      session: 'a',
+    };
+    const pending: EditDraft = {
+      ...row,
+      grants: ['t'],
+      id: 'b:1',
+      session: 'b',
+    };
+    vi.mocked(readDrafts).mockResolvedValueOnce([accepted, pending]);
+    const { options } = await open();
+    expect(recordDrafts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ adopted: [accepted] })
+    );
+    expect(render().draftsSending).toBe(true);
+    options.onSynced?.({ state: true });
+    expect(render().status).toBe('saving');
+    expect(options.beforeJoin?.()).toBeUndefined();
+    vi.advanceTimersByTime(30_000);
+    expect(recorder.adopt).toHaveBeenCalledWith([pending]);
+    expect(render()).toMatchObject({ draftsSending: false, status: 'saving' });
+    expect(options.beforeJoin?.()).toBeInstanceOf(Promise);
+    sending.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(options.beforeJoin?.()).toBeUndefined();
   });
 });

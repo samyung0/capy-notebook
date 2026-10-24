@@ -41,8 +41,6 @@ const PROTOCOL_HEADER: &str = "x-capy-protocol";
 /// The drafts' stored collaboration tokens, comma-separated (Q288): each may
 /// re-grant the client ids it offered under the reconnect rule.
 const GRANTS_HEADER: &str = "x-capy-grants";
-/// The most stored tokens one send presents (a page sends one per session).
-const MAX_GRANTS: usize = 16;
 /// How long a browser keeps the preflight's answer (Chromium caps it at 2 h).
 const PREFLIGHT_MAX_AGE: &str = "7200";
 
@@ -142,7 +140,7 @@ impl Refused {
     }
 
     /// The user is in a timeout; `started` when this send began it.
-    fn timed_out(app: &Shared, user: &str, verdict: Verdict) -> Option<Self> {
+    pub(crate) fn timed_out(app: &Shared, user: &str, verdict: Verdict) -> Option<Self> {
         let Verdict::TimedOut { remaining, started } = verdict else {
             return None;
         };
@@ -328,10 +326,6 @@ async fn checked_and_stored(
     if matches!(name, RoomName::Material { .. }) && update.len() > NOTE_MAX_SYNC_BYTES {
         return Err(Refused::new(Class::TooLarge, "past the writer's sync cap"));
     }
-    let verdict = app.allowances.take(user, update.len(), Instant::now());
-    if let Some(refusal) = Refused::timed_out(app, user, verdict) {
-        return Err(refusal);
-    }
     // The lease and a local reset may have begun while the body arrived: a
     // JOIN joins at once after its checks, a send only now (REVIEW1 S2).
     let evicting = crate::socket::room_evicting(app, room)
@@ -347,14 +341,9 @@ async fn checked_and_stored(
     // Ids the drafts' own tokens offered: the room checks each under the
     // JOIN's rule (Q288). A token that grants nothing is ignored.
     let now = crate::auth::now_seconds();
-    let granted: Vec<u64> = header_text(headers, GRANTS_HEADER)
-        .into_iter()
-        .flat_map(|value| value.split(','))
-        .take(MAX_GRANTS)
-        .flat_map(|stored| {
-            crate::auth::granted_ids(stored.trim(), &app.config.secret, room, user, now)
-        })
-        .collect();
+    let granted = header_text(headers, GRANTS_HEADER)
+        .map(|header| crate::auth::granted_by(header, &app.config.secret, room, user, now))
+        .unwrap_or_default();
     let durable = admitted(app, &name, &context, update, base, granted).await?;
     match durable.await {
         Ok(Ok(())) => Ok(()),

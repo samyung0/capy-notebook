@@ -72,6 +72,7 @@ import {
   deleteDrafts,
   draftBytes,
   draftGroups,
+  draftSender,
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
@@ -83,12 +84,18 @@ import {
   recoveryDocument,
   reportRecoveryGroup,
   sameSourceLineage,
-  sendBeforeJoin,
+  splitOpenDrafts,
   sweepDrafts,
 } from './editDrafts';
 
 const ROOM = 'material:mat_1:schema:1';
 const REMOTE = Symbol('room');
+
+/** A room token offering `clientId` (`tag` tells two apart); only its
+ * payload is read in the browser. */
+function grant(clientId: number, tag = '') {
+  return `h.${btoa(JSON.stringify({ clientId, tag }))}.s`;
+}
 
 /** A room and one client synced to it, as the provider leaves them. */
 function syncedClient(text: string) {
@@ -722,6 +729,27 @@ describe('recording a note session', () => {
       'token-2',
     ]);
     expect(rows.find((row) => row.seq === 1)).toBeUndefined();
+  });
+
+  it("marks a session's rows accepted at the first receipt covering one of its own edits, not an adopted row's (Q326)", async () => {
+    const key = 'u_1:material:accepted';
+    const adopted = draft('earlier:1', { data: new Uint8Array(), key });
+    const { client, recorder } = noteRecorder(key, 'base ', {
+      adopted: [adopted],
+    });
+    const text = client.getText('content');
+    text.insert(text.length, 'a');
+    text.insert(text.length, 'b');
+    // Edit 1 is the adopted rows: covering it says nothing of this session.
+    await recorder.covered(1);
+    expect((await readDrafts(key)).some((row) => row.accepted)).toBe(false);
+    await recorder.covered(2);
+    const left = await readDrafts(key);
+    expect(left.map((row) => row.seq)).toEqual([3]);
+    expect(left.every((row) => row.accepted)).toBe(true);
+    // Rows written from now on say so too.
+    text.insert(text.length, 'c');
+    expect((await readDrafts(key)).every((row) => row.accepted)).toBe(true);
   });
 
   it('restores online edits without a base once the room sync brings it', async () => {
@@ -1720,7 +1748,23 @@ describe('the draft sweep sending', () => {
     expect(await readDrafts(key)).toHaveLength(2);
   });
 
-  it("sends a closed offline tab's rows with its stored token before an editor joins, under the tab's id (Q288)", async () => {
+  it("splits an opening editor's rows: accepted ones apply, never-accepted ones with a token send, the rest are held (Q326)", async () => {
+    const key = 'u_split:material:mat_1';
+    const accepted = draft('a:1', { accepted: true, key });
+    const sent = draft('b:1', { grants: [grant(7)], key });
+    const bare = draft('c:1', { key });
+    await putDrafts([accepted, sent, bare]);
+    const { apply, send } = splitOpenDrafts(key, [accepted, sent, bare]);
+    expect(apply).toEqual([accepted]);
+    expect(send).toEqual([sent]);
+    await vi.waitFor(async () =>
+      expect(
+        (await readDrafts(key)).find((row) => row.id === 'c:1')?.held
+      ).toBe(true)
+    );
+  });
+
+  it("sends a closed offline tab's never-accepted rows with its stored token under the tab's id, until stored or held (Q319, Q326)", async () => {
     const editor = {
       access: 'write' as const,
       room: ROOM,
@@ -1732,48 +1776,95 @@ describe('the draft sweep sending', () => {
       ['u_open:material:mat_2', 'unassigned'],
     ] as const) {
       // The tab typed offline only, then closed.
+      const tab = grant(41, key);
       const { client, recorder } = noteRecorder(key, 'base ', {
-        token: () => 'tab-token',
+        token: () => tab,
       });
       recorder.disconnected();
       client.getText('content').insert(5, 'offline');
       await recorder.dispose();
+      // An accepted session's row is the editor's to apply: never sent.
+      await putDrafts([draft(`accepted-${key}`, { accepted: true, key })]);
       requests.length = 0;
       if (refusal) answer(409, refusal);
       else storeNext();
-      await sendBeforeJoin(key, editor);
+      const sender = draftSender(key, async () => editor);
+      await sender.settled;
       expect(requests).toHaveLength(1);
       const [sent] = requests;
       expect(sent.headers.get('authorization')).toBe('Bearer editor-token');
-      expect(sent.headers.get('x-capy-grants')).toBe('tab-token');
+      expect(sent.headers.get('x-capy-grants')).toBe(tab);
       // The edits go as the tab wrote them, under its own client id.
       expect(
         Y.decodeUpdate(sent.body).structs.some(
           (struct) => struct.id.client === client.clientID
         )
       ).toBe(true);
-      const left = await readDrafts(key);
+      const left = (await readDrafts(key)).filter((row) => !row.accepted);
       if (refusal) {
-        // Still refused under that id: held for the catch-up merge.
+        // Still refused under that id: held for the merge view.
         expect(left.length).toBeGreaterThan(0);
         expect(left.every((row) => row.held)).toBe(true);
       } else expect(left).toEqual([]);
     }
   });
 
-  it("presents the group's stored room tokens, newest first, each once (Q288)", async () => {
+  // Q328: a send whose answer was lost goes again, at once when the browser
+  // is back online; the room takes the old steps again as a no-op (Q321).
+  it('sends again after a lost answer, at once when the browser comes back online, and settles on the next answer', async () => {
+    const key = 'u_lost:material:mat_1';
+    await putDrafts(
+      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
+    );
+    requests.length = 0;
+    fetchDrafts.mockImplementationOnce(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    // The page's online event (this vitest has no window).
+    const page = new EventTarget();
+    Object.assign(globalThis, {
+      addEventListener: page.addEventListener.bind(page),
+      removeEventListener: page.removeEventListener.bind(page),
+    });
+    const sender = draftSender(key, async () => ({
+      access: 'write' as const,
+      room: ROOM,
+      token: 'room-token',
+      url: 'wss://collab.test',
+    }));
+    await vi.waitFor(() => expect(fetchDrafts).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sender.done).toBe(false);
+    expect(await readDrafts(key)).toHaveLength(2);
+    storeNext();
+    page.dispatchEvent(new Event('online'));
+    await sender.settled;
+    Reflect.deleteProperty(globalThis, 'addEventListener');
+    Reflect.deleteProperty(globalThis, 'removeEventListener');
+    expect(requests).toHaveLength(1);
+    expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it("presents the group's stored room tokens, newest first, one per client id (Q288, Q322)", async () => {
     const key = 'u_grants:material:mat_1';
     const [state, update] = await leftRows(key);
+    const [older, a, newer, b] = [
+      grant(1, 'old'),
+      grant(2),
+      grant(1),
+      grant(3),
+    ];
     await putDrafts([
-      { ...state, grants: ['token-old', 'token-a'], savedAt: 1 },
-      { ...update, grants: ['token-a', 'token-b'], savedAt: 2 },
+      { ...state, grants: [older, a], savedAt: 1 },
+      { ...update, grants: [newer, b], savedAt: 2 },
     ]);
     requests.length = 0;
     storeNext();
     await sweepDrafts('u_grants', tokens(ROOM));
     expect(requests).toHaveLength(1);
+    // One session's refreshed tokens take one slot: its newest.
     expect(requests[0].headers.get('x-capy-grants')).toBe(
-      'token-b,token-a,token-old'
+      [b, newer, a].join(',')
     );
   });
 

@@ -1575,7 +1575,8 @@ from any page.
   update records nothing. Rows are recorded in memory at once and in the
   database off the room's task (a slow database stalls no channel, Q226 M4),
   in order through one queue per room that the room's unload waits on; a
-  batch still failing after its retries (about 15 s) is logged as an error. A Leave says whether the tab still holds unsent edits for the
+  batch still failing after its retries (about 15 s), or a queue a closing
+  room drops, is logged as an error. A Leave says whether the tab still holds unsent edits for the
   document (one byte: 0 when it holds none, beyond the provider's
   unacknowledged updates and the drafts not yet covered by a receipt); a
   clean Leave expires the recorded ids its token offered, so they never bind
@@ -1602,17 +1603,52 @@ from any page.
 - **Draft grants** (Epo 2026-10-24, Q288). Stored draft rows keep their
   session's last signed room token (`grants` in `src/lib/editDrafts.ts`; a
   merged row keeps each of its rows'). A draft send presents its group's
-  tokens in `X-Capy-Grants` (newest first, at most 16), and the server
-  re-grants the ids each offers under the reconnect rule: our signature, the
-  same user and room, issued at most 7 days ago, expiry ignored
-  (`auth::granted_ids`), and recorded for no one else, absent from the
-  history and held by no live channel (`ClientIds::grantable`). The write
-  records them. So the drafts of a closed tab whose edits never reached the
-  room go in from any page. An editor opening the document (a note, an item
-  room, a source session) first sends the rows its room takes the same way
-  and then joins (`sendBeforeJoin`, Epo 2026-10-24), since its live channel
-  presents no tokens. A group still refused `unassigned` (a token over 7 days
-  old, an id recorded to another user) is held for the catch-up merge.
+  tokens in `X-Capy-Grants`, newest first and one per client id they offer
+  (a session's refreshed tokens take one slot), at most 16. The server
+  re-grants the ids each offers under the reconnect rule: our signature,
+  the same user and room, issued at most 7 days ago, expiry ignored
+  (`auth::granted_ids`, `auth::granted_by` reads the first 16), and
+  recorded for no one else, absent from the history and held by no live
+  channel (`ClientIds::grantable`). The write records them. So the drafts
+  of a closed tab whose edits never reached the room go in from any page. A
+  group still refused `unassigned` (a token over 7 days old, an id recorded
+  to another user) is held for the merge view. Stored drafts and their
+  short-lived tokens stay in the browser through sign-out and an account
+  switch, as the drafts always did; an expired token grants nothing, and a
+  grant needs the sender's own user.
+- **Opening with stored drafts** (Epo 2026-10-24, Q319, Q326, Q327, Q328).
+  The recorder marks a session's rows `accepted` once a receipt covers one
+  of its own edits (`covered > start`: adopted rows do not count), since
+  the room then recorded the session's id. On open (`splitOpenDrafts`) a
+  note, item room or source session applies accepted rows and syncs them
+  over its live channel; rows of a never-accepted session with a stored
+  token go through the draft send (`draftSender`) while the editor joins;
+  the rest are marked held for the merge view. Until the send settles (every
+  group stored or held) the editor shows the syncing status and is
+  view-only: notes lock the content and toolbar, items set `sending`
+  (`itemEditingStopped`), sources return `draftsSending`. A send that fails
+  goes again 30 s later, doubling to 5 minutes, and at once on the browser's
+  `online` event, never twice at once. Not settled 30 s after the open
+  (`DRAFT_SEND_WAIT_MS`) with the room synced, the editor closes its channel,
+  applies those rows, adds them to its recorder's adopted rows and edits on:
+  every edit is stored as a draft and nothing goes live, since the room
+  would refuse the old steps on the channel. Its provider's `beforeJoin`
+  then holds every JOIN until the send settles (reconnects included, and a
+  socket closed at the 10 s join deadline joins again into the same wait).
+  Once a send is accepted the editor joins and continues; one the room
+  refused leaves the steps in the document, so the live sync is refused
+  `unassigned` and the edits open in the copy-only recovery. Before a first
+  sync the join's own 30 s connection error stands. A live refusal has no
+  automatic fallback: an accepted session is refused only once its record
+  and its tokens are past 7 days.
+- **Duplicate draft sends** (Epo 2026-10-24, Q321). A draft send whose
+  update the room already holds in full (`ydoc::contains_changes` is false
+  over the room's state vector and delete set) is accepted as a no-op on the
+  room's task, before the allowance is charged: no charge, no store and no
+  gateway checkpoint. So the page sweep, an opening editor and other tabs
+  may send one group without a lock, a resend after a lost answer costs
+  nothing, and simultaneous duplicates count once since a room handles
+  writes in order.
 - **Refusal.** An update under another id goes the refused-on-entry way:
   material rooms send `document-rejected` with code `unassigned` (the editor
   keeps its unsaved edits as a refused draft), source rooms

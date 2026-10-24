@@ -28,10 +28,13 @@ import { markUpdateAvailable } from '@/lib/appRelease';
 import { SOURCE_STATE_MAX_BYTES } from '@/lib/const';
 import {
   applyDrafts,
+  DRAFT_SEND_WAIT_MS,
   type DraftRecorder,
+  type DraftSender,
   deleteDrafts,
   draftKey as documentDraftKey,
   draftGroups,
+  draftSender,
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
@@ -40,8 +43,8 @@ import {
   recordDrafts,
   reportRecoveryGroup,
   sameSourceLineage,
-  sendBeforeJoin,
   sourceLineage,
+  splitOpenDrafts,
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { CopyError, errorCopy } from '@/lib/errors';
@@ -287,6 +290,12 @@ export function useSourceSession(
   // limit): the unsaved changes are discarded and the view drops to view mode
   // under the read-only strip.
   const [readOnly, setReadOnly] = useState(false);
+  // Stored steps of never-accepted sessions are in the draft send while the
+  // room joins (Q319): view-only until it settles. Held: past
+  // DRAFT_SEND_WAIT_MS the session took them itself and edits on, nothing
+  // live until the room took them (Q327). Both read as saving.
+  const [draftsSending, setDraftsSending] = useState(false);
+  const [draftsHeld, setDraftsHeld] = useState(false);
   const qc = useQueryClient();
   useEffect(() => {
     if (!readOnly) return;
@@ -344,6 +353,11 @@ export function useSourceSession(
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let goOffline = () => {};
+    // The draft send of never-accepted stored steps, and whether the steps
+    // are held here (every JOIN waits for the send, Q327).
+    let sender: DraftSender | null = null;
+    let heldSteps = false;
+    let heldEpisode = false;
     // The join (Epo 2026-10-23): one 30 s watch from here over the session
     // request, the room's answer and an Office view's ready; a session that
     // has not joined by then errors as a first join does.
@@ -353,7 +367,7 @@ export function useSourceSession(
     const reconnect = roomReconnector({
       // Reconnecting kept failing: edit on this device until it is back.
       onStuck: () => {
-        if (cancelled || runtime.current?.recovery) return;
+        if (cancelled || runtime.current?.recovery || heldSteps) return;
         if (joined) goOffline();
         else {
           timedOut = true;
@@ -439,6 +453,8 @@ export function useSourceSession(
     setDirty(false);
     setHandoff(false);
     setReplaced(false);
+    setDraftsSending(false);
+    setDraftsHeld(false);
     setPaused(false);
     setReadOnly(false);
     setUnavailable(null);
@@ -451,14 +467,13 @@ export function useSourceSession(
     setLoaded(null);
     void (async () => {
       // The route may have started the session, token and base already.
-      const open = await takeSourceOpen(fileId, 'edit', controller.signal);
+      const [open, storedDrafts] = await Promise.all([
+        takeSourceOpen(fileId, 'edit', controller.signal),
+        bestEffort(() => readDrafts(draftKey)),
+      ]);
       if (cancelled) return;
       const { base, session } = open;
       const credentials = open.credentials!;
-      // The rows its room takes go with their stored tokens first (Q288).
-      await sendBeforeJoin(draftKey, credentials);
-      const storedDrafts = await bestEffort(() => readDrafts(draftKey));
-      if (cancelled) return;
       if (
         session.epoch !== credentials.epoch ||
         session.room !== credentials.room
@@ -538,9 +553,15 @@ export function useSourceSession(
         }
         if (!disposed && shown) setLoaded({ bytes, doc: shared, session });
       };
-      // One update for all of them: a long session leaves a row per edit.
-      applyDrafts(shared, restoredDrafts, RESTORE_ORIGIN);
-      if (restoredDrafts.length) setDirty(true);
+      // Accepted sessions' rows apply here, in one update (a long session
+      // leaves a row per edit); never-accepted ones with stored tokens go
+      // through the draft send (Q326).
+      const { apply, send: pendingDrafts } = splitOpenDrafts(
+        draftKey,
+        restoredDrafts
+      );
+      applyDrafts(shared, apply, RESTORE_ORIGIN);
+      if (apply.length) setDirty(true);
       let initialToken: SourceCollaborationToken | null = credentials;
       const pending = new Map<string, number>();
       const active = {
@@ -781,9 +802,12 @@ export function useSourceSession(
       };
       active.checkpoint = checkpoint;
       provider = createSourceProvider({
+        // A publication's first refusal never gets here (sourceProvider.ts).
+        // While its never-accepted steps are held, a JOIN waits for the
+        // draft send to take them (Q327).
+        beforeJoin: () => (heldSteps ? sender?.settled : undefined),
         document: shared,
         name: session.room,
-        // A publication's first refusal never gets here (sourceProvider.ts).
         onAuthenticationFailed: ({ reason }) => {
           if (cancelled || active.recovery) return;
           // Paused before this client saw the room's paused message.
@@ -991,8 +1015,9 @@ export function useSourceSession(
             setSlowed(false);
             if (joined || viewReadyRef.current !== false) join();
             delay.connected();
-            if (offlineMode) {
+            if (offlineMode || heldEpisode) {
               offlineMode = false;
+              heldEpisode = false;
               recorder?.connected();
               setBanner((current) =>
                 isRecoveryBanner(current) ? current : null
@@ -1068,7 +1093,7 @@ export function useSourceSession(
       // receipts that cover it. Storage that fails never blocks editing;
       // offline, the banner says the device holds nothing.
       recorder = recordDrafts({
-        adopted: restoredDrafts,
+        adopted: apply,
         base: { bytes: base, sha: session.baseSourceSHA256 },
         doc: shared,
         ignore: (origin) => origin === provider || origin === RESTORE_ORIGIN,
@@ -1088,6 +1113,41 @@ export function useSourceSession(
         report,
         token: () => lastToken,
       });
+      // The draft send runs while the room joins (Q319, Q328); not settled
+      // in time with the room synced, the session takes the steps itself
+      // and edits on, nothing live until the send settles (Q327).
+      if (pendingDrafts.length) {
+        const current = draftSender(draftKey, () =>
+          api.post<SourceCollaborationToken>(
+            `/files/${fileId}/collaboration-token`,
+            {}
+          )
+        );
+        sender = current;
+        setDraftsSending(true);
+        const wait = setTimeout(() => {
+          if (cancelled || current.done || !everSynced || active.recovery)
+            return;
+          heldSteps = true;
+          heldEpisode = true;
+          provider?.disconnect();
+          recorder?.disconnected();
+          applyDrafts(shared, pendingDrafts, RESTORE_ORIGIN);
+          recorder?.adopt(pendingDrafts);
+          setDirty(true);
+          setDraftsSending(false);
+          setDraftsHeld(true);
+          provider?.connect();
+        }, DRAFT_SEND_WAIT_MS);
+        void current.settled.then(() => {
+          clearTimeout(wait);
+          if (cancelled || sender !== current) return;
+          sender = null;
+          heldSteps = false;
+          setDraftsSending(false);
+          setDraftsHeld(false);
+        });
+      }
       shared.on('update', (_update: Uint8Array, origin: unknown) => {
         if (origin === provider || origin === RESTORE_ORIGIN || discarded)
           return;
@@ -1110,6 +1170,7 @@ export function useSourceSession(
     return () => {
       cancelled = true;
       disposed = true;
+      sender?.stop();
       controller.abort();
       clearTimeout(timer);
       delay.dispose();
@@ -1146,6 +1207,7 @@ export function useSourceSession(
     dirty: dirty || bufferDirty,
     discardDraft,
     discarding,
+    draftsSending,
     error,
     flushHandler,
     handoff,
@@ -1157,7 +1219,10 @@ export function useSourceSession(
     replaced,
     save,
     slowed,
-    status: status === 'saved' && bufferDirty ? ('saving' as const) : status,
+    status:
+      status === 'saved' && (bufferDirty || draftsSending || draftsHeld)
+        ? ('saving' as const)
+        : status,
     synced,
     unavailable,
     workerClientId,

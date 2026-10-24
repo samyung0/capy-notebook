@@ -28,6 +28,10 @@ import { type ChannelHandler, CollabSocket } from './socket';
 export interface RoomProviderConfig {
   /** Shared with the editor (Plate passes its own). */
   awareness?: Awareness | null;
+  /** What a JOIN waits for first, when anything (Q327): the draft send of
+   * stored steps the room never accepted, which must reach it before the
+   * document syncs. Undefined joins at once. */
+  beforeJoin?: () => Promise<void> | undefined;
   document: Y.Doc;
   name: string;
   onAuthenticated?: () => void;
@@ -480,6 +484,11 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
 
   /** The channel's JOIN, with a fresh token. */
   private async sendJoin(channel: number) {
+    const before = this.config.beforeJoin?.();
+    if (before) {
+      await before;
+      if (this.channel !== channel) return;
+    }
     let token: string;
     try {
       token = await this.config.token(this.previousToken);

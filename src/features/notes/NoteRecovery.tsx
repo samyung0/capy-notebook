@@ -1,7 +1,7 @@
 import { yTextToSlateElement } from '@slate-yjs/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
-import type { Material, MaterialCollaborationToken } from '@/api/types';
+import type { Material } from '@/api/types';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import type {
   MaterialDocument,
@@ -16,7 +16,7 @@ import {
   readDrafts,
   recoveryDocument,
   reportRecoveryGroup,
-  sendBeforeJoin,
+  splitOpenDrafts,
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
@@ -24,19 +24,22 @@ import { afterPaint, type NoteView } from './roomSwap';
 import { toastDraftsLost } from './saveFailure';
 
 export interface NoteDrafts {
-  /** Rows of the current lineage, merged into the live note. */
+  /** Rows of the current lineage the editor applies: its accepted
+   * sessions' (Q326). */
   current: EditDraft[];
   /** The room and mount the rows were read for. */
   for: string;
+  /** Rows of never-accepted sessions with stored tokens: the draft send
+   * takes them while the editor joins (Q319). */
+  pending: EditDraft[];
   /** One refused or other-lineage group, shown read-only first. */
   recovery: { doc: Y.Doc; refused: boolean; rows: EditDraft[] } | null;
 }
 
 /**
  * Reads a note's stored edits for the room it opens (`for`: room and mount
- * generation, so a remount reads what the old mount wrote), once the ones its
- * room takes went through `/drafts` with their stored tokens (Q288,
- * `sendBeforeJoin`). A recovery group
+ * generation, so a remount reads what the old mount wrote), split by who
+ * sends them (`splitOpenDrafts`, Q326). A recovery group
  * nothing can draw is dropped with a toast and the next one is read. Both
  * are reported (edit_incidents): a group of another lineage once
  * (reportRecoveryGroup), a dropped group once per page load.
@@ -44,21 +47,15 @@ export interface NoteDrafts {
 export function useNoteDrafts(
   materialId: string,
   key: string | null,
-  token: MaterialCollaborationToken | undefined,
+  room: string | undefined,
   generation: number
 ) {
   const [drafts, setDrafts] = useState<NoteDrafts | null>(null);
-  const room = token?.room;
-  // Read when the room is known; a refreshed token does not read again.
-  const tokenNow = useRef(token);
-  tokenNow.current = token;
   useEffect(() => {
-    if (!(key && room && tokenNow.current)) return;
+    if (!(key && room)) return;
     let active = true;
     const report = editIncidentReporter('material', materialId);
-    const sent = sendBeforeJoin(key, tokenNow.current);
     void (async () => {
-      await sent;
       let rows = await readDrafts(key).catch((error) => {
         console.warn('Draft storage failed:', error);
         return [] as EditDraft[];
@@ -66,12 +63,14 @@ export function useNoteDrafts(
       for (;;) {
         const { current, recovery } = draftGroups(rows, room);
         if (!recovery.length) {
-          if (active)
-            setDrafts({
-              current,
-              for: `${room}:${generation}`,
-              recovery: null,
-            });
+          if (!active) return;
+          const { apply, send } = splitOpenDrafts(key, current);
+          setDrafts({
+            current: apply,
+            for: `${room}:${generation}`,
+            pending: send,
+            recovery: null,
+          });
           return;
         }
         const doc = recoveryDocument(recovery);
@@ -81,6 +80,7 @@ export function useNoteDrafts(
             setDrafts({
               current,
               for: `${room}:${generation}`,
+              pending: [],
               recovery: { doc, refused: !!recovery[0].refused, rows: recovery },
             });
           return;

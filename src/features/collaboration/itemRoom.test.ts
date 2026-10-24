@@ -7,6 +7,7 @@ import type { RoomProviderConfig } from './roomProvider';
 const providers: {
   config: RoomProviderConfig;
   connects: number;
+  disconnects: number;
   stateless: string[];
 }[] = [];
 vi.mock('./roomProvider', () => ({
@@ -14,16 +15,19 @@ vi.mock('./roomProvider', () => ({
     record: {
       config: RoomProviderConfig;
       connects: number;
+      disconnects: number;
       stateless: string[];
     };
     constructor(config: RoomProviderConfig) {
-      this.record = { config, connects: 0, stateless: [] };
+      this.record = { config, connects: 0, disconnects: 0, stateless: [] };
       providers.push(this.record);
     }
     connect() {
       this.record.connects += 1;
     }
-    disconnect() {}
+    disconnect() {
+      this.record.disconnects += 1;
+    }
     destroy() {}
     sendStateless(payload: string) {
       this.record.stateless.push(payload);
@@ -42,7 +46,13 @@ vi.mock('@/api/hooks', () => ({
     return { ...next, token: 't', url: 'ws://x' };
   }),
 }));
+// The draft send of never-accepted stored steps: settled by `release`.
+const sending = vi.hoisted(() => ({
+  done: false,
+  release: () => {},
+}));
 const drafts = vi.hoisted(() => ({
+  adopted: [] as unknown[],
   discarded: 0,
   disposed: 0,
   onStorage: undefined as ((ok: boolean) => void) | undefined,
@@ -52,6 +62,7 @@ const drafts = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/editDrafts', () => ({
   applyDrafts: vi.fn(),
+  DRAFT_SEND_WAIT_MS: 30_000,
   deleteDrafts: vi.fn(async () => {
     drafts.rows = [];
   }),
@@ -64,10 +75,28 @@ vi.mock('@/lib/editDrafts', () => ({
   }),
   draftKey: (actor: string, kind: string, id: string) =>
     `${actor}:${kind}:${id}`,
+  draftSender: vi.fn(() => {
+    const settled = new Promise<void>((resolve) => {
+      sending.release = () => {
+        sending.done = true;
+        resolve();
+      };
+    });
+    return {
+      get done() {
+        return sending.done;
+      },
+      settled,
+      stop() {},
+    };
+  }),
   readDrafts: vi.fn(async () => drafts.rows),
   recordDrafts: (options: { onStorage: (ok: boolean) => void }) => {
     drafts.onStorage = options.onStorage;
     return {
+      adopt(rows: unknown[]) {
+        drafts.adopted.push(...rows);
+      },
       connected() {},
       covered: async () => {
         drafts.unsaved = false;
@@ -89,7 +118,14 @@ vi.mock('@/lib/editDrafts', () => ({
     };
   },
   recoveryDocument: () => new Y.Doc(),
-  sendBeforeJoin: vi.fn(async () => undefined),
+  // Rows with a stored token and no accepted mark go through the send.
+  splitOpenDrafts: (
+    _key: string,
+    rows: { accepted?: true; grants?: string[] }[]
+  ) => ({
+    apply: rows.filter((row) => row.accepted || !row.grants),
+    send: rows.filter((row) => !row.accepted && row.grants),
+  }),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
@@ -97,9 +133,8 @@ vi.mock('./unsentItems', () => ({ markUnsent: vi.fn() }));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
 const { NoteSeat } = await import('./noteSeat');
-const { applyDrafts, readDrafts, sendBeforeJoin } = await import(
-  '@/lib/editDrafts'
-);
+const { applyDrafts } = await import('@/lib/editDrafts');
+const { itemEditingStopped } = await import('./itemRoom');
 const { markUpdateAvailable } = await import('@/lib/appRelease');
 const { markUnsent } = await import('./unsentItems');
 
@@ -108,6 +143,8 @@ beforeEach(() => {
   providers.length = 0;
   tokens.length = 0;
   drafts.rows = [];
+  drafts.adopted = [];
+  sending.done = false;
   drafts.refused = 0;
   drafts.discarded = 0;
   drafts.disposed = 0;
@@ -257,28 +294,62 @@ it('opens stored refused edits in recovery until Reload', async () => {
   room.destroy();
 });
 
-// Q288: rows of a closed tab whose id the room never recorded go through
-// `/drafts` with their stored tokens before the room joins (its channel
-// presents none); what the room took is no longer stored to apply.
-it('sends its stored rows with their tokens before it reads them and joins', async () => {
-  drafts.rows = [{ lineage: 'material:q:schema:1' }];
-  const order: string[] = [];
-  vi.mocked(sendBeforeJoin).mockImplementationOnce(async (key, token) => {
-    order.push(`sent ${key} ${token.token}`);
-    drafts.rows = [];
-  });
-  vi.mocked(readDrafts).mockImplementationOnce(async () => {
-    order.push(`read ${providers.length}`);
-    return drafts.rows as never;
-  });
+// Q319, Q326: a never-accepted session's stored steps go through the draft
+// send while the room joins; the room stays view-only (and syncing) until
+// it settles, and its JOIN waits for nothing meanwhile.
+it('joins while its stored steps are in the draft send, view-only until it settles', async () => {
+  const row = { grants: ['t'], lineage: 'material:q:schema:1' };
+  drafts.rows = [row];
   const { room } = await started();
-  expect(order).toEqual(['sent u:material:q t', 'read 0']);
   expect(providers[0].connects).toBe(1);
+  expect(providers[0].config.beforeJoin?.()).toBeUndefined();
   expect(applyDrafts).not.toHaveBeenCalledWith(
     room.doc,
-    [{ lineage: 'material:q:schema:1' }],
+    [row],
     expect.anything()
   );
+  providers[0].config.onSynced?.({ state: true });
+  expect(room.getSnapshot()).toMatchObject({
+    sending: true,
+    status: 'syncing',
+  });
+  expect(itemEditingStopped(room.getSnapshot())).toBe(true);
+  sending.release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(room.getSnapshot().sending).toBe(false);
+  expect(itemEditingStopped(room.getSnapshot())).toBe(false);
+  room.destroy();
+});
+
+// Q327, Q328: not settled 30 s on, the synced room takes the steps itself
+// and edits on, its channel closed and every JOIN waiting for the send;
+// once the send settles the JOIN goes. A send the room refused leaves the
+// steps in the document, so the room refuses them live and the edits open
+// for copying (the existing recovery).
+it('takes its stored steps after 30 s, joins only once the send settles, and a refusal then opens recovery', async () => {
+  const row = { grants: ['t'], lineage: 'material:q:schema:1' };
+  drafts.rows = [row];
+  const { onReplace, room } = await started();
+  providers[0].config.onSynced?.({ state: true });
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(applyDrafts).toHaveBeenCalledWith(room.doc, [row], expect.anything());
+  expect(drafts.adopted).toEqual([row]);
+  expect(providers[0]).toMatchObject({ connects: 2, disconnects: 1 });
+  expect(room.getSnapshot()).toMatchObject({
+    sending: false,
+    status: 'syncing',
+  });
+  expect(itemEditingStopped(room.getSnapshot())).toBe(false);
+  expect(providers[0].config.beforeJoin?.()).toBeInstanceOf(Promise);
+  sending.release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(providers[0].config.beforeJoin?.()).toBeUndefined();
+  providers[0].config.onStateless?.({
+    payload: JSON.stringify({ code: 'unassigned', type: 'document-rejected' }),
+  });
+  expect(drafts.refused).toBe(1);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(onReplace).toHaveBeenCalledTimes(1);
   room.destroy();
 });
 

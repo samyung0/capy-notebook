@@ -1315,6 +1315,26 @@ impl Room {
                 return;
             }
         }
+        // A group the room already holds in full (the sweep, an opening
+        // editor and another tab may all send it) is accepted as a no-op:
+        // no allowance charge and no store (Epo 2026-10-24, Q321). The room
+        // handles writes in order, so back-to-back duplicates count once.
+        if let Ok(decoded) = ydoc::decode(&update)
+            && !ydoc::contains_changes(&self.doc.transact(), &decoded)
+        {
+            let (done, durable) = oneshot::channel();
+            let _ = done.send(Ok(()));
+            let _ = reply.send(Ok(durable));
+            return;
+        }
+        let verdict = self
+            .app
+            .allowances
+            .take(&context.user_id, update.len(), Instant::now());
+        if let Some(refusal) = Refused::timed_out(&self.app, &context.user_id, verdict) {
+            let _ = reply.send(Err(refusal));
+            return;
+        }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
         let read_only = context.access != Access::Write;
         let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -3573,7 +3593,7 @@ impl Room {
         let offered = [member.context.client_id, member.context.worker_client_id];
         let ids: Vec<u64> = std::iter::once(member.client)
             .chain(member.worker)
-            .filter(|&id| offered.contains(&u32::try_from(id).ok()))
+            .filter(|&id| offered.iter().flatten().any(|&own| u64::from(own) == id))
             .collect();
         let user = member.context.user_id.clone();
         if let Some(rows) = self.client_ids.left_clean(&user, &ids) {
@@ -3598,7 +3618,12 @@ impl Room {
             return;
         };
         let Some(handle) = self.own_handle() else {
-            // Closing: nothing more is written.
+            // Closing: nothing more can be written.
+            log(
+                Level::Error,
+                "client id rows lost",
+                json!({ "batches": self.rows.len(), "error": "the room has no handle", "room": self.name }),
+            );
             self.rows.clear();
             return;
         };

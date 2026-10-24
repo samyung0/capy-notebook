@@ -291,7 +291,7 @@ function CollaborativeNoteEditor({
   const drafts = useNoteDrafts(
     material.id,
     storedKey,
-    collaborationTokenData,
+    collaborationTokenData?.room,
     editorGeneration
   );
   const tokenStatus = isApiError(collaborationTokenError)
@@ -453,6 +453,7 @@ function CollaborativeNoteEditor({
         onReadOnly={reportReadOnly}
         onSaveDelayed={setSaveDelayed}
         onUnavailable={onUnavailable}
+        pending={mount.drafts.pending}
         phase={phase}
         restored={mount.drafts.current}
       />

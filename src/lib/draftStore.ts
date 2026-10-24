@@ -43,7 +43,7 @@ export type DraftRequest =
       op: 'mark';
       key: string;
       ids: string[];
-      flag: 'held' | 'refused' | 'reported';
+      flag: 'accepted' | 'held' | 'refused' | 'reported';
     }
   /** Every document of an account with its row ids, read from the index
    * alone (no row is loaded). */
@@ -73,6 +73,15 @@ export type DraftInfo = Omit<EditDraft, 'data'> & { bytes: number };
  * quadratic (1.7 s for 10k typed updates), runs of 64 merged and then merged
  * again stay linear (70 ms). */
 export const MERGE_RUN = 64;
+
+/** The `accepted` field of one row holding `rows`: set only when every one
+ * of them is (a row of a never-accepted session goes through the draft send,
+ * Q326). */
+export function acceptedOf(rows: { accepted?: true }[]): {
+  accepted?: true;
+} {
+  return rows.every((row) => row.accepted) ? { accepted: true } : {};
+}
 
 /** The `grants` field of rows holding the edits of `rows` (or of one
  * token): each stored token once. */
@@ -403,8 +412,10 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
                 Number(a.kind === 'update') - Number(b.kind === 'update') ||
                 a.seq - b.seq
             )[found.length - 1];
+            const { accepted: _accepted, ...rest } = last;
             stores.drafts.put({
-              ...last,
+              ...rest,
+              ...acceptedOf(found),
               ...grantsOf(found),
               data: Y.mergeUpdates(pieces),
             });
@@ -466,7 +477,13 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
               current.transaction?.abort();
               return;
             }
-            stores.drafts.put({ ...last, ...grantsOf(found), data });
+            const { accepted: _accepted, ...rest } = last;
+            stores.drafts.put({
+              ...rest,
+              ...acceptedOf(found),
+              ...grantsOf(found),
+              data,
+            });
             for (const row of found.slice(0, -1)) stores.drafts.delete(row.id);
           };
         }

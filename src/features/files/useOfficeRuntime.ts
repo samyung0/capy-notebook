@@ -523,6 +523,7 @@ export function useOfficeRuntime({
     !source.replaced &&
     !source.offlineLimit &&
     !source.outdated &&
+    !source.draftsSending &&
     source.status !== 'recovery' &&
     // `connecting` pauses only before the first sync: the document exists
     // only from then (each session start clears it), and the first save

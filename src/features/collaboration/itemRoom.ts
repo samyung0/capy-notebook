@@ -26,15 +26,18 @@ import { markUpdateAvailable } from '@/lib/appRelease';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import {
   applyDrafts,
+  DRAFT_SEND_WAIT_MS,
   type DraftRecorder,
+  type DraftSender,
   deleteDrafts,
   draftGroups,
   draftKey,
+  draftSender,
   type EditDraft,
   readDrafts,
   recordDrafts,
   recoveryDocument,
-  sendBeforeJoin,
+  splitOpenDrafts,
 } from '@/lib/editDrafts';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
@@ -97,6 +100,9 @@ export interface ItemRoomSnapshot {
   readOnlyCode: ReadOnlyCode | null;
   /** Edits that cannot join this room, shown for copying until Reload. */
   recovery: ItemRecovery | null;
+  /** Stored steps of never-accepted sessions are in the draft send (Q319):
+   * view-only until it settles. */
+  sending: boolean;
   /** Joined, its answer waiting on the user's open budget (Epo 2026-10-20):
    * loading until it syncs, never offline meanwhile. */
   slowed: boolean;
@@ -106,9 +112,13 @@ export interface ItemRoomSnapshot {
 }
 
 /** Whether an item editor stops taking edits: offline past the bound this
- * device may hold, or refused as outdated. */
-export function itemEditingStopped(offline: ItemRoomSnapshot['offline']) {
-  return offline === 'offline-limit' || isOutdatedBanner(offline);
+ * device may hold, refused as outdated, or while its stored steps are in
+ * the draft send (Q319). */
+export function itemEditingStopped({
+  offline,
+  sending,
+}: Pick<ItemRoomSnapshot, 'offline' | 'sending'>) {
+  return sending || offline === 'offline-limit' || isOutdatedBanner(offline);
 }
 
 /** What a room needs of its provider (the MSW stand-in implements it too). */
@@ -177,6 +187,7 @@ export class ItemRoom {
     presence: NO_PRESENCE,
     readOnlyCode: null,
     recovery: null,
+    sending: false,
     slowed: false,
     status: 'connecting',
     synced: false,
@@ -208,6 +219,13 @@ export class ItemRoom {
   private eviction: string | null = null;
   /** Stops waiting to start again after a first open that failed. */
   private waiting: (() => void) | null = null;
+  /** The draft send of never-accepted stored steps (Q319, Q327, Q328). */
+  private sender: DraftSender | null = null;
+  /** Its steps applied here after DRAFT_SEND_WAIT_MS: every edit stored,
+   * nothing live, and every JOIN waiting for the send (Q327). */
+  private heldSteps = false;
+  /** The next sync ends the stored-only episode the held steps began. */
+  private heldEpisode = false;
 
   constructor(materialId: string, options: ItemRoomOptions = {}) {
     this.materialId = materialId;
@@ -220,8 +238,11 @@ export class ItemRoom {
     });
     this.history = undoTarget(this.undo);
     this.reconnector = roomReconnector({
-      // Still not back after the grace period: the room is offline.
-      onStuck: () => this.goOffline(),
+      // Still not back after the grace period: the room is offline. A join
+      // waiting on the draft send is not stuck.
+      onStuck: () => {
+        if (!this.heldSteps) this.goOffline();
+      },
       provider: () => (this.destroyed || this.ended ? null : this.provider),
     });
   }
@@ -246,7 +267,12 @@ export class ItemRoom {
   }
 
   private live(): ItemRoomStatus {
-    return this.unsynced > 0 || this.recorder?.unsaved ? 'syncing' : 'saved';
+    return this.unsynced > 0 ||
+      this.recorder?.unsaved ||
+      this.snapshot.sending ||
+      this.heldSteps
+      ? 'syncing'
+      : 'saved';
   }
 
   private tokenRequest() {
@@ -286,9 +312,6 @@ export class ItemRoom {
     const access = first.access === 'write' ? 'write' : 'read';
     this.set({ access });
     const key = this.draftKey();
-    // The rows its room takes go with their stored tokens first (Q288).
-    if (key && access === 'write') await sendBeforeJoin(key, first);
-    if (this.destroyed) return;
     if (key && access === 'write' && !(await this.restore(key))) {
       // Recovery is this open's answer: no room joins.
       this.reconnector.dispose();
@@ -297,6 +320,9 @@ export class ItemRoom {
     if (this.destroyed) return;
     let cached: string | null = first.token;
     this.provider = createItemProvider({
+      // While its never-accepted steps are held, a JOIN waits for the draft
+      // send to take them (Q327).
+      beforeJoin: () => (this.heldSteps ? this.sender?.settled : undefined),
       document: this.doc,
       name: first.room,
       onAuthenticationFailed: ({ reason }) => {
@@ -363,7 +389,9 @@ export class ItemRoom {
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
         if (state) {
-          if (this.snapshot.offline) this.recorder?.connected();
+          if (this.snapshot.offline || this.heldEpisode)
+            this.recorder?.connected();
+          this.heldEpisode = false;
           this.reconnector.connected();
           this.set({
             offline: null,
@@ -423,6 +451,39 @@ export class ItemRoom {
     this.provider.connect();
   }
 
+  /** Sends the never-accepted stored steps while the room joins (Q319,
+   * Q328); past DRAFT_SEND_WAIT_MS, synced, the room takes them itself
+   * and edits on with nothing live until the send settles (Q327). */
+  private sendDrafts(key: string, pending: EditDraft[]) {
+    const sender = draftSender(key, () =>
+      getMaterialCollaborationToken(this.materialId, this.tokenRequest())
+    );
+    this.sender = sender;
+    this.set({ sending: true });
+    const timer = setTimeout(() => {
+      if (this.sender !== sender || sender.done || !this.snapshot.synced)
+        return;
+      if (this.ended || this.destroyed || this.stale) return;
+      this.heldSteps = true;
+      this.heldEpisode = true;
+      this.provider?.disconnect();
+      this.recorder?.disconnected();
+      applyDrafts(this.doc, pending, RESTORE_ORIGIN);
+      this.recorder?.adopt(pending);
+      this.set({ sending: false, status: 'syncing' });
+      this.provider?.connect();
+    }, DRAFT_SEND_WAIT_MS);
+    void sender.settled.then(() => {
+      clearTimeout(timer);
+      if (this.sender !== sender) return;
+      this.sender = null;
+      this.heldSteps = false;
+      this.set({ sending: false });
+      if (this.snapshot.synced && this.snapshot.status !== 'offline')
+        this.set({ status: this.live() });
+    });
+  }
+
   /** An embed closed as its note's oldest is near the screen again. */
   wake() {
     this.provider?.wake();
@@ -476,9 +537,12 @@ export class ItemRoom {
         rows = rows.filter((row) => !recovery.includes(row));
         continue;
       }
-      applyDrafts(this.doc, current, RESTORE_ORIGIN);
+      // Accepted sessions' rows apply here; never-accepted ones with stored
+      // tokens go through the draft send (Q326).
+      const { apply, send } = splitOpenDrafts(key, current);
+      applyDrafts(this.doc, apply, RESTORE_ORIGIN);
       this.recorder = recordDrafts({
-        adopted: current,
+        adopted: apply,
         doc: this.doc,
         ignore: (origin) =>
           origin === RESTORE_ORIGIN ||
@@ -496,6 +560,7 @@ export class ItemRoom {
         },
         token: () => this.lastToken,
       });
+      if (send.length) this.sendDrafts(key, send);
       return true;
     }
   }
@@ -634,6 +699,7 @@ export class ItemRoom {
   }
 
   private end() {
+    this.sender?.stop();
     markUnsent(this, false);
     this.options.seat?.attach(null);
     this.provider?.destroy();
@@ -696,6 +762,7 @@ export class ItemRoom {
 
   destroy() {
     this.destroyed = true;
+    this.sender?.stop();
     this.waiting?.();
     this.reconnector.dispose();
     markUnsent(this, false);
@@ -794,6 +861,7 @@ const INITIAL: ItemRoomSnapshot = {
   presence: NO_PRESENCE,
   readOnlyCode: null,
   recovery: null,
+  sending: false,
   slowed: false,
   status: 'connecting',
   synced: false,

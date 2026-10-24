@@ -65,7 +65,10 @@ import { cn } from '@/lib/cn';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import {
   applyDrafts,
+  DRAFT_SEND_WAIT_MS,
   type DraftRecorder,
+  type DraftSender,
+  draftSender,
   dropLostDrafts,
   type EditDraft,
   recordDrafts,
@@ -472,6 +475,7 @@ export function NoteEditorCore({
   collaborationToken,
   draftKey,
   restored,
+  pending,
   phase = 'live',
   onPainted,
   joinStartedAt,
@@ -500,6 +504,9 @@ export function NoteEditorCore({
   /** Stored edits of this room's lineage (a reload, another tab): applied
    * before the room connects, then synced and saved like any edit. */
   restored: EditDraft[];
+  /** Stored edits of never-accepted sessions: the draft send takes them
+   * while the room joins (Q319, Q327). */
+  pending: EditDraft[];
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   /** The room's other editors, for the header's avatar group (null once
    * the editor unmounts). */
@@ -547,6 +554,8 @@ export function NoteEditorCore({
   const recorder = useRef<DraftRecorder | null>(null);
   // The room is unreachable: the editor keeps editing on this device.
   const offlineMode = useRef(false);
+  // Steps were held (Q327): the next sync ends that stored-only episode.
+  const heldEpisode = useRef(false);
   const storageOk = useRef(true);
   const overLimit = useRef(false);
   const [offlineLimit, setOfflineLimit] = useState(false);
@@ -619,8 +628,23 @@ export function NoteEditorCore({
   // the paused note above it still on screen.
   const statusChange = useRef(onEditorStatusChange);
   statusChange.current = phase === 'paused' ? undefined : onEditorStatusChange;
+  // Stored steps of never-accepted sessions go through the draft send while
+  // the room joins (Q319): view-only until it settles. Past DRAFT_SEND_WAIT_MS
+  // the note applies them and edits on, nothing live and every JOIN waiting
+  // for the send, until the room took them (`heldSteps`, Q327, Q328). Both
+  // read as syncing.
+  const [draftsSending, setDraftsSending] = useState(pending.length > 0);
+  const sendingNow = useRef(pending.length > 0);
+  const heldSteps = useRef(false);
+  const sender = useRef<DraftSender | null>(null);
   const report = useCallback((saveState: NoteEditorStatus['saveState']) => {
-    const shown = phaseNow.current === 'standby' ? 'reconnecting' : saveState;
+    const shown =
+      phaseNow.current === 'standby'
+        ? 'reconnecting'
+        : (sendingNow.current || heldSteps.current) &&
+            (saveState === 'saved' || saveState === 'reconnecting')
+          ? 'syncing'
+          : saveState;
     statusChange.current?.(
       reportedSlowed.current
         ? { saveState: shown, slowed: true }
@@ -982,8 +1006,9 @@ export function NoteEditorCore({
             hasSynced.current = true;
             reconnector.current?.connected();
             saveDelay.connected();
-            if (offlineMode.current) {
+            if (offlineMode.current || heldEpisode.current) {
               offlineMode.current = false;
+              heldEpisode.current = false;
               recorder.current?.connected();
               reportOffline.current?.(null);
             }
@@ -1017,6 +1042,10 @@ export function NoteEditorCore({
                 } as never)
               : ({
                   options: {
+                    // While its never-accepted steps are held, a JOIN waits
+                    // for the draft send to take them (Q327).
+                    beforeJoin: () =>
+                      heldSteps.current ? sender.current?.settled : undefined,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
                     onClose: () => {
@@ -1162,7 +1191,7 @@ export function NoteEditorCore({
     const current = roomReconnector({
       // Lost for good before the first sync: nothing to edit offline.
       onStuck: () => {
-        if (stale.current) return;
+        if (stale.current || heldSteps.current) return;
         if (hasSynced.current) goOfflineNow.current();
         else setStatus('error');
       },
@@ -1229,6 +1258,47 @@ export function NoteEditorCore({
       reportSaveDelayed.current?.(false);
     };
   }, [collaborationToken.room, editor, material.id, qc, seat, setStatus]);
+
+  // The draft send of never-accepted steps (Q319, Q327, Q328).
+  useEffect(() => {
+    if (!pending.length) return;
+    const current = draftSender(draftKey, () =>
+      getMaterialCollaborationToken(material.id)
+    );
+    sender.current = current;
+    let active = true;
+    void current.settled.then(() => {
+      if (!active) return;
+      sendingNow.current = false;
+      heldSteps.current = false;
+      setDraftsSending(false);
+      if (reportedStatus.current) report(reportedStatus.current);
+    });
+    // Not settled in time: the note takes the steps itself and edits on,
+    // every edit stored and nothing live until the room took them. Before
+    // a first sync the join's own 30 s error stands.
+    const timer = setTimeout(() => {
+      if (!active || current.done || !hasSynced.current) return;
+      if (rejected.current || stale.current) return;
+      const room = roomProvider(editor)?.provider;
+      heldSteps.current = true;
+      heldEpisode.current = true;
+      room?.disconnect();
+      recorder.current?.disconnected();
+      applyDrafts(ydoc, pending, RESTORE_ORIGIN);
+      recorder.current?.adopt(pending);
+      sendingNow.current = false;
+      setDraftsSending(false);
+      report('syncing');
+      void room?.connect();
+    }, DRAFT_SEND_WAIT_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      current.stop();
+      if (sender.current === current) sender.current = null;
+    };
+  }, [draftKey, editor, material.id, pending, report, ydoc]);
 
   // Out of standby: the header shows this editor's own status now.
   const lastPhase = useRef(phase);
@@ -1411,7 +1481,8 @@ export function NoteEditorCore({
   // Offline past the bound, refused as outdated, or paused for a swap:
   // nothing may edit until reconnect, reload or the next editor. A paused
   // editor's content stops edits without Slate's readOnly (pauseEdits).
-  const locked = offlineLimit || outdated || phase === 'paused';
+  const locked =
+    offlineLimit || outdated || phase === 'paused' || draftsSending;
   return (
     <EditorHoldScope>
       <NoteSeatContext.Provider value={seat}>
@@ -1452,7 +1523,9 @@ export function NoteEditorCore({
                             <NoteEditorContent
                               discussions={discussions}
                               presence={presence}
-                              readOnly={offlineLimit || outdated}
+                              readOnly={
+                                offlineLimit || outdated || draftsSending
+                              }
                               shouldShowStats={shouldShowDocumentStats(
                                 documentStats
                               )}
