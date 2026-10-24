@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeCitationRegions } from './citationRegions';
+import {
+  audioStartMs,
+  formatClock,
+  normalizeCitationRegions,
+} from './citationRegions';
 
 describe('normalizeCitationRegions', () => {
   it('keeps valid page-1000 boxes and their source order', () => {
@@ -46,5 +50,39 @@ describe('normalizeCitationRegions', () => {
         top: 50,
       },
     ]);
+  });
+});
+
+describe('audio citations', () => {
+  it('start at their first sentence, which no page box mistakes', () => {
+    const regions = [
+      {
+        bbox: null,
+        end_ms: 64_980,
+        page: 0,
+        space: 'audio-ms',
+        speaker: 1,
+        start_ms: 61_200,
+      },
+      {
+        bbox: null,
+        end_ms: 70_000,
+        page: 0,
+        space: 'audio-ms',
+        start_ms: 65_000,
+      },
+    ];
+    expect(audioStartMs(regions)).toBe(61_200);
+    expect(normalizeCitationRegions(regions)).toEqual([]);
+    expect(
+      audioStartMs([
+        { bbox: [1, 2, 3, 4], page: 1, space: 'page-1000-topleft' },
+      ])
+    ).toBeUndefined();
+  });
+
+  it('show their time as m:ss or h:mm:ss', () => {
+    expect(formatClock(61_200)).toBe('1:01');
+    expect(formatClock(3_725_000)).toBe('1:02:05');
   });
 });

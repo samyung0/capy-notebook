@@ -82,6 +82,7 @@ import {
   scenarioSourceSession,
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
+import { voiceInputHandlers } from './voiceInput';
 
 /** Query parsing shared by the owner-scoped list mocks; the cursor is an offset. */
 function listParams(href: string) {
@@ -675,6 +676,7 @@ const mockCreditSettings: CreditSettings = {
 export const handlers = [
   ...questionBankHandlers,
   ...editorAssetHandlers,
+  ...voiceInputHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
       ? new HttpResponse(null, { status: 503 })
