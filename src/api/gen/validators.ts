@@ -1276,6 +1276,7 @@ export const ListMessagesResponseItem = zod.object({
   "n": zod.int().optional(),
   "pageEnd": zod.int().optional(),
   "pageStart": zod.int().optional(),
+  "published": zod.string().optional(),
   "regions": zod.array(zod.object({
   "bbox": zod.array(zod.number()).nullable(),
   "end_ms": zod.int().optional(),
@@ -1284,7 +1285,9 @@ export const ListMessagesResponseItem = zod.object({
   "speaker": zod.int().optional(),
   "start_ms": zod.int().optional()
 })).nullish(),
-  "snippet": zod.string()
+  "siteName": zod.string().optional(),
+  "snippet": zod.string(),
+  "url": zod.string().optional()
 })).nullish(),
   "content": zod.string(),
   "conversationId": zod.string(),

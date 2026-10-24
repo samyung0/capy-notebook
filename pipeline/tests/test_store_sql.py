@@ -1138,6 +1138,16 @@ def test_provider_call_open_enforces_terminal_slot_and_idempotency(workspace):
                 "agent",
                 "instant",
             )
+        # A paid search after the credits ran out would spend past them.
+        with pytest.raises(RuntimeError, match="web search is not allowed"):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "web_search",
+                "agent",
+                "",
+            )
 
         db.open_provider_call(
             cur,

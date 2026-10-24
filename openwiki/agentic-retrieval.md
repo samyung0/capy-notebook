@@ -89,7 +89,7 @@ network and no pin.
 
 | Module | Slot | What it builds |
 | --- | --- | --- |
-| `chat.py` | `chat` | Agent system prompt (one prompt for every turn, library rules appended only with Library on) and full message list; the checkpoint compaction prompt |
+| `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, the message led by its mode line; the Q221 send-back texts; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `ingest.py` | `ingest` | File descriptor |
@@ -104,8 +104,10 @@ Agent tool descriptions come from the shared contract
 (`retrieval/contract.py`) alone; `tools.schemas_for` only appends the
 library's subject list to `search_knowledge` and the skill list to
 `read_skill`, and drops
-`excerpt_ids` from the write tools when the library is not a source this turn
-(the model otherwise fills it with workspace passage ids). Curate mode's prompt module
+`excerpt_ids` from the write tools when the library is not ready this turn
+(not configured, down or empty, as its tools drop out; the model otherwise
+fills it with workspace passage ids). The Workspace only switch never changes
+the list. Curate mode's prompt module
 (`prompts/curate.py`) was deleted on 2026-10-04. Almost nothing model-facing is
 written in `retrieval/`: `LANG_RULE` lives in `chat.py`, and `retrieval/`
 keeps tool results and refusal strings, which the model reads as data rather
@@ -2384,9 +2386,10 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
 - `catalog(conn)`: the subjects that hold at least one searchable verified excerpt on a
   current book version, `[{id, label, aliases, area, excerpts}]` sorted by
   label, for `search_knowledge`'s description, whose `subject` takes those
-  ids. It is read once per turn with Library on, before the first model call,
-  which is also how a configured but unreachable or empty library leaves that
-  turn on the workspace instead of failing on the first tool call. The loader
+  ids. It is read once per turn, whatever the Workspace only switch says,
+  before the first model call, which is also how a configured but unreachable
+  or empty library leaves that turn without the library tools instead of
+  failing on the first tool call. The loader
   keeps topic ids apart from subject ids: a topic whose id is a subject id
   refuses the publish naming both. `pool()` takes a lock so two turns
   starting together cannot each build a pool, and waits at most ten seconds
@@ -2444,8 +2447,8 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
   plain search lands on the expected topic for every first hit but reaches
   an expected role 58 of 110 times; role wording in the query does not move
   that; tag predicates do, and expose gaps. The chat offers these as
-  `search_knowledge` and `read_knowledge` on turns with the
-  Library switch on (Build flow and the Library switch, below).
+  `search_knowledge` and `read_knowledge` (Build flow and the Workspace only
+  switch, below).
 
 Delegated Sol reviews follow `lab/knowledge/review.md`. The optional `retrieval`
 object holds a description of at most 400 characters, applicability of at most
@@ -2458,7 +2461,7 @@ is explicitly unknown. `non_teaching` is a successful role classification used
 alone and excluded from search and retrieval coverage counts. Classification
 confidence and extraction quality remain separate.
 
-With Library on, the model searches with the learner's subject or without one,
+With Workspace only off, the model searches with the learner's subject or without one,
 and keeps the learner's constraints when a subject search misses and it
 searches again without the subject. The library rules (`LIBRARY_RULES` in `prompts/chat.py`)
 require explicit applicability and distinguish source exercises from adapted
@@ -2744,7 +2747,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    last with tools off (raised from 8 on 2026-10-08: the intake comparison lost
    22 of 150 runs to a refused write with no response left to redo it); once a
    write lands the turn runs under the build budget (Limits, under Build flow
-   and the Library switch, below). Completion, compaction, query-embedding, and cumulative input counts
+   and the Workspace only switch, below). Completion, compaction, query-embedding, and cumulative input counts
    remain telemetry. They do not stop a turn.
 4. Independent reads in one response run concurrently (max 4, at most 1
    `search_workspace`). Any mutating call keeps that whole response serial.
@@ -2952,7 +2955,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    The chat panel shows a turn's work as trace rows
    (`src/features/workspace/chat/ChatTrace.tsx`, logic in `trace.ts`). Each
    row is an 18px CSS-animated icon chosen by tool family (`ActivityIcon.tsx`:
-   hourglass for thinking, a lens over a book for searches, a page turn for
+   hourglass for thinking, a lens over a book for searches (a web search
+   too, quoting its query like the others; its copy, `chat_step_search_web_*`,
+   is a draft for Epo's review), a page turn for
    reads and inspect, a viewfinder for captures, fanned files for listings, a
    pen for anything that edits, creates or adds, pacman for trash and restore,
    ldrs bouncy for any other tool) and a sentence: present tense while
@@ -3306,18 +3311,36 @@ error or Sentry event carries the audio, the transcript or the key. Credits
 and the rate class are in
 [observability-metering.md](observability-metering.md).
 
-### Build flow and the Library switch
+### Build flow and the Workspace only switch
 
 Curate mode, a thread flag fixed at creation (`conversations.curate`), was
 replaced on 2026-10-04 by one build flow on every turn and a per-turn Library
 switch (`todo-learning.md`, Part 2); migration
 `0052_drop_conversation_curate.sql` drops the column. Any turn can answer or
-build, and the knowledge library is one more source while the switch is on.
+build. On 2026-10-24 (Epo) the Library switch became the Workspace only switch,
+off by default: off, the workspace comes first and the library, `search_web`
+and the model's own knowledge may expand it; on, only the workspace's files and
+materials are sources.
 
-- **Library switch.** A chip in the chat input
-  (`src/features/workspace/ChatPanel.tsx`), on by default and never locked: it
-  stays where the learner left it and applies to the next send. Each turn sends
-  `library` and the open item as `openResource: {id, kind}`
+- **The cache rule.** The switch never changes the system prompt or the tool
+  list, so a flip keeps the provider's cached prefix. Each learner message
+  starts with its mode line (`chat_prompts.MODE_LINES`, added by
+  `with_mode_line`): `[Workspace only: on. Use only this workspace's files and
+  materials.]` or `[Workspace only: off. Workspace first; the library,
+  search_web and your own knowledge may expand it.]`. Go stores the switch in
+  the user message's metadata (`workspaceOnly`, `store.AddUserMessage`) and
+  sends it with each history row, and `evidence.history_turns` puts the line
+  back on that message as it was sent; messages saved before the switch carry
+  none. The library tools and `search_web` (`tools.OUTSIDE_TOOLS`) stay listed
+  in both modes; while the switch is on, `tools.run` answers a call to one with
+  `NOT_AVAILABLE` ("… is not available this turn: Workspace only is on …",
+  `lifecycle_rejected`) before it runs, and a write naming `excerpt_ids` or a
+  library figure is refused the same way. Earlier library reads and cited web
+  results still replay as history in both modes.
+- **Workspace only switch.** A chip in the chat input
+  (`src/features/workspace/ChatPanel.tsx`), off by default and never locked:
+  it stays where the learner left it and applies to the next send. Each turn
+  sends `workspaceOnly` and the open item as `openResource: {id, kind}`
   (`src/api/chatStream.ts`, `src/features/workspace/useChatStream.ts`); the
   title never leaves the browser. Go's `chatTurnContext`
   (`server/internal/httpapi/chat_stream.go`) looks the title up itself
@@ -3325,10 +3348,10 @@ build, and the knowledge library is one more source while the switch is on.
   untrashed file or material of this workspace, under the kind given, is kept,
   and anything else reaches the pipeline as `null`. It also reads
   `studyProgress` (`store.StudyEnabled`: the workspace override, else the
-  account default). With `library` true Go appends `library.read` to the turn's
-  operations for any role that can chat, viewers included; writes still follow
-  the role and account state (a frozen or full actor loses `material.create`
-  and `document.edit`). Go sends `library`, `openResource`, `studyProgress` and
+  account default). Go appends `library.read` to every turn's operations for
+  any role that can chat, viewers included; writes still follow the role and
+  account state (a frozen or full actor loses `material.create` and
+  `document.edit`). Go sends `workspaceOnly`, `openResource`, `studyProgress` and
   `studyPreferences` (the requester's `users.study_preferences`, saved with
   `PATCH /api/me/study-preferences`; unset fields take
   `prompts/preferences.py`'s defaults) with the stream request
@@ -3337,22 +3360,26 @@ build, and the knowledge library is one more source while the switch is on.
   (`conversations.ledger`, its gateway route and the `create_ledger` tool) was
   dropped on 2026-10-13 (`0078_drop_conversation_ledger.sql`; the measurement
   is `bench/rag/reports/2026-10-13-ledger-vs-noledger.md`).
-- **Admission.** With Library on, the agent reads the library's subject list
-  once before the first model call (`tools.load_library_catalog`). An
+- **Admission.** The agent reads the library's subject list once before the
+  first model call (`tools.load_library_catalog`), in both modes. An
   unconfigured library, one that does not answer (logged as a warning) or one
-  with no subject holding a searchable excerpt turns `ctx.library` off for that
-  turn: no library tools and no library rules, and the turn runs on the
+  with no subject holding a searchable excerpt leaves the library tools
+  unoffered that turn (`tools._library_ready`), and the turn runs on the
   workspace instead of failing. There is no context-window minimum. The
   subject list is appended to the `search_knowledge` description only, one
   line per subject with its tagged-excerpt count (`- "statistics" (5166
   excerpts)`); labels and aliases are omitted. `subject` takes one of those
   ids, and one the turn's catalog lacks is refused naming it before any
   search. Topic ids are never in a description or a search card.
-- **Prompt** (`prompts/chat.py`). `system_prompt(locale, library=..., writes=...)` is one
-  prompt for every turn and stays lean: grounding rules; answer or build (a
-  question gets an answer with citations, a request to learn, make, expand or
-  practise gets materials without asking whether to create them; a write
-  starts by reading its skills); and the budget every turn shares (tool calls
+- **Prompt** (`prompts/chat.py`). `system_prompt(locale, writes=...)` is one
+  prompt for every turn and stays lean: grounding rules; sources (the mode
+  line, the workspace first in both modes, what each mode allows, a web result
+  cited by its number and never written as a URL or link); answer or build (a
+  question, or a request to explain or summarise, gets an answer with
+  citations, not materials; a request to learn, make, expand or practise gets
+  materials without asking whether to create them, and so does the learner's
+  pick of the offer to make a note or a slide deck; a write starts by reading
+  its skills); and the budget every turn shares (tool calls
   per response; the planning cap until the first successful write, then up to
   the build budget's tool calls in the whole turn and the stall guard, more
   after errored writes, in one sentence), with its numbers read from
@@ -3360,8 +3387,8 @@ build, and the knowledge library is one more source while the switch is on.
   rules follow (the capture rule covers workspace sources; the library rules
   say when a library page is captured), and a turn offered no write tool (a
   viewer) gets `READ_ONLY_RULE`: answer, and say the workspace does not let it
-  build or edit. With Library
-  on, `LIBRARY_RULES` is appended: search with the learner's subject or
+  build or edit. `LIBRARY_RULES` follows in both modes, headed for
+  Workspace only off: search with the learner's subject or
   without one, a search hit is not a read, state applicability and gaps,
   relax a missed subject filter,
   `capture_knowledge_page` when numbers or formulas look corrupted, and
@@ -3380,7 +3407,7 @@ build, and the knowledge library is one more source while the switch is on.
   user can undo one, `replace_text` for plain
   wording and `replace_block` for a block with formatting or math, keep other
   people's changes unless the learner asks otherwise, source files only when
-  asked), with Library on the `excerpt_ids` rule (name excerpts read this turn
+  asked), the `excerpt_ids` rule (name excerpts read this turn
   or retained in full, or omit them and the write credits the reads since the
   last write; Write guard, below). Since 2026-10-14 `editing` is the general
   guideline for every write: it also holds the plan (ask first only when the
@@ -3398,8 +3425,9 @@ build, and the knowledge library is one more source while the switch is on.
   interactive blocks inside it as the preferences say, knowledge checks sized
   and placed as the preferences say, growing a long note by appending
   sections after block `"end"`, the note format (`Formats` in the contract:
-  `noteMarkdownDescription`), and with Library on one primary excerpt, figure
-  placement and exercise reuse (the text earlier skills carried, unchanged).
+  `noteMarkdownDescription`), and, for Workspace only off, one primary
+  excerpt, figure placement and exercise reuse. Skill texts are the same in
+  both modes.
   `read_skill`'s catalog (`skills.catalog`) words the building skill of the
   output-files preference as the one for the chapters and the other as "only
   when the request asks for" its format. A write is refused until the skills
@@ -3701,7 +3729,7 @@ build, and the knowledge library is one more source while the switch is on.
   top-level blocks or a whole new value, never for typing. Go keeps its own
   union for the shared note (`AnonymousNote`) and the write-time family check;
   the projection stays on its idle schedule.
-- **Figures in notes.** A note written with Library on can
+- **Figures in notes.** A note written from the library can
   show a library figure as an ordinary image of that note: the model writes
   `![caption](figure:<figure id>)` in `create_material` content or an
   `insert_markdown` / `replace_block` command (the `workspace_building`
@@ -3756,10 +3784,10 @@ build, and the knowledge library is one more source while the switch is on.
   each material, not a citation.
 - **Playground.** `lab/playground` runs this loop in process with the app's
   prompt, tools, limits and write guard (`configs/chat.json`, `system_prompt:
-  null`). A per-turn Library checkbox (default on), an Open picker and the
-  preference controls write `library`, `open_resource` and
+  null`). A Workspace only checkbox (default off), an Open picker and the
+  preference controls write `workspace_only`, `open_resource` and
   `study_preferences`; every turn gets an editor's build operations under
-  `user_id="playground"`, plus `library.read` with Library on. There is no
+  `user_id="playground"`, plus `library.read`. There is no
   gateway, so `create_material` and `edit_document` write
   `materials/<id>.json` under the run through `tools.write_sources` (each
   material records the excerpt ids it credited), quizzes
@@ -3781,11 +3809,12 @@ build, and the knowledge library is one more source while the switch is on.
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; `file_ids` take any workspace item id, and any invalid supplied id rejects the call, naming it |
 | `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading; a material other than a note is refused ("… is a quiz, which has no passages to read; inspect_document reads it.") |
-| `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
-| `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
+| `search_knowledge` | none | Offered when the library answered its subject list; answers as not available while Workspace only is on. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
+| `read_knowledge` | none | As `search_knowledge`. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
+| `search_web` | none | DeepSeek's web search (`retrieval/websearch.py`, `POST https://api.deepseek.com/v1/tools/search` on the platform `DEEPSEEK_API_KEY`): one focused query of at most 128 characters, 5 results, no retry; only the query is sent (never the learner's question or IP), and the description asks for it in the model's own words rather than copied from the learner's files (Epo 2026-10-24, Q289). Each result is a `Passage(kind="web")` (`chunk_id` `web:<url>`, the link in `file_id`, title, site, the date parsed from DeepSeek's RFC 3339 value to YYYY-MM-DD and left out when it does not parse, DeepSeek's summary as the text and its snippet for display) in one source block, numbered like passages, with a data-not-instructions note and the searches left. A user message gets 3 searches: an empty one counts and is free, a failed one (an error, a timeout, a non-2xx answer or a body without a results list) is free and the first 2 failures do not count, so at most 5 calls run (Epo 2026-10-24); results that miss the point are an ordinary search the model judges, since DeepSeek answers even a nonsense query with 5 results (2026-10-24 probe); the parser keeps only title, url, snippet, summary, site_name and date; calls of one response hold their places while they run. The same query again in one message (compared without case or extra spaces) reuses that message's answer, neither charged nor counted; a search whose settlement fails keeps its results and is neither charged nor counted, its call row left to the receipt sweep (Editor 2026-10-24). A search with results costs 1.8 credits ([observability-metering.md](observability-metering.md)). Answers as not available while Workspace only is on. Retains cited results, which replay from their saved copy |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
-| `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
+| `capture_knowledge_page` | none | As `search_knowledge`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
@@ -3921,9 +3950,11 @@ both writes; version 5 was never released. Version 7 (2026-09-19) reshapes
 or topic, and points `search_knowledge` topic ids at a subject browse. Version
 8 adds ledger upserts and material-backed excerpt retention, version 9 part
 marks and open-part mark schemes. Version 10 (2026-10-04) replaces the curate
-thread mode with the per-turn Library switch: the stream request carries
+thread mode with the per-turn Library switch: the stream request carried
 `library`, `openResource` and `studyProgress`, and the ledger and write rules
-apply to any build. Version 11 replaces `search_questions` with
+apply to any build. Version 40 (2026-10-24) adds `search_web`, replaces
+`library` with `workspaceOnly`, grants `library.read` with every chat and keeps
+the library tools and `search_web` offered in both modes of the switch. Version 11 replaces `search_questions` with
 `list_question_bank`. Version 12 (2026-10-05) adds `read_skill`, shortens every
 tool description to what the schema cannot say, and moves the note and
 question formats out of the write tools into the contract's `formats`, which
@@ -4005,8 +4036,8 @@ computes the caller's operations from the effective role
 trash.read, trash.restore`) and sends them with the chat request; Python offers
 only the tools those operations allow and rechecks on dispatch. `library.read`
 is the one operation no role grants, because the shared library is not a
-workspace resource: the gateway adds it per turn when the request's `library`
-is true, for any role that can chat, viewers included. Writing from the library
+workspace resource: the gateway adds it to every chat turn, for any role that
+can chat, viewers included. Writing from the library
 still needs the role's write operations. A `contractVersion` mismatch fails the turn with
 `contract_mismatch`.
 
@@ -4941,7 +4972,12 @@ Raised `k` markers come from
 the message's citation list by `n` and follow the last paragraph of the text
 they back (Streamdown's root is `display: contents` so that paragraph can run
 inline); tables and charts put their sources under the block, and the
-message's sources are neutral badges under the model name.
+message's sources are neutral badges under the model name. A web result's
+entry takes a row of its own: the page title links to the page in a new tab
+(http(s) only, `chat/webCitation.ts`) beside its site, which truncates within
+the row, and its date, with the snippet as a muted line under them, clamped
+to two lines; the result's raised number moves to that entry
+(`sourceEntryId`).
 The prompt reserves `AskUser` for required user input and excludes simple follow-up questions,
 with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
 write): on the first message of a chat, an explanation or summary request is
@@ -4963,7 +4999,28 @@ list, which left answers empty or ending on "a few questions:" with the
 questions gone. Other models get no such tool and keep writing `AskUser` in
 the answer. The credit guard's terminal call sends no tools, so AskUser is not
 listed there and a GLM call to it on DigitalOcean is still dropped; that needs
-exhausted credits and a question in the same turn.
+exhausted credits and a question in the same turn. The prose of a tool-called
+`AskUser` keeps its citations: markers naming shown passages move into the
+`Md`'s `passages` (`agent._cited`). GLM also writes the call as text in its own
+markup (`AskUser<arg_key>question</arg_key><arg_value>…`); for the `zai` pin
+only, `agent.text_ask_user` reads that back as the call it meant, and the text
+before it is the prose. That markup is checked on a prose answer once the
+response ends (`response_guard.contains_arg_markup`): recovered for `zai`,
+flagged for any other model. Inside an answer program it is no turn error:
+the program streams as written and the browser drops the statement it cannot
+parse, as before the check.
+
+**Q221 send-back** (Epo 2026-10-24). A first-turn reply (no history and no
+checkpoint) whose answer holds only `AskUser` questions goes back to the model
+once: after an answer program as a user message (`chat_prompts.SEND_BACK`),
+after a tool-called `AskUser` as each call's tool result (`SEND_BACK_TOOL`).
+A learner who cannot write gets the texts that ask for the answer alone, with
+no note or deck offer (`SEND_BACK_READ_ONLY`, `SEND_BACK_TOOL_READ_ONLY`). Until it has been sent back, a reply
+streams nothing before a statement of another part shows
+(`agent._ANSWER_PART`), so an offer-only reply never reaches the browser. The
+response after the send-back runs even past the planning cap, with tools off
+there; a credit guard terminal call or exhausted credits skip it. The next
+reply is the answer whatever it holds.
 `AskUser` blocks of the latest completed reply render nothing inline and
 replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
 one question at a time, numbered choices, a "something else" field, Skip,
@@ -4974,8 +5031,8 @@ while the panel is mounted); older or dismissed replies show their questions
 as read-only "Asked:" lines and are never re-asked.
 
 Before rendering, `retrieval/response_guard.py` holds partial protocol markers across
-stream chunks and detects known tool-call envelopes, including DSML, XML tool calls
-and JSON `tool_calls` fields. A match drains the current provider call for usage,
+stream chunks and detects known tool-call envelopes, including DSML, XML tool calls,
+and JSON `tool_calls` fields (GLM's argument markup is checked on prose answers only, above). A match drains the current provider call for usage,
 stops the turn without executing its tools or making a repair request, clears the
 current answer and citations, and returns `response_flagged`. The UI shows
 "Response flagged due to safety concern"; the error code is persisted in message

@@ -564,7 +564,11 @@ named provider directly. These exact routing exceptions are allowed:
   reasoning-off call runs at and `high` the chat default.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
-  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`. Every OpenRouter
+  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
+  Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
+  migration `0112_chat_sources.sql`), which sends the chat pin's effort
+  (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
+  goes to Together alone. Every OpenRouter
   model, GLM included, takes its provider list from `OPENROUTER_ROUTING` in
   `pipeline/elitellm/client.py`: an
   ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
@@ -762,7 +766,9 @@ whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Fla
 where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400, OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
-price, its first route, decision 2026-10-21), embedding 40, reranker 50.
+price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
+1200 (Together's list price, its only route, 2026-10-24), embedding 40,
+reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
@@ -826,7 +832,7 @@ month by `surface`, which the Usage tab draws as one credit bar coloured by area
 faint at the end. `GET /api/usage/events` keyset-pages the actor's `usage_events`
 rows newest first (`before` cursor from the previous page's `next`, 20 rows at
 most) for the Detailed usage tab: kind (`llm`, `embedding`, `rerank`,
-`audio`, `parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
+`audio`, `web_search`, `parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
 tokens and credits. It does not use a separate analytics table and does not show
 USD. `GET /api/billing/invoices` reads the customer's latest 12 non-draft Stripe
 invoices live for the Subscription tab (a user with no Stripe customer gets an
@@ -1216,6 +1222,19 @@ request past its own 15-second bound stays open for its receipt window like
 any other uncertain call; any failure keeps fused order instead of failing the
 search.
 
+The agent's `search_web` (DeepSeek's web search) has its own usage kind,
+`web_search`, on the chat session that ran it (decision 2026-10-24). The
+pipeline opens its `provider_calls` row (`deepseek` / `search`) before the
+request and settles it with `units`: 1 for a search that returned results, 0
+for an empty one; a failed search abandons the row unbilled. The gateway
+accepts units only on this kind, at most 1 and with no tokens, and prices a
+unit at the active `web_search` resource rate (1,800,000 micros, 1.8 credits,
+from DeepSeek's $0.75 per 1,000 searches), charged like LLM tokens on a
+platform-paid session. The usage row's `unit` is `search` and its catalog
+columns are empty. Once a session's credits run out, the pipeline's call open
+refuses a search, as it refuses any call but the terminal one. The cap of 3
+counted searches per message is the agent's (agentic-retrieval.md).
+
 Streamed completions send `stream_options={"include_usage": True}`. **Without
 it an OpenAI-compatible stream reports no usage at all**, which is how the
 single highest-volume path in the product ends up costing an unknown amount.
@@ -1471,7 +1490,7 @@ primary database and can add optional column-limited read DSNs for UAT/local.
 ### Pricing is policy
 
 Token work is priced from the resolved `model_configs` row. Non-token policy
-(digital and VLM pages, audio seconds, and email) is versioned in
+(digital and VLM pages, audio seconds, email, and web searches) is versioned in
 `resource_credit_rates`; `figure_caption_call` rows remain for history but none
 is active. The Ops usage page edits these
 rates by inserting a new active version and recording an operator audit event.
@@ -1772,7 +1791,9 @@ production values are GLM 150/125 and Qwen embedding 200/80; local development
 keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
 rows: DeepSeek Flash 2500/1500, GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 and V4.1 Flash 1017 64/0 (ingest-only,
-so no interactive reserve; page reads lease the `vlm_page` gate instead), Qwen
+so no interactive reserve; page reads lease the `vlm_page` gate instead),
+MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together held 16
+calls at once in the 2026-10-23 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an
 environment that already has rows changes them in Ops.
 DeepSeek and DeepInfra totals follow their published account/model concurrency

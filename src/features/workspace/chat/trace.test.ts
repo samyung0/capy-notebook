@@ -46,6 +46,7 @@ const base = { live: false, startedAt: at(0), stopped: false, thinking: false };
 describe('toolIcon', () => {
   it('acts out each tool family and bounces for the rest', () => {
     expect(toolIcon('search_knowledge')).toBe('search');
+    expect(toolIcon('search_web')).toBe('search');
     expect(toolIcon('read_skill')).toBe('read');
     expect(toolIcon('capture_page')).toBe('look');
     expect(toolIcon('list_trashed_files')).toBe('list');
@@ -104,6 +105,11 @@ describe('stepTitle', () => {
       label: '“osmosis”',
       text: 'Searched your sources for “osmosis”',
     });
+    const web = tool('w', 'search_web', undefined, { detail: 'airlift' });
+    expect(stepTitle(web, 'running').text).toBe(
+      'Searching the web for “airlift”'
+    );
+    expect(stepTitle(web, 'failed').text).toBe("Couldn't search the web");
     const look = tool('c', 'capture_page', undefined, {
       capture: { bbox: null, bytes: 1, page: 12 },
     });

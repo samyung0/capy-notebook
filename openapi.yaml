@@ -1112,12 +1112,18 @@ components:
         pageStart:
           format: int64
           type: integer
+        published:
+          type: string
         regions:
           items:
             $ref: "#/components/schemas/Region"
           nullable: true
           type: array
+        siteName:
+          type: string
         snippet:
+          type: string
+        url:
           type: string
       required:
         - fileId

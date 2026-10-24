@@ -37,7 +37,8 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     assert text.startswith("# Skill: note_building\n")
     assert contract.FORMATS["note"] in text and "Quizzes: add_questions" not in text
     editing = (await tools._read_skill({"name": "editing"}, ctx)).text()
-    assert "Budget:" in editing and "excerpt_ids are" not in editing
+    # One text in both modes of the Workspace only switch.
+    assert "Budget:" in editing and "excerpt_ids are" in editing
     assert "add_questions" in editing and "Flashcards:" in editing
     assert "Edits not yet in search show up as hints" in editing
     office = (await tools._read_skill({"name": "office_building"}, ctx)).text()
@@ -65,7 +66,6 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
         "The first page lists the paragraph styles by id and name. A command "
         "copies an id whole, as the read shows it." in office
     )
-    ctx.library = True
     assert (
         "Practice from the library"
         in (await tools._read_skill({"name": "note_building"}, ctx)).text()
@@ -140,6 +140,6 @@ async def test_a_later_turn_replays_the_skills_an_earlier_turn_read():
     # Once each, where first read, with the current text.
     assert [m["id"] for m in replayed] == ["a1", "a1"]
     assert replayed[0]["content"] == skills.render(
-        "editing", skills.SKILLS["editing"].text(False)
+        "editing", skills.SKILLS["editing"].text()
     )
     assert skills.retained(history) == {"editing", "note_building"}
