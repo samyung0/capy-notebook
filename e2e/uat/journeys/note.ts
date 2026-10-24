@@ -281,7 +281,8 @@ const MEDIA = {
 /**
  * A note image or audio clip through the slash command's file picker (the
  * actor, under the line `after`): one ready row named by the note and charged
- * to the owner, and the stored bytes are the picked ones. Images also render.
+ * to the actor who added it (M16), and the stored bytes are the picked ones.
+ * Images also render.
  */
 export async function insertNoteMedia(
   run: UatRun,
@@ -332,7 +333,7 @@ export async function insertNoteMedia(
   assert.equal(asset.status, 'ready');
   assert.equal(asset.material_id, noteId);
   assert.equal(asset.created_by, actor.id);
-  assert.equal(asset.user_id, run.owner.id);
+  assert.equal(asset.user_id, actor.id);
   assert.equal(Number(asset.size_bytes), file.buffer.length);
   await run.record('blob', asset.object_path, { assetId, noteId });
   assert.equal((await run.blob(asset.object_path)).sha256, sha256(file.buffer));
