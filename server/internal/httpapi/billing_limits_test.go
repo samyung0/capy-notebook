@@ -24,12 +24,18 @@ import (
 func TestCreditCheckoutsAreReusedPerUser(t *testing.T) {
 	a, _, ctx := checkoutTestAPI(t)
 	a.cfg.StripeSecretKey = "sk_test_fake"
-	created := 0
+	created, reads := 0, 0
+	status := map[string]string{}
 	a.stripeTopUpCheckout = func(_, _ string, _ int64, _, _ string) (billing.CheckoutSession, error) {
 		created++
 		id := fmt.Sprintf("cs_topup_%s_%d", userID(ctx), created)
+		status[id] = "open"
 		return billing.CheckoutSession{ID: id, URL: "https://checkout.stripe.test/" + id, Status: "open",
 			ExpiresAt: time.Now().Add(30 * time.Minute)}, nil
+	}
+	a.stripeGetCheckout = func(id string) (billing.CheckoutSession, error) {
+		reads++
+		return billing.CheckoutSession{ID: id, Status: status[id]}, nil
 	}
 	topUp := func(cents int64) string {
 		t.Helper()
@@ -49,9 +55,18 @@ func TestCreditCheckoutsAreReusedPerUser(t *testing.T) {
 	if err := a.s.ForgetCreditCheckout(ctx, fmt.Sprintf("cs_topup_%s_2", userID(ctx))); err != nil {
 		t.Fatal(err)
 	}
-	topUp(1000)
+	third := topUp(1000)
 	if created != 3 {
 		t.Fatalf("after its webhook finished the page: %d sessions, want 3", created)
+	}
+	// Completed with its webhook lost (review L-7): Stripe's status says so,
+	// and the next click gets a new page.
+	status[fmt.Sprintf("cs_topup_%s_3", userID(ctx))] = "complete"
+	if again := topUp(1000); again == third || created != 4 {
+		t.Fatalf("a completed page was handed out again (%d sessions)", created)
+	}
+	if reads != 2 {
+		t.Fatalf("Stripe status reads = %d, want one per reuse (2)", reads)
 	}
 }
 

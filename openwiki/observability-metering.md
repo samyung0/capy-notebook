@@ -1524,7 +1524,10 @@ OAuth tokens and connected providers are kept in process for 3 minutes per
 user (a token never within a minute of its expiry, and not at all without
 one); a disconnect and every Clerk `user.*` webhook drop the user's entries.
 Stripe Checkout pages for the same top-up amount or card setup are handed out
-again while they have 5 minutes left, and invoice lists are cached for 60 s.
+again while they have 5 minutes left and Stripe still reports them open (one
+status read; a completed or expired page is dropped and a new one made), and
+invoice lists are cached for 60 s. Every top-up or card click takes the
+Stripe session bucket, the reused ones included.
 
 **Signed share reads.** The site Worker signs each read of `/api/public/` with
 `X-Capy-Share-Read: {unix}.{base64url HMAC-SHA256(SHARE_LINK_SECRET,

@@ -699,15 +699,27 @@ func (a *api) creditCheckout(
 	ctx context.Context, kind string, amountCents int64, open func() (billing.CheckoutSession, error),
 ) (*urlOutput, error) {
 	uid := userID(ctx)
-	url, err := a.s.OpenCreditCheckout(ctx, uid, kind, amountCents)
+	// Every click takes the session bucket: a reuse reads its session's
+	// status from Stripe, a new page creates one.
+	if err := a.stripeSessionAllowed(ctx); err != nil {
+		return nil, err
+	}
+	sessionID, url, err := a.s.OpenCreditCheckout(ctx, uid, kind, amountCents)
 	if err != nil {
 		return nil, hErr(err)
 	}
 	if url != "" {
-		return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
-	}
-	if err := a.stripeSessionAllowed(ctx); err != nil {
-		return nil, err
+		// A page completed or expired without its webhook arriving is dead.
+		recorded, err := a.stripeGetCheckout(sessionID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		if recorded.Status == string(stripe.CheckoutSessionStatusOpen) {
+			return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+		}
+		if err := a.s.ForgetCreditCheckout(ctx, sessionID); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	session, err := open()
 	if err != nil {

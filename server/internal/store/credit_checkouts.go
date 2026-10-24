@@ -9,18 +9,18 @@ import (
 // left to be handed out again, so the user can still finish it.
 const creditCheckoutReuseMargin = 5 * time.Minute
 
-// OpenCreditCheckout returns the page of the user's open Checkout of kind
-// (billing.KindTopUp or KindReloadMethod) for amountCents (0 for the card),
-// or "" when there is none to reuse.
-func (s *Store) OpenCreditCheckout(ctx context.Context, userID, kind string, amountCents int64) (string, error) {
-	var url string
-	err := s.pool.QueryRow(ctx, `SELECT url FROM credit_checkouts
+// OpenCreditCheckout returns the session and page of the user's recorded
+// Checkout of kind (billing.KindTopUp or KindReloadMethod) for amountCents (0
+// for the card), or "" when there is none to reuse. The caller checks with
+// Stripe that it is still open.
+func (s *Store) OpenCreditCheckout(ctx context.Context, userID, kind string, amountCents int64) (sessionID, url string, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT session_id, url FROM credit_checkouts
 		WHERE user_id=$1 AND kind=$2 AND amount_cents=$3 AND expires_at > $4`,
-		userID, kind, amountCents, time.Now().Add(creditCheckoutReuseMargin)).Scan(&url)
+		userID, kind, amountCents, time.Now().Add(creditCheckoutReuseMargin)).Scan(&sessionID, &url)
 	if isNoRows(err) {
-		return "", nil
+		return "", "", nil
 	}
-	return url, err
+	return sessionID, url, err
 }
 
 // RecordCreditCheckout keeps a new credit Checkout for reuse until it expires;
