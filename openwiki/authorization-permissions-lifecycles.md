@@ -1608,6 +1608,11 @@ deleted with it; incidents that name no user, or another user, keep the
 purged account's file ids until their 90 days pass. Its open Checkout pages
 (`credit_checkouts`, a Stripe URL and amount) and its daily grading and invite
 counters (`grading_usage`, `invite_usage`) go too (Epo 2026-10-24, Q315).
+Questions it last edited or reviewed in the shared question bank stay, with
+its id blanked from `updated_by` and `reviewed_by`: the purge worker does that
+first, through the bank's editor pool, and leaves the account due while the
+bank cannot answer (Q350; `purgeAccount` in `server/cmd/api/account_workers.go`,
+`bank.ForgetUser`).
 `starter_grants` keeps
 the user id and the card's Stripe fingerprint through purge, so the same card
 cannot claim the starter credits again on a new account (see

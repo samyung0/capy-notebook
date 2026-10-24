@@ -544,13 +544,13 @@ func main() {
 		CaptionDays: envInt("CAPY_CAPTION_CACHE_TTL_DAYS", 90),
 	})
 	go runBlobSweep(ctx, st, blobStore)
-	go runAccountPurgeWorker(ctx, st, clerkSecret != "")
 	go runOverQuotaNoticeWorker(ctx, st)
 	go runCollaborationEvictionWorker(ctx, st, rdb)
 	go runSourceBatchWorker(ctx, st, rdb)
 	go runBankCommentDigestWorker(ctx, st, emailSender, appURL)
 
 	bankStore := bank.New(env("BANK_DATABASE_URL", ""), env("BANK_EDITOR_DATABASE_URL", ""), env("BANK_ASSETS_URL", ""), env("LIBRARY_DATABASE_URL", ""))
+	go runAccountPurgeWorker(ctx, st, bankStore.ForgetUser, clerkSecret != "")
 	// Questions copied from the bank into quizzes keep linking its figures.
 	questions.QuizBankAssetsURL = env("BANK_ASSETS_URL", "")
 	defer bankStore.Close()
