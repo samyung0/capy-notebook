@@ -4,13 +4,16 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { LostEditorAssetPurpose } from './lostEditorAssetPurpose.ts';
+import type { EditorAssetItemPurpose } from './editorAssetItemPurpose.ts';
 
-export interface LostEditorAsset {
+export interface EditorAssetItem {
   assetId: string;
   createdAt: string;
+  lostAccess: boolean;
+  materialId?: string;
   materialTitle: string;
   name: string;
-  purpose: LostEditorAssetPurpose;
+  purpose: EditorAssetItemPurpose;
   sizeBytes: number;
+  workspaceName: string;
 }

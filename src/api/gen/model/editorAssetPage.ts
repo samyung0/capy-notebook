@@ -4,11 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { LostEditorAsset } from './lostEditorAsset.ts';
+import type { EditorAssetItem } from './editorAssetItem.ts';
 
-export interface LostEditorAssetPage {
+export interface EditorAssetPage {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  items: LostEditorAsset[];
+  items: EditorAssetItem[];
   nextCursor?: string;
 }

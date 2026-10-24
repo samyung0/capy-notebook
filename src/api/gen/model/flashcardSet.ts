@@ -23,6 +23,8 @@ export interface FlashcardSet {
   parentMaterialId?: string;
   privacy: Privacy;
   provenance?: Provenance;
+  /** @nullable */
+  removedAssetIds?: string[] | null;
   revision: number;
   sharePath?: string;
   workspaceId: string;
