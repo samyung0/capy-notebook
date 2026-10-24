@@ -221,7 +221,7 @@ export function ItemCard({
   return (
     <Card
       className={cn(
-        '@container group/card relative gap-0 p-1.5 hover:bg-surface-hover-bg',
+        '@container group/card relative gap-0 p-1.5 hover:bg-page-hover',
         selected && 'bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
       )}
       data-item

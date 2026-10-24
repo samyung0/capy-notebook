@@ -55,6 +55,7 @@ import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useOnlineStatus } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { usePointerDownPress } from '@/lib/usePointerDownPress';
 import { MaterialModeToggle } from './MaterialModeToggle';
 import { MaterialShareDialog } from './MaterialShareDialog';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
@@ -85,7 +86,8 @@ export interface OneColumnChrome {
   workspaceName: string;
 }
 
-/** The title as the button that opens the Files dropdown, chevron after it. */
+/** The title as the button that opens the Files dropdown, chevron after it.
+ * Opens on press, like the menus. */
 export function FilesTitleButton({
   chrome,
   children,
@@ -93,12 +95,13 @@ export function FilesTitleButton({
   chrome: OneColumnChrome;
   children: ReactNode;
 }) {
+  const press = usePointerDownPress();
   return (
     <button
       aria-expanded={chrome.filesOpen}
       className="flex min-w-0 max-w-full items-center gap-1.5 rounded-button text-left sm:gap-2"
-      onClick={chrome.onOpenFiles}
       type="button"
+      {...press(chrome.onOpenFiles)}
     >
       {children}
       <Icon
@@ -189,6 +192,9 @@ export function EditorSaveStatus({
       <TooltipTrigger
         className={cn(
           'inline-flex size-(--toolbar-button) shrink-0 items-center justify-center rounded-button outline-none focus-visible:ring-2 focus-visible:ring-action',
+          // With its label the button grows to fit it rather than spilling
+          // the icon over the ⋮ before it.
+          labelFromMd && 'md:w-auto md:px-1.5',
           failed && 'text-solid-error'
         )}
         data-save-state={editorStatus.saveState}

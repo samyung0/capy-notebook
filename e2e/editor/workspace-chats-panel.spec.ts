@@ -121,11 +121,16 @@ test('the Files view searches the tree by name', async ({ page }) => {
   await expect(page.locator('[data-workspace-file-tree]')).toHaveCount(2);
 });
 
-test('below 1536px the panel starts closed and history lists archived chats', async ({
+test('the panel starts open; closed, history lists archived chats', async ({
   page,
 }) => {
   await openWorkspace(page, 1366);
   await showPanelView(page, m.workspace_tab_chat());
+  await expect(leftPanel(page)).toBeVisible();
+  // The rail offers Chat history only while the left panel is closed.
+  await page
+    .getByRole('button', { name: m.workspace_close_side_panel() })
+    .click();
   await expect(leftPanel(page)).toHaveCount(0);
   await page.getByRole('button', { name: m.chat_history() }).click();
   const history = page.getByRole('dialog', { name: m.chat_history() });

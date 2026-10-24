@@ -6,12 +6,17 @@ import {
 } from '@tanstack/react-router';
 import {
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from 'react';
-import { type PanelSize, usePanelRef } from 'react-resizable-panels';
+import {
+  type GroupImperativeHandle,
+  type PanelSize,
+  useGroupRef,
+} from 'react-resizable-panels';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
@@ -95,18 +100,25 @@ const isPanelTab = (value: unknown): value is PanelTab =>
 const isLeftView = (value: unknown): value is LeftView =>
   value === 'chats' || value === 'files';
 
-// The rail is 32% of the group from 1380px up (~438px at a 1400px window).
-// Narrower, it takes three quarters of the lost width down to 400px, the
-// least a rich chat answer (cards, tables, charts) reads well in.
 /** The header's panel toggles while their panel is open: the icon's strip
  * fills in the accent. */
 const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
+
+const LEFT_SIZE = 340;
+const LEFT_MIN = 300;
+const VIEWER_MIN = 400;
+// The rail is 32% of the group from 1380px up (~438px at a 1400px window).
+// Narrower, it takes three quarters of the lost width down to 400px, the
+// least a rich chat answer (cards, tables, charts) reads well in.
 const RAIL_SHARE = 0.32;
 const RAIL_FULL_AT = 1380;
 const RAIL_MIN = 400;
 function railSize(groupWidth: number) {
-  if (groupWidth >= RAIL_FULL_AT) return `${RAIL_SHARE * 100}%`;
-  return `${Math.max(RAIL_MIN, RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth))}px`;
+  if (groupWidth >= RAIL_FULL_AT) return RAIL_SHARE * groupWidth;
+  return Math.max(
+    RAIL_MIN,
+    RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth)
+  );
 }
 
 /** A collapsible panel was dragged under its least width. Reopening a
@@ -115,73 +127,100 @@ function collapsedByDrag(size: PanelSize, previous: PanelSize | undefined) {
   return size.inPixels === 0 && !!previous && previous.inPixels > 0;
 }
 
-/** A side panel. Closed, it collapses to nothing but stays mounted: the
- * group remembers a layout per set of panels, so a remounted panel would come
- * back collapsed after a drag closed it, and the rail's chat keeps its thread,
- * draft and stream. Opening sizes it
- * from the group's width; with `fitToWidth` it refits whenever that width
- * changes, which also drops a width the user dragged. Dragging it under its
- * least width closes it. */
+/** A side panel. Closed, it collapses to nothing but stays mounted, so the
+ * rail's chat keeps its thread, draft and stream. usePanelLayout places it;
+ * dragging it under its least width closes it. */
 function SidePanel({
   id,
   open,
   onCollapse,
-  size,
-  fitToWidth = false,
   minSize,
   maxSize,
+  className,
   children,
 }: {
   id: string;
   open: boolean;
   onCollapse: () => void;
-  size: (groupWidth: number) => string;
-  fitToWidth?: boolean;
   minSize: string;
   maxSize: string;
+  className: string;
   children: ReactNode;
 }) {
-  const panelRef = usePanelRef();
-  const [element, setElement] = useState<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const group = element?.parentElement;
-    if (!group) return;
-    // The first callback lands after the group has registered its panels.
-    let first = true;
-    const observer = new ResizeObserver(([entry]) => {
-      const panel = panelRef.current;
-      if (!open) {
-        if (panel && !panel.isCollapsed()) panel.collapse();
-      } else if (first || fitToWidth) {
-        panel?.resize(size(entry.contentRect.width));
-      }
-      first = false;
-    });
-    observer.observe(group);
-    return () => observer.disconnect();
-  }, [element, fitToWidth, open, panelRef, size]);
   return (
     <ResizablePanel
-      className="overflow-visible!"
+      className={cn('overflow-visible!', className)}
       collapsible
-      // Constant: a changing defaultSize re-registers the group, and the
-      // resize that opens the panel then lands on the stale layout.
+      // Constant: a changing defaultSize re-registers the group.
       defaultSize="0%"
-      elementRef={setElement}
       id={id}
       maxSize={maxSize}
       minSize={minSize}
       onResize={(next, _id, previous) => {
         if (open && collapsedByDrag(next, previous)) onCollapse();
       }}
-      panelRef={panelRef}
     >
       {children}
     </ResizablePanel>
   );
 }
 
-const leftSize = () => '340px';
+/** Lays the side panels out whenever one opens or closes: the panel that did
+ * not change keeps its width and the viewer takes the difference (the
+ * library's own resize moves space to and from the farthest panel first, so
+ * opening the rail collapsed the left panel). The left opens at 340px, the
+ * rail at railSize, which it follows with the window while it is the only
+ * side panel open. When the viewer would drop under its least width, the
+ * rail and then the left give way down to theirs. */
+function usePanelLayout({
+  group,
+  groupRef,
+  hasLeft,
+  left,
+  right,
+}: {
+  group: HTMLDivElement | null;
+  groupRef: RefObject<GroupImperativeHandle | null>;
+  /** The left panel is rendered (xl up). */
+  hasLeft: boolean;
+  left: boolean;
+  right: boolean;
+}) {
+  useEffect(() => {
+    if (!group) return;
+    // The first callback lands after the group has registered its panels.
+    let first = true;
+    const observer = new ResizeObserver(([entry]) => {
+      const handle = groupRef.current;
+      const width = entry.contentRect.width;
+      const fit = right && !left;
+      if (!(handle && width > 0 && (first || fit))) return;
+      first = false;
+      const current = handle.getLayout();
+      const kept = (id: string) => ((current[id] ?? 0) * width) / 100;
+      let files = left ? kept('files') || LEFT_SIZE : 0;
+      let rail = right ? (fit ? 0 : kept('rail')) || railSize(width) : 0;
+      let short = VIEWER_MIN - (width - files - rail);
+      if (short > 0 && rail > 0) {
+        const give = Math.min(short, rail - RAIL_MIN);
+        rail -= Math.max(give, 0);
+        short -= Math.max(give, 0);
+      }
+      if (short > 0 && files > 0) files -= Math.min(short, files - LEFT_MIN);
+      const share = (px: number) => (px / width) * 100;
+      // The library reads the sizes in panel order, not by id, so the
+      // entries go in that order (an object literal's keys get sorted).
+      const sizes: [string, number][] = [
+        ['files', share(files)],
+        ['viewer', 100 - share(files) - share(rail)],
+        ['rail', share(rail)],
+      ];
+      handle.setLayout(Object.fromEntries(hasLeft ? sizes : sizes.slice(1)));
+    });
+    observer.observe(group);
+    return () => observer.disconnect();
+  }, [group, groupRef, hasLeft, left, right]);
+}
 
 export default function WorkspaceOpen() {
   const params = useParams({ strict: false });
@@ -207,15 +246,13 @@ export default function WorkspaceOpen() {
   const [cloneOpen, setCloneOpen] = useState(false);
 
   // Breakpoints: one column below 1260px, side panels from there, the left
-  // one only from xl up. The left starts open from 2xl, where there is room,
-  // the right starts closed (a chat row opens it); both toggles and both
-  // panels' views are remembered.
+  // one only from xl up. The left starts open, the right closed (a chat row
+  // opens it); both toggles and both panels' views are remembered.
   const lg = useMediaQuery('(min-width: 1260px)');
   const xl = useMediaQuery('(min-width: 1280px)');
-  const roomy = useMediaQuery('(min-width: 1536px)');
   const [leftOpen, setLeftOpen] = useLocalPref(
     PREF_KEYS.leftPanel,
-    roomy,
+    true,
     isBoolean
   );
   const [rightOpen, setRightOpen] = useLocalPref(
@@ -225,6 +262,16 @@ export default function WorkspaceOpen() {
   );
   const oneColumnLayout = !lg;
   const leftShown = xl && leftOpen;
+  const panelGroupRef = useGroupRef();
+  const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
+  usePanelLayout({
+    // One column has no side panels to place.
+    group: lg ? panelGroup : null,
+    groupRef: panelGroupRef,
+    hasLeft: xl,
+    left: leftShown,
+    right: rightOpen,
+  });
   const [leftView, setLeftView] = useLocalPref(
     PREF_KEYS.leftView,
     'chats',
@@ -755,39 +802,50 @@ export default function WorkspaceOpen() {
 
   // The viewer keeps one parent chain at every width: moving an Office iframe
   // to another parent reloads its runtime and refetches the document.
+  // The gaps between panels are padding inside them and the separators stay
+  // mounted (disabled while their panel is closed): panels size as shares of
+  // their summed width, so a gap or separator that came and went with a
+  // panel shifted the other one, and a new separator re-registered the group,
+  // which could restore a layout with the reopened panel at zero.
   // overflow-visible WITH important is so that shadow doesnt get clipped
   return (
     <>
       <div className="flex h-full min-h-0 flex-col gap-2.5">
         <ResizablePanelGroup
           className={cn(
-            'overflow-visible! flex min-h-0 flex-1 gap-1.5',
+            'overflow-visible! flex min-h-0 flex-1',
             // Collapsed, a side panel leaves no gap behind.
             !leftOpen && '[&>#files]:hidden!',
             !rightOpen && '[&>#rail]:hidden!'
           )}
+          elementRef={setPanelGroup}
+          groupRef={panelGroupRef}
           orientation="horizontal"
         >
           {xl && (
             <>
               <SidePanel
+                className="pr-1.5"
                 id="files"
                 maxSize="420px"
-                minSize="300px"
+                minSize={`${LEFT_MIN}px`}
                 onCollapse={() => setLeftOpen(false)}
                 open={leftOpen}
-                size={leftSize}
               >
                 {/* Unlike the rail's chat, nothing here needs to survive closing. */}
                 {leftOpen && leftPanel}
               </SidePanel>
-              {leftOpen && <ResizableHandle withHandle />}
+              <ResizableHandle disabled={!leftOpen} withHandle={leftOpen} />
             </>
           )}
           <ResizablePanel
-            className="overflow-visible!"
+            className={cn(
+              'overflow-visible!',
+              leftShown && 'pl-1.5',
+              lg && rightOpen && 'pr-1.5'
+            )}
             id="viewer"
-            minSize={oneColumnLayout ? undefined : '400px'}
+            minSize={oneColumnLayout ? undefined : `${VIEWER_MIN}px`}
           >
             <div
               className="relative h-full"
@@ -822,15 +880,14 @@ export default function WorkspaceOpen() {
           </ResizablePanel>
           {lg && (
             <>
-              {rightOpen && <ResizableHandle withHandle />}
+              <ResizableHandle disabled={!rightOpen} withHandle={rightOpen} />
               <SidePanel
-                fitToWidth={!leftShown}
+                className="pl-1.5"
                 id="rail"
                 maxSize="50%"
                 minSize={`${RAIL_MIN}px`}
                 onCollapse={() => setRightOpen(false)}
                 open={rightOpen}
-                size={railSize}
               >
                 {railColumn}
               </SidePanel>
