@@ -75,9 +75,8 @@ export const OLDEST_CLOSED_REASON = 'collaboration-oldest-closed';
 /** Why the server closed an embed's channel: its note joined one past its
  * cap of embed channels (`EMBED_CLOSED_REASON`, same file). */
 export const EMBED_CLOSED_REASON = 'collaboration-embed-closed';
-/** Why the server refused a JOIN's client id: a live channel holds it, or
- * it is another user's (`REFUSED_REASON`, collaboration-rs/crates/server/src/
- * client_ids.rs). */
+/** Why the server refused a JOIN's client id: a live channel holds it
+ * (`REFUSED_REASON`, collaboration-rs/crates/server/src/client_ids.rs). */
 const CLIENT_ID_REFUSED_REASON = 'collaboration-client-id';
 /** Why the server closed or refused an embed's channel: its note's channel
  * is not joined (`NOTE_CLOSED_REASON`, same file). */

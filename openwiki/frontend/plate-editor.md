@@ -1511,13 +1511,12 @@ its id by presenting its previous token.
   `collaboration-rs/crates/server/src/client_ids.rs`). A JOIN binds its
   channel to the id its Y.Doc names, in memory. An id recorded to the
   joiner's user binds as it is, whichever id the token offers (a reconnect).
-  An id recorded to another user is refused as `collaboration-client-id`. An
-  unrecorded id binds only when it is the one the token offers, has no
+  An unrecorded id binds only when it is the one the token offers, has no
   structs in the document's history (its state vector) and no live channel
-  holds it (nor the room's own client). One the token does not offer, or one
-  in the history (its row cleared or expired), is refused as
-  `collaboration-unassigned-id`: no retry binds it, so the editor does not
-  retry (`roomRefusal` reads it as `unassigned`; until the catch-up merge
+  holds it (nor the room's own client). One recorded to another user, one the
+  token does not offer, or one in the history (its row cleared or expired) is
+  refused as `collaboration-unassigned-id`: no retry binds it, so the editor
+  does not retry (`roomRefusal` reads it as `unassigned`; until the catch-up merge
   re-applies its edits, a note or item keeps its unsent edits as refused and
   remounts, a source session goes to recovery). One a live channel holds is
   refused as `collaboration-client-id` (two sessions presented one previous
@@ -1583,6 +1582,15 @@ its id by presenting its previous token.
   its token's id is re-granted and its edits land. Drafts stored before the
   binding, under ids nobody was assigned, are refused once and kept for
   copying.
+- **The unassigned signal** (for the catch-up merge's re-author mode). Edits
+  under an id the room does not hold for the user are answered apart from an
+  invalid document on every path: a room write gets `document-rejected` code
+  `unassigned` (material rooms) or `source-checkpoint-failed` code
+  `unassigned` (source rooms), a draft send class `unassigned` (409), and the
+  JOIN of a document that wrote under such an id `collaboration-unassigned-id`
+  (`collaboration-client-id` means only that a live channel holds the id; the
+  browser retries once with fresh ids, and a document that wrote then hears
+  `collaboration-unassigned-id`).
 - **Awareness.** A channel's awareness entries are kept only under its bound
   id; entries under any other id are ignored.
 - **Browser writers.** Notes, items and text sources write under their

@@ -21,15 +21,16 @@ use yrs::{ReadTxn, Update, UpdateBlock};
 
 use crate::auth::{Context, RoomName};
 
-/// Why a JOIN was refused under this rule: its id is another user's, or one
-/// a live channel holds. The browser joins again with a fresh token, without
-/// its previous one (a Y.Doc that never wrote takes the fresh token's id;
-/// one that wrote names its own again).
+/// Why a JOIN was refused under this rule: a live channel holds its id. The
+/// browser joins again with a fresh token, without its previous one (a Y.Doc
+/// that never wrote takes the fresh token's id; one that wrote names its own
+/// again and, the id still not its user's, hears [UNASSIGNED_REASON]).
 pub const REFUSED_REASON: &str = "collaboration-client-id";
 
-/// Why a JOIN was refused: the room holds its id for no user: not the one
-/// its token offers and unrecorded (never assigned, or a row that was
-/// cleared), or unrecorded with structs in the document's history.
+/// Why a JOIN was refused: the room does not hold its id for the joiner's
+/// user: recorded to another user, or unrecorded and either not the one its
+/// token offers (never assigned, or a row that was cleared) or with structs
+/// in the document's history.
 /// No retry binds it: the browser does not retry, and its edits under the
 /// id are re-applied under an assigned one (Epo 2026-10-24).
 pub const UNASSIGNED_REASON: &str = "collaboration-unassigned-id";
@@ -225,7 +226,8 @@ impl ClientIds {
     /// is the Y.Doc's id from the JOIN; `history` says whether the room's
     /// state already has structs under an id, `live` whether a live channel
     /// is bound to it or it is the room's own. An id recorded to this user
-    /// binds as it is (a reconnect, whichever id its token offers). An
+    /// binds as it is (a reconnect, whichever id its token offers); one
+    /// recorded to another user is not this user's (unassigned). An
     /// unrecorded id must be the one its token offers (fresh, or the previous
     /// token's again, Q236), outside the history (else the room no longer
     /// holds it: unassigned) and not live (two channels never share an
@@ -245,7 +247,7 @@ impl ClientIds {
         let worker = context.worker_client_id.map(u64::from);
         let check = |id: u64, offered: bool| match self.owners.get(&id) {
             Some(owner) if *owner == context.user_id => Ok(()),
-            Some(_) => Err(REFUSED_REASON),
+            Some(_) => Err(UNASSIGNED_REASON),
             None if !offered || history(id) => Err(UNASSIGNED_REASON),
             None if live(id) => Err(REFUSED_REASON),
             None => Ok(()),

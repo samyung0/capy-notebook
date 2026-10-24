@@ -2919,11 +2919,11 @@ async fn edits_under_an_unassigned_client_id_are_refused_with_their_own_code() {
 }
 
 /// Security regression (Q226, binding review M2): every JOIN guard of the
-/// client-id binding refuses: a JOIN naming an id stored as another user's,
-/// an id a live read channel holds, and a write token whose worker id is
-/// taken as `collaboration-client-id`, and an id its token does not offer
-/// that no user holds as `collaboration-unassigned-id`. Fails if any of
-/// those guards is removed.
+/// client-id binding refuses: a JOIN naming an id a live read channel holds,
+/// or a write token whose worker id one holds, as `collaboration-client-id`,
+/// and an id stored as another user's or one its token does not offer that
+/// no user holds as `collaboration-unassigned-id`. Fails if any of those
+/// guards is removed.
 #[tokio::test]
 async fn every_join_guard_refuses_a_client_id_it_may_not_bind() {
     let Some(env) = env() else { return };
@@ -2946,9 +2946,10 @@ async fn every_join_guard_refuses_a_client_id_it_may_not_bind() {
     };
     // Another user's stored id, named with the joiner's own fresh token.
     let editors = token(&room, &editor, "write");
-    refused(
+    refused_as(
         join_payload_as(&room, &editors, Some(client_protocol()), owners),
         "another user's id",
+        "collaboration-unassigned-id",
     )
     .await;
     // A free id other than the one the token offers.
