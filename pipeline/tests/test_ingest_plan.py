@@ -72,3 +72,45 @@ def test_validates_the_versioned_server_contract() -> None:
 def test_rejects_unknown_or_internally_inconsistent_contracts(value) -> None:
     with pytest.raises(TerminalError):
         plan.require(value)
+
+
+_AUDIO = {
+    "route": "audio_transcription",
+    "parserRoute": "",
+    "stages": [
+        "fetch_source",
+        "transcribe_audio",
+        "persist_derived_text",
+        "chunk",
+        "index",
+        "generate_derivatives",
+    ],
+    "resources": [
+        "object_storage_read",
+        "embedding_model",
+        "ingest_model",
+        "audio_transcription",
+        "object_storage_write",
+    ],
+}
+
+
+@pytest.mark.parametrize("format_name", ["mp3", "m4a", "webm", "opus"])
+def test_audio_is_transcribed(format_name) -> None:
+    assert plan.require(_value(format=format_name, **_AUDIO)).route == (
+        plan.AUDIO_TRANSCRIPTION
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        _value(format="pdf", **_AUDIO),
+        _value(
+            format="mp3", route="store_only", parserRoute="", stages=[], resources=[]
+        ),
+    ],
+)
+def test_audio_takes_only_the_audio_route(value) -> None:
+    with pytest.raises(TerminalError):
+        plan.require(value)

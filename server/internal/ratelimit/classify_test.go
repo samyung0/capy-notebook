@@ -36,6 +36,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces":                                   classDefault,
 		"/api/edit-incidents":                               classIncident,
 		"/api/files/f_1/thumbnail":                          classThumbnail,
+		"/api/workspaces/ws_1/voice-transcriptions":         classVoice,
 	}
 	for path, want := range cases {
 		if got := classify(http.MethodGet, path); got != want {
@@ -78,5 +79,8 @@ func TestDefaultConfigRaisesAIAndAddsBurst(t *testing.T) {
 	}
 	if cfg.Integration.Limit != 30 || cfg.Integration.Window != time.Minute {
 		t.Fatalf("integration = %+v", cfg.Integration)
+	}
+	if cfg.Voice.Limit != 60 || cfg.Voice.Window != time.Hour || cfg.Voice.burst() != 6 {
+		t.Fatalf("voice = %+v", cfg.Voice)
 	}
 }

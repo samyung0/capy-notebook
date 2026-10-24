@@ -281,13 +281,16 @@ func (FileStatus) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "FileStatus", "pending", "processing", "ready", "failed")
 }
 
-// FileIndexLimit is the ingest limit a file's content is over. The pipeline
-// raises these as InputLimitError (pipeline/pipeline/jobs.py) with the same codes.
+// FileIndexLimit is why a ready file is not indexed: the ingest limit its
+// content is over, or no_speech, a recording with no speech in it. The
+// pipeline raises these as InputLimitError (pipeline/pipeline/jobs.py) with
+// the same codes.
 type FileIndexLimit string
 
 func (FileIndexLimit) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "FileIndexLimit", "page_limit", "scanned_page_limit", "element_limit",
-		"image_pixel_limit", "tabular_column_limit", "tabular_text_limit")
+		"image_pixel_limit", "audio_duration_limit", "tabular_column_limit", "tabular_text_limit",
+		"no_speech")
 }
 
 // NotificationKind categorises an in-app notification.

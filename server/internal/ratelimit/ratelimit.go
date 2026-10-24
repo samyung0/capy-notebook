@@ -78,6 +78,9 @@ type Config struct {
 	ShareReadSecret []byte
 	// Clock is nil for real time; tests set one so waits take no time.
 	Clock Clock
+	// Voice applies to chat voice input, a few recordings a minute from a
+	// person talking; it leaves the chat allowance to the turns they send.
+	Voice Rule
 }
 
 // DefaultConfig is tuned for a single-seat free tier: generous enough that
@@ -100,6 +103,7 @@ func DefaultConfig() Config {
 		// Per visitor and shared page (Epo 2026-10-24, Q244): a cold page
 		// with a few hundred images.
 		SharePage: Rule{Limit: 300, Window: time.Minute},
+		Voice:     Rule{Limit: 60, Window: time.Hour, Burst: 6},
 	}
 }
 

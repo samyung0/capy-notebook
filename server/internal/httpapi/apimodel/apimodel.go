@@ -184,6 +184,8 @@ type SourceUploadPolicy struct {
 	AllowNoExtension             bool                          `json:"allowNoExtension"`
 	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
 	VLMIngestPageCreditMicros    int64                         `json:"vlmIngestPageCreditMicros"`
+	AudioSecondCreditMicros      int64                         `json:"audioSecondCreditMicros"`
+	AudioMaxDurationSeconds      int                           `json:"audioMaxDurationSeconds"`
 }
 
 type Material struct {
@@ -220,13 +222,17 @@ type Material struct {
 	// embedded quizzes and flashcard sets that has credits, by id: the app
 	// computes the note's footer from it and the document's current embeds.
 	EmbedCredits map[string]*store.Provenance `json:"embedCredits,omitempty"`
-	// ImageMaxBytes caps one uploaded image by the material payer's plan: it
-	// pays for the images added to it (Sam 2026-10-19). The browser shrinks
-	// larger images.
+	// ImageMaxBytes caps one uploaded image by the reader's plan: whoever adds
+	// an image pays for it (M16). The browser shrinks larger images.
 	ImageMaxBytes int64 `json:"imageMaxBytes"`
 	// AudioMaxBytes caps one uploaded audio file the same way; the browser
 	// refuses a larger one before it sends anything (Epo 2026-10-22).
 	AudioMaxBytes int64 `json:"audioMaxBytes"`
+	// RemovedAssetIDs are the images and audio its content shows that no
+	// longer exist: deleted by their uploader, or with the uploader's account
+	// (M16). The app shows each as removed instead of loading it; an embedded
+	// quiz or set carries its own list.
+	RemovedAssetIDs []string `json:"removedAssetIds,omitempty"`
 	// StorageFull: the material is view-only because its payer (its creator)
 	// is at its storage limit; "self" when that is the viewer. Editors only.
 	StorageFull store.StorageFullBy `json:"storageFull,omitempty"`
@@ -416,6 +422,8 @@ type Quiz struct {
 	IsOwner        bool `json:"isOwner"`
 	CanEdit        bool `json:"canEdit"`
 	CanEditContent bool `json:"canEditContent"`
+	// RemovedAssetIDs is Material's for the quiz's images.
+	RemovedAssetIDs []string `json:"removedAssetIds,omitempty"`
 }
 
 func FromQuiz(q store.Quiz) Quiz {
@@ -473,6 +481,12 @@ type GradedQuiz struct {
 	Correct   float64          `json:"correct"`
 	Total     float64          `json:"total"`
 	Questions []map[string]any `json:"questions" nullable:"false"`
+}
+
+// VoiceTranscription is a chat voice recording's text, for the composer to
+// insert where the user edits and sends it; nothing is sent or stored.
+type VoiceTranscription struct {
+	Text string `json:"text"`
 }
 
 // GradedQuestion is one checked question, keyed and awarded like GradedQuiz.

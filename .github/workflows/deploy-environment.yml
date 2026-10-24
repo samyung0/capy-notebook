@@ -257,6 +257,7 @@ jobs:
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
           # Exactly the secrets this render reads; test_config.py checks the list.
+          CAPY_SECRET_ALIBABA_MODELSTUDIO_KEY: ${{ secrets.ALIBABA_MODELSTUDIO_KEY }}
           CAPY_SECRET_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CAPY_SECRET_B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
           CAPY_SECRET_B2_KEY_ID: ${{ secrets.B2_KEY_ID }}

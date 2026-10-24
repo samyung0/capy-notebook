@@ -624,6 +624,30 @@ func TestByokSessionsCountTowardTheActorCap(t *testing.T) {
 	}
 }
 
+// A voice clip's reserved session neither takes one of the LLM leases nor
+// counts against them: five open chat streams leave the microphone working,
+// and an open clip leaves room for five streams.
+func TestReservedSessionTakesNoLLMLease(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	llm, embed := platformSessionRates()
+	if _, err := s.BeginReservedSession(ctx, userID, "", SurfaceChat, 2_000_000); err != nil {
+		t.Fatalf("first clip: %v", err)
+	}
+	for i := range ConcurrentLLMLeases {
+		if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, ""); err != nil {
+			t.Fatalf("stream %d beside a clip: %v", i, err)
+		}
+	}
+	if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, ""); !errors.Is(err, ErrTooManyLLMLeases) {
+		t.Fatalf("sixth stream: %v, want ErrTooManyLLMLeases", err)
+	}
+	if _, err := s.BeginReservedSession(ctx, userID, "", SurfaceChat, 2_000_000); err != nil {
+		t.Fatalf("clip beside five streams: %v", err)
+	}
+}
+
 func TestSweepThenLateProviderCallChargesOnce(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

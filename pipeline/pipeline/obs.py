@@ -17,6 +17,7 @@ import dataclasses
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 from dataclasses import dataclass, field
@@ -219,6 +220,7 @@ def init_sentry(service: str) -> None:
             StarletteIntegration(failed_request_status_codes=set()),
         ],
         before_send=_before_send,
+        before_breadcrumb=_before_breadcrumb,
         # Prompts and note content flow through this service.
         send_default_pii=False,
         max_request_body_size="never",
@@ -260,6 +262,27 @@ def _before_send(event, hint):
             return None
         exc._sentry_event_id = event["event_id"]
     return event
+
+
+_URL_QUERY = re.compile(r"[?#][^\s\"']*")
+
+
+def _before_breadcrumb(crumb, _hint):
+    """An HTTP request's breadcrumb keeps its URL without the query or
+    fragment, where a signed link (a transcript's result link) carries its
+    signature. ``httplib`` is the request breadcrumb of http.client (so
+    requests) and httpx; ``httpx`` is httpx's own INFO log line, which names
+    the whole URL."""
+    if crumb.get("category") in ("httplib", "httpx"):
+        data = crumb.get("data") or {}
+        for key in ("http.query", "http.fragment", "url.query", "url.fragment"):
+            data.pop(key, None)
+        for key in ("url", "url.full"):
+            if isinstance(data.get(key), str):
+                data[key] = _URL_QUERY.sub("", data[key])
+        if isinstance(crumb.get("message"), str):
+            crumb["message"] = _URL_QUERY.sub("", crumb["message"])
+    return crumb
 
 
 def capture_error(exc: BaseException, **tags: str) -> str | None:

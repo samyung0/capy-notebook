@@ -452,7 +452,9 @@ const TYPED_SERVER_CODES = new Set([
   'captcha_unavailable',
   'provider_busy',
   'rate_limit_unavailable',
+  'transcription_failed',
   'upload_queue_full',
+  'voice_unavailable',
 ]);
 
 /** The trace id an error that stays on screen shows (a boundary, FormAlert,

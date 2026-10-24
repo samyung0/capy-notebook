@@ -26,6 +26,10 @@ const (
 	MaterialSource    = 200
 	ConversationTitle = 60
 	ChatMessage       = 5_000
+	// VoiceInputSeconds is the longest chat voice recording, in seconds
+	// rather than characters (Epo 2026-10-23); its transcript stays well
+	// under ChatMessage.
+	VoiceInputSeconds = 120
 	// Comment bounds the plain text of one note comment.
 	Comment           = 3_000
 	LLMAPIKey         = 512

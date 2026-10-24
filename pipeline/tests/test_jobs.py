@@ -43,6 +43,21 @@ def test_parse_and_post_parse_each_have_one_retry():
     assert policy_for("ingest").max_attempts == 2
 
 
+def test_an_audio_ingest_job_runs_under_its_own_policy():
+    """Its many poll claims re-pend without attempts, so only a worker that
+    died mid-claim or an ordinary error spends one: two may happen."""
+    from pipeline.ingest import plan
+    from pipeline.jobs import policy_key
+
+    audio = {"processingPlan": {"route": plan.AUDIO_TRANSCRIPTION}}
+    pdf = {"processingPlan": {"route": plan.DOCUMENT_PARSE}}
+
+    assert policy_key("ingest", audio) == "audio"
+    assert policy_for(policy_key("ingest", audio)).max_attempts == 3
+    assert policy_key("ingest", pdf) == policy_key("ingest", None) == "ingest"
+    assert policy_key("parse", audio) == "parse"
+
+
 def test_unknown_job_types_are_terminal():
     with pytest.raises(TerminalError, match="unknown job type"):
         policy_for("no_such_job")

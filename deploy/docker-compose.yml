@@ -155,6 +155,9 @@ services:
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
       # Grades open quiz parts; without it grading answers 503.
       JEV_TYPESAFE_API_KEY: ${JEV_TYPESAFE_API_KEY:-}
+      # Chat voice input: Alibaba Model Studio; without it voice input answers 503.
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       COLLABORATION_URL: ${COLLABORATION_URL:-ws://localhost:1234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Vestigial label stored on the job payload; the parse route is chosen by
@@ -292,6 +295,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Uploaded audio: Alibaba Model Studio Filetrans.
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       CAPY_CAPTION_MAX_EDGE: ${CAPY_CAPTION_MAX_EDGE:-1280}
       CAPY_IMAGE_MAX_PIXELS: ${CAPY_IMAGE_MAX_PIXELS:-100000000}

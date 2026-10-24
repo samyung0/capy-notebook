@@ -3351,7 +3351,7 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
     if numbered and result.paged:
         body = "\n\n".join(
             source_block(
-                f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.text}"
+                f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.reading_text()}"
             )
             for number, passage in numbered
         )

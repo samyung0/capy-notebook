@@ -24,7 +24,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then reads a parse bundle's text-less page renders with the VLM, chunks (with heading retention and extraction confidence), captions standalone images, embeds, and writes the file descriptor. Each replica runs one job at a time |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then reads a parse bundle's text-less page renders with the VLM, chunks (with heading retention and extraction confidence), captions standalone images, transcribes audio, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/plate-ai/*` over the same index |
 | Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs (`parser/odl/`); seven parse children over one FIFO, depth 8; renders text-less pages as JPEGs for the ingest worker's VLM; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
@@ -58,10 +58,12 @@ flowchart LR
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
   Worker -->|image| ImageCaption[Captioning-slot VLM]
+  Worker -->|audio| AudioTranscript[Alibaba Filetrans task]
   Worker -->|CSV / TSV / text| DirectText[Direct normalization]
   Worker -->|parsed document| VlmPages[Text-less pages read by the captioning-slot VLM]
   VlmPages --> Chunk[Heading-aware chunker + heading retention + confidence]
   ImageCaption --> Chunk
+  AudioTranscript --> Chunk
   DirectText --> Chunk
   Chunk --> Index[Embed + file descriptor]
   Index --> Store[(rag_chunks / summaries)]
@@ -225,7 +227,7 @@ changed. Until a workspace model-migration job exists:
 | Type | Enqueued by | Does |
 | --- | --- | --- |
 | Parse | Go upload finalization for `document_parse` plans | Validate → download/hash once → exact-vector donor reuse or parser artifact publication → atomic ingest handoff |
-| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk (heading retention, extraction confidence) / caption a standalone image → embed → two-tier file summary |
+| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk (heading retention, extraction confidence) / caption a standalone image / transcribe audio → embed → two-tier file summary |
 
 Both stages get one retry (two total attempts), exponential backoff
 (`not_before`), a per-type wall-clock timeout, and a heartbeat lease so a dead
@@ -277,7 +279,7 @@ silently taking a nearby route.
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
 | supported image | Captioning-slot pin call (DeepSeek V4.1 Flash 1017 through OpenRouter) | faithful searchable caption | No |
-| supported audio | Store-only (playable in the viewer) | none | No |
+| supported audio | Presigned B2 source link + Alibaba Model Studio Filetrans (`qwen-audio-3.1-asr-flash-filetrans`) | transcript sentences; times and speakers in `regions` | No (`audio-ms` regions) |
 | unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
 HTML, RTF, XML, and source-code extensions have no dedicated handlers. They use
@@ -1156,8 +1158,8 @@ and bundles older than `CAPY_PARSE_SPOOL_TTL_HOURS` (two hours) that no pending
 or running job names, such as a bundle whose parse job ended before handoff.
 
 `files.indexed` is true only after retrieval chunks are written, or reused from
-identical canonical content. Direct image/CSV/TSV routes get an ingest job
-even though they do not use the parser. Audio, unknown and legacy store-only uploads finish
+identical canonical content. Direct image/audio/CSV/TSV routes get an ingest job
+even though they do not use the parser. Unknown and legacy store-only uploads finish
 `ready` with `indexed=false`: the original blob stays viewable/downloadable, and
 chat/generate cannot search it. A failed ingest keeps the original blob and
 lands `failed`/unindexed; the UI shows a banner rather than replacing the
@@ -1165,11 +1167,11 @@ viewer.
 
 #### Ingest limits
 
-Six limits are checked on the real content during ingest. A file over one is
+Seven limits are checked on the real content during ingest. A file over one is
 not failed: the worker raises `InputLimitError(code)`, the job and its attempt
 fail with that `error_code` (logged at info, no Sentry event), and the file
 ends `ready`, `indexed=false`, with `files.index_limit` set to the code
-(migrations `0072`, `0081`, `0089`). It opens, downloads, edits and clones like any file; only
+(migrations `0072`, `0081`, `0089`, `0111`). It opens, downloads, edits and clones like any file; only
 search, chat and generate skip it. The file banner and the upload panel say it
 is too large to index (`files_not_indexed_too_large`; for `element_limit`,
 `files_not_indexed_too_many_elements`, and the upload panel also raises one
@@ -1186,8 +1188,10 @@ Indexing tab lists the change as failed.
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
 | `element_limit` | Image placements, vector paint operators (PDF); table rows, pictures, shapes (DOCX/PPTX) | `odl/elements.py`: 250,000 placements a file and 40,000 a page, 2,000,000 paints; 2,000 each in Office | No |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
+| `audio_duration_limit` | Length of an audio upload measured from its packets (ffmpeg in the decoder sandbox), before any provider task; also where the returned transcript's speech ends | 2 hours (`sourceupload.AudioMaxDurationSeconds`, generated into `pipeline/generated/limits.py`), the provider's limit with speaker labels | The browser reads the length (`audioDuration.ts`; a recorder's WebM or Ogg that names none is sought past its end to find it) and blocks submit past the policy's `audioMaxDurationSeconds`. A file whose length it cannot read within 5 s, or reads as zero, is refused before upload with a toast naming it, since its cost cannot be estimated (Epo 2026-10-24). The upload request requires `durationSeconds` for audio (400 without it) and refuses one past the limit. Imports are only checked by the worker. |
 | `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
 | `tabular_text_limit` | Estimated tokens of rendered CSV/TSV row text, counted while rendering, before chunking or embedding | 1,000,000 | No |
+| `no_speech` | Not a limit: a recording whose finished transcription has no sentences (Epo 2026-10-24: nothing indexed is not a failed index) | none | No |
 
 ### Provider source imports
 
@@ -1265,7 +1269,7 @@ than treating a missing SQL value as an unfenced wildcard.
 Nothing calls a third-party parsing API. The former service could not return
 bounding boxes or images, needed polling, and capped files at 10 MB / 20 pages.
 
-### Direct image and delimited-text ingest
+### Direct image, audio and delimited-text ingest
 
 The Go gateway never processes source media. It enforces the plan byte limit,
 stores the object, resolves the processing plan, snapshots the model pins, and
@@ -1302,8 +1306,190 @@ performs the planned work:
   pipeline identity, so after a bump an upload or reprocess chunks the table
   again instead of reusing a donor's old chunks; tables already indexed keep
   theirs until they are reprocessed.
+- audio goes to Alibaba Model Studio's Filetrans
+  (`qwen-audio-3.1-asr-flash-filetrans`, Singapore workspace,
+  `ALIBABA_MODELSTUDIO_KEY` / `ALIBABA_MODELSTUDIO_URL`), below.
 
 Image captions use the containing-resource associations described below.
+
+#### Audio transcription (Filetrans)
+
+`pipeline/ingest/source_text.py` transcribes an audio ingest job over several
+short claims of the same job, never one claim that waits for the task. A
+cached transcript (`derived-text/<sha>/qwen-audio-3.1-filetrans.json`,
+registered as `derived_text` in `artifact_cache`, sentences with times and
+speakers) is reused with no task and no charge. Each claim holds a session
+advisory lock on the source SHA (`filetrans:<sha>`), and a job finds another
+live job's task for the same bytes (`payload->'filetrans'->>'sha256'`) before
+it measures or submits: it then waits 30 s and reads that job's cached
+transcript, so identical uploads make one task. A worker without
+`ALIBABA_MODELSTUDIO_*` fails the file at once, before any of the steps below.
+
+**The claim with no stored task** submits one:
+
+1. ffmpeg measures the downloaded source under the decoder sandbox's policy
+   (`decode.audio_seconds`, deployment-runbook §7.5): it copies every packet
+   of the first audio stream to the null muxer, nothing decoded, and reports
+   where the last one ends, so a WebM with no duration in its header (what
+   browser recorders write) or an MP4 whose header boxes name a shorter one
+   is measured all the same. An MP4 edit list still applies, as in playback.
+   Over two hours is the `audio_duration_limit` index limit, before any task
+   or charge; a file ffmpeg cannot read fails at once. Then the measured
+   cost, ceil(seconds) at the job's `audio_transcription_second` rate, faces
+   the browser upload's credit gate (Epo 2026-10-24, "check before submit"):
+   it may land at most 0.3x the monthly limit past the actor's available
+   credits (`db.actor_has_credits` with the estimate, the same rule as Go's
+   `AssertCreditsForEstimate`). This holds imported audio (Drive, OneDrive),
+   which no browser measured, and rechecks a browser upload on its measured
+   length; a system-paid job is not checked. A refusal ends the file as an
+   ingest the account cannot take (failed, `accounting` /
+   `ingest_admission_refused`, "ingest refused because the account is locked
+   or over quota"), before any gate lease, link or task, with nothing
+   charged.
+2. The call opens its `provider_calls` row (kind `audio`) under its own gate:
+   at most 12 tasks in flight per environment (`provider_capacity_leases`,
+   key `filetrans`, one unit a task), counted across every worker and every
+   re-pended job. A full gate is a `CapacityWait`: the job re-pends without
+   spending an attempt ("waiting for provider capacity"). The call's receipt
+   window and its lease are held for an hour plus the five-minute grace
+   (`FILETRANS_HOLD_S`) and renewed by every poll claim, so a task's lease
+   lives from its submit to its end, and a job that died lets its lease go
+   within the hour. The hour is past the longest re-pend delay plus the
+   queue's wait for a free ingest worker (one claim may run
+   `CAPY_INGEST_TIMEOUT`, 20 minutes).
+3. Once admitted, the worker signs a GET link for that one source object,
+   valid for ten minutes (`FILETRANS_LINK_S`), the time Alibaba has to fetch
+   it; it is the only way the task reads the audio, and only a new submit
+   signs another.
+4. The task is submitted to `{host}/api/v1/services/audio/asr/transcription`
+   (`X-DashScope-Async: enable`) with the link, `channel_id: [0]`,
+   `keep_dialect: true` (Cantonese stays as spoken), `diarization_enabled:
+   true`, and one `input_text` context message naming the workspace and the
+   file. `{host}` is `ALIBABA_MODELSTUDIO_URL` without `/compatible-mode/v1`;
+   the pipeline refuses to start with a URL not ending in that path.
+5. The task is stored in the job's payload, `filetrans: {taskId, callId,
+   submittedAt, seconds, sha256, providerFailures, polls}`, merged in place
+   and only while this claim still holds the job, and committed. The job then
+   re-pends with its attempt handed back (`release_job_for_capacity`), the
+   file showing "transcribing" (processing, 20%), and the worker is free. A
+   claim that loses the job between the submit and the store leaves that
+   task unpolled: it abandons the call it opened and frees its lease at once
+   (nothing else names them), and a reclaimed job's next claim submits again.
+
+**Each later claim** polls the stored task once (`{host}/api/v1/tasks/{id}`,
+`source_text.poll_task`) after renewing its call and lease for another hour.
+The worker polls before it fetches, hashes or looks up anything for the
+source (`_process_ingest_job`); the stored `sha256` names the source, which
+is fetched and hashed only once the task has succeeded. Each re-pend between
+polls is recorded as its own attempt outcome, `transcription_poll` (no error
+category), apart from `capacity_wait`, and the job counts as queued only
+from when its delay is over (`queued_at` is the poll's due time), so the
+intended delay is not queue latency.
+
+- `PENDING` or `RUNNING`, or a poll answered 408, 429 or 5xx, not answered,
+  or not JSON: the job re-pends again. The delays grow from 2 s by half each
+  time up to 30 s (2, 3, 4, 7, 10, 15, 23, 30, 30 s…), and the count is
+  stored with the task. A poll's request is logged at DEBUG only; the submit
+  stays at INFO.
+- A poll answered 404 is a lost task (below). Any other 4xx (a rotated key,
+  say) abandons the call, frees the gate slot and fails the file.
+- `SUCCEEDED`: the claim reads the result JSON from the task's
+  `transcription_url` (Alibaba's own signed link, fetched without the API key
+  and without logging its URL) and goes on to chunk, index and settle in the
+  same claim. The link must be on Alibaba's result buckets
+  (`dashscope-result-*.oss-*.aliyuncs.com`, no port or user part) and is
+  always fetched over https: tasks answer `http://` links, which are
+  upgraded, since OSS serves the same signed link on either scheme. A
+  redirect is not followed. Another host fails at once; a redirect or any
+  answer but 200 re-pends the job to read the result again (Alibaba keeps it
+  a day), counted as `downloadFailures` with the task, and the fifth such read
+  is a provider failure. A transcript that does not parse is a provider
+  failure.
+- `FAILED` with `InvalidFile.*` (a link the task could not fetch, a file it
+  could not decode) fails the file at once. Any other `FAILED`, `CANCELED`,
+  `UNKNOWN` or a state this code does not know is a provider failure.
+- A task stored more than 12 hours ago (`FILETRANS_RESUME_S`; Alibaba keeps
+  results 24 hours), or one Alibaba answers 404 for, is lost: a provider
+  failure. A younger task whose call ran out unpolled (the host was down past
+  the hour) is polled all the same: still running or succeeded, it takes a new
+  call and gate lease (or waits for a free slot as a `CapacityWait`), the new
+  `callId` is stored, and the old call is left to the receipt sweep. It is
+  charged once, on the new call, and never submitted again.
+
+**Counting.** A provider failure is a refused submit (408, 429, 5xx or an
+unanswered one), a task that ended without a transcript, or a lost task. It
+abandons the call uncharged and frees the lease (an unanswered submit keeps
+its lease until it expires, since a task may run), stores
+`providerFailures`, and re-pends the job, whose next claim submits a new
+task: the one retry. The second provider failure fails the file. Re-pends
+never spend an attempt. Attempts are spent only by a worker that died
+mid-claim (its lease expires, `reclaim_expired_leases` re-pends the job with
+the payload intact, and the next claim polls the stored task instead of
+submitting another) and by an ordinary retryable error (a database or
+embedding failure); an audio ingest job has three attempts (`POLICIES["audio"]`
+through `jobs.policy_key`), where any other ingest job has two. A job
+polling a stored task is never a first claim, so its credits are checked
+once, before its submit.
+
+**Billing.** Only a transcript with sentences is charged: whole seconds
+(ceil) of the measured duration or the last sentence's end, whichever is
+later, at the job's snapshotted `audio_transcription_second` rate, settled
+locally on the ingest session with `units` / `unit = 'seconds'`, on the
+stored call, before the lease is freed. A transcript whose speech ends past
+two hours is the `audio_duration_limit` index limit instead: nothing is
+charged or cached, though the task ran. A recording with no speech is not a
+failure: its call settles at zero credits as a successful call, nothing is
+cached, and the file ends ready and unindexed with `index_limit =
+'no_speech'`, shown in the neutral not-indexed banner as "No speech was
+found in this recording." A failed, refused or lost task is never charged. A
+worker that died after the settlement and before the job ended leaves the
+call applied: the next claim polls, reads the result again and settles the
+same receipt, which applies once. A job pays for its audio once: a later
+call on the same session (a retry whose cached transcript was lost) records
+its seconds at zero credits. Then the transcript is cached (best effort, as
+below). The guard is per job: when the cache write fails and the job then
+fails at a later stage, the user's Retry is a new job on a new session, which
+transcribes and charges again. This takes a failed write (after the bucket
+client's three attempts) followed by a failure past transcription, so it is
+rare.
+
+Once a task is submitted, and until its job ends, the user cannot trash the
+file (Epo 2026-10-24: the task is billed whether or not its result is used).
+`TrashFile` refuses with 409 `audio_transcribing` ("This recording is still
+being transcribed; try again when it finishes"), for a browser delete and the
+chat agent's trash tool alike; the trash dialog shows it inline, and the file
+menu's Delete is disabled with that hint while an audio file is processing.
+Audio has no other user replace or refresh path (source refresh is for
+editable documents). Cascades the user cannot hold back still end the job:
+workspace or account deletion, an editor's removal or demotion, lifecycle
+sweeps. Any job end with a task stored, cancelled, failed, out of attempts or
+refused, frees the task's gate lease and abandons its call
+(`lifecycle`/`job_ended`) in the same transaction, through the
+`jobs_end_filetrans_call` trigger (0111), so no slot waits out the hour; the
+task may still finish at Alibaba, uncharged. A claim that opens a call (a
+submit, or a new call for a run-out one) and then finds its job gone ends
+that call itself. A job whose transcript
+another job cached while its own task ran abandons its call uncharged (a
+settled one stays settled) and frees its lease. Log lines and errors
+name HTTP statuses and provider error codes only, never transcript text or a
+signed link.
+
+Transcript chunks (`retrieval/chunking.py` `chunk_transcript`) hold whole
+sentences, one per line, with no overlap: `text`, `indexed_text` and the
+`search` vector see speech only, with no times or speaker labels. Each chunk's
+`regions` has one entry per sentence, `{"start_ms", "end_ms", "speaker",
+"space": "audio-ms"}` (speaker null without labels), and `page_start` /
+`page_end` stay null. A chunk ends before the token budget, and past half of
+it prefers to end at a speaker change or a pause of 2 s or more. Sentences
+are never split, so each keeps its one time range: a sentence longer than the
+budget (a long unpunctuated stretch) is a chunk of its own, over the budget. The read
+tool and search results render the times at read time: the passage header
+names the span (`lecture.mp3 › 12:30–14:05`) and each speaker's turn opens
+with `[12:30 · Speaker 2]` (`Passage.reading_text`). Citation text-layer
+refinement and `capture_page` take page regions only; an audio citation keeps
+its regions, which Go stores and ships as `start_ms` / `end_ms` / `speaker`
+on `Region`, so the chip shows the start time and the file view starts the
+player there. The pipeline identity is `direct:filetrans`.
 
 These B2 objects are reuse caches, not ingest success conditions. Each cache
 write is one `put_object` through the pipeline's S3 client, which gives every
@@ -2911,7 +3097,8 @@ Below 1260px the workspace has no panels and `ChatPanel` takes `dock`
 (`WorkspaceOpen`): it lays an overlay on the viewer holding the chat page and,
 while that is closed, `ChatDock` (`chat/ChatDock.tsx`). Phones, and Office
 files at every width, get a 52px round button at the bottom right that morphs
-into a one-line field (history clock on the left, send on the right) and
+into a one-line field (history clock on the left, voice input and send on
+the right, [Chat voice input](#chat-voice-input)) and
 focuses it in the same tap, so the keyboard opens; wider screens show the
 field itself. The morph copies the Files panel's floating plus
 (`motion-chat-dock` in `motion.css`): one surface anchored bottom right
@@ -2937,6 +3124,90 @@ The keyboard covers the page instead of resizing it (Chrome's default
 keep their size. `useKeyboardHeight` sets `--keyboard-inset` to the height the
 keyboard covers; the dock's field and the chat page's bottom padding add it, so
 only the composer lifts above the keyboard.
+
+### Chat voice input
+
+The chat composer (`ChatPanel`) and the one-line dock on file pages below lg
+(`ChatDock`) have a mic button left of Send where the browser has
+`MediaRecorder` and `getUserMedia` (`chat/VoiceInput.tsx`, logic in
+`chat/voiceRecording.ts`); elsewhere it is not shown. Both show one
+`useVoiceInput` in `ChatPanel`, so a recording carries over between the dock
+and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
+
+- **Recording.** The button toggles one recording: Opus in WebM or Ogg where
+  `MediaRecorder.isTypeSupported` says so, else Safari's AAC in MP4, asked for
+  at 32 kb/s. While it records, the elapsed time and the limit show beside it
+  (`0:42 / 2:00`) and the mic is filled purple, its label Stop recording; it
+  stops by itself at `VOICE_INPUT_MAX_SECONDS` (120,
+  `fieldlimits.VoiceInputSeconds`, generated into
+  `src/api/limits.generated.ts`). The microphone's tracks stop whenever
+  a recording ends, and when the recorder fails to start; a recording is
+  dropped when the questions block takes the composer's place or the chat
+  goes.
+- **Transcription.** The clip goes as the raw body of
+  `POST /api/workspaces/{id}/voice-transcriptions` with its own
+  `Content-Type` (`useTranscribeVoice`, no toast); a spinner holds the button
+  meanwhile. The answer's `text` is inserted at the composer's caret, over a
+  selection, spaced from neighbouring words except beside Chinese or
+  Japanese (Korean, which spaces its words, is spaced like Latin text;
+  appended while the questions block hides the composer). Nothing is sent:
+  the user
+  edits and sends as usual, under the usual 5,000-character limit.
+- **Errors** show under the composer (`data-error-surface="inline"`) until
+  the next recording: a blocked or missing microphone, busy (any 429), over
+  two minutes, no speech heard, or could not transcribe; credits and account
+  refusals keep their usual copy. Nothing retries; the user records again.
+- **In the dock** the mic sits between the field and Send and, like Send,
+  keeps the field focused through a tap. The field stays open while a
+  recording runs or is transcribed (scrolling and blur do not fold it, and a
+  recording started on the chat page opens it), the transcript lands at the
+  dock field's caret, and the elapsed time or an error shows inside the dock
+  above the field, which grows to fit it.
+
+The gateway (`server/internal/httpapi/voice.go`) lets anyone who may chat in
+the workspace transcribe (the chat stream's `WorkspaceEffectiveRole` check;
+others get 404). It takes `audio/webm`, `audio/ogg` or `audio/mp4` (other
+types 415 `voice_format_unsupported`) and at most 2 MiB, read for at most
+60 s; Huma stops reading at the limit and answers 413. Without
+`ALIBABA_MODELSTUDIO_KEY` and `_URL` it answers 503 `voice_unavailable`; the
+API refuses to start with only one of them set, or with a URL not ending in
+`/compatible-mode/v1` (the pipeline's rule). It then:
+
+1. Reads the context: the workspace title and its 20 newest sources' names
+   (`Workspace: …
+Sources: a, b`), cut to 1,000 characters.
+2. Holds the two-minute maximum of the caller's credits (120 s at
+   `voice_input_second`) in a `chat` session (`BeginReservedSession`, which
+   takes none of the concurrent LLM leases) and opens an `audio` provider
+   call (`alibaba`, `qwen-audio-3.1-asr-flash`, purpose `transcription`,
+   receipt window 2 minutes).
+3. Calls Model Studio once (`server/internal/alibaba`):
+   `{host}/api/v1/services/aigc/multimodal-generation/generation` with
+   `X-DashScope-SSE: disable`, the context as an `input_text` message, then
+   the clip as an `input_audio` data URI, and `format` (`webm`, `ogg`,
+   `mp4`), `sample_rate: "16000"`, `keep_dialect: true`. `{host}` is
+   `ALIBABA_MODELSTUDIO_URL` without `/compatible-mode/v1`.
+4. Answers from the top-level `sentence`: a span (`end_time`) past 125 s is
+   422 `voice_too_long` and blank text is 422 `voice_no_speech`, both with no
+   text; text with `end_time` missing or not above zero is an unreadable
+   answer (502 `transcription_failed`, uncharged), since it has no length to
+   cap or charge. The API image has no audio duration parser, so the 2 MiB
+   limit and this span are the server's two-minute check. Flash's `usage`
+   reports tokens, not seconds, so the span is the only length.
+5. Closes the session, which frees the hold, then settles ceil(`end_time`
+   / 1000) seconds on the call, at most the 120 held (a clip inside the
+   five-second stop margin is charged two minutes), so the spend is checked
+   against the user's credits rather than its own hold; then answers
+   `{text}`. A receipt refused after the session closed still answers the
+   text, uncharged, with the hold already freed.
+
+Alibaba's 429 is a 429 `transcription_busy` and any other failure a 502
+`transcription_failed` (reported to Sentry with the status and provider code
+only); either abandons the call uncharged and frees the hold, as do the 422s
+and a request the browser left. The audio is never stored, and no log line,
+error or Sentry event carries the audio, the transcript or the key. Credits
+and the rate class are in
+[observability-metering.md](observability-metering.md).
 
 ### Build flow and the Library switch
 
@@ -5172,7 +5443,7 @@ current chunk, with full coverage in the large-document reduction path.
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
-| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
+| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION`, `ALIBABA_MODELSTUDIO_KEY`, `ALIBABA_MODELSTUDIO_URL` | Image decoding is capped at 100M pixels. Audio transcription needs both Alibaba values (all or none, and the URL ending in `/compatible-mode/v1`, checked at startup by the pipeline and the API; unset fails an audio ingest terminally); its two-hour cap, 12-task gate, hour-long task hold and ten-minute source link are code constants. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |
 | UAT scripted tool turns | `RETRIEVAL_UAT_SCRIPTED_TOOLS` | UAT only, exactly `true` or unset; a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`, and the renderer refuses it outside `uat`. With it on, a chat message starting `[uat-scripted-tools]` followed by JSON steps (`retrieval/scripted.py`) replaces the model's responses: each step's tool calls still run through `tools.run` with the role's operations, contract validation and the skills gate, and a string step is the answer. With it off the marker is plain text. The UAT chat journey uses it so tool coverage is deterministic and free. |

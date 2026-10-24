@@ -310,6 +310,14 @@ export const api = {
       body: body === undefined ? undefined : JSON.stringify(body),
       method: 'POST',
     }),
+  /** A raw body sent as its own type, such as a recorded clip. */
+  postBlob: <T>(path: string, body: Blob, options?: RequestOptions) =>
+    request<T>(path, {
+      ...options,
+      body,
+      headers: { 'Content-Type': body.type },
+      method: 'POST',
+    }),
   put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, {
       ...options,
@@ -360,6 +368,8 @@ export const qk = {
   learningProgress: ['learning', 'progress'] as const,
   /** Everything under Learning: progress and plans. */
   learningRoot: ['learning'] as const,
+  /** The caller's images and audio in notes it can no longer open. */
+  lostMedia: ['editor-assets', 'lost'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,
