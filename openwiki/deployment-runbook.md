@@ -1180,24 +1180,23 @@ for phase in http_request_firewall_custom http_ratelimit http_request_cache_sett
 done
 ```
 
-**Rate limiting rule** (`capy_public_api_rate_limit`, Epo 2026-10-24). The
-zone is on the Free plan, where a rate limiting rule may match only the path
-(no host), counts per IP (with the data centre, `cf.colo.id`) over 10 s and
-blocks for 10 s, and the zone gets one rule. The one rule covers
+**Rate limiting rule** (`capy_public_api_rate_limit`, Epo 2026-10-24, Q303).
+The zone is on the Free plan, where a rate limiting rule may match only the
+path (no host), counts per IP (with the data centre, `cf.colo.id`) over 10 s
+and blocks for 10 s, and the zone gets one rule. The one rule covers
 `/api/public/` on every host of both environments: 100 requests in 10 s from
 one address, then blocked for 10 s. `/api/public/` is the costliest path a
 signed-out caller reaches (grading calls Jev; a public note read is up to
-about 2 MiB). The gateway holds a signed-out address to 60 a minute on
-signed-out grading and to 300 a minute per shared page on share reads (Q244),
-so one address reading several shared pages at once can pass Go and still
-meet this rule; its value is still open with Epo. It stops floods before the
-tunnel and Redis. The site Worker's own reads of `/api/public/` reach the origin without
-passing the zone's rate-limit phase (a same-zone subrequest, the Worker has no
-`global_fetch_strictly_public`), so they are not counted against one address;
+about 2 MiB). It stops floods before the tunnel and Redis. The rule covers
+direct `/api/public/` calls only. Share pages a visitor opens (`/share/`,
+`/w/`, `/p/`) are served by the site Worker, whose own reads of
+`/api/public/` reach the origin without passing the zone's rate-limit phase
+(a same-zone subrequest, the Worker has no `global_fetch_strictly_public`);
 the Worker signs the visitor's address into each read and Go counts it per
-visitor and shared page
-([observability-metering.md](observability-metering.md#6-rate-limiting)).
-Everything else has no edge limit. A production-only or wider limit needs the
+visitor and shared page, 300 a minute (Q244;
+[observability-metering.md](observability-metering.md#6-rate-limiting)).
+Share pages get no edge rule or per-visitor total for now (Epo 2026-10-24,
+Q310). Everything else has no edge limit. A production-only or wider limit needs the
 Pro plan (host in the expression, blocks up to an hour, two rules). The rule
 must leave `/webhooks/` out: Stripe and Clerk burst deliveries and retries
 from small sets of IPs, and rate limiting them can lose subscription or
