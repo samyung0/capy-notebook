@@ -1,4 +1,4 @@
-import { type ComponentType, lazy, StrictMode } from 'react';
+import { type ComponentType, lazy, StrictMode, Suspense } from 'react';
 import { createRoot, hydrateRoot } from 'react-dom/client';
 import { anonymousNoteAssetUrl } from '@/api/anonymous';
 import { USE_MSW } from '@/api/auth';
@@ -38,6 +38,13 @@ const PublicFlashcardsEmbed = lazy(() =>
     default: mod.PublicFlashcardsEmbed,
   }))
 );
+
+// Clerk loads only when the note embeds a quiz: a signed-in visitor's checks
+// then take the signed-in route (Q311, Q350).
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
+  | string
+  | undefined;
+const ShareAuth = lazy(() => import('./ShareAuth'));
 
 /** PublicEmbed.tsx as the browser hydrates it. */
 function PublicEmbed({ materialId }: EmbedProps) {
@@ -95,6 +102,19 @@ export async function hydrateIslands(
     );
   }
   // Grading failures in embedded quizzes toast.
-  const toaster = document.body.appendChild(document.createElement('div'));
-  createRoot(toaster).render(<AppToaster />);
+  const extras = document.body.appendChild(document.createElement('div'));
+  const withClerk =
+    !USE_MSW &&
+    PUBLISHABLE_KEY &&
+    state.embeds.some((embed) => embed.kind === 'quiz');
+  createRoot(extras).render(
+    <>
+      <AppToaster />
+      {withClerk && (
+        <Suspense fallback={null}>
+          <ShareAuth publishableKey={PUBLISHABLE_KEY} />
+        </Suspense>
+      )}
+    </>
+  );
 }

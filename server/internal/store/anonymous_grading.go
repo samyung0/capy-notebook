@@ -12,14 +12,22 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
-// Daily caps on signed-out grading. Classrooms share one IP, so the per-IP cap
-// is generous; the global cap protects the Jev key's quota.
+// Daily caps on signed-out grading. Classrooms share one address, so the
+// per-address cap (an IPv6 /56 is one address) is generous; the global cap
+// protects the Jev key's quota.
 const (
 	AnonymousGradingPartsPerIP  = 300
 	AnonymousGradingPartsPerDay = 50_000
 )
 
-var ErrAnonymousGradingLimit = errors.New("anonymous grading limit reached")
+// SignedInGradingPartsPerDay caps the open parts one signed-in user has Jev
+// grade a UTC day: quiz attempts, review and bank checks, computation checks.
+const SignedInGradingPartsPerDay = 2_000
+
+var (
+	ErrAnonymousGradingLimit = errors.New("anonymous grading limit reached")
+	ErrGradingLimit          = errors.New("daily grading limit reached")
+)
 
 var anonymousLocalID = regexp.MustCompile(fmt.Sprintf(`^[A-Za-z0-9-]{1,%d}$`, fieldlimits.AnonymousLocalID))
 
@@ -80,9 +88,30 @@ func (s *Store) RecordAnonymousGradingUsage(ctx context.Context, ipHash, localID
 	return err
 }
 
-// PruneAnonymousGradingUsage keeps 30 days of rows.
-func (s *Store) PruneAnonymousGradingUsage(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM anonymous_grading_usage
-		WHERE day < (now() AT TIME ZONE 'UTC')::date - 30`)
-	return err
+// ReserveGrading counts a signed-in user's open parts against today's cap
+// before any Jev call; counted parts stay counted when grading later fails.
+func (s *Store) ReserveGrading(ctx context.Context, userID string, parts int) error {
+	tag, err := s.pool.Exec(ctx, `INSERT INTO grading_usage (day, user_id, parts)
+		SELECT (now() AT TIME ZONE 'UTC')::date, $1, $2::int WHERE $2::int <= $3::int
+		ON CONFLICT (day, user_id) DO UPDATE SET parts=grading_usage.parts+EXCLUDED.parts
+		WHERE grading_usage.parts+EXCLUDED.parts <= $3::int`, userID, parts, SignedInGradingPartsPerDay)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrGradingLimit
+	}
+	return nil
+}
+
+// PruneDailyUsage keeps 30 days of the per-day counters: signed-out and
+// signed-in grading, and invites.
+func (s *Store) PruneDailyUsage(ctx context.Context) error {
+	for _, table := range []string{"anonymous_grading_usage", "grading_usage", "invite_usage"} {
+		if _, err := s.pool.Exec(ctx, `DELETE FROM `+table+`
+			WHERE day < (now() AT TIME ZONE 'UTC')::date - 30`); err != nil {
+			return err
+		}
+	}
+	return nil
 }

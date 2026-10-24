@@ -157,7 +157,7 @@ async function createNote(
 /** A comment without an anchor, as the Go gate tests send. */
 const comment = {
   anchorVersion: 1,
-  contentRich: [{ children: [{ text: 'Margin note' }], type: 'p' }],
+  text: 'Margin note',
 };
 
 /** A 1 KiB store-only upload's ticket request, under the Free per-file cap

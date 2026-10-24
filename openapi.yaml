@@ -983,28 +983,6 @@ components:
         - netTokens
         - access
       type: object
-    Canvas:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/Canvas.json
-          format: uri
-          readOnly: true
-          type: string
-        id:
-          type: string
-        name:
-          type: string
-        scene: {}
-        updatedAt:
-          format: date-time
-          type: string
-      required:
-        - id
-        - name
-        - updatedAt
-      type: object
     Card:
       additionalProperties: false
       properties:
@@ -1110,6 +1088,22 @@ components:
       required:
         - materialId
         - itemId
+        - answers
+      type: object
+    CheckSharedNoteQuizReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CheckSharedNoteQuizReq.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          description: The learner's answers by part id
+          type: object
+      required:
         - answers
       type: object
     Citation:
@@ -1275,7 +1269,6 @@ components:
           type: string
         authorName:
           type: string
-        contentRich: {}
         createdAt:
           format: date-time
           type: string
@@ -1287,6 +1280,8 @@ components:
           type: boolean
         isEdited:
           type: boolean
+        text:
+          type: string
         updatedAt:
           format: date-time
           type: string
@@ -1297,7 +1292,7 @@ components:
         - discussionId
         - userId
         - authorName
-        - contentRich
+        - text
         - isEdited
         - isDeleted
         - createdAt
@@ -1447,19 +1442,6 @@ components:
       required:
         - answers
       type: object
-    CreateCanvasReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateCanvasReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 120
-          type: string
-      type: object
     CreateCommentReq:
       additionalProperties: false
       properties:
@@ -1469,15 +1451,12 @@ components:
           format: uri
           readOnly: true
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
-        - contentRich
+        - text
       type: object
     CreateConversationReq:
       additionalProperties: false
@@ -1518,17 +1497,16 @@ components:
           minimum: 1
           type: integer
         blockId:
+          maxLength: 128
+          minLength: 1
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
         - anchorVersion
-        - contentRich
+        - text
       type: object
     CreateEmbeddedMaterialReq:
       additionalProperties: false
@@ -2503,6 +2481,9 @@ components:
           type: object
         localId:
           maxLength: 64
+          type: string
+        turnstileToken:
+          maxLength: 2048
           type: string
       required:
         - answers
@@ -4278,6 +4259,24 @@ components:
         - canEdit
         - canEditContent
       type: object
+    PublicFlashcardSetPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicFlashcardSetPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicFlashcardSet"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
+      type: object
     PublicQuiz:
       additionalProperties: false
       properties:
@@ -4285,67 +4284,43 @@ components:
           type: string
         canClone:
           type: boolean
-        canEdit:
-          type: boolean
-        canEditContent:
-          type: boolean
-        chapters:
-          items:
-            type: string
-          type: array
         clones:
           format: int64
           type: integer
-        createdAt:
-          format: date-time
-          type: string
         id:
           type: string
-        isOwner:
-          type: boolean
         name:
           type: string
-        parentMaterialId:
-          type: string
-        privacy:
-          $ref: "#/components/schemas/Privacy"
-        provenance:
-          $ref: "#/components/schemas/Provenance"
-        questions:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-        removedAssetIds:
-          items:
-            type: string
-          nullable: true
-          type: array
-        revision:
+        questionCount:
           format: int64
           type: integer
-        sharePath:
-          type: string
         workspaceId:
           type: string
-        workspaceName:
-          type: string
       required:
-        - author
-        - clones
-        - canClone
-        - revision
         - id
         - name
         - workspaceId
-        - workspaceName
-        - chapters
-        - questions
-        - createdAt
-        - privacy
-        - isOwner
-        - canEdit
-        - canEditContent
+        - author
+        - clones
+        - canClone
+      type: object
+    PublicQuizPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicQuizPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicQuiz"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
       type: object
     PublicWorkspace:
       additionalProperties: false
@@ -4421,6 +4396,24 @@ components:
         - isOwner
         - capabilities
         - canClone
+      type: object
+    PublicWorkspacePage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicWorkspacePage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicWorkspace"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
       type: object
     QuestionCredit:
       additionalProperties: false
@@ -5167,28 +5160,12 @@ components:
         - reviewedBy
         - reviewerName
       type: object
-    SaveCanvasReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SaveCanvasReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 120
-          minLength: 1
-          type: string
-        scene: {}
-      type: object
     SearchKind:
       enum:
         - workspace
         - file
         - event
         - flashcards
-        - thinking
       type: string
     SearchResult:
       additionalProperties: false
@@ -6766,15 +6743,12 @@ components:
           format: uri
           readOnly: true
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
-        - contentRich
+        - text
       type: object
     UpdateConversationReq:
       additionalProperties: false
@@ -8808,14 +8782,20 @@ paths:
   /api/explore/flashcards:
     get:
       operationId: exploreFlashcardSets
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicFlashcardSet"
-                type: array
+                $ref: "#/components/schemas/PublicFlashcardSetPage"
           description: OK
         default:
           content:
@@ -8829,14 +8809,20 @@ paths:
   /api/explore/quizzes:
     get:
       operationId: exploreQuizzes
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicQuiz"
-                type: array
+                $ref: "#/components/schemas/PublicQuizPage"
           description: OK
         default:
           content:
@@ -8850,14 +8836,20 @@ paths:
   /api/explore/workspaces:
     get:
       operationId: exploreWorkspaces
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicWorkspace"
-                type: array
+                $ref: "#/components/schemas/PublicWorkspacePage"
           description: OK
         default:
           content:
@@ -11314,6 +11306,42 @@ paths:
       summary: Open a signed share link once
       tags:
         - Sharing
+  /api/shared/notes/{token}/quizzes/{quizId}/check:
+    post:
+      operationId: checkSharedNoteQuiz
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: quizId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckSharedNoteQuizReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GradedQuiz"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Grade a signed-in check of a quiz embedded in a shared note
+      tags:
+        - Sharing
   /api/source-upload-policy:
     get:
       operationId: getSourceUploadPolicy
@@ -11489,106 +11517,6 @@ paths:
       summary: Update a task
       tags:
         - Schedule
-  /api/thinking:
-    get:
-      operationId: listCanvases
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Canvas"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List thinking canvases
-      tags:
-        - Thinking
-    post:
-      operationId: createCanvas
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCanvasReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Create a canvas
-      tags:
-        - Thinking
-  /api/thinking/{id}:
-    get:
-      operationId: getCanvas
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get a canvas
-      tags:
-        - Thinking
-    put:
-      operationId: saveCanvas
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SaveCanvasReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Save a canvas
-      tags:
-        - Thinking
   /api/trash:
     get:
       operationId: listTrash

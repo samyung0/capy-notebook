@@ -77,12 +77,37 @@ func conflictError(code, detail string) error {
 	}
 }
 
+// limitError is a 429 carrying a machine code the browser maps to copy.
+func limitError(code, detail string) error {
+	return &huma.ErrorModel{
+		Status: http.StatusTooManyRequests,
+		Title:  http.StatusText(http.StatusTooManyRequests),
+		Detail: detail,
+		Errors: []*huma.ErrorDetail{{Message: code}},
+	}
+}
+
 // audioTranscribingDetail is the copy for store.ErrAudioTranscribing.
 const audioTranscribingDetail = "This recording is still being transcribed; try again when it finishes"
 
 func mapHTTPError(err error) error {
 	if err == nil {
 		return nil
+	}
+	for code, rowCap := range map[string]error{
+		"comment_limit":    store.ErrTooManyComments,
+		"annotation_limit": store.ErrTooManyAnnotations,
+		"event_limit":      store.ErrTooManyEvents,
+	} {
+		if errors.Is(err, rowCap) {
+			return conflictError(code, rowCap.Error())
+		}
+	}
+	if errors.Is(err, store.ErrInviteRecentlySent) {
+		return limitError("invite_recently_sent", "this address was invited in the last 10 minutes")
+	}
+	if errors.Is(err, store.ErrInviteLimit) {
+		return limitError("invite_limit", "the daily invite limit is reached; it resets at midnight UTC")
 	}
 	if errors.Is(err, store.ErrAudioTranscribing) {
 		return conflictError("audio_transcribing", audioTranscribingDetail)
@@ -412,7 +437,7 @@ func newUnexpectedError(status int, traceID string) *unexpectedError {
 // typedServerCodes are the 5xx codes the browser gives their own copy; a 5xx
 // carrying anything else in errors[] (an error's text, even one word) is
 // unexpected. src/lib/errors.ts keeps the same list.
-var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full", "transcription_failed", "voice_unavailable"}
+var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full", "rate_limit_unavailable", "captcha_unavailable", "transcription_failed", "voice_unavailable"}
 
 func typedServerError(details []*huma.ErrorDetail) bool {
 	return len(details) > 0 && !slices.ContainsFunc(details, func(detail *huma.ErrorDetail) bool {
@@ -586,7 +611,6 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerFlashcards(api)
 	a.registerStudy(api)
 	a.registerSchedule(api)
-	a.registerThinking(api)
 	a.registerExplore(api)
 	a.registerShare(api)
 	a.registerWorkspaceSummary(api)

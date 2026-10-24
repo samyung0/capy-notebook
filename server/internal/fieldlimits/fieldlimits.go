@@ -30,7 +30,7 @@ const (
 	// rather than characters (Epo 2026-10-23); its transcript stays well
 	// under ChatMessage.
 	VoiceInputSeconds = 120
-	// Comment bounds the plain text of one note comment (its paragraphs joined).
+	// Comment bounds the plain text of one note comment.
 	Comment           = 3_000
 	LLMAPIKey         = 512
 	EventTitle        = 60
@@ -179,7 +179,6 @@ var Columns = map[string]int{
 	"events.title":                     EventTitle,
 	"events.location":                  EventLocation,
 	"tasks.title":                      TaskTitle,
-	"canvases.name":                    MaterialTitle,
 	"workspace_invites.email":          Email,
 	"conversations.title":              ConversationTitle,
 	"editor_assets.name":               FileName,
@@ -188,6 +187,7 @@ var Columns = map[string]int{
 	"anonymous_grading_usage.local_id": AnonymousLocalID,
 	"reconcile_runs.requested_by_name": UserName,
 	"pdf_annotations.text":             PDFAnnotationText,
+	"material_comments.text":           Comment,
 }
 
 // Clamp trims s and cuts it to max runes. It is for values the user did not

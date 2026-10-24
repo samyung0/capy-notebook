@@ -305,8 +305,8 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    depends on how the origin is reached — see the option you picked.
 
 > **Both the SPA and the API must be proxied.** Proxying only the SPA leaves
-> `api.capynotebook.com` publicly resolvable, which is where the rate limiting, the WAF,
-> and the origin's anonymity actually matter.
+> `api.capynotebook.com` publicly resolvable, which is where the WAF, the edge rate
+> limiting rule (§2) and the origin's anonymity actually matter.
 
 ### 1.0.1 UAT API routing without Workers
 
@@ -1159,10 +1159,13 @@ not in Capy (Epo 2026-10-21). On the production instance, and the same on UAT
 
 ## 2. Cloudflare — rules
 
-The zone's WAF custom rules, cache rules and response header transform rules
-are code. One zone holds production and UAT, and
+The zone's WAF custom rules, rate limiting rules, cache rules and response
+header transform rules are code. One zone holds production and UAT, and
 [`deploy/cloudflare/rules.json`](../deploy/cloudflare/rules.json) lists every
-rule of those three phases for both environments.
+rule of those four phases for both environments. Applying the file to the
+live zone is a deploy step: a commit that changes it is live only once someone
+runs the apply below (then `--check`), with a ruleset-editing token for the
+zone at deploy time.
 `scripts/deploy/cloudflare_rules.py` applies the file or checks the zone
 against it:
 
@@ -1202,20 +1205,71 @@ for phase in http_request_firewall_custom http_ratelimit http_request_cache_sett
 done
 ```
 
-**No edge rate limiting rule yet.** The zone is on the Free plan, where a
-rate limiting rule may match only the path (no host), counts per IP over 10 s
-and blocks for 10 s, and the zone gets one rule. Production and UAT share the
-zone and their paths, so a production-only limit cannot be written; it needs
-the Pro plan (host in the expression, blocks up to an hour, two rules). Until
-then the gateway's limits are the only ones. When the rule is added it goes in
-the file's `http_ratelimit` phase and must leave `/webhooks/` out: Stripe and
-Clerk burst deliveries and retries from small sets of IPs, and rate limiting
-them can lose subscription or identity events.
+**Rate limiting rules** (Epo 2026-10-24, Q303, Q324). The zone is on
+Cloudflare Pro, which allows two rate limiting rules; the phase holds both,
+and `scripts/deploy/test_cloudflare_rules.py` refuses a third. Each counts
+per IP with the data centre (`cf.colo.id`).
 
-**WAF custom rule** (`capy_webhooks_skip_security`): requests under
-`/webhooks/` on the API hosts (`api`, `uat-api`) skip every security rule (the remaining custom rules, rate
-limiting, managed rules, Super Bot Fight Mode, and Zone Lockdown, User Agent
-Blocking, Browser Integrity Check, Hotlink Protection and Security Level).
+- `capy_public_api_rate_limit` covers `/api/public/` on every host of both
+  environments: 100 requests in 10 s from one address, then blocked for 10 s.
+  `/api/public/` is the costliest path a signed-out caller reaches (grading
+  calls Jev; a public note read is up to about 2 MiB). It stops floods before
+  the tunnel and Redis. It covers direct `/api/public/` calls only: the site
+  Worker's own reads of `/api/public/` reach the origin without passing the
+  zone's rate-limit phase (a same-zone subrequest, the Worker has no
+  `global_fetch_strictly_public`); the Worker signs the visitor's address
+  into each read and Go counts it per visitor and shared page, 300 a minute
+  (Q244; [observability-metering.md](observability-metering.md#6-rate-limiting)).
+- `capy_share_pages_rate_limit` covers the shared pages a visitor opens,
+  `/share/` and `/w/` on the app hosts of both environments (`app`,
+  `uat`): past 600 requests a minute from one address,
+  a Managed Challenge. On Pro a challenge action must set
+  `mitigation_timeout` 0, so the rule throttles (each request past the rate
+  is challenged) rather than holding a challenge for a set time. The rule
+  matches `/share/` and `/w/` only: `/p/` serves the pages' images and audio,
+  which cannot answer a challenge, so it stays bounded by the gateway's
+  per-visitor share-read class (Epo 2026-10-24, Q329).
+
+Everything else has no edge limit. A rule must leave `/webhooks/` out: Stripe
+and Clerk burst deliveries and retries from small sets of IPs, and rate
+limiting them can lose subscription or identity events. Super Bot Fight Mode
+and the managed WAF rulesets stay off until they are tested on chosen routes
+(Q324).
+
+**WAF custom rules.** `capy_block_internal_paths` blocks `/api/internal/` and
+`/internal/` on every public host of both environments (`api`, `uat-api`,
+`app`, `uat`, `collab`, `uat-collab`). Nothing legitimate reaches
+them through Cloudflare: retrieval and collaboration call the gateway on the
+Docker network, the ingest hosts over WireGuard (`GATEWAY_URL` on the private
+address), and the local lane over its private routes. A caller that needs an
+internal route through a public host is a configuration error to fix, not a
+rule to widen.
+
+`capy_webhooks_skip_security`: requests under `/webhooks/` on the API hosts
+(`api`, `uat-api`) from Stripe's or Svix's published webhook addresses skip
+every security rule (the remaining custom rules, rate limiting, managed rules,
+Super Bot Fight Mode, and Zone Lockdown, User Agent Blocking, Browser
+Integrity Check, Hotlink Protection and Security Level). Clerk delivers its
+webhooks through Svix, and its docs link Svix's whole list, so every region
+is listed. A webhook from any other address gets the zone's ordinary rules.
+The addresses come from:
+
+- Stripe: <https://stripe.com/files/ips/ips_webhooks.json> (`WEBHOOKS`)
+- Svix: <https://docs.svix.com/webhook-ips.json> (every region's list)
+
+**Refresh at each deploy.** Before applying the rules, run
+`python3 scripts/deploy/webhook_ranges.py`. It reads both published lists
+and compares their union with the rule's `ip.src in {...}` set: exit 0 in
+sync, 1 when they differ (each missing or extra address printed, then the
+whole published union), 2 when a list cannot be read (retry; do not apply on
+a guess). On a difference, replace the set at the end of the rule's
+expression with the printed union (addresses and CIDRs separated by
+spaces), run `python3 scripts/deploy/test_webhook_ranges.py` and
+`python3 scripts/deploy/test_cloudflare_rules.py` (update the fixture lists
+in the first to the new published lists), commit, and apply. Do the same
+when either provider announces a change. A provider address missing from the
+set shows up as challenged or blocked webhook deliveries in the provider's
+dashboard and in Security → Events.
 
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
@@ -1477,7 +1531,12 @@ Two content security policies, both built once per SPA build by
     `form-action 'self'`, `object-src 'none'` and `base-uri 'none'`;
   - `frame-ancestors 'self'`: only the app may frame these pages, and
     nothing in it does today, so an outside site (an LMS, a blog) cannot
-    embed a shared quiz or note.
+    embed a shared quiz or note;
+  - on a shared quiz and a shared note only (the pages that grade signed-out
+    answers), `https://challenges.cloudflare.com` in `script-src` and
+    `frame-src` for Cloudflare Turnstile (`allowTurnstile` in
+    `workers/site/handler.ts`; Epo 2026-10-24, Q271). Flashcard, summary and
+    error pages do not get it.
 
   The SPA gets the same `script-src` report-only, inside its image header,
   plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
@@ -1538,6 +1597,41 @@ it; a new script or frame host on a public page goes into `scriptSources` or
 `capy-web` security report. The HTML embed frame, the Office runtime and Ops
 keep their own policies (§2.3, `workers/office/_headers`, the Ops application
 below).
+
+### 2.5 Turnstile widget (signed-out answer checks)
+
+Each signed-out answer check (a shared quiz's Submit, a quiz embedded in a
+shared note) carries a Cloudflare Turnstile token, and the API verifies it
+with siteverify before grading (Epo 2026-10-24, Q271; observability-metering
+§ anonymous grading). Dashboard work, by hand, once per environment:
+
+1. Cloudflare dashboard → Turnstile → Add widget. Mode **Managed**. Hostnames:
+   the environment's app hosts that serve share pages (UAT:
+   `uat.capynotebook.com` and `local.uat.capynotebook.com`; production: its
+   app hostname). One widget
+   per environment, so a leaked UAT key cannot pass production checks.
+2. GitHub environment (`uat`, `production`): variable
+   `VITE_TURNSTILE_SITE_KEY` (the widget's site key, built into the share
+   pages) and secret `TURNSTILE_SECRET_KEY` (its secret key, for the API).
+   `scripts/env/config.py` refuses a build without the site key and an app
+   render without the secret, and a production gateway does not boot without
+   the secret or with one of Cloudflare's published test secrets
+   (`validateTurnstileSecret`, Q308), or when `APP_URL`,
+   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` name no host to
+   check tokens against (`turnstileHosts`, Q350).
+3. Deploy, open a shared quiz signed out and submit: the check is graded. A
+   403 `captcha_failed` means the token did not verify (wrong key pair, or a
+   host siteverify names that is not among the gateway's `APP_URL`,
+   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` hosts); a 503
+   `captcha_unavailable` means siteverify could not answer (the API refuses
+   rather than skipping the check).
+
+Local stacks and e2e use Cloudflare's published test keys, which always pass:
+site key `1x00000000000000000000AA`, secret
+`1x0000000000000000000000000000000AA` (`deploy/.env.example`, the Compose
+files, `playwright.config.ts`). The API still calls siteverify with the test
+secret, so a local signed-out check needs Cloudflare reachable; it checks no
+hostname there, since test tokens name none of the app hosts.
 
 ---
 
@@ -2395,7 +2489,9 @@ content. Never point the ordinary app migrator at `bank`.
    the expected image content type, immutable cache headers and a Cloudflare
    cache hit after warming.
 4. Production comments require `BANK_COMMENT_EMAIL` and the existing email
-   backend, sender identity and `APP_URL`. Sending is direct and user-retryable.
+   backend, sender identity and `APP_URL`. Comments are stored and emailed as
+   one digest per recipient every 4 hours
+   ([question-bank.md](question-bank.md#comments)).
 5. Install the updated `library-db-backup.sh` only after the bank exists. Add
    the `BANK_PRIVATE_B2_*` entries from `deploy/library-db.env.example` to the
    host's mode-0600 `.env`. Use a bucket-scoped write-only backup key. The script

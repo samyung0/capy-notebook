@@ -13,7 +13,7 @@ part of the account/workspace lifecycle fixes.
   workspaces, and therefore deletes their files, materials, revision history,
   collaboration state, share links, and workspace-scoped ingest/RAG records.
 - Final purge deletes standalone materials owned by the account and the
-  account's personal events, tasks, canvases, labels, conversations, tags,
+  account's personal events, tasks, labels, conversations, tags,
   attempts, mistakes, notifications, notification preferences/outbox rows,
   lifecycle notices, source-import jobs, and stored model credentials/settings.
 - Memberships and invitations involving the deleted account are removed.

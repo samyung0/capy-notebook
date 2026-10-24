@@ -1,5 +1,5 @@
 import { slateRangeToRelativeRange, type YjsEditor } from '@slate-yjs/core';
-import { NodeApi, type Path, PathApi, RangeApi, type TElement } from 'platejs';
+import { type Path, PathApi, RangeApi, type TElement } from 'platejs';
 import {
   createPlatePlugin,
   type PlateElementProps,
@@ -39,7 +39,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/Popover';
 import { Textarea } from '@/components/ui/TextArea';
-import type { MaterialValue } from '@/features/materials/document';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { getLocale, m } from '@/i18n';
@@ -339,10 +338,6 @@ function CommentCount({ text }: { text: string }) {
   );
 }
 
-function richComment(text: string): MaterialValue {
-  return [{ children: [{ text }], type: 'p' }];
-}
-
 export function CollaborationProvider({
   children,
   discussions,
@@ -405,7 +400,7 @@ export function CollaborationProvider({
         }),
         anchorVersion: 1,
         blockId,
-        contentRich: richComment(text),
+        text,
       });
       commentTarget.current = null;
       setDialogOpen(false);
@@ -418,10 +413,7 @@ export function CollaborationProvider({
   const actions = useMemo<CollaborationActions>(
     () => ({
       addComment: async (discussionId, text) => {
-        await addComment({
-          contentRich: richComment(text),
-          discussionId,
-        });
+        await addComment({ discussionId, text });
       },
       canEdit,
       collaborationError: error,
@@ -453,10 +445,7 @@ export function CollaborationProvider({
         setDialogOpen(true);
       },
       updateComment: async (commentId, text) => {
-        await updateComment({
-          commentId,
-          contentRich: richComment(text),
-        });
+        await updateComment({ commentId, text });
       },
     }),
     [
@@ -595,17 +584,6 @@ function DiscussionThread({ discussion }: { discussion: MaterialDiscussion }) {
   );
 }
 
-function commentContentText(contentRich: unknown): string {
-  if (!Array.isArray(contentRich)) return '';
-  return contentRich
-    .filter(
-      (node): node is Record<string, unknown> =>
-        !!node && typeof node === 'object' && !Array.isArray(node)
-    )
-    .map((node) => NodeApi.string(node as never))
-    .join('\n');
-}
-
 const DAY_MS = 86_400_000;
 
 /** Relative within a day ("10 minutes ago"), a short date after that. */
@@ -639,7 +617,7 @@ function CommentEntry({
       icon: 'pencil',
       label: m.action_edit(),
       onClick: () => {
-        setEditText(commentContentText(entry.contentRich));
+        setEditText(entry.text);
         setEditing(true);
       },
     });
@@ -737,7 +715,7 @@ function CommentEntry({
           <p className="text-fg-muted italic">{m.editor_deleted_comment()}</p>
         ) : (
           <p className="whitespace-pre-wrap break-words">
-            {commentContentText(entry.contentRich)}
+            {entry.text}
             {entry.isEdited && (
               <span className="text-fg-muted text-xs">
                 {' '}

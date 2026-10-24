@@ -560,16 +560,17 @@ type Discussion struct {
 }
 
 type Comment struct {
-	ID              string          `json:"id"`
-	DiscussionID    string          `json:"discussionId"`
-	UserID          string          `json:"userId"`
-	AuthorName      string          `json:"authorName"`
-	AuthorAvatarURL string          `json:"authorAvatarUrl,omitempty"`
-	ContentRich     json.RawMessage `json:"contentRich"`
-	IsEdited        bool            `json:"isEdited"`
-	IsDeleted       bool            `json:"isDeleted"`
-	CreatedAt       time.Time       `json:"createdAt"`
-	UpdatedAt       time.Time       `json:"updatedAt"`
+	ID              string `json:"id"`
+	DiscussionID    string `json:"discussionId"`
+	UserID          string `json:"userId"`
+	AuthorName      string `json:"authorName"`
+	AuthorAvatarURL string `json:"authorAvatarUrl,omitempty"`
+	// Text is empty for a deleted comment.
+	Text      string    `json:"text"`
+	IsEdited  bool      `json:"isEdited"`
+	IsDeleted bool      `json:"isDeleted"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // MaterialRef is one row in the unified left-panel materials list, aggregating
@@ -645,13 +646,6 @@ type NotificationPrefs struct {
 	EmailBilling         bool `json:"emailBilling"`
 }
 
-type Canvas struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	UpdatedAt time.Time       `json:"updatedAt"`
-	Scene     json.RawMessage `json:"scene,omitempty"`
-}
-
 type SearchResult struct {
 	ID       string     `json:"id"`
 	Kind     SearchKind `json:"kind"`
@@ -674,10 +668,15 @@ type PublicWorkspace struct {
 	Clones int    `json:"clones"`
 }
 
+// PublicQuiz is a quiz on Explore, read from its stored preview.
 type PublicQuiz struct {
-	Quiz
-	Author string `json:"author"`
-	Clones int    `json:"clones"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	WorkspaceID string `json:"workspaceId"`
+	// QuestionCount is the stored preview's; absent while the quiz has none.
+	QuestionCount *int   `json:"questionCount,omitempty"`
+	Author        string `json:"author"`
+	Clones        int    `json:"clones"`
 	// CanClone: the caller may copy it (CanCloneFrom; a standalone item, anyone).
 	CanClone bool `json:"canClone"`
 }

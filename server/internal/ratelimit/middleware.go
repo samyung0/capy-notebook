@@ -1,12 +1,19 @@
 package ratelimit
 
 import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"math"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // class is the route bucket a request falls into. Classes exist because a
@@ -21,9 +28,14 @@ const (
 	classAI
 	classEditor
 	classUpload
+	// classImport is a Drive/OneDrive import route: an upload that also calls
+	// Clerk, so it takes both the upload and the integration bucket.
+	classImport
+	classIntegration
 	classIncident
 	classThumbnail
 	classVoice
+	classBankComment
 )
 
 // aiSuffixes are the model-backed routes. Matching by suffix rather than exact
@@ -44,15 +56,16 @@ var editorSuffixes = []string{
 	"/ai/copilot",
 }
 
-// A gateway upload counts once, at its ticket: the upload itself is refused
-// without a ticket whose turn has come.
-var uploadSuffixes = []string{
-	"/sources",
-	"/sources/uploads/tickets",
+var importSuffixes = []string{
 	"/sources/import",
 	"/sources/import-inspect",
 	"/sources/import-content",
-	"/editor-assets/uploads/tickets",
+}
+
+// A gateway upload's ticket takes the upload class inside the upload line,
+// which lines a ticket past it up instead of answering 429 (Q282,
+// ratelimit.Limiter.TakeUpload).
+var uploadSuffixes = []string{
 	// A file removed before it was sent, counted into its batch.
 	"/removed",
 }
@@ -62,10 +75,9 @@ var uploadSuffixes = []string{
 // Webhooks are the important entry: Stripe and Clerk deliver subscription and
 // identity changes here, and a 429 turns into billing state that silently
 // drifts out of sync. They authenticate by signature, and both providers apply
-// their own delivery rate, so volume abuse is not a concern.
+// their own delivery rate; the edge treats any other source normally
+// (deploy/cloudflare/rules.json).
 var exemptPrefixes = []string{
-	"/healthz",
-	"/readyz",
 	"/webhooks/",
 	"/api/internal/",
 	// Collaboration has no Clerk identity; all rooms share its service IP.
@@ -73,15 +85,19 @@ var exemptPrefixes = []string{
 	"/internal/collaboration/",
 }
 
-func classify(path string) class {
+func classify(method, path string) class {
+	// Container health checks; only these exact paths.
+	if path == "/healthz" || path == "/readyz" {
+		return classExempt
+	}
 	for _, prefix := range exemptPrefixes {
 		if strings.HasPrefix(path, prefix) {
 			return classExempt
 		}
 	}
-	// Signed-out share routes key on the client IP, which a whole classroom
-	// shares; anonymous grading is bounded by its daily caps instead of the
-	// AI burst guard.
+	// Signed-out share routes key on the client address, which a whole
+	// classroom shares; anonymous grading is bounded by its daily caps instead
+	// of the AI burst guard.
 	if strings.HasPrefix(path, "/api/public/") {
 		return classDefault
 	}
@@ -91,8 +107,17 @@ func classify(path string) class {
 	if strings.HasPrefix(path, "/api/files/") && strings.HasSuffix(path, "/thumbnail") {
 		return classThumbnail
 	}
+	// Clerk Backend API callers: the connected providers, picker tokens and
+	// disconnects, and a profile save (which reads the Clerk photo).
+	if path == "/api/integrations" || strings.HasPrefix(path, "/api/integrations/") ||
+		(method == http.MethodPatch && path == "/api/me") {
+		return classIntegration
+	}
 	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/voice-transcriptions") {
 		return classVoice
+	}
+	if method == http.MethodPost && strings.HasPrefix(path, "/api/bank/questions/") && strings.HasSuffix(path, "/comments") {
+		return classBankComment
 	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -108,6 +133,11 @@ func classify(path string) class {
 			return classAI
 		}
 	}
+	for _, suffix := range importSuffixes {
+		if strings.HasSuffix(path, suffix) {
+			return classImport
+		}
+	}
 	for _, suffix := range uploadSuffixes {
 		if strings.HasSuffix(path, suffix) {
 			return classUpload
@@ -116,86 +146,216 @@ func classify(path string) class {
 	return classDefault
 }
 
-// Middleware applies per-user (or per-IP when anonymous) limits. It must run
-// after authentication so userFunc can name the caller; unauthenticated
-// requests fall back to the client IP, which is only trustworthy while the
-// origin refuses non-Cloudflare traffic.
+// ShareReadHeader is the site Worker's proof on its reads of /api/public/:
+// "{unix seconds}.{visitor address}.{base64url HMAC-SHA256 with
+// SHARE_LINK_SECRET over "share-read:v2:{unix seconds}:{address}:{path}"}"
+// (workers/site/shareRead.ts). The address is the visitor's CF-Connecting-IP,
+// which a same-zone Worker subrequest does not carry on its own.
+const ShareReadHeader = "X-Capy-Share-Read"
+
+// shareReadWindow is how far a header's time may be from the gateway's: a
+// header is good for one path and about a minute.
+const shareReadWindow = time.Minute
+
+// publicShareToken returns the share token of a GET or HEAD read under
+// /api/public/{kind}/{token}/.
+func publicShareToken(r *http.Request) (string, bool) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return "", false
+	}
+	parts := strings.SplitN(r.URL.Path, "/", 6)
+	if len(parts) < 5 || parts[1] != "api" || parts[2] != "public" || parts[4] == "" {
+		return "", false
+	}
+	return parts[4], true
+}
+
+// signedShareToken is whether token is a share link signed with
+// SHARE_LINK_SECRET.
+func (l *Limiter) signedShareToken(token string) bool {
+	_, ok := store.VerifyShareToken(l.cfg.ShareReadSecret, token)
+	return ok
+}
+
+// signedVisitor returns the visitor address a valid ShareReadHeader signs for
+// this path, within shareReadWindow of now.
+func signedVisitor(r *http.Request, secret []byte, now time.Time) (string, bool) {
+	if len(secret) == 0 {
+		return "", false
+	}
+	stamp, rest, ok := strings.Cut(r.Header.Get(ShareReadHeader), ".")
+	dot := strings.LastIndex(rest, ".")
+	if !ok || dot < 0 {
+		return "", false
+	}
+	address, mac := rest[:dot], rest[dot+1:]
+	if _, err := netip.ParseAddr(address); err != nil {
+		return "", false
+	}
+	seconds, err := strconv.ParseInt(stamp, 10, 64)
+	if err != nil {
+		return "", false
+	}
+	if age := now.Sub(time.Unix(seconds, 0)); age > shareReadWindow || age < -shareReadWindow {
+		return "", false
+	}
+	sum := hmac.New(sha256.New, secret)
+	sum.Write([]byte("share-read:v2:" + stamp + ":" + address + ":" + r.URL.Path))
+	want := base64.RawURLEncoding.EncodeToString(sum.Sum(nil))
+	if !hmac.Equal([]byte(want), []byte(mac)) {
+		return "", false
+	}
+	return address, true
+}
+
+// Middleware applies per-user (or per-address when anonymous) limits. It must
+// run after authentication so userFunc can name the caller; unauthenticated
+// requests fall back to the client address, which is only trustworthy while
+// the origin refuses non-Cloudflare traffic.
 func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if l == nil {
 			return next
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			routeClass := classify(r.URL.Path)
+			routeClass := classify(r.Method, r.URL.Path)
 			if routeClass == classExempt {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			ctx := r.Context()
 			userID := userFunc(r)
-			subject, scope := "ip:"+obs.ClientIP(r), "ip"
+			// Share reads count per visitor and shared page together (Epo
+			// 2026-10-24, Q244): a signed-in visitor by user, a signed-out one
+			// by address (IPv6 by its /56), the site Worker's reads by the
+			// visitor address they sign; an unsigned or forged claim counts by
+			// the request's own address. The bucket replaces the base one, so
+			// a read is charged once. A token we did not sign counts in the
+			// base bucket, so a made-up one gets no bucket of its own (Q308).
+			if token, ok := publicShareToken(r); ok && l.signedShareToken(token) {
+				visitor := "user:" + userID
+				if userID == "" {
+					address, signed := signedVisitor(r, l.cfg.ShareReadSecret, l.clock().Now())
+					if !signed {
+						address = obs.ClientIP(r)
+					}
+					visitor = "ip:" + obs.FoldAddress(address)
+				}
+				share := bucket{key: "share:" + visitor + ":" + token, rule: l.cfg.SharePage, code: "rate_limited"}
+				if l.admitOrRefuse(w, r, []bucket{share}, time.Time{}) {
+					next.ServeHTTP(w, r)
+				}
+				return
+			}
+			subject, scope := "ip:"+obs.ClientAddress(r), "ip"
 			base := l.cfg.Anonymous
 			if userID != "" {
 				subject, scope = "user:"+userID, "user"
 				base = l.cfg.Authenticated
 			}
+			buckets := append([]bucket{{key: scope + ":base:" + subject, rule: base, code: "rate_limited"}},
+				l.classBuckets(routeClass, subject)...)
 
-			if ok, retry := l.Allow(ctx, scope+":base:"+subject, base); !ok {
-				reject(w, r, retry, "rate_limited")
-				return
-			}
-
-			// The expensive classes carry a second, tighter budget on top of
-			// the general one rather than replacing it, so a caller cannot
-			// spend their whole general allowance on model calls.
-			switch routeClass {
-			case classAI:
-				if ok, retry := l.Allow(ctx, "ai:"+subject, l.cfg.AI); !ok {
-					reject(w, r, retry, "ai_rate_limited")
+			switch {
+			case answerCheck(r.Method, r.URL.Path):
+				// An answer check waits behind its spinner, then is graded or
+				// refused.
+				if !l.admitOrRefuse(w, r, buckets, l.clock().Now().Add(MaxWait)) {
 					return
 				}
-				if ok, retry := l.Allow(ctx, "ai-burst:"+subject, l.cfg.AIBurst); !ok {
-					reject(w, r, retry, "ai_rate_limited")
+			case chatSend(r.Method, r.URL.Path):
+				// A chat send whose AI buckets admit it within MaxWait waits
+				// in its stream, which shows the wait (PendingWait).
+				deadline := l.clock().Now().Add(MaxWait)
+				if !l.admitOrRefuse(w, r, buckets[:1], time.Time{}) {
 					return
 				}
-			case classEditor:
-				if ok, retry := l.Allow(ctx, "editor:"+subject, l.cfg.Editor); !ok {
-					reject(w, r, retry, "ai_rate_limited")
+				rest, refusal, err := l.admit(r.Context(), buckets[1:], time.Time{})
+				switch {
+				case err != nil:
+					unavailable(w, r, err)
 					return
-				}
-			case classUpload:
-				if ok, retry := l.Allow(ctx, "upload:"+subject, l.cfg.Upload); !ok {
-					reject(w, r, retry, "upload_rate_limited")
+				case refusal != nil && refusal.RetryAfter > MaxWait:
+					reject(w, r, refusal.RetryAfter, refusal.Code)
 					return
+				case refusal != nil:
+					wait := Wait(func(ctx context.Context) error {
+						_, refusal, err := l.admit(ctx, rest, deadline)
+						if err != nil {
+							return &Refusal{Code: "rate_limit_unavailable", RetryAfter: unavailableRetrySeconds * time.Second}
+						}
+						if refusal != nil {
+							return refusal
+						}
+						return nil
+					})
+					r = r.WithContext(context.WithValue(r.Context(), waitKey{}, wait))
 				}
-			case classIncident:
-				if ok, retry := l.Allow(ctx, "incident:"+subject, l.cfg.Incident); !ok {
-					reject(w, r, retry, "rate_limited")
-					return
-				}
-			case classThumbnail:
-				if ok, retry := l.Allow(ctx, "thumbnail:"+subject, l.cfg.Thumbnail); !ok {
-					reject(w, r, retry, "rate_limited")
-					return
-				}
-			case classVoice:
-				if ok, retry := l.Allow(ctx, "voice:"+subject, l.cfg.Voice); !ok {
-					reject(w, r, retry, "ai_rate_limited")
+			default:
+				if !l.admitOrRefuse(w, r, buckets, time.Time{}) {
 					return
 				}
 			}
-
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func reject(w http.ResponseWriter, r *http.Request, retry time.Duration, code string) {
-	seconds := int(retry.Seconds())
-	if seconds < 1 {
-		seconds = 1
+// classBuckets are the tighter budgets the expensive classes carry on top of
+// the general one rather than replacing it, so a caller cannot spend their
+// whole general allowance on model calls. The AI and upload buckets refuse
+// while Redis cannot count them.
+func (l *Limiter) classBuckets(routeClass class, subject string) []bucket {
+	switch routeClass {
+	case classAI:
+		return []bucket{
+			{key: "ai:" + subject, rule: l.cfg.AI, code: "ai_rate_limited", failClosed: true},
+			{key: "ai-burst:" + subject, rule: l.cfg.AIBurst, code: "ai_rate_limited", failClosed: true},
+		}
+	case classEditor:
+		return []bucket{{key: "editor:" + subject, rule: l.cfg.Editor, code: "ai_rate_limited"}}
+	case classUpload:
+		return []bucket{{key: "upload:" + subject, rule: l.cfg.Upload, code: "upload_rate_limited", failClosed: true}}
+	case classImport:
+		return []bucket{
+			{key: "upload:" + subject, rule: l.cfg.Upload, code: "upload_rate_limited", failClosed: true},
+			{key: "integration:" + subject, rule: l.cfg.Integration, code: "rate_limited"},
+		}
+	case classIntegration:
+		return []bucket{{key: "integration:" + subject, rule: l.cfg.Integration, code: "rate_limited"}}
+	case classIncident:
+		return []bucket{{key: "incident:" + subject, rule: l.cfg.Incident, code: "rate_limited"}}
+	case classThumbnail:
+		return []bucket{{key: "thumbnail:" + subject, rule: l.cfg.Thumbnail, code: "rate_limited"}}
+	case classVoice:
+		// Each recording is a paid transcription, so it refuses like the AI
+		// class while Redis cannot count it.
+		return []bucket{{key: "voice:" + subject, rule: l.cfg.Voice, code: "ai_rate_limited", failClosed: true}}
+	case classBankComment:
+		return []bucket{{key: "bank-comment:" + subject, rule: l.cfg.BankComment, code: "rate_limited"}}
 	}
+	return nil
+}
+
+// admitOrRefuse admits the request through buckets by deadline, or answers
+// the refusal (429, or 503 while a fail-closed bucket cannot be counted) and
+// reports false.
+func (l *Limiter) admitOrRefuse(w http.ResponseWriter, r *http.Request, buckets []bucket, deadline time.Time) bool {
+	_, refusal, err := l.admit(r.Context(), buckets, deadline)
+	switch {
+	case err != nil:
+		unavailable(w, r, err)
+		return false
+	case refusal != nil:
+		reject(w, r, refusal.RetryAfter, refusal.Code)
+		return false
+	}
+	return true
+}
+
+func reject(w http.ResponseWriter, r *http.Request, retry time.Duration, code string) {
+	// Rounded up: a client that waits exactly this long is let through.
+	seconds := max(int(math.Ceil(retry.Seconds())), 1)
 	obs.Log(r.Context()).Warn("rate limited",
 		"path", obs.LogPath(r.URL.Path),
 		"code", code,
@@ -205,4 +365,19 @@ func reject(w http.ResponseWriter, r *http.Request, retry time.Duration, code st
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusTooManyRequests)
 	_, _ = w.Write([]byte(`{"code":"` + code + `","message":"too many requests","retryAfterSeconds":` + strconv.Itoa(seconds) + `}`))
+}
+
+// unavailableRetrySeconds is the wait a fail-closed refusal names.
+const unavailableRetrySeconds = 5
+
+func unavailable(w http.ResponseWriter, r *http.Request, err error) {
+	obs.Log(r.Context()).Warn("rate limiter unavailable",
+		"path", obs.LogPath(r.URL.Path),
+		"error", err,
+	)
+	w.Header().Set("Retry-After", strconv.Itoa(unavailableRetrySeconds))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = w.Write([]byte(`{"code":"rate_limit_unavailable","message":"try again shortly","retryAfterSeconds":` +
+		strconv.Itoa(unavailableRetrySeconds) + `}`))
 }

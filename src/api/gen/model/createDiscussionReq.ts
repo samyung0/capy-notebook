@@ -4,7 +4,6 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateDiscussionReqContentRichItem } from './createDiscussionReqContentRichItem.ts';
 
 export interface CreateDiscussionReq {
   /** A URL to the JSON Schema for this object. */
@@ -17,10 +16,14 @@ export interface CreateDiscussionReq {
   anchorStart?: string;
   /** @minimum 1 */
   anchorVersion: number;
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
   blockId?: string;
   /**
-     * @minItems 1
-     * @nullable
+     * @minLength 1
+     * @maxLength 3000
      */
-  contentRich: CreateDiscussionReqContentRichItem[] | null;
+  text: string;
 }

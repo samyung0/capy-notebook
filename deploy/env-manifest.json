@@ -809,6 +809,11 @@
       "kind": "variable",
       "targets": ["local"]
     },
+    "TURNSTILE_SECRET_KEY": {
+      "kind": "secret",
+      "targets": ["app", "workflow"],
+      "required_for": ["app"]
+    },
     "UAT_ACTOR_EMAIL_DOMAIN": {
       "kind": "variable",
       "targets": ["quality"],
@@ -1019,10 +1024,6 @@
       "kind": "variable",
       "targets": ["workflow", "build"]
     },
-    "VITE_FEATURE_THINKING": {
-      "kind": "variable",
-      "targets": ["workflow", "build"]
-    },
     "VITE_GOOGLE_PICKER_API_KEY": {
       "kind": "variable",
       "targets": ["workflow", "build"]
@@ -1070,6 +1071,11 @@
     "VITE_SENTRY_DSN_OPS": {
       "kind": "variable",
       "targets": ["workflow"]
+    },
+    "VITE_TURNSTILE_SITE_KEY": {
+      "kind": "variable",
+      "targets": ["workflow", "build"],
+      "required_for": ["build"]
     },
     "VITE_USE_MSW": {
       "kind": "variable",

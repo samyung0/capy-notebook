@@ -1567,7 +1567,7 @@ from any page.
 - **The record.** `material_yjs_client_ids` (material, document `content` or
   `keys`, id) and `source_document_client_ids` (file, id), each row naming
   the user (indexed) and deleted with its document and by the account purge
-  (migration 0113). A room loads its rows once and keeps them in memory, so
+  (migration 0114). A room loads its rows once and keeps them in memory, so
   reconnects and update checks read no database. An update accepted and
   applied (after admission, the validator and the limits) records the ids it
   wrote under as the writer's user's the first time in a room's life, and
@@ -2762,10 +2762,21 @@ Comments and threads remain relational. A discussion stores:
 - encoded start/end Yjs relative positions;
 - anchor schema version;
 - a short quoted-text fallback;
-- comments, resolution state, and authorship.
+- comments and authorship.
 
-The JSON API base64-encodes relative positions; PostgreSQL stores raw `bytea`.
-Go enforces paired anchors and strict size/version/quote bounds.
+Comments are plain fields (Epo 2026-10-24): each comment holds its
+discussion, author and plain text of at most 3,000 characters (`text`, the
+only size rule; no rich content and no JSON byte cap). Go refuses text that is
+empty or only whitespace, and any field the schema does not name. Every
+comment field (text, quote, block id) refuses control characters other than
+newline and tab and the bidi override and isolate characters (U+202A-U+202E,
+U+2066-U+2069); zero-width joiners, which emoji and some scripts need, stay
+(Epo 2026-10-24, Q313). The comment box and the AI's
+comments both send one plain text; the thread shows it as written. The
+discussion and comment routes take bodies of at most 64 KiB, which fits the
+largest valid discussion. The JSON API base64-encodes relative positions;
+PostgreSQL stores raw `bytea`. Go enforces paired anchors, a block id of 1-128
+characters and strict size/version/quote bounds.
 
 When creating a comment, the browser converts the selected Slate range with
 `slateRangeToRelativeRange`. Rendering reverses it with

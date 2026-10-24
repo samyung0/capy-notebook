@@ -4,14 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicFlashcardSet } from './publicFlashcardSet.ts';
 
-export interface SaveCanvasReq {
+export interface PublicFlashcardSetPage {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /**
-     * @minLength 1
-     * @maxLength 120
-     */
-  name?: string;
-  scene?: unknown;
+  items: PublicFlashcardSet[];
+  nextCursor?: string;
 }

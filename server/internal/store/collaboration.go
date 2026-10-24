@@ -225,6 +225,23 @@ func (s *Store) CreateWorkspaceInvite(ctx context.Context, wsID, identifier stri
 	return err
 }
 
+// An owner sends one invite to an address of a workspace every
+// inviteResendCooldown, cancelled invites included, and at most
+// InvitesPerOwnerPerDay invites and resends a UTC day. Both read the same
+// whether or not the address has an account. An account invited under
+// another address within the wait gets no second notification or email: the
+// new row is stored inert and answered as sent, so the answer never tells the
+// owner that two addresses are one account.
+const (
+	inviteResendCooldown  = 10 * time.Minute
+	InvitesPerOwnerPerDay = 50
+)
+
+var (
+	ErrInviteRecentlySent = errors.New("this address was invited moments ago")
+	ErrInviteLimit        = errors.New("daily invite limit reached")
+)
+
 func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, identifier string, role WorkspaceRole, invitedBy string) (*Notification, bool, error) {
 	identifier = strings.TrimSpace(identifier)
 	if identifier == "" || (role != RoleEditor && role != RoleViewer) {
@@ -259,6 +276,39 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 	if err := status.Err(); err != nil {
 		return nil, false, err
 	}
+	// The owner's own id or email, or a current member's user id, names someone
+	// the owner already sees in the roster: such an invite sends nothing, so it
+	// skips the resend wait and the daily count. An email that reaches a member
+	// is counted like any other address, so the answer discloses no account.
+	var known bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_members
+			WHERE workspace_id=$1 AND user_id=$2)
+		OR EXISTS (SELECT 1 FROM users WHERE id=$3 AND (id=$2 OR lower(email)=lower($2)))`,
+		wsID, identifier, ownerID).Scan(&known); err != nil {
+		return nil, false, err
+	}
+	if !known {
+		var recent bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_invites
+			WHERE workspace_id=$1 AND lower(email)=lower($2)
+				AND accepted_at IS NULL AND created_at > $3)`,
+			wsID, identifier, now.Add(-inviteResendCooldown)).Scan(&recent); err != nil {
+			return nil, false, err
+		}
+		if recent {
+			return nil, false, ErrInviteRecentlySent
+		}
+		counted, err := tx.Exec(ctx, `INSERT INTO invite_usage (day, user_id, invites)
+			VALUES ((now() AT TIME ZONE 'UTC')::date, $1, 1)
+			ON CONFLICT (day, user_id) DO UPDATE SET invites=invite_usage.invites+1
+			WHERE invite_usage.invites < $2::int`, invitedBy, InvitesPerOwnerPerDay)
+		if err != nil {
+			return nil, false, err
+		}
+		if counted.RowsAffected() == 0 {
+			return nil, false, ErrInviteLimit
+		}
+	}
 
 	var inviteID, invitedUserID, workspaceName, inviteEmail, locale, inviterName string
 	err = tx.QueryRow(ctx, `
@@ -289,6 +339,11 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 					SELECT 1 FROM workspace_members wm
 					WHERE wm.workspace_id=$1 AND wm.user_id=u.id
 				)
+				AND NOT EXISTS (
+					SELECT 1 FROM workspace_invites recent
+					WHERE recent.workspace_id=$1 AND recent.invited_user_id=u.id
+						AND recent.created_at > $9
+				)
 		)
 		INSERT INTO workspace_invites
 			(id, workspace_id, invited_user_id, email, role, token_hash, invited_by, expires_at, created_at)
@@ -304,7 +359,8 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 			COALESCE((SELECT email FROM users WHERE id=workspace_invites.invited_user_id),''),
 			COALESCE((SELECT locale FROM users WHERE id=workspace_invites.invited_user_id),''),
 			(SELECT name FROM users WHERE id=$6)`,
-		wsID, identifier, uid("inv"), role, tokenHash[:], invitedBy, expiresAt, now).
+		wsID, identifier, uid("inv"), role, tokenHash[:], invitedBy, expiresAt, now,
+		now.Add(-inviteResendCooldown)).
 		Scan(&inviteID, &invitedUserID, &workspaceName, &inviteEmail, &locale, &inviterName)
 	if err != nil {
 		return nil, false, err
