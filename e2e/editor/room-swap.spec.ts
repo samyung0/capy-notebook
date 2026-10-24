@@ -171,7 +171,9 @@ test("a note reload whose JOIN is never answered ends at the join's 30 s", async
 
 // A note's join starts at its token request (Epo 2026-10-23): a first open
 // whose token never answers ends in the connection error 30 s on, not a
-// loading pane for ever.
+// loading pane for ever. Timed from the page's last token request, not the
+// load: a busy runner sends it up to 40 s after the load, and a reload (MSW's,
+// while its worker does not control the page yet) starts the join again.
 test("a first open whose token request hangs ends at the join's 30 s", async ({
   page,
 }) => {
@@ -182,13 +184,21 @@ test("a first open whose token request hangs ends at the join's 30 s", async ({
     const { holdNoteTokens } = await import(path);
     holdNoteTokens(id);
   }, EDITOR_NOTE.id);
+  let requested = 0;
+  page.on('request', (request) => {
+    if (
+      request.url().endsWith(`/materials/${EDITOR_NOTE.id}/collaboration-token`)
+    )
+      requested = Date.now();
+  });
   await page.goto(
     `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}&mode=edit`
   );
   const failed = page.getByText(m.editor_collab_unavailable());
-  await page.waitForTimeout(15_000);
-  await expect(failed).toHaveCount(0);
-  await expect(failed).toBeVisible({ timeout: 30_000 });
+  await expect(failed).toBeVisible({ timeout: 90_000 });
+  const shown = Date.now() - requested;
+  expect(shown).toBeGreaterThan(28_000);
+  expect(shown).toBeLessThan(38_000);
   await expect(page.locator('[data-note-mount]')).toHaveCount(0);
 });
 
