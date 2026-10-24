@@ -69,7 +69,8 @@ test('a note edited offline in a closed tab reaches a co-editor from another pag
 }) => {
   test.setTimeout(120_000);
   const body = 'Stored drafts body';
-  const edited = `${body} written offline`;
+  const online = `${body} online`;
+  const edited = `${online} written offline`;
   const material = await materialFactory.createNote({
     blockId: 'stored-drafts-body',
     body,
@@ -94,21 +95,32 @@ test('a note edited offline in a closed tab reaches a co-editor from another pag
   await expect(other.locator('main')).toBeVisible();
   await workerLoaded(other);
 
+  const typeAtEnd = async (shown: string, typed: string) => {
+    const text = ownerPage
+      .locator('[contenteditable="true"]')
+      .first()
+      .getByText(shown, { exact: true });
+    const box = await text.boundingBox();
+    if (!box) throw new Error('the note body has no layout box');
+    await text.click({
+      force: true,
+      position: { x: Math.max(box.width - 1, 0), y: box.height / 2 },
+    });
+    await ownerPage.keyboard.type(typed);
+  };
+  // The tab's first accepted write records its client id as its user's
+  // (Q236); drafts of a tab whose edits never reached the room wait for the
+  // catch-up merge instead.
+  await typeAtEnd(body, ' online');
+  await expect(editorPage.getByText(online, { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+
   await link.down(ownerPage);
   await expect(
     ownerPage.locator('[data-connection-status="offline"]')
   ).toBeVisible();
-  const text = ownerPage
-    .locator('[contenteditable="true"]')
-    .first()
-    .getByText(body, { exact: true });
-  const box = await text.boundingBox();
-  if (!box) throw new Error('the note body has no layout box');
-  await text.click({
-    force: true,
-    position: { x: Math.max(box.width - 1, 0), y: box.height / 2 },
-  });
-  await ownerPage.keyboard.type(' written offline');
+  await typeAtEnd(online, ' written offline');
   await expect(ownerPage.getByText(edited, { exact: true })).toBeVisible();
   // Every key is stored on the device; nothing reached the room.
   expect(await storedRows(ownerPage, material.id)).toBeGreaterThan(1);
@@ -151,17 +163,27 @@ test('a text source edited offline in a closed tab reaches a co-editor from anot
   await expect(other.locator('main')).toBeVisible();
   await workerLoaded(other);
 
+  const typeAtEnd = async (typed: string) => {
+    await source(ownerPage).click();
+    await ownerPage.keyboard.press('ControlOrMeta+End');
+    await ownerPage.keyboard.type(typed);
+  };
+  // The tab's first accepted write records its client id (Q236).
+  await typeAtEnd(' online');
+  await expect(source(editorPage)).toHaveValue(`${body} online`, {
+    timeout: 20_000,
+  });
+
   await link.down(ownerPage);
-  await source(ownerPage).click();
-  await ownerPage.keyboard.press('ControlOrMeta+End');
-  await ownerPage.keyboard.type(' written offline');
-  await expect(source(ownerPage)).toHaveValue(`${body} written offline`);
+  await typeAtEnd(' written offline');
+  const edited = `${body} online written offline`;
+  await expect(source(ownerPage)).toHaveValue(edited);
   expect(await storedRows(ownerPage, fileId, 'file')).toBeGreaterThan(1);
-  await expect(source(editorPage)).toHaveValue(body);
+  await expect(source(editorPage)).toHaveValue(`${body} online`);
 
   await ownerPage.close();
   await link.up(other);
-  await expect(source(editorPage)).toHaveValue(`${body} written offline`, {
+  await expect(source(editorPage)).toHaveValue(edited, {
     timeout: 20_000,
   });
   await expect.poll(() => storedRows(other, fileId, 'file')).toBe(0);
