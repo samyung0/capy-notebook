@@ -32,7 +32,7 @@
       {
         "ref": "capy_app_api_bypass_cache",
         "description": "The app hosts' same-origin /api/ is never cached",
-        "expression": "http.host in {\"app.capynotebook.com\" \"uat-app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
+        "expression": "http.host in {\"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
         "action": "set_cache_settings",
         "action_parameters": { "cache": false },
         "enabled": true
@@ -61,7 +61,7 @@
       {
         "ref": "capy_app_api_no_store_nosniff",
         "description": "The app hosts' same-origin /api/: no-store and nosniff, as the Worker set them",
-        "expression": "http.host in {\"app.capynotebook.com\" \"uat-app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
+        "expression": "http.host in {\"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
         "action": "rewrite",
         "action_parameters": {
           "headers": {
@@ -74,7 +74,7 @@
       {
         "ref": "capy_uat_app_noindex",
         "description": "The UAT app hosts are kept out of search indexes",
-        "expression": "http.host in {\"uat-app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"}",
+        "expression": "http.host in {\"app.uat.capynotebook.com\" \"uat.capynotebook.com\"}",
         "action": "rewrite",
         "action_parameters": {
           "headers": {
