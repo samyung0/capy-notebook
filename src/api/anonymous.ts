@@ -1,5 +1,5 @@
 import { m } from '@/i18n';
-import { ApiError, parseErrorBody } from './client';
+import { ApiError, api, parseErrorBody } from './client';
 import type { GradeAnonymousQuizReq, GradedQuiz, Question } from './types';
 
 /**
@@ -69,6 +69,25 @@ export function captchaCopy(err: unknown): string | undefined {
   if (!(err instanceof ApiError)) return;
   if (err.code === 'captcha_failed') return m.quiz_captcha_failed();
   if (err.code === 'captcha_unavailable') return m.quiz_captcha_unavailable();
+}
+
+/** A signed-in visitor's check of a quiz embedded in a shared note, through
+ * the note's link: graded under the user's daily grading parts with no
+ * captcha, storing nothing (Q311). */
+export async function checkSharedNoteQuiz(
+  token: string,
+  quizId: string,
+  answers: GradeAnonymousQuizReq['answers']
+): Promise<{ questions: Question[]; awarded: number; max: number }> {
+  const graded = await api.post<GradedQuiz>(
+    `/shared/notes/${token}/quizzes/${quizId}/check`,
+    { answers }
+  );
+  return {
+    awarded: graded.correct,
+    max: graded.total,
+    questions: graded.questions,
+  };
 }
 
 /** Grades an attempt at a quiz embedded in a shared note, through the note's

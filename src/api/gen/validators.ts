@@ -5593,6 +5593,26 @@ export const RedeemShareLinkResponse = zod.object({
 
 
 /**
+ * @summary Grade a signed-in check of a quiz embedded in a shared note
+ */
+export const CheckSharedNoteQuizParams = zod.object({
+  "token": zod.string(),
+  "quizId": zod.string()
+})
+
+export const CheckSharedNoteQuizBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id')
+})
+
+export const CheckSharedNoteQuizResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "correct": zod.number(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "total": zod.number()
+})
+
+
+/**
  * @summary Get source upload policy
  */
 export const GetSourceUploadPolicyQueryParams = zod.object({

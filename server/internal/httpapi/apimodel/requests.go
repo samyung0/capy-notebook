@@ -230,6 +230,12 @@ type GradeAnonymousQuizReq struct {
 	TurnstileToken string `json:"turnstileToken,omitempty" maxLength:"2048"`
 }
 
+// CheckSharedNoteQuizReq is a signed-in visitor's check of a quiz embedded in
+// a shared note (Q311).
+type CheckSharedNoteQuizReq struct {
+	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+}
+
 // CheckReviewItemReq checks one question of a review session.
 type CheckReviewItemReq struct {
 	MaterialID string            `json:"materialId" minLength:"1"`

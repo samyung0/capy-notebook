@@ -16,7 +16,7 @@ import {
 } from '@/lib/localDb';
 import { redeemShareToken } from '@/lib/shareRedeem';
 import { signedIn, useSignedIn } from './session';
-import { useTurnstile } from './turnstile';
+import { takeTurnstileToken } from './turnstile';
 
 function Frame({
   children,
@@ -45,8 +45,6 @@ export function SharedQuiz({
   token: string;
 }) {
   const session = useSignedIn();
-  // Only a signed-out check carries a Turnstile token.
-  const turnstile = useTurnstile(session === false);
   const [past, setPast] = useState<LocalQuizAttempt[]>([]);
   const quizId = quiz.id;
   useEffect(() => {
@@ -70,7 +68,6 @@ export function SharedQuiz({
           // visitors get the browser note and their past attempts.
           session === false && (
             <div className="mt-6 grid gap-2 text-fg-muted">
-              <div ref={turnstile.box} />
               <p className="t-meta">{m.quiz_saved_in_browser()}</p>
               {past.length > 0 && (
                 <>
@@ -108,7 +105,8 @@ export function SharedQuiz({
           const graded = await gradeAnonymousQuiz(token, {
             answers,
             localId: await anonymousId().catch(() => undefined),
-            turnstileToken: await turnstile.take(),
+            // Only a signed-out check carries a Turnstile token.
+            turnstileToken: await takeTurnstileToken(),
           });
           const attempt: LocalQuizAttempt = {
             answers,

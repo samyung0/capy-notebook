@@ -213,7 +213,11 @@ references in its current content and has not trashed, in reference order (quizz
 written cards only); they render in place (`src/share/PublicEmbed.tsx`) and are the only note data the page's
 script receives. The note's asset route also serves an image one of those embeds shows, owned by that embed.
 Visitors grade an embedded quiz at `POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same
-caps as the quiz grade, stores nothing, and returns 404 for any quiz the note does not embed and reference.
+caps as the quiz grade, stores nothing, and returns 404 for any quiz the note does not embed and reference. A
+signed-in visitor's check goes instead to `POST /api/shared/notes/{token}/quizzes/{quizId}/check`: the same
+share-token checks, graded under the user's daily grading parts with no captcha, storing nothing (Epo 2026-10-24,
+Q311). The page takes it only once the session is known to be signed in; while it is signed out, failed or not
+yet settled, the check takes the captcha route.
 Embedded quizzes and flashcard sets are named by a random UUID that is never displayed, and they are left out of
 every materials listing, Explore, search and the workspace quiz count.
 

@@ -36,6 +36,7 @@ import type {
   Chapter,
   CheckBankQuestionReq,
   CheckReviewItemReq,
+  CheckSharedNoteQuizReq,
   CheckSourceAccessParams,
   ClaimSourceRefreshParams,
   CloneFileReq,
@@ -8020,6 +8021,73 @@ const res = await fetch(getRedeemShareLinkUrl(),
 
   const data: redeemShareLinkResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as redeemShareLinkResponse
+}
+
+
+
+export type checkSharedNoteQuizResponse200 = {
+  data: GradedQuiz
+  status: 200
+}
+
+export type checkSharedNoteQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type checkSharedNoteQuizResponseSuccess = (checkSharedNoteQuizResponse200) & {
+  headers: Headers;
+};
+export type checkSharedNoteQuizResponseError = (checkSharedNoteQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type checkSharedNoteQuizResponse = (checkSharedNoteQuizResponseSuccess | checkSharedNoteQuizResponseError)
+
+export const getCheckSharedNoteQuizUrl = (token: string,
+    quizId: string,) => {
+
+
+
+
+  return `/api/shared/notes/${token}/quizzes/${quizId}/check`
+}
+
+/**
+ * @summary Grade a signed-in check of a quiz embedded in a shared note
+ */
+export const checkSharedNoteQuiz = async (token: string,
+    quizId: string,
+    checkSharedNoteQuizReq: NonReadonly<CheckSharedNoteQuizReq>, options?: RequestInit): Promise<checkSharedNoteQuizResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCheckSharedNoteQuizUrl(token,quizId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(checkSharedNoteQuizReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkSharedNoteQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkSharedNoteQuizResponse
 }
 
 

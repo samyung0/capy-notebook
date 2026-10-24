@@ -358,3 +358,87 @@ func TestAnonymousNoteEmbedsAndGrading(t *testing.T) {
 		t.Fatalf("grading through the note stored %d attempts", attempts)
 	}
 }
+
+// TestSignedInSharedNoteQuizChecks (security regression: rate-limit audit r2
+// N-3, Q311). A signed-in visitor's check of a quiz embedded in a shared note
+// is graded with no captcha under the user's daily grading parts and stores
+// no attempt. It keeps the anonymous route's share checks: a forged link and a
+// quiz the note does not embed are 404s, and a signed-out caller is refused.
+func TestSignedInSharedNoteQuizChecks(t *testing.T) {
+	h, st, calls := openGradingAPI(t, "full")
+	ctx := context.Background()
+	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Signed-in embeds", Content: noteTestContent(t, "# Embeds\n\nbody")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	questions, err := json.Marshal([]any{map[string]any{
+		"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
+		"parts": []any{map[string]any{"id": "open-a", "blocks": []any{map[string]any{"type": "text", "text": "Explain."}},
+			"answer": map[string]any{"type": "open", "accepted": []any{"Because."}, "hints": []any{}}, "marks": 1,
+			"markscheme": []any{map[string]any{"text": "Point one", "marks": 1}}, "solution": []any{}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	embed := func() store.Material {
+		mt, err := st.CreateEmbeddedMaterial(ctx, "u_owner", note.ID, store.EmbeddedDraft{Kind: "quiz", Questions: questions})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mt
+	}
+	quiz, unreferenced := embed(), embed()
+	content, err := materialdoc.Marshal(materialdoc.Envelope{SchemaVersion: materialdoc.SchemaVersion, Value: []map[string]any{
+		materialdoc.ParagraphNode("intro"), materialdoc.MaterialRefNode(quiz.ID, "quiz"),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateMaterial(ctx, note.ID, store.MaterialPatch{Content: &content, UpdatedBy: "u_owner"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateStandaloneMaterialPrivacy(ctx, "u_owner", note.ID, "", store.PrivacyLink); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM grading_usage WHERE user_id='u_other'`)
+	})
+	token := store.ShareToken(nil, note.ID)
+	check := func(user, path string) *httptest.ResponseRecorder {
+		return doReq(t, h, http.MethodPost, path, user, map[string]any{"answers": map[string]any{"open-a": "Because."}})
+	}
+	path := "/api/shared/notes/" + token + "/quizzes/" + quiz.ID + "/check"
+
+	captchas, graded := captchaCalls.Load(), calls.Load()
+	if rec := check("u_other", path); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
+		t.Fatalf("signed-in check → %d %s", rec.Code, rec.Body.String())
+	}
+	if captchaCalls.Load() != captchas || calls.Load() == graded {
+		t.Fatalf("captcha checks %d, Jev calls %d; want no captcha and a graded open part",
+			captchaCalls.Load()-captchas, calls.Load()-graded)
+	}
+	var parts, attempts int
+	if err := st.Pool().QueryRow(ctx, `SELECT COALESCE((SELECT parts FROM grading_usage WHERE user_id='u_other' AND day=current_date), 0),
+		(SELECT count(*) FROM attempts WHERE material_id=$1)`, quiz.ID).Scan(&parts, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if parts != 1 || attempts != 0 {
+		t.Fatalf("daily parts %d and attempts %d, want 1 part reserved and nothing stored", parts, attempts)
+	}
+
+	forged := token[:len(token)-1] + "x"
+	if forged == token {
+		forged = token[:len(token)-1] + "y"
+	}
+	for name, p := range map[string]string{
+		"forged link":       "/api/shared/notes/" + forged + "/quizzes/" + quiz.ID + "/check",
+		"quiz not embedded": "/api/shared/notes/" + token + "/quizzes/" + unreferenced.ID + "/check",
+	} {
+		if rec := check("u_other", p); rec.Code != http.StatusNotFound {
+			t.Errorf("%s → %d, want 404", name, rec.Code)
+		}
+	}
+	if rec := check("", path); rec.Code != http.StatusUnauthorized {
+		t.Errorf("signed out → %d, want 401", rec.Code)
+	}
+}

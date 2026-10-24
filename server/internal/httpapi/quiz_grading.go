@@ -326,6 +326,66 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 	return &gradedQuizOutput{Body: apimodel.GradedQuiz{Correct: correct, Total: total, Questions: graded}}, nil
 }
 
+/* ------------------------------------ signed-in check of a shared note quiz */
+
+type checkSharedNoteQuizInput struct {
+	Token  string `path:"token"`
+	QuizID string `path:"quizId"`
+	Body   apimodel.CheckSharedNoteQuizReq
+}
+
+// registerSharedNoteQuizCheck serves POST
+// /api/shared/notes/{token}/quizzes/{quizId}/check: a signed-in visitor's
+// check of a quiz embedded in a shared note, graded under the user's daily
+// grading parts with no captcha and recording nothing (Epo 2026-10-24,
+// Q311). It keeps the anonymous route's share-token checks: a forged token
+// is refused before the body is read, and only a quiz the shared note embeds
+// is graded.
+func (a *api) registerSharedNoteQuizCheck(api huma.API) {
+	verified := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		if _, ok := a.s.VerifyShareToken(ctx.Param("token")); !ok {
+			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "not found")
+			return
+		}
+		next(ctx)
+	}}
+	huma.Register(api, huma.Operation{
+		OperationID: "checkSharedNoteQuiz", Method: http.MethodPost, Path: "/api/shared/notes/{token}/quizzes/{quizId}/check",
+		Summary: "Grade a signed-in check of a quiz embedded in a shared note", Tags: []string{"Sharing"},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
+	}, func(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuizOutput, error) {
+		out, err := a.checkSharedNoteQuiz(ctx, in)
+		return out, reportHandlerError(ctx, err)
+	})
+}
+
+func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuizOutput, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	id, err := a.sharedMaterialID(in.Token)
+	if err != nil {
+		return nil, err
+	}
+	stored, err := a.s.AnonymousNoteQuiz(ctx, id, in.QuizID)
+	if err != nil {
+		return nil, storedContentError(ctx, id, err)
+	}
+	qs, err := decodeStoredQuestions(stored)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	plan, err := planGrading(qs, in.Body.Answers)
+	if err != nil {
+		return nil, gradeRequestError(err)
+	}
+	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "", map[string]any{"quizId": in.QuizID, "sharedNoteId": id})
+	if err != nil {
+		return nil, err
+	}
+	return &gradedQuizOutput{Body: apimodel.GradedQuiz{Correct: correct, Total: total, Questions: graded}}, nil
+}
+
 /* --------------------------------------------------------- authoring check */
 
 // ComputationCheckReq names one open part of a draft question.

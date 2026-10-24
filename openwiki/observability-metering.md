@@ -720,10 +720,13 @@ per day overall; over either, the API answers 429 `anonymous_grading_limit`
 and the page asks the visitor to sign in. There is no per-shared-item cap:
 each signed-out answer check carries a Cloudflare Turnstile token instead (Epo
 2026-10-24, Q243, Q271), since an address-rotating client defeats any per-item
-or per-address count. The page solves it in the background (managed mode, a
-challenge only when Cloudflare asks) on load and again after each check
-(`src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
-quiz), and the API verifies it with siteverify (5 s timeout) after the share
+or per-address count. A shared page runs at most one widget (managed mode, a
+challenge only when Cloudflare asks, shown fixed on screen), rendered at the
+first signed-out check and solved again only when a check asks, never in the
+background; a check stops waiting for its token after 15 s and the API's
+refusal shows the failed-check copy (Epo 2026-10-24, Q309;
+`src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
+quiz). The API verifies it with siteverify (5 s timeout) after the share
 token's check and before grading (`checkCaptcha`, `server/internal/httpapi/
 turnstile.go`): a missing or refused token, or one solved on a host other
 than the environment's app hosts (the hosts of `APP_URL`,
@@ -732,8 +735,8 @@ development and e2e, whose test keys name no app host), answers 403
 `captcha_failed`, and a siteverify that cannot answer 503
 `captcha_unavailable`, refusing rather than skipping the check; the page shows
 both under Submit (Q308). A deployed gateway refuses Cloudflare's published
-test secrets at boot. Signed-in checks take no
-token. Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
+test secrets at boot. Signed-in checks take no token, a signed-in
+visitor's check of a quiz embedded in a shared note included (Q311). Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
 is reporting only, because the client chooses it. Rows older than 30 days are pruned by the API's
 maintenance loop. No browser fingerprinting is used.
 The visitor's grading post goes straight to `/api/public/.../grade`, so it

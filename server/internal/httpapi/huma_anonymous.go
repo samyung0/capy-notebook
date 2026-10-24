@@ -57,6 +57,7 @@ func (a *api) registerAnonymousMaterials(api huma.API) {
 	reg(api, http.MethodGet, "/api/public/notes/{token}", "getAnonymousNote", "Sharing", "Get a shared note for signed-out visitors", http.StatusOK, a.getAnonymousNote)
 	reg(api, http.MethodGet, "/api/public/notes/{token}/assets/{assetId}", "getAnonymousNoteAsset", "Sharing", "Get a shared note image URL", http.StatusOK, a.getAnonymousNoteAsset)
 	a.registerAnonymousGrading(api)
+	a.registerSharedNoteQuizCheck(api)
 }
 
 // sharedMaterialID returns the id a share token signs; forged tokens are 404.
