@@ -206,6 +206,10 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 			a.failSourceBatchFile(context.Background(), batch)
 		}
 	})
+	// A ticket past its user's upload class waits in line (Q282).
+	a.uploads.admitClass = func(ctx context.Context, user string) (time.Duration, error) {
+		return a.limiter.TakeUpload(ctx, user)
+	}
 	if rdb != nil {
 		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
 		go a.listenWorkspaceTree(context.Background())

@@ -192,11 +192,13 @@ conflict. Zod's own messages follow the UI locale (`z.config` in
 copy.
 
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
-and `too_many_streams`. An upload answered 429 waits out
-`retryAfterSeconds` (at most 30 s) and gets 3 attempts in all, as does an
-import request after a network error, 408, 429 or 5xx
-(`src/features/workspace/sourceUpload.ts`, `sourceImport.ts`). The add-source
-dialog toasts it and keeps the unsent tail. Do not map it onto credits or the file-cap copy.
+and `too_many_streams`. An upload is never retried by the browser: one past
+the upload rate class waits in the gateway's upload line and its row shows
+its place (Epo 2026-10-24, Q282; backend-storage-quota § upload line), and
+any refusal fails its row. An import request gets 3 attempts in all after a
+network error, 408, 429 or 5xx, waiting out `retryAfterSeconds` (at most
+30 s) (`src/features/workspace/sourceImport.ts`). The add-source dialog
+toasts it and keeps the unsent tail. Do not map it onto credits or the file-cap copy.
 
 Browser analysis of a fast-parse row reports inline on that row, never as a
 toast: one message each for a user-password PDF, a damaged file, more pages

@@ -1596,7 +1596,10 @@ import routes) carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
-file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Chat voice
+file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). A ticket
+takes the upload budget inside the upload line, which lines up a ticket past
+it instead of a 429 (Epo 2026-10-24, Q282; backend-storage-quota § upload
+line); an import past it answers 429. Chat voice
 input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
 with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
 person talking, apart from the chat allowance the turns they send then use.
@@ -1663,7 +1666,9 @@ within 10 s:
   behind its normal spinner, then is graded or answers 429.
 
 Every other limited route answers 429 at once, and nothing retries a 429
-automatically (L12; uploads keep their own retry). The pipeline's wait for an
+automatically (L12): a gateway upload past its class waits in the upload
+line instead (Q282), and only an import request keeps the browser's retry
+(`sourceImport.ts`). The pipeline's wait for an
 AI process slot is the other half of the contract: it sends
 `{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 30 s) and
 ends the stream with the in-stream `provider_busy` error when the wait runs

@@ -1634,7 +1634,6 @@ export function useUploadSource(wsId: string) {
       onQueued,
       onUploadProgress,
       signal,
-      willRetry,
     }: {
       file: File;
       kind: SourceFile['kind'];
@@ -1663,8 +1662,6 @@ export function useUploadSource(wsId: string) {
       onQueued?: (position: number) => void;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
-      /** A 429 is retried with a new ticket (withUploadRetry). */
-      willRetry?: boolean;
     }) => {
       const metadata = {
         batchId,
@@ -1693,7 +1690,7 @@ export function useUploadSource(wsId: string) {
           form.append('file', file);
           return api.upload<SourceFile>(path, form, onUploadProgress, signal);
         },
-        { onQueued, signal, willRetry }
+        { onQueued, signal }
       );
     },
     onSuccess: (file, vars) => {

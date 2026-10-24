@@ -188,3 +188,19 @@ func (l *Limiter) Allow(ctx context.Context, key string, rule Rule) (bool, time.
 	}
 	return false, time.Duration(res[1]) * time.Millisecond, nil
 }
+
+// TakeUpload spends one request of userID's upload budget for a gateway
+// upload ticket, which the upload line consults instead of answering 429
+// (Epo 2026-10-24, Q282): 0 when it admits, else how long until it would.
+// Without a limiter it admits; a Redis failure is returned, since the
+// upload class refuses while it cannot count.
+func (l *Limiter) TakeUpload(ctx context.Context, userID string) (time.Duration, error) {
+	if l == nil {
+		return 0, nil
+	}
+	ok, retry, err := l.Allow(ctx, "upload:user:"+userID, l.cfg.Upload)
+	if err != nil || ok {
+		return 0, err
+	}
+	return max(retry, time.Millisecond), nil
+}

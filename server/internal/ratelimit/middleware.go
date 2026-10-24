@@ -60,11 +60,10 @@ var importSuffixes = []string{
 	"/sources/import-content",
 }
 
-// A gateway upload counts once, at its ticket: the upload itself is refused
-// without a ticket whose turn has come.
+// A gateway upload's ticket takes the upload class inside the upload line,
+// which lines a ticket past it up instead of answering 429 (Q282,
+// ratelimit.Limiter.TakeUpload).
 var uploadSuffixes = []string{
-	"/sources/uploads/tickets",
-	"/editor-assets/uploads/tickets",
 	// A file removed before it was sent, counted into its batch.
 	"/removed",
 }

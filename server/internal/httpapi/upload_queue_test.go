@@ -2,11 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 // takeSized takes user's ticket for a file of size bytes and checks its place.
@@ -351,5 +354,77 @@ func TestUploadBodyDeadlineScalesWithItsSize(t *testing.T) {
 		if got := bodyDeadline(size); got != want {
 			t.Fatalf("bodyDeadline(%d) = %v, want %v", size, got, want)
 		}
+	}
+}
+
+// overClass makes q's upload class answer whatever *wait says and records
+// the rechecks it schedules, which the test runs itself.
+func overClass(q *uploadQueue, wait *time.Duration) (due *[]func(), delays *[]time.Duration) {
+	due, delays = &[]func(){}, &[]time.Duration{}
+	q.admitClass = func(context.Context, string) (time.Duration, error) { return *wait, nil }
+	q.after = func(d time.Duration, f func()) {
+		*delays = append(*delays, d)
+		*due = append(*due, f)
+	}
+	return due, delays
+}
+
+func errorMessage(err error) string {
+	var model *huma.ErrorModel
+	if errors.As(err, &model) && len(model.Errors) > 0 {
+		return model.Errors[0].Message
+	}
+	return ""
+}
+
+// A ticket past its user's upload rate class waits in line instead of a 429,
+// asks the class again after its retry-after, and gets its turn once the
+// class admits it (Epo 2026-10-24; security regression: rate-limit audit
+// Q282).
+func TestUploadQueueLinesUpATicketPastItsClass(t *testing.T) {
+	q := newUploadQueue(nil)
+	wait := time.Second
+	due, delays := overClass(q, &wait)
+	turn := takeOrFail(t, q, "u0", 1)
+	if len(*due) != 1 || (*delays)[0] != time.Second {
+		t.Fatalf("rechecks %v, want one after the class's 1 s", *delays)
+	}
+	// Still over the class: it waits for the next retry-after.
+	wait = 2 * time.Second
+	(*due)[0]()
+	if got := placeOf(t, q, turn, "u0"); got != 1 || len(*due) != 2 || (*delays)[1] != 2*time.Second {
+		t.Fatalf("after a refused recheck: place %d, rechecks %v; want place 1 and a recheck after 2 s", got, *delays)
+	}
+	wait = 0
+	(*due)[1]()
+	if got := placeOf(t, q, turn, "u0"); got != 0 {
+		t.Fatalf("after the class admitted it: place %d, want its turn", got)
+	}
+}
+
+// Tickets waiting on their class still count against the line's limits:
+// a user's 21st is refused as upload_queue_full (security regression:
+// rate-limit audit Q282).
+func TestUploadQueueLimitsTicketsPastTheirClass(t *testing.T) {
+	q := newUploadQueue(nil)
+	wait := time.Minute
+	overClass(q, &wait)
+	for i := 1; i <= uploadQueuePerUser; i++ {
+		takeOrFail(t, q, "u0", i)
+	}
+	_, err := q.take("u0", "sources:ws", uploadClaim{size: 1})
+	if errorStatus(err) != 503 || errorMessage(err) != "upload_queue_full" {
+		t.Fatalf("u0's 21st ticket past its class: %v", err)
+	}
+}
+
+// A ticket whose class Redis cannot count is refused, not lined up
+// (security regression: rate-limit audit Q282).
+func TestUploadQueueRefusesWhenTheClassCannotCount(t *testing.T) {
+	q := newUploadQueue(nil)
+	q.admitClass = func(context.Context, string) (time.Duration, error) { return 0, errors.New("redis down") }
+	_, err := q.take("u0", "sources:ws", uploadClaim{size: 1})
+	if errorStatus(err) != 503 || errorMessage(err) != "rate_limit_unavailable" {
+		t.Fatalf("a ticket without its class: %v", err)
 	}
 }

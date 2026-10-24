@@ -63,7 +63,7 @@ func TestAIAndUploadRefuseWithoutRedis(t *testing.T) {
 	handler := passthrough(New(dead, DefaultConfig()), "u_1")
 	for _, path := range []string{
 		"/api/workspaces/ws_1/chat/stream",
-		"/api/workspaces/ws_1/sources/uploads/tickets",
+		"/api/workspaces/ws_1/sources/batches/sb_1/removed",
 		"/api/workspaces/ws_1/sources/import",
 	} {
 		rec := serve(handler, http.MethodPost, path, nil)

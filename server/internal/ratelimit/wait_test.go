@@ -147,3 +147,18 @@ func TestOtherLimitedRoutesAreRefusedAtOnce(t *testing.T) {
 		t.Fatalf("generate: status %d slept %v, want 429 at once", rec.Code, clock.Slept())
 	}
 }
+
+// TestUploadTicketTakesTheUploadClass (rate-limit audit Q282). An upload
+// ticket spends the user's upload class and, past it, learns how long until
+// the class admits it, which its place in the upload line waits for.
+func TestUploadTicketTakesTheUploadClass(t *testing.T) {
+	rdb := testRedis(t, "upload:user:u_take_upload")
+	l := New(rdb, Config{Upload: Rule{Limit: 1, Window: 8 * time.Second, Burst: 1}})
+	ctx := context.Background()
+	if wait, err := l.TakeUpload(ctx, "u_take_upload"); err != nil || wait != 0 {
+		t.Fatalf("first ticket: wait %v err %v, want admitted", wait, err)
+	}
+	if wait, err := l.TakeUpload(ctx, "u_take_upload"); err != nil || wait < 7*time.Second || wait > 8*time.Second {
+		t.Fatalf("second ticket: wait %v err %v, want about 8 s", wait, err)
+	}
+}
