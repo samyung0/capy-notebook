@@ -169,20 +169,17 @@ function SidePanel({
  * not change keeps its width and the viewer takes the difference (the
  * library's own resize moves space to and from the farthest panel first, so
  * opening the rail collapsed the left panel). The left opens at 340px, the
- * rail at railSize, which it follows with the window while it is the only
- * side panel open. When the viewer would drop under its least width, the
+ * rail at railSize, which it follows when the window resizes while it is the
+ * only side panel open. When the viewer would drop under its least width, the
  * rail and then the left give way down to theirs. */
 function usePanelLayout({
   group,
   groupRef,
-  hasLeft,
   left,
   right,
 }: {
   group: HTMLDivElement | null;
   groupRef: RefObject<GroupImperativeHandle | null>;
-  /** The left panel is rendered (xl up). */
-  hasLeft: boolean;
   left: boolean;
   right: boolean;
 }) {
@@ -195,11 +192,19 @@ function usePanelLayout({
       const width = entry.contentRect.width;
       const fit = right && !left;
       if (!(handle && width > 0 && (first || fit))) return;
-      first = false;
       const current = handle.getLayout();
+      // The library reads a layout's sizes by position, in the order its
+      // panels registered (not the DOM's): the current layout's keys give
+      // that order. None yet: the group has no size, wait for one.
+      const order = Object.keys(current);
+      if (order.length === 0) return;
+      // The first callback after a toggle keeps the rail's width; later
+      // ones are window resizes, which refit it.
+      const toggled = first;
+      first = false;
       const kept = (id: string) => ((current[id] ?? 0) * width) / 100;
       let files = left ? kept('files') || LEFT_SIZE : 0;
-      let rail = right ? (fit ? 0 : kept('rail')) || railSize(width) : 0;
+      let rail = right ? (toggled ? kept('rail') : 0) || railSize(width) : 0;
       let short = VIEWER_MIN - (width - files - rail);
       if (short > 0 && rail > 0) {
         const give = Math.min(short, rail - RAIL_MIN);
@@ -208,18 +213,16 @@ function usePanelLayout({
       }
       if (short > 0 && files > 0) files -= Math.min(short, files - LEFT_MIN);
       const share = (px: number) => (px / width) * 100;
-      // The library reads the sizes in panel order, not by id, so the
-      // entries go in that order (an object literal's keys get sorted).
-      const sizes: [string, number][] = [
-        ['files', share(files)],
-        ['viewer', 100 - share(files) - share(rail)],
-        ['rail', share(rail)],
-      ];
-      handle.setLayout(Object.fromEntries(hasLeft ? sizes : sizes.slice(1)));
+      const sizes: Record<string, number> = {
+        files: share(files),
+        rail: share(rail),
+        viewer: 100 - share(files) - share(rail),
+      };
+      handle.setLayout(Object.fromEntries(order.map((id) => [id, sizes[id]])));
     });
     observer.observe(group);
     return () => observer.disconnect();
-  }, [group, groupRef, hasLeft, left, right]);
+  }, [group, groupRef, left, right]);
 }
 
 export default function WorkspaceOpen() {
@@ -268,7 +271,6 @@ export default function WorkspaceOpen() {
     // One column has no side panels to place.
     group: lg ? panelGroup : null,
     groupRef: panelGroupRef,
-    hasLeft: xl,
     left: leftShown,
     right: rightOpen,
   });
