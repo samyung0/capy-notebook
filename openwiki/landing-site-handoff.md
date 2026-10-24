@@ -11,8 +11,8 @@ Build a public website that explains Capy Notebook, helps visitors decide whethe
 | Public website at `capynotebook.com` and `www.capynotebook.com` | Approved separation from the dashboard. |
 | Astro, entirely prerendered | Preliminary user choice. Use this as the planning baseline; do not silently add a server rendering requirement. |
 | Building the landing app | Deferred. This request authorizes the handoff document only. |
-| UAT dashboard | Live at `https://uat.capynotebook.com` (`app.uat.capynotebook.com` until its retirement, runbook §1.0.2). |
-| Old UAT hostname | `app.uat.capynotebook.com` (Q291): a temporary 302 to `uat` for 7 days once uat-quality passes there, then retired. The 2026-09 move used the same redirect for GET/HEAD, preserving path/query and excluding `/api` and `/api/*`. User confirmed no files or browser drafts to recover. |
+| UAT dashboard | Live at `https://uat.capynotebook.com`. |
+| Old UAT hostnames | `app.uat.capynotebook.com` was retired on 2026-10-25 (Q291) and no longer resolves. |
 | Production dashboard | Source prepared for `https://app.capynotebook.com`; no production deployment exists. |
 | Visual design, launch copy, public pricing, launch languages | Still to be chosen. Suggestions below are recommendations, not approved product decisions. |
 
