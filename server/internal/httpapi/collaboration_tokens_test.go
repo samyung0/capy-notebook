@@ -35,9 +35,6 @@ func TestCollaborationClaimsCarryABoundedIdentity(t *testing.T) {
 	}
 }
 
-// Security regression (Q213, Epo 2026-10-23): every token offers its own
-// Yjs client id, never 0 (the DOCX seed's client), so no two sessions are
-// handed the same id. Fails if the claim is missing or repeats.
 // Security regression (Epo 2026-10-24, Q236): a previous token gives its
 // client ids again only when it carries our signature, names the same user
 // and room, and was issued at most 7 days ago (its expiry is otherwise
@@ -95,6 +92,9 @@ func TestNewClientIDSkipsTheForksSeedIDs(t *testing.T) {
 	}
 }
 
+// Security regression (Q213, Epo 2026-10-23): every token offers its own
+// Yjs client id, never 0 (the DOCX seed's client), so no two sessions are
+// handed the same id. Fails if the claim is missing or repeats.
 func TestCollaborationClaimsOfferAFreshClientID(t *testing.T) {
 	seen := map[uint32]bool{}
 	for range 64 {

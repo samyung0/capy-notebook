@@ -78,6 +78,12 @@ export const EMBED_CLOSED_REASON = 'collaboration-embed-closed';
 /** Why the server refused a JOIN's client id: a live channel holds it
  * (`REFUSED_REASON`, collaboration-rs/crates/server/src/client_ids.rs). */
 const CLIENT_ID_REFUSED_REASON = 'collaboration-client-id';
+/** How long JOINs refused for `CLIENT_ID_REFUSED_REASON` keep presenting the
+ * previous token (r2 S2): a dropped socket's channel holds the ids until the
+ * server closes it, at most 60 s later (`SILENT_CLOSE`,
+ * collaboration-rs/crates/server/src/socket.rs), and the reconnect then gets
+ * them again. Past it the token's ids are another session's. */
+const CLIENT_ID_HELD_MS = 70_000;
 /** Why the server closed or refused an embed's channel: its note's channel
  * is not joined (`NOTE_CLOSED_REASON`, same file). */
 const NOTE_CLOSED_REASON = 'collaboration-note-closed';
@@ -155,6 +161,8 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   /** The last token this provider used: the next token request presents it
    * so the room keeps the session's ids (Q236). */
   private previousToken: string | undefined;
+  /** When JOINs were first refused for a live channel holding the ids. */
+  private heldSince: number | undefined;
   /** A DOCX session's second id, for its editor's resident layout worker
    * (Q219): taken with the document's and kept with it. */
   workerClientId: number | undefined;
@@ -290,8 +298,15 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
         return;
       case MessageKind.Refused: {
         const reason = readText(payload);
-        // A live channel holds the id: the retry asks for fresh ids.
-        if (reason === CLIENT_ID_REFUSED_REASON) this.previousToken = undefined;
+        // A live channel holds the ids: retries present the previous token
+        // until that channel can have closed, then ask for fresh ids.
+        if (reason === CLIENT_ID_REFUSED_REASON) {
+          this.heldSince ??= Date.now();
+          if (Date.now() - this.heldSince >= CLIENT_ID_HELD_MS) {
+            this.previousToken = undefined;
+            this.heldSince = undefined;
+          }
+        }
         this.endChannel();
         // An embed whose note left meanwhile joins again with the note.
         if (reason !== NOTE_CLOSED_REASON)
@@ -527,6 +542,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
 
   private joined() {
     this.assertBound();
+    this.heldSince = undefined;
     // A join after a timeout counts afresh from here, so waiters on the
     // unsynced count see it go to zero only after the resync.
     this.resetCounts();

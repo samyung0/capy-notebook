@@ -1316,10 +1316,16 @@ impl Connection {
 
     /// `onTokenSync`: verify the fresh token, recheck access, re-arm.
     async fn token(&mut self, channel: u64, payload: &[u8]) {
-        let Some(Channel::Joined { room, name, .. }) = self.channels.get(&channel) else {
+        let Some(Channel::Joined {
+            room,
+            name,
+            context: joined,
+            ..
+        }) = self.channels.get(&channel)
+        else {
             return;
         };
-        let (room, name) = (room.clone(), name.clone());
+        let (room, name, user) = (room.clone(), name.clone(), joined.user_id.clone());
         let Ok(token) = protocol::decode_text(payload) else {
             return;
         };
@@ -1331,6 +1337,9 @@ impl Connection {
             auth::now_seconds(),
         );
         let result = match verified {
+            // A channel stays its user's: another user's token, even for the
+            // same room, is refused (r2 S4).
+            Ok(claims) if claims.sub != user => Err("the token names another user".to_owned()),
             Ok(claims) => token_access(&self.app, &name, &claims.sub, claims.access)
                 .await
                 .map(|()| Context::from(&claims)),

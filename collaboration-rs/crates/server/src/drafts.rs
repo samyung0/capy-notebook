@@ -38,6 +38,11 @@ use crate::room::{self, Draft, Durable, NOTE_MAX_SYNC_BYTES, RoomCmd};
 const ROOM_HEADER: &str = "x-capy-room";
 const BASE_HEADER: &str = "x-capy-base";
 const PROTOCOL_HEADER: &str = "x-capy-protocol";
+/// The drafts' stored collaboration tokens, comma-separated (Q288): each may
+/// re-grant the client ids it offered under the reconnect rule.
+const GRANTS_HEADER: &str = "x-capy-grants";
+/// The most stored tokens one send presents (a page sends one per session).
+const MAX_GRANTS: usize = 16;
 /// How long a browser keeps the preflight's answer (Chromium caps it at 2 h).
 const PREFLIGHT_MAX_AGE: &str = "7200";
 
@@ -219,7 +224,7 @@ pub async fn preflight(State(app): State<Shared>, headers: HeaderMap) -> Respons
             (header::ACCESS_CONTROL_ALLOW_METHODS, "POST"),
             (
                 header::ACCESS_CONTROL_ALLOW_HEADERS,
-                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol",
+                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol, x-capy-grants",
             ),
             (header::ACCESS_CONTROL_MAX_AGE, PREFLIGHT_MAX_AGE),
         ],
@@ -339,7 +344,18 @@ async fn checked_and_stored(
         ));
     }
     let base = header_text(headers, BASE_HEADER).map(str::to_owned);
-    let durable = admitted(app, &name, &context, update, base).await?;
+    // Ids the drafts' own tokens offered: the room checks each under the
+    // JOIN's rule (Q288). A token that grants nothing is ignored.
+    let now = crate::auth::now_seconds();
+    let granted: Vec<u64> = header_text(headers, GRANTS_HEADER)
+        .into_iter()
+        .flat_map(|value| value.split(','))
+        .take(MAX_GRANTS)
+        .flat_map(|stored| {
+            crate::auth::granted_ids(stored.trim(), &app.config.secret, room, user, now)
+        })
+        .collect();
+    let durable = admitted(app, &name, &context, update, base, granted).await?;
     match durable.await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(Refused::new(Class::Unavailable, error)),
@@ -359,6 +375,7 @@ async fn admitted(
     context: &Context,
     update: Bytes,
     base: Option<String>,
+    granted: Vec<u64>,
 ) -> Result<Durable, Refused> {
     for _ in 0..2 {
         let handle = app.rooms.get_or_spawn(&name.to_string(), |id| {
@@ -369,6 +386,7 @@ async fn admitted(
             context: context.clone(),
             update: update.clone(),
             base: base.clone(),
+            granted: granted.clone(),
             reply,
         }));
         if handle.tx.send(command).await.is_err() {

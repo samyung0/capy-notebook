@@ -74,6 +74,18 @@ export type DraftInfo = Omit<EditDraft, 'data'> & { bytes: number };
  * again stay linear (70 ms). */
 export const MERGE_RUN = 64;
 
+/** The `grants` field of rows holding the edits of `rows` (or of one
+ * token): each stored token once. */
+export function grantsOf(
+  rows: { grants?: string[] }[] | string | undefined
+): Pick<EditDraft, 'grants'> {
+  const grants =
+    typeof rows === 'string'
+      ? [rows]
+      : [...new Set((rows ?? []).flatMap((row) => row.grants ?? []))];
+  return grants.length ? { grants } : {};
+}
+
 /** Rows as one update, states first. */
 export function mergedRows(rows: EditDraft[]) {
   const ordered = [...rows].sort(
@@ -391,7 +403,11 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
                 Number(a.kind === 'update') - Number(b.kind === 'update') ||
                 a.seq - b.seq
             )[found.length - 1];
-            stores.drafts.put({ ...last, data: Y.mergeUpdates(pieces) });
+            stores.drafts.put({
+              ...last,
+              ...grantsOf(found),
+              data: Y.mergeUpdates(pieces),
+            });
             for (const row of found)
               if (row.id !== last.id) deleteRow(stores, row);
             kept = { id: last.id, key: last.key, seq: last.seq };
@@ -450,7 +466,7 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
               current.transaction?.abort();
               return;
             }
-            stores.drafts.put({ ...last, data });
+            stores.drafts.put({ ...last, ...grantsOf(found), data });
             for (const row of found.slice(0, -1)) stores.drafts.delete(row.id);
           };
         }

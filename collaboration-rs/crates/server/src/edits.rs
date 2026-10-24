@@ -421,6 +421,23 @@ async fn live_state(app: &Shared, room: &str) -> Option<Vec<u8>> {
     tokio::time::timeout(SNAPSHOT_WAIT, answer).await.ok()?.ok()
 }
 
+/// The client ids bound to a loaded room's live channels (r2 N7): a
+/// session's id is unrecorded until its first write, and a scratch id avoids
+/// it too. An unloaded room has none.
+async fn live_ids(app: &Shared, room: &str) -> HashSet<u64> {
+    let Some(handle) = app.rooms.get(room) else {
+        return HashSet::new();
+    };
+    let (reply, answer) = oneshot::channel();
+    if handle.tx.send(RoomCmd::LiveIds(reply)).await.is_err() {
+        return HashSet::new();
+    }
+    match tokio::time::timeout(SNAPSHOT_WAIT, answer).await {
+        Ok(Ok(live)) => live,
+        _ => HashSet::new(),
+    }
+}
+
 /// One document a server edit changed: its row, the cover it makes, what
 /// its live room lacks of it, and the edit's own items when that room was
 /// loaded (its Undo).
@@ -917,7 +934,9 @@ pub async fn edit_material(
     } else {
         None
     };
-    let assigned = assigned_ids(&tx, &material_id).await?;
+    let mut assigned = assigned_ids(&tx, &material_id).await?;
+    assigned.extend(live_ids(app, &room).await);
+    assigned.extend(live_ids(app, &keys_room).await);
     let computed = tokio::task::spawn_blocking(move || {
         compute(base, rows, live, kind, commands, quiz, &assigned)
     })
@@ -1165,9 +1184,11 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     } else {
         None
     };
-    let assigned = assigned_ids(&tx, &material_id)
+    let mut assigned = assigned_ids(&tx, &material_id)
         .await
         .map_err(|error| error.message().to_owned())?;
+    assigned.extend(live_ids(app, &room).await);
+    assigned.extend(live_ids(app, &keys_room).await);
     let computed = tokio::task::spawn_blocking(move || -> Result<Option<Computed>, String> {
         replace_on(base, rows, live, kind, &command, quiz, &assigned)
     })

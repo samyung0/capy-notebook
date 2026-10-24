@@ -1481,7 +1481,9 @@ editing session its Yjs client id and admits a writer's changes only under
 ids assigned to that writer's user, in every room (notes, items, keys,
 Office and text files); on 2026-10-24 (Q226 M3, Q236) that an id is
 recorded at the first accepted write under it, and that a reconnect keeps
-its id by presenting its previous token.
+its id by presenting its previous token; on 2026-10-24 (Q288) that stored
+drafts keep their tab's last token, which re-grants their id to a draft send
+from any page.
 
 - **Assignment** (`newClientID` and `regrantedClientIDs` in
   `server/internal/httpapi/collaboration_tokens.go`). Every collaboration
@@ -1502,8 +1504,8 @@ its id by presenting its previous token.
   Office editor, whose replica and layout worker took their ids at the edit
   `load`, needs no reload. A new id comes with a new Y.Doc (a new editor or
   item room, a room swap's renderer), or when a document that never wrote
-  gets a fresh token (its previous one too old, or dropped after a
-  `collaboration-client-id` refusal). Edits a document made before its first
+  gets a fresh token (its previous one too old, or dropped after 70 s of
+  `collaboration-client-id` refusals). Edits a document made before its first
   JOIN stay under the id Yjs drew, and the room refuses them as they are (Epo
   2026-10-24, see Refusal); a document whose `clientID` no longer matches the
   id it took stops its channel with an error instead of sending (Q226 L3).
@@ -1519,10 +1521,15 @@ its id by presenting its previous token.
   does not retry (`roomRefusal` reads it as `unassigned`; until the catch-up merge
   re-applies its edits, a note or item keeps its unsent edits as refused and
   remounts, a source session goes to recovery). One a live channel holds is
-  refused as `collaboration-client-id` (two sessions presented one previous
-  token): the provider drops its previous token and retries with a fresh
-  id. A channel whose token turns writable writes under the id it bound (Q226
-  M1).
+  refused as `collaboration-client-id`: a dropped socket's channel the
+  server has not closed yet (at most 60 s, `SILENT_CLOSE`), or two sessions
+  presenting one previous token. The provider keeps presenting its previous
+  token for 70 s from the first such refusal (`CLIENT_ID_HELD_MS`), so a
+  reconnect after a network drop gets its ids back once the old channel
+  closed, then drops it and retries with a fresh id. A channel whose token
+  turns writable writes under the id it bound (Q226 M1); a token refresh
+  naming another user than the channel's is refused (the channel closes at
+  its token's expiry), so a bound id stays its user's.
 - **A DOCX session's worker id** (Q219, Epo 2026-10-23). The DOCX editor
   lays out and applies typing in a resident worker, a yrs document of its
   own, so a DOCX write token also offers `workerClientId` (Go mints it only
@@ -1538,33 +1545,48 @@ its id by presenting its previous token.
   `keys`, id) and `source_document_client_ids` (file, id), each row naming
   the user (indexed) and deleted with its document and by the account purge
   (migration 0109). A room loads its rows once and keeps them in memory, so
-  reconnects and update checks read no database. The first accepted write
-  under an id in a room's life records it as the writer's user's, in memory
-  at once and in the database off the room's task (a slow database stalls no
-  channel, Q226 M4), or refreshes its row's `last_write_at`; a JOIN records
-  nothing. A Leave says whether the tab still holds unsent edits for the
+  reconnects and update checks read no database. An update accepted and
+  applied (after admission, the validator and the limits) records the ids it
+  wrote under as the writer's user's the first time in a room's life, and
+  refreshes their `last_write_at` once a day after; a JOIN or a refused
+  update records nothing. Rows are recorded in memory at once and in the
+  database off the room's task (a slow database stalls no channel, Q226 M4),
+  in order through one queue per room that the room's unload waits on; a
+  batch still failing after its retries (about 15 s) is logged as an error. A Leave says whether the tab still holds unsent edits for the
   document (one byte: 0 when it holds none, beyond the provider's
   unacknowledged updates and the drafts not yet covered by a receipt); a
-  clean Leave expires the channel's recorded ids, so they never bind again,
-  and a socket drop or a Leave with unsent edits keeps them. Each room load
+  clean Leave expires the recorded ids its token offered, so they never bind
+  again (an id it bound otherwise, its user's other tab's, stays), and a
+  socket drop or a Leave with unsent edits keeps them. Each room load
   first deletes the document's expired rows and rows unwritten for 7 days:
   no scheduled job (Q226 M3). The server's own writers (the room client, the
-  edit scratch documents) take ids outside the recorded set and the room's
-  history (Q226 L2). Ids never enter the Yjs document, whose readers must
+  edit scratch documents) take ids outside the recorded set, the ids bound
+  to live channels and the room's history (Q226 L2). Ids never enter the Yjs document, whose readers must
   not map ids to users.
 - **Admission** (`client_ids::foreign`, after the marker check). Every block
   an update adds beyond the room's held clock for its client must be under an
   id the writer's user holds: one recorded to the user (any of them, so
-  drafts of their earlier sessions still apply) or one bound to a live
-  channel of the user (a draft send from another page of a tab that is still
-  joined). Blocks at clocks the room holds pass as duplicates, and delete sets
+  drafts of their earlier sessions still apply), one bound to a live channel
+  of the user (a draft send from another page of a tab that is still
+  joined), or one a draft send's stored token re-grants (see draft grants). Blocks at clocks the room holds pass as duplicates, and delete sets
   are not bound. Server-side writers (the room client, Office engine
   children, seeds) do not go through admission.
 - **Reserved copy ids** (Epo 2026-10-24, M5). Ids from 2^32 up to the PPTX
   bootstrap id (2^53-1) are reserved for derived override-seed copies; no
-  session is assigned one and none is recorded. A source room admits structs
-  under them from members who may edit the file (`client_ids::RESERVED`);
-  every other room refuses them like any unassigned id.
+  session is assigned one. Until override-seed copies exist, every room
+  refuses structs under them like any unassigned id, a source file's editors
+  included.
+- **Draft grants** (Epo 2026-10-24, Q288). Stored draft rows keep their
+  session's last signed room token (`grants` in `src/lib/editDrafts.ts`; a
+  merged row keeps each of its rows'). A draft send presents its group's
+  tokens in `X-Capy-Grants` (newest first, at most 16), and the server
+  re-grants the ids each offers under the reconnect rule: our signature, the
+  same user and room, issued at most 7 days ago, expiry ignored
+  (`auth::granted_ids`), and recorded for no one else, absent from the
+  history and held by no live channel (`ClientIds::grantable`). The write
+  records them. So the drafts of a closed tab whose edits never reached the
+  room go in from any page. A group still refused `unassigned` (a token over
+  7 days old, an id recorded to another user) is held for the editor.
 - **Refusal.** An update under another id goes the refused-on-entry way:
   material rooms send `document-rejected` with code `unassigned` (the editor
   keeps its unsaved edits as a refused draft), source rooms
@@ -1578,10 +1600,11 @@ its id by presenting its previous token.
   bound. Until the catch-up merge re-applies them under the tab's id (Epo
   2026-10-24, `human/frontend/error-handling.md`), they open for copying:
   this covers a session that typed without a write accepted and reconnects
-  with a fresh token (its previous one too old or refused); within 7 days
-  its token's id is re-granted and its edits land. Drafts stored before the
-  binding, under ids nobody was assigned, are refused once and kept for
-  copying.
+  with a fresh token (its previous one over 7 days old). An open tab within
+  7 days gets its id re-granted by its previous token, after a network drop
+  too, and its edits land; a closed tab's drafts carry its last token (see
+  draft grants). Drafts stored before the binding, under ids nobody was
+  assigned, are refused once and kept for copying.
 - **The unassigned signal** (for the catch-up merge's re-author mode). Edits
   under an id the room does not hold for the user are answered apart from an
   invalid document on every path: a room write gets `document-rejected` code
@@ -1589,8 +1612,8 @@ its id by presenting its previous token.
   `unassigned` (source rooms), a draft send class `unassigned` (409), and the
   JOIN of a document that wrote under such an id `collaboration-unassigned-id`
   (`collaboration-client-id` means only that a live channel holds the id; the
-  browser retries once with fresh ids, and a document that wrote then hears
-  `collaboration-unassigned-id`).
+  browser retries with its previous token for 70 s, then with fresh ids, and
+  a document that wrote then hears `collaboration-unassigned-id`).
 - **Awareness.** A channel's awareness entries are kept only under its bound
   id; entries under any other id are ignored.
 - **Browser writers.** Notes, items and text sources write under their

@@ -704,6 +704,25 @@ describe('recording a note session', () => {
     expect(await readDrafts(key)).toEqual([]);
   });
 
+  it("keeps the session's last room token on its rows, and a merged run keeps each (Q288)", async () => {
+    const key = 'u_1:material:grants';
+    let token: string | undefined;
+    const { client } = noteRecorder(key, 'base ', { token: () => token });
+    const text = client.getText('content');
+    text.insert(text.length, 'a');
+    token = 'token-1';
+    for (let index = 0; index < 30; index++) text.insert(text.length, 'b');
+    token = 'token-2';
+    for (let index = 0; index < 33; index++) text.insert(text.length, 'c');
+    const rows = await readDrafts(key);
+    // The first 64 edits merged into one row holding both tokens.
+    expect(rows.find((row) => row.seq === 64)?.grants).toEqual([
+      'token-1',
+      'token-2',
+    ]);
+    expect(rows.find((row) => row.seq === 1)).toBeUndefined();
+  });
+
   it('restores online edits without a base once the room sync brings it', async () => {
     const key = 'u_1:material:online';
     const { client, room } = noteRecorder(key, 'base ');
@@ -1698,6 +1717,22 @@ describe('the draft sweep sending', () => {
     await sweepDrafts('u_switch', api, { current: () => signedIn });
     expect(requests).toHaveLength(0);
     expect(await readDrafts(key)).toHaveLength(2);
+  });
+
+  it("presents the group's stored room tokens, newest first, each once (Q288)", async () => {
+    const key = 'u_grants:material:mat_1';
+    const [state, update] = await leftRows(key);
+    await putDrafts([
+      { ...state, grants: ['token-old', 'token-a'], savedAt: 1 },
+      { ...update, grants: ['token-a', 'token-b'], savedAt: 2 },
+    ]);
+    requests.length = 0;
+    storeNext();
+    await sweepDrafts('u_grants', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    expect(requests[0].headers.get('x-capy-grants')).toBe(
+      'token-b,token-a,token-old'
+    );
   });
 
   it('sends the client protocol, and stops for the page load once refused as outdated, marking no row', async () => {

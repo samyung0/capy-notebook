@@ -189,6 +189,9 @@ export class ItemRoom {
   /** The token request that failed, if one did: the provider reports only
    * its own "Failed to get token" text. */
   private tokenError: unknown = null;
+  /** The last room token handed to the provider: stored drafts keep it
+   * (Q288). */
+  private lastToken: string | undefined;
   private readonly listeners = new Set<() => void>();
   private readonly materialId: string;
   private readonly options: ItemRoomOptions;
@@ -381,9 +384,9 @@ export class ItemRoom {
       parent: this.options.inside ?? undefined,
       token: async (previousToken) => {
         if (cached) {
-          const token = cached;
+          this.lastToken = cached;
           cached = null;
-          return token;
+          return this.lastToken;
         }
         let fresh: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
         try {
@@ -404,6 +407,7 @@ export class ItemRoom {
         const now = fresh.access === 'write' ? 'write' : 'read';
         if (now !== this.snapshot.access && now === 'read') this.readOnly();
         this.set({ access: now });
+        this.lastToken = fresh.token;
         return fresh.token;
       },
       // Stored drafts not yet covered by a receipt (Q236).
@@ -486,6 +490,7 @@ export class ItemRoom {
           this.storageOk = ok;
           this.showOffline();
         },
+        token: () => this.lastToken,
       });
       return true;
     }

@@ -203,6 +203,17 @@ fn token_offering(room: &str, user: &str, access: &str, client: u64) -> String {
     sign_claims(&claims)
 }
 
+/// A write token offering `client`, issued `age` seconds ago (and valid for
+/// an hour from then).
+fn token_issued(room: &str, user: &str, client: u64, age: i64) -> String {
+    let mut claims = token_claims(room, user, "write", 300);
+    let issued = claims["iat"].as_i64().expect("iat") - age;
+    claims["clientId"] = client.into();
+    claims["iat"] = issued.into();
+    claims["exp"] = (issued + 3600).into();
+    sign_claims(&claims)
+}
+
 /// A write token offering `client` and, for a DOCX session's resident
 /// layout worker, `worker` (Q219).
 fn token_with_worker(room: &str, user: &str, client: u64, worker: u64) -> String {
@@ -2624,6 +2635,130 @@ async fn a_client_id_is_recorded_at_its_first_accepted_write_not_at_join() {
     assert_eq!(id_rows(&env, &room, other.id()).await, 0);
 }
 
+/// Security regression (r2 S1): an update the room refuses (here its
+/// validator) records nothing, even under the writer's own bound id: an id
+/// is recorded once an update is accepted and applied. Fails if a refused
+/// write records its id.
+#[tokio::test]
+async fn a_refused_update_records_no_client_id() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut refused) = writer(&env, server.port, "hello").await;
+    refused
+        .write(|doc| {
+            let root = doc.get_or_insert_text("content");
+            let mut txn = doc.transact_mut();
+            let diff = root.diff(&txn, yrs::types::text::YChange::identity);
+            let Some(yrs::Out::YXmlText(block)) = diff.into_iter().map(|chunk| chunk.insert).next()
+            else {
+                panic!("no block");
+            };
+            let mut attrs = yrs::types::Attrs::new();
+            attrs.insert("type".into(), yrs::Any::from("timeline"));
+            block.format(&mut txn, 0, 2, attrs);
+        })
+        .await;
+    let (rejected, _) = refused.stateless("document-rejected").await;
+    assert_eq!(rejected["code"], "invalid_document");
+    // A room writes its rows in order: once a later write's row is in, a
+    // refused write's would be too.
+    let mut later = Client::open(server.port).await;
+    later.joined(&room, &token(&room, &user, "write")).await;
+    assert!(later.settle(|c| c.block_text() == "hello").await);
+    later.type_text("-b").await;
+    later.until(6).await.expect("ack");
+    assert!(id_rows_reach(&env, &room, later.id(), 1).await);
+    assert_eq!(id_rows(&env, &room, refused.id()).await, 0);
+}
+
+/// r2 S3: a room writes its client-id rows in order and unloads only once
+/// they are in: a room its last session left right after a first write
+/// stays loaded while the row waits on the database, and the row lands.
+/// Fails if a room may unload with rows unwritten.
+#[tokio::test]
+async fn a_room_left_right_after_a_first_write_unloads_once_its_row_is_in() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, room, mut session) = writer(&env, server.port, "base").await;
+    let mut locker = db(&env).await;
+    let lock = locker.transaction().await.expect("transaction");
+    lock.batch_execute("LOCK TABLE material_yjs_client_ids IN EXCLUSIVE MODE")
+        .await
+        .expect("lock");
+    session.type_text("-a").await;
+    session.until(6).await.expect("ack");
+    let id = session.id();
+    drop(session);
+    for _ in 0..30 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            active_rooms(server.port).await,
+            1,
+            "unloaded before its row"
+        );
+    }
+    lock.rollback().await.expect("unlock");
+    wait_unloaded(server.port).await;
+    assert_eq!(id_rows(&env, &room, id).await, 1);
+}
+
+/// Security regression (r2 S4): a channel stays its user's: a token refresh
+/// naming another user, even one who may edit the same room, is refused,
+/// and the channel closes at its token's expiry. Fails if a refresh may
+/// change a channel's user.
+#[tokio::test]
+async fn a_token_refresh_naming_another_user_is_refused() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    let mut client = Client::open(server.port).await;
+    client
+        .joined(&room, &token_for(&room, &owner, "write", 2))
+        .await;
+    client.until(10).await.expect("a token request");
+    let mut refresh = Vec::new();
+    varbytes(&mut refresh, token(&room, &editor, "write").as_bytes());
+    client.send(11, &refresh).await;
+    let closed = client.until(4).await.expect("closed at expiry");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("token expired"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+}
+
+/// r2 N6: a clean Leave expires only the ids its token offered: a channel
+/// that bound another tab's recorded id (its user's) leaves it bindable.
+/// Fails if a clean Leave expires an id its token did not offer.
+#[tokio::test]
+async fn a_clean_leave_keeps_an_id_its_token_did_not_offer() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut first) = writer(&env, server.port, "base").await;
+    first.type_text("-a").await;
+    first.until(6).await.expect("ack");
+    let id = first.id();
+    assert!(id_rows_reach(&env, &room, id, 1).await);
+    // Another channel of the user names the tab's id; its token offers
+    // another.
+    let join = join_payload_as(
+        &room,
+        &token(&room, &user, "write"),
+        Some(client_protocol()),
+        id,
+    );
+    let mut second = Client::open(server.port).await;
+    second.send(0, &join).await;
+    assert_eq!(second.until(1).await.expect("binds the tab's id"), [1]);
+    second.leave(false).await;
+    second.send(0, &join).await;
+    assert_eq!(
+        second.until(1).await.expect("the id still binds"),
+        [1],
+        "the clean Leave expired another tab's id"
+    );
+}
+
 /// Security regression (Q236): an Office session (its editor's id, and a
 /// DOCX layout worker's) that wrote nothing keeps both ids after its room
 /// unloaded when its reconnect's token offers them again, as Go re-grants
@@ -3154,13 +3289,13 @@ async fn unused_client_id_rows_clear_at_a_room_load_and_their_ids_stay_taken() {
 /// A client id in the range reserved for override-seed copies (M5).
 const RESERVED_ID: u64 = (1 << 32) + 7;
 
-/// Security regression (Epo 2026-10-24, M5): structs under an id reserved
-/// for override-seed copies (2^32 up to the PPTX bootstrap id) are admitted
-/// from an editor of a source file; a read-only member's are refused, and a
-/// note room refuses them as under any unassigned id. Fails if a source room
-/// refuses reserved ids, or if any other room admits them.
+/// Security regression (r2 N8): until override-seed copies exist, no room
+/// admits structs under the range reserved for them (2^32 up to the PPTX
+/// bootstrap id), not even from a source file's editor: the source room
+/// refuses them as under any unassigned id, and so does a note room. Fails if
+/// either room admits a reserved id.
 #[tokio::test]
-async fn reserved_copy_ids_are_admitted_only_from_a_source_files_editors() {
+async fn reserved_copy_ids_are_refused_until_override_seeds_exist() {
     let Some(env) = env() else { return };
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
@@ -3172,27 +3307,14 @@ async fn reserved_copy_ids_are_admitted_only_from_a_source_files_editors() {
     editor
         .send(5, &sync(2, &typed_as(&editor, RESERVED_ID, "r-")))
         .await;
-    editor
-        .until(6)
-        .await
-        .expect("the copy's write is acknowledged");
-    let mut reader = Client::open(server.port).await;
-    assert_eq!(reader.joined(&room, &token(&room, &user, "read")).await, 0);
+    let closed = editor.until(4).await.expect("the editor's write closes");
     assert!(
-        reader.settle(|c| source_text(c) == "r-base").await,
-        "{}",
-        source_text(&reader)
-    );
-    reader
-        .send(5, &sync(2, &typed_as(&reader, RESERVED_ID + 1, "x-")))
-        .await;
-    let closed = reader.until(4).await.expect("a reader's write closes");
-    assert!(
-        String::from_utf8_lossy(&closed).contains("read-only"),
+        String::from_utf8_lossy(&closed).contains("client id"),
         "{}",
         String::from_utf8_lossy(&closed)
     );
-    // A note room: a reserved id is an unassigned one.
+    let (failed, _) = editor.stateless("source-checkpoint-failed").await;
+    assert_eq!(failed["code"], "unassigned");
     let (_, _, mut writer) = writer(&env, server.port, "note").await;
     writer
         .send(5, &sync(2, &forged(&writer.doc, RESERVED_ID, "-copy")))
@@ -8761,16 +8883,16 @@ async fn send_drafts(
     origin: Option<&str>,
     body: Vec<u8>,
 ) -> (u16, serde_json::Value) {
-    send_drafts_over(port, room, token, origin, None, body).await
+    send_drafts_over(port, room, token, origin, &[], body).await
 }
 
-/// `send_drafts` naming the base a source's drafts grew over.
+/// `send_drafts` with more headers (a source's base, stored tokens).
 async fn send_drafts_over(
     port: u16,
     room: &str,
     token: Option<&str>,
     origin: Option<&str>,
-    base: Option<&str>,
+    headers: &[(&str, &str)],
     body: Vec<u8>,
 ) -> (u16, serde_json::Value) {
     let mut request = reqwest::Client::new()
@@ -8785,8 +8907,8 @@ async fn send_drafts_over(
     if let Some(origin) = origin {
         request = request.header("origin", origin);
     }
-    if let Some(base) = base {
-        request = request.header("x-capy-base", base);
+    for (name, value) in headers {
+        request = request.header(*name, *value);
     }
     let response = request.send().await.expect("draft send");
     let status = response.status().as_u16();
@@ -8865,6 +8987,10 @@ async fn active_rooms(port: u16) -> u64 {
         .expect("active rooms")
 }
 
+/// Security regression (Q236, r2 N3): a draft send writes under an id bound
+/// to a live channel of its user (the tab, still joined, never wrote), and
+/// its write records the id. Fails if such a send is refused or records
+/// nothing.
 #[tokio::test]
 async fn a_draft_send_reaches_the_open_editor_and_answers_once_stored() {
     let Some(env) = env() else { return };
@@ -8900,6 +9026,10 @@ async fn a_draft_send_reaches_the_open_editor_and_answers_once_stored() {
         editor.settle(|c| c.block_text() == "base offline").await,
         "{}",
         editor.block_text()
+    );
+    assert!(
+        id_rows_reach(&env, &room, editor.id(), 1).await,
+        "the draft's write records the tab's id"
     );
 }
 
@@ -8989,6 +9119,88 @@ async fn a_draft_under_a_client_id_nobody_was_assigned_is_refused() {
         "{answer}"
     );
     synced(server.port, &room, &user, "base").await;
+}
+
+/// Security regression (Epo 2026-10-24, Q288): a closed tab whose edits
+/// never reached the room (its id recorded for no one) has its drafts
+/// accepted from another page under its old id when the send presents the
+/// tab's stored token, and the write records the id. A token issued more
+/// than 7 days ago, another user's token offering the id, and the user's own
+/// token offering an id recorded to another user grant nothing: the drafts
+/// are refused as `unassigned`. Fails if stored tokens are ignored, or if
+/// any of those re-grants an id.
+#[tokio::test]
+async fn drafts_of_a_closed_tab_go_in_under_its_id_with_its_stored_token() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    // The other user's session wrote: its id is recorded to them.
+    let mut theirs = synced(server.port, &room, &editor, "base").await;
+    theirs.type_text("-e").await;
+    theirs.until(6).await.expect("ack");
+    let their_id = theirs.id();
+    assert!(id_rows_reach(&env, &room, their_id, 1).await);
+    let stolen = drafted(&theirs.doc, typed_into_note(" stolen"));
+    drop(theirs);
+    let id = fresh_client_id();
+    let stored = token_offering(&room, &owner, "write", id);
+    let mut tab = Client::open(server.port).await;
+    assert_eq!(tab.joined(&room, &stored).await, 1);
+    assert_eq!(tab.id(), id);
+    assert!(tab.settle(|c| c.block_text() == "base-e").await);
+    // Typed offline, then closed with its edits unsent.
+    let drafts = drafted(&tab.doc, typed_into_note(" offline"));
+    tab.leave(true).await;
+    drop(tab);
+    wait_unloaded(server.port).await;
+    let fresh = token(&room, &owner, "write");
+    let send = |grant: String, body: Vec<u8>| {
+        let (room, fresh) = (room.clone(), fresh.clone());
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&fresh),
+                Some(ORIGIN),
+                &[("x-capy-grants", &grant)],
+                body,
+            )
+            .await
+        }
+    };
+    let week = 7 * 24 * 60 * 60;
+    for (grant, body, case) in [
+        (
+            token_issued(&room, &owner, id, week + 60),
+            drafts.clone(),
+            "over 7 days old",
+        ),
+        (
+            token_offering(&room, &editor, "write", id),
+            drafts.clone(),
+            "another user's token",
+        ),
+        (
+            token_offering(&room, &owner, "write", their_id),
+            stolen,
+            "an id recorded to another user",
+        ),
+    ] {
+        let (status, answer) = send(grant, body).await;
+        assert_eq!(
+            (status, answer["class"].as_str()),
+            (409, Some("unassigned")),
+            "{case}: {answer}"
+        );
+    }
+    assert_eq!(id_rows(&env, &room, id).await, 0);
+    let (status, answer) = send(stored, drafts).await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        id_rows_reach(&env, &room, id, 1).await,
+        "the id is recorded"
+    );
+    synced(server.port, &room, &owner, "base-e offline").await;
 }
 
 #[tokio::test]
@@ -9289,6 +9501,7 @@ async fn a_draft_preflight_answers_an_allowed_origin_alone() {
         "x-capy-room",
         "x-capy-base",
         "x-capy-protocol",
+        "x-capy-grants",
     ] {
         assert!(
             header("access-control-allow-headers").contains(name),
@@ -9591,7 +9804,7 @@ async fn an_office_draft_goes_in_over_the_rooms_base_alone_and_never_while_pause
                 &room,
                 Some(&write),
                 Some(ORIGIN),
-                base.as_deref(),
+                base.as_deref().map(|base| ("x-capy-base", base)).as_slice(),
                 vec![0, 0],
             )
             .await

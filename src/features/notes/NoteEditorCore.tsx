@@ -562,6 +562,8 @@ export function NoteEditorCore({
   // The token request that failed, if one did: the provider only reports its
   // own "Failed to get token" text.
   const tokenError = useRef<unknown>(null);
+  // The last room token handed to the provider: stored drafts keep it (Q288).
+  const lastToken = useRef<string | undefined>(undefined);
   // Parsing normalizes and copies every node, so on a near-limit document this
   // costs seconds. It is the *initial* value — the room is authoritative from
   // sync onwards — so it is computed once per mount rather than on every
@@ -1052,6 +1054,7 @@ export function NoteEditorCore({
                         readOnlyNow.current(true);
                         throw new Error(COLLABORATION_READ_ONLY_REASON);
                       }
+                      lastToken.current = token.token;
                       return token.token;
                     },
                     // Stored drafts not yet covered by a receipt (Q236).
@@ -1141,6 +1144,7 @@ export function NoteEditorCore({
         showOffline();
       },
       report: reportIncident,
+      token: () => lastToken.current,
     });
     recorder.current = current;
     return () => {

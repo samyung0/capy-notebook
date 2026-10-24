@@ -245,6 +245,36 @@ fn sign(secret: &str, signed: &str) -> Vec<u8> {
 
 /// `verifyCollaborationToken`.
 pub fn verify(token: &str, secret: &str, room: &str, now: i64) -> Result<Claims, TokenError> {
+    checked(token, secret, room, now, true)
+}
+
+/// How old a stored draft's token may be and still re-grant its client ids
+/// (Epo 2026-10-24, Q288): the unsent-edit expiry.
+const GRANT_SECONDS: i64 = 7 * 24 * 60 * 60;
+
+/// The client ids `token` offered, when it may re-grant them to a draft send
+/// by `user` in `room` (Q288, the reconnect rule of Q236): our signature, the
+/// same user and room, issued at most 7 days ago; its expiry is otherwise
+/// ignored. None for anything else.
+pub fn granted_ids(token: &str, secret: &str, room: &str, user: &str, now: i64) -> Vec<u64> {
+    match checked(token, secret, room, now, false) {
+        Ok(claims) if claims.sub == user && claims.iat >= now - GRANT_SECONDS => {
+            [claims.client_id, claims.worker_client_id]
+                .into_iter()
+                .flatten()
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn checked(
+    token: &str,
+    secret: &str,
+    room: &str,
+    now: i64,
+    expiring: bool,
+) -> Result<Claims, TokenError> {
     let parts: Vec<&str> = token.split('.').collect();
     let [header, payload, signature] = parts.as_slice() else {
         return Err(TokenError::Malformed);
@@ -273,7 +303,7 @@ pub fn verify(token: &str, secret: &str, room: &str, now: i64) -> Result<Claims,
         || claims.sub.is_empty()
         || claims.jti.is_empty()
         || claims.iat > now + 30
-        || claims.exp <= now
+        || (expiring && claims.exp <= now)
         || [claims.client_id, claims.worker_client_id]
             .into_iter()
             .flatten()

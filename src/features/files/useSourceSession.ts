@@ -564,6 +564,9 @@ export function useSourceSession(
       // The token request that failed, if one did (the provider only reports
       // its own text for it).
       let tokenError: unknown = null;
+      // The last room token handed to the provider: stored drafts keep it
+      // (Q288).
+      let lastToken: string | undefined;
       // Set by reset() and refuse(): later typing changes nothing stored.
       let discarded = false;
       // Set by stale(): a late change (the frame's last input) is stored
@@ -1035,6 +1038,7 @@ export function useSourceSession(
             replace('readOnly', true);
             throw new Error(COLLABORATION_READ_ONLY_REASON);
           }
+          lastToken = token.token;
           return token.token;
         },
         // Stored drafts not yet covered by a receipt (Q236).
@@ -1080,6 +1084,7 @@ export function useSourceSession(
           showOffline();
         },
         report,
+        token: () => lastToken,
       });
       shared.on('update', (_update: Uint8Array, origin: unknown) => {
         if (origin === provider || origin === RESTORE_ORIGIN || discarded)

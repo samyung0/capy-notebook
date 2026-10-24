@@ -330,22 +330,36 @@ it('presents its previous token and keeps the ids it offers again, written or no
   expect(provider.workerClientId).toBe(11);
 });
 
-it('asks for fresh ids after the room refused its client id', async () => {
-  // A live channel holds the id (two sessions presented one token).
-  const asked: (string | undefined)[] = [];
-  const { join, provider, socket } = await joined({
-    token: async (previous) => {
-      asked.push(previous);
-      return token(`t${asked.length}`);
-    },
-  });
-  socket.deliver(
-    message(join.channel, MessageKind.Refused, text('collaboration-client-id'))
-  );
-  provider.disconnect();
-  provider.connect();
-  await flush();
-  expect(asked).toEqual([undefined, undefined]);
+it('presents its previous token for 70 s of client id refusals, then asks for fresh ids', async () => {
+  // r2 S2: a live channel holds the ids, as a dropped socket's does until
+  // the server closes it (60 s); past that, two sessions presented one token.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const asked: (string | undefined)[] = [];
+    const { join, provider, socket } = await joined({
+      token: async (previous) => {
+        asked.push(previous);
+        return token('t1');
+      },
+    });
+    const refuse = async (channel: number, after: number) => {
+      vi.setSystemTime(Date.now() + after);
+      socket.deliver(
+        message(channel, MessageKind.Refused, text('collaboration-client-id'))
+      );
+      provider.disconnect();
+      provider.connect();
+      await flush();
+      return socket.take(MessageKind.Join)[0];
+    };
+    const second = await refuse(join.channel, 0);
+    const third = await refuse(second.channel, 69_000);
+    expect(asked).toEqual([undefined, token('t1'), token('t1')]);
+    await refuse(third.channel, 1000);
+    expect(asked.at(-1)).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('says on Leave whether the tab still holds unsent edits', async () => {

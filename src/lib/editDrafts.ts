@@ -19,6 +19,7 @@ import {
   type DraftRef,
   type DraftReply,
   type DraftRequest,
+  grantsOf,
   MERGE_RUN,
   mergedRows,
   type StorageError,
@@ -42,6 +43,11 @@ export interface EditDraft {
   /** A source's base (`bases` store), which recovery opens the edits over. */
   base?: string;
   data: Uint8Array;
+  /** The signed room tokens of the sessions whose edits it holds, each the
+   * session's last when the row was written (Q288): a send from any page
+   * presents them, and the room grants their client ids again under the
+   * reconnect rule. */
+  grants?: string[];
   /** A sweep left it for the editor's next open: the service could not take
    * it (it needs the room's state, a piece is over the service's cap, or it
    * is of another lineage or Office base), so no sweep sends it again. */
@@ -435,6 +441,8 @@ export interface DraftRecorderOptions {
   /** Reports a failing draft store and each offline episode, after the
    * reconnect (edit_incidents). */
   report?: EditIncidentReporter;
+  /** The session's last signed room token, which its rows keep (Q288). */
+  token?: () => string | undefined;
 }
 
 /**
@@ -459,6 +467,7 @@ export function recordDrafts({
   onLimit,
   onStorage,
   report,
+  token,
 }: DraftRecorderOptions) {
   const session = crypto.randomUUID();
   const keep = stored(key);
@@ -500,6 +509,7 @@ export function recordDrafts({
     data: Uint8Array,
     refused?: true
   ): EditDraft => ({
+    ...grantsOf(token?.()),
     data,
     id: kind === 'state' ? `${session}:state` : `${session}:${seq}`,
     key,
@@ -812,20 +822,29 @@ type Sent = 'sent' | 'refused' | 'waits' | 'later' | 'retry' | 'outdated';
 // Set once a send was refused as outdated: sweeps stop for the page load.
 let outdated = false;
 
+/** The most stored tokens one send presents (the service reads as many). */
+const MAX_GRANTS = 16;
+
 /** A document's rows its room takes now: not refused, not left for the
  * editor (`held`), of the token's room, one group per lineage (an Office
- * file's rows of another base go apart). */
+ * file's rows of another base go apart), with the newest of their stored
+ * tokens. */
 function sendableGroups(rows: DraftInfo[], room: string) {
-  const groups = new Map<string, DraftRef[]>();
+  const groups = new Map<string, DraftInfo[]>();
   for (const row of rows) {
     if (row.refused || row.held || row.lineage.split('@')[0] !== room) continue;
-    const group = groups.get(row.lineage) ?? [];
-    group.push({ id: row.id, key: row.key, seq: row.seq });
-    groups.set(row.lineage, group);
+    groups.set(row.lineage, [...(groups.get(row.lineage) ?? []), row]);
   }
-  return [...groups.entries()].map(([lineage, refs]) => ({
-    base: rows.find((row) => row.lineage === lineage)?.base,
-    refs,
+  return [...groups.values()].map((group) => ({
+    base: group[0].base,
+    grants: [
+      ...new Set(
+        [...group]
+          .sort((a, b) => b.savedAt - a.savedAt)
+          .flatMap((row) => [...(row.grants ?? [])].reverse())
+      ),
+    ].slice(0, MAX_GRANTS),
+    refs: group.map(({ id, key, seq }) => ({ id, key, seq })),
   }));
 }
 
@@ -837,7 +856,7 @@ function sendableGroups(rows: DraftInfo[], room: string) {
  * one row of the pieces not sent (Epo 2026-10-18), which `refs` names. */
 async function sendGroup(
   token: RoomToken,
-  group: { base?: string; refs: DraftRef[] }
+  group: { base?: string; grants: string[]; refs: DraftRef[] }
 ): Promise<{ refs: DraftRef[]; sent: Sent }> {
   let pieces: Uint8Array<ArrayBuffer>[] | null;
   try {
@@ -869,7 +888,7 @@ const DRAFT_PACING = {};
 
 async function sendPiece(
   token: RoomToken,
-  group: { base?: string },
+  group: { base?: string; grants: string[] },
   body: Uint8Array<ArrayBuffer>
 ): Promise<Sent> {
   // Over the service's cap (a struct that cannot be cut): never sendable as
@@ -888,6 +907,9 @@ async function sendPiece(
     'x-capy-room': token.room,
   };
   if (group.base !== undefined) headers['x-capy-base'] = group.base;
+  // The drafts' own client ids (Q288): a tab whose edits never reached the
+  // room had them recorded for no one.
+  if (group.grants.length) headers['x-capy-grants'] = group.grants.join(',');
   let response: Response;
   try {
     response = await fetch(

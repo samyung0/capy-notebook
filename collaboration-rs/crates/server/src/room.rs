@@ -6,7 +6,7 @@
 //! idle and unloads once empty and clean. Note rooms validate Plate content
 //! (`notes`); source rooms admit and store through `sources`.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -63,6 +63,14 @@ pub const MAX_PRESENCE: usize = 64;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
+/// A client-id row batch that failed is tried again after these waits; a
+/// batch failing them all is logged as lost (r2 S3).
+const ROW_RETRIES: [Duration; 4] = [
+    Duration::from_millis(250),
+    Duration::from_secs(1),
+    Duration::from_secs(4),
+    Duration::from_secs(10),
+];
 
 pub type MemberKey = (u64, u64);
 
@@ -89,6 +97,11 @@ pub enum RoomCmd {
     Token(MemberKey, Context),
     /// A store's I/O finished.
     Stored(Box<StoreDone>),
+    /// The head of the client-id row queue was written, or failed every try.
+    RowsWritten(Result<(), String>),
+    /// The client ids bound to live channels, for the server's own id draws
+    /// (r2 N7).
+    LiveIds(oneshot::Sender<HashSet<u64>>),
     /// A projection finished.
     Projected(i64, Result<(), String>),
     /// Store now (if anything is unsaved) and answer once it is durable.
@@ -159,6 +172,9 @@ pub struct Draft {
     pub update: bytes::Bytes,
     /// The base the drafts grew over (an Office file needs the room's).
     pub base: Option<String>,
+    /// Client ids the drafts' stored tokens offered (Q288), checked here
+    /// under the JOIN's rule before the drafts may write under them.
+    pub granted: Vec<u64>,
     pub reply: oneshot::Sender<Result<Durable, Refused>>,
 }
 
@@ -474,6 +490,10 @@ pub struct Room {
     /// Children passes waiting, and whether one waits on the API.
     child_passes: std::collections::VecDeque<ChildPass>,
     child_running: bool,
+    /// Client-id rows to write, in order, one batch at a time off the room's
+    /// task (r2 S3); the room unloads only once they are written.
+    rows: VecDeque<client_ids::Rows>,
+    rows_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
@@ -894,6 +914,8 @@ async fn run(
         forced_unload: Vec::new(),
         child_passes: std::collections::VecDeque::new(),
         child_running: false,
+        rows: VecDeque::new(),
+        rows_running: false,
         applying: false,
         agent_changes: HashMap::new(),
         agent_reverted: HashMap::new(),
@@ -1034,7 +1056,7 @@ impl Room {
     }
 
     fn unloadable(&self) -> bool {
-        let empty = self.members.is_empty();
+        let empty = self.members.is_empty() && self.rows.is_empty() && !self.rows_running;
         if self.discard_pending.is_some() || !self.forced_unload.is_empty() {
             return empty && !self.store.running;
         }
@@ -1097,6 +1119,15 @@ impl Room {
                 }
             }
             RoomCmd::Stored(done) => self.stored(*done),
+            RoomCmd::RowsWritten(result) => self.rows_written(result),
+            RoomCmd::LiveIds(reply) => {
+                let live: HashSet<u64> = self
+                    .members
+                    .values()
+                    .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+                    .collect();
+                let _ = reply.send(live);
+            }
             RoomCmd::Projected(version, result) => self.projected(version, result),
             RoomCmd::Persist(reply) => {
                 if !self.store.dirty
@@ -1257,8 +1288,17 @@ impl Room {
             context,
             update,
             base,
+            granted,
             reply,
         } = draft;
+        let (history, live) = (self.in_history(), self.live_ids());
+        let granted: Vec<u64> = granted
+            .into_iter()
+            .filter(|&id| {
+                self.client_ids
+                    .grantable(id, &context.user_id, &history, &live)
+            })
+            .collect();
         if let Kindly::Source(source) = &self.kind {
             // A publication handoff holds every writer read-only.
             let refused = if self.app.handoff().busy(&self.name) {
@@ -1283,7 +1323,7 @@ impl Room {
             if update == IT_PANIC_UPDATE {
                 panic!("integration test panic");
             }
-            self.admit_update(None, &context, read_only, &update)
+            self.admit_update(None, &context, read_only, &update, &granted)
         }));
         let outcome = checked.unwrap_or_else(|_| {
             self.update_panicked(None, update.len());
@@ -2577,7 +2617,7 @@ impl Room {
             return;
         };
         let (context, read_only) = (member.context.clone(), member.read_only);
-        match self.admit_update(Some(key), &context, read_only, bytes) {
+        match self.admit_update(Some(key), &context, read_only, bytes, &[]) {
             Outcome::Admitted => {}
             Outcome::Unheld => self.resync(key, step2, &context),
             Outcome::Refused {
@@ -2596,6 +2636,7 @@ impl Room {
         context: &Context,
         read_only: bool,
         bytes: &[u8],
+        granted: &[u64],
     ) -> Outcome {
         if self.app.evictions.blocks(&self.name, false) {
             return Outcome::refused(Class::Unavailable, "collaboration room is being reset");
@@ -2650,29 +2691,26 @@ impl Room {
             );
         }
         // A writer adds structs only under ids its user holds (Q213): ones
-        // recorded to the user or bound to one of the user's live channels
-        // (a draft send has none of its own), and a source room's editor
-        // under reserved copy ids too (M5).
-        let source = matches!(self.kind, Kindly::Source(_));
+        // recorded to the user, bound to one of the user's live channels (a
+        // draft send has none of its own) or granted to a draft by its stored
+        // token (Q288). Reserved copy ids are refused until override-seed
+        // copies exist (r2 N8).
+        let state = self.doc.transact().state_vector();
         let bound: Vec<u64> = self
             .members
             .values()
             .filter(|member| member.context.user_id == context.user_id)
             .flat_map(|member| std::iter::once(member.client).chain(member.worker))
             .collect();
-        if let Some(client) = client_ids::foreign(&self.doc.transact(), &update, |id| {
+        if let Some(client) = client_ids::foreign(&state, &update, |id| {
             self.client_ids.owned_by(id, &context.user_id)
                 || bound.contains(&id)
-                || (source && client_ids::RESERVED.contains(&id))
+                || granted.contains(&id)
         }) {
             return self.foreign_update_refused(context, client, bytes.len());
         }
-        // The first accepted write under an id in this room's life records
-        // it as the user's (Q236), or refreshes its row (M3).
-        let written = client_ids::written(&self.doc.transact(), &update);
-        if let Some(rows) = self.client_ids.first_writes(&context.user_id, &written) {
-            self.write_rows(rows);
-        }
+        // Recorded once the update is accepted and applied (r2 S1).
+        let written = client_ids::written(&state, &update);
         // Admission and apply run off the runtime's workers while the room
         // waits, unless the update is a small edit of a few structs (REVIEW2
         // S1, REVIEW3 S1): a trial on a copy, a source's exact measure near
@@ -2808,6 +2846,14 @@ impl Room {
         applied += content.len();
         if let Kindly::Source(source) = &mut self.kind {
             source.estimate.applied(applied as u64, freed);
+        }
+        // The first accepted write under an id in this room's life records
+        // it as the user's (Q236), or refreshes its row once a day (M3).
+        if let Some(rows) =
+            self.client_ids
+                .first_writes(&context.user_id, &written, std::time::Instant::now())
+        {
+            self.write_rows(rows);
         }
         self.ack(writer);
         if !content.is_empty() {
@@ -3518,13 +3564,16 @@ impl Room {
         move |id| id == own || bound.contains(&id)
     }
 
-    /// A clean Leave (Q236): the channel's recorded ids expire.
+    /// A clean Leave (Q236): the channel's recorded ids its token offered
+    /// expire; an id it bound otherwise (another tab's, r2 N6) stays.
     fn left_clean(&mut self, key: MemberKey) {
         let Some(member) = self.members.get(&key) else {
             return;
         };
+        let offered = [member.context.client_id, member.context.worker_client_id];
         let ids: Vec<u64> = std::iter::once(member.client)
             .chain(member.worker)
+            .filter(|&id| offered.contains(&u32::try_from(id).ok()))
             .collect();
         let user = member.context.user_id.clone();
         if let Some(rows) = self.client_ids.left_clean(&user, &ids) {
@@ -3532,20 +3581,54 @@ impl Room {
         }
     }
 
-    /// Writes client-id rows off the room's task (Q226 M4): a slow database
-    /// stalls no channel.
-    fn write_rows(&self, rows: client_ids::Rows) {
+    /// Queues client-id rows (r2 S3): written in order, one batch at a time
+    /// off the room's task (Q226 M4: a slow database stalls no channel), and
+    /// the room unloads only once the queue is empty.
+    fn write_rows(&mut self, rows: client_ids::Rows) {
+        self.rows.push_back(rows);
+        self.next_rows();
+    }
+
+    /// Writes the queue's head, retrying a failure a few times.
+    fn next_rows(&mut self) {
+        if self.rows_running {
+            return;
+        }
+        let Some(rows) = self.rows.front().cloned() else {
+            return;
+        };
+        let Some(handle) = self.own_handle() else {
+            // Closing: nothing more is written.
+            self.rows.clear();
+            return;
+        };
+        self.rows_running = true;
         let db = self.app.db.clone();
-        let room = self.name.clone();
         tokio::spawn(async move {
-            if let Err(error) = rows.run(&db).await {
-                log(
-                    Level::Warn,
-                    "client id rows not written",
-                    json!({ "error": error, "room": room }),
-                );
+            let mut result = rows.run(&db).await;
+            for delay in ROW_RETRIES {
+                if result.is_ok() {
+                    break;
+                }
+                tokio::time::sleep(delay).await;
+                result = rows.run(&db).await;
             }
+            let _ = handle.tx.send(RoomCmd::RowsWritten(result)).await;
         });
+    }
+
+    /// The queue's head was written, or failed every try (logged as lost).
+    fn rows_written(&mut self, result: Result<(), String>) {
+        self.rows_running = false;
+        self.rows.pop_front();
+        if let Err(error) = result {
+            log(
+                Level::Error,
+                "client id rows lost",
+                json!({ "error": error, "room": self.name }),
+            );
+        }
+        self.next_rows();
     }
 
     fn own_handle(&self) -> Option<RoomHandle> {

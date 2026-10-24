@@ -14,10 +14,11 @@
 //! (`workerClientId`, Q219), bound and recorded the same way.
 
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use deadpool_postgres::Pool;
 use yrs::block::ClientID;
-use yrs::{ReadTxn, Update, UpdateBlock};
+use yrs::{StateVector, Update, UpdateBlock};
 
 use crate::auth::{Context, RoomName};
 
@@ -35,14 +36,12 @@ pub const REFUSED_REASON: &str = "collaboration-client-id";
 /// id are re-applied under an assigned one (Epo 2026-10-24).
 pub const UNASSIGNED_REASON: &str = "collaboration-unassigned-id";
 
-/// Client ids reserved for derived override-seed copies (Epo 2026-10-24,
-/// M5): at or above 2^32 and below the PPTX bootstrap id (2^53 - 1). No
-/// session is assigned one (session ids are u32); only a source room admits
-/// them, from members who may edit the file.
-pub const RESERVED: std::ops::Range<u64> = (1 << 32)..((1 << 53) - 1);
-
 /// How long a row may go unwritten before a room load clears it (M3).
 const UNUSED_DAYS: i32 = 7;
+
+/// How often an id's writes refresh its row's last write time (r2 N1): a
+/// room loaded for more than 7 days keeps the rows of ids still written.
+const REFRESH_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Why an update was refused: it holds structs under an id its writer's
 /// user was not assigned.
@@ -56,12 +55,12 @@ enum Document {
     Source { file_id: String },
 }
 
-/// One document's record: which user each recorded id belongs to, and the
-/// ids whose last write this room's life has recorded.
+/// One document's record: which user each recorded id belongs to, and when
+/// this room's life last wrote each id's row.
 pub struct ClientIds {
     document: Document,
     owners: HashMap<u64, String>,
-    written: HashSet<u64>,
+    written: HashMap<u64, Instant>,
 }
 
 /// The ids a JOIN binds its channel to: its session's and, on a DOCX write
@@ -72,6 +71,7 @@ pub struct Bound {
 }
 
 /// Rows to write off the room's task (a slow database stalls no channel).
+#[derive(Clone)]
 pub struct Rows {
     ids: Vec<i64>,
     user: String,
@@ -79,6 +79,7 @@ pub struct Rows {
     change: Change,
 }
 
+#[derive(Clone)]
 enum Change {
     /// A first accepted write in this room's life: the row is recorded, or
     /// its last write time refreshed (M3).
@@ -208,7 +209,7 @@ impl ClientIds {
         Ok(ClientIds {
             document,
             owners,
-            written: HashSet::new(),
+            written: HashMap::new(),
         })
     }
 
@@ -245,28 +246,57 @@ impl ClientIds {
         };
         let offered = context.client_id.map(u64::from) == Some(client);
         let worker = context.worker_client_id.map(u64::from);
-        let check = |id: u64, offered: bool| match self.owners.get(&id) {
-            Some(owner) if *owner == context.user_id => Ok(()),
-            Some(_) => Err(UNASSIGNED_REASON),
-            None if !offered || history(id) => Err(UNASSIGNED_REASON),
-            None if live(id) => Err(REFUSED_REASON),
-            None => Ok(()),
-        };
-        check(client, offered)
-            .and_then(|()| worker.map_or(Ok(()), |id| check(id, true)))
+        let user = &context.user_id;
+        self.holds(client, user, offered, &history, &live)
+            .and_then(|()| worker.map_or(Ok(()), |id| self.holds(id, user, true, &history, &live)))
             .map_err(String::from)?;
         Ok(Bound { client, worker })
     }
 
-    /// The rows of `written` (ids just written under, each recorded to the
-    /// writer's user or bound to one of its channels) that this room's life
-    /// has not recorded a write under yet: recorded as `user`'s, in memory
-    /// now and in the database off the room's task. Reserved copy ids are
-    /// never recorded.
-    pub fn first_writes(&mut self, user: &str, written: &[u64]) -> Option<Rows> {
+    /// Whether `user` may write under `id` offered by a draft's stored token
+    /// (Q288): under the JOIN's rule, as an offered id.
+    pub fn grantable(
+        &self,
+        id: u64,
+        user: &str,
+        history: impl Fn(u64) -> bool,
+        live: impl Fn(u64) -> bool,
+    ) -> bool {
+        self.holds(id, user, true, &history, &live).is_ok()
+    }
+
+    /// The JOIN's rule for one id (see [ClientIds::bind]).
+    fn holds(
+        &self,
+        id: u64,
+        user: &str,
+        offered: bool,
+        history: &impl Fn(u64) -> bool,
+        live: &impl Fn(u64) -> bool,
+    ) -> Result<(), &'static str> {
+        match self.owners.get(&id) {
+            Some(owner) if owner == user => Ok(()),
+            Some(_) => Err(UNASSIGNED_REASON),
+            None if !offered || history(id) => Err(UNASSIGNED_REASON),
+            None if live(id) => Err(REFUSED_REASON),
+            None => Ok(()),
+        }
+    }
+
+    /// The rows of `written` (ids of an accepted, applied update, each
+    /// recorded to the writer's user, bound to one of its channels or granted
+    /// to its draft) that this room's life has not written in a day:
+    /// recorded as `user`'s, in memory now and in the database off the room's
+    /// task, or their last write time refreshed.
+    pub fn first_writes(&mut self, user: &str, written: &[u64], now: Instant) -> Option<Rows> {
         let mut ids = Vec::new();
         for &id in written {
-            if !RESERVED.contains(&id) && self.written.insert(id) {
+            if self
+                .written
+                .get(&id)
+                .is_none_or(|at| now.duration_since(*at) >= REFRESH_EVERY)
+            {
+                self.written.insert(id, now);
                 self.owners.insert(id, user.to_owned());
                 ids.push(id as i64);
             }
@@ -305,10 +335,9 @@ fn document_name(keys: bool) -> &'static str {
     if keys { "keys" } else { "content" }
 }
 
-/// The client ids of `update` with a struct past what the room holds: the
-/// ids it writes under.
-pub fn written<T: ReadTxn>(txn: &T, update: &Update) -> Vec<u64> {
-    let state = txn.state_vector();
+/// The client ids of `update` with a struct past `state` (what the room
+/// holds): the ids it writes under.
+pub fn written(state: &StateVector, update: &Update) -> Vec<u64> {
     let mut ids: Vec<u64> = update
         .blocks()
         .filter_map(|block| {
@@ -330,12 +359,11 @@ fn block_end(block: &UpdateBlock) -> (ClientID, u32) {
     }
 }
 
-/// The first client id of `update` with a struct past what the room holds
-/// (an item, a GC range or a skip) for which `owned` says no. Structs at
-/// clocks the room holds are duplicates yrs skips; the delete set is not
-/// bound (anyone editing deletes others' text).
-pub fn foreign<T: ReadTxn>(txn: &T, update: &Update, owned: impl Fn(u64) -> bool) -> Option<u64> {
-    let state = txn.state_vector();
+/// The first client id of `update` with a struct past `state` (what the
+/// room holds: an item, a GC range or a skip) for which `owned` says no.
+/// Structs at clocks the room holds are duplicates yrs skips; the delete set
+/// is not bound (anyone editing deletes others' text).
+pub fn foreign(state: &StateVector, update: &Update, owned: impl Fn(u64) -> bool) -> Option<u64> {
     update.blocks().find_map(|block| {
         let (client, end) = block_end(&block);
         (end > state.get(&client) && !owned(client.get())).then(|| client.get())
@@ -344,7 +372,7 @@ pub fn foreign<T: ReadTxn>(txn: &T, update: &Update, owned: impl Fn(u64) -> bool
 
 #[cfg(test)]
 mod tests {
-    use yrs::{Doc, GetString, Text, Transact};
+    use yrs::{Doc, GetString, ReadTxn, Text, Transact};
 
     use super::*;
 
@@ -390,23 +418,38 @@ mod tests {
         let bobs = |id: u64| id == 20;
         // Bob types under his own id, with Alice's held structs alongside.
         let update = edit(&room, &bob, |d| type_at_end(d, " bob"));
-        assert_eq!(foreign(&room.transact(), &update, bobs), None);
+        assert_eq!(
+            foreign(&room.transact().state_vector(), &update, bobs),
+            None
+        );
         let state = bob
             .transact()
             .encode_state_as_update_v1(&yrs::StateVector::default());
         assert_eq!(
-            foreign(&room.transact(), &ydoc::decode(&state).unwrap(), bobs),
+            foreign(
+                &room.transact().state_vector(),
+                &ydoc::decode(&state).unwrap(),
+                bobs
+            ),
             None
         );
         // Alice relaying Bob's structs the room does not hold is refused;
         // once the room holds them they are duplicates.
         assert_eq!(
-            foreign(&room.transact(), &ydoc::decode(&state).unwrap(), alices),
+            foreign(
+                &room.transact().state_vector(),
+                &ydoc::decode(&state).unwrap(),
+                alices
+            ),
             Some(20)
         );
         room.transact_mut().apply_update(update).unwrap();
         assert_eq!(
-            foreign(&room.transact(), &ydoc::decode(&state).unwrap(), alices),
+            foreign(
+                &room.transact().state_vector(),
+                &ydoc::decode(&state).unwrap(),
+                alices
+            ),
             None
         );
         // Bob deletes Alice's text: deletions are not bound.
@@ -414,11 +457,43 @@ mod tests {
             d.get_or_insert_text("content")
                 .remove_range(&mut d.transact_mut(), 0, 5);
         });
-        assert_eq!(foreign(&room.transact(), &deleted, bobs), None);
+        assert_eq!(
+            foreign(&room.transact().state_vector(), &deleted, bobs),
+            None
+        );
         // An update under Alice's id is hers alone.
         let forger = doc(10);
         let forged = edit(&room, &forger, |d| type_at_end(d, "!"));
-        assert_eq!(foreign(&room.transact(), &forged, bobs), Some(10));
-        assert_eq!(foreign(&room.transact(), &forged, alices), None);
+        assert_eq!(
+            foreign(&room.transact().state_vector(), &forged, bobs),
+            Some(10)
+        );
+        assert_eq!(
+            foreign(&room.transact().state_vector(), &forged, alices),
+            None
+        );
+    }
+
+    /// Security regression (r2 N1): an id's writes refresh its row's last
+    /// write time again once a day of the room's life, not only at its first
+    /// write, so a room loaded for more than 7 days keeps a writer's row.
+    /// Fails if only the first write counts.
+    #[test]
+    fn an_ids_writes_refresh_its_row_once_a_day() {
+        let mut ids = ClientIds {
+            document: Document::Source {
+                file_id: "f_1".into(),
+            },
+            owners: HashMap::new(),
+            written: HashMap::new(),
+        };
+        let start = Instant::now();
+        assert!(ids.first_writes("u_1", &[7], start).is_some());
+        assert!(ids.owned_by(7, "u_1"));
+        assert!(ids.first_writes("u_1", &[7], start).is_none());
+        assert!(
+            ids.first_writes("u_1", &[7], start + REFRESH_EVERY)
+                .is_some()
+        );
     }
 }
