@@ -270,3 +270,79 @@ func TestTrashFencesJobsAndRooms(t *testing.T) {
 		t.Fatal("trash did not enqueue the source room eviction")
 	}
 }
+
+// A submitted transcription task holds its audio file (Epo 2026-10-24): the
+// task is billed whether or not its result is used, so trashing the file is
+// refused until the job ends. A job that ends (here out of attempts) frees
+// the task's gate lease and abandons its call at once, and so does a cascade
+// the user cannot hold back, such as deleting the workspace.
+func TestTrashRefusesATranscribingAudioFile(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID, editorID, ws, _, _ := trashFixture(t, s)
+	sessionID, err := beginIngestSpend(ctx, s, ownerID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcribing := func(name string) (File, string, string) {
+		t.Helper()
+		file, err := s.createReadyFile(ctx, ws.ID, ownerID, name, "audio", nil, "", 4096, "sources/"+uid("blob")+"/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		callID, jobID := uid("pc"), uid("job")
+		mustInsertProviderCall(t, s, sessionID, ProviderCallUsage{CallID: callID, Kind: KindAudio, Purpose: "transcription"})
+		if _, err := s.pool.Exec(ctx, `INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
+			VALUES ($1,'filetrans',1,now()+interval '1 hour')`, callID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.pool.Exec(ctx, `INSERT INTO jobs (id,type,payload,status,attempts)
+			VALUES ($1,'ingest',jsonb_build_object('fileId',$2::text,'reservationId',$3::text,
+				'filetrans',jsonb_build_object('taskId','task-1','callId',$4::text)),'pending',0)`,
+			jobID, file.ID, sessionID, callID); err != nil {
+			t.Fatal(err)
+		}
+		return file, callID, jobID
+	}
+	ended := func(callID string) {
+		t.Helper()
+		var status, code string
+		var leases int
+		if err := s.pool.QueryRow(ctx, `SELECT status, error_code,
+			(SELECT count(*) FROM provider_capacity_leases WHERE id=$1)
+			FROM provider_calls WHERE id=$1`, callID).Scan(&status, &code, &leases); err != nil {
+			t.Fatal(err)
+		}
+		if status != "abandoned" || code != "job_ended" || leases != 0 {
+			t.Fatalf("call %s/%s with %d leases, want abandoned/job_ended and none", status, code, leases)
+		}
+	}
+
+	exhausted, exhaustedCall, exhaustedJob := transcribing("exhausted.mp3")
+	if _, err := s.TrashFile(ctx, editorID, exhausted.ID, AgentOperation{}); !errors.Is(err, ErrAudioTranscribing) {
+		t.Fatalf("trash while transcribing: %v, want ErrAudioTranscribing", err)
+	}
+	if fileCount(t, s, ws.ID, false) != 2 {
+		t.Fatal("the refused trash moved the file")
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE jobs SET status='failed' WHERE id=$1`, exhaustedJob); err != nil {
+		t.Fatal(err)
+	}
+	ended(exhaustedCall)
+	if _, err := s.TrashFile(ctx, editorID, exhausted.ID, AgentOperation{}); err != nil {
+		t.Fatalf("trash once the job ended: %v", err)
+	}
+
+	_, cascadedCall, cascadedJob := transcribing("cascaded.mp3")
+	if err := s.DeleteWorkspace(ctx, ownerID, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	var jobStatus string
+	if err := s.pool.QueryRow(ctx, `SELECT status FROM jobs WHERE id=$1`, cascadedJob).Scan(&jobStatus); err != nil {
+		t.Fatal(err)
+	}
+	if jobStatus != "failed" {
+		t.Fatalf("job %s after the workspace went", jobStatus)
+	}
+	ended(cascadedCall)
+}

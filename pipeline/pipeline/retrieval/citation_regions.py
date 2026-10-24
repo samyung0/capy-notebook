@@ -114,11 +114,13 @@ async def refine(workspace_id: str, passages: list[Passage]) -> list[dict[str, A
     citations = [p.as_citation() for p in passages]
     files: dict[str, list[int]] = defaultdict(list)
     for index, passage in enumerate(passages):
-        if passage.regions and Path(passage.file_name).suffix.lower() not in {
-            ".docx",
-            ".xlsx",
-            ".pptx",
-        }:
+        # Page boxes only: an audio transcript's regions are times.
+        if (
+            passage.regions
+            and passage.regions[0].get("space") == SPACE
+            and Path(passage.file_name).suffix.lower()
+            not in {".docx", ".xlsx", ".pptx"}
+        ):
             files[passage.file_id].append(index)
     for file_id, indices in files.items():
         try:

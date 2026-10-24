@@ -430,6 +430,7 @@ export * from './userChatSendKey.ts';
 export * from './userChatSteps.ts';
 export * from './userColor.ts';
 export * from './userModelSlot.ts';
+export * from './voiceTranscription.ts';
 export * from './workspace.ts';
 export * from './workspaceAttemptsOutputBody.ts';
 export * from './workspaceCollaborator.ts';

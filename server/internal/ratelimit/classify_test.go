@@ -29,6 +29,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces":                                   classDefault,
 		"/api/edit-incidents":                               classIncident,
 		"/api/files/f_1/thumbnail":                          classThumbnail,
+		"/api/workspaces/ws_1/voice-transcriptions":         classVoice,
 	}
 	for path, want := range cases {
 		if got := classify(path); got != want {
@@ -53,5 +54,8 @@ func TestDefaultConfigRaisesAIAndAddsBurst(t *testing.T) {
 	}
 	if cfg.Thumbnail.Limit != 60 || cfg.Thumbnail.Window != time.Hour || cfg.Thumbnail.burst() != 60 {
 		t.Fatalf("thumbnail = %+v", cfg.Thumbnail)
+	}
+	if cfg.Voice.Limit != 60 || cfg.Voice.Window != time.Hour || cfg.Voice.burst() != 6 {
+		t.Fatalf("voice = %+v", cfg.Voice)
 	}
 }

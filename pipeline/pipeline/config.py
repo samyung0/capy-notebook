@@ -139,6 +139,12 @@ class Config:
     ingest_provider_timeout_s: float = float(
         _env("CAPY_INGEST_PROVIDER_TIMEOUT_S", "120")
     )
+    # Uploaded audio is transcribed by Alibaba Model Studio's Filetrans task
+    # API. The URL is the workspace's OpenAI-compatible base (ending in
+    # /compatible-mode/v1); the task API sits on the same host. Unset fails
+    # audio ingest explicitly.
+    alibaba_modelstudio_key: str = _env("ALIBABA_MODELSTUDIO_KEY", "")
+    alibaba_modelstudio_url: str = _env("ALIBABA_MODELSTUDIO_URL", "")
     # ---- provider imports (Drive / OneDrive) -----------------------------
     # The import worker streams one provider file into B2 per claim and needs
     # GATEWAY_URL + PIPELINE_SECRET for the download grant and completion.
@@ -292,6 +298,28 @@ def require_all_or_none(group: str, values: dict[str, str]) -> None:
     if missing and len(missing) != len(values):
         raise ValueError(f"{group} must be fully set or fully unset; missing {missing}")
 
+
+require_all_or_none(
+    "ALIBABA_MODELSTUDIO_*",
+    {
+        "ALIBABA_MODELSTUDIO_KEY": cfg.alibaba_modelstudio_key,
+        "ALIBABA_MODELSTUDIO_URL": cfg.alibaba_modelstudio_url,
+    },
+)
+
+# The workspace's OpenAI-compatible base; the task API is the same host
+# without this path.
+MODELSTUDIO_BASE_PATH = "/compatible-mode/v1"
+
+
+def require_modelstudio_url(url: str) -> None:
+    if url and not url.endswith(MODELSTUDIO_BASE_PATH):
+        raise ValueError(
+            f"ALIBABA_MODELSTUDIO_URL must end with {MODELSTUDIO_BASE_PATH}"
+        )
+
+
+require_modelstudio_url(cfg.alibaba_modelstudio_url)
 
 require_all_or_none(
     "KNOWLEDGE_BASE_B2_*",
