@@ -226,7 +226,9 @@ def _client_error(exc: BaseException) -> dict[str, Any]:
     )
 
 
-def _busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
+def busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
+    """The in-stream provider_busy error: a busy model call, or a chat that
+    waited past its budget for a process slot (service.py)."""
     event = events.error(models.BUSY_ERROR, models.BUSY_ERROR_CODE)
     event["retryAfterSeconds"] = models.busy_retry_after_s(exc)
     return _with_usage(event)
@@ -620,6 +622,7 @@ async def _run_turn(
                 messages,
                 ctx.pending_images,
                 spec.provider_slug,
+                {c["callId"]: int(c["estimatedImageTokens"]) for c in ctx.captures},
             )
             budget.estimated_input_tokens += compact.request_context(
                 request_messages, spec, schemas=active_schemas
@@ -744,7 +747,7 @@ async def _run_turn(
         except elitellm.ProviderBusy as exc:
             log.warning("agent step: provider busy: %s", exc)
             if not _client_gone(client):
-                yield _busy_error(exc)
+                yield busy_error(exc)
             budget.stop_reason = STOP_ERROR
             return
         except Exception as exc:

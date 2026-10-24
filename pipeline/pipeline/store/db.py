@@ -374,7 +374,13 @@ def uid(prefix: str) -> str:
 
 
 def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
-    """Claim one due pending job of exactly ``job_type`` atomically."""
+    """Claim one due pending job of exactly ``job_type`` atomically.
+
+    Round-robin by actor (Epo 2026-10-24, rate-limit audit): the job whose
+    actor has the fewest jobs of this type running goes first, the oldest
+    among those, so one account's backlog never queues everyone else's. Jobs
+    without an ``actorUserId`` count as one shared actor.
+    """
     cur.execute(
         """
         UPDATE jobs SET
@@ -384,15 +390,23 @@ def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
             attempts=attempts+1,
             lease_expires_at = now() + make_interval(secs => %s)
         WHERE id = (
-            SELECT id FROM jobs
-            WHERE status='pending'
-              AND type=%s
-              AND (not_before IS NULL OR not_before <= now())
-            ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
+            SELECT j.id FROM jobs j
+            LEFT JOIN (
+                SELECT COALESCE(payload->>'actorUserId', '') AS actor,
+                       count(*) AS running
+                FROM jobs
+                WHERE status='running' AND type=%s
+                GROUP BY 1
+            ) r ON r.actor = COALESCE(j.payload->>'actorUserId', '')
+            WHERE j.status='pending'
+              AND j.type=%s
+              AND (j.not_before IS NULL OR j.not_before <= now())
+            ORDER BY COALESCE(r.running, 0), j.created_at
+            FOR UPDATE OF j SKIP LOCKED LIMIT 1
         )
         RETURNING id, type, payload, attempts, queued_at, provider_waits
         """,
-        (lease_s, job_type),
+        (lease_s, job_type, job_type),
     )
     row = cur.fetchone()
     if not row:
@@ -1038,8 +1052,8 @@ def release_job_for_provider_busy(
 
     Like ``release_job_for_capacity`` the attempt is handed back; the re-pend is
     counted on ``provider_waits`` so the worker can cap it. ``created_at`` is
-    untouched, so the claim order puts the job ahead of anything newer once
-    ``not_before`` passes.
+    untouched, so once ``not_before`` passes the claim order puts the job
+    ahead of anything newer from actors with as many jobs running.
     """
     cur.execute(
         """

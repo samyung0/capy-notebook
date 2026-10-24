@@ -285,6 +285,79 @@ async def test_cancellation_waits_for_known_receipt_to_finish():
     assert finished.is_set()
 
 
+def _counting_estimates(monkeypatch) -> list:
+    """The values the context estimator walks, in order."""
+    walked: list = []
+    real = accounting.estimate_context_value
+
+    def counting(value):
+        walked.append(value)
+        return real(value)
+
+    monkeypatch.setattr(accounting, "estimate_context_value", counting)
+    return walked
+
+
+def test_a_model_call_estimates_only_messages_it_has_not_measured(monkeypatch):
+    """(security regression: rate-limit audit Q238) A request's estimate sums
+    each message's kept estimate: the next call's request walks only the
+    message added since, never the whole context again."""
+    walked = _counting_estimates(monkeypatch)
+    messages = [
+        {"role": "system", "content": "rules " * 200},
+        {"role": "user", "content": "question " * 300},
+        {"role": "assistant", "content": "answer " * 300},
+    ]
+    first = models.measure_request_context(messages, model=_spec())
+    assert len(walked) == len(messages)
+    walked.clear()
+    added = {"role": "tool", "tool_call_id": "c1", "content": "result " * 100}
+    messages.append(added)
+
+    second = models.measure_request_context(messages, model=_spec())
+
+    assert walked == [
+        {"role": "tool", "tool_call_id": "c1", "content": "result " * 100}
+    ]
+    assert second.system_tokens == first.system_tokens
+    assert second.conversation_tokens == (
+        first.conversation_tokens + models.message_tokens(added)
+    )
+
+
+def test_a_message_estimate_is_kept_until_the_message_changes(monkeypatch):
+    """(security regression: rate-limit audit Q238) One walk per message; a
+    message edited in place (a notice appended to a tool result) is counted
+    again."""
+    walked = _counting_estimates(monkeypatch)
+    message = {"role": "tool", "tool_call_id": "c1", "content": "result " * 50}
+
+    def measure() -> int:
+        return models.measure_request_context([message], model=_spec()).total_tokens
+
+    first = measure()
+    assert measure() == measure() == first
+    assert len(walked) == 1
+
+    message["content"] += " Answer from the evidence you have now."
+    assert measure() > first
+    assert len(walked) == 2
+
+
+def test_the_estimates_count_like_the_character_walk():
+    """The CJK runs counted in C give the per-character count: kana, hangul
+    and ideographs one token each, other characters four (prose) or three
+    (provider JSON) to a token."""
+    from pipeline.retrieval.chunking import estimate_tokens
+    from pipeline.retrieval.lang import is_cjk
+
+    text = "Plain words, café, 中文字符, かなカナ, 한국어, emoji 🙂, 豈 and 中" * 7
+    cjk = sum(1 for ch in text if is_cjk(ch))
+    assert cjk > 0
+    assert estimate_tokens(text) == cjk + (len(text) - cjk + 3) // 4
+    assert accounting.estimate_context_value(text) == cjk + (len(text) - cjk + 2) // 3
+
+
 def test_measure_context_separates_system_tools_and_conversation():
     measured = accounting.measure_context(
         [

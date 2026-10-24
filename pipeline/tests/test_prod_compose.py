@@ -62,6 +62,19 @@ def test_collaboration_runs_without_capabilities_or_privilege_gain(
     assert "no-new-privileges:true" in service["security_opt"]
 
 
+def test_retrieval_has_a_memory_and_cpu_limit() -> None:
+    """(security regression: rate-limit audit L13) The retrieval container's
+    memory and CPU come from each environment's rendered configuration, so a
+    runaway turn cannot take the gateway's, Postgres' or collaboration's share
+    of the app host."""
+    service = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"][
+        "retrieval"
+    ]
+
+    assert service["mem_limit"] == "${RETRIEVAL_MEM_LIMIT:?set RETRIEVAL_MEM_LIMIT}"
+    assert service["cpus"] == "${RETRIEVAL_CPUS:?set RETRIEVAL_CPUS}"
+
+
 APP_IMAGES = {
     "migrate": "CAPY_SERVER_IMAGE",
     "server": "CAPY_SERVER_IMAGE",

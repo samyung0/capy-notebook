@@ -16,7 +16,6 @@ knowledge-base bucket and keyed in the same cache by its object key.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import io
@@ -35,11 +34,12 @@ import requests
 
 from ..config import cfg
 from ..store import blobstore
-from . import store
+from . import accounting, limits, store
 
 log = logging.getLogger("capy.retrieval.capture")
 
 JPEG_QUALITY = 80
+OFFICE_BUSY = "the Office converter is busy; try this capture again later"
 
 
 class CaptureUnavailable(Exception):
@@ -120,7 +120,7 @@ async def pdf_path(workspace_id: str, file_id: str) -> Path:
         os.utime(target)
         return target
     max_bytes = int(row.get("size_bytes") or 0)
-    await asyncio.to_thread(_download, blob, target, max_bytes)
+    await limits.render_thread(_download, blob, target, max_bytes)
     return target
 
 
@@ -135,7 +135,7 @@ async def knowledge_pdf_path(object_key: str, max_bytes: int) -> Path:
     if target.is_file():
         os.utime(target)
         return target
-    await asyncio.to_thread(
+    await limits.render_thread(
         _download, object_key, target, max_bytes, blobstore.library_download_file
     )
     return target
@@ -145,7 +145,7 @@ async def render_knowledge(
     object_key: str, max_bytes: int, page: int, bbox: list[float] | None, max_edge: int
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     pdf = await knowledge_pdf_path(object_key, max_bytes)
-    return await asyncio.to_thread(render, pdf, page, bbox, max_edge)
+    return await limits.render_thread(render, pdf, page, bbox, max_edge)
 
 
 def _office_capture(
@@ -247,6 +247,48 @@ def _image_capture(
         return image_jpeg(source, bbox, max_edge)
 
 
+def _decoded(image: Any, bbox: list[float], max_edge: int) -> Any:
+    """The first frame decoded no larger than the box needs (Epo 2026-10-24,
+    Q239): a JPEG at a reduced DCT scale while it decodes, any other format
+    reduced by a whole factor once it loads, before a full-size copy or colour
+    conversion is made, as ingest's decoder does (ingest/decode.py). The box
+    keeps more than ``max_edge`` pixels on its long side whichever way the
+    image's orientation turns it."""
+    width, height = image.size
+    span_x, span_y = (bbox[2] - bbox[0]) / 1000, (bbox[3] - bbox[1]) / 1000
+    long_side = min(
+        max(width * span_x, height * span_y), max(height * span_x, width * span_y)
+    )
+    # One pixel over, for the crop's rounding.
+    scale = min(1.0, (max_edge + 1) / long_side)
+    need = (max(1, math.ceil(width * scale)), max(1, math.ceil(height * scale)))
+    image.draft("RGB", need)  # JPEG only; before the pixels load.
+    factor = min(image.width // need[0], image.height // need[1])
+    if factor < 2:
+        return image.copy()
+    if image.mode in ("1", "P", "PA") or image.mode.startswith("I;16"):
+        # Modes reduce refuses, or would average palette indices.
+        image = image.convert("RGBA" if image.has_transparency_data else "RGB")
+    return image.reduce(factor)
+
+
+def _thumbnail_size(width: int, height: int, edge: int) -> tuple[int, int]:
+    """The size ``Image.thumbnail((edge, edge))`` gives a ``width`` x
+    ``height`` image, with its rounding."""
+    if width <= edge and height <= edge:
+        return width, height
+    aspect = width / height
+    if aspect <= 1:
+        n = edge * aspect
+        side = min(math.floor(n), math.ceil(n), key=lambda v: abs(aspect - v / edge))
+        return max(side, 1), edge
+    n = edge / aspect
+    side = min(
+        math.floor(n), math.ceil(n), key=lambda v: abs(aspect - edge / v) if v else 0
+    )
+    return edge, max(side, 1)
+
+
 def image_jpeg(
     source: Path | IO[bytes], bbox: list[float] | None, max_edge: int
 ) -> tuple[bytes, list[float], tuple[int, int]]:
@@ -258,31 +300,37 @@ def image_jpeg(
             raise ValueError("bbox must be [x0, y0, x1, y1] with x0 < x1 and y0 < y1")
     else:
         bbox = [0, 0, 1000, 1000]
-    from PIL import Image, ImageOps, UnidentifiedImageError
+    from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
 
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(source) as opened:
                 # ponytail: first frame only; later GIF frames are not captured
-                frame = ImageOps.exif_transpose(opened).convert("RGBA")
+                size = opened.size
+                frame = _decoded(opened, bbox, max_edge)
+                # Pillow turns a TIFF upright as it loads; exif_transpose the rest.
+                orientation = frame.getexif().get(ExifTags.Base.Orientation)
+                full = size[::-1] if orientation in (5, 6, 7, 8) else size
+                frame = ImageOps.exif_transpose(frame).convert("RGBA")
     except (Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
         raise CaptureUnavailable("this image is too large to render") from exc
     except (OSError, ValueError, UnidentifiedImageError) as exc:
         # SVG and formats this Pillow build lacks (an upload's caption covers them).
         raise CaptureUnavailable("this image format cannot be rendered") from exc
-    width, height = frame.size
-    clip = frame.crop(
-        (
-            round(width * bbox[0] / 1000),
-            round(height * bbox[1] / 1000),
-            round(width * bbox[2] / 1000),
-            round(height * bbox[3] / 1000),
-        )
-    )
-    if clip.width == 0 or clip.height == 0:
+    # The box and the capture's size come from the full-size image, so a
+    # reduced decode changes neither; the reduced frame only supplies pixels.
+    box = [round(full[i % 2] * bbox[i] / 1000) for i in range(4)]
+    width, height = box[2] - box[0], box[3] - box[1]
+    if width == 0 or height == 0:
         raise ValueError("bbox selects an empty region")
-    clip.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+    scale_x, scale_y = frame.width / full[0], frame.height / full[1]
+    clip = frame.resize(
+        _thumbnail_size(width, height, max_edge),
+        Image.Resampling.LANCZOS,
+        box=(box[0] * scale_x, box[1] * scale_y, box[2] * scale_x, box[3] * scale_y),
+        reducing_gap=2.0,
+    )
     flat = Image.new("RGB", clip.size, "white")
     flat.paste(clip, mask=clip.getchannel("A"))
     buffer = io.BytesIO()
@@ -301,7 +349,7 @@ async def render_file(
             raise CaptureUnavailable(
                 "the source has no stored bytes", "unavailable_target"
             )
-        return await asyncio.to_thread(_image_capture, row, page, bbox, max_edge)
+        return await limits.render_thread(_image_capture, row, page, bbox, max_edge)
     office_format = {"doc": "docx", "sheet": "xlsx", "slides": "pptx"}.get(
         row.get("kind")
     )
@@ -314,15 +362,22 @@ async def render_file(
             raise CaptureUnavailable(
                 "the source has no stored bytes", "unavailable_target"
             )
-        return await asyncio.to_thread(
-            _office_capture,
-            {**row, "name": f"source.{office_format}"},
-            page,
-            bbox,
-            max_edge,
-        )
+        # The parser's queue is ingest's too: past the process's Office
+        # capture slots the call answers busy instead of queueing there.
+        if not limits.OFFICE_CAPTURE_SLOTS.take():
+            raise CaptureUnavailable(OFFICE_BUSY, "unavailable_target")
+        try:
+            return await limits.render_thread(
+                _office_capture,
+                {**row, "name": f"source.{office_format}"},
+                page,
+                bbox,
+                max_edge,
+            )
+        finally:
+            limits.OFFICE_CAPTURE_SLOTS.release()
     pdf = await pdf_path(workspace_id, file_id)
-    return await asyncio.to_thread(render, pdf, page, bbox, max_edge)
+    return await limits.render_thread(render, pdf, page, bbox, max_edge)
 
 
 # --------------------------------------------------------------------- render
@@ -389,6 +444,7 @@ def inject_images(
     messages: list[dict[str, Any]],
     images: dict[str, tuple[str, str]],
     provider_slug: str = "",
+    tokens: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Attach captured images after the tool-result block that produced them.
 
@@ -398,39 +454,65 @@ def inject_images(
     (prompts/sources.py) after its label. Live compaction only folds exchanges
     into the turn note, so the captures of folded exchanges ride right after
     the note: every capture stays until the answer (Epo 2026-10-21).
+
+    ``tokens`` (call id -> the capture's pixel estimate) keeps each built
+    message's estimate on it, so a request built for every model call does not
+    decode its images again to measure them (Q238).
     """
     if not images:
         return messages
     live = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
-    folded = [image for call_id, image in images.items() if call_id not in live]
+    folded = [call_id for call_id in images if call_id not in live]
     out: list[dict[str, Any]] = []
-    pending: list[tuple[str, str]] = []
+    pending: list[str] = []
     for i, message in enumerate(messages):
         out.append(message)
         if message.get("_kind") == "turn_note" and folded:
             out.append(
                 _images_message(
-                    "the tool calls this note folded", folded, provider_slug
+                    "the tool calls this note folded",
+                    folded,
+                    images,
+                    tokens,
+                    provider_slug,
                 )
             )
         if message.get("role") == "tool" and message.get("tool_call_id") in images:
-            pending.append(images[message["tool_call_id"]])
+            pending.append(message["tool_call_id"])
         following = messages[i + 1] if i + 1 < len(messages) else None
         if pending and (following is None or following.get("role") != "tool"):
-            out.append(_images_message("the tool calls above", pending, provider_slug))
+            out.append(
+                _images_message(
+                    "the tool calls above", pending, images, tokens, provider_slug
+                )
+            )
             pending = []
     return out
 
 
 def _images_message(
-    source: str, images: list[tuple[str, str]], provider_slug: str
+    source: str,
+    call_ids: list[str],
+    images: dict[str, tuple[str, str]],
+    tokens: dict[str, int] | None,
+    provider_slug: str,
 ) -> dict[str, Any]:
-    content: list[dict[str, Any]] = [{"type": "text", "text": f"Images from {source}:"}]
-    for label, url in images:
-        content.append({"type": "text", "text": f"{label}\n<source>"})
-        content.append(image_part(url, provider_slug))
-        content.append({"type": "text", "text": "</source>"})
-    return {"role": "user", "content": content}
+    text: list[dict[str, Any]] = [{"type": "text", "text": f"Images from {source}:"}]
+    content = list(text)
+    for call_id in call_ids:
+        label, url = images[call_id]
+        labelled = {"type": "text", "text": f"{label}\n<source>"}
+        closing = {"type": "text", "text": "</source>"}
+        content += [labelled, image_part(url, provider_slug), closing]
+        text += [labelled, closing]
+    message = {"role": "user", "content": content}
+    if tokens is not None and all(call_id in tokens for call_id in call_ids):
+        accounting.keep_tokens(
+            message,
+            accounting.estimate_context_value({**message, "content": text})
+            + sum(tokens[call_id] for call_id in call_ids),
+        )
+    return message
 
 
 def _image_bytes(part: dict[str, Any]) -> bytes | None:

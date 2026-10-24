@@ -42,6 +42,7 @@ from . import (
     contract,
     deck,
     library,
+    limits,
     pending,
     pending_hints,
     questions,
@@ -1972,7 +1973,7 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
             change_id=change_id,
             checkpoint=checkpoint,
         )
-        jpeg, box, size = await asyncio.to_thread(
+        jpeg, box, size = await limits.render_thread(
             capture.image_jpeg, io.BytesIO(raw), None, cfg.capture_max_edge
         )
     except capture.CaptureUnavailable as exc:
@@ -3158,7 +3159,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if not ctx.deck_dir:
         ctx.deck_dir = tempfile.mkdtemp(prefix="capy-deck-")
     project = Path(ctx.deck_dir) / rid
-    problem = await asyncio.to_thread(
+    problem = await limits.render_thread(
         deck.write, record, args, problems, figures, project
     )
     if problem:
@@ -3169,7 +3170,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if not deck.complete(record):
         return _result(outline)
     pptx = project / "deck.pptx"
-    problem = await asyncio.to_thread(deck.save, record, project, pptx)
+    problem = await limits.render_thread(deck.save, record, project, pptx)
     if problem:
         return _result(
             f"{outline}\n\nThe export failed; rewrite the slide it names: {problem}"
