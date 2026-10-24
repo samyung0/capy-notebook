@@ -789,10 +789,14 @@ export function NoteEditorCore({
   // Once synced, the old document's unsent edits are merged in a worker and
   // applied as one edit of this session (sent, stored, its receipt covering
   // the restored rows, which it replaces at once); then the note paints, and
-  // the swap shows it. Text the merge would hide (in a block someone deleted)
-  // stays as one refused row, which opens read-only for copying after the
-  // remount. With nothing unsent the worker never loads.
+  // the swap shows it. The blocks holding what the merge would hide (inside a
+  // block someone deleted) stay whole, from the old document, as one refused
+  // row, which opens read-only for copying after the remount. With nothing
+  // unsent the worker never loads.
   const mergeStarted = useRef(false);
+  // Set once the merged update is applied: from then on this session holds
+  // the note's edits as any session does.
+  const mergeApplied = useRef(false);
   const mergeNow = useRef(() => {});
   mergeNow.current = () => {
     if (!lateDocument || mergeStarted.current) return;
@@ -801,21 +805,27 @@ export function NoteEditorCore({
       ? mergeLate(lateDocument, Y.encodeStateAsUpdate(ydoc))
       : Promise.resolve(null);
     merged
-      .then((result) => {
+      .then(async (result) => {
         if (rejected.current || stale.current) return;
         if (result) Y.applyUpdate(ydoc, result.merged, LATE_ORIGIN);
+        mergeApplied.current = true;
         const hidden = result?.hidden.length
-          ? hiddenDocument(result.hidden)
+          ? hiddenDocument(lateDocument, result.hidden)
           : undefined;
-        void recorder.current?.supersede(hidden);
+        const kept = await recorder.current?.supersede(hidden);
+        if (hidden && !kept) {
+          // The hidden blocks could not be stored: the adopted rows stay (no
+          // receipt may delete them), the note never opens live here, and
+          // the storage failure is shown.
+          stale.current = true;
+          roomProvider(editorRef.current)?.disconnect();
+          reportRejection.current?.('late', 'lost');
+          return;
+        }
         setLateMerging(false);
         unsavedChanges.current = true;
         saveNow.current();
-        if (hidden)
-          reportRejection.current?.(
-            'late',
-            storageOk.current ? 'kept' : 'lost'
-          );
+        if (hidden) reportRejection.current?.('late', 'kept');
       })
       .catch((error: unknown) => failLate.current(lateDocument, error));
   };
@@ -978,8 +988,10 @@ export function NoteEditorCore({
       else if (refusal === 'retry') reconnector.current?.refused();
       else if (refusal === 'late') {
         if (stale.current) return;
-        // A new session is never late: a second answer is a failure.
-        if (lateDocument) {
+        // A new session is never late: a second answer before its merge
+        // applied is a failure. After it, the session is late as any is
+        // (it holds edits made since), so it goes the ordinary late way.
+        if (lateDocument && !mergeApplied.current) {
           failLate.current(
             lateDocument,
             new Error('The room answered a late merge late again')

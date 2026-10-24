@@ -753,24 +753,26 @@ export function recordDrafts({
     /** A late merge's update is applied (recorded as this session's edit):
      * the adopted rows it stands for go now rather than at a receipt, so a
      * reload never merges them again, and `hidden` (a document of the text
-     * the merge would hide) stays as one refused row, shown for copying. */
-    supersede(hidden?: Uint8Array): Promise<void> {
+     * the merge would hide) stays as one refused row, shown for copying.
+     * That row is written first and the adopted rows go only once it
+     * landed; resolves whether it did (when it did not, they stay). */
+    async supersede(hidden?: Uint8Array): Promise<boolean> {
+      if (hidden) {
+        const kept = {
+          ...row('state', sequence, hidden, 'refused'),
+          id: `${session}:hidden`,
+        };
+        try {
+          await putWithBase([kept]);
+        } catch (error) {
+          failed(error);
+          return false;
+        }
+      }
       const previous = pendingAdopted;
       pendingAdopted = [];
-      const kept = hidden
-        ? [
-            {
-              ...row('state', sequence, hidden, 'refused'),
-              id: `${session}:hidden`,
-            },
-          ]
-        : [];
-      return write(
-        Promise.all([
-          deleteDrafts(previous),
-          kept.length ? putWithBase(kept) : null,
-        ])
-      );
+      void write(deleteDrafts(previous));
+      return true;
     },
     get unsaved() {
       return sequence > covered;

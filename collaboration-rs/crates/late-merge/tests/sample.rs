@@ -2,7 +2,7 @@
 //! (src/features/collaboration/lateMerge/lateMerge.test.ts): a Plate note
 //! whose tab went offline and edited while the room edited and collected
 //! units the tab still holds. The native merge gives exactly the stored
-//! bytes and hidden text (`sample-hidden.json`, as the WASM build gives it),
+//! bytes and hidden blocks (`sample-hidden.json`, as the WASM build gives them),
 //! and so must the WASM one. `LATE_MERGE_WRITE_SAMPLE=1` writes the sample
 //! again (after a deliberate change to the merge's output).
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
@@ -16,18 +16,12 @@ use support::note::{Note, edit, sync};
 use support::rng::Rng;
 use yrs::{ID, IdSet, ReadTxn, Transact};
 
-/// The hidden text as the WASM build hands it to JavaScript.
+/// The hidden blocks as the WASM build hands them to JavaScript.
 fn hidden_json(merged: &late_merge::Merged) -> String {
     let parts: Vec<serde_json::Value> = merged
         .hidden
         .iter()
-        .map(|part| {
-            serde_json::json!({
-                "block": { "client": part.block.client.get(), "clock": part.block.clock },
-                "blockId": part.block_id,
-                "text": part.text,
-            })
-        })
+        .map(|block| serde_json::json!({ "client": block.client.get(), "clock": block.clock }))
         .collect();
     serde_json::to_string_pretty(&parts).unwrap() + "\n"
 }

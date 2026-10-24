@@ -3,8 +3,8 @@
 
 use wasm_bindgen::prelude::*;
 
-/// [crate::Merged] for JavaScript: `hidden` is JSON, an array of `{ block:
-/// { client, clock }, blockId, text }`.
+/// [crate::Merged] for JavaScript: `hidden` is JSON, an array of the blocks'
+/// item ids, `{ client, clock }`.
 #[wasm_bindgen(getter_with_clone)]
 pub struct Merged {
     pub update: Vec<u8>,
@@ -16,13 +16,7 @@ fn answer(merged: Result<crate::Merged, crate::Refused>) -> Result<Merged, JsErr
     let hidden: Vec<serde_json::Value> = merged
         .hidden
         .iter()
-        .map(|part| {
-            serde_json::json!({
-                "block": { "client": part.block.client.get(), "clock": part.block.clock },
-                "blockId": part.block_id,
-                "text": part.text,
-            })
-        })
+        .map(|block| serde_json::json!({ "client": block.client.get(), "clock": block.clock }))
         .collect();
     Ok(Merged {
         update: merged.update,

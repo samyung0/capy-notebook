@@ -9,7 +9,7 @@
 //! origin; one the current document dropped moves to the key's current value.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, VecDeque};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ use yrs::updates::decoder::Decode;
 use yrs::{Doc, ID, IdSet, ReadTxn, Transact, Update, UpdateBlock};
 
 use crate::write::{self, ContentRef, Out};
-use crate::{Hidden, Merged, Own, ParentRef, Refused, View, parent_ref};
+use crate::{Merged, Own, ParentRef, Refused, View, parent_ref};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Anchor {
@@ -70,9 +70,8 @@ impl Piece<'_> {
     }
 }
 
-/// The block a unit of the tab's document sits in: its item id and its `id`
-/// attribute, when it has one.
-pub type BlockOf<'a> = dyn Fn(&ID) -> Option<(ID, Option<String>)> + 'a;
+/// The top-level block a unit of the tab's document sits in (its item id).
+pub type BlockOf<'a> = dyn Fn(&ID) -> Option<ID> + 'a;
 
 /// A delete set's ranges per client, sorted and joined.
 struct Ranges(HashMap<ClientID, Vec<Range<u32>>>);
@@ -363,8 +362,11 @@ pub fn stable_left(
     // Typing's rule for merged runs: a gap after a tombstone moves to the end
     // of its deleted run. A run landing inside a deleted run would turn its
     // interior into edges on tabs that still hold units the room discarded,
-    // and their next insert would name one.
-    let snap = |a: &Anchor| -> Anchor {
+    // and their next insert would name one. Each deleted item walked keeps
+    // its run's end, so an item is walked once however many anchors share
+    // its run.
+    let mut run_end: HashMap<ID, ID> = HashMap::new();
+    let mut snap = |a: &Anchor| -> Anchor {
         let Anchor::After(u) = a else {
             return a.clone();
         };
@@ -374,15 +376,21 @@ pub fn stable_left(
         if !item.is_deleted() {
             return a.clone();
         }
-        let mut last = item.last_id();
-        while let Some(r) = item.right() {
-            if !r.is_deleted() {
-                break;
+        let mut walked: Vec<ID> = Vec::new();
+        let end = loop {
+            if let Some(&end) = run_end.get(item.id()) {
+                break end;
             }
-            last = r.last_id();
-            item = r;
+            walked.push(*item.id());
+            match item.right() {
+                Some(r) if r.is_deleted() => item = r,
+                _ => break item.last_id(),
+            }
+        };
+        for id in walked {
+            run_end.insert(id, end);
         }
-        Anchor::After(last)
+        Anchor::After(end)
     };
     let mut groups: HashMap<(ParentRef, Anchor), Vec<usize>> = HashMap::new();
     for i in 0..news.len() {
@@ -560,7 +568,7 @@ pub fn stable_left(
     deletes.diff_with(&view.removed);
     // Whether units placed in `list` would not show: a block around them is
     // deleted in the current document (or collected), or is a new piece
-    // placed so. A map value's own place is not followed: it counts as shown.
+    // placed so.
     let in_deleted = |list: &ParentRef| -> bool {
         let mut list = list.clone();
         loop {
@@ -574,6 +582,10 @@ pub fn stable_left(
                         parent: Some(parent),
                         ..
                     } => parent.clone(),
+                    // A value written over a held one, whose block is not
+                    // deleted: loading the current document collected every
+                    // deleted block's values, and a value written over one
+                    // of those takes the block as its parent (a redirect).
                     Res::Map { .. } => return false,
                     Res::Drop => return true,
                 };
@@ -590,20 +602,14 @@ pub fn stable_left(
         }
     };
     // What the tab shows that the merged document would hide: pieces dropped
-    // for a block the current document lacks, or placed inside a deleted one.
-    let mut hidden: Vec<usize> = (0..news.len())
-        .filter(|&i| {
-            !dead[i]
-                && match &res[i] {
-                    Res::Drop => true,
-                    Res::List { list, .. } => in_deleted(list),
-                    Res::Map { .. } => false,
-                }
-        })
+    // for a block the current document lacks, or placed inside a deleted one
+    // (text, embeds and attribute values alike).
+    let hidden: Vec<usize> = (0..news.len())
+        .filter(|&i| !dead[i] && in_deleted(&ParentRef::Item(news[i].id())))
         .collect();
 
     if let Some(author) = author {
-        let (update, unwritten) = reauthored(Placed {
+        let update = reauthored(Placed {
             author,
             from: held.get(&author),
             news: &news,
@@ -615,10 +621,9 @@ pub fn stable_left(
             struct_of: &struct_of,
             deletes,
         })?;
-        hidden.extend(unwritten);
         return Ok(Merged {
             update,
-            hidden: described(hidden, &news, own, block_of),
+            hidden: blocks(&hidden, &news, block_of),
         });
     }
 
@@ -701,42 +706,17 @@ pub fn stable_left(
     }
     Ok(Merged {
         update: write::update(sections, &deletes)?,
-        hidden: described(hidden, &news, own, block_of),
+        hidden: blocks(&hidden, &news, block_of),
     })
 }
 
-/// The hidden pieces' text, joined per block in the tab's document order.
-/// Only text counts: embeds and nested types carry none of their own.
-fn described(pieces: Vec<usize>, news: &[Piece], own: &Own, block_of: &BlockOf<'_>) -> Vec<Hidden> {
-    let mut parts: Vec<((usize, u32), Hidden)> = Vec::new();
-    for i in pieces {
-        let piece = news[i];
-        let ItemContent::String(s) = piece.item.content() else {
-            continue;
-        };
-        let Some((block, block_id)) = block_of(&piece.id()) else {
-            continue;
-        };
-        let order = own.order(&piece.id()).unwrap_or((usize::MAX, 0));
-        let text = write::utf16_slice(s.as_str(), piece.start, piece.end);
-        parts.push((
-            order,
-            Hidden {
-                block,
-                block_id,
-                text,
-            },
-        ));
-    }
-    parts.sort_by_key(|(order, _)| *order);
-    let mut out: Vec<Hidden> = Vec::new();
-    for (_, part) in parts {
-        match out.last_mut() {
-            Some(last) if last.block == part.block => last.text.push_str(&part.text),
-            _ => out.push(part),
-        }
-    }
-    out
+/// The top-level blocks of the hidden pieces, each once.
+fn blocks(pieces: &[usize], news: &[Piece], block_of: &BlockOf<'_>) -> Vec<ID> {
+    let set: BTreeSet<ID> = pieces
+        .iter()
+        .filter_map(|&i| block_of(&news[i].id()))
+        .collect();
+    set.into_iter().collect()
 }
 
 /// What `stable_left` worked out, for writing it under a new client id.
@@ -758,10 +738,11 @@ struct Placed<'a, 'p> {
 }
 
 /// The placed live pieces as new units of `author`, each after every new
-/// piece it names (its origins, its parent, a map value's origin). A piece
-/// naming one that is not written (deleted in the tab, or dropped) is not
-/// written either; the update comes with those pieces, which the tab shows.
-fn reauthored(p: Placed) -> Result<(Vec<u8>, Vec<usize>), Refused> {
+/// piece it names (its origins, its parent, a map value's origin). Every
+/// piece named is live: placement names only placed units, Yjs deletes a
+/// type's children with it, and a value written over a dead one takes that
+/// one's origin; a document breaking this is refused.
+fn reauthored(p: Placed) -> Result<Vec<u8>, Refused> {
     let named = |i: usize| -> Vec<ID> {
         let mut ids: Vec<ID> = Vec::new();
         ids.extend(p.origin_of.get(&i));
@@ -782,9 +763,8 @@ fn reauthored(p: Placed) -> Result<(Vec<u8>, Vec<usize>), Refused> {
         ids
     };
     let live_ix: Vec<usize> = (0..p.news.len()).filter(|&i| (p.live)(i)).collect();
-    let mut deps: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut waiting: HashMap<usize, usize> = HashMap::new();
     let mut users: HashMap<usize, Vec<usize>> = HashMap::new();
-    let mut unwritten: HashSet<usize> = HashSet::new();
     for &i in &live_ix {
         let mut on: Vec<usize> = named(i)
             .iter()
@@ -794,15 +774,13 @@ fn reauthored(p: Placed) -> Result<(Vec<u8>, Vec<usize>), Refused> {
         on.sort_unstable();
         on.dedup();
         if on.iter().any(|&d| !(p.live)(d)) {
-            unwritten.insert(i);
+            return Err(Refused::Shape("a live struct names one not written"));
         }
-        on.retain(|&d| (p.live)(d));
         for &d in &on {
             users.entry(d).or_default().push(i);
         }
-        deps.insert(i, on);
+        waiting.insert(i, on.len());
     }
-    let mut waiting: HashMap<usize, usize> = deps.iter().map(|(&i, on)| (i, on.len())).collect();
     let mut ready: BinaryHeap<Reverse<(usize, usize)>> = waiting
         .iter()
         .filter(|(_, n)| **n == 0)
@@ -813,17 +791,13 @@ fn reauthored(p: Placed) -> Result<(Vec<u8>, Vec<usize>), Refused> {
     let mut order: Vec<usize> = Vec::new();
     let mut next = p.from;
     let mut seen = 0usize;
-    let mut left_out: Vec<usize> = Vec::new();
     while let Some(Reverse((_, i))) = ready.pop() {
         seen += 1;
-        if unwritten.contains(&i) || deps[&i].iter().any(|d| unwritten.contains(d)) {
-            unwritten.insert(i);
-            left_out.push(i);
-        } else {
-            at.insert(i, next);
-            next += p.news[i].len();
-            order.push(i);
-        }
+        at.insert(i, next);
+        next = next
+            .checked_add(p.news[i].len())
+            .ok_or(Refused::Shape("the new clocks run past the largest one"))?;
+        order.push(i);
         for &u in users.get(&i).into_iter().flatten() {
             let n = waiting.entry(u).or_default();
             *n -= 1;
@@ -883,5 +857,5 @@ fn reauthored(p: Placed) -> Result<(Vec<u8>, Vec<usize>), Refused> {
     }
     let mut sections = BTreeMap::new();
     sections.insert(p.author, (p.from, structs));
-    Ok((write::update(sections, &p.deletes)?, left_out))
+    write::update(sections, &p.deletes)
 }

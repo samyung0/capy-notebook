@@ -30,17 +30,13 @@ impl ContentRef {
             ContentRef::Slice(ItemContent::String(s), start, end) => {
                 // yrs's `encode_slice` keeps the whole rest of a string when
                 // `end` is 0, so a string is cut here.
-                enc.write_string(&utf16_slice(s.as_str(), *start, *end));
+                let units: Vec<u16> = s.as_str().encode_utf16().collect();
+                let part = &units[*start as usize..=*end as usize];
+                enc.write_string(&String::from_utf16_lossy(part));
             }
             ContentRef::Slice(c, start, end) => c.encode_slice(enc, *start, *end),
         }
     }
-}
-
-/// UTF-16 units `start..=end` of `s` (Yjs counts strings in them).
-pub fn utf16_slice(s: &str, start: u32, end: u32) -> String {
-    let units: Vec<u16> = s.encode_utf16().collect();
-    String::from_utf16_lossy(&units[start as usize..=end as usize])
 }
 
 /// One struct to write.

@@ -780,7 +780,7 @@ describe('recording a note session', () => {
     expect(await readDrafts(key)).toEqual([]);
   });
 
-  it('replaces the adopted rows at once after a late merge, keeping hidden text as one refused row', async () => {
+  it('replaces the adopted rows at once after a late merge, keeping the hidden blocks as one refused row', async () => {
     const key = 'u_1:material:supersede';
     const earlier = draft('earlier:1', { key, late: true, session: 'earlier' });
     await putDrafts([earlier]);
@@ -788,7 +788,7 @@ describe('recording a note session', () => {
     client.getText('content').insert(1, 'merged');
     const hidden = new Y.Doc();
     hidden.getText('content').insert(0, 'hidden');
-    await recorder.supersede(Y.encodeStateAsUpdate(hidden));
+    expect(await recorder.supersede(Y.encodeStateAsUpdate(hidden))).toBe(true);
     const rows = await readDrafts(key);
     expect(rows.some((row) => row.id === earlier.id)).toBe(false);
     expect(rows.filter((row) => !row.refused).map((row) => row.kind)).toEqual([
@@ -798,6 +798,39 @@ describe('recording a note session', () => {
     expect(recoveryDocument(refused)?.getText('content').toString()).toBe(
       'hidden'
     );
+  });
+
+  it('keeps the adopted rows when the hidden blocks cannot be stored', async () => {
+    const key = 'u_1:material:supersede-failing';
+    const earlier = draft('earlier:1', { key, late: true, session: 'earlier' });
+    await putDrafts([earlier]);
+    const onStorage = vi.fn();
+    const { client, recorder } = noteRecorder(key, 'a', {
+      adopted: [earlier],
+      onStorage,
+    });
+    client.getText('content').insert(1, 'merged');
+    const put = IDBObjectStore.prototype.put;
+    const spy = vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementation(function (this: IDBObjectStore, ...args) {
+        if ((args[0] as EditDraft).id?.endsWith(':hidden'))
+          throw new DOMException('Broken', 'UnknownError');
+        return put.apply(this, args);
+      });
+    const hidden = new Y.Doc();
+    hidden.getText('content').insert(0, 'hidden');
+    try {
+      expect(await recorder.supersede(Y.encodeStateAsUpdate(hidden))).toBe(
+        false
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    const rows = await readDrafts(key);
+    expect(rows.some((row) => row.id === earlier.id)).toBe(true);
+    expect(rows.some((row) => row.refused)).toBe(false);
+    expect(onStorage).toHaveBeenCalledWith(false);
   });
 
   it('writes the whole document at unmount only when unsaved work outgrew it', async () => {

@@ -2,25 +2,27 @@
 //! collected units, the snap to the end of a deleted run, the tab's own ids,
 //! held units skipped, a map value on a collected origin, repeats, refusals,
 //! the re-authored mode (the same places under a newly assigned id), the
-//! text a merge would hide, and the cost of structs claiming near-maximal
-//! lengths.
+//! blocks holding what a merge would hide, and the cost of structs claiming
+//! near-maximal lengths.
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
 
 mod support;
 
 use std::time::Duration;
 
-use late_merge::Hidden;
+use notes::plate;
 use notes::slate::Operation;
+use serde_json::json;
 use support::collect::collect;
 use support::note::{Note, paragraph};
-use yrs::block::ClientID;
+use yrs::block::{ClientID, ItemContent};
+use yrs::branch::BranchPtr;
 use yrs::encoding::write::Write;
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::{Encoder, EncoderV1};
 use yrs::{
     Any, Array, Doc, GetString, ID, IdSet, Map, Out, ReadTxn, StateVector, Text, TextPrelim,
-    Transact, Update, UpdateBlock,
+    Transact, Update, UpdateBlock, Xml, XmlTextRef,
 };
 
 fn id(client: u64, clock: u32) -> ID {
@@ -361,7 +363,58 @@ fn structs_claiming_near_maximal_lengths_cost_what_their_bytes_cost() {
 }
 
 #[test]
-fn text_typed_into_a_collected_block_comes_back_hidden_with_its_block() {
+fn reauthored_clocks_running_past_the_largest_one_are_refused() {
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "LR");
+    // The room holds the assigned id 11 up to its second-last clock.
+    apply(&room, &planted(11, u32::MAX - 1, false));
+    let tab = doc(2);
+    sync(&room, &tab);
+    tab.get_or_insert_text("t")
+        .insert(&mut tab.transact_mut(), 1, "XY");
+    assert!(matches!(
+        late_merge::reauthor(&state(&tab), &state(&room), 11),
+        Err(late_merge::Refused::Shape(_))
+    ));
+}
+
+/// The top-level element at `index` of a note: its item id and its type.
+fn element(doc: &Doc, index: usize) -> (ID, XmlTextRef) {
+    let txn = doc.transact();
+    let root = plate::content_root(&txn).unwrap();
+    let mut next = root.start();
+    let mut seen = 0;
+    while let Some(item) = next {
+        next = item.right();
+        if item.is_deleted() {
+            continue;
+        }
+        if let ItemContent::Type(inner) = item.content() {
+            if seen == index {
+                return (
+                    *item.id(),
+                    XmlTextRef::from(BranchPtr::from(inner.as_ref())),
+                );
+            }
+            seen += 1;
+        }
+    }
+    panic!("no element {index}");
+}
+
+/// The note's top-level block at `index` removed, as a peer deletes it (a
+/// tombstone, not collected).
+fn remove_block(note: &mut Note, index: usize) {
+    let node = note.root.children[index].clone();
+    note.apply(&[Operation::RemoveNode {
+        path: vec![index],
+        node,
+    }]);
+}
+
+#[test]
+fn text_typed_into_a_collected_block_names_its_block() {
     let room = doc(1);
     let a = room.get_or_insert_array("a");
     a.insert(&mut room.transact_mut(), 0, "p1");
@@ -380,50 +433,95 @@ fn text_typed_into_a_collected_block_comes_back_hidden_with_its_block() {
     // The room deletes all three; the collection discards the block.
     a.remove_range(&mut room.transact_mut(), 0, 3);
     let current = collected(&room);
-    let hidden = vec![Hidden {
-        block: id(1, 2),
-        block_id: None,
-        text: "XY".into(),
-    }];
     let merged = late_merge::merge(&state(&tab), &state(&current)).unwrap();
-    assert_eq!(merged.hidden, hidden);
+    assert_eq!(merged.hidden, vec![id(1, 2)]);
     assert!(items(&merged.update).is_empty());
     let reauthored = late_merge::reauthor(&state(&tab), &state(&current), 9).unwrap();
-    assert_eq!(reauthored.hidden, hidden);
+    assert_eq!(reauthored.hidden, vec![id(1, 2)]);
     assert!(items(&reauthored.update).is_empty());
 }
 
 #[test]
-fn text_typed_into_a_block_a_peer_deleted_comes_back_hidden_with_its_block_id() {
+fn text_typed_into_a_block_a_peer_deleted_names_its_block() {
     let mut room = Note::new(1, "s");
     room.apply(&[Operation::InsertNode {
         path: vec![1],
         node: paragraph("s2", "abc"),
     }]);
     let mut tab = Note::load(2, "t", &room.state());
+    let (block, _) = element(&tab.doc, 1);
     let typing = tab.insert_ops(1, 3, "XY");
     tab.apply(&typing);
-    // A peer deletes the block (a tombstone, not collected).
-    let node = room.root.children[1].clone();
-    room.apply(&[Operation::RemoveNode {
-        path: vec![1],
-        node,
-    }]);
+    remove_block(&mut room, 1);
     for merged in [
         late_merge::merge(&tab.state(), &room.state()).unwrap(),
         late_merge::reauthor(&tab.state(), &room.state(), 9).unwrap(),
     ] {
-        let [part] = merged.hidden.as_slice() else {
-            panic!("one hidden block: {:?}", merged.hidden);
-        };
-        assert_eq!(
-            (part.block_id.as_deref(), part.text.as_str()),
-            (Some("s2"), "XY")
-        );
+        assert_eq!(merged.hidden, vec![block]);
         // The update still carries the text, into the deleted block, where
         // it does not show.
         let mut after = Note::load(3, "x", &room.state());
         after.receive(&merged.update);
         assert!(!after.value().contains("XY"));
+    }
+}
+
+#[test]
+fn a_block_typed_into_a_container_a_peer_deleted_names_the_container() {
+    let mut room = Note::new(1, "s");
+    room.apply(&[Operation::InsertNode {
+        path: vec![1],
+        node: json!({"type": "callout", "id": "c", "children": [paragraph("c1", "in")]}),
+    }]);
+    let mut tab = Note::load(2, "t", &room.state());
+    let (container, _) = element(&tab.doc, 1);
+    tab.apply(&[Operation::InsertNode {
+        path: vec![1, 1],
+        node: paragraph("t1", "new words"),
+    }]);
+    remove_block(&mut room, 1);
+    for merged in [
+        late_merge::merge(&tab.state(), &room.state()).unwrap(),
+        late_merge::reauthor(&tab.state(), &room.state(), 9).unwrap(),
+    ] {
+        assert_eq!(merged.hidden, vec![container]);
+    }
+}
+
+#[test]
+fn attributes_written_in_blocks_a_peer_deleted_name_their_blocks() {
+    let mut room = Note::new(1, "s");
+    let mermaid = room.mermaid();
+    room.apply(&[
+        Operation::InsertNode {
+            path: vec![1],
+            node: mermaid,
+        },
+        Operation::InsertNode {
+            path: vec![2],
+            node: json!({"type": "html_embed", "id": "h", "html": "<b>x</b>", "caption": "old", "children": [{"text": ""}]}),
+        },
+    ]);
+    let tab = Note::load(2, "t", &room.state());
+    let (diagram, source_of) = element(&tab.doc, 1);
+    let (embed, caption_of) = element(&tab.doc, 2);
+    {
+        // A source written over the stored one (as the Mermaid dialog's
+        // lookup makes a text of a stored string), then typed into; and a
+        // caption written over the stored one.
+        let mut txn = tab.doc.transact_mut();
+        let source = source_of.insert_attribute(&mut txn, "source", TextPrelim::new("graph LR"));
+        source.insert(&mut txn, 8, "\n  A --> B");
+        caption_of.insert_attribute(&mut txn, "caption", Any::from("new caption"));
+    }
+    remove_block(&mut room, 2);
+    remove_block(&mut room, 1);
+    let mut both = vec![diagram, embed];
+    both.sort();
+    for merged in [
+        late_merge::merge(&tab.state(), &room.state()).unwrap(),
+        late_merge::reauthor(&tab.state(), &room.state(), 9).unwrap(),
+    ] {
+        assert_eq!(merged.hidden, both);
     }
 }

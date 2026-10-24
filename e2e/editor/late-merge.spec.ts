@@ -10,6 +10,7 @@ const note = `/workspaces/ws_scenarios?material=${MATERIAL}&mode=edit`;
 const seed = 'A note for trying application errors.';
 const OFFLINE = ' Written while away.';
 const PEER = 'A block from another tab.';
+const AGAIN = ' Typed after the merge.';
 
 const MOCK = '/src/mocks/collaboration.ts';
 
@@ -167,7 +168,25 @@ test('a late tab merges its unsent edits into the current note and swaps without
   await page.keyboard.press('ControlOrMeta+z');
   await expect(editor).toContainText(OFFLINE.trim());
 
-  // The room holds them: a reload shows both, once.
+  // Cut off again after the merge and answered late once more: this session
+  // is late as any, and what it typed since is merged in turn.
+  await setReachable(page, false);
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(AGAIN);
+  await setReachable(page, true);
+  await expect(editor).toContainText(AGAIN.trim(), { timeout: 30_000 });
+  await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+  const again = await editor.innerText();
+  expect(again.split(AGAIN.trim()).length - 1).toBe(1);
+  expect(again.split(OFFLINE.trim()).length - 1).toBe(1);
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 30_000,
+  });
+
+  // The room holds them: a reload shows each, once.
   await lateSessions(page, null);
   await peerLeaves(page);
   await page.reload();
@@ -175,6 +194,7 @@ test('a late tab merges its unsent edits into the current note and swaps without
   await expect(reloaded).toContainText(PEER, { timeout: 30_000 });
   const after = await reloaded.innerText();
   expect(after.split(OFFLINE.trim()).length - 1).toBe(1);
+  expect(after.split(AGAIN.trim()).length - 1).toBe(1);
 });
 
 test('a late merge that cannot finish keeps the edits read-only for copying, never dropping them', async ({
@@ -247,10 +267,14 @@ test('a reload during the merge keeps the edits: the reloaded editor merges its 
 
   // The reloaded page joins (a new session); only the stored late row holds
   // the words, and it is merged, never applied raw: the room lacks them
-  // while the merge waits.
+  // while the merge waits, and the toolbar takes no edit meanwhile.
   await page.reload();
   await roomLacksOfflineWords(page);
   await mergeHeld(page);
+  await expect(page.locator('[data-note-toolbar]')).toHaveAttribute(
+    'inert',
+    ''
+  );
   await page.evaluate(() =>
     (window as unknown as { releaseLateMerge: () => void }).releaseLateMerge()
   );
@@ -284,7 +308,7 @@ test('a merge past its deadline keeps the edits read-only for copying', async ({
   await page.keyboard.type(OFFLINE);
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
-  // The merge never answers: 10 s after it started the tab stops it.
+  // The merge never answers: 10 s after its WASM loaded the tab stops it.
   await mergeHeld(page);
   await expect(page.getByTestId('note-recovery')).toContainText(
     OFFLINE.trim(),
@@ -321,20 +345,74 @@ test('text typed into a block another tab deleted opens read-only for copying af
   await peerLeaves(page);
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
-  // The merge applies, and the typed words, which the deleted block would
-  // hide, open read-only for copying.
+  // The merge applies, and the block holding the typed words, which its
+  // deletion would hide, opens whole and read-only for copying.
   const recovery = page.getByTestId('note-recovery');
   await expect(recovery).toContainText(OFFLINE.trim(), { timeout: 30_000 });
-  await expect(recovery).not.toContainText(seed);
+  await expect(recovery).toContainText(seed);
+  await expect(recovery).not.toContainText(PEER);
   const banner = page.locator(
     '[data-testid="save-banner"][data-kind="refused"]'
   );
   await expect(banner).toBeVisible();
+  // Kept on this device: a page reload shows it again.
   await lateSessions(page, null);
+  await page.reload();
+  await expect(page.getByTestId('note-recovery')).toContainText(
+    OFFLINE.trim(),
+    { timeout: 30_000 }
+  );
   await banner.getByRole('button', { name: 'Reload' }).click();
   const editor = page.locator(
     '[data-note-mount="live"] [contenteditable="true"]'
   );
   await expect(editor).toContainText(PEER, { timeout: 30_000 });
   await expect(editor).not.toContainText(OFFLINE.trim());
+});
+
+test('a merge that runs out of time after its editor stopped leaves the edits to the reloaded editor', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await holdMerges(page);
+  await page.goto(note);
+  const live = page.locator('[data-note-mount="live"]');
+  await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
+  // As in the reload case, a peer's block makes the room store the note.
+  await joinPeer(page);
+  await setReachable(page, false);
+  await live.locator('[contenteditable="true"]').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(OFFLINE);
+  await peerAppends(page, PEER);
+  await peerLeaves(page);
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, true);
+  await mergeHeld(page);
+  // Capy is updated meanwhile: the merging editor stops (outdated), and its
+  // merge runs out of time afterwards. It leaves the stored rows alone.
+  await page.evaluate(async (path) => {
+    const { refuseThisBuild } = await import(path);
+    refuseThisBuild();
+  }, MOCK);
+  await page.waitForTimeout(11_000);
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+  // The reload (the new build) merges the stored late row.
+  await page.reload();
+  await mergeHeld(page);
+  await page.evaluate(() =>
+    (window as unknown as { releaseLateMerge: () => void }).releaseLateMerge()
+  );
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  await expect(editor).toContainText(PEER);
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
 });

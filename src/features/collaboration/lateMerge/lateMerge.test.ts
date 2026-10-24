@@ -1,10 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
-import { beforeAll, expect, it } from 'vitest';
+import { beforeAll, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import type { MaterialValue } from '@/features/materials/document';
 import { initSync } from './generated/late_merge.js';
-import { hiddenDocument, holdsUnsent } from './lateMerge';
+import {
+  hiddenDocument,
+  holdsUnsent,
+  LATE_MERGE_DEADLINE_MS,
+  mergeLate,
+} from './lateMerge';
 import { mergeRequest } from './lateMerge.worker';
 
 /** The sample the native merge is held to (collaboration-rs late-merge
@@ -39,8 +44,8 @@ it('merges in the worker to exactly the bytes the native merge gives', async () 
   if (!('merged' in reply)) throw new Error(reply.error);
   const merged = new Uint8Array(reply.merged);
   expect(merged).toEqual(sample('merged'));
-  // And the same hidden text: the tab's typing in blocks the other session
-  // deleted.
+  // And the same hidden blocks: those the tab typed in that the other
+  // session deleted.
   expect(reply.hidden).toEqual(
     JSON.parse(
       readFileSync(
@@ -121,32 +126,126 @@ it('needs no merge when the old document holds nothing the current one lacks', (
   ).toBe(true);
 });
 
-it('returns text typed into a block someone deleted, which the recovery document holds', async () => {
+/** The top-level blocks of a note, or the children of one block. */
+const embeds = (text: Y.XmlText) =>
+  (text.toDelta() as { insert: Y.XmlText }[]).map(({ insert }) => insert);
+
+it("keeps the whole blocks someone deleted, embeds and all, in the tab's order", async () => {
   const room = new Y.Doc();
-  const value: MaterialValue = [
-    { children: [{ text: 'abc' }], id: 'b1', type: 'p' },
-    { children: [{ text: 'kept' }], id: 'b2', type: 'p' },
-  ];
-  room.get('content', Y.XmlText).applyDelta(slateNodesToInsertDelta(value));
+  const content = room.get('content', Y.XmlText);
+  const value = [
+    { children: [{ text: 'intro' }], id: 'b0', type: 'p' },
+    {
+      children: [{ children: [{ text: 'inside' }], id: 'c1p', type: 'p' }],
+      id: 'c1',
+      type: 'callout',
+    },
+  ] as MaterialValue;
+  content.applyDelta(slateNodesToInsertDelta(value));
+  // A Mermaid block added later sits first: its id comes after the callout's.
+  const mermaid = [
+    {
+      children: [{ text: '' }],
+      id: 'm1',
+      source: 'graph TD',
+      type: 'mermaid',
+    },
+  ] as MaterialValue;
+  content.applyDelta([{ retain: 1 }, ...slateNodesToInsertDelta(mermaid)]);
   const tab = new Y.Doc();
   Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
-  const block = (
-    tab.get('content', Y.XmlText).toDelta() as { insert: Y.XmlText }[]
-  )[0].insert;
-  block.insert(3, 'XY');
-  // Another session deletes the block.
-  room.get('content', Y.XmlText).delete(0, 1);
+  const [, diagram, callout] = embeds(tab.get('content', Y.XmlText));
+  // The tab writes a source over the stored one (as the Mermaid dialog does
+  // for a stored string) and types into it; it adds an image to the callout.
+  const source = new Y.Text();
+  diagram.setAttribute('source', source);
+  source.insert(0, 'graph LR');
+  const image = [
+    {
+      children: [{ text: '' }],
+      id: 'img1',
+      type: 'img',
+      url: 'https://example.com/a.png',
+    },
+  ] as MaterialValue;
+  callout.applyDelta([{ retain: 1 }, ...slateNodesToInsertDelta(image)]);
+  // Another session deletes both blocks.
+  content.delete(2, 1);
+  content.delete(1, 1);
+  const old = Y.encodeStateAsUpdate(tab);
   const reply = await mergeRequest({
     current: Y.encodeStateAsUpdate(room).buffer as ArrayBuffer,
-    old: Y.encodeStateAsUpdate(tab).buffer as ArrayBuffer,
+    old: old.slice().buffer,
   });
   if (!('merged' in reply)) throw new Error(reply.error);
-  expect(reply.hidden).toEqual([
-    { block: expect.any(Object), blockId: 'b1', text: 'XY' },
-  ]);
+  expect(reply.hidden).toHaveLength(2);
   const kept = new Y.Doc();
-  Y.applyUpdate(kept, hiddenDocument(reply.hidden));
+  Y.applyUpdate(kept, hiddenDocument(old, [...reply.hidden, reply.hidden[0]]));
   expect(yTextToSlateElement(kept.get('content', Y.XmlText)).children).toEqual([
-    { children: [{ text: 'XY' }], id: 'b1', type: 'p' },
+    {
+      children: [{ text: '' }],
+      id: 'm1',
+      source: 'graph LR',
+      type: 'mermaid',
+    },
+    {
+      children: [
+        { children: [{ text: 'inside' }], id: 'c1p', type: 'p' },
+        {
+          children: [{ text: '' }],
+          id: 'img1',
+          type: 'img',
+          url: 'https://example.com/a.png',
+        },
+      ],
+      id: 'c1',
+      type: 'callout',
+    },
   ]);
+});
+
+it('counts the deadline from the loaded WASM, not from the download', async () => {
+  vi.useFakeTimers();
+  const workers: {
+    onmessage: (event: { data: unknown }) => void;
+    stopped: boolean;
+  }[] = [];
+  vi.stubGlobal(
+    'Worker',
+    class {
+      onmessage = (_event: { data: unknown }) => {};
+      onerror = null;
+      stopped = false;
+      constructor() {
+        workers.push(this);
+      }
+      postMessage() {}
+      terminate() {
+        this.stopped = true;
+      }
+    }
+  );
+  try {
+    let outcome: string | null = null;
+    void mergeLate(new Uint8Array(), new Uint8Array()).then(
+      () => {
+        outcome = 'merged';
+      },
+      () => {
+        outcome = 'failed';
+      }
+    );
+    // A slow download: past the deadline, but the WASM has not loaded.
+    await vi.advanceTimersByTimeAsync(LATE_MERGE_DEADLINE_MS * 2);
+    expect(outcome).toBeNull();
+    workers[0].onmessage({ data: { ready: true } });
+    await vi.advanceTimersByTimeAsync(LATE_MERGE_DEADLINE_MS - 1);
+    expect(outcome).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(outcome).toBe('failed');
+    expect(workers[0].stopped).toBe(true);
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
 });

@@ -1,26 +1,14 @@
 [
   {
-    "block": {
-      "client": 1,
-      "clock": 105
-    },
-    "blockId": "s4",
-    "text": "uocwrokonw"
+    "client": 1,
+    "clock": 0
   },
   {
-    "block": {
-      "client": 1,
-      "clock": 35
-    },
-    "blockId": "s2",
-    "text": "paragraph 2 has some words in it"
+    "client": 1,
+    "clock": 35
   },
   {
-    "block": {
-      "client": 1,
-      "clock": 0
-    },
-    "blockId": "s1",
-    "text": "i"
+    "client": 1,
+    "clock": 105
   }
 ]
