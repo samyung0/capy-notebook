@@ -430,6 +430,34 @@ func TestUploadQueueRefusesWhenTheClassCannotCount(t *testing.T) {
 	}
 }
 
+// A ticket whose class Redis cannot count gives its place back: its user's
+// share and the line's count are as before, and it blocks no ticket behind
+// it (security regression: rate-limit audit r3 review A-S1, Q350).
+func TestUploadQueueClassErrorGivesThePlaceBack(t *testing.T) {
+	q := newUploadQueue(nil)
+	takeSized(t, q, "r0", uploadBudget/2, 0)
+	down := true
+	q.admitClass = func(context.Context, string) (time.Duration, error) {
+		if down {
+			return 0, errors.New("redis down")
+		}
+		return 0, nil
+	}
+	// It does not fit beside r0's file: had it kept its place, it would
+	// block the line at once.
+	if _, err := q.take("u0", "sources:ws", uploadClaim{size: uploadBudget/2 + 1}); errorMessage(err) != "rate_limit_unavailable" {
+		t.Fatalf("a ticket without its class: %v", err)
+	}
+	q.mu.Lock()
+	waiting, classed := q.waitingLocked("u0"), q.classedLocked()
+	q.mu.Unlock()
+	if waiting != 0 || classed != 0 {
+		t.Fatalf("after the refusal u0 has %d waiting and the line counts %d, want 0 and 0", waiting, classed)
+	}
+	down = false
+	takeSized(t, q, "b", 1, 0)
+}
+
 // classByUser makes q's upload class refuse the users in over (for a minute)
 // and admit everyone else, counting the class tokens it is asked for.
 func classByUser(q *uploadQueue, over map[string]bool) (asked *int, due *[]func()) {
