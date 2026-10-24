@@ -30,6 +30,12 @@ import (
 // sweep may not have run yet but the item is no longer restorable.
 var ErrTrashExpired = errors.New("trash retention has expired")
 
+// ErrAudioTranscribing refuses to trash an audio file whose transcription task
+// was submitted and whose job has not ended: the task is billed by the
+// provider whether or not its result is used (Epo 2026-10-24). Cascades the
+// user cannot hold back (workspace or account deletion) still cancel the job.
+var ErrAudioTranscribing = errors.New("this recording is still being transcribed")
+
 // TrashItem is trash-listing metadata only: no content, no download URL.
 type TrashItem struct {
 	Kind          agenttools.ResourceKind `json:"kind" enum:"source_file,material"`
@@ -127,6 +133,17 @@ func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID stri
 			// Already trashed by another action: active-content authority ends
 			// at the trash boundary, so this reads like a missing file.
 			return nil, ErrNotFound
+		}
+		if kind == string(FileAudio) {
+			var transcribing bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (
+				SELECT 1 FROM jobs WHERE type='ingest' AND status IN ('pending','running')
+				   AND payload->>'fileId'=$1 AND payload->'filetrans' ? 'taskId')`, fileID).Scan(&transcribing); err != nil {
+				return nil, err
+			}
+			if transcribing {
+				return nil, ErrAudioTranscribing
+			}
 		}
 		episode := uid("trash")
 		var purgeAfter time.Time

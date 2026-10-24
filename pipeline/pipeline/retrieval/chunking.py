@@ -129,13 +129,34 @@ class Region:
         return {"page": self.page, "bbox": self.bbox, "space": BBOX_SPACE}
 
 
+# Milliseconds from the start of a recording.
+AUDIO_SPACE = "audio-ms"
+
+
+@dataclass
+class AudioRegion:
+    """One transcript sentence's span in its recording, and its speaker."""
+
+    start_ms: int
+    end_ms: int
+    speaker: int | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "start_ms": self.start_ms,
+            "end_ms": self.end_ms,
+            "speaker": self.speaker,
+            "space": AUDIO_SPACE,
+        }
+
+
 @dataclass
 class Chunk:
     text: str
     section_path: str = ""
     page_start: int | None = None
     page_end: int | None = None
-    regions: list[Region] = field(default_factory=list)
+    regions: list[Region | AudioRegion] = field(default_factory=list)
     # A reference list: embedded and readable, but absent from the lexical
     # index. Citation titles repeat a topic's exact vocabulary, so on a
     # Chinese paper an English question lexically matched the English-tagged
@@ -802,6 +823,47 @@ def chunk_markdown(text: str, *, overlap_tokens: int | None = None) -> list[Chun
 
     flush_paragraph()
     flush_section()
+    return chunks
+
+
+# A gap this long between sentences, like a new speaker, is where a transcript
+# chunk past half its size prefers to end.
+_TRANSCRIPT_PAUSE_MS = 2_000
+
+
+def chunk_transcript(sentences: list[dict[str, Any]]) -> list[Chunk]:
+    """Pack whole transcript sentences into chunks, one region per sentence.
+
+    ``sentences`` are ``{"start_ms", "end_ms", "speaker", "text"}`` in time
+    order. A chunk's text is its sentences alone, one per line, so search sees
+    speech and nothing else; times and speakers live in the regions. A chunk
+    never splits a sentence and has no overlap, so no time range repeats.
+    """
+    chunks: list[Chunk] = []
+    lines: list[str] = []
+    regions: list[Region | AudioRegion] = []
+    size = 0
+    previous: dict[str, Any] | None = None
+    for sentence in sentences:
+        tokens = estimate_tokens(sentence["text"])
+        if previous is not None:
+            turn = (
+                sentence["speaker"] != previous["speaker"]
+                or sentence["start_ms"] - previous["end_ms"] >= _TRANSCRIPT_PAUSE_MS
+            )
+            if size + tokens > cfg.chunk_tokens or (
+                turn and size >= cfg.chunk_tokens // 2
+            ):
+                chunks.append(Chunk(text="\n".join(lines), regions=regions))
+                lines, regions, size = [], [], 0
+        lines.append(sentence["text"])
+        regions.append(
+            AudioRegion(sentence["start_ms"], sentence["end_ms"], sentence["speaker"])
+        )
+        size += tokens
+        previous = sentence
+    if regions:
+        chunks.append(Chunk(text="\n".join(lines), regions=regions))
     return chunks
 
 

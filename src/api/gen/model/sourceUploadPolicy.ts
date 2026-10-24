@@ -12,6 +12,8 @@ export interface SourceUploadPolicy {
   readonly $schema?: string;
   accept: string;
   allowNoExtension: boolean;
+  audioMaxDurationSeconds: number;
+  audioSecondCreditMicros: number;
   digitalParsePageCreditMicros: number;
   kinds: SourceUploadKindPolicy[];
   maxBytes: number;

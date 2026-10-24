@@ -513,6 +513,7 @@ export function MaterialsTab({
         onClose={() => setDeleting(null)}
         onConfirm={() => {
           if (deleting) deleteMaterial(deleting.id);
+          setDeleting(null);
         }}
         open={!!deleting}
       />

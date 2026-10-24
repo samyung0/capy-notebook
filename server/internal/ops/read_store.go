@@ -376,7 +376,7 @@ func ingestEnvironmentMetrics(
 		       count(*) FILTER (
 		         WHERE status = 'running' AND lease_expires_at < now())::bigint,
 		       COALESCE(extract(epoch FROM now() - min(queued_at) FILTER (
-		         WHERE status = 'pending')) * 1000, 0)::bigint
+		         WHERE status = 'pending' AND queued_at <= now())) * 1000, 0)::bigint
 		  FROM jobs
 		 WHERE type IN ('import', 'parse', 'ingest')
 	`).Scan(

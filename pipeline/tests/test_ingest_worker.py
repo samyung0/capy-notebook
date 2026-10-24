@@ -19,6 +19,15 @@ from pipeline.ingest import worker
 from pipeline.parse import parser_client
 
 
+def test_an_audio_job_polling_its_task_is_not_a_first_claim():
+    """Its credits were checked before it submitted; a poll claim, whose
+    attempt the re-pend handed back, must not refuse it mid-task."""
+    job = {"attempts": 1, "provider_waits": 0}
+
+    assert worker._first_claim(job, {})
+    assert not worker._first_claim(job, {"filetrans": {"taskId": "task-1"}})
+
+
 def test_source_refresh_publishes_only_its_ready_event(monkeypatch):
     events: list[str] = []
     monkeypatch.setattr(
@@ -1341,6 +1350,174 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     worker._cleanup_payload_source(job["payload"])
 
 
+def _audio_job(monkeypatch, tmp_path, filetrans=None):
+    """An audio ingest job with its database, bucket and providers faked:
+    the job, what touched the source (``fetch``), and the re-pends."""
+    touched: list[str] = []
+    yields: list[tuple] = []
+
+    async def _pin(_ws):
+        return object()
+
+    async def _embed_pin(_ws):
+        return {
+            "embedding_dim": 2560,
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+            "embedding_model_version": 1,
+        }
+
+    async def _no_donor(**_k):
+        return None
+
+    class FakeS3:
+        def get_object(self, **_kwargs):
+            touched.append("fetch")
+            return {"Body": io.BytesIO(b"audio")}
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _embed_pin)
+    monkeypatch.setattr(
+        worker.registry, "pins_from_payload", lambda *_a, **_k: object()
+    )
+    monkeypatch.setattr(worker.registry, "set_job_pins", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a, **_k: "lecture.mp3")
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_record_source_sha", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(worker.blobstore, "_s3_client", FakeS3)
+    monkeypatch.setattr(worker, "_remember_local_source", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.store, "find_ready_donor", _no_donor)
+    monkeypatch.setattr(worker, "_set_file_status", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_audio_context", lambda *_a: "Workspace: Bio")
+    monkeypatch.setattr(
+        worker, "_yield_for_capacity", lambda *a, **k: yields.append((a, k))
+    )
+    payload = _ingest_payload(
+        kind="audio",
+        blobPath="sources/blob_1.mp3",
+        processingPlan={
+            "version": 2,
+            "format": "mp3",
+            "route": ingest_plan.AUDIO_TRANSCRIPTION,
+            "parserRoute": "",
+            "captionMode": "none",
+            "office": False,
+            "stages": [
+                "fetch_source",
+                "transcribe_audio",
+                "persist_derived_text",
+                "chunk",
+                "index",
+                "generate_derivatives",
+            ],
+            "resources": [
+                "object_storage_read",
+                "embedding_model",
+                "ingest_model",
+                "audio_transcription",
+                "object_storage_write",
+            ],
+        },
+        **({"filetrans": filetrans} if filetrans else {}),
+    )
+    payload["resourceRates"]["audio_transcription_second"] = {
+        "version": 2,
+        "unit": "second",
+        "creditMicrosPerUnit": 16_667,
+    }
+    for key in ("parseArtifact", "parseJobId"):
+        payload.pop(key)
+    job = {"id": "job_audio", "type": "ingest", "attempts": 1, "payload": payload}
+    return job, touched, yields
+
+
+async def test_a_running_transcription_task_re_pends_its_job_as_processing(
+    monkeypatch, tmp_path
+):
+    """While its task runs at Alibaba an audio job gives its claim back with
+    the attempt undone, after the task's poll delay, as a poll rather than a
+    capacity wait, and its file shows transcribing rather than queued. The
+    poll comes first: a claim that finds the task running neither fetches,
+    hashes nor measures the source. Once it succeeded, the claim takes the
+    source and finishes with the result link it polled."""
+    from pipeline.ingest import source_text
+
+    stored = {"taskId": "task-1", "callId": "pc_1", "sha256": "ab" * 32}
+    job, touched, yields = _audio_job(monkeypatch, tmp_path, stored)
+    polls = [source_text.FiletransWait(7), "https://result.test/r.json"]
+
+    async def _poll(state, *, job_id, attempt):
+        assert (state, job_id, attempt) == (stored, "job_audio", 1)
+        answer = polls.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return {**state, "callId": "pc_2"}, answer
+
+    async def _finish(**kwargs):
+        assert kwargs["stored"] == {**stored, "callId": "pc_2"}
+        assert kwargs["transcript_url"] == "https://result.test/r.json"
+        assert touched == ["fetch"]
+        raise source_text.FiletransWait(9)
+
+    def _measured(_path):
+        touched.append("measure")
+        return 60.0
+
+    monkeypatch.setattr(worker.source_text, "poll_task", _poll)
+    monkeypatch.setattr(worker.source_text, "transcribe_audio_source", _finish)
+    monkeypatch.setattr(worker.source_text, "audio_duration_seconds", _measured)
+
+    with pytest.raises(source_text.FiletransWait):
+        await worker.process_ingest_job(job)
+
+    ((args, kwargs),) = yields
+    assert args[0] is job and args[7:10] == ("transcribing", 7, "transcription_poll")
+    assert kwargs == {"progress": ("transcribing", 20, "processing")}
+    assert touched == []
+
+    with pytest.raises(source_text.FiletransWait):
+        await worker.process_ingest_job(job)
+    assert yields[1][0][8] == 9 and touched == ["fetch"]
+    worker._cleanup_payload_source(job["payload"])
+
+
+async def test_an_audio_task_the_credits_cannot_cover_ends_the_file_refused(
+    monkeypatch, tmp_path
+):
+    """The measured cost failed the credit gate before any task: the file
+    ends failed as an ingest the account cannot take, uncharged, and the
+    actor's credits were what was checked."""
+    from pipeline.ingest import source_text
+
+    job, _touched, yields = _audio_job(monkeypatch, tmp_path)
+    failed: list[dict] = []
+
+    async def _refused(**kwargs):
+        assert kwargs["credit_user_id"] == job["payload"]["actorUserId"]
+        raise source_text.AudioCreditsRefused("over the credits left")
+
+    def _finish_fail(**kwargs):
+        failed.append(kwargs)
+        return False
+
+    monkeypatch.setattr(worker.source_text, "transcribe_audio_source", _refused)
+    monkeypatch.setattr(worker, "_finish_fail", _finish_fail)
+    monkeypatch.setattr(worker, "_publish_progress", lambda *_a, **_k: None)
+
+    await worker.process_ingest_job(job)
+
+    (refusal,) = failed
+    assert (refusal["error_category"], refusal["error_code"]) == (
+        "accounting",
+        "ingest_admission_refused",
+    )
+    assert "locked or over quota" in refusal["error"] and not yields
+    worker._cleanup_payload_source(job["payload"])
+
+
 @pytest.mark.parametrize(
     ("error", "message"),
     [
@@ -1551,10 +1728,15 @@ _COLUMN_LIMIT = worker.InputLimitError(
 )
 
 
+_NO_SPEECH = worker.InputLimitError("no_speech", "no speech was found")
+
+
 @pytest.mark.parametrize(
     ("error", "refresh", "captured", "code", "index_limit"),
     [
         (_COLUMN_LIMIT, False, False, "tabular_column_limit", "tabular_column_limit"),
+        # A recording with no speech ends ready and unindexed, not failed.
+        (_NO_SPEECH, False, False, "no_speech", "no_speech"),
         # An edited source over the limit keeps its published version.
         (_COLUMN_LIMIT, True, False, "tabular_column_limit", ""),
         (

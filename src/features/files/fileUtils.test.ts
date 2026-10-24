@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { fileCanClone, fileIsIngesting } from './fileUtils';
+import { m } from '@/i18n';
+import { fileCanClone, fileIsIngesting, notIndexedMessage } from './fileUtils';
 
 describe('fileIsIngesting', () => {
   it('treats pending and processing as in-flight ingest', () => {
@@ -22,5 +23,19 @@ describe('fileCanClone', () => {
     expect(fileCanClone({ indexed: false, status: 'failed' })).toBe(false);
     expect(fileCanClone({ indexed: true, status: 'processing' })).toBe(false);
     expect(fileCanClone({ indexed: false, status: 'pending' })).toBe(false);
+  });
+});
+
+describe('notIndexedMessage', () => {
+  it('says a recording had no speech, apart from the size limits', () => {
+    expect(notIndexedMessage({ indexLimit: 'no_speech' })).toBe(
+      m.files_not_indexed_no_speech()
+    );
+    expect(notIndexedMessage({ indexLimit: 'audio_duration_limit' })).toBe(
+      m.files_not_indexed_too_large()
+    );
+    expect(notIndexedMessage({ indexLimit: undefined })).toBe(
+      m.files_not_indexed()
+    );
   });
 });

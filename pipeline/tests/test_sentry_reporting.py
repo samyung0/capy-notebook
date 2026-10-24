@@ -1,5 +1,11 @@
 """Real SDK counts, with an in-memory transport and no Sentry network calls."""
 
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import httpx
+import requests
 import sentry_sdk
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -105,3 +111,53 @@ def test_http_and_stream_failure_ownership(monkeypatch):
     finally:
         client.close()
         sentry_sdk.get_global_scope().set_client(None)
+
+
+def test_http_breadcrumbs_carry_no_query(monkeypatch):
+    """(security regression: signed links stay out of Sentry) A request to a
+    signed link, through requests or httpx, leaves a breadcrumb without its
+    query or fragment, so a later event from the process carries neither."""
+
+    class Ok(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Ok)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    link = f"http://127.0.0.1:{server.server_port}/result.json"
+    original_init = sentry_sdk.init
+    monkeypatch.setenv("SENTRY_DSN", "https://test@example.invalid/1")
+    monkeypatch.setenv("SENTRY_TRACES_SAMPLE_RATE", "0")
+    monkeypatch.setattr(
+        sentry_sdk,
+        "init",
+        lambda **kwargs: original_init(**kwargs, transport=LocalTransport),
+    )
+    obs.init_sentry("ingest")
+    client = sentry_sdk.get_client()
+    try:
+        requests.get(f"{link}?Signature=requests-secret#part", timeout=5)
+        httpx.get(f"{link}?Signature=httpx-secret", timeout=5)
+        obs.capture_error(RuntimeError("a later failure"))
+
+        (event,) = client.transport.events
+        crumbs = [
+            crumb
+            for crumb in event["breadcrumbs"]["values"]
+            if str(crumb.get("data", {}).get("url", "")).startswith(link)
+        ]
+        assert len(crumbs) == 2
+        assert all(crumb["data"]["url"] == link for crumb in crumbs)
+        assert "secret" not in json.dumps(event)
+        assert "part" not in json.dumps(crumbs)
+    finally:
+        client.close()
+        sentry_sdk.get_global_scope().set_client(None)
+        server.shutdown()
+        server.server_close()

@@ -20,6 +20,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
 
+	"github.com/samyung0/capy-notebook/server/internal/alibaba"
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
@@ -75,6 +76,9 @@ type Config struct {
 	// Jev grades open quiz parts. Nil (no JEV_TYPESAFE_API_KEY) makes grading
 	// answer 503 rather than falling back to another model.
 	Jev *jev.Client
+	// Voice transcribes chat voice input. Nil (no ALIBABA_MODELSTUDIO_KEY or
+	// _URL) makes voice input answer 503 voice_unavailable.
+	Voice *alibaba.Client
 	// PipelineSecret authenticates the retrieval service's and the ingest
 	// host's callbacks into /api/internal/*. Empty disables those routes and
 	// therefore Drive/OneDrive imports, which need the import worker.
@@ -422,6 +426,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"code":    "operation_conflict",
 			"message": "this operation id was already used with a different request",
+		})
+		return
+	}
+	if errors.Is(err, store.ErrAudioTranscribing) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "audio_transcribing",
+			"message": audioTranscribingDetail,
 		})
 		return
 	}
