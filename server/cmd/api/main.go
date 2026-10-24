@@ -166,7 +166,7 @@ var turnstileTestSecrets = []string{
 
 // turnstileHosts are the hosts a signed-out check's Turnstile token must have
 // been solved on (Q308): the app hosts of APP_URL, CORS_ALLOWED_ORIGINS and
-// COLLABORATION_ALLOWED_ORIGINS (UAT's lists hold uat-app, app.uat, uat and
+// COLLABORATION_ALLOWED_ORIGINS (UAT's lists hold uat, app.uat and
 // local.uat). Development and e2e use Cloudflare's test keys, whose tokens
 // name no app host, so they check none. Elsewhere an empty list would check
 // no host, so the gateway refuses to boot (Q350).

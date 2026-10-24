@@ -5,7 +5,7 @@
       {
         "ref": "capy_block_internal_paths",
         "description": "Internal service routes are reached over the private network only, never through Cloudflare",
-        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\" \"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat-app.capynotebook.com\" \"uat.capynotebook.com\" \"collab.capynotebook.com\" \"uat-collab.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/api/internal/\") or starts_with(http.request.uri.path, \"/internal/\"))",
+        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\" \"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\" \"collab.capynotebook.com\" \"uat-collab.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/api/internal/\") or starts_with(http.request.uri.path, \"/internal/\"))",
         "action": "block",
         "enabled": true
       },
@@ -44,7 +44,7 @@
       {
         "ref": "capy_share_pages_rate_limit",
         "description": "Shared pages (/share/, /w/) on the app hosts: 600 requests a minute per address, then a Managed Challenge (throttling; /p/ images and audio are left out, since a challenge breaks subresources)",
-        "expression": "http.host in {\"app.capynotebook.com\" \"uat-app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/share/\") or starts_with(http.request.uri.path, \"/w/\"))",
+        "expression": "http.host in {\"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/share/\") or starts_with(http.request.uri.path, \"/w/\"))",
         "action": "managed_challenge",
         "ratelimit": {
           "characteristics": ["ip.src", "cf.colo.id"],
