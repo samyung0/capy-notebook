@@ -721,9 +721,14 @@ challenge only when Cloudflare asks) on load and again after each check
 (`src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
 quiz), and the API verifies it with siteverify (5 s timeout) after the share
 token's check and before grading (`checkCaptcha`, `server/internal/httpapi/
-turnstile.go`): a missing or refused token answers 403 `captcha_failed`, and a
-siteverify that cannot answer 503 `captcha_unavailable`, refusing rather than
-skipping the check; the page shows both under Submit. Signed-in checks take no
+turnstile.go`): a missing or refused token, or one solved on a host other
+than the environment's app hosts (the hosts of `APP_URL`,
+`CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS`; not checked in
+development and e2e, whose test keys name no app host), answers 403
+`captcha_failed`, and a siteverify that cannot answer 503
+`captcha_unavailable`, refusing rather than skipping the check; the page shows
+both under Submit (Q308). A deployed gateway refuses Cloudflare's published
+test secrets at boot. Signed-in checks take no
 token. Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
 is reporting only, because the client chooses it. Rows older than 30 days are pruned by the API's
 maintenance loop. No browser fingerprinting is used.
@@ -1631,7 +1636,9 @@ Stripe session bucket, the reused ones included.
 under `/api/public/{kind}/{token}/` takes one bucket keyed by visitor and share
 token together, 300 a minute, in place of the base class (one charge per
 read): a signed-in visitor by user id, a signed-out one by address (IPv6 by
-its /56). The site Worker's reads reach the origin without the visitor's
+its /56). A token that is not a share link signed with `SHARE_LINK_SECRET`
+counts in the base class instead, so a made-up token gets no bucket of its
+own (Q308). The site Worker's reads reach the origin without the visitor's
 address, so the Worker signs it: `X-Capy-Share-Read: {unix}.{address}.
 {base64url HMAC-SHA256(SHARE_LINK_SECRET,
 "share-read:v2:{unix}:{address}:{path}")}`, the address being the visitor's

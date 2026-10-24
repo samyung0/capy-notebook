@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -142,10 +144,46 @@ func validateServiceSecrets(appEnv, pipelineSecret, collaborationSecret string) 
 // answer checks it verifies with Turnstile (Epo 2026-10-24, Q271). Local
 // stacks set Cloudflare's published test secret.
 func validateTurnstileSecret(appEnv, secret string) error {
-	if appEnv == "development" || appEnv == "e2e" || secret != "" {
+	if appEnv == "development" || appEnv == "e2e" {
 		return nil
 	}
-	return errors.New("TURNSTILE_SECRET_KEY is required: signed-out answer checks are verified with Turnstile")
+	if secret == "" {
+		return errors.New("TURNSTILE_SECRET_KEY is required: signed-out answer checks are verified with Turnstile")
+	}
+	if slices.Contains(turnstileTestSecrets, secret) {
+		return errors.New("TURNSTILE_SECRET_KEY is one of Cloudflare's published test secrets, which verify nothing")
+	}
+	return nil
+}
+
+// turnstileTestSecrets are Cloudflare's published test secrets: they pass,
+// fail or spend every token, so a deployed gateway refuses them (Q308).
+var turnstileTestSecrets = []string{
+	"1x0000000000000000000000000000000AA",
+	"2x0000000000000000000000000000000AA",
+	"3x0000000000000000000000000000000AA",
+}
+
+// turnstileHosts are the hosts a signed-out check's Turnstile token must have
+// been solved on (Q308): the app hosts of APP_URL, CORS_ALLOWED_ORIGINS and
+// COLLABORATION_ALLOWED_ORIGINS (UAT's lists hold uat-app, app.uat, uat and
+// local.uat). Development and e2e use Cloudflare's test keys, whose tokens
+// name no app host, so they check none.
+func turnstileHosts(appEnv string, origins ...string) []string {
+	if appEnv == "development" || appEnv == "e2e" {
+		return nil
+	}
+	var hosts []string
+	for _, origin := range origins {
+		u, err := url.Parse(origin)
+		if err != nil || u.Hostname() == "" {
+			continue
+		}
+		if host := strings.ToLower(u.Hostname()); !slices.Contains(hosts, host) {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts
 }
 
 func validateAuthConfiguration(
@@ -523,6 +561,7 @@ func main() {
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),
 		BankCommentEmail:       env("BANK_COMMENT_EMAIL", ""),
 		TurnstileSecret:        turnstileSecret,
+		TurnstileHosts:         turnstileHosts(appEnv, append(append([]string{appURL}, corsOrigins...), authorizedParties...)...),
 		ReleaseSHA:             env("RELEASE_SHA", ""),
 		APIDocs:                appEnv == "development",
 		ClerkSecretKey:         clerkSecret,

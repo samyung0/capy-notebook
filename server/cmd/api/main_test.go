@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -184,5 +185,34 @@ func TestProductionNeedsTheTurnstileSecret(t *testing.T) {
 		if err := validateTurnstileSecret(appEnv, ""); err != nil {
 			t.Fatalf("%s: %v", appEnv, err)
 		}
+		if err := validateTurnstileSecret(appEnv, turnstileTestSecrets[0]); err != nil {
+			t.Fatalf("%s with the test secret: %v", appEnv, err)
+		}
+	}
+	// Cloudflare's published test secrets verify nothing (security
+	// regression: rate-limit audit r2 N-1, Q308).
+	for _, secret := range turnstileTestSecrets {
+		if err := validateTurnstileSecret("production", secret); err == nil {
+			t.Fatalf("production booted with the test secret %s", secret)
+		}
+	}
+}
+
+// TestTurnstileTokensMustComeFromTheAppHosts (security regression:
+// rate-limit audit r2 N-2, Q308). Outside development and e2e a token must
+// have been solved on one of the environment's app origins; UAT's lists
+// give its widget's four hosts.
+func TestTurnstileTokensMustComeFromTheAppHosts(t *testing.T) {
+	got := turnstileHosts("production",
+		"https://app.uat.capynotebook.com",
+		"https://uat-app.capynotebook.com", "https://app.uat.capynotebook.com", "https://uat.capynotebook.com",
+		"https://uat-app.capynotebook.com", "https://app.uat.capynotebook.com", "https://uat.capynotebook.com",
+		"https://local.uat.capynotebook.com")
+	want := []string{"app.uat.capynotebook.com", "uat-app.capynotebook.com", "uat.capynotebook.com", "local.uat.capynotebook.com"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("turnstile hosts = %v, want %v", got, want)
+	}
+	if got := turnstileHosts("e2e", "http://localhost:5173"); got != nil {
+		t.Fatalf("e2e turnstile hosts = %v, want none", got)
 	}
 }

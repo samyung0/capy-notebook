@@ -129,6 +129,27 @@ func TestAnswerChecksWaitThenProceed(t *testing.T) {
 	}
 }
 
+// TestAnswerChecksOverTheWaitAreRefusedAtOnce (security regression:
+// rate-limit audit r2 N-5, Q308). An answer check, signed in or signed out,
+// whose buckets admit it only after more than 10 s answers 429 without
+// waiting.
+func TestAnswerChecksOverTheWaitAreRefusedAtOnce(t *testing.T) {
+	rdb := testRedis(t, "user:base:user:u_wait_check_long", "ai:user:u_wait_check_long", "ai-burst:user:u_wait_check_long",
+		"ip:base:ip:192.0.2.81")
+	for _, c := range []struct{ user, path string }{
+		{"u_wait_check_long", "/api/review/check"},
+		{"", "/api/public/quizzes/tok_1/grade"},
+	} {
+		clock := newFakeClock()
+		handler := passthrough(New(rdb, waitConfig(clock, 20*time.Second)), c.user)
+		edit := func(r *http.Request) { r.RemoteAddr = "192.0.2.81:1234" }
+		serve(handler, http.MethodPost, c.path, edit)
+		if rec := serve(handler, http.MethodPost, c.path, edit); rec.Code != http.StatusTooManyRequests || clock.Slept() != 0 {
+			t.Fatalf("%s: status %d after sleeping %v, want 429 at once", c.path, rec.Code, clock.Slept())
+		}
+	}
+}
+
 // TestOtherLimitedRoutesAreRefusedAtOnce (rate-limit audit Q268). Every
 // route other than a chat send or an answer check answers 429 at once.
 func TestOtherLimitedRoutesAreRefusedAtOnce(t *testing.T) {

@@ -30,14 +30,17 @@ var ErrCaptchaFailed = errors.New("captcha failed")
 // tell (an outage, a misconfigured secret).
 type CaptchaVerifier func(ctx context.Context, token string) error
 
-const turnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
-
-// turnstileTimeout bounds one siteverify call; a slower answer is an outage.
-const turnstileTimeout = 5 * time.Second
+// Tests point these at a local server and shorten the wait.
+var (
+	turnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+	// turnstileTimeout bounds one siteverify call; a slower answer is an outage.
+	turnstileTimeout = 5 * time.Second
+)
 
 // newTurnstileVerifier verifies tokens with siteverify under secret. Without
-// a secret every check is an outage, never a skipped verification.
-func newTurnstileVerifier(secret string) CaptchaVerifier {
+// a secret every check is an outage, never a skipped verification. With
+// hosts, a token solved on any other host is refused (Q308).
+func newTurnstileVerifier(secret string, hosts []string) CaptchaVerifier {
 	if secret == "" {
 		return func(context.Context, string) error { return errors.New("TURNSTILE_SECRET_KEY is not set") }
 	}
@@ -60,11 +63,15 @@ func newTurnstileVerifier(secret string) CaptchaVerifier {
 		var out struct {
 			Success    bool     `json:"success"`
 			ErrorCodes []string `json:"error-codes"`
+			Hostname   string   `json:"hostname"`
 		}
 		if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
 			return fmt.Errorf("siteverify: %w", err)
 		}
 		if out.Success {
+			if len(hosts) > 0 && !slices.Contains(hosts, strings.ToLower(out.Hostname)) {
+				return ErrCaptchaFailed
+			}
 			return nil
 		}
 		// Cloudflare's own failure and a refused secret are not the visitor's.

@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // testRedis is the disposable Redis of pnpm test:go, with the keys the test
@@ -116,14 +119,15 @@ func shareRead(secret []byte, address, path string, at time.Time) string {
 // reads count by the visitor address they sign, and a forged, stale,
 // other-path or unsigned claim counts by the request's own address.
 func TestShareReadsCountPerVisitorAndPage(t *testing.T) {
-	const pageA, pageB = "/api/public/notes/mat_a.sigA", "/api/public/workspaces/ws_b.sigB/summary"
+	secret := []byte("share-link-secret-for-tests-0123456789")
+	tokenA, tokenB := store.ShareToken(secret, "mat_a"), store.ShareToken(secret, "ws_b")
+	pageA, pageB := "/api/public/notes/"+tokenA, "/api/public/workspaces/"+tokenB+"/summary"
 	const visitor, other, worker = "198.51.100.7", "198.51.100.8", "192.0.2.80"
 	rdb := testRedis(t,
-		"share:ip:"+visitor+":mat_a.sigA", "share:ip:"+visitor+":ws_b.sigB",
-		"share:ip:"+other+":mat_a.sigA", "share:user:u_reader:mat_a.sigA",
-		"share:ip:192.0.2.81:mat_a.sigA", "share:ip:192.0.2.82:mat_a.sigA",
-		"share:ip:192.0.2.83:mat_a.sigA", "share:ip:192.0.2.84:mat_a.sigA")
-	secret := []byte("share-link-secret-for-tests-0123456789")
+		"share:ip:"+visitor+":"+tokenA, "share:ip:"+visitor+":"+tokenB,
+		"share:ip:"+other+":"+tokenA, "share:user:u_reader:"+tokenA,
+		"share:ip:192.0.2.81:"+tokenA, "share:ip:192.0.2.82:"+tokenA,
+		"share:ip:192.0.2.83:"+tokenA, "share:ip:192.0.2.84:"+tokenA)
 	limiter := New(rdb, Config{
 		Anonymous:       Rule{Limit: 1000, Window: time.Hour},
 		Authenticated:   Rule{Limit: 1000, Window: time.Hour},
@@ -175,6 +179,58 @@ func TestShareReadsCountPerVisitorAndPage(t *testing.T) {
 	get(anonymous, pageA, "192.0.2.81", "")
 	if code := get(anonymous, pageA, "192.0.2.81", ""); code != http.StatusTooManyRequests {
 		t.Fatalf("third read from the untrusted address: %d, want 429", code)
+	}
+}
+
+// TestUnsignedShareTokensCountInTheBaseBucket (security regression:
+// rate-limit audit r2 N-6, Q308). A share read under a token we did not sign
+// counts in the caller's anonymous base bucket instead of a share bucket of
+// its own, so made-up tokens do not each get 300 reads a minute.
+func TestUnsignedShareTokensCountInTheBaseBucket(t *testing.T) {
+	const from = "198.51.100.30"
+	rdb := testRedis(t, "ip:base:ip:"+from)
+	limiter := New(rdb, Config{
+		Anonymous:       Rule{Limit: 2, Window: time.Hour},
+		SharePage:       Rule{Limit: 1000, Window: time.Hour},
+		ShareReadSecret: []byte("share-link-secret-for-tests-0123456789"),
+	})
+	handler := passthrough(limiter, "")
+	for i, token := range []string{"mat_a.AAAAAAAAAAAAAAAA", "mat_b.BBBBBBBBBBBBBBBB", "not-a-token"} {
+		code := serve(handler, http.MethodGet, "/api/public/notes/"+token, func(r *http.Request) {
+			r.Header.Set("CF-Connecting-IP", from)
+		}).Code
+		if want := map[bool]int{true: http.StatusTooManyRequests, false: http.StatusNoContent}[i == 2]; code != want {
+			t.Fatalf("read %d of an unsigned token: %d, want %d", i+1, code, want)
+		}
+	}
+}
+
+// TestSignedIPv6VisitorsFoldTo56 (security regression: rate-limit audit r2
+// N-6, Q246). The Worker's signed visitor address folds to its /56, so two
+// addresses of one /56 share a page's bucket.
+func TestSignedIPv6VisitorsFoldTo56(t *testing.T) {
+	secret := []byte("share-link-secret-for-tests-0123456789")
+	token := store.ShareToken(secret, "mat_v6")
+	page := "/api/public/notes/" + token
+	rdb := testRedis(t, "share:ip:"+obs.FoldAddress("2001:db8:aa:ff00::1")+":"+token)
+	limiter := New(rdb, Config{
+		Anonymous:       Rule{Limit: 1000, Window: time.Hour},
+		SharePage:       Rule{Limit: 1, Window: time.Hour},
+		ShareReadSecret: secret,
+	})
+	handler := passthrough(limiter, "")
+	now := time.Now()
+	read := func(visitor string) int {
+		return serve(handler, http.MethodGet, page, func(r *http.Request) {
+			r.Header.Set("CF-Connecting-IP", "192.0.2.80")
+			r.Header.Set(ShareReadHeader, shareRead(secret, visitor, page, now))
+		}).Code
+	}
+	if code := read("2001:db8:aa:ff00::1"); code != http.StatusNoContent {
+		t.Fatalf("first read: %d", code)
+	}
+	if code := read("2001:db8:aa:ffee::2"); code != http.StatusTooManyRequests {
+		t.Fatalf("a second address of the /56: %d, want 429", code)
 	}
 }
 

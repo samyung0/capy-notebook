@@ -1581,17 +1581,21 @@ with siteverify before grading (Epo 2026-10-24, Q271; observability-metering
    pages) and secret `TURNSTILE_SECRET_KEY` (its secret key, for the API).
    `scripts/env/config.py` refuses a build without the site key and an app
    render without the secret, and a production gateway does not boot without
-   the secret (`validateTurnstileSecret`).
+   the secret or with one of Cloudflare's published test secrets
+   (`validateTurnstileSecret`, Q308).
 3. Deploy, open a shared quiz signed out and submit: the check is graded. A
-   403 `captcha_failed` means the token did not verify (wrong key pair or
-   hostname); a 503 `captcha_unavailable` means siteverify could not answer
-   (the API refuses rather than skipping the check).
+   403 `captcha_failed` means the token did not verify (wrong key pair, or a
+   host siteverify names that is not among the gateway's `APP_URL`,
+   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` hosts); a 503
+   `captcha_unavailable` means siteverify could not answer (the API refuses
+   rather than skipping the check).
 
 Local stacks and e2e use Cloudflare's published test keys, which always pass:
 site key `1x00000000000000000000AA`, secret
 `1x0000000000000000000000000000000AA` (`deploy/.env.example`, the Compose
 files, `playwright.config.ts`). The API still calls siteverify with the test
-secret, so a local signed-out check needs Cloudflare reachable.
+secret, so a local signed-out check needs Cloudflare reachable; it checks no
+hostname there, since test tokens name none of the app hosts.
 
 ---
 

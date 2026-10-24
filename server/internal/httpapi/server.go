@@ -74,6 +74,10 @@ type Config struct {
 	// TurnstileSecret verifies signed-out answer checks' Turnstile tokens
 	// (TURNSTILE_SECRET_KEY); CaptchaVerifier replaces siteverify in tests.
 	TurnstileSecret string
+	// TurnstileHosts are the hosts a Turnstile token must have been solved
+	// on, the environment's app hosts; empty skips the check (development
+	// and e2e, whose test keys name no app host).
+	TurnstileHosts  []string
 	CaptchaVerifier CaptchaVerifier
 	// ModelRegistry is the process-wide model config cache. Nil disables
 	// per-model pricing and pinning (tests).
@@ -197,7 +201,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		streamByUser:         make(map[string]int),
 	}
 	if a.captcha == nil {
-		a.captcha = newTurnstileVerifier(cfg.TurnstileSecret)
+		a.captcha = newTurnstileVerifier(cfg.TurnstileSecret, cfg.TurnstileHosts)
 	}
 	a.uploads = newUploadQueue(func(batch string, removed bool) {
 		if removed {

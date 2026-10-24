@@ -73,7 +73,8 @@ type Config struct {
 	// Worker (whose ShareReadHeader signs the visitor's address), instead of
 	// the base bucket.
 	SharePage Rule
-	// ShareReadSecret is SHARE_LINK_SECRET, which signs ShareReadHeader.
+	// ShareReadSecret is SHARE_LINK_SECRET, which signs share tokens and
+	// ShareReadHeader.
 	// Empty sends every signed-out read to the anonymous bucket.
 	ShareReadSecret []byte
 	// Clock is nil for real time; tests set one so waits take no time.

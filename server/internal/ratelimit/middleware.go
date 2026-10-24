@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // class is the route bucket a request falls into. Classes exist because a
@@ -165,6 +166,13 @@ func publicShareToken(r *http.Request) (string, bool) {
 	return parts[4], true
 }
 
+// signedShareToken is whether token is a share link signed with
+// SHARE_LINK_SECRET.
+func (l *Limiter) signedShareToken(token string) bool {
+	_, ok := store.VerifyShareToken(l.cfg.ShareReadSecret, token)
+	return ok
+}
+
 // signedVisitor returns the visitor address a valid ShareReadHeader signs for
 // this path, within shareReadWindow of now.
 func signedVisitor(r *http.Request, secret []byte, now time.Time) (string, bool) {
@@ -218,8 +226,9 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 			// by address (IPv6 by its /56), the site Worker's reads by the
 			// visitor address they sign; an unsigned or forged claim counts by
 			// the request's own address. The bucket replaces the base one, so
-			// a read is charged once.
-			if token, ok := publicShareToken(r); ok {
+			// a read is charged once. A token we did not sign counts in the
+			// base bucket, so a made-up one gets no bucket of its own (Q308).
+			if token, ok := publicShareToken(r); ok && l.signedShareToken(token) {
 				visitor := "user:" + userID
 				if userID == "" {
 					address, signed := signedVisitor(r, l.cfg.ShareReadSecret, l.clock().Now())
