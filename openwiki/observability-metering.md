@@ -1670,7 +1670,7 @@ automatically (L12): a gateway upload past its class waits in the upload
 line instead (Q282), and only an import request keeps the browser's retry
 (`sourceImport.ts`). The pipeline's wait for an
 AI process slot is the other half of the contract: it sends
-`{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 30 s) and
+`{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 60 s, Q293) and
 ends the stream with the in-stream `provider_busy` error when the wait runs
 out. The chat trace shows both phases as a waiting row.
 
