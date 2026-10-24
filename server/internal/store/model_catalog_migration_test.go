@@ -140,7 +140,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 		}
 	}
 	var count int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_capacities`).Scan(&count); err != nil || count != 4 {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_capacities`).Scan(&count); err != nil || count != 5 {
 		t.Fatalf("bootstrap rows=%d err=%v", count, err)
 	}
 	for _, want := range []struct {
@@ -151,6 +151,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 		{"zai", "glm-5.3-flash", 150, 125},
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
 		{"deepinfra", "Qwen/Qwen3-Reranker-4B", 200, 80},
+		{"openrouter", "minimax/minimax-m3.1-flash", 16, 15},
 	} {
 		var total, reserve int
 		err := tx.QueryRow(ctx, `SELECT concurrency_total, interactive_reserve

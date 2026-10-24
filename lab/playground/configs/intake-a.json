@@ -1,6 +1,6 @@
 {
   "workspace_id": "odl_eval_odl_nocaption",
-  "library": true,
+  "workspace_only": false,
   "open_resource": null,
   "study_preferences": {},
   "model": {

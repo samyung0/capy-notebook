@@ -189,9 +189,7 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
     assert (await library.read_excerpt("e_worked")).figures == []
 
     # No decorative or excluded id anywhere a model reads: read, search.
-    ctx = ToolContext(
-        workspace_id="ws", operations=frozenset({"library.read"}), library=True
-    )
+    ctx = ToolContext(workspace_id="ws", operations=frozenset({"library.read"}))
     text = (await tools._read_knowledge({"excerpt_id": "e_intro"}, ctx)).text()
     assert "figures: fig_1, fig_2" in text and "- fig_2: Figure 8.2" in text
     assert "fig_band" not in text and "fig_nc" not in text and "fig_page" not in text
@@ -200,9 +198,7 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
 
 
 async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):
-    ctx = ToolContext(
-        workspace_id="ws", operations=frozenset({"library.read"}), library=True
-    )
+    ctx = ToolContext(workspace_id="ws", operations=frozenset({"library.read"}))
     figures = [
         {
             "id": "fig_2",

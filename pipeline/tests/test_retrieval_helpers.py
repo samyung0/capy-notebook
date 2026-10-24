@@ -180,16 +180,15 @@ def _excerpt(**kwargs) -> library.Excerpt:
     )
 
 
-def test_knowledge_tools_need_the_library_switch_a_library_and_the_operation(
+def test_knowledge_tools_need_a_library_that_answered_and_the_operation(
     monkeypatch,
 ):
     monkeypatch.setattr(tools.library, "enabled", lambda: True)
     ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_LIBRARY)
 
-    assert "search_knowledge" not in _names(ctx), "Library off: never offered"
-    ctx.library = True
+    assert "search_knowledge" not in _names(ctx), "no subject list: library down"
+    ctx.library_catalog = [_STATISTICS]
     assert set(tools.KNOWLEDGE_TOOLS) <= set(_names(ctx))
-    # Workspace reads stay available with Library on.
     assert "search_workspace" in _names(ctx)
 
     monkeypatch.setattr(tools.library, "enabled", lambda: False)
@@ -203,13 +202,16 @@ def test_knowledge_capture_also_needs_the_knowledge_base_bucket(monkeypatch):
     monkeypatch.setattr(tools.library, "enabled", lambda: True)
     monkeypatch.setattr(tools.cfg, "knowledge_base_b2_bucket", "")
     ctx = ToolContext(
-        workspace_id="ws", user_id="u_1", operations=_LIBRARY, library=True
+        workspace_id="ws",
+        user_id="u_1",
+        operations=_LIBRARY,
+        library_catalog=[_STATISTICS],
     )
 
     assert tools.KNOWLEDGE_CAPTURE not in _names(ctx), "no bucket, nothing to render"
     monkeypatch.setattr(tools.cfg, "knowledge_base_b2_bucket", "capy-knowledge-base")
     assert tools.KNOWLEDGE_CAPTURE in _names(ctx)
-    ctx.library = False
+    ctx.library_catalog = []
     assert tools.KNOWLEDGE_CAPTURE not in _names(ctx)
 
 
@@ -228,7 +230,6 @@ def test_subject_list_rides_on_search_knowledge_only(monkeypatch):
         workspace_id="ws",
         user_id="u_1",
         operations=_LIBRARY,
-        library=True,
         library_catalog=[_STATISTICS],
     )
 
@@ -256,7 +257,6 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_subjects(
         workspace_id="ws",
         user_id="u_1",
         operations=_LIBRARY,
-        library=True,
         library_catalog=[_STATISTICS],
     )
     excerpt = _excerpt()
@@ -306,7 +306,6 @@ async def test_empty_result_reports_role_counts_only_under_a_subject(monkeypatch
     ctx = ToolContext(
         workspace_id="ws",
         operations=_LIBRARY,
-        library=True,
         library_catalog=[_STATISTICS],
     )
     available: dict[str, int] | None = {"introduction": 3, "exercise": 1}
@@ -346,7 +345,7 @@ def _read_result(**kwargs) -> library.ExcerptRead:
 
 
 async def test_read_knowledge_pages_in_chunk_units_and_records_the_read(monkeypatch):
-    ctx = ToolContext(workspace_id="ws", operations=_LIBRARY, library=True)
+    ctx = ToolContext(workspace_id="ws", operations=_LIBRARY)
 
     async def _read(excerpt_id, *, start=0, **_kwargs):
         assert (excerpt_id, start) == ("e_1", 42)
@@ -376,7 +375,7 @@ async def test_a_page_the_output_limit_cuts_continues_at_the_first_unshown_chunk
 ):
     """The page stops before the clip would, so next start skips nothing."""
     monkeypatch.setattr(tools, "TOOL_RESULT_MAX_TOKENS", 450)
-    ctx = ToolContext(workspace_id="ws", operations=_LIBRARY, library=True)
+    ctx = ToolContext(workspace_id="ws", operations=_LIBRARY)
 
     async def _read(excerpt_id, *, start=0, count=12):
         assert count == 3
@@ -412,7 +411,6 @@ def _library_ctx() -> ToolContext:
         user_id="u_1",
         operations=_LIBRARY | _EDITOR,
         assistant_message_id="m_1",
-        library=True,
     )
 
 
@@ -458,17 +456,18 @@ async def test_a_write_credits_named_excerpts_or_the_reads_since_the_last_write(
     assert ctx.library_evidence.used == {"e_1", "e_2", "e_3"}
 
 
-async def test_without_the_library_writes_offer_and_take_no_excerpt_ids(monkeypatch):
-    """Offered anyway, the model fills excerpt_ids with workspace passage ids."""
+async def test_workspace_only_refuses_a_write_naming_excerpts(monkeypatch):
+    """The writes keep excerpt_ids in both modes (one tool list); with
+    Workspace only on, a write naming library excerpts is refused."""
     monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
-    ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_EDITOR)
-    for schema in tools.schemas_for(ctx):
-        assert "excerpt_ids" not in schema["function"]["parameters"]["properties"]
+    ctx = ToolContext(
+        workspace_id="ws", user_id="u_1", operations=_EDITOR, workspace_only=True
+    )
     refused = await tools.write_sources(
         ctx, "create_material", {"excerpt_ids": ["attention#1"]}
     )
     assert isinstance(refused, tools.ToolResult)
-    assert "library is not a source this turn" in refused.text()
+    assert "Workspace only is on this turn" in refused.text()
 
 
 async def test_an_edit_of_a_source_file_carries_no_provenance():
@@ -1322,15 +1321,14 @@ def test_chat_request_requires_enabled_thinking():
     assert ChatStreamReq(**fields, thinking="high").thinking == "high"
 
 
-def test_one_prompt_adds_the_library_rules_only_with_library_on():
+def test_one_prompt_holds_the_library_rules_in_both_modes():
     from pipeline.prompts import chat as chat_prompts
     from pipeline.prompts import skills
     from pipeline.retrieval import limits
 
-    off = chat_prompts.system_prompt("en")
-    on = chat_prompts.system_prompt("en", library=True)
+    off = on = chat_prompts.system_prompt("en")
 
-    assert "Library (a source this turn)" in on and "Library (a source" not in off
+    assert "Library (when Workspace only is off)" in off
     # Without a write tool (a viewer) the model is told it cannot write.
     assert chat_prompts.READ_ONLY_RULE in chat_prompts.system_prompt("en", writes=False)
     assert chat_prompts.READ_ONLY_RULE not in off
@@ -1340,9 +1338,7 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
     assert chat_prompts.FIRST_TURN_OFFER not in chat_prompts.system_prompt(
         "en", writes=False
     )
-    assert "lacks the learning scope or the learner's level" in skills.editing(
-        library=False
-    )
+    assert "lacks the learning scope or the learner's level" in skills.editing()
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
         assert "propose the plan" not in prompt

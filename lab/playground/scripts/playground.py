@@ -59,23 +59,25 @@ PREVIEW_BUILD = "pnpm exec vite build --config lab/playground/preview/vite.confi
 EMBED = REPO / "embed"
 SLIDE_FIGURE = re.compile(r"""href=(["'])\.\./images/(c\d+\.jpg)\1""")
 # Production derives the write operations from the actor's role; the playground
-# grants an editor's, plus library.read when the Library switch is on.
+# grants an editor's, plus library.read, which production grants with every chat.
 BUILD_OPERATIONS = frozenset(
     {"source.read", "material.read", "material.create", "document.edit"}
 )
 
 
 def operations_for(c: dict[str, Any]) -> frozenset[str]:
-    return BUILD_OPERATIONS | ({"library.read"} if c["library"] else set())
+    del c
+    return BUILD_OPERATIONS | {"library.read"}
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "workspace_id": "odl_eval_odl",
     "scope_file_ids": None,
     "locale": "en",
-    # library: the per-turn Library switch; the shared library is a source.
-    # Materials are written as files under the run directory either way.
-    "library": True,
+    # workspace_only: the per-message Workspace only switch; on, only the
+    # workspace is a source. Materials are written as files under the run
+    # directory either way.
+    "workspace_only": False,
     # open_resource: what the learner has open, as the app sends it:
     # {"id", "kind", "title"}, or null.
     "open_resource": None,
@@ -103,7 +105,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # null keeps the production system prompt; a string replaces it wholesale,
     # except the library rules, which library_rules owns.
     "system_prompt": None,
-    # null keeps production's library rules; sent only with Library on.
+    # null keeps production's library rules; "" drops them.
     "library_rules": None,
     "prompt_addon": "",
     "tool_descriptions": {},
@@ -152,8 +154,13 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
     out = copy.deepcopy(DEFAULT_CONFIG)
     # The server's --target decides where a turn runs; configs and saved runs
     # from before 2026-10-05 still carry target (and the old acceptance
-    # question), which mean nothing here.
-    raw = {k: v for k, v in raw.items() if k not in ("target", "question", "expect")}
+    # question), which mean nothing here; those from before 2026-10-24 carry
+    # library, the switch Workspace only replaced.
+    raw = {
+        k: v
+        for k, v in raw.items()
+        if k not in ("target", "question", "expect", "library")
+    }
     for key, value in raw.items():
         if isinstance(value, dict) and isinstance(out.get(key), dict):
             out[key].update(value)
@@ -235,29 +242,29 @@ def effective_prompt(
     c: dict[str, Any],
     base: str | None = None,
     *,
-    library: bool | None = None,
     with_library: bool = True,
 ) -> str:
-    """The exact system prompt a turn sends: production text without the
-    library rules, or the config's replacement; with Library on, the library
-    rules (production's or library_rules) where production puts them, before
-    the answer format, or last when a replacement dropped that; then the
-    addons. ``with_library=False`` is the editable part the page shows."""
+    """The exact system prompt a turn sends, the same in both modes of the
+    Workspace only switch: production text without the library rules, or the
+    config's replacement; then the library rules (production's or
+    library_rules) where production puts them, before the answer format, or
+    last when a replacement dropped that; then the addons.
+    ``with_library=False`` is the editable part the page shows."""
     import capture
     import citations
 
     from pipeline.prompts import chat as chat_prompts
 
-    library = c["library"] if library is None else library
     if base is None:
         base = chat_prompts.system_prompt(c["locale"])
+    base = base.replace("\n\n" + chat_prompts.LIBRARY_RULES, "", 1)
     text = base if c["system_prompt"] is None else c["system_prompt"]
-    if library and with_library:
-        rules = (
-            chat_prompts.LIBRARY_RULES
-            if c["library_rules"] is None
-            else c["library_rules"]
-        )
+    rules = (
+        chat_prompts.LIBRARY_RULES
+        if c["library_rules"] is None
+        else c["library_rules"]
+    )
+    if rules and with_library:
         head, lang, tail = text.rpartition("\n\n" + chat_prompts.LANG_RULE)
         text = (
             f"{head}\n\n{rules}{lang}{tail}" if lang else f"{text}\n\n{rules}"
@@ -327,17 +334,18 @@ def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
     return configured_tools(c, out)
 
 
-def skill_texts(c: dict[str, Any], *, library: bool) -> dict[str, str]:
+def skill_texts(c: dict[str, Any]) -> dict[str, str]:
     """Production's text of each skill."""
     from pipeline.retrieval import skills
 
-    return {name: skill.text(library) for name, skill in skills.SKILLS.items()}
+    del c
+    return {name: skill.text() for name, skill in skills.SKILLS.items()}
 
 
-def skill_text(c: dict[str, Any], name: str, *, library: bool) -> str | None:
+def skill_text(c: dict[str, Any], name: str) -> str | None:
     """What read_skill returns here: the config's text, else production's,
     then the config's addon."""
-    offered = skill_texts(c, library=library)
+    offered = skill_texts(c)
     if name not in offered:
         return None
     text = c["skills"].get(name, offered[name])
@@ -1343,7 +1351,7 @@ class Turn:
         from pipeline.retrieval.chunking import estimate_tokens
 
         c, state = self.config, self.state
-        library = bool(c["library"])
+        workspace_only = bool(c["workspace_only"])
         spec = model_spec(c["model"])
         registry.bind_request_llm(thinking=c["model"]["thinking"])
         registry.set_job_pins(registry.JobPins(captioning=spec))
@@ -1363,7 +1371,7 @@ class Turn:
         ctx = tools.ToolContext(
             workspace_id=c["workspace_id"],
             user_id="playground",
-            library=library,
+            workspace_only=workspace_only,
             operations=operations_for(c),
             file_ids=c["scope_file_ids"] or None,
             assistant_message_id=self.id,
@@ -1393,10 +1401,8 @@ class Turn:
             "cfg": (cfg.search_top_k, cfg.search_per_file_cap),
         }
 
-        def system_prompt(locale, *, library=False, writes=True):
-            return effective_prompt(
-                c, saved["system_prompt"](locale, writes=writes), library=library
-            )
+        def system_prompt(locale, *, writes=True):
+            return effective_prompt(c, saved["system_prompt"](locale, writes=writes))
 
         def schemas_for(ctx_):
             schemas = turn_tools(c, saved["schemas_for"](ctx_))
@@ -1452,7 +1458,7 @@ class Turn:
                     skills.refusal(needs, write=tools.mutates(name))
                 )
             elif name == "read_skill" and (
-                text := skill_text(c, clean["name"], library=ctx_.library)
+                text := skill_text(c, clean["name"])
             ) is not None:
                 # Production's _read_skill: office_building offers the Office tools.
                 if clean["name"] == skills.OFFICE_BUILDING:
@@ -1992,7 +1998,7 @@ class Turn:
             "config": c,
             "question": self.question,
             "history": self.history,
-            "system_prompt": system_prompt(c["locale"], library=library),
+            "system_prompt": system_prompt(c["locale"]),
             "tool_schemas": state.get("tool_schemas", []),
             "answer": done.get("answer", ""),
             "answer_raw": done.get("answer_raw"),
@@ -2016,7 +2022,7 @@ class Turn:
             "events": recorded,
             # What the loop read and wrote. Materials carry their own
             # provenance books, which is the attribution a real material keeps.
-            "library": library,
+            "workspace_only": workspace_only,
             "library_reads": [
                 {"excerpt_id": r.excerpt_id, "start": r.start, "section": r.section}
                 for r in ctx.library_reads.reads
@@ -2198,13 +2204,12 @@ def build_app(target: str):
         ctx = tools.ToolContext(
             workspace_id=c["workspace_id"],
             user_id="playground",
-            library=c["library"],
+            workspace_only=c["workspace_only"],
             operations=operations_for(c),
         )
-        if c["library"]:
-            # The pinned version's topic catalog rides in the knowledge tool
-            # descriptions, so this reads the library exactly as a turn does.
-            await tools.load_library_catalog(ctx)
+        # The pinned version's topic catalog rides in the knowledge tool
+        # descriptions, so this reads the library exactly as a turn does.
+        await tools.load_library_catalog(ctx)
         return {
             "prompt": effective_prompt(
                 c, production_prompt(c["locale"]), with_library=False
@@ -2212,7 +2217,7 @@ def build_app(target: str):
             "library_rules": chat_prompts.LIBRARY_RULES,
             "full_prompt": effective_prompt(c, production_prompt(c["locale"])),
             "tools": turn_tools(c, production_schemas(ctx)),
-            "skills": skill_texts(c, library=ctx.library),
+            "skills": skill_texts(c),
             "preferences": production_preferences,
             "tool_prompts": {
                 s["function"]["name"]: tool_prompt(s["function"])
@@ -2386,7 +2391,7 @@ def check_decks() -> None:
         record = state["materials"][0]
         rid = record["id"]
         assert "1. Tangent meets radius (to write)" in made.text()
-        assert "Reference slide toc" in skills.SKILLS[skills.DECK_BUILDING].text(False)
+        assert "Reference slide toc" in skills.SKILLS[skills.DECK_BUILDING].text()
         long = '<text x="64" y="300">' + "far too long for this box " * 8 + "</text>"
         for args, says in (
             ({"slide": 1, "svg": "<svg"}, "does not parse"),
@@ -2538,7 +2543,7 @@ def check_figures() -> None:
         return [{"id": "b", "title": "B", "excerptIds": list(excerpt_ids), "version": 1}]
 
     async def flow(run_dir: Path) -> None:
-        ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS, library=True)
+        ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS)
         ctx.library_reads.note("exc_1", 0, "1.1")
         state = {"materials": [], "captures": [], "run_dir": run_dir}
         made = await create_material_locally(
@@ -2667,7 +2672,7 @@ def check_preferences() -> None:
     from pipeline.prompts import preferences
 
     c = merged({"skill_addons": {"editing": "Addon."}})
-    assert skill_text(c, "editing", library=False).endswith("\n\nAddon.")
+    assert skill_text(c, "editing").endswith("\n\nAddon.")
     production = preferences.lines({"writingStyle": "brief"})
     with preference_wording(merged({"preference_text": {"writingStyle=brief": "Short."}})):
         assert preferences.lines({"writingStyle": "brief"}) == [
@@ -2732,14 +2737,9 @@ def check() -> None:
     from pipeline.retrieval import skills
 
     edited = merged({"skills": {"note_building": "my building"}})
-    assert skill_text(edited, "note_building", library=True) == "my building"
-    assert skill_text(edited, "editing", library=True) != "my building"
-    assert skill_text(edited, "deck_building", library=True) == skills.SKILLS[
-        "deck_building"
-    ].text(True)
-    assert "Practice from the library" not in skill_text(
-        merged({}), "note_building", library=False
-    )
+    assert skill_text(edited, "note_building") == "my building"
+    assert skill_text(edited, "editing") != "my building"
+    assert skill_text(edited, "deck_building") == skills.SKILLS["deck_building"].text()
     for invalid in (None, {"unknown": "x"}, {"note_building": 1}):
         try:
             merged({"skills": invalid})
@@ -2834,7 +2834,7 @@ def check() -> None:
             )
             assert csp.startswith("default-src 'none'")
             for mode in (False, True):
-                c = merged({"library": mode})
+                c = merged({"workspace_only": mode})
                 expected = effective_prompt(c, with_library=False)
                 with (
                     patch.object(chat, "system_prompt", return_value="active turn"),
@@ -2875,7 +2875,6 @@ def check() -> None:
             c = merged(
                 {
                     "target": "local",
-                    "library": True,
                     "tools": ["capture_page", "list_sources"],
                     "model": {"adhoc": {"provider_name": "test"}},
                 }
@@ -2908,23 +2907,24 @@ def check() -> None:
                 assert saved["library_reads"] == []
         bare = merged(
             {
-                "library": False,
+                "library_rules": "",
                 "system_prompt": "",
                 "capture": {"addon": False},
             }
         )
         assert effective_prompt(bare, "production") == ""
         decks = merged(
-            {"library": False, "system_prompt": "", "capture": {"addon": False}}
+            {"library_rules": "", "system_prompt": "", "capture": {"addon": False}}
         )
         # The main explainer format reaches the model with the study
         # preferences in the turn context, not the system prompt.
         assert effective_prompt(decks, "production") == ""
         # The library rules sit before the answer format, as production puts
         # them, whether they or the rest of the prompt were edited.
-        assert effective_prompt(merged({}), chat.system_prompt("en")).replace(
-            "\n\n" + chat.LANG_RULE, ""
-        ).startswith(chat.system_prompt("en", library=True).split("\n\n" + chat.LANG_RULE)[0])
+        unedited = merged({"capture": {"addon": False}})
+        assert effective_prompt(unedited, chat.system_prompt("en")) == chat.system_prompt(
+            "en"
+        )
         lib = merged({"library_rules": "MY RULES", "tools": []})
         assert effective_prompt(lib, "base\n\n" + chat.LANG_RULE) == (
             "base\n\nMY RULES\n\n" + chat.LANG_RULE
@@ -2947,7 +2947,7 @@ def check() -> None:
         ), path
         assert c["answer"]["citations"] in ("as_is", "renumber", "structured"), path
         assert c["capture"]["citation"] in ("page", "new"), path
-        assert isinstance(c["library"], bool), path
+        assert isinstance(c["workspace_only"], bool), path
     print("playground checks passed")
 
 
