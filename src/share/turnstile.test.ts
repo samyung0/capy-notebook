@@ -8,6 +8,7 @@ interface FakeOptions {
   callback: (token: string) => void;
   'expired-callback': () => void;
   'refresh-expired'?: string;
+  'refresh-timeout'?: string;
 }
 
 let options: FakeOptions[];
@@ -18,6 +19,14 @@ let resets: number;
 function expire(widget: FakeOptions) {
   widget['expired-callback']();
   if (widget['refresh-expired'] !== 'never') widget.callback('token-refreshed');
+}
+
+/** An interactive challenge timing out as Turnstile handles it: the widget
+ * runs it again by itself unless rendered with `'refresh-timeout': 'manual'`
+ * (or `never`). */
+function timeOut(widget: FakeOptions) {
+  if (!['manual', 'never'].includes(widget['refresh-timeout'] ?? 'auto'))
+    widget.callback('token-rerun');
 }
 
 beforeEach(() => {
@@ -83,4 +92,16 @@ it('gives up after 15 s with an empty token', async () => {
   await vi.waitFor(() => expect(options).toHaveLength(1));
   await vi.advanceTimersByTimeAsync(TAKE_TIMEOUT_MS);
   await expect(check).resolves.toBe('');
+});
+
+it('waits for the visitor when a challenge times out, with no solve in the background', async () => {
+  const { TAKE_TIMEOUT_MS, takeTurnstileToken } = await import('./turnstile');
+  const first = takeTurnstileToken();
+  await vi.waitFor(() => expect(options).toHaveLength(1));
+  await vi.advanceTimersByTimeAsync(TAKE_TIMEOUT_MS);
+  await expect(first).resolves.toBe('');
+  timeOut(options[0]);
+  const next = takeTurnstileToken();
+  options[0].callback('token-visitor');
+  await expect(next).resolves.toBe('token-visitor');
 });
