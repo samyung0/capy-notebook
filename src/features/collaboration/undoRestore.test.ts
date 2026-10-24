@@ -3,8 +3,8 @@ import * as Y from 'yjs';
 
 // The yjs patch's redo rule (patches/yjs@13.6.31.patch, `redoItem`): a
 // restored list item keeps the right neighbour its trace finds only when it
-// lies after its left, else takes the item now after the left; the check walks
-// at most 4,096 items.
+// lies after its left, else takes the item now after the left; a traced right
+// with more than 4,096 items between the left and it gives way too.
 
 type Op = { insert: unknown };
 
@@ -75,9 +75,11 @@ it('restores a deleted paragraph holding a split copy alike on every replica', (
   }
 });
 
-it('places a restored item after its left once the right walk passes its bound', () => {
-  // "acb" as three items; a peer with a lower client id (the seed) puts
-  // 5,000 items between the restored "a" and "b" before "c" comes back.
+/** "acb" as three items; a peer with a lower client id (the seed) puts
+ * `peerItems` items between the restored "a" and "b" before "c" comes back:
+ * where "c" lands on the writer, the peer and both reloads, with each text's
+ * length. */
+function restoredCAfterPeerItems(peerItems: number) {
   const { local, seed, undo, writer } = setup('ab', (paragraph) =>
     paragraph.insert(1, 'c')
   );
@@ -87,16 +89,35 @@ it('places a restored item after its left once the right walk passes its bound',
   sync(writer, seed);
   seed.transact(() => {
     const restored = first(seed);
-    for (let i = 0; i < 5000; i++) restored.insert(1, 'x');
+    for (let i = 0; i < peerItems; i++) restored.insert(1, 'x');
   });
   sync(seed, writer);
   undo.undo(); // takes back step 1: "c" comes back
   sync(writer, seed);
-
-  // Past the bound "c" takes the item after "a" as its right; an unbounded
-  // walk keeps "b", and "c" lands after the peer's items.
-  for (const doc of withReloads([writer, seed])) {
+  return withReloads([writer, seed]).map((doc) => {
     const [text] = paragraphs(doc);
-    expect([text.indexOf('c'), text.length]).toEqual([1, 5003]);
-  }
+    return [text.indexOf('c'), text.length];
+  });
+}
+
+it('keeps a traced right that lies after the left', () => {
+  // "b" is 5 items past "a", so "c" lands after the peer's items, as in stock
+  // Yjs (taking the item after the left instead would put it right after "a").
+  expect(restoredCAfterPeerItems(5)).toEqual([
+    [6, 8],
+    [6, 8],
+    [6, 8],
+    [6, 8],
+  ]);
+});
+
+it('places a restored item after its left once the right walk passes its bound', () => {
+  // Past the bound "c" takes the item after "a" as its right; an unbounded
+  // walk keeps "b", and "c" lands after the peer's 5,000 items.
+  expect(restoredCAfterPeerItems(5000)).toEqual([
+    [1, 5003],
+    [1, 5003],
+    [1, 5003],
+    [1, 5003],
+  ]);
 });
