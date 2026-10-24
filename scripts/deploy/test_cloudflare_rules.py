@@ -275,8 +275,8 @@ class RulesFileTest(unittest.TestCase):
             )
 
     def test_signed_out_api_reads_have_the_edge_rate_limit(self):
-        """Security regression: rate-limit audit H1 (the Free plan's one rule)."""
-        (limit,) = CONFIG["phases"]["http_ratelimit"]
+        """Security regression: rate-limit audit H1."""
+        limit = rule(CONFIG["phases"], "http_ratelimit", "capy_public_api_rate_limit")
         self.assertEqual(
             limit["expression"], 'starts_with(http.request.uri.path, "/api/public/")'
         )
@@ -290,6 +290,32 @@ class RulesFileTest(unittest.TestCase):
                 "mitigation_timeout": 10,
             },
         )
+
+    def test_shared_pages_are_challenged_past_600_a_minute(self):
+        """Security regression: rate-limit audit Q324 (the zone on Pro)."""
+        share = rule(CONFIG["phases"], "http_ratelimit", "capy_share_pages_rate_limit")
+        for host in ("app", "uat-app", "app.uat", "uat"):
+            self.assertIn(f'"{host}.capynotebook.com"', share["expression"])
+        for path in ("/share/", "/w/"):
+            self.assertIn(
+                f'starts_with(http.request.uri.path, "{path}")', share["expression"]
+            )
+        # /p/ serves images and audio, which a challenge answer would break.
+        self.assertNotIn("/p/", share["expression"])
+        self.assertEqual(share["action"], "managed_challenge")
+        self.assertEqual(
+            share["ratelimit"],
+            {
+                "characteristics": ["ip.src", "cf.colo.id"],
+                "period": 60,
+                "requests_per_period": 600,
+                "mitigation_timeout": 0,
+            },
+        )
+
+    def test_the_rate_limit_phase_holds_at_most_two_rules(self):
+        """Cloudflare Pro allows two rate limiting rules (Q324)."""
+        self.assertLessEqual(len(CONFIG["phases"]["http_ratelimit"]), 2)
 
     def test_ops_and_backend_hosts_are_never_cached_in_either_environment(self):
         ops = rule(

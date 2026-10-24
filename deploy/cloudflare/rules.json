@@ -40,6 +40,19 @@
           "mitigation_timeout": 10
         },
         "enabled": true
+      },
+      {
+        "ref": "capy_share_pages_rate_limit",
+        "description": "Shared pages (/share/, /w/) on the app hosts: 600 requests a minute per address, then a Managed Challenge (throttling; /p/ images and audio are left out, since a challenge breaks subresources)",
+        "expression": "http.host in {\"app.capynotebook.com\" \"uat-app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/share/\") or starts_with(http.request.uri.path, \"/w/\"))",
+        "action": "managed_challenge",
+        "ratelimit": {
+          "characteristics": ["ip.src", "cf.colo.id"],
+          "period": 60,
+          "requests_per_period": 600,
+          "mitigation_timeout": 0
+        },
+        "enabled": true
       }
     ],
     "http_request_cache_settings": [

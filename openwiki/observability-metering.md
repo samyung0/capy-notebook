@@ -1664,8 +1664,10 @@ when the header verifies for that path within a minute of its clock and the
 address parses as an IP (`ratelimit.signedVisitor`); an unsigned, forged,
 stale or other-path claim counts by the request's own address. A visitor's
 direct read and the Worker's read for them share the bucket. Signed-out
-grading posts keep the anonymous class and their daily caps. Shared page
-views get no Cloudflare challenge for now (Q272). Workers Cache entries are
+grading posts keep the anonymous class and their daily caps. At the edge,
+the shared pages (`/share/`, `/w/`) get a Managed Challenge past 600
+requests a minute per address (Epo 2026-10-24, Q324;
+[deployment-runbook.md](deployment-runbook.md) § rate limiting rules). Workers Cache entries are
 unchanged (each query string keeps its own).
 
 Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its
