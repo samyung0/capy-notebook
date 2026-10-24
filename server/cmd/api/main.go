@@ -475,6 +475,9 @@ func main() {
 			if err := st.PruneEditIncidents(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune edit incidents: %v", err)
 			}
+			if err := st.PruneBankCommentNotices(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("prune bank comment notices: %v", err)
+			}
 		}
 		sweep()
 		ticker := time.NewTicker(time.Minute)

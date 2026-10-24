@@ -607,7 +607,9 @@ them sent; a failed send leaves them for the next run. A batch keeps its
 notices row-locked until it commits and a concurrent replica skips locked
 rows, so no notice is sent twice unless the commit fails after its email went
 out. A notice whose author has requested account deletion is held, and the
-purge deletes it. Comments have no rate class. This is temporary until a
+purge deletes it. A sent notice is deleted 30 days after its email went out
+(Epo 2026-10-24, Q302; `PruneBankCommentNotices` in the API's minute sweep).
+Comments have no rate class. This is temporary until a
 shared pipeline for content notices (reports, feedback, forums) exists.
 
 Each source has a `kind`. A `library` source names an excerpt, book and the

@@ -79,3 +79,11 @@ func (s *Store) SendBankCommentDigests(
 	}
 	return sent, errors.Join(sendErrs...)
 }
+
+// PruneBankCommentNotices deletes notices 30 days after their digest email
+// was sent (Epo 2026-10-24, Q302). Unsent notices stay for the next digest.
+func (s *Store) PruneBankCommentNotices(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM bank_comment_notices
+		WHERE sent_at < now() - interval '30 days'`)
+	return err
+}

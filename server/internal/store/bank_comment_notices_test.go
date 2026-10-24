@@ -161,3 +161,41 @@ func TestBankCommentDigestRunsOnceAcrossReplicas(t *testing.T) {
 		t.Fatalf("reviewers got %d emails from two concurrent batches, want 1", len(got))
 	}
 }
+
+// TestSentBankCommentNoticesArePrunedAfter30Days (Epo 2026-10-24, Q302). A
+// notice whose digest was sent more than 30 days ago is deleted; one sent
+// more recently stays.
+func TestSentBankCommentNoticesArePrunedAfter30Days(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	user := newBlobTestUser(t, s, "u_bank_notice_prune")
+	recipient := uid("prune") + "@example.test"
+	addNotice(t, s, user, recipient, "old")
+	addNotice(t, s, user, recipient, "recent")
+	if _, err := s.pool.Exec(ctx, `UPDATE bank_comment_notices
+		SET sent_at = now() - CASE body WHEN 'old' THEN interval '31 days' ELSE interval '29 days' END
+		WHERE recipient = $1`, recipient); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PruneBankCommentNotices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	rows, err := s.pool.Query(ctx, `SELECT body FROM bank_comment_notices WHERE recipient = $1 ORDER BY body`, recipient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			t.Fatal(err)
+		}
+		left = append(left, body)
+	}
+	if rows.Err() != nil {
+		t.Fatal(rows.Err())
+	}
+	if !slices.Equal(left, []string{"recent"}) {
+		t.Fatalf("notices left = %v, want [recent]", left)
+	}
+}
