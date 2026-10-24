@@ -1246,9 +1246,8 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 		}
 	}
 	// The creator pays, in a workspace too (Sam 2026-10-18); an embedded
-	// row is charged to its note's payer, as the note's images are (Sam
-	// 2026-10-19). The payer is set once at insert, so the unlocked read is
-	// stable.
+	// row is charged to its note's payer (Sam 2026-10-19). The payer is set
+	// once at insert, so the unlocked read is stable.
 	creatorID := mt.CreatedBy
 	ownerID := creatorID
 	if creatorID == "" {

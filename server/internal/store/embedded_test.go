@@ -372,7 +372,15 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	}
 	foreign := embed(strangerID, foreignNote.ID, EmbeddedDraft{Kind: "quiz", Questions: questions})
 
-	usedBefore, editorBefore := f.used(ownerID), f.used(editorID)
+	usage := func(user string) int64 {
+		t.Helper()
+		got, err := s.StorageUsage(ctx, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.UsedBytes
+	}
+	usedBefore, editorBefore := usage(ownerID), usage(editorID)
 	blocks := func(ids ...string) []EmbeddedAdoption {
 		out := make([]EmbeddedAdoption, len(ids))
 		for i, id := range ids {
@@ -380,8 +388,9 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		}
 		return out
 	}
+	free := mustPlanLimits(t, s, PlanFree)
 	list, refused, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID,
-		blocks(own.ID, quiz.ID, cards.ID, cut.ID, foreign.ID, "mat_purged"))
+		blocks(own.ID, quiz.ID, cards.ID, cut.ID, foreign.ID, "mat_purged"), free)
 	if err != nil || refused {
 		t.Fatal(err, refused)
 	}
@@ -417,7 +426,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		t.Fatal(err)
 	}
 	if copiedImage.MaterialID != quizCopy.ID || copiedImage.WorkspaceID != ws.ID ||
-		copiedImage.UserID != ownerID || copiedImage.ObjectPath != image.ObjectPath || copiedImage.Status != "ready" {
+		copiedImage.UserID != editorID || copiedImage.ObjectPath != image.ObjectPath || copiedImage.Status != "ready" {
 		t.Fatalf("copied image = %+v", copiedImage)
 	}
 	sourceCards, err := s.ListCards(ctx, cards.ID)
@@ -434,9 +443,15 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	if copiedCards[0].Image == nil || copiedCards[0].Image.AssetID == cardImage.ID {
 		t.Fatalf("copied card image = %+v, want its own copy", copiedCards[0].Image)
 	}
-	if f.used(ownerID) <= usedBefore+100 || f.used(editorID) != editorBefore {
-		t.Fatalf("charged owner %d, editor %d; want the target note's payer charged",
-			f.used(ownerID)-usedBefore, f.used(editorID)-editorBefore)
+	// The rows are the note's payer's; their two images the paster's (M16).
+	var rows int64
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(sum(size_bytes),0) FROM materials WHERE id = ANY($1)`,
+		[]string{adopted[quiz.ID], adopted[cards.ID], adopted[cut.ID]}).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if usage(ownerID)-usedBefore != rows || usage(editorID)-editorBefore != 200 {
+		t.Fatalf("charged owner %d (rows %d), editor %d; want the rows on the owner and the images on the editor",
+			usage(ownerID)-usedBefore, rows, usage(editorID)-editorBefore)
 	}
 
 	// The same quiz in several blocks: each block asking for a copy gets its
@@ -444,7 +459,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	twice, _, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, []EmbeddedAdoption{
 		{SourceID: own.ID}, {SourceID: own.ID, Copy: true}, {SourceID: own.ID, Copy: true},
 		{SourceID: quiz.ID}, {SourceID: quiz.ID, Copy: true},
-	})
+	}, free)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +477,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	// unless the block asks for a copy.
 	trash(own.ID)
 	trashed, _, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID,
-		[]EmbeddedAdoption{{SourceID: own.ID}, {SourceID: own.ID, Copy: true}})
+		[]EmbeddedAdoption{{SourceID: own.ID}, {SourceID: own.ID, Copy: true}}, free)
 	if err != nil || trashed[0] != own.ID || trashed[1] == "" || trashed[1] == own.ID {
 		t.Fatalf("trashed own row = %v, %v", trashed, err)
 	}
@@ -470,7 +485,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		t.Fatalf("own row after its block came back: %v", err)
 	}
 
-	if _, _, err := s.AdoptEmbeddedMaterials(ctx, viewerID, target.ID, blocks(quiz.ID)); err == nil {
+	if _, _, err := s.AdoptEmbeddedMaterials(ctx, viewerID, target.ID, blocks(quiz.ID), free); err == nil {
 		t.Fatal("a viewer adopted into the note")
 	}
 	limit := mustPlanLimits(t, s, PlanFree).StorageBytes
@@ -479,7 +494,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	}
 	// Over the note payer's quota the copy is left out and the call says so;
 	// the own row still answers.
-	if list, refused, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, blocks(own.ID, quiz.ID)); err != nil || !refused ||
+	if list, refused, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, blocks(own.ID, quiz.ID), free); err != nil || !refused ||
 		list[0] != own.ID || list[1] != "" {
 		t.Fatalf("adopt over quota = %v refused %v, %v", list, refused, err)
 	}
@@ -718,7 +733,7 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adopted, refused, err := s.AdoptEmbeddedMaterials(ctx, ownerID, other.ID, []EmbeddedAdoption{{SourceID: quiz.ID}})
+	adopted, refused, err := s.AdoptEmbeddedMaterials(ctx, ownerID, other.ID, []EmbeddedAdoption{{SourceID: quiz.ID}}, mustPlanLimits(t, s, PlanFree))
 	if err != nil || refused || len(adopted) != 1 {
 		t.Fatal(adopted, refused, err)
 	}
@@ -742,7 +757,7 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adopted, refused, err = s.AdoptEmbeddedMaterials(ctx, ownerID, saNote.ID, []EmbeddedAdoption{{SourceID: ncQuiz.ID}, {SourceID: quiz.ID}})
+	adopted, refused, err = s.AdoptEmbeddedMaterials(ctx, ownerID, saNote.ID, []EmbeddedAdoption{{SourceID: ncQuiz.ID}, {SourceID: quiz.ID}}, mustPlanLimits(t, s, PlanFree))
 	if err != nil || refused || len(adopted) != 2 || adopted[0] != "" || adopted[1] == "" {
 		t.Fatalf("adopted = %v refused %v, %v; want the NonCommercial copy left out and the other copied", adopted, refused, err)
 	}

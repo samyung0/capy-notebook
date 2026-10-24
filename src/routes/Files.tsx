@@ -41,6 +41,7 @@ import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
 import { formatFileSize } from '@/features/files/fileUtils';
+import { LostMedia } from '@/features/files/LostMedia';
 import {
   clearOnBlank,
   SelectionAction,
@@ -319,6 +320,11 @@ function ActiveFiles({
             />
           </div>
         )}
+        {/* After the last page, so it does not move down as pages load. */}
+        {kinds.length === 0 &&
+          workspaceIds.length === 0 &&
+          !isLoading &&
+          !hasNextPage && <LostMedia view={view} />}
       </PageBody>
       <ConfirmDialog
         body={m.files_delete_selected_body({

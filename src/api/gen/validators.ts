@@ -1371,6 +1371,43 @@ export const ReportEditIncidentResponse = zod.void()
 
 
 /**
+ * @summary List the images and audio the caller pays for in materials it can no longer open
+ */
+export const listLostEditorAssetsQueryLimitDefault = 40;
+export const listLostEditorAssetsQueryLimitMax = 100;
+
+
+
+export const ListLostEditorAssetsQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listLostEditorAssetsQueryLimitMax).default(listLostEditorAssetsQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListLostEditorAssetsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "assetId": zod.string(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "materialTitle": zod.string(),
+  "name": zod.string(),
+  "purpose": zod.enum(['image', 'audio']),
+  "sizeBytes": zod.int()
+})),
+  "nextCursor": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete an image or audio clip the caller pays for in another account's material
+ */
+export const DeleteEditorAssetParams = zod.object({
+  "assetId": zod.string()
+})
+
+export const DeleteEditorAssetResponse = zod.void()
+
+
+/**
  * @summary List events
  */
 export const ListEventsResponseItem = zod.object({
@@ -1597,6 +1634,7 @@ export const ExploreQuizzesResponseItem = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -3106,6 +3144,7 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3262,6 +3301,7 @@ export const GetMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3413,6 +3453,7 @@ export const CloneMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3678,6 +3719,7 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3859,6 +3901,7 @@ export const UpdateMaterialSharingResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -4817,6 +4860,7 @@ export const CreateQuizResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -4911,6 +4955,7 @@ export const GetQuizResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5033,6 +5078,7 @@ export const GetQuizForEditResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5118,6 +5164,7 @@ export const UpdateQuizMetadataResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5198,6 +5245,7 @@ export const UpdateQuizSharingResponse = zod.object({
 })).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -6927,6 +6975,7 @@ export const CreateMaterialResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),

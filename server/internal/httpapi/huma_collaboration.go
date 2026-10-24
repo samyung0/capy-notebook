@@ -193,11 +193,12 @@ func (a *api) adoptMaterialChildren(ctx context.Context, in *materialChildrenInp
 	out := &materialChildrenOutput{}
 	out.Body.Assets = []adoptedMaterialChild{}
 	out.Body.Materials = []adoptedMaterialChild{}
+	// The actor pays for the images it pastes, under its plan caps (M16).
+	workspaceID, limits, err := a.s.EditorAssetMaterial(ctx, in.ID, actor)
+	if err != nil {
+		return nil, hErr(err)
+	}
 	if len(in.Body.AssetIDs) > 0 {
-		workspaceID, limits, err := a.s.EditorAssetMaterial(ctx, in.ID)
-		if err != nil {
-			return nil, hErr(err)
-		}
 		adopted, refused, err := a.s.AdoptEditorAssets(ctx, actor, workspaceID, in.ID, in.Body.AssetIDs, limits)
 		if err != nil {
 			return nil, hErr(err)
@@ -212,7 +213,7 @@ func (a *api) adoptMaterialChildren(ctx context.Context, in *materialChildrenInp
 		for i, block := range in.Body.Materials {
 			blocks[i] = store.EmbeddedAdoption{SourceID: block.MaterialID, Copy: block.Copy}
 		}
-		adopted, refused, err := a.s.AdoptEmbeddedMaterials(ctx, actor, in.ID, blocks)
+		adopted, refused, err := a.s.AdoptEmbeddedMaterials(ctx, actor, in.ID, blocks, limits)
 		if err != nil {
 			return nil, hErr(err)
 		}

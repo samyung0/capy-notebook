@@ -1170,11 +1170,24 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
 
 - Every file, editor asset, upload, and material is charged to the account that
   uploaded, imported, cloned or created it, in any workspace (uploader pays,
-  Sam 2026-10-18; see backend-storage-quota.md).
-- Nobody adds bytes to another user's bill, and an owner's transfer moves none.
+  Sam 2026-10-18; see backend-storage-quota.md). That includes the images and
+  audio an editor adds inside someone else's note, quiz or set: uploaded,
+  pasted or placed by the chat agent for it (Epo 2026-10-24, M16). An embedded
+  quiz or set row is the exception: it is charged to its note's payer.
+- A member who leaves or is removed keeps paying for those images and audio
+  and deletes them from its Files page, where they are listed under a note it
+  can no longer open; deleting its account deletes them. The note then shows
+  each as removed by its uploader.
+- Nobody adds bytes to another user's bill, except the embedded quiz or set
+  row itself, charged to its note's payer; the images in it are the account's
+  that added them, pasted copies included. Charges never move: not on leaving,
+  removal, account deletion or an owner's transfer.
 - A frozen account edits nowhere, and nobody edits what a frozen account pays
   for. Nobody edits the content of an account at or over its limit either,
   though organizing it still works; the rest of the workspace stays editable.
+  A material's view-only state follows only its own payer: an editor at its
+  limit just cannot add images or audio to it, and nobody adds them to a
+  material whose payer is frozen or at its limit.
 
 ### What the gate checks
 
@@ -1414,6 +1427,14 @@ never appear in either. Past reviews and notifications keep the caller's
 history but blank the live workspace (and chapter) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
+The Files tab also lists, in a section of their own, the images and audio the
+caller pays for in other accounts' notes, quizzes and sets in workspaces it can
+no longer reach (`GET /api/editor-assets/lost`): name, size, added time and
+the note's title (blank once that workspace's owner is no longer live), never
+opened or restored. Delete there (`DELETE /api/editor-assets/{assetId}`) is
+final, since a trashed asset would come back with the note's next save; only
+the asset's payer may delete it, and only in a material it does not pay for
+itself (M16).
 
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),
@@ -1529,8 +1550,11 @@ standalone materials, planner/history data,
 memberships, invitations, notification data, credentials, and other
 product-content rows are deleted atomically with the account tombstone, as is
 the account's job history (job and attempt rows whose payload names its
-workspaces; billing rows keep theirs with the attempt link cleared). A job it
-ran in another owner's workspace stays with that file, without its id.
+workspaces; billing rows keep theirs with the attempt link cleared). What it
+pays for in other people's workspaces goes too: its uploads, materials, and
+the images and audio it added to their notes, which then read as removed by
+their uploader (M16). A job it ran in another owner's workspace stays with
+that file, without its id.
 Remaining cross-account attribution is anonymized. Profile PII is scrubbed;
 pseudonymous billing, usage, provider, storage, and audit ledgers may remain
 under their own retention requirements. The account's editing incidents
