@@ -33,6 +33,7 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 
 from ..config import cfg
+from ..elitellm.client import RawJson
 from ..store import blobstore
 from . import accounting, limits, store
 
@@ -420,7 +421,9 @@ def render(
 
 
 def data_url(jpeg: bytes) -> str:
-    return "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+    """A capture's image as it rides in requests, encoded once when the capture
+    is taken: no later model call of its turn encodes it again (Q299)."""
+    return RawJson("data:image/jpeg;base64," + base64.b64encode(jpeg).decode())
 
 
 # ------------------------------------------------------------- image transport
@@ -428,16 +431,27 @@ def data_url(jpeg: bytes) -> str:
 
 def image_part(url: str, provider_slug: str) -> dict[str, Any]:
     if provider_slug == "anthropic":
-        header, data = url.split(",", 1)
+        header = url[: url.index(",")]
         return {
             "type": "image",
             "source": {
                 "type": "base64",
                 "media_type": header[5:].split(";")[0],
-                "data": data,
+                "data": _base64_data(url),
             },
         }
     return {"type": "image_url", "image_url": {"url": url}}
+
+
+def _base64_data(url: str) -> str:
+    """The data URL's base64 part; for a capture's, made on its first request
+    and kept on the URL for the rest of the turn."""
+    if not isinstance(url, RawJson):
+        return url.split(",", 1)[1]
+    kept = vars(url)
+    if "data" not in kept:
+        kept["data"] = RawJson(url.split(",", 1)[1])
+    return kept["data"]
 
 
 def inject_images(

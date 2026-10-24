@@ -480,28 +480,29 @@ async def _chat_events(req: ChatStreamReq):
 
 def _busy() -> elitellm.ProviderBusy:
     return elitellm.ProviderBusy(
-        "the retrieval service is at its request limit",
+        "the retrieval service is at its turn limit",
         retry_after=accounting.BUSY_RETRY_AFTER_S,
     )
 
 
-def _take_request_slot() -> None:
-    """Admit a generate request, or answer the existing 503 provider_busy with
-    Retry-After when the process is full."""
-    if not limits.REQUEST_SLOTS.take():
+def _take_turn_slot() -> None:
+    """Admit a generate request among the turns in progress, or answer the
+    existing 503 provider_busy with Retry-After at once (Q268: only chat
+    waits)."""
+    if not limits.TURN_SLOTS.take():
         raise _busy()
 
 
 class _ChatSlot:
-    """A chat stream's process slot: taken inside the stream, given back when
-    the response ends, however it ends (``_SlotStream``)."""
+    """A chat stream's turn slot: taken inside the stream, given back when the
+    response ends, however it ends (``_SlotStream``)."""
 
     held = False
 
     def release(self) -> None:
         if self.held:
             self.held = False
-            limits.REQUEST_SLOTS.release()
+            limits.TURN_SLOTS.release()
 
 
 class _SlotStream(StreamingResponse):
@@ -517,14 +518,15 @@ class _SlotStream(StreamingResponse):
 
 
 async def _admitted_chat(req: ChatStreamReq, slot: _ChatSlot):
-    """The stream starts at once. Past the process's slots it says it is
-    waiting, once, and waits up to CHAT_SLOT_WAIT_S in arrival order (Epo
-    2026-10-24, Q268); a client that leaves gives up its place. Past the wait
-    it ends with the provider_busy event a busy model call sends."""
-    slot.held = limits.REQUEST_SLOTS.take()
+    """The stream starts at once. Past the turns in progress it says it is
+    waiting and waits up to CHAT_SLOT_WAIT_S in arrival order (Epo 2026-10-24,
+    Q268, inner-turn slots); a client that leaves gives up its place. Past the
+    wait it ends with the provider_busy event a busy model call sends. Each of
+    the turn's model calls then takes a call slot of its own (``agent``)."""
+    slot.held = limits.TURN_SLOTS.take()
     if not slot.held:
         yield _sse(phase("waiting_capacity"))
-        slot.held = await limits.REQUEST_SLOTS.wait(limits.CHAT_SLOT_WAIT_S)
+        slot.held = await limits.TURN_SLOTS.wait(limits.CHAT_SLOT_WAIT_S)
         if not slot.held:
             yield _sse(busy_error(_busy()))
             return
@@ -553,7 +555,9 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
     The usage envelope is attached here rather than inside each workflow so
     every generate kind reports it the same way.
     """
-    _take_request_slot()
+    _take_turn_slot()
+    # Its one model call answers provider_busy at once past the call slots too.
+    slots_token = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
     try:
         accounting_token = _bind_accounting(req.spendSessionId)
         try:
@@ -565,7 +569,8 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
         finally:
             _reset_accounting(accounting_token)
     finally:
-        limits.REQUEST_SLOTS.release()
+        limits.reset_call_slots(slots_token)
+        limits.TURN_SLOTS.release()
 
 
 async def _generate(req: GenerateReq) -> dict[str, Any]:

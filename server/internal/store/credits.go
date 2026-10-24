@@ -886,6 +886,11 @@ func (s *Store) settleProviderCallAtomic(
 	if tag.RowsAffected() != 1 {
 		return settlement, ErrProviderCallConflict
 	}
+	// The call's capacity lease goes with its settlement, not in a round trip
+	// of its own from the AI process (Epo 2026-10-24, Q298).
+	if _, err := tx.Exec(ctx, `DELETE FROM provider_capacity_leases WHERE id=$1`, call.CallID); err != nil {
+		return settlement, err
+	}
 	if out.status == "released" {
 		if _, err := tx.Exec(ctx, `UPDATE provider_sessions
 			SET status='settled' WHERE id=$1 AND status='released'`, sessionID); err != nil {

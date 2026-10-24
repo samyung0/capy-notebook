@@ -1122,30 +1122,36 @@ def acquire_provider_capacity(
     capacity: int,
     lease_seconds: int,
 ) -> bool:
-    """Atomically reserve weighted capacity across every ingest process."""
+    """Atomically reserve weighted capacity across every process.
+
+    The model-wide lock covers one statement (Epo 2026-10-24, Q298): an insert
+    that counts the unexpired leases it sees once the lock is held, so the
+    count stays exact. Expired leases are swept before the lock, each by
+    whichever admission locks it first."""
+    cur.execute(
+        """
+        DELETE FROM provider_capacity_leases WHERE id IN (
+          SELECT id FROM provider_capacity_leases
+           WHERE provider=%s AND expires_at<=now()
+           FOR UPDATE SKIP LOCKED)
+        """,
+        (provider,),
+    )
+    # A statement of its own: the insert's snapshot is taken after the lock.
     cur.execute(
         "SELECT pg_advisory_xact_lock(hashtext(%s))",
         (f"provider-capacity:{provider}",),
     )
     cur.execute(
-        "DELETE FROM provider_capacity_leases WHERE provider=%s AND expires_at<=now()",
-        (provider,),
-    )
-    cur.execute(
-        "SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases WHERE provider=%s",
-        (provider,),
-    )
-    used = int(cur.fetchone()[0])
-    if used + units > capacity:
-        return False
-    cur.execute(
         """
         INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
-        VALUES (%s,%s,%s,now()+make_interval(secs => %s))
+        SELECT %s,%s,%s,now()+make_interval(secs => %s)
+         WHERE (SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases
+                 WHERE provider=%s AND expires_at>now()) + %s <= %s
         """,
-        (lease_id, provider, units, lease_seconds),
+        (lease_id, provider, units, lease_seconds, provider, units, capacity),
     )
-    return True
+    return cur.rowcount == 1
 
 
 def provider_capacity_used(cur, provider: str) -> int:
@@ -2143,7 +2149,8 @@ def settle_ingest_provider_call(
     units: int = 0,
     unit: str = "tokens",
 ) -> str:
-    """Atomically apply one post-paid ingest provider attempt.
+    """Atomically apply one post-paid ingest provider attempt, freeing its
+    capacity lease (id ``call_id``) in the same transaction (Q298).
 
     A ``system`` session (the maintenance republish) records the usage at
     zero credits against its actor. A job pays for its audio once: a retry
@@ -2332,6 +2339,7 @@ def settle_ingest_provider_call(
     )
     if cur.rowcount != 1:
         raise ProviderSettlementRejected("ingest provider call could not be applied")
+    release_provider_capacity(cur, call_id)
     if reservation_status == "released":
         cur.execute(
             """

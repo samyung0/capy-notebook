@@ -17,7 +17,7 @@ import json
 import logging
 import shutil
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -44,6 +44,7 @@ from . import (
 from .chunking import estimate_tokens
 from .limits import (
     BUILD_TOOLS_PER_TURN,
+    CHAT_SLOT_WAIT_S,
     MAX_CONCURRENT,
     PLANNING_RESPONSES,
     STALL_RESPONSES,
@@ -57,7 +58,10 @@ from .limits import (
     TOOLS_PER_RESPONSE,
     WRITE_ERROR_GRACE,
     WRITE_ERROR_GRACE_MAX,
+    CallSlotPolicy,
     TurnBudget,
+    bind_call_slots,
+    reset_call_slots,
 )
 
 # The write tools. The turn's first successful one starts the build budget,
@@ -192,21 +196,62 @@ class ClientDrop:
     (``stopped``, Epo 2026-10-21). Either way the calls already running finish
     and settle, and the loop starts no other model or tool call. Only a dropped
     hop stops the stream: a stopped turn still sends Go what its running calls
-    did.
+    did. ``left`` is set by either, so a call waiting for its slot gives up its
+    place at once (``models.call_slot``).
     """
 
     dropped: bool = False
     stopped: bool = False
+    left: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     def mark(self) -> None:
         self.dropped = True
+        self.left.set()
 
     def stop(self) -> None:
         self.stopped = True
+        self.left.set()
 
 
 def _client_gone(client: ClientDrop | None) -> bool:
     return bool(client and (client.dropped or client.stopped))
+
+
+class _SlotWaits:
+    """Where a turn's model call that waits for a call slot says so: the queue
+    the turn drains at that moment, as the waiting status on each wait (Epo
+    2026-10-24, inner-turn slots)."""
+
+    def __init__(self) -> None:
+        self.queue: asyncio.Queue[Any] | None = None
+
+    def report(self) -> None:
+        if self.queue is not None:
+            self.queue.put_nowait(events.phase("waiting_capacity"))
+
+
+async def _while_waiting(
+    task: asyncio.Future[Any], waits: _SlotWaits
+) -> AsyncIterator[dict[str, Any]]:
+    """Await ``task``, a step whose model calls run outside the response
+    stream (a checkpoint or compaction summary), passing on each slot wait it
+    reports. Leaving early cancels the step, as awaiting it directly would."""
+    queue: asyncio.Queue[Any] = asyncio.Queue()
+    waits.queue = queue
+    try:
+        while not task.done():
+            getter = asyncio.ensure_future(queue.get())
+            try:
+                await asyncio.wait({task, getter}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                getter.cancel()
+            if getter.done() and not getter.cancelled():
+                yield getter.result()
+    except BaseException:
+        task.cancel()
+        raise
+    finally:
+        waits.queue = None
 
 
 def _with_usage(event: dict[str, Any]) -> dict[str, Any]:
@@ -225,7 +270,8 @@ def _client_error(exc: BaseException) -> dict[str, Any]:
 
 def busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
     """The in-stream provider_busy error: a busy model call, or a chat that
-    waited past its budget for a process slot (service.py)."""
+    waited past its budget for a turn slot (service.py) or a call slot
+    (``models.call_slot``)."""
     event = events.error(models.BUSY_ERROR, models.BUSY_ERROR_CODE)
     event["retryAfterSeconds"] = models.busy_retry_after_s(exc)
     return _with_usage(event)
@@ -308,6 +354,12 @@ async def run_agent(
     for the model.
     """
     ended = False
+    # Each model call of the turn takes a call slot, waiting up to 60 s in
+    # arrival order with the waiting status (Epo 2026-10-24, inner-turn slots).
+    waits = _SlotWaits()
+    slots = bind_call_slots(
+        CallSlotPolicy(CHAT_SLOT_WAIT_S, waits.report, client.left if client else None)
+    )
     try:
         async for event in _run_turn(
             query=query,
@@ -318,6 +370,7 @@ async def run_agent(
             checkpoint=checkpoint,
             client=client,
             script=script,
+            waits=waits,
         ):
             if event["type"] in ("done", "error"):
                 for frame in close_cut_edits(ctx):
@@ -337,6 +390,7 @@ async def run_agent(
                 )
             )
     finally:
+        reset_call_slots(slots)
         # Before the await: a cancelled record must not leave the directory.
         if ctx.deck_dir:
             shutil.rmtree(ctx.deck_dir, ignore_errors=True)
@@ -353,6 +407,7 @@ async def _run_turn(
     checkpoint: dict[str, Any] | None = None,
     client: ClientDrop | None = None,
     script: scripted.Script | None = None,
+    waits: _SlotWaits,
 ) -> AsyncIterator[dict[str, Any]]:
     budget = TurnBudget()
     ctx.budget = budget
@@ -429,17 +484,28 @@ async def _run_turn(
     reported_omitted: set[str] = set()
     try:
         await ctx.pending_sources.validate()
-        messages, replacement = await _admit_checkpoint(
-            messages=messages,
-            history=prior,
-            checkpoint=checkpoint,
-            spec=spec,
-            schemas=schemas,
-            budget=budget,
-            query_msg=query_msg,
+        admitted = asyncio.ensure_future(
+            _admit_checkpoint(
+                messages=messages,
+                history=prior,
+                checkpoint=checkpoint,
+                spec=spec,
+                schemas=schemas,
+                budget=budget,
+                query_msg=query_msg,
+            )
         )
+        async for waiting in _while_waiting(admitted, waits):
+            yield waiting
+        messages, replacement = admitted.result()
     except pending.SourceChanged as exc:
         yield _with_usage(events.error(str(exc), exc.code))
+        return
+    except models.CallNotStarted:
+        budget.stop_reason = STOP_CLIENT_GONE
+        return
+    except elitellm.ProviderBusy as exc:
+        yield busy_error(exc)
         return
     except models.UserKeyError as exc:
         yield _with_usage(dict(exc.as_event()))
@@ -561,15 +627,20 @@ async def _run_turn(
                 reported_omitted |= ctx.pending_sources.omitted_ids
                 yield ctx.pending_sources.event(True)
             await ctx.pending_sources.validate()
-            messages = await compact.compact_messages(
-                messages,
-                spec,
-                schemas=active_schemas,
-                protect_live_chain=True,
-                on_compact=_count,
-                extra=outside,
-                allow_summary=not terminal_call,
+            compacting = asyncio.ensure_future(
+                compact.compact_messages(
+                    messages,
+                    spec,
+                    schemas=active_schemas,
+                    protect_live_chain=True,
+                    on_compact=_count,
+                    extra=outside,
+                    allow_summary=not terminal_call,
+                )
             )
+            async for waiting in _while_waiting(compacting, waits):
+                yield waiting
+            messages = compacting.result()
             state = accounting.current()
             if (
                 state
@@ -580,14 +651,19 @@ async def _run_turn(
                 terminal_call = True
                 tools_off = True
                 active_schemas = None
-                messages = await compact.compact_messages(
-                    messages,
-                    spec,
-                    schemas=active_schemas,
-                    protect_live_chain=True,
-                    allow_summary=False,
-                    extra=outside,
+                compacting = asyncio.ensure_future(
+                    compact.compact_messages(
+                        messages,
+                        spec,
+                        schemas=active_schemas,
+                        protect_live_chain=True,
+                        allow_summary=False,
+                        extra=outside,
+                    )
                 )
+                async for waiting in _while_waiting(compacting, waits):
+                    yield waiting
+                messages = compacting.result()
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
                 return
@@ -612,11 +688,11 @@ async def _run_turn(
             ).total_tokens
             block_n += 1
             block_id = f"b{block_n}"
-            pending_q: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
+            # Stream events, and the waiting status if the call waits for its slot.
+            pending_q: asyncio.Queue[Any] = asyncio.Queue()
+            waits.queue = pending_q
 
-            def _on_event(
-                ev: StreamEvent, q: asyncio.Queue[StreamEvent | None] = pending_q
-            ) -> None:
+            def _on_event(ev: StreamEvent, q: asyncio.Queue[Any] = pending_q) -> None:
                 q.put_nowait(ev)
 
             budget.completion_calls += 1
@@ -644,7 +720,7 @@ async def _run_turn(
 
             async def _finish(
                 task: asyncio.Task[AssembledResponse] = stream_task,
-                q: asyncio.Queue[StreamEvent | None] = pending_q,
+                q: asyncio.Queue[Any] = pending_q,
             ) -> AssembledResponse:
                 try:
                     return await asyncio.shield(task)
@@ -664,6 +740,10 @@ async def _run_turn(
                     ev = await pending_q.get()
                     if ev is None:
                         break
+                    if isinstance(ev, dict):  # the call waits for its slot
+                        if not _client_gone(client):
+                            yield ev
+                        continue
                     if ev.kind != "text" or not ev.text:
                         continue
                     prose = renderer.push(guard.push(ev.text))
@@ -684,6 +764,7 @@ async def _run_turn(
                 assembled = await asyncio.shield(finisher)
                 raise
             finally:
+                waits.queue = None
                 if not stream_task.done():
                     try:
                         await asyncio.shield(stream_task)

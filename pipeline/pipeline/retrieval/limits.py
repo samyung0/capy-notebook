@@ -71,19 +71,57 @@ class Slots:
         self.used -= 1
 
 
+@dataclass(frozen=True)
+class CallSlotPolicy:
+    """How a request's model calls take a CALL_SLOTS slot: ``wait_s`` 0
+    answers provider_busy at once; ``on_wait`` runs each time a call waits;
+    once ``left`` is set (the client is gone) a waiting call gives up its place
+    and starts nothing."""
+
+    wait_s: float
+    on_wait: Callable[[], None] | None = None
+    left: asyncio.Event | None = None
+
+
+_call_slot_policy: contextvars.ContextVar[CallSlotPolicy | None] = (
+    contextvars.ContextVar("call_slot_policy", default=None)
+)
+
+
+def bind_call_slots(policy: CallSlotPolicy) -> contextvars.Token:
+    """Bind the policy for the model calls of this request; with none bound
+    (the ingest worker, a test) a call takes no slot."""
+    return _call_slot_policy.set(policy)
+
+
+def reset_call_slots(token: contextvars.Token) -> None:
+    _call_slot_policy.reset(token)
+
+
+def call_slot_policy() -> CallSlotPolicy | None:
+    return _call_slot_policy.get()
+
+
 # The retrieval service is one uvicorn process (Epo 2026-10-24, rate-limit
-# audit; openwiki/agentic-retrieval.md "Process capacity"): chat and generate
-# requests running at once (Q292), past which a chat waits up to
-# CHAT_SLOT_WAIT_S in arrival order (Q268, Q293) and a generate answers
-# provider_busy;
-REQUEST_SLOTS = Slots(64)
+# audit; openwiki/agentic-retrieval.md "Process capacity"): model calls in
+# flight (Q292, inner-turn slots), each taking a slot for its request and
+# response and giving it back while its turn runs tools;
+CALL_SLOTS = Slots(64)
+# chat turns and generate requests in progress, each holding its history and
+# captures in memory while it waits or runs tools (up to about 7.4 MiB with 16
+# captures; a ceiling from a memory measurement against the 3 GiB container,
+# value for sign-off);
+TURN_SLOTS = Slots(96)
+# past either a chat waits up to this long in arrival order, with the waiting
+# status (Q268, Q293), and anything else answers provider_busy at once;
 CHAT_SLOT_WAIT_S = 60.0
 # Office captures in flight to the parser, whose queue ingest shares;
 OFFICE_CAPTURE_SLOTS = Slots(1)
 # and threads for deck scripts, page renders and capture downloads, so they
 # never hold the default executor every model call's admission runs on. Two
-# also bound the memory of side-by-side image decodes (at Pillow's pixel limit
-# up to 1.3 GiB each for a WebP, 0.1 GiB for a JPEG; capture._decoded).
+# also bound the memory of side-by-side image decodes (a 5-megapixel source up
+# to about 130 MiB; at Pillow's pixel limit up to 1.3 GiB for a WebP, 0.1 GiB
+# for a JPEG; capture._decoded).
 RENDER_THREADS = 2
 _render_pool = ThreadPoolExecutor(RENDER_THREADS, thread_name_prefix="capy-render")
 

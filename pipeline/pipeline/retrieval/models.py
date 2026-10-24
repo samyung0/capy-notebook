@@ -13,6 +13,7 @@ invisible and the user is silently not charged for it.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import math
 import random
@@ -27,7 +28,7 @@ from ..config import cfg
 from ..prompts.captioning import VLM_PAGE_PROMPT
 from ..prompts.retrieval import qwen3_query
 from ..registry import ModelConfig
-from . import accounting, capture
+from . import accounting, capture, limits
 from .stream import (
     AssembledResponse,
     ChatCompletionsAssembler,
@@ -93,6 +94,86 @@ class _StreamReceipt:
         self.seen = False
         # The last usage block, None until the provider sends one.
         self.usage: NormalizedUsage | None = None
+
+
+CALL_LIMIT_BUSY = "the AI process is at its model call limit"
+
+
+class CallNotStarted(Exception):
+    """A call that waited for its slot until its client left: nothing was sent."""
+
+
+@asynccontextmanager
+async def call_slot():
+    """One model call's process slot (Epo 2026-10-24, inner-turn slots), held
+    for its request and response, retries included, under the request's slot
+    policy (``limits.bind_call_slots``). Past a full CALL_SLOTS the call waits
+    in arrival order up to the policy's wait, or answers provider_busy at once;
+    with no policy bound the call takes no slot."""
+    policy = limits.call_slot_policy()
+    if policy is None:
+        yield
+        return
+    if not limits.CALL_SLOTS.take():
+        if policy.wait_s <= 0:
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        if policy.on_wait is not None:
+            policy.on_wait()
+        if not await _wait_for_slot(policy):
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+    try:
+        yield
+    finally:
+        limits.CALL_SLOTS.release()
+
+
+async def _wait_for_slot(policy: limits.CallSlotPolicy) -> bool:
+    """Wait for a call slot; a client that leaves meanwhile gives up its place
+    (the loop starts no call after a drop or a Stop, ``agent.ClientDrop``)."""
+    if policy.left is None:
+        return await limits.CALL_SLOTS.wait(policy.wait_s)
+    waiting = asyncio.ensure_future(limits.CALL_SLOTS.wait(policy.wait_s))
+    left = asyncio.ensure_future(policy.left.wait())
+    try:
+        await asyncio.wait({waiting, left}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        left.cancel()
+        if not waiting.done():
+            waiting.cancel()  # leaves the queue, passing on a slot handed to it
+        await asyncio.wait({waiting})
+    got = not waiting.cancelled() and waiting.result()
+    if policy.left.is_set():
+        if got:
+            limits.CALL_SLOTS.release()
+        raise CallNotStarted("the client left while the call waited for its slot")
+    return got
+
+
+def _slotted(call):
+    """``call`` (a coroutine function) runs holding its call slot."""
+
+    @functools.wraps(call)
+    async def slotted(*args, **kwargs):
+        async with call_slot():
+            return await call(*args, **kwargs)
+
+    return slotted
+
+
+def _slotted_stream(stream):
+    """``stream`` (an async generator function) yields holding its call slot."""
+
+    @functools.wraps(stream)
+    async def slotted(*args, **kwargs):
+        async with call_slot():
+            async for item in stream(*args, **kwargs):
+                yield item
+
+    return slotted
 
 
 @asynccontextmanager
@@ -503,6 +584,7 @@ async def complete(
     return elitellm.message_from_response(resp)
 
 
+@_slotted
 async def complete_response(
     messages: list[dict[str, Any]],
     *,
@@ -750,6 +832,7 @@ def _responses_content(message: dict[str, Any]) -> Any:
     return parts
 
 
+@_slotted
 async def stream_agent_response(
     messages: list[dict[str, Any]],
     *,
@@ -888,6 +971,7 @@ async def _stream_via_adapter(
     return assembler.finish()
 
 
+@_slotted_stream
 async def stream_text(
     messages: list[dict[str, Any]],
     *,
@@ -982,6 +1066,7 @@ async def stream_text(
 VLM_PAGE_MAX_TOKENS = 2_000
 
 
+@_slotted
 async def read_page(
     data_url: str, *, credit_micros: int, scripted: str | None = None
 ) -> str | None:
@@ -1053,6 +1138,7 @@ async def read_page(
         return None
 
 
+@_slotted
 async def caption_image(data_url: str, prompt: str) -> str:
     """Describe a standalone image upload so it becomes searchable text.
 

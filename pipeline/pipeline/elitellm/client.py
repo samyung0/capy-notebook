@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+import secrets
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, Self
 
 import httpx
 
@@ -554,19 +556,64 @@ def _client() -> httpx.AsyncClient:
     return client
 
 
-def jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
+_JSON_AS_IS = re.compile(r"[A-Za-z0-9+/=:;,._-]*")
+
+
+class RawJson(str):
+    """A string JSON leaves as it is (a base64 data URL), checked once when it
+    is made: request bodies copy it between quotes instead of encoding it
+    again, so a capture's image is encoded when it is taken, not on every model
+    call of its turn (Epo 2026-10-24, Q299)."""
+
+    def __new__(cls, value: str) -> Self:
+        if not _JSON_AS_IS.fullmatch(value):
+            raise ValueError("RawJson holds only characters JSON leaves as they are")
+        return super().__new__(cls, value)
+
+
+def jsonable(value: Any, raw: list[str] | None = None, mark: str = "") -> Any:
+    """``value`` as plain JSON types; with ``raw``, each RawJson becomes
+    ``mark`` and is appended to ``raw`` in the order the encoder writes it."""
+    if isinstance(value, str):
+        if raw is not None and isinstance(value, RawJson):
+            raw.append(value)
+            return mark
+        return value
+    if value is None or isinstance(value, (int, float, bool)):
         return value
     if isinstance(value, dict):
-        return {str(key): jsonable(child) for key, child in value.items()}
+        return {str(key): jsonable(child, raw, mark) for key, child in value.items()}
     if isinstance(value, list):
-        return [jsonable(item) for item in value]
+        return [jsonable(item, raw, mark) for item in value]
     dump = getattr(value, "model_dump", None)
     if callable(dump):
-        return jsonable(dump())
+        return jsonable(dump(), raw, mark)
     if hasattr(value, "__dict__"):
-        return jsonable(vars(value))
+        return jsonable(vars(value), raw, mark)
     return value
+
+
+def encode_json(body: Any) -> bytes:
+    """``body`` as httpx's ``json=`` sends it, each RawJson copied in."""
+    raw: list[str] = []
+    mark = f"\x00raw-{secrets.token_hex(8)}\x00"
+    text = json.dumps(
+        jsonable(body, raw, mark),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    if raw:
+        # Each copy is dropped as soon as the next one is made, so a request
+        # peaks at its text and its bytes, as with httpx.
+        pieces = text.split(json.dumps(mark))
+        joined = [pieces[0]]
+        for value, piece in zip(raw, pieces[1:], strict=True):
+            joined += ['"', value, '"', piece]
+        del text, pieces
+        text = "".join(joined)
+        del joined
+    return text.encode()
 
 
 async def _post_json(
@@ -580,7 +627,10 @@ async def _post_json(
         timeout = _call_timeout()
     async with asyncio.timeout(timeout):
         response = await _client().post(
-            url, headers=headers, json=jsonable(body), timeout=httpx.Timeout(timeout)
+            url,
+            headers=headers,
+            content=encode_json(body),
+            timeout=httpx.Timeout(timeout),
         )
     if response.status_code >= 400:
         raise _error_from_response(
@@ -644,7 +694,7 @@ async def _stream_sse(
         "POST",
         url,
         headers=headers,
-        json=jsonable(body),
+        content=encode_json(body),
         timeout=httpx.Timeout(first_idle, read=None),
     )
     response = await bounded(stream.__aenter__())
