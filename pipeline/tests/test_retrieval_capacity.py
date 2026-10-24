@@ -212,11 +212,18 @@ async def test_a_chat_past_the_slots_waits_and_takes_the_freed_slot(monkeypatch)
 
 
 async def test_a_chat_that_waits_past_its_budget_ends_busy(monkeypatch):
-    """(security regression: rate-limit audit Q268) Past its wait the stream
-    ends with the provider_busy event a busy model call sends, never running
-    the turn."""
+    """(security regression: rate-limit audit Q268) A chat waits up to 60 s
+    (Q293); past its wait the stream ends with the provider_busy event a busy
+    model call sends, never running the turn."""
     runs = _chats(monkeypatch)
-    monkeypatch.setattr(limits, "CHAT_SLOT_WAIT_S", 0)
+    budgets: list[float] = []
+    wait = limits.Slots.wait
+
+    async def spent_wait(self, budget_s: float) -> bool:
+        budgets.append(budget_s)
+        return await wait(self, 0)  # the budget runs out at once
+
+    monkeypatch.setattr(limits.Slots, "wait", spent_wait)
     chat = _ChatStream("late")
     await _until(chat.task.done)
     chat.task.result()
@@ -230,6 +237,7 @@ async def test_a_chat_that_waits_past_its_budget_ends_busy(monkeypatch):
             "retryAfterSeconds": 5,
         },
     ]
+    assert budgets == [60.0]
     assert runs == []
     assert limits.REQUEST_SLOTS.used == 1
 

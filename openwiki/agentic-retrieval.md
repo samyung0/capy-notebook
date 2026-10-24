@@ -3030,10 +3030,10 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   5 s), which Go maps to the same retryable error as a busy model. A chat
   waits instead (Epo 2026-10-24, Q268; `service._admitted_chat`): its stream
   starts at once, sends `{"type":"phase","phase":"waiting_capacity"}` once, and
-  waits up to 30 s (`CHAT_SLOT_WAIT_S`) for a slot. Waiters take slots in
+  waits up to 60 s (`CHAT_SLOT_WAIT_S`, Q293) for a slot. Waiters take slots in
   arrival order, a freed slot passing straight to the one waiting longest
   (`Slots.wait`), and a client that hangs up while waiting leaves the queue.
-  Past the 30 s the stream ends with the in-stream `provider_busy` error a
+  Past the 60 s the stream ends with the in-stream `provider_busy` error a
   busy model call sends (`retryAfterSeconds` 5); after a slot it carries on
   as any turn. A stream holds its slot until its response ends however it
   ends (`service._SlotStream`). The Go limits come first: 5 open chat
@@ -3081,15 +3081,16 @@ built before the clock starts. Model-call admission p95:
 | 192           |                      | 0.93 s |                                    |        |
 | 256           |                      | 1.24 s |                                    |        |
 
-The request cap is 64, where full-length turns pass about 1 s; turns of
-typical length stay under 1 s up to 192. After the change no admission took
-30 s at any load. Past the cap chats wait (above). With the cap at 64, turns
-of four 3-second calls (about 13 s each) arriving 128 or 192 at once all got a
-slot (the last waiting 25 s; 29 s at full length); 256 at once, 128 waited out
-their 30 s. Turns of three 10-second calls (about 32 s, longer than the wait)
-arriving 96 or 128 at once: every chat past the 64 timed out (32 and 64), so
-with real turn lengths a burst past the cap mostly ends busy rather than
-queueing. A full-length turn holds about 11 MiB of the process (64 of them
+The request cap is 64 (Epo 2026-10-24, Q292), where full-length turns pass
+about 1 s; turns of typical length stay under 1 s up to 192. After the change
+no model-call admission took over 30 s at any load. Past the cap chats wait
+(above). Measured while the wait was 30 s (Q293 made it 60 s, about one
+full-length turn): with the cap at 64, turns of four 3-second calls (about
+13 s each) arriving 128 or 192 at once all got a slot (the last waiting 25 s;
+29 s at full length); 256 at once, 128 waited out their 30 s. Turns of three
+10-second calls (about 32 s, longer than that wait) arriving 96 or 128 at
+once: every chat past the 64 timed out (32 and 64), so with real turn lengths
+a burst past the cap mostly ended busy rather than queueing. A full-length turn holds about 11 MiB of the process (64 of them
 about 0.7 GiB), a typical one well under 1 MiB. Before the change a sync pool of
 8 instead of 4 lowered the p95 only past the point where the loop saturated,
 so the pools keep their defaults. Eight 24-second blocking jobs on the
