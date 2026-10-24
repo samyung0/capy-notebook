@@ -395,17 +395,38 @@ refused never waits. The reservation itself still happens when the upload
 starts, and gates again; a ticket holds none. Running uploads share a
 budget of 1 GB of declared size, the temp disk their bodies spool to; at most
 256 run at once, a sanity bound on connections, and at most 4 of one user's
-(Epo 2026-10-22). Held turns count as running. A ticket whose file fits the
-budget, whose user is under 4 and that no blocking ticket holds back answers
-`{ticketId, position: 0}` (its turn), else it waits with its place (1 is
-next). Freed bytes go to the line oldest first: a ticket whose user is at 4
-is passed by, so one user's fifth file waits while other users' files run,
+(Epo 2026-10-22; no per-user byte share, Epo 2026-10-24, Q245). Held turns
+count as running. A ticket whose file fits the budget, whose user is under 4
+and that no blocking ticket holds back answers `{ticketId, position: 0}` (its
+turn), else it waits with its place (1 is next). Freed bytes go to the line
+oldest first: a ticket whose user is at 4 is passed by, so one user's fifth
+file waits while other users' files run,
 and a file that does not fit is passed by smaller ones that do until it has
 waited 30 s; from then on it blocks every file behind it until it fits, so
 small files cannot starve a big one. There is no minimum send rate: the
-size-scaled body deadline and the 4 per user bound a slow upload. The line holds 128 waiting tickets
-and 20 of one user's; past either the ticket is refused with a typed 503,
-`upload_queue_full` (busy, try again). The browser long-polls
+size-scaled body deadline and the 4 per user bound a slow upload. A ticket
+past its user's upload rate class (observability-metering § rate limits)
+waits in the line too instead of a 429 (Epo 2026-10-24, Q282): the ticket
+takes the class itself (`ratelimit.Limiter.TakeUpload`, not the middleware),
+and one the class refuses gets a place, asks the class again once its
+retry-after passes (every 5 s while Redis cannot answer), and joins the
+line's order when admitted; until then it neither gets a turn nor blocks the
+line, and the browser shows it queued. A ticket whose class Redis cannot
+count is refused (503 `rate_limit_unavailable`). Source and editor-asset
+tickets share the line and the class; imports do not take tickets and keep
+their 429. The line holds 2,000 waiting tickets that spent their class token
+(Epo 2026-10-24, Q318) and 20 of one user's, waiting on the class or not; a
+ticket waiting only on its class counts toward its user's 20 alone, and its
+wait clock (the 30 s before it blocks) restarts when the class admits it
+(Q307). Past either limit the ticket is refused with a typed 503,
+`upload_queue_full` (busy, try again), before it spends a class token: a
+ticket takes its place under the line's lock, then spends its token outside
+it, so a slow Redis delays only that ticket (Q350). While it asks it holds
+its place and counts toward both limits, but gets no turn and blocks
+nothing. The 2,000 is soft: a ticket the class admits later joins without a
+check, and under a burst so can tickets that would start at once as they take
+their place but do not once their class answers. Each user's 20 holds from
+the moment a ticket takes its place. The browser long-polls
 `GET /api/uploads/tickets/{id}?position=N`, which answers at once when the
 turn comes, when the ticket's place differs from N but no sooner than 2 s
 after the ask (so a fast line costs a browser one poll per 2 s, inside the
@@ -413,14 +434,12 @@ per-user rate limit), and otherwise after 25 s, under Cloudflare's 100 s. A
 turn holds its bytes for 30 s; an upload that has not started by then passes
 them to the line, and its own upload is refused. When waiting or
 the upload fails in the browser (a cancel, the row's remove button, a closed
-editor or dialog, or a 429 the browser retries with a new ticket), it gives
-the ticket back with `DELETE /api/uploads/tickets/{id}` (its owner only),
-which hands the ticket's place, or its turn's bytes, to the line at
-once. A source ticket given back counts at once as a failed file of its
-batch, or as a removed one when the user removed its row (`?reason=removed`);
-a retry's (`?reason=retry`, sent only when the browser will retry the 429,
-not after its last attempt) settles nothing: the retry counts the file. Any
-other reason is a 400. Giving back a ticket the upload already spent is a
+editor or dialog, or a refusal), it gives the ticket back with
+`DELETE /api/uploads/tickets/{id}` (its owner only), which hands the
+ticket's place, or its turn's bytes, to the line at once. The browser never
+retries an upload itself (Q282). A source ticket given back counts at once
+as a failed file of its batch, or as a removed one when the user removed its
+row (`?reason=removed`). Any other reason is a 400. Giving back a ticket the upload already spent is a
 harmless 410. An abandoned tab sends nothing, and its ticket waits for its
 turn to pass. The upload carries
 `?ticket=` and is refused before its body is read when the ticket is missing,
@@ -791,7 +810,7 @@ direction.
 | Workspace name / description | 80 / 500 |
 | Chapter name (add, update, upload, import) | 60 |
 | File name (upload, import, rename, editor asset) | 120 |
-| Material, quiz, flashcard set, canvas, generate title | 120 |
+| Material, quiz, flashcard set, generate title | 120 |
 | Conversation title | 60 |
 | Event title / location | 60 / 100 |
 | Task title | 80 |

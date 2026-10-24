@@ -29,7 +29,6 @@ import {
   type ParseMode,
   SOURCE_UPLOAD_CONCURRENCY,
   splitSourceWave,
-  withUploadRetry,
 } from './sourceUpload';
 
 export type SourceProvider = 'google' | 'microsoft';
@@ -330,8 +329,8 @@ export function startSourceTransfer(start: StartTransfer) {
         SOURCE_UPLOAD_CONCURRENCY,
         async (request) => {
           const cancel = rowSignal(request.key);
-          // Whether the server holds a ticket for the current attempt, whose
-          // give-back then counts a removed file.
+          // Whether the server holds the upload's ticket, whose give-back
+          // then counts a removed file.
           let ticketed = false;
           try {
             if (cancel.aborted) {
@@ -339,28 +338,26 @@ export function startSourceTransfer(start: StartTransfer) {
               return;
             }
             patchTransfer(request.key, { stage: 'uploading' });
-            const file = await withUploadRetry((willRetry) => {
-              ticketed = false;
-              return start.uploadSource({
-                batchId,
-                batchTotal: requests.length,
-                chapterId: request.chapterId,
-                chapterName: request.chapterName,
-                durationSeconds: request.durationSeconds,
-                estimatedCreditMicros: request.estimatedCreditMicros,
-                file: request.file,
-                kind: request.kind,
-                onQueued: (queuePosition) => {
-                  ticketed = true;
-                  patchTransfer(request.key, { queuePosition });
-                },
-                onUploadProgress: (uploadPct) =>
-                  patchTransfer(request.key, { uploadPct }),
-                pageCount: request.pageCount,
-                parseMode: request.parseMode,
-                signal: cancel,
-                willRetry,
-              });
+            // An upload past the upload rate class waits in the gateway's
+            // line (queuePosition); the browser never retries one (Q282).
+            const file = await start.uploadSource({
+              batchId,
+              batchTotal: requests.length,
+              chapterId: request.chapterId,
+              chapterName: request.chapterName,
+              durationSeconds: request.durationSeconds,
+              estimatedCreditMicros: request.estimatedCreditMicros,
+              file: request.file,
+              kind: request.kind,
+              onQueued: (queuePosition) => {
+                ticketed = true;
+                patchTransfer(request.key, { queuePosition });
+              },
+              onUploadProgress: (uploadPct) =>
+                patchTransfer(request.key, { uploadPct }),
+              pageCount: request.pageCount,
+              parseMode: request.parseMode,
+              signal: cancel,
             });
             patchTransfer(request.key, {
               fileId: file.id,

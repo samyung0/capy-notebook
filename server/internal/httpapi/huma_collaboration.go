@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"net/http"
@@ -14,10 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -108,10 +105,10 @@ func (a *api) registerCollaboration(api huma.API) {
 	a.registerSourceDocuments(api)
 	const tag = "Material collaboration"
 	reg(api, http.MethodGet, "/api/materials/{id}/discussions", "listMaterialDiscussions", tag, "List nested material comment discussions", http.StatusOK, a.listMaterialDiscussions)
-	reg(api, http.MethodPost, "/api/materials/{id}/discussions", "createMaterialDiscussion", tag, "Create a comment discussion", http.StatusCreated, a.createMaterialDiscussion)
+	regWithMaxBody(api, http.MethodPost, "/api/materials/{id}/discussions", "createMaterialDiscussion", tag, "Create a comment discussion", http.StatusCreated, commentBodyMaxBytes, a.createMaterialDiscussion)
 	reg(api, http.MethodDelete, "/api/discussions/{id}", "deleteMaterialDiscussion", tag, "Soft-delete a comment discussion", http.StatusNoContent, a.deleteMaterialDiscussion)
-	reg(api, http.MethodPost, "/api/discussions/{id}/comments", "createMaterialComment", tag, "Add a comment to a discussion", http.StatusCreated, a.createMaterialComment)
-	reg(api, http.MethodPatch, "/api/comments/{id}", "updateMaterialComment", tag, "Edit an authored comment", http.StatusOK, a.updateMaterialComment)
+	regWithMaxBody(api, http.MethodPost, "/api/discussions/{id}/comments", "createMaterialComment", tag, "Add a comment to a discussion", http.StatusCreated, commentBodyMaxBytes, a.createMaterialComment)
+	regWithMaxBody(api, http.MethodPatch, "/api/comments/{id}", "updateMaterialComment", tag, "Edit an authored comment", http.StatusOK, commentBodyMaxBytes, a.updateMaterialComment)
 	reg(api, http.MethodDelete, "/api/comments/{id}", "deleteMaterialComment", tag, "Soft-delete a comment", http.StatusNoContent, a.deleteMaterialComment)
 	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
 	// The handler decodes the 2 MiB body once (decodeProjectionBody, then
@@ -432,9 +429,6 @@ func (a *api) createMaterialDiscussion(ctx context.Context, in *createDiscussion
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := checkCommentLength(in.Body.ContentRich); err != nil {
-		return nil, err
-	}
 	discussion, err := a.s.CreateCommentDiscussion(
 		ctx,
 		in.ID,
@@ -444,7 +438,7 @@ func (a *api) createMaterialDiscussion(ctx context.Context, in *createDiscussion
 		in.Body.AnchorEnd,
 		in.Body.AnchorVersion,
 		in.Body.AnchorQuote,
-		apimodel.EncodeRaw(in.Body.ContentRich),
+		string(in.Body.Text),
 	)
 	if err != nil {
 		return nil, collaborationError(err)
@@ -480,12 +474,7 @@ func (a *api) createMaterialComment(ctx context.Context, in *createCommentInput)
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := checkCommentLength(in.Body.ContentRich); err != nil {
-		return nil, err
-	}
-	comment, err := a.s.AddComment(
-		ctx, in.ID, userID(ctx), apimodel.EncodeRaw(in.Body.ContentRich),
-	)
+	comment, err := a.s.AddComment(ctx, in.ID, userID(ctx), string(in.Body.Text))
 	if err != nil {
 		return nil, collaborationError(err)
 	}
@@ -504,12 +493,7 @@ func (a *api) updateMaterialComment(ctx context.Context, in *updateCommentBodyIn
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := checkCommentLength(in.Body.ContentRich); err != nil {
-		return nil, err
-	}
-	comment, err := a.s.EditOwnComment(
-		ctx, in.ID, userID(ctx), apimodel.EncodeRaw(in.Body.ContentRich),
-	)
+	comment, err := a.s.EditOwnComment(ctx, in.ID, userID(ctx), string(in.Body.Text))
 	if err != nil {
 		return nil, collaborationError(err)
 	}
@@ -564,27 +548,8 @@ func (a *api) publishCommentInvalidation(ctx context.Context, materialID string)
 	_ = a.rdb.Publish(ctx, "capy:collaboration:comments", payload).Err()
 }
 
-// checkCommentLength bounds a comment's plain text the way the note shows it:
-// each top-level block's text leaves joined, blocks separated by a newline.
-func checkCommentLength(content []map[string]any) error {
-	runes := max(len(content)-1, 0)
-	var walk func(node map[string]any)
-	walk = func(node map[string]any) {
-		if text, ok := node["text"].(string); ok {
-			runes += utf8.RuneCountInString(text)
-		}
-		children, _ := node["children"].([]any)
-		for _, child := range children {
-			if c, ok := child.(map[string]any); ok {
-				walk(c)
-			}
-		}
-	}
-	for _, node := range content {
-		walk(node)
-	}
-	if runes > fieldlimits.Comment {
-		return huma.Error422UnprocessableEntity(fmt.Sprintf("a comment is at most %d characters", fieldlimits.Comment))
-	}
-	return nil
-}
+// commentBodyMaxBytes bounds the comment and discussion bodies. Their largest
+// is a discussion whose 3,000-character text and 1,000-character quote are
+// sent with every character escaped (12 bytes for one outside the BMP) beside
+// two base64 anchors of 4 KiB each: about 60 KB.
+const commentBodyMaxBytes = 64 << 10

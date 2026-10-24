@@ -10,10 +10,9 @@ import (
 )
 
 // runAccountPurgeWorker retries session revocation for deletion-pending users,
-// then permanently destroys accounts whose purge_after has elapsed. Content
-// deletion and PII scrub run in PurgeUser; Clerk identity deletion happens
-// afterwards so a crash mid-purge leaves a row the next tick can finish.
-func runAccountPurgeWorker(ctx context.Context, st *store.Store, clerkEnabled bool) {
+// then permanently destroys accounts whose purge_after has elapsed
+// (purgeAccount).
+func runAccountPurgeWorker(ctx context.Context, st *store.Store, forgetBank func(context.Context, string) error, clerkEnabled bool) {
 	tick := func() {
 		if clerkEnabled {
 			ids, err := st.ClaimUsersDueForSessionRevocation(ctx, 10)
@@ -44,26 +43,7 @@ func runAccountPurgeWorker(ctx context.Context, st *store.Store, clerkEnabled bo
 			return
 		}
 		for _, id := range ids {
-			if err := st.PurgeUser(ctx, id); err != nil {
-				if ctx.Err() == nil {
-					log.Printf("purge user %s: %v", id, err)
-				}
-				continue
-			}
-			if clerkEnabled {
-				if err := integrations.DeleteIdentity(ctx, id); err != nil {
-					log.Printf("purge clerk identity %s: %v", id, err)
-					if retryErr := st.RetryIdentityDeletion(ctx, id); retryErr != nil {
-						log.Printf("schedule clerk identity retry %s: %v", id, retryErr)
-					}
-					continue
-				}
-			}
-			if err := st.MarkIdentityDeletionComplete(ctx, id); err != nil {
-				log.Printf("finish identity deletion %s: %v", id, err)
-				continue
-			}
-			log.Printf("purged account %s", id)
+			purgeAccount(ctx, st, forgetBank, clerkEnabled, id)
 		}
 	}
 	tick()
@@ -104,4 +84,37 @@ func runOverQuotaNoticeWorker(ctx context.Context, st *store.Store) {
 			return
 		}
 	}
+}
+
+// purgeAccount destroys one due account: its id on bank questions
+// (forgetBank, Q350), content deletion and PII scrub in PurgeUser, then its
+// Clerk identity. Every step is idempotent and the account stays due until
+// the last one finishes, so a crash or a failed step leaves a row the next
+// tick can finish. The bank goes first: an account whose Clerk identity is
+// already gone is no longer due once PurgeUser commits.
+func purgeAccount(ctx context.Context, st *store.Store, forgetBank func(context.Context, string) error, clerkEnabled bool, id string) {
+	if err := forgetBank(ctx, id); err != nil {
+		log.Printf("purge bank attribution %s: %v", id, err)
+		return
+	}
+	if err := st.PurgeUser(ctx, id); err != nil {
+		if ctx.Err() == nil {
+			log.Printf("purge user %s: %v", id, err)
+		}
+		return
+	}
+	if clerkEnabled {
+		if err := integrations.DeleteIdentity(ctx, id); err != nil {
+			log.Printf("purge clerk identity %s: %v", id, err)
+			if retryErr := st.RetryIdentityDeletion(ctx, id); retryErr != nil {
+				log.Printf("schedule clerk identity retry %s: %v", id, retryErr)
+			}
+			return
+		}
+	}
+	if err := st.MarkIdentityDeletionComplete(ctx, id); err != nil {
+		log.Printf("finish identity deletion %s: %v", id, err)
+		return
+	}
+	log.Printf("purged account %s", id)
 }

@@ -4,12 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicQuiz } from './publicQuiz.ts';
 
-export interface Canvas {
+export interface PublicQuizPage {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  id: string;
-  name: string;
-  scene?: unknown;
-  updatedAt: string;
+  items: PublicQuiz[];
+  nextCursor?: string;
 }

@@ -10,7 +10,9 @@ func TestSourceAnalysisContentCannotExecuteOnTheAppOrigin(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	payload := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
 
-	writeSourceAnalysisContent(recorder, payload)
+	if _, err := (&analysisContent{w: recorder}).Write(payload); err != nil {
+		t.Fatal(err)
+	}
 
 	response := recorder.Result()
 	defer response.Body.Close()

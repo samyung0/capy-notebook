@@ -5,14 +5,22 @@ import { useEffect, useState } from 'react';
    so the edge-cached page and data stay the same for every visitor. */
 
 let settle: (signedIn: boolean) => void = () => undefined;
+let settled: boolean | undefined;
 const session = new Promise<boolean>((resolve) => {
   settle = resolve;
 });
 
 export const signedIn = () => session;
 
+/** The session's answer once Clerk has given it, else `undefined`: a check
+ * that cannot wait takes the signed-out route until then (Q311). */
+export const sessionNow = () => settled;
+
 /** Later calls are ignored: the first answer holds for the page's life. */
-export const settleSession = (value: boolean) => settle(value);
+export const settleSession = (value: boolean) => {
+  settled ??= value;
+  settle(value);
+};
 
 /** `undefined` until Clerk answers. */
 export function useSignedIn(): boolean | undefined {

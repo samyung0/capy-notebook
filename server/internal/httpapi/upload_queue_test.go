@@ -2,11 +2,15 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 // takeSized takes user's ticket for a file of size bytes and checks its place.
@@ -49,9 +53,9 @@ func budgetUsed(q *uploadQueue) (int64, int) {
 	return q.used, q.running
 }
 
-// The line holds at most 128 waiting tickets and 20 of one user's (Epo
-// 2026-10-22); a ticket past either is refused as busy.
-func TestUploadQueueHoldsAtMost128And20PerUser(t *testing.T) {
+// The line holds at most 2,000 waiting tickets (Q318) and 20 of one user's
+// (Epo 2026-10-22); a ticket past either is refused as busy.
+func TestUploadQueueHoldsAtMost2000And20PerUser(t *testing.T) {
 	q := newUploadQueue(nil)
 	fillBudget(t, q)
 	for i := 1; i <= 20; i++ {
@@ -60,11 +64,11 @@ func TestUploadQueueHoldsAtMost128And20PerUser(t *testing.T) {
 	if _, err := q.take("u0", "sources:ws", uploadClaim{size: 1}); errorStatus(err) != 503 {
 		t.Fatalf("u0's 21st waiting ticket: %v", err)
 	}
-	for i := 21; i <= 128; i++ {
+	for i := 21; i <= uploadQueueMax; i++ {
 		takeOrFail(t, q, fmt.Sprintf("u%d", (i-1)/20), i)
 	}
 	if _, err := q.take("newcomer", "sources:ws", uploadClaim{size: 1}); errorStatus(err) != 503 {
-		t.Fatalf("the 129th waiting ticket: %v", err)
+		t.Fatalf("the 2,001st waiting ticket: %v", err)
 	}
 }
 
@@ -352,4 +356,270 @@ func TestUploadBodyDeadlineScalesWithItsSize(t *testing.T) {
 			t.Fatalf("bodyDeadline(%d) = %v, want %v", size, got, want)
 		}
 	}
+}
+
+// overClass makes q's upload class answer whatever *wait says and records
+// the rechecks it schedules, which the test runs itself.
+func overClass(q *uploadQueue, wait *time.Duration) (due *[]func(), delays *[]time.Duration) {
+	due, delays = &[]func(){}, &[]time.Duration{}
+	q.admitClass = func(context.Context, string) (time.Duration, error) { return *wait, nil }
+	q.after = func(d time.Duration, f func()) {
+		*delays = append(*delays, d)
+		*due = append(*due, f)
+	}
+	return due, delays
+}
+
+func errorMessage(err error) string {
+	var model *huma.ErrorModel
+	if errors.As(err, &model) && len(model.Errors) > 0 {
+		return model.Errors[0].Message
+	}
+	return ""
+}
+
+// A ticket past its user's upload rate class waits in line instead of a 429,
+// asks the class again after its retry-after, and gets its turn once the
+// class admits it (Epo 2026-10-24; security regression: rate-limit audit
+// Q282).
+func TestUploadQueueLinesUpATicketPastItsClass(t *testing.T) {
+	q := newUploadQueue(nil)
+	wait := time.Second
+	due, delays := overClass(q, &wait)
+	turn := takeOrFail(t, q, "u0", 1)
+	if len(*due) != 1 || (*delays)[0] != time.Second {
+		t.Fatalf("rechecks %v, want one after the class's 1 s", *delays)
+	}
+	// Still over the class: it waits for the next retry-after.
+	wait = 2 * time.Second
+	(*due)[0]()
+	if got := placeOf(t, q, turn, "u0"); got != 1 || len(*due) != 2 || (*delays)[1] != 2*time.Second {
+		t.Fatalf("after a refused recheck: place %d, rechecks %v; want place 1 and a recheck after 2 s", got, *delays)
+	}
+	wait = 0
+	(*due)[1]()
+	if got := placeOf(t, q, turn, "u0"); got != 0 {
+		t.Fatalf("after the class admitted it: place %d, want its turn", got)
+	}
+}
+
+// Tickets waiting on their class still count against the line's limits:
+// a user's 21st is refused as upload_queue_full (security regression:
+// rate-limit audit Q282).
+func TestUploadQueueLimitsTicketsPastTheirClass(t *testing.T) {
+	q := newUploadQueue(nil)
+	wait := time.Minute
+	overClass(q, &wait)
+	for i := 1; i <= uploadQueuePerUser; i++ {
+		takeOrFail(t, q, "u0", i)
+	}
+	_, err := q.take("u0", "sources:ws", uploadClaim{size: 1})
+	if errorStatus(err) != 503 || errorMessage(err) != "upload_queue_full" {
+		t.Fatalf("u0's 21st ticket past its class: %v", err)
+	}
+}
+
+// A ticket whose class Redis cannot count is refused, not lined up
+// (security regression: rate-limit audit Q282).
+func TestUploadQueueRefusesWhenTheClassCannotCount(t *testing.T) {
+	q := newUploadQueue(nil)
+	q.admitClass = func(context.Context, string) (time.Duration, error) { return 0, errors.New("redis down") }
+	_, err := q.take("u0", "sources:ws", uploadClaim{size: 1})
+	if errorStatus(err) != 503 || errorMessage(err) != "rate_limit_unavailable" {
+		t.Fatalf("a ticket without its class: %v", err)
+	}
+}
+
+// A ticket whose class Redis cannot count gives its place back: its user's
+// share and the line's count are as before, and it blocks no ticket behind
+// it (security regression: rate-limit audit r3 review A-S1, Q350).
+func TestUploadQueueClassErrorGivesThePlaceBack(t *testing.T) {
+	q := newUploadQueue(nil)
+	takeSized(t, q, "r0", uploadBudget/2, 0)
+	down := true
+	q.admitClass = func(context.Context, string) (time.Duration, error) {
+		if down {
+			return 0, errors.New("redis down")
+		}
+		return 0, nil
+	}
+	// It does not fit beside r0's file: had it kept its place, it would
+	// block the line at once.
+	if _, err := q.take("u0", "sources:ws", uploadClaim{size: uploadBudget/2 + 1}); errorMessage(err) != "rate_limit_unavailable" {
+		t.Fatalf("a ticket without its class: %v", err)
+	}
+	q.mu.Lock()
+	waiting, classed := q.waitingLocked("u0"), q.classedLocked()
+	q.mu.Unlock()
+	if waiting != 0 || classed != 0 {
+		t.Fatalf("after the refusal u0 has %d waiting and the line counts %d, want 0 and 0", waiting, classed)
+	}
+	down = false
+	takeSized(t, q, "b", 1, 0)
+}
+
+// classByUser makes q's upload class refuse the users in over (for a minute)
+// and admit everyone else, counting the class tokens it is asked for.
+func classByUser(q *uploadQueue, over map[string]bool) (asked *int, due *[]func()) {
+	asked, due = new(int), &[]func(){}
+	q.admitClass = func(_ context.Context, user string) (time.Duration, error) {
+		*asked++
+		if over[user] {
+			return time.Minute, nil
+		}
+		return 0, nil
+	}
+	q.after = func(_ time.Duration, f func()) { *due = append(*due, f) }
+	return asked, due
+}
+
+// Tickets waiting only on their class count toward their users' 20, never
+// the line's 2,000, so accounts over their class cannot fill the line against
+// everyone else (Epo 2026-10-24, Q307; security regression: rate-limit audit
+// r2 S-1).
+func TestUploadQueueTicketsPastTheirClassLeaveTheLineOpen(t *testing.T) {
+	q := newUploadQueue(nil)
+	over := map[string]bool{}
+	classByUser(q, over)
+	fillBudget(t, q)
+	place := 0
+	for u := range uploadQueueMax/uploadQueuePerUser + 1 {
+		user := fmt.Sprintf("over%d", u)
+		over[user] = true
+		for range uploadQueuePerUser {
+			place++
+			takeOrFail(t, q, user, place)
+		}
+	}
+	// More tickets than the line holds wait on their class; another user's
+	// ticket still gets a place behind them.
+	takeOrFail(t, q, "b", place+1)
+}
+
+// A ticket the line refuses spends no class token (Q307; security
+// regression: rate-limit audit r2 N-9).
+func TestUploadQueueFullLineSpendsNoClassToken(t *testing.T) {
+	q := newUploadQueue(nil)
+	asked, _ := classByUser(q, map[string]bool{})
+	fillBudget(t, q)
+	for i := 1; i <= uploadQueuePerUser; i++ {
+		takeOrFail(t, q, "u0", i)
+	}
+	before := *asked
+	if _, err := q.take("u0", "sources:ws", uploadClaim{size: 1}); errorMessage(err) != "upload_queue_full" {
+		t.Fatalf("u0's 21st ticket: %v", err)
+	}
+	if *asked != before {
+		t.Fatalf("a refused ticket spent %d class tokens, want 0", *asked-before)
+	}
+}
+
+// A ticket takes its place before it spends its class token: a ticket for
+// the last place that arrives while another asks its class finds the place
+// taken and spends no token (Q350; security regression: rate-limit audit r3
+// N-1).
+func TestUploadQueueTakesItsPlaceBeforeSpendingTheClassToken(t *testing.T) {
+	q := newUploadQueue(nil)
+	asked, _ := classByUser(q, map[string]bool{})
+	fillBudget(t, q)
+	for i := 1; i < uploadQueuePerUser; i++ {
+		takeOrFail(t, q, "u0", i)
+	}
+	before := *asked
+	admit := q.admitClass
+	var once sync.Once
+	var otherErr error
+	otherDone := make(chan struct{})
+	q.admitClass = func(ctx context.Context, user string) (time.Duration, error) {
+		once.Do(func() {
+			// u0's other ticket for the last place arrives meanwhile.
+			go func() {
+				_, otherErr = q.take("u0", "sources:ws", uploadClaim{size: 1})
+				close(otherDone)
+			}()
+			select {
+			case <-otherDone:
+			case <-time.After(100 * time.Millisecond):
+			}
+		})
+		return admit(ctx, user)
+	}
+	takeOrFail(t, q, "u0", uploadQueuePerUser)
+	<-otherDone
+	if errorMessage(otherErr) != "upload_queue_full" {
+		t.Fatalf("the other ticket for the last place: %v", otherErr)
+	}
+	if *asked != before+1 {
+		t.Fatalf("%d class tokens spent, want 1", *asked-before)
+	}
+}
+
+// A class check that stalls delays only its own ticket: another user's take
+// and a waiting ticket's poll complete meanwhile, and the stalled ticket
+// gets its place once the class answers (Q350; security regression:
+// rate-limit audit r3 N-1).
+func TestUploadQueueSlowClassDelaysOnlyItsTicket(t *testing.T) {
+	q := newUploadQueue(nil)
+	fillBudget(t, q)
+	waiting := takeOrFail(t, q, "w", 1)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var released sync.Once
+	t.Cleanup(func() { released.Do(func() { close(release) }) })
+	q.admitClass = func(_ context.Context, user string) (time.Duration, error) {
+		if user == "slow" {
+			close(entered)
+			<-release
+		}
+		return 0, nil
+	}
+	slow := make(chan error, 1)
+	go func() {
+		_, err := q.take("slow", "sources:ws", uploadClaim{size: 1})
+		slow <- err
+	}()
+	<-entered
+	calls := make(chan error, 2)
+	go func() {
+		_, err := q.take("b", "sources:ws", uploadClaim{size: 1})
+		calls <- err
+	}()
+	go func() {
+		_, err := q.wait(context.Background(), waiting.TicketID, "w", -1)
+		calls <- err
+	}()
+	// The bound only ends a stuck run; the test counts completed calls.
+	stuck := time.After(10 * time.Second)
+	for completed := 0; completed < 2; completed++ {
+		select {
+		case err := <-calls:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-stuck:
+			t.Fatalf("%d of 2 calls completed while a class check stalled", completed)
+		}
+	}
+	released.Do(func() { close(release) })
+	if err := <-slow; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A ticket the class admits after a long wait starts its wait clock then,
+// so it does not block the line at once for time it spent on its class
+// (Q307; security regression: rate-limit audit r2 N-9).
+func TestUploadQueueClassWaitDoesNotCountAsLineWait(t *testing.T) {
+	q := newUploadQueue(nil)
+	over := map[string]bool{"big": true}
+	_, due := classByUser(q, over)
+	takeSized(t, q, "r0", uploadBudget/2, 0)
+	big := takeSized(t, q, "big", uploadBudget/2+1, 1)
+	q.mu.Lock()
+	q.tickets[big.TicketID].queued = time.Now().Add(-time.Hour)
+	q.mu.Unlock()
+	over["big"] = false
+	(*due)[0]()
+	// The big file still does not fit, but has not waited uploadBlockAfter
+	// since the class admitted it, so a small file passes it.
+	takeSized(t, q, "small", 1, 0)
 }

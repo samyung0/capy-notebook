@@ -6,10 +6,11 @@ import {
   useRef,
   useState,
 } from 'react';
-import { isAnonymousGradingLimit } from '@/api/anonymous';
+import { captchaCopy, isAnonymousGradingLimit } from '@/api/anonymous';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
+import { InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type {
@@ -134,6 +135,7 @@ export function AttemptBody({
   const [graded, setGraded] = useState<Graded | null>(null);
   const [minutes, setMinutes] = useState<string>();
   const [grading, setGrading] = useState(false);
+  const [checkError, setCheckError] = useState<string>();
   const setAnswer = useCallback(
     (partId: string, value: Answer) =>
       setAnswers((current) => ({ ...current, [partId]: value })),
@@ -197,6 +199,7 @@ export function AttemptBody({
 
   async function finish() {
     setGrading(true);
+    setCheckError(undefined);
     try {
       const result = await grade(answers, startedAt);
       const pct = result.max > 0 ? (result.awarded / result.max) * 100 : 0;
@@ -207,6 +210,11 @@ export function AttemptBody({
       setGraded(result);
       onGraded?.(answers, result);
     } catch (err) {
+      const captcha = captchaCopy(err);
+      if (captcha) {
+        setCheckError(captcha);
+        return;
+      }
       if (isAnonymousGradingLimit(err)) {
         toastSignInRequired(
           m.quiz_anonymous_limit_title(),
@@ -315,6 +323,7 @@ export function AttemptBody({
             {grading ? m.quiz_grading() : m.quiz_submit()}
           </Button>
         </div>
+        {checkError && <InputError className="mt-2">{checkError}</InputError>}
         {footer}
         <SourcesLine
           className={embedded ? 'mt-3' : 'mt-16 pb-4'}

@@ -172,21 +172,24 @@ type TransferWorkspaceReq struct {
 	RecipientID string `json:"recipientId" minLength:"1"`
 }
 
+// Comments are plain fields (Epo 2026-10-24): a discussion holds its block
+// id, anchor range and quote, each comment its plain text; the store refuses
+// whitespace-only text and control characters but newline and tab.
 type CreateDiscussionReq struct {
-	BlockID       *string          `json:"blockId,omitempty"`
-	AnchorStart   []byte           `json:"anchorStart,omitempty" maxLength:"4096"`
-	AnchorEnd     []byte           `json:"anchorEnd,omitempty" maxLength:"4096"`
-	AnchorVersion int              `json:"anchorVersion" minimum:"1"`
-	AnchorQuote   string           `json:"anchorQuote,omitempty" maxLength:"1000"`
-	ContentRich   []map[string]any `json:"contentRich" minItems:"1"`
+	BlockID       *string     `json:"blockId,omitempty" minLength:"1" maxLength:"128"`
+	AnchorStart   []byte      `json:"anchorStart,omitempty" maxLength:"4096"`
+	AnchorEnd     []byte      `json:"anchorEnd,omitempty" maxLength:"4096"`
+	AnchorVersion int         `json:"anchorVersion" minimum:"1"`
+	AnchorQuote   string      `json:"anchorQuote,omitempty" maxLength:"1000"`
+	Text          CommentText `json:"text" minLength:"1"`
 }
 
 type CreateCommentReq struct {
-	ContentRich []map[string]any `json:"contentRich" minItems:"1"`
+	Text CommentText `json:"text" minLength:"1"`
 }
 
 type UpdateCommentReq struct {
-	ContentRich []map[string]any `json:"contentRich" minItems:"1"`
+	Text CommentText `json:"text" minLength:"1"`
 }
 
 type CreateQuizReq struct {
@@ -222,6 +225,15 @@ type GradeAnonymousQuizReq struct {
 	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
 	// LocalID is the anonymous browser's reporting id for the grading caps.
 	LocalID string `json:"localId,omitempty" maxLength:"64"`
+	// TurnstileToken is the Cloudflare Turnstile token the page solved for this
+	// check; the API verifies it before grading.
+	TurnstileToken string `json:"turnstileToken,omitempty" maxLength:"2048"`
+}
+
+// CheckSharedNoteQuizReq is a signed-in visitor's check of a quiz embedded in
+// a shared note (Q311).
+type CheckSharedNoteQuizReq struct {
+	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
 }
 
 // CheckReviewItemReq checks one question of a review session.
@@ -379,15 +391,6 @@ type UpdateConversationReq struct {
 	Title    *ConversationTitle `json:"title,omitempty" minLength:"1"`
 	Pinned   *bool              `json:"pinned,omitempty"`
 	Archived *bool              `json:"archived,omitempty" doc:"true archives and unpins; false puts the thread back in the list"`
-}
-
-type CreateCanvasReq struct {
-	Name MaterialTitle `json:"name,omitempty"`
-}
-
-type SaveCanvasReq struct {
-	Name  *MaterialTitle `json:"name,omitempty" minLength:"1"`
-	Scene any            `json:"scene,omitempty"`
 }
 
 type BillingCheckoutReq struct {

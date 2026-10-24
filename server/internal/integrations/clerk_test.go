@@ -28,6 +28,7 @@ func TestClerkConnectedProvidersSeparatesLoginFromImportGrants(t *testing.T) {
 		{"Google import", "oauth_google", GoogleDriveReadonlyScope, "verified", "googleDriveReadonly", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			ForgetClerkUser("user_import")
 			body, err := json.Marshal(clerk.User{
 				ID: "user_import",
 				ExternalAccounts: []*clerk.ExternalAccount{{

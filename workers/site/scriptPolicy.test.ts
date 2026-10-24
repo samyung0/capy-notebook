@@ -7,7 +7,7 @@ import {
   shareToken,
 } from '../../src/lib/shareLink';
 import { appPolicy, pagePolicy } from '../../vite-image-policy';
-import { handleSiteRequest } from './handler';
+import { allowTurnstile, handleSiteRequest } from './handler';
 
 const DEPLOYED = {
   B2_BUCKET: 'capy-notebook-uat',
@@ -177,8 +177,13 @@ describe('enforced script policy', () => {
       ),
     ];
     expect(pages.map((page) => page.status)).toEqual([200, 200, 404, 404]);
-    for (const page of pages) {
+    // The quiz page grades signed-out answers, so it also allows Turnstile.
+    expect(pages[0].headers.get('Content-Security-Policy')).toBe(
+      allowTurnstile(PAGE_POLICY)
+    );
+    for (const page of pages.slice(1))
       expect(page.headers.get('Content-Security-Policy')).toBe(PAGE_POLICY);
+    for (const page of pages) {
       expect(locked(page.headers.get('Content-Security-Policy'))).toEqual(
         LOCKED
       );
@@ -199,9 +204,13 @@ describe('enforced script policy', () => {
     );
     const policy = page.headers.get('Content-Security-Policy');
     const hash = createHash('sha256').update(boot).digest('base64');
+    const [self, ...hosts] = directives(allowTurnstile(PAGE_POLICY))[
+      'script-src'
+    ];
     expect(directives(policy)['script-src']).toEqual([
-      ...directives(PAGE_POLICY)['script-src'],
+      self,
       `'sha256-${hash}'`,
+      ...hosts,
     ]);
     expect(locked(policy)).toEqual(LOCKED);
     // What the render wrote is text, and no hash covers it.

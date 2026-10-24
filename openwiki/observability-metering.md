@@ -703,19 +703,52 @@ output, so grading is **recorded, never charged**: signed-in requests write one
 `POST /api/questions/computation-check` writes one per check. Attempt points
 stay on the quiz snapshot for the taker and are not a trusted score.
 
+A signed-in user's open parts are capped at 2,000 per UTC day
+(`grading_usage`, `store.SignedInGradingPartsPerDay`), shared by quiz
+attempts, review checks, bank checks and computation checks (one part each).
+Parts are reserved before any Jev call and stay counted when grading fails;
+past the cap the API answers 429 `grading_limit` and closed-only attempts are
+still graded.
+
 Anonymous grading has no actor, so it is kept in `anonymous_grading_usage` per
-UTC day, salted client-IP hash (HMAC with `SHARE_LINK_SECRET`) and the random
-id the browser keeps in IndexedDB. Parts are counted before any Jev call and
-stay counted when grading fails. Caps: 300 graded parts per IP hash per day
-(generous because a classroom shares one IP) and 50,000 per day overall; over
-either, the API answers 429 `anonymous_grading_limit` and the page asks the
-visitor to sign in. The local id is reporting only, because the client
-chooses it. Rows older than 30 days are pruned by the API's maintenance loop.
-No browser fingerprinting is used. `/api/public/*` stays in the default
-anonymous class (60/minute per IP) rather than the AI class, whose 15/minute
-burst would stop a classroom sharing one IP. Same-zone Worker subrequests carry the
-visitor's IP in `CF-Connecting-IP`; this needs checking on UAT before the
-per-IP cap is relied on.
+UTC day, salted client-address hash (HMAC with `SHARE_LINK_SECRET`; an IPv6
+address by its /56) and the random id the browser keeps in IndexedDB. The
+share token is verified before the body is read. Parts are counted before any
+Jev call and stay counted when grading fails. Caps: 300 graded parts per
+address hash per day (generous because a classroom shares one IP) and 50,000
+per day overall; over either, the API answers 429 `anonymous_grading_limit`
+and the page asks the visitor to sign in. There is no per-shared-item cap:
+each signed-out answer check carries a Cloudflare Turnstile token instead (Epo
+2026-10-24, Q243, Q271), since an address-rotating client defeats any per-item
+or per-address count. A shared page runs at most one widget (managed mode, a
+challenge only when Cloudflare asks, shown fixed on screen), rendered at the
+first signed-out check and solved again only when a check asks, never in the
+background (it renders with `refresh-expired: never`, Q350, and
+`refresh-timeout: manual`, so a timed-out interactive challenge waits for the
+visitor); a check stops waiting for its token after 15 s and the API's
+refusal shows the failed-check copy (Epo 2026-10-24, Q309;
+`src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
+quiz). The API verifies it with siteverify (5 s timeout) after the share
+token's check and before grading (`checkCaptcha`, `server/internal/httpapi/
+turnstile.go`): a missing or refused token, or one solved on a host other
+than the environment's app hosts (the hosts of `APP_URL`,
+`CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS`; not checked in
+development and e2e, whose test keys name no app host), answers 403
+`captcha_failed`, and a siteverify that cannot answer 503
+`captcha_unavailable`, refusing rather than skipping the check; the page shows
+both under Submit (Q308). A deployed gateway refuses Cloudflare's published
+test secrets at boot, and an empty app host list, which would check no host
+(Q350; `turnstileHosts`, `server/cmd/api/main.go`). Signed-in checks take no token, a signed-in
+visitor's check of a quiz embedded in a shared note included (Q311). Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
+is reporting only, because the client chooses it. Rows older than 30 days are pruned by the API's
+maintenance loop. No browser fingerprinting is used.
+The visitor's grading post goes straight to `/api/public/.../grade`, so it
+carries the visitor's own address and takes the anonymous class (60/minute
+per address) rather than the AI class, whose 15/minute burst would stop a
+classroom sharing one IP. The site Worker's own reads of `/api/public/`
+carry no visitor address (a same-zone Worker subrequest reaches the origin
+without one); they sign the visitor's address and count per visitor and
+shared page (§6).
 
 Ingest and captioning are pinned onto the job at enqueue (`ingestJobPayload`),
 because their defaults are hot-reloadable and a queued job may outlive one.
@@ -1552,9 +1585,16 @@ Three layers, each doing what the ones below it cannot:
 
 | Layer | Sees | Handles |
 | --- | --- | --- |
-| Cloudflare | IP, path | volumetric floods, before origin bandwidth is spent |
-| Go middleware | Clerk identity, plan, route class | per-user semantic limits |
+| Cloudflare | IP, path | one rate limiting rule (Free plan): `/api/public/`, 100 requests in 10 s per address, then blocked for 10 s; the WAF blocks internal paths on the public hosts ([deployment-runbook.md](deployment-runbook.md#2-cloudflare--rules)) |
+| Go middleware | Clerk identity, plan, route class | per-user semantic limits, and per address for signed-out callers |
 | Credits ledger | measured cost | spend, in money rather than requests |
+
+Everything but `/api/public/` reaches the gateway with no edge limit: chat,
+uploads, the collaboration host and the webhooks are bounded in Go (or the
+Rust collaboration server) or not at all. The site Worker's own reads of
+`/api/public/` skip the zone's rate-limit phase (a same-zone subrequest goes
+straight to the origin), so the edge counts each visitor once, by the
+request they send.
 
 The collaboration server limits its own writers apart: each user's SYNC,
 awareness and query messages, over every socket and draft send, take from an
@@ -1572,8 +1612,9 @@ limits hold across replicas — the in-process counters it replaces only ever
 worked with one.
 
 **Route classes** (`middleware.go`): request cost across this API varies by four
-orders of magnitude. Listing workspaces touches one index. A chat turn is
-capped at 12 planning responses and 12 accepted tool calls. Provider completion,
+orders of magnitude. Listing workspaces touches one index. A chat turn gets
+12 responses before its first write, 4 tool calls per response and 160 per
+turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
 (`/chat/stream`, `/generate`, `/ai/command`, signed-in quiz `/grade` and
 `/computation-check`) are 200/hour with burst 15, plus
@@ -1585,18 +1626,98 @@ import routes) carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
-file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Chat voice
+file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). A ticket
+takes the upload budget inside the upload line, which lines up a ticket past
+it instead of a 429 (Epo 2026-10-24, Q282; backend-storage-quota § upload
+line); an import past it answers 429. Chat voice
 input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
 with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
 person talking, apart from the chat allowance the turns they send then use.
 Credits remain the money bound; these limits only stop abuse patterns.
 
+The rate-limit audit (Epo 2026-10-24) added these classes:
+
+| Class | Routes | Limit | Key |
+| --- | --- | --- | --- |
+| Integration | `/api/integrations*` and `PATCH /api/me` (each reads Clerk, whose Backend API limit the whole instance shares) | 30/minute | user |
+| Stripe session | subscription Checkout, top-up, card setup, portal, portal cancel (`checkout_limit`) | 10/hour | user |
+| Share page | every GET or HEAD under `/api/public/{kind}/{token}/`, direct or through the site Worker (instead of the base class) | 300/minute (Epo 2026-10-24, Q244) | visitor and share token |
+| Bank comment | `POST /api/bank/questions/{id}/comments`, each a notice in the maintainers' 4-hourly digest ([question-bank.md](question-bank.md#comments)) | 120/hour, burst 20 (Epo 2026-10-24, Q314) | user |
+
+The Integration class counts by method and path; the limiter never reads a
+body. Import routes take the upload and the integration budgets. Clerk's
+OAuth tokens and connected providers are kept in process for 3 minutes per
+user (a token never within a minute of its expiry, and not at all without
+one); a disconnect and every Clerk `user.*` webhook drop the user's entries.
+Stripe Checkout pages for the same top-up amount or card setup are handed out
+again while they have 5 minutes left and Stripe still reports them open (one
+status read; a completed or expired page is dropped and a new one made), and
+invoice lists are cached for 60 s. Every top-up or card click takes the
+Stripe session bucket, the reused ones included.
+
+**Share reads per visitor and page** (Epo 2026-10-24, Q244). A GET or HEAD
+under `/api/public/{kind}/{token}/` takes one bucket keyed by visitor and share
+token together, 300 a minute, in place of the base class (one charge per
+read): a signed-in visitor by user id, a signed-out one by address (IPv6 by
+its /56). A token that is not a share link signed with `SHARE_LINK_SECRET`
+counts in the base class instead, so a made-up token gets no bucket of its
+own (Q308). The site Worker's reads reach the origin without the visitor's
+address, so the Worker signs it: `X-Capy-Share-Read: {unix}.{address}.
+{base64url HMAC-SHA256(SHARE_LINK_SECRET,
+"share-read:v2:{unix}:{address}:{path}")}`, the address being the visitor's
+`CF-Connecting-IP` (`workers/site/shareRead.ts`). Go trusts the address only
+when the header verifies for that path within a minute of its clock and the
+address parses as an IP (`ratelimit.signedVisitor`); an unsigned, forged,
+stale or other-path claim counts by the request's own address. A visitor's
+direct read and the Worker's read for them share the bucket. Signed-out
+grading posts keep the anonymous class and their daily caps. At the edge,
+the shared pages (`/share/`, `/w/`) get a Managed Challenge past 600
+requests a minute per address (Epo 2026-10-24, Q324;
+[deployment-runbook.md](deployment-runbook.md) § rate limiting rules). Workers Cache entries are
+unchanged (each query string keeps its own).
+
+Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its
+/56 and IPv4 by the address (`obs.ClientAddress`; Epo 2026-10-24, Q246): the
+anonymous limiter, signed-out grading's allowance and signed-out share reads. `Retry-After` is rounded up, so a client that
+waits exactly that long gets through.
+
+**Waiting instead of an immediate 429** (Epo 2026-10-24, Q268;
+`ratelimit.MaxWait`, `server/internal/ratelimit/wait.go`). A refused bucket
+names its GCRA retry-after; two kinds of request wait for it when it ends
+within 10 s:
+
+- A chat send (`POST .../chat/stream`) whose AI or AI-burst bucket refuses
+  opens its stream, sends `{"type":"phase","phase":"waiting_limit"}` after
+  `start`, waits, takes the buckets and runs the turn
+  (`ratelimit.PendingWait` in `chatStream`). Past 10 s it answers 429 before
+  any stream; a wait that runs out (another request took the slot) ends the
+  turn with an in-stream `ai_rate_limited` error. A stop ends the wait. The
+  base bucket never waits.
+- An answer check (a quiz attempt, the review and bank checks, the
+  computation check, a signed-out grade) waits for every bucket it spends
+  behind its normal spinner, then is graded or answers 429.
+
+Every other limited route answers 429 at once, and nothing retries a 429
+automatically (L12): a gateway upload past its class waits in the upload
+line instead (Q282), and only an import request keeps the browser's retry
+(`sourceImport.ts`). The pipeline's wait for an
+AI process slot is the other half of the contract: it sends
+`{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 60 s, Q293) and
+ends the stream with the in-stream `provider_busy` error when the wait runs
+out. The chat trace shows both phases as the same row, the thinking hourglass
+with "Waiting" (Epo 2026-10-24, Q300: limit and captcha copy says what the
+user sees and can do, not slots, limiters or vendors).
+
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.
 They authenticate by signature and both providers apply their own delivery rate.
+At the edge they skip the security rules only from the providers' published
+addresses.
 
 The secret-authenticated service routes `/api/internal/*` and
-`/internal/collaboration/*` also bypass the user/IP limiter. Collaboration
+`/internal/collaboration/*` also bypass the user/IP limiter. Their callers
+use the private network; on the public hosts the edge blocks both paths
+([deployment-runbook.md](deployment-runbook.md#2-cloudflare--rules)). Collaboration
 bootstrap, access checks, saves, publication and note projection share a service
 IP and must not consume one anonymous caller's 60/minute allowance. Their
 service-secret checks, per-file authorization and ingest admission gates still
@@ -1709,8 +1830,26 @@ provider and model for the selected range; the pre-call row carries
 the provider and model so abandoned attempts are attributable. A gate
 refusal writes no call row and is not counted.
 
-**Redis failures fail open.** A limiter outage must not become an API outage;
-the edge still bounds the blast radius.
+**Redis failures fail open, except AI and uploads.** While the limiter's
+Redis errors, the AI and upload classes (and the import routes, which take
+the upload bucket) answer 503 `rate_limit_unavailable` with
+`Retry-After: 5`: those are the classes whose requests spend money or GPU
+after the answer. Every other class lets the request through, since a
+limiter outage must not become an API outage; the edge covers only
+`/api/public/`.
+
+**Server timeouts.** The gateway's `http.Server` reads a request's headers and
+body within 1 minute, writes an answer within 5 minutes and closes idle
+connections after 2 minutes (`httpapi.NewServer`). A chat stream, an
+AI command, the event stream and an allowed upload extend their own
+deadlines once admitted (`extendDeadlines`). A cloud import's content
+stream has an upload's body deadline for the plan's file cap (30 s plus the
+cap at 100 KB/s, at most 5 minutes); its provider client bounds only the
+dial, TLS and response headers, so a slow browser does not cut it. The chat
+stream body is capped at 128 KiB before it is decoded (413 `query_too_long`).
+
+**Request logs.** A 5xx whose client went away first is logged at WARN, not
+ERROR, so aborted streams do not page.
 
 Disabled under `APP_ENV=e2e`, where Playwright drives hundreds of requests per
 second through a handful of fixed users.

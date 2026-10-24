@@ -29,7 +29,6 @@ import type {
   ReportEditIncidentReq,
   SourceFile,
   Task,
-  ThinkingCanvas,
   TrashItem,
   User,
   WireMessage,
@@ -1882,11 +1881,6 @@ export const accountStatus: AccountStatus = {
   userId: user.id,
 };
 
-export const canvases: ThinkingCanvas[] = [
-  { id: 'cv_1', name: 'Bio mind map', updatedAt: hours(4) },
-  { id: 'cv_2', name: 'Essay brainstorm', updatedAt: days(2) },
-];
-
 /* ---------------- study materials (mindmaps / diagrams) ---------------- */
 const ownerCapabilities = {
   canEdit: true,
@@ -2459,29 +2453,26 @@ export const publicWorkspaces: PublicWorkspace[] = [
     sharePath: '/w/pub_ws_2.IT_5zt_99G56MWnD',
   },
 ];
-/** Explore's quizzes with their keys; the route sends learner views. */
-export const publicQuizzes: (Omit<PublicQuiz, 'questions'> & {
-  questions: Question[];
-})[] = [
+/** Explore's quizzes with their keys (clone sources); the route sends the
+ * question count only. */
+export const publicQuizzes: (PublicQuiz & { questions: Question[] })[] = [
   {
-    ...seedQuizzes[0],
     author: 'mrslee',
     canClone: true,
     clones: 540,
     id: 'pub_qz_1',
-    isOwner: false,
     name: 'Cell biology — 50 questions',
-    privacy: 'public',
+    questions: seedQuizzes[0].questions,
+    workspaceId: seedQuizzes[0].workspaceId,
   },
   {
-    ...seedQuizzes[2],
     author: 'mathpro',
     canClone: true,
     clones: 410,
     id: 'pub_qz_2',
-    isOwner: false,
     name: 'Calculus II mega quiz',
-    privacy: 'public',
+    questions: seedQuizzes[2].questions,
+    workspaceId: seedQuizzes[2].workspaceId,
   },
 ];
 export const publicFlashcardSets: PublicFlashcardSet[] = [

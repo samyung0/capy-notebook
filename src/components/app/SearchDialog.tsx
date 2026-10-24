@@ -27,13 +27,11 @@ const KIND_ICON: Record<SearchKind, Parameters<typeof Icon>[0]['name']> = {
   event: 'schedule',
   file: 'files',
   flashcards: 'flashcards',
-  thinking: 'write',
   workspace: 'workspaces',
 };
 
 function visibleSearchResult(result: SearchResult): boolean {
   if (result.kind === 'event') return features.schedule;
-  if (result.kind === 'thinking') return features.thinking;
   return true;
 }
 
