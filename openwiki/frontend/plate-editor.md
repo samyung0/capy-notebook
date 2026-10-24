@@ -1639,6 +1639,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   2026-10-24, Q247-Q250) raised `CLIENT_PROTOCOL` to 16 and both minimums to
   16, so note and item tabs without the rule reload. Its deploy request names
   "client protocol 15 -> 16, material 7 -> 16, source 15 -> 16".
+  The DOCX typing fixes (pin 88b28baa4: a page whose positions only shift
+  keeps its mirror and overlay nodes, charts, shapes and content controls are
+  named by their embed, and the position projection follows typed text; Epo
+  2026-10-24, Q351) raised `CLIENT_PROTOCOL` to 17 and `MIN_SOURCE` to 17;
+  `MIN_MATERIAL` stays 16. Its deploy request names "client protocol 16 -> 17,
+  source 16 -> 17".
 
 #### When to bump
 
