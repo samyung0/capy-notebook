@@ -1265,9 +1265,10 @@ function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
 
 /** Deleting a file moves it to the trash; the owner can restore it from
  * Files › Trash for 30 days. Its bytes stay charged until purged. */
-export function useDeleteFile(wsId: string) {
+export function useDeleteFile(wsId: string, options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (id: string) => api.del<void>(`/files/${id}`),
     onSuccess: () => invalidateAfterFileDelete(qc, wsId),
   });

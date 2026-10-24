@@ -440,6 +440,7 @@ class _Flow:
         def store(_job_id, attempt, state):
             assert attempt == 1
             self.payload = dict(state)
+            return True
 
         monkeypatch.setattr(source_text.cfg, "alibaba_modelstudio_key", "test-key")
         monkeypatch.setattr(source_text, "_source_lock", no_lock)
@@ -845,17 +846,19 @@ async def test_a_task_the_worker_found_succeeded_is_not_polled_again(monkeypatch
 async def test_a_claim_that_loses_its_job_before_storing_the_task_orphans_it(
     monkeypatch,
 ):
-    """The job was reclaimed between the submit and the store: the task is
-    never polled, its call and lease run out on their own, and the job's
-    next claim submits again and settles that task once."""
+    """The job ended or was reclaimed between the submit and the store: the
+    task is never polled, the call this claim opened is abandoned and its
+    lease freed at once (nothing else names it), and a reclaimed job's next
+    claim submits again and settles that task once."""
     flow = _Flow(monkeypatch)
     kept = source_text._store_state
-    monkeypatch.setattr(source_text, "_store_state", lambda *_a: None)
+    monkeypatch.setattr(source_text, "_store_state", lambda *_a: False)
 
     with pytest.raises(source_text.FiletransWait):
         await flow.claim()
     assert flow.payload == {}
-    (orphan,) = flow.leases
+    (orphan,) = flow.calls
+    assert flow.calls[orphan] == "abandoned" and flow.leases == set()
 
     monkeypatch.setattr(source_text, "_store_state", kept)
     flow.polls = [_SUCCEEDED]
@@ -863,8 +866,26 @@ async def test_a_claim_that_loses_its_job_before_storing_the_task_orphans_it(
     await flow.run()
 
     assert flow.kinds().count("submit") == 2
-    assert flow.kinds().count("settle") == 1
-    assert flow.calls[orphan] == "open" and flow.leases == {orphan}
+    assert flow.kinds().count("settle") == 1 and flow.leases == set()
+
+
+@pytest.mark.asyncio
+async def test_a_new_call_for_a_task_whose_job_ended_meanwhile_is_freed(
+    monkeypatch,
+):
+    """A claim reopening a run-out call finds its job gone when it stores the
+    new call: that call ends at once and the claim stops."""
+    flow = _Flow(monkeypatch)
+    flow.stored_task(call="")
+    flow.polls = [_SUCCEEDED]
+    monkeypatch.setattr(source_text, "_store_state", lambda *_a: False)
+
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+
+    (new_call,) = flow.calls
+    assert flow.calls[new_call] == "abandoned" and flow.leases == set()
+    assert "settle" not in flow.kinds()
 
 
 @pytest.mark.asyncio

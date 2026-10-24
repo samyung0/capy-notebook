@@ -503,12 +503,24 @@ def _download_transcript(url: str) -> dict[str, Any]:
     return value
 
 
-def _store_state(job_id: str, attempt: int, state: dict[str, Any]) -> None:
+def _store_state(job_id: str, attempt: int, state: dict[str, Any]) -> bool:
+    """Whether the state was stored: False when this claim lost the job
+    (ended, or reclaimed by another worker)."""
     with db.connect() as conn, conn.cursor() as cur:
         stored = db.set_job_filetrans(cur, job_id, attempt, state)
         conn.commit()
     if not stored:
         log.warning("job %s lost its claim before its task state was stored", job_id)
+    return stored
+
+
+async def _store_new_call(job_id: str, attempt: int, state: dict[str, Any]) -> None:
+    """Store a state naming a call this claim just opened. A job that ended
+    meanwhile has nothing that could free that call's lease (its end freed
+    the stored one), so it is ended here and the claim stops."""
+    if not await asyncio.to_thread(_store_state, job_id, attempt, state):
+        await _end_call(str(state["callId"]), None)
+        raise FiletransWait(_POLL_FIRST_S)
 
 
 def _task_in_flight(source_sha256: str, job_id: str) -> bool:
@@ -601,8 +613,7 @@ async def _submit_task(
     except BaseException as exc:
         await _end_call(call_id, exc)
         raise
-    await asyncio.to_thread(
-        _store_state,
+    await _store_new_call(
         job_id,
         attempt,
         {
@@ -671,8 +682,7 @@ async def poll_task(
         # Its call ran out unpolled (the host was down past the hour): the
         # sweep abandons it, and the task carries on under a new one.
         state["callId"] = await _open_task_call()
-        if not running:
-            await asyncio.to_thread(_store_state, job_id, attempt, state)
+        await _store_new_call(job_id, attempt, state)
     if running:
         await _wait_again(state, job_id, attempt)
     return state, str(url)

@@ -1362,8 +1362,8 @@ transcript, so identical uploads make one task. A worker without
    re-pends with its attempt handed back (`release_job_for_capacity`), the
    file showing "transcribing" (processing, 20%), and the worker is free. A
    claim that loses the job between the submit and the store leaves that
-   task unpolled: its call and lease run out on their own, and the job's
-   next claim submits again.
+   task unpolled: it abandons the call it opened and frees its lease at once
+   (nothing else names them), and a reclaimed job's next claim submits again.
 
 **Each later claim** polls the stored task once (`{host}/api/v1/tasks/{id}`,
 `source_text.poll_task`) after renewing its call and lease for another hour.
@@ -1442,8 +1442,22 @@ transcribes and charges again. This takes a failed write (after the bucket
 client's three attempts) followed by a failure past transcription, so it is
 rare.
 
-A job that ends while its task runs (its file deleted, a donor reused) leaves
-the task's call and lease to run out within the hour. A job whose transcript
+Once a task is submitted, and until its job ends, the user cannot trash the
+file (Epo 2026-10-24: the task is billed whether or not its result is used).
+`TrashFile` refuses with 409 `audio_transcribing` ("This recording is still
+being transcribed; try again when it finishes"), for a browser delete and the
+chat agent's trash tool alike; the trash dialog shows it inline, and the file
+menu's Delete is disabled with that hint while an audio file is processing.
+Audio has no other user replace or refresh path (source refresh is for
+editable documents). Cascades the user cannot hold back still end the job:
+workspace or account deletion, an editor's removal or demotion, lifecycle
+sweeps. Any job end with a task stored, cancelled, failed, out of attempts or
+refused, frees the task's gate lease and abandons its call
+(`lifecycle`/`job_ended`) in the same transaction, through the
+`jobs_end_filetrans_call` trigger (0109), so no slot waits out the hour; the
+task may still finish at Alibaba, uncharged. A claim that opens a call (a
+submit, or a new call for a run-out one) and then finds its job gone ends
+that call itself. A job whose transcript
 another job cached while its own task ran abandons its call uncharged (a
 settled one stays settled) and frees its lease. Log lines and errors
 name HTTP statuses and provider error codes only, never transcript text or a

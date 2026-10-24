@@ -31,3 +31,33 @@ ALTER TABLE ingest_job_attempts ADD CONSTRAINT ingest_job_attempts_status_check 
   'running', 'succeeded', 'retrying', 'failed', 'superseded',
   'lease_expired', 'capacity_wait', 'provider_busy', 'transcription_poll'
 ));
+
+-- A job that ends with a transcription task stored (cancelled by a deletion
+-- or lifecycle cascade, failed, out of attempts, refused) frees the task's
+-- gate lease and abandons its call at once, so no slot waits out the hour.
+-- A settled call stays settled. Calls before leases, the order every renewal
+-- takes them in.
+CREATE OR REPLACE FUNCTION end_job_filetrans_call()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  call_id text := NEW.payload->'filetrans'->>'callId';
+BEGIN
+  UPDATE provider_calls SET status='abandoned', abandoned_at=now(),
+    error_category='lifecycle', error_code='job_ended'
+   WHERE id=call_id AND status='open';
+  DELETE FROM provider_capacity_leases WHERE id=call_id;
+  RETURN NULL;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION end_job_filetrans_call() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS jobs_end_filetrans_call ON jobs;
+CREATE TRIGGER jobs_end_filetrans_call
+  AFTER UPDATE OF status ON jobs
+  FOR EACH ROW
+  WHEN (OLD.status IN ('pending', 'running')
+        AND NEW.status NOT IN ('pending', 'running')
+        AND NEW.payload->'filetrans' ? 'callId')
+  EXECUTE FUNCTION end_job_filetrans_call();

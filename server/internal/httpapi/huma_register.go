@@ -77,9 +77,15 @@ func conflictError(code, detail string) error {
 	}
 }
 
+// audioTranscribingDetail is the copy for store.ErrAudioTranscribing.
+const audioTranscribingDetail = "This recording is still being transcribed; try again when it finishes"
+
 func mapHTTPError(err error) error {
 	if err == nil {
 		return nil
+	}
+	if errors.Is(err, store.ErrAudioTranscribing) {
+		return conflictError("audio_transcribing", audioTranscribingDetail)
 	}
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return huma.Error400BadRequest(err.Error())

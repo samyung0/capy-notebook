@@ -189,6 +189,8 @@
   "confirm_delete_title": "删除 {name}？",
   "confirm_delete_body": "此操作无法撤销。",
   "confirm_trash_body": "将移至回收站，可在 30 天内还原，永久删除前仍计入存储空间。",
+  "trash_audio_transcribing": "这段录音仍在转写中，请在转写完成后再试。",
+  "trash_audio_transcribing_hint": "录音转写完成后可删除",
   "settings_tab_general": "通用",
   "settings_tab_llm": "模型",
   "settings_llm_chat": "工作区对话",

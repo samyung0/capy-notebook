@@ -224,8 +224,13 @@ Second review fixes (2026-10-24):
 - [x] Failed reads of the result link are counted (`downloadFailures`);
       the fifth is a provider failure.
 - [x] A cached transcript ends this job's own open call uncharged.
-- [ ] Waiting on Epo: freeing a cancelled job's gate slot, and a length
-      check for imported (Drive/OneDrive) audio.
+- [x] A submitted task holds its file (Epo 2026-10-24, "we shouldnt let
+      user cancel an already started transcribe task"): trash is refused
+      with 409 `audio_transcribing` until the job ends, shown inline, and
+      Delete is disabled while an audio file processes. Cascades still end
+      the job; any job end with a task stored frees its lease and abandons
+      its call at once (0109 trigger `jobs_end_filetrans_call`).
+- [ ] Waiting on Epo: a length check for imported (Drive/OneDrive) audio.
 
 ## Part B: voice input (Flash)
 

@@ -439,6 +439,10 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   30 days; the current workspace owner and the item's payer list, restore or
   permanently delete trash, whoever trashed it. A payer who left the workspace
   still trashes and purges what it pays for but cannot open or restore it.
+  An audio file whose transcription task was submitted cannot be trashed
+  until its job ends (409 `audio_transcribing`, Epo 2026-10-24); deletion
+  cascades still cancel the job and free its provider slot
+  ([agentic-retrieval.md](agentic-retrieval.md#audio-transcription-filetrans)).
 - Viewers can read files when workspace visibility permits, but cannot mutate
   workspace structure or files.
 - Upload reservations and finalized bytes are charged to the editor who

@@ -426,6 +426,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	if errors.Is(err, store.ErrAudioTranscribing) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "audio_transcribing",
+			"message": audioTranscribingDetail,
+		})
+		return
+	}
 	if errors.Is(err, store.ErrTitleTaken) {
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"code":    "title_taken",

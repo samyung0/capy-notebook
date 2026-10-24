@@ -965,7 +965,9 @@ call can legitimately run, plus five minutes: the interactive stream backstop
 ingest provider timeout (120 s) for ingest, and an hour for an audio
 transcription task (`open_call(provider_timeout_s=…)`), renewed with its gate
 lease by each claim that polls the task (`accounting.renew_call`), so it spans
-the job's re-pends; direct SQL callers get the
+the job's re-pends, and abandoned as `lifecycle`/`job_ended` with its lease
+freed when the job ends unsettled (`jobs_end_filetrans_call`); direct SQL
+callers get the
 column's default 12-hour-five-minute window. The additional five minutes are
 receipt-only settlement grace.
 
