@@ -23,7 +23,9 @@ import (
 // starve a big one. A user at their share is passed by, as ever. A ticket
 // past its user's upload rate class waits in line too, instead of a 429, and
 // joins the line's order once the class admits it (Epo 2026-10-24, Q282);
-// source and editor-asset tickets share the line and the class. A turn holds
+// source and editor-asset tickets share the line and the class. Such a ticket
+// counts only toward its user's waiting tickets, not the line's size, and its
+// wait clock restarts when the class admits it (Q307). A turn holds
 // its share of the budget for uploadTurnTTL; an upload that has not started
 // by then passes it to the next ticket. The line lives in this process, since
 // the API runs as one instance; a scaled-out API would need it in Redis. A
@@ -161,13 +163,22 @@ func editorAssetTarget(materialID string) string   { return "assets:" + material
 // take gives user a ticket for target: its turn at once when its upload rate
 // class admits it, its file fits, the user is under their share and no ticket
 // blocks the line, else a place in line, or uploadQueueFull when the line, or
-// the user's share of it, is full. A file larger than the whole budget is
-// refused (413), and a class Redis cannot count refuses (503).
+// the user's share of it, is full (roomLocked). A file larger than the whole
+// budget is refused (413), and a class Redis cannot count refuses (503).
 func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, error) {
 	// It would never fit, and once it had waited it would block every
 	// ticket behind it.
 	if claim.size > uploadBudget {
 		return uploadTurn{}, huma.Error413RequestEntityTooLarge("the upload is larger than the gateway's upload budget")
+	}
+	t := &uploadTicket{id: randID("utk"), user: user, target: target, claim: claim}
+	// A ticket the line would refuse spends no class token (Q307). The check
+	// repeats below, since another ticket may take the last place meanwhile.
+	q.mu.Lock()
+	err := q.roomLocked(t)
+	q.mu.Unlock()
+	if err != nil {
+		return uploadTurn{}, err
 	}
 	retry, err := q.askClass(user)
 	if err != nil {
@@ -178,17 +189,14 @@ func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, 
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	t := &uploadTicket{id: randID("utk"), user: user, target: target, claim: claim, overClass: retry > 0}
-	// Every move grants the line first, so whoever still waits is at their
-	// share, does not fit, or is behind a blocking ticket: this ticket passes
-	// only those the line would pass too.
-	if !t.overClass && q.active[user] < uploadUserSlots && q.fitsLocked(t) && !q.blockedLocked() {
+	t.overClass = retry > 0
+	if !t.overClass && q.startsLocked(t) {
 		q.tickets[t.id] = t
 		q.grantLocked(t)
 		return uploadTurn{TicketID: t.id}, nil
 	}
-	if len(q.line) >= uploadQueueMax || q.waitingLocked(user) >= uploadQueuePerUser {
-		return uploadTurn{}, uploadQueueFull()
+	if err := q.roomLocked(t); err != nil {
+		return uploadTurn{}, err
 	}
 	t.queued = time.Now()
 	q.tickets[t.id] = t
@@ -229,7 +237,40 @@ func (q *uploadQueue) recheckClass(t *uploadTicket) {
 		return
 	}
 	t.overClass = false
+	t.queued = time.Now()
 	q.advanceLocked()
+}
+
+// startsLocked is whether t gets its turn at once: every move grants the
+// line first, so whoever still waits is at their share, does not fit, or is
+// behind a blocking ticket, and t passes only those the line would pass too.
+func (q *uploadQueue) startsLocked(t *uploadTicket) bool {
+	return q.active[t.user] < uploadUserSlots && q.fitsLocked(t) && !q.blockedLocked()
+}
+
+// roomLocked refuses a ticket that would wait when its user already has
+// uploadQueuePerUser waiting, or when the line already holds uploadQueueMax
+// tickets that spent their class token; one waiting only on its class counts
+// toward its user's share alone (Q307).
+func (q *uploadQueue) roomLocked(t *uploadTicket) error {
+	if !t.overClass && q.startsLocked(t) {
+		return nil
+	}
+	if q.waitingLocked(t.user) >= uploadQueuePerUser || (!t.overClass && q.classedLocked() >= uploadQueueMax) {
+		return uploadQueueFull()
+	}
+	return nil
+}
+
+// classedLocked counts the waiting tickets that spent their class token.
+func (q *uploadQueue) classedLocked() int {
+	n := 0
+	for _, t := range q.line {
+		if !t.overClass {
+			n++
+		}
+	}
+	return n
 }
 
 // fitsLocked is whether t's file fits the budget and the running uploads.

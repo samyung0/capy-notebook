@@ -428,3 +428,78 @@ func TestUploadQueueRefusesWhenTheClassCannotCount(t *testing.T) {
 		t.Fatalf("a ticket without its class: %v", err)
 	}
 }
+
+// classByUser makes q's upload class refuse the users in over (for a minute)
+// and admit everyone else, counting the class tokens it is asked for.
+func classByUser(q *uploadQueue, over map[string]bool) (asked *int, due *[]func()) {
+	asked, due = new(int), &[]func(){}
+	q.admitClass = func(_ context.Context, user string) (time.Duration, error) {
+		*asked++
+		if over[user] {
+			return time.Minute, nil
+		}
+		return 0, nil
+	}
+	q.after = func(_ time.Duration, f func()) { *due = append(*due, f) }
+	return asked, due
+}
+
+// Tickets waiting only on their class count toward their users' 20, never
+// the line's 128, so a few accounts over their class cannot fill the line
+// against everyone else (Epo 2026-10-24, Q307; security regression:
+// rate-limit audit r2 S-1).
+func TestUploadQueueTicketsPastTheirClassLeaveTheLineOpen(t *testing.T) {
+	q := newUploadQueue(nil)
+	over := map[string]bool{}
+	classByUser(q, over)
+	fillBudget(t, q)
+	place := 0
+	for u := range 7 {
+		user := fmt.Sprintf("over%d", u)
+		over[user] = true
+		for range uploadQueuePerUser {
+			place++
+			takeOrFail(t, q, user, place)
+		}
+	}
+	// 140 tickets wait on their class; another user's ticket still gets a
+	// place behind them.
+	takeOrFail(t, q, "b", place+1)
+}
+
+// A ticket the line refuses spends no class token (Q307; security
+// regression: rate-limit audit r2 N-9).
+func TestUploadQueueFullLineSpendsNoClassToken(t *testing.T) {
+	q := newUploadQueue(nil)
+	asked, _ := classByUser(q, map[string]bool{})
+	fillBudget(t, q)
+	for i := 1; i <= uploadQueuePerUser; i++ {
+		takeOrFail(t, q, "u0", i)
+	}
+	before := *asked
+	if _, err := q.take("u0", "sources:ws", uploadClaim{size: 1}); errorMessage(err) != "upload_queue_full" {
+		t.Fatalf("u0's 21st ticket: %v", err)
+	}
+	if *asked != before {
+		t.Fatalf("a refused ticket spent %d class tokens, want 0", *asked-before)
+	}
+}
+
+// A ticket the class admits after a long wait starts its wait clock then,
+// so it does not block the line at once for time it spent on its class
+// (Q307; security regression: rate-limit audit r2 N-9).
+func TestUploadQueueClassWaitDoesNotCountAsLineWait(t *testing.T) {
+	q := newUploadQueue(nil)
+	over := map[string]bool{"big": true}
+	_, due := classByUser(q, over)
+	takeSized(t, q, "r0", uploadBudget/2, 0)
+	big := takeSized(t, q, "big", uploadBudget/2+1, 1)
+	q.mu.Lock()
+	q.tickets[big.TicketID].queued = time.Now().Add(-time.Hour)
+	q.mu.Unlock()
+	over["big"] = false
+	(*due)[0]()
+	// The big file still does not fit, but has not waited uploadBlockAfter
+	// since the class admitted it, so a small file passes it.
+	takeSized(t, q, "small", 1, 0)
+}
