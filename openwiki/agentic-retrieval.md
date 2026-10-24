@@ -4627,9 +4627,15 @@ file), anything else `invalid_input` showing the file's first picture or
 chart id (XLSX: the id form). An XLSX by-id read takes the drawing,
 relationship, media and chart parts from the package alone
 (`xlsx_drawing::by_ids`, `ooxml_opc::read_part`) without opening the
-workbook (2 to 9 s on large books): no workbook edit changes a drawing, so
-the state is not read, and a picture of a sheet deleted since the read is
-still answered. Go passes `office.ids` alone to the inspect route
+workbook (2 to 9 s on large books). No workbook edit adds, removes or moves
+a picture or chart (the state holds no drawing), so the package's parts are
+what the sheet list shows; of the state (the checkpoint the session lookup
+merges from the durable layers and the live room) it reads only the sheet
+order (`xlsx:sheet-order`), so a picture or chart of a sheet deleted since
+the read is `unavailable_target` naming the id ("its sheet was deleted"),
+as the sheet list no longer lists it. DOCX and PPTX by-id reads open the
+session over the base and that state as their reads do, so a picture added
+or removed in the editor answers as the read lists it. Go passes `office.ids` alone to the inspect route
 (`internal_documents.go`). There a by-id read is busy (an `unavailable_target`
 refusal, 409, the agent reads to ask again; not a 503) when its room's
 background engine process already holds 4 queued calls (`IDS_READ_QUEUE`,
