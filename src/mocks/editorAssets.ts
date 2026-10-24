@@ -98,11 +98,8 @@ export const editorAssetHandlers = [
       ),
     });
   }),
-  // Only media in a note the viewer can no longer open are deleted here.
   http.delete('/api/editor-assets/:id', ({ params }) => {
-    const i = embeds.findIndex(
-      (item) => item.assetId === params.id && item.lostAccess
-    );
+    const i = embeds.findIndex((item) => item.assetId === params.id);
     if (i < 0) return new HttpResponse(null, { status: 404 });
     embeds.splice(i, 1);
     return new HttpResponse(null, { status: 204 });

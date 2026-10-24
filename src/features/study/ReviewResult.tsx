@@ -5,10 +5,7 @@ import { Icon } from '@/components/ui/Icon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { CardGrid } from '@/features/flashcards/CardView';
 import { ResultCardTile } from '@/features/flashcards/FlashcardResult';
-import {
-  RemovedAssetsContext,
-  useRemovedAssets,
-} from '@/features/materials/MediaAssetView';
+import { RemovedAssetsContext } from '@/features/materials/MediaAssetView';
 import { TextView } from '@/features/questions/TextView';
 import type { QuestionBlock, TextBlock } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
@@ -105,6 +102,8 @@ export function reviewResultMeta(s: PastReview) {
 
 type Order = 'order' | 'hardest' | 'easiest';
 
+const GRADED_COPIES = { ids: new Set<string>() };
+
 export function ReviewResultBody({
   result,
   onAgain,
@@ -128,10 +127,10 @@ export function ReviewResultBody({
   const cardsLabel = share(m.review_result_cards(), cards.length);
   const sum = (list: ReviewAnswer[], key: 'correct' | 'total') =>
     list.reduce((total, a) => total + (a[key] ?? 0), 0);
-  // The items' images their uploader deleted read as removed (M16).
-  const removed = useRemovedAssets(result.removedAssetIds);
   return (
-    <RemovedAssetsContext.Provider value={removed}>
+    // Graded copies: a missing image keeps the plain empty box, even inside a
+    // session that names its items' removed images (Q270).
+    <RemovedAssetsContext.Provider value={GRADED_COPIES}>
       <div>
         <div className="mb-6.5 flex items-center justify-between gap-3">
           {result.better > 0 ? (

@@ -1223,8 +1223,8 @@ export const useEditorAssets = (access?: EditorAssetAccess) =>
     queryKey: qk.editorAssets(access),
   });
 
-/** Deletes one in a note the caller can no longer open, at once: nothing
- * restores it, and the note shows it as removed by its uploader. */
+/** Deletes one of them at once, wherever it sits: nothing restores it, and
+ * its note shows it as removed by its uploader. */
 export function useDeleteEditorAsset() {
   const qc = useQueryClient();
   return useMutation({

@@ -203,26 +203,12 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) 
 }
 
 // reviewOutput is a session to study: answer keys hidden (learnerSession) and
-// its removed images named.
+// the images of the items still to answer that no longer exist named: deleted
+// by their uploader, or with the uploader's account (M16). Answered items are
+// graded copies, whose missing images keep the plain empty box (Q270).
 func (a *api) reviewOutput(ctx context.Context, res store.ReviewSession) (*reviewOutput, error) {
-	items := make([]store.ReviewItem, 0, len(res.Items)+len(res.Done))
-	items = append(items, res.Items...)
-	for _, done := range res.Done {
-		items = append(items, done.ReviewItem)
-	}
-	var err error
-	if res.RemovedAssetIDs, err = a.removedReviewAssets(ctx, items); err != nil {
-		return nil, hErr(err)
-	}
-	return &reviewOutput{Body: learnerSession(res)}, nil
-}
-
-// removedReviewAssets lists the card and question images of items that no
-// longer exist: deleted by their uploader, or with the uploader's account
-// (M16).
-func (a *api) removedReviewAssets(ctx context.Context, items []store.ReviewItem) ([]string, error) {
 	var ids []string
-	for _, it := range items {
+	for _, it := range res.Items {
 		if it.Image != nil {
 			ids = append(ids, it.Image.AssetID)
 		}
@@ -230,7 +216,11 @@ func (a *api) removedReviewAssets(ctx context.Context, items []store.ReviewItem)
 			ids = append(ids, questions.AssetIDs(it.Question)...)
 		}
 	}
-	return a.s.MissingEditorAssetIDs(ctx, ids)
+	var err error
+	if res.RemovedAssetIDs, err = a.s.MissingEditorAssetIDs(ctx, ids); err != nil {
+		return nil, hErr(err)
+	}
+	return &reviewOutput{Body: learnerSession(res)}, nil
 }
 
 // learnerSession hides answer keys: a review session is studying, and its
@@ -269,13 +259,6 @@ func (a *api) getReviewResult(ctx context.Context, in *reviewSessionIDInput) (*r
 	}
 	res, err := a.s.ReviewSessionResult(ctx, userID(ctx), in.ID)
 	if err != nil {
-		return nil, hErr(err)
-	}
-	items := make([]store.ReviewItem, len(res.Items))
-	for i, answer := range res.Items {
-		items[i] = answer.ReviewItem
-	}
-	if res.RemovedAssetIDs, err = a.removedReviewAssets(ctx, items); err != nil {
 		return nil, hErr(err)
 	}
 	return &reviewResultOutput{Body: res}, nil

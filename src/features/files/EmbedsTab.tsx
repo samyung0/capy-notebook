@@ -29,8 +29,8 @@ const accessLabel = (access: EditorAssetAccess) =>
 
 /** The Files page's Embeds tab: every image and audio clip the caller pays
  * for (M16), named by its note. One in a note the caller can open opens that
- * note; one in a note it can no longer open is deleted for good, since
- * nothing restores it, and its note shows it as removed. */
+ * note. Any can be deleted for good (Q273), since nothing restores it, and
+ * its note then shows it as removed. */
 export function EmbedsTab({
   access,
   onAccessChange,
@@ -176,19 +176,17 @@ function EmbedCard({
   return (
     <ItemCard
       actions={
-        item.lostAccess && (
-          <Menu
-            items={[
-              {
-                danger: true,
-                icon: 'trash',
-                label: m.trash_delete_forever(),
-                onClick: () => onDelete(item),
-              },
-            ]}
-            triggerIcon="moreHorizontal"
-          />
-        )
+        <Menu
+          items={[
+            {
+              danger: true,
+              icon: 'trash',
+              label: m.trash_delete_forever(),
+              onClick: () => onDelete(item),
+            },
+          ]}
+          triggerIcon="moreHorizontal"
+        />
       }
       details={`${fileKindLabel(kind)} · ${formatFileSize(item.sizeBytes)}`}
       icon={fileIconName({ kind, name: item.name })}

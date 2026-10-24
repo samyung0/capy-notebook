@@ -4958,11 +4958,6 @@ components:
           items:
             $ref: "#/components/schemas/ReviewAnswer"
           type: array
-        removedAssetIds:
-          items:
-            type: string
-          nullable: true
-          type: array
         session:
           $ref: "#/components/schemas/PastReview"
       required:

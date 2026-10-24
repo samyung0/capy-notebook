@@ -161,8 +161,8 @@ const tab = (props: { access?: 'open' | 'lost' } = {}) => (
 
 // Every image and audio clip the viewer pays for is listed under its note's
 // title with its kind and size (Epo 2026-10-24): one in a note it can open
-// opens that note and has nothing to delete; one in a note it cannot open
-// has only Delete, and an owner no longer live leaves the note unnamed.
+// opens that note, and every one can be deleted (Q273); an owner no longer
+// live leaves the note unnamed.
 it('lists media under their note, opening or deleting by access', () => {
   embeds.items = [
     item('asset_a', 'mitosis.png', 'Cell division', false),
@@ -174,8 +174,8 @@ it('lists media under their note, opening or deleting by access', () => {
   expect(html).toContain(m.files_note_unavailable());
   expect(html).toContain(`${m.file_kind_image()} · 2 KB`);
   expect(html).toContain(`${m.file_kind_audio()} · 2 KB`);
-  // One Delete, the lost clip's.
-  expect(html.match(/data-menu/g)).toHaveLength(1);
+  // Delete on both, the open image's too.
+  expect(html.match(/data-menu/g)).toHaveLength(2);
   expect(html.match(/href="\/materials\//g)).toHaveLength(1);
   expect(html).not.toContain(m.files_lost_media_notice());
 

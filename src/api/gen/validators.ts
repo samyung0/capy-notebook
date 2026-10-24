@@ -5544,7 +5544,6 @@ export const GetReviewResultResponse = zod.object({
   "rating": zod.int().min(1).max(getReviewResultResponseItemsItemRatingMax),
   "total": zod.number().optional()
 })),
-  "removedAssetIds": zod.array(zod.string()).nullish(),
   "session": zod.object({
   "answered": zod.int(),
   "cards": zod.object({

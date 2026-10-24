@@ -152,41 +152,46 @@ it('shows a removed card image in a review session', () => {
   expect(render(<ReviewSession />)).toContain(m.media_image_removed());
 });
 
-// A result's question opens to show its images.
-it("shows a removed question image in a review session's result", async () => {
+// A result's graded question keeps the plain empty box for a missing image,
+// even inside a session that names it as removed (Q270).
+it("keeps the plain box for a missing image in a review session's result", async () => {
+  const { RemovedAssetsContext } = await import(
+    '@/features/materials/MediaAssetView'
+  );
   const root = createRoot(document.getElementById('root') as never);
   await act(async () =>
     root.render(
-      <ReviewResultBody
-        onAgain={() => undefined}
-        result={{
-          better: 0,
-          items: [
-            {
-              correct: 1,
-              itemId: 'q1',
-              kind: 'question',
-              materialId: 'quiz',
-              materialTitle: 'Cells',
-              question,
-              rating: 3,
+      <RemovedAssetsContext.Provider value={{ ids: new Set(['asset_quiz']) }}>
+        <ReviewResultBody
+          onAgain={() => undefined}
+          result={{
+            better: 0,
+            items: [
+              {
+                correct: 1,
+                itemId: 'q1',
+                kind: 'question',
+                materialId: 'quiz',
+                materialTitle: 'Cells',
+                question,
+                rating: 3,
+                total: 1,
+              },
+            ],
+            session: {
+              answered: 1,
+              group: 'workspace',
+              iconId: '',
+              id: 'rs',
+              lastAnswerAt: new Date().toISOString(),
+              startedAt: new Date().toISOString(),
               total: 1,
+              workspaceId: 'ws',
+              workspaceName: 'Bio',
             },
-          ],
-          removedAssetIds: ['asset_quiz'],
-          session: {
-            answered: 1,
-            group: 'workspace',
-            iconId: '',
-            id: 'rs',
-            lastAnswerAt: new Date().toISOString(),
-            startedAt: new Date().toISOString(),
-            total: 1,
-            workspaceId: 'ws',
-            workspaceName: 'Bio',
-          },
-        }}
-      />
+          }}
+        />
+      </RemovedAssetsContext.Provider>
     )
   );
   await act(async () => {
@@ -194,8 +199,8 @@ it("shows a removed question image in a review session's result", async () => {
       .querySelector('li [aria-expanded]')
       ?.dispatchEvent(new window.Event('click', { bubbles: true }));
   });
-  expect(document.getElementById('root')?.textContent).toContain(
-    m.media_image_removed()
-  );
+  const text = document.getElementById('root')?.textContent;
+  expect(text).toContain('True?');
+  expect(text).not.toContain(m.media_image_removed());
   await act(async () => root.unmount());
 });

@@ -631,12 +631,12 @@ func TestFullUploaderIsRefusedWhileTheNoteStaysEditable(t *testing.T) {
 // The Embeds tab lists every image and audio clip its payer pays for under its
 // note (an embedded set's under the set's note), marked once the payer can no
 // longer open that note (Epo 2026-10-24). A member keeps paying for its images
-// in the owner's note after its removal and deletes them only then; neither
-// another editor nor the owner deletes them, and nobody deletes media in a
-// note it can open there. Media in a trashed note are listed only once their
-// payer has lost the note. A suspended or deleting owner's note title is
-// hidden, and the payer still deletes (Sam 2026-10-19). The note, and the set
-// for its card image, then read each deleted one as removed.
+// in the owner's note after its removal and deletes them there; neither
+// another editor nor the owner deletes them. Media in a trashed note are
+// listed only once their payer has lost the note. A suspended or deleting
+// owner's note title and workspace name are hidden, and the payer still
+// deletes (Sam 2026-10-19). The note, and the set for its card image, then
+// read each deleted one as removed.
 func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -710,9 +710,6 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	}
 	expect(list(owner, ""), false, ownImage.ID)
 	expect(list(owner, EditorAssetsOpen), false, ownImage.ID)
-	if err := s.DeleteEditorAsset(ctx, editor, image.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("deleting an image in a note its payer can open = %v, want not found", err)
-	}
 	if err := s.RemoveWorkspaceMember(ctx, owner, ws.ID, editor); err != nil {
 		t.Fatal(err)
 	}
@@ -738,9 +735,6 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 		if err := s.DeleteEditorAsset(ctx, actor, image.ID); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("%s deleting the editor's image = %v, want not found", actor, err)
 		}
-	}
-	if err := s.DeleteEditorAsset(ctx, owner, ownImage.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("the owner deleting its own note's image = %v, want not found", err)
 	}
 	for _, step := range []struct {
 		lock, unlock string
@@ -845,56 +839,48 @@ func TestEmbedsListPagesWithinTheCallersRows(t *testing.T) {
 	}
 }
 
-// Access is decided under the workspace lock: a delete that saw the payer
-// locked out, then waited on the lock while the payer was invited back,
-// refuses, since the payer can open the note again (M16).
-func TestEmbedDeleteDecidesAccessUnderTheLock(t *testing.T) {
+// Its payer deletes an image or audio clip wherever it sits (Q273): an
+// editor that still edits the note, a member that may now only view it, a
+// frozen payer and the note's own owner all delete theirs, and the note then
+// reads each as removed for everyone. Nobody deletes another account's.
+func TestPayerDeletesItsMediaWhereverItSits(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "u_m16_race_owner")
-	editor := newBlobTestUser(t, s, "u_m16_race_editor")
+	owner := newBlobTestUser(t, s, "u_q273_owner")
+	editor := newBlobTestUser(t, s, "u_q273_editor")
+	viewer := newBlobTestUser(t, s, "u_q273_viewer")
+	frozen := newBlobTestUser(t, s, "u_q273_frozen")
+	stranger := newBlobTestUser(t, s, "u_q273_stranger")
 	ws, note, _ := m16Note(t, s, owner, editor)
-	image := editorAssetFixture{t: t, s: s, ctx: ctx}.ready(editor, ws.ID, note.ID)
-	if err := s.RemoveWorkspaceMember(ctx, owner, ws.ID, editor); err != nil {
+	for _, member := range []string{viewer, frozen} {
+		addWorkspaceEditor(t, s, ws.ID, member)
+	}
+	f := editorAssetFixture{t: t, s: s, ctx: ctx}
+	images := map[string]EditorAsset{}
+	for _, payer := range []string{owner, editor, viewer, frozen} {
+		images[payer] = f.ready(payer, ws.ID, note.ID)
+	}
+	ids := []string{images[owner].ID, images[editor].ID, images[viewer].ID, images[frozen].ID}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, note.ID, noteWithImages(t, ids...)); err != nil {
 		t.Fatal(err)
 	}
-	invite, err := s.pool.Begin(ctx)
-	if err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='viewer' WHERE workspace_id=$1 AND user_id=$2`, ws.ID, viewer); err != nil {
 		t.Fatal(err)
 	}
-	defer invite.Rollback(ctx)
-	// An invite accept takes the workspace row first, as the delete does.
-	if _, err := invite.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR UPDATE`, ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- s.DeleteEditorAsset(ctx, editor, image.ID) }()
-	waiting := false
-	for range 500 {
-		var n int
-		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
-			WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%FROM workspaces WHERE id=$1 FOR UPDATE%'`).Scan(&n); err != nil {
-			t.Fatal(err)
+	pushFrozen(t, s, frozen, ws.ID)
+	for _, actor := range []string{stranger, editor} {
+		if err := s.DeleteEditorAsset(ctx, actor, images[viewer].ID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s deleting another account's image = %v, want not found", actor, err)
 		}
-		if waiting = n > 0; waiting {
-			break
+	}
+	for _, payer := range []string{editor, viewer, frozen, owner} {
+		if err := s.DeleteEditorAsset(ctx, payer, images[payer].ID); err != nil {
+			t.Fatalf("%s deleting its own image = %v", payer, err)
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	if !waiting {
-		t.Fatal("the delete never waited on the workspace lock")
-	}
-	if _, err := invite.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'editor')`, ws.ID, editor); err != nil {
-		t.Fatal(err)
-	}
-	if err := invite.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-done; !errors.Is(err, ErrNotFound) {
-		t.Fatalf("delete after the payer was invited back = %v, want not found", err)
-	}
-	if !(editorAssetFixture{t: t, s: s, ctx: ctx}).exists(image.ID) {
-		t.Fatal("the image was deleted from a note its payer can open again")
+	slices.Sort(ids)
+	if removed, err := s.MissingEditorAssetIDs(ctx, ids); err != nil || !slices.Equal(removed, ids) {
+		t.Fatalf("the note reads removed %v, %v; want all four %v", removed, err, ids)
 	}
 }
 

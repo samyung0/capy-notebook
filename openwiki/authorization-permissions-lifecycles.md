@@ -1441,10 +1441,12 @@ The Embeds tab lists every image and audio clip the caller pays for
 `lostAccess` when the caller can no longer reach the note's workspace
 (`lostAccessSQL`; title and workspace name blank once that workspace's owner
 is no longer live). One in a note the caller can open opens that note; one it
-cannot is never opened or restored, only deleted
-(`DELETE /api/editor-assets/{assetId}`), which is final, since a trashed asset
-would come back with the note's next save. Only the asset's payer may delete
-it, and only while it cannot open the note (M16).
+cannot is never opened or restored. Its payer deletes any of them
+(`DELETE /api/editor-assets/{assetId}`, Q273), wherever it sits and whatever
+it may still do in that note, a frozen payer included: the note keeps the node
+and shows it as removed, the delete edits nothing in it. Deleting is final,
+since a trashed asset would come back with the note's next save. Nobody else
+deletes it (M16).
 
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),
