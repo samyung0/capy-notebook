@@ -239,8 +239,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    parent origins in GitHub. `workers/office` stages the runtime HTML and assets
    from the same build as the SPA, replaces inherited headers, and publishes
    before the SPA. UAT uses `uat-office.capynotebook.com` and allows
-   `https://uat.capynotebook.com,https://app.uat.capynotebook.com,https://local.uat.capynotebook.com`
-   during the hostname transition. Remove the old app parent only after §1.0.2.
+   `https://uat.capynotebook.com,https://local.uat.capynotebook.com`.
    Production uses the `office.capynotebook.com` custom domain configured in
    `wrangler.office.jsonc` and permits only `https://app.capynotebook.com`. The Worker
    handles runtime HTML with `no-store`, supplies the matching `frame-ancestors`
@@ -320,10 +319,8 @@ summary renders keep using the existing `capy-notebook-uat` deployment.
 | Proxied `uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
 | Worker Route | `uat.capynotebook.com/*` → `capy-notebook-uat` |
 | More-specific zone route | `uat.capynotebook.com/api/*` → **None**, no script |
-| More-specific Worker Route | `uat.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`; the old host has the same) |
+| More-specific Worker Route | `uat.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`) |
 | Tunnel ingress | Host `uat.capynotebook.com`, path `^/api/`, service `http://127.0.0.1:8080` |
-
-The old app host `app.uat` keeps the same five entries until §1.0.2 retires it.
 
 The ingress goes straight to the gateway's loopback port; Go never reads the
 Host header, so no `httpHostHeader` override is needed. Keep this ingress
@@ -345,7 +342,7 @@ transition both match the old and new UAT hosts as well as the production
 app host:
 
 ```text
-http.host in {"app.capynotebook.com" "app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
+http.host in {"app.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
 ```
 
 - **Cache Rule** `capy_app_api_bypass_cache`: bypass cache (`cache: false`).
@@ -396,10 +393,9 @@ stays on the app Worker.
    DNS, routes, tunnel ingress and edge rules for rollback. Finish existing UAT
    journey cleanup before changing targets; saved run manifests bind to their
    original app URL and must not be rewritten to bypass cleanup checks.
-2. Universal SSL covers `uat`. Keep the advanced `*.uat.capynotebook.com`
-   certificate's renewal until `app.uat` is retired; it covers only that old
-   host. Add the new DNS, ingress, Worker route, scriptless API exclusion and
-   edge rules from §1.0.1 while retaining the old hosts. Exclude every UAT app
+2. Universal SSL covers `uat`; no UAT host needs an advanced certificate.
+   Add the new DNS, ingress, Worker route, scriptless API exclusion and edge
+   rules from §1.0.1 while retaining the old hosts. Exclude every UAT app
    host from search indexing at the edge; production's public summaries retain
    their existing visibility rules.
 3. Before sending users to the new app, add its origin to CORS, collaboration
@@ -410,9 +406,9 @@ stays on the app Worker.
    | Setting | Transition value |
    | --- | --- |
    | `APP_URL`, `DEPLOYMENT_APP_URL`, `UAT_APP_URL` | `https://uat.capynotebook.com` |
-   | `UAT_ALLOWED_HOSTS` | `uat.capynotebook.com,app.uat.capynotebook.com,uat-api.capynotebook.com,uat-collab.capynotebook.com,uat-ops.capynotebook.com` |
-   | `CORS_ALLOWED_ORIGINS` | `https://uat.capynotebook.com,https://app.uat.capynotebook.com` |
-   | `COLLABORATION_ALLOWED_ORIGINS`, `OFFICE_ALLOWED_PARENT_ORIGINS` | `https://uat.capynotebook.com,https://app.uat.capynotebook.com,https://local.uat.capynotebook.com` |
+   | `UAT_ALLOWED_HOSTS` | `uat.capynotebook.com,uat-api.capynotebook.com,uat-collab.capynotebook.com,uat-ops.capynotebook.com` |
+   | `CORS_ALLOWED_ORIGINS` | `https://uat.capynotebook.com` |
+   | `COLLABORATION_ALLOWED_ORIGINS`, `OFFICE_ALLOWED_PARENT_ORIGINS` | `https://uat.capynotebook.com,https://local.uat.capynotebook.com` |
 
    `VITE_APP_URL` and Worker `APP_ORIGIN` derive from `DEPLOYMENT_APP_URL`; rebuild
    rather than editing generated assets. UAT B2's checked-in CORS file
@@ -457,13 +453,13 @@ requests with HTTP 302 and preserves path/query. `/api` and `/api/*` are
 excluded; the old API routing and overlap origins remain. Disable this one rule
 to restore old-host page access without removing the API routes.
 
-For the Q291 move (Epo, Q304–Q306), the 2026-09 redirect above is removed so
-`uat` serves the app again, and `app.uat` keeps serving pages until a full
-uat-quality passes on `uat`. Its page navigations then get a temporary 302 to
-`uat` for 7 days. After that, `app.uat` is retired (DNS, site, assets
-and scriptless routes, ingress, rules entries, and its overlap origins), the
-`dev-sam.uat` record is deleted, and Epo cancels the advanced certificate.
-`inbox.uat` (MX only) and `local.uat` (no public DNS) stay; neither uses it.
+The Q291 move (Epo, Q304–Q306, Q336) finished on 2026-10-25: the 2026-09
+redirect above was removed so `uat` serves the app again, a full uat-quality
+passed there, and `app.uat` was then retired without waiting out its 7-day 302
+(Epo: no one used it). Its DNS, routes, ingress, rules entries and origins are
+gone, `dev-sam.uat` is deleted, and the advanced `*.uat` certificate is
+cancelled. `inbox.uat` (MX only) and `local.uat` (no public DNS) stay; neither
+needs it.
 
 Rollback restores the saved canonical app values, Clerk return paths and page
 routing together, then rebuilds/redeploys so generated origins agree. DNS alone
@@ -666,7 +662,7 @@ Compose does not bind:
 | `uat-api` / `api` | `http://127.0.0.1:8080` |
 | `uat-collab` / `collab` | `http://127.0.0.1:1234` |
 | `uat-ops` / `ops` (Access, §2.1) | `http://127.0.0.1:8082` |
-| `uat` / `app`, path `^/api/` (§1.0.1; the old `app.uat` too until §1.0.2) | `http://127.0.0.1:8080` |
+| `uat` / `app`, path `^/api/` (§1.0.1) | `http://127.0.0.1:8080` |
 | `uat-deploy` / `deploy` (Access, service token only) | `ssh://127.0.0.1:22` |
 | anything else | `http_status:404` |
 

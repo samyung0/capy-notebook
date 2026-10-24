@@ -28,10 +28,6 @@
       },
       "routes": [
         {
-          "pattern": "app.uat.capynotebook.com/assets/*",
-          "zone_name": "capynotebook.com"
-        },
-        {
           "pattern": "uat.capynotebook.com/assets/*",
           "zone_name": "capynotebook.com"
         }

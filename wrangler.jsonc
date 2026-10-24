@@ -75,15 +75,10 @@
       "placement": { "region": "aws:eu-central-1" },
       "workers_dev": false,
       "preview_urls": false,
-      // Every app host points to capy-uat and needs its own scriptless /api/* route.
-      // uat is the UAT app again (Q291: Clerk accepts only its primary domain); app.uat stays
-      // until the runbook §1.0.2 retirement.
-      // Each host's /assets/* belongs to the assets Worker (wrangler.assets.jsonc).
+      // The app host points to capy-uat and needs a scriptless /api/* route (runbook
+      // §1.0.1). It is the Clerk primary domain: Clerk refuses app URLs elsewhere (Q291).
+      // Its /assets/* belongs to the assets Worker (wrangler.assets.jsonc).
       "routes": [
-        {
-          "pattern": "app.uat.capynotebook.com/*",
-          "zone_name": "capynotebook.com"
-        },
         {
           "pattern": "uat.capynotebook.com/*",
           "zone_name": "capynotebook.com"
