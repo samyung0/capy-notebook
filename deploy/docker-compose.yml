@@ -395,6 +395,12 @@ services:
       # One sync connection per default-executor thread, so a model call's
       # admission never queues for a connection (Epo 2026-10-24, Q297).
       CAPY_DB_SYNC_POOL_MAX_SIZE: "8"
+      # The collaboration server's allocator settings (Q343): two glibc arenas
+      # and fixed 128 KiB trim and mmap thresholds give freed request buffers
+      # back after a burst instead of keeping the process at its high-water mark.
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      MALLOC_MMAP_THRESHOLD_: "131072"
     ports:
       # Bound to localhost: this is a debug port. Do not publish :8001 on a
       # public interface — the gateway reaches retrieval over the docker network.

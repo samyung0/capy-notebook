@@ -109,9 +109,9 @@ def call_slot_policy() -> CallSlotPolicy | None:
 CALL_SLOTS = Slots(64)
 # chat turns and generate requests in progress, each holding its history and
 # captures in memory while it waits or runs tools (up to about 7.4 MiB with 16
-# captures; a ceiling from a memory measurement against the 3 GiB container,
-# value for sign-off);
-TURN_SLOTS = Slots(96)
+# captures): 96 in production's 3 GiB, 48 in UAT's 1.5 GiB (Q338, Q343;
+# CAPY_TURN_SLOTS);
+TURN_SLOTS = Slots(cfg.turn_slots)
 # past either a chat waits up to this long in arrival order, with the waiting
 # status (Q268, Q293), and anything else answers provider_busy at once;
 CHAT_SLOT_WAIT_S = 60.0

@@ -110,6 +110,10 @@ class Config:
     vlm_pages_per_job: int = int(_env("CAPY_VLM_PAGES_PER_JOB", "10"))
     db_sync_pool_max_size: int = int(_env("CAPY_DB_SYNC_POOL_MAX_SIZE", "4"))
     db_async_pool_max_size: int = int(_env("CAPY_DB_ASYNC_POOL_MAX_SIZE", "8"))
+    # The AI process's chat and generate turns in progress (retrieval/limits.py):
+    # production 96 (Q338), UAT 48 for its 1.5 GiB (Q343), rendered per
+    # environment by scripts/env/config.py.
+    turn_slots: int = int(_env("CAPY_TURN_SLOTS", "96"))
     # Durable captions/transcripts expire independently of local parse handoffs.
     caption_cache_ttl_days: int = int(_env("CAPY_CAPTION_CACHE_TTL_DAYS", "90"))
     # Age after which the idle sweep removes spool files no active job names.
@@ -409,6 +413,9 @@ if not 1 <= cfg.vlm_pages_per_job <= cfg.vlm_page_capacity:
 
 if cfg.db_sync_pool_max_size <= 0 or cfg.db_async_pool_max_size <= 0:
     raise ValueError("pipeline database pool limits must be positive")
+
+if cfg.turn_slots <= 0:
+    raise ValueError("CAPY_TURN_SLOTS must be positive")
 
 
 def require_parse_timeouts() -> None:

@@ -75,6 +75,24 @@ def test_retrieval_has_a_memory_and_cpu_limit() -> None:
     assert service["cpus"] == "${RETRIEVAL_CPUS:?set RETRIEVAL_CPUS}"
 
 
+@pytest.mark.parametrize("compose", ["docker-compose.prod.yml", "docker-compose.yml"])
+def test_retrieval_returns_freed_memory_to_the_system(compose: str) -> None:
+    """(security regression: rate-limit audit M13, Q343) Retrieval runs with
+    the collaboration server's allocator settings, so request buffers freed
+    after a burst go back instead of holding the process near its limit; the
+    deployed one takes its turns-in-progress ceiling from each environment."""
+    path = COMPOSE.parent / compose
+    environment = yaml.safe_load(path.read_text(encoding="utf-8"))["services"][
+        "retrieval"
+    ]["environment"]
+
+    assert {key: environment.get(key) for key in MALLOC} == MALLOC
+    if compose == "docker-compose.prod.yml":
+        assert environment["CAPY_TURN_SLOTS"] == (
+            "${RETRIEVAL_TURN_SLOTS:?set RETRIEVAL_TURN_SLOTS}"
+        )
+
+
 APP_IMAGES = {
     "migrate": "CAPY_SERVER_IMAGE",
     "server": "CAPY_SERVER_IMAGE",

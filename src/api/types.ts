@@ -553,7 +553,14 @@ export type WireMessage = Omit<GenMessage, 'citations'> & {
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 export type ChatStatus = 'streaming' | 'complete' | 'aborted' | 'error';
-export type ChatPhase = 'planning' | 'running_tools' | 'answering';
+/** The waiting phases: for the per-user limiter (sent by the API) and for an
+ * AI process slot (sent by the pipeline), shown in the trace (Q268). */
+export type ChatWaitingPhase = 'waiting_limit' | 'waiting_capacity';
+export type ChatPhase =
+  | 'planning'
+  | 'running_tools'
+  | 'answering'
+  | ChatWaitingPhase;
 
 export interface ChatMessage {
   activity?: ActivityBlock[];
