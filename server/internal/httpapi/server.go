@@ -70,6 +70,10 @@ type Config struct {
 	// RateLimit governs per-user and per-IP request limits. The zero value
 	// disables limiting entirely.
 	RateLimit ratelimit.Config
+	// TurnstileSecret verifies signed-out answer checks' Turnstile tokens
+	// (TURNSTILE_SECRET_KEY); CaptchaVerifier replaces siteverify in tests.
+	TurnstileSecret string
+	CaptchaVerifier CaptchaVerifier
 	// ModelRegistry is the process-wide model config cache. Nil disables
 	// per-model pricing and pinning (tests).
 	ModelRegistry *models.Registry
@@ -105,6 +109,7 @@ type api struct {
 	cfg                Config
 	mailRecorder       mail.Recorder
 	limiter            *ratelimit.Limiter
+	captcha            CaptchaVerifier
 	modelReg           *models.Registry
 	jev                *jev.Client
 	stripeSubscription func(string) (*stripe.Subscription, error)
@@ -165,6 +170,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		cfg:                cfg,
 		mailRecorder:       cfg.MailRecorder,
 		limiter:            ratelimit.New(rdb, cfg.RateLimit),
+		captcha:            cfg.CaptchaVerifier,
 		jev:                cfg.Jev,
 		modelReg:           cfg.ModelRegistry,
 		stripeSubscription: billing.RetrieveSubscription,
@@ -185,6 +191,9 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeMethodCheckout: billing.CreateReloadMethodCheckout,
 		stripePortal:         billing.CreatePortalSession,
 		streamByUser:         make(map[string]int),
+	}
+	if a.captcha == nil {
+		a.captcha = newTurnstileVerifier(cfg.TurnstileSecret)
 	}
 	a.uploads = newUploadQueue(func(batch string, removed bool) {
 		if removed {

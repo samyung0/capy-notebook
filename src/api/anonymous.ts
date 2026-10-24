@@ -1,3 +1,4 @@
+import { m } from '@/i18n';
 import { ApiError, parseErrorBody } from './client';
 import type { GradeAnonymousQuizReq, GradedQuiz, Question } from './types';
 
@@ -62,6 +63,13 @@ export async function gradeAnonymousQuiz(
 /** The daily anonymous grading cap; the visitor can sign in to keep going. */
 export const isAnonymousGradingLimit = (err: unknown) =>
   err instanceof ApiError && err.code === 'anonymous_grading_limit';
+
+/** A signed-out check's Turnstile refusal, shown inline under Check. */
+export function captchaCopy(err: unknown): string | undefined {
+  if (!(err instanceof ApiError)) return;
+  if (err.code === 'captcha_failed') return m.quiz_captcha_failed();
+  if (err.code === 'captcha_unavailable') return m.quiz_captcha_unavailable();
+}
 
 /** Grades an attempt at a quiz embedded in a shared note, through the note's
  * link (the quiz has none of its own); it stores nothing. */

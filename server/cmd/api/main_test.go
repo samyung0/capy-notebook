@@ -169,3 +169,20 @@ func TestDeployedGatewaysRefuseShortServiceSecrets(t *testing.T) {
 		}
 	}
 }
+
+// TestProductionNeedsTheTurnstileSecret (rate-limit audit Q271). A deployed
+// gateway does not boot without the secret that verifies signed-out answer
+// checks; local stacks may run without it.
+func TestProductionNeedsTheTurnstileSecret(t *testing.T) {
+	if err := validateTurnstileSecret("production", ""); err == nil {
+		t.Fatal("production booted without TURNSTILE_SECRET_KEY")
+	}
+	if err := validateTurnstileSecret("production", "0x4AAAAAAA-secret"); err != nil {
+		t.Fatal(err)
+	}
+	for _, appEnv := range []string{"development", "e2e"} {
+		if err := validateTurnstileSecret(appEnv, ""); err != nil {
+			t.Fatalf("%s: %v", appEnv, err)
+		}
+	}
+}

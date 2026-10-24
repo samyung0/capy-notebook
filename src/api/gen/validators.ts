@@ -4523,11 +4523,14 @@ export const GradeAnonymousNoteQuizParams = zod.object({
 
 export const gradeAnonymousNoteQuizBodyLocalIdMax = 64;
 
+export const gradeAnonymousNoteQuizBodyTurnstileTokenMax = 2048;
+
 
 
 export const GradeAnonymousNoteQuizBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
-  "localId": zod.string().max(gradeAnonymousNoteQuizBodyLocalIdMax).optional()
+  "localId": zod.string().max(gradeAnonymousNoteQuizBodyLocalIdMax).optional(),
+  "turnstileToken": zod.string().max(gradeAnonymousNoteQuizBodyTurnstileTokenMax).optional()
 })
 
 export const GradeAnonymousNoteQuizResponse = zod.object({
@@ -4630,11 +4633,14 @@ export const GradeAnonymousQuizParams = zod.object({
 
 export const gradeAnonymousQuizBodyLocalIdMax = 64;
 
+export const gradeAnonymousQuizBodyTurnstileTokenMax = 2048;
+
 
 
 export const GradeAnonymousQuizBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
-  "localId": zod.string().max(gradeAnonymousQuizBodyLocalIdMax).optional()
+  "localId": zod.string().max(gradeAnonymousQuizBodyLocalIdMax).optional(),
+  "turnstileToken": zod.string().max(gradeAnonymousQuizBodyTurnstileTokenMax).optional()
 })
 
 export const GradeAnonymousQuizResponse = zod.object({

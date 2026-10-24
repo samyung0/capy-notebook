@@ -710,10 +710,19 @@ share token is verified before the body is read. Parts are counted before any
 Jev call and stay counted when grading fails. Caps: 300 graded parts per
 address hash per day (generous because a classroom shares one IP) and 50,000
 per day overall; over either, the API answers 429 `anonymous_grading_limit`
-and the page asks the visitor to sign in. There is no per-shared-item cap: a
-captcha token on each signed-out answer check is the planned next layer (Epo
-2026-10-24, vendor not chosen yet). The local id is reporting only, because
-the client chooses it. Rows older than 30 days are pruned by the API's
+and the page asks the visitor to sign in. There is no per-shared-item cap:
+each signed-out answer check carries a Cloudflare Turnstile token instead (Epo
+2026-10-24, Q243, Q271), since an address-rotating client defeats any per-item
+or per-address count. The page solves it in the background (managed mode, a
+challenge only when Cloudflare asks) on load and again after each check
+(`src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
+quiz), and the API verifies it with siteverify (5 s timeout) after the share
+token's check and before grading (`checkCaptcha`, `server/internal/httpapi/
+turnstile.go`): a missing or refused token answers 403 `captcha_failed`, and a
+siteverify that cannot answer 503 `captcha_unavailable`, refusing rather than
+skipping the check; the page shows both under Submit. Signed-in checks take no
+token. Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
+is reporting only, because the client chooses it. Rows older than 30 days are pruned by the API's
 maintenance loop. No browser fingerprinting is used.
 The visitor's grading post goes straight to `/api/public/.../grade`, so it
 carries the visitor's own address and takes the anonymous class (60/minute

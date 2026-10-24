@@ -2399,6 +2399,9 @@ components:
         localId:
           maxLength: 64
           type: string
+        turnstileToken:
+          maxLength: 2048
+          type: string
       required:
         - answers
       type: object

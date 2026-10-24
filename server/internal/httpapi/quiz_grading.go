@@ -289,6 +289,11 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
+	// After the share-token check (the route's middleware) and before any
+	// grading; a forged link never reaches siteverify.
+	if err := a.checkCaptcha(ctx, body.TurnstileToken); err != nil {
+		return nil, err
+	}
 	var ipHash string
 	if len(plan.open) > 0 {
 		if a.jev == nil {

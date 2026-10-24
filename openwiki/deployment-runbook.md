@@ -1457,7 +1457,12 @@ Two content security policies, both built once per SPA build by
     `form-action 'self'`, `object-src 'none'` and `base-uri 'none'`;
   - `frame-ancestors 'self'`: only the app may frame these pages, and
     nothing in it does today, so an outside site (an LMS, a blog) cannot
-    embed a shared quiz or note.
+    embed a shared quiz or note;
+  - on a shared quiz and a shared note only (the pages that grade signed-out
+    answers), `https://challenges.cloudflare.com` in `script-src` and
+    `frame-src` for Cloudflare Turnstile (`allowTurnstile` in
+    `workers/site/handler.ts`; Epo 2026-10-24, Q271). Flashcard, summary and
+    error pages do not get it.
 
   The SPA gets the same `script-src` report-only, inside its image header,
   plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
@@ -1518,6 +1523,35 @@ it; a new script or frame host on a public page goes into `scriptSources` or
 `capy-web` security report. The HTML embed frame, the Office runtime and Ops
 keep their own policies (§2.3, `workers/office/_headers`, the Ops application
 below).
+
+### 2.5 Turnstile widget (signed-out answer checks)
+
+Each signed-out answer check (a shared quiz's Submit, a quiz embedded in a
+shared note) carries a Cloudflare Turnstile token, and the API verifies it
+with siteverify before grading (Epo 2026-10-24, Q271; observability-metering
+§ anonymous grading). Dashboard work, by hand, once per environment:
+
+1. Cloudflare dashboard → Turnstile → Add widget. Mode **Managed**. Hostnames:
+   the environment's app hosts that serve share pages (UAT:
+   `app.uat.capynotebook.com`, `uat.capynotebook.com` and
+   `local.uat.capynotebook.com`; production: its app hostname). One widget
+   per environment, so a leaked UAT key cannot pass production checks.
+2. GitHub environment (`uat`, `production`): variable
+   `VITE_TURNSTILE_SITE_KEY` (the widget's site key, built into the share
+   pages) and secret `TURNSTILE_SECRET_KEY` (its secret key, for the API).
+   `scripts/env/config.py` refuses a build without the site key and an app
+   render without the secret, and a production gateway does not boot without
+   the secret (`validateTurnstileSecret`).
+3. Deploy, open a shared quiz signed out and submit: the check is graded. A
+   403 `captcha_failed` means the token did not verify (wrong key pair or
+   hostname); a 503 `captcha_unavailable` means siteverify could not answer
+   (the API refuses rather than skipping the check).
+
+Local stacks and e2e use Cloudflare's published test keys, which always pass:
+site key `1x00000000000000000000AA`, secret
+`1x0000000000000000000000000000000AA` (`deploy/.env.example`, the Compose
+files, `playwright.config.ts`). The API still calls siteverify with the test
+secret, so a local signed-out check needs Cloudflare reachable.
 
 ---
 

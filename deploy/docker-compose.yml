@@ -151,6 +151,8 @@ services:
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-dev-collaboration-secret}
       # Vite's summary middleware falls back to the same value (vite.config.ts).
       SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:-dev-share-link-secret-0123456789abcdef}
+      # Cloudflare's published Turnstile test secret, which always passes.
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
       # Grades open quiz parts; without it grading answers 503.
       JEV_TYPESAFE_API_KEY: ${JEV_TYPESAFE_API_KEY:-}
       COLLABORATION_URL: ${COLLABORATION_URL:-ws://localhost:1234}

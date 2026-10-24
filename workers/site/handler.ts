@@ -210,6 +210,17 @@ async function allowTemplateScripts(
   );
 }
 
+/** Cloudflare Turnstile, which a signed-out answer check solves (Epo
+ * 2026-10-24, Q271): its script and challenge frame, allowed only on the
+ * pages that grade answers, a shared quiz and a shared note's embedded
+ * quizzes (src/share/turnstile.ts). */
+const TURNSTILE = 'https://challenges.cloudflare.com';
+const FRAME_SRC = /frame-src [^;]*/;
+export const allowTurnstile = (policy: string) =>
+  policy
+    .replace("script-src 'self'", `script-src 'self' ${TURNSTILE}`)
+    .replace(FRAME_SRC, (directive) => `${directive} ${TURNSTILE}`);
+
 const headers = (extra: HeadersInit = {}) => {
   const result = new Headers(extra);
   result.set('Cache-Control', 'no-store');
@@ -381,7 +392,10 @@ export async function handleSiteRequest(
       responseHeaders.set(IMAGE_POLICY_HEADER, IMAGE_POLICY);
       responseHeaders.set(
         PAGE_POLICY_HEADER,
-        await allowTemplateScripts(PAGE_POLICY, template)
+        await allowTemplateScripts(
+          kind === 'flashcards' ? PAGE_POLICY : allowTurnstile(PAGE_POLICY),
+          template
+        )
       );
       if (data.privacy === 'link')
         responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');

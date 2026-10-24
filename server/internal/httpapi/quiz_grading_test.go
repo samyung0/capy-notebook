@@ -50,7 +50,7 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 	st.SetModelRegistry(reg)
 	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
 		E2EAuth: true, E2ESecret: "e2e-test-secret", E2EUserIDs: []string{"u_owner", "u_editor", "u_viewer", "u_other"},
-		ModelRegistry: reg, Jev: jev.NewForTest("key", srv.URL),
+		ModelRegistry: reg, Jev: jev.NewForTest("key", srv.URL), CaptchaVerifier: testCaptcha,
 	})
 	return h, st, &calls
 }
@@ -232,7 +232,7 @@ func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		return rec
 	}
-	const open = `{"answers":{"open-a":"Because.","closed-b":false},"localId":"device-1"}`
+	const open = `{"answers":{"open-a":"Because.","closed-b":false},"localId":"device-1","turnstileToken":"turnstile-ok"}`
 	rec := grade("203.0.113.7", open)
 	var graded struct {
 		Correct, Total float64
@@ -259,7 +259,7 @@ func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 	if rec := grade("203.0.113.7", open); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "anonymous_grading_limit") {
 		t.Fatalf("capped IP → %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := grade("203.0.113.7", `{"answers":{"closed-b":true}}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
+	if rec := grade("203.0.113.7", `{"answers":{"closed-b":true},"turnstileToken":"turnstile-ok"}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
 		t.Fatalf("capped IP, closed parts only → %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := grade("198.51.100.4", open); rec.Code != http.StatusOK {
@@ -313,7 +313,7 @@ func TestAnonymousNoteEmbedsAndGrading(t *testing.T) {
 	token := store.ShareToken(nil, note.ID)
 	grade := func(quizID string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/public/notes/"+token+"/quizzes/"+quizID+"/grade",
-			strings.NewReader(`{"answers":{"q1-a":true}}`))
+			strings.NewReader(`{"answers":{"q1-a":true},"turnstileToken":"turnstile-ok"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)

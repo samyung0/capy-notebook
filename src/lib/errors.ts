@@ -449,6 +449,7 @@ const TYPED_SERVER_CODES = new Set([
   'ai_unavailable',
   'bank_unavailable',
   'generate_empty',
+  'captcha_unavailable',
   'provider_busy',
   'rate_limit_unavailable',
   'upload_queue_full',

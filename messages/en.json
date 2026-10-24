@@ -824,6 +824,8 @@
   "quiz_open_placeholder": "Write a few sentences",
   "quiz_grading": "Marking…",
   "quiz_grade_failed": "Could not mark your answers",
+  "quiz_captcha_failed": "We could not confirm you are a person. Submit your answers again.",
+  "quiz_captcha_unavailable": "The person check is unavailable right now. Try again in a moment.",
   "quiz_grade_failed_body": "Grading is unavailable right now. Try again in a moment.",
   "quiz_level_recall": "Recall",
   "quiz_level_application": "Application",

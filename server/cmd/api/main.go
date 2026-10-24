@@ -136,6 +136,17 @@ func validateServiceSecrets(appEnv, pipelineSecret, collaborationSecret string) 
 	return nil
 }
 
+// validateTurnstileSecret refuses, outside development and e2e, a gateway
+// without TURNSTILE_SECRET_KEY: every gateway serves signed-out grading, whose
+// answer checks it verifies with Turnstile (Epo 2026-10-24, Q271). Local
+// stacks set Cloudflare's published test secret.
+func validateTurnstileSecret(appEnv, secret string) error {
+	if appEnv == "development" || appEnv == "e2e" || secret != "" {
+		return nil
+	}
+	return errors.New("TURNSTILE_SECRET_KEY is required: signed-out answer checks are verified with Turnstile")
+}
+
 func validateAuthConfiguration(
 	appEnv string,
 	authDisabled, e2eAuth bool,
@@ -346,6 +357,10 @@ func main() {
 	if err := validateServiceSecrets(appEnv, pipeSecret, collaborationSecret); err != nil {
 		log.Fatal(err)
 	}
+	turnstileSecret := env("TURNSTILE_SECRET_KEY", "")
+	if err := validateTurnstileSecret(appEnv, turnstileSecret); err != nil {
+		log.Fatal(err)
+	}
 	var pipe *pipeline.Client
 	if u := env("PIPELINE_URL", ""); u != "" {
 		pipe = pipeline.New(u, pipeSecret)
@@ -499,6 +514,7 @@ func main() {
 		BankAssets:             bankAssets,
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),
 		BankCommentEmail:       env("BANK_COMMENT_EMAIL", ""),
+		TurnstileSecret:        turnstileSecret,
 		ReleaseSHA:             env("RELEASE_SHA", ""),
 		APIDocs:                appEnv == "development",
 		ClerkSecretKey:         clerkSecret,

@@ -47,7 +47,7 @@ func TestAnonymousGradingCountsIPv6By56(t *testing.T) {
 	})
 	grade := func(ip string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+token+"/grade",
-			strings.NewReader(`{"answers":{"open-a":"Because."}}`))
+			strings.NewReader(`{"answers":{"open-a":"Because."},"turnstileToken":"turnstile-ok"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("CF-Connecting-IP", ip)
 		rec := httptest.NewRecorder()

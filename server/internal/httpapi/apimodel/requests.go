@@ -225,6 +225,9 @@ type GradeAnonymousQuizReq struct {
 	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
 	// LocalID is the anonymous browser's reporting id for the grading caps.
 	LocalID string `json:"localId,omitempty" maxLength:"64"`
+	// TurnstileToken is the Cloudflare Turnstile token the page solved for this
+	// check; the API verifies it before grading.
+	TurnstileToken string `json:"turnstileToken,omitempty" maxLength:"2048"`
 }
 
 // CheckReviewItemReq checks one question of a review session.
