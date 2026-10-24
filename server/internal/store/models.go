@@ -181,7 +181,7 @@ type File struct {
 	// chat and generate.
 	Indexed bool `json:"indexed"`
 	// IndexLimit names the ingest limit a ready, unindexed file's content is
-	// over (too many pages, pixels, CSV cells or text). The file
+	// over (too many pages, pixels, audio hours, CSV cells or text). The file
 	// opens and downloads as usual; only search and chat skip it.
 	IndexLimit *FileIndexLimit `json:"indexLimit,omitempty"`
 	// HasBytes says a source object exists. Bytes are read through the links
@@ -367,6 +367,10 @@ type FlashcardSet struct {
 	IsOwner        bool `json:"isOwner"`
 	CanEdit        bool `json:"canEdit"`
 	CanEditContent bool `json:"canEditContent"`
+	// RemovedAssetIDs are its card images that no longer exist: deleted by
+	// their uploader, or with the uploader's account (M16). Study shows each
+	// as removed instead of loading it.
+	RemovedAssetIDs []string `json:"removedAssetIds,omitempty"`
 }
 
 type Flashcard struct {

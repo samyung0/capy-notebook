@@ -237,6 +237,20 @@ The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.
 
+Undo and Redo restore a deleted list item as a copy placed by tracing its old
+neighbours' `redone` links. The copy keeps the right neighbour its trace finds
+only when that lies after its left neighbour; otherwise it takes the item now
+after the left, as a local insert does (Epo 2026-10-24). A traced right with
+more than 4,096 items between the left and it gives way to the item after the
+left too, which bounds the walk. Without the rule a trace through a copy an
+earlier Undo made, later split by typing, can give a right origin before the
+origin, and each replica then places the copy by its own block boundaries, so
+peers and reloads read the text in another order.
+Yjs has it through our pnpm patch (`redoItem` in `patches/yjs@13.6.31.patch`)
+and the fork's yrs in `Item::redo` (`third_party/yrs/src/block.rs`), so
+browser notes and items, the server's agent Undo and the Office editors all
+follow it.
+
 ### Room presence
 
 Developer Epo decided the avatar group and verified cursor labels on
@@ -1167,6 +1181,15 @@ A first open whose token has not answered by then shows the collaboration
 unavailable panel with Retry instead of loading for ever; an editor not
 synced by then, a JOIN never answered on the open socket included, turns the
 status red, and after a reload that failing editor replaces the paused one.
+The editor binds to the room's document (`YjsEditor.connect`) only at the
+room's first sync (`roomBinding.ts`, CAPY-WEB-7). Plate's init binds after
+waiting at most 5 s; bound to a document the room had not filled, the editor
+showed it empty and kept a paragraph the document never got, which broke
+every later Yjs mapping. Until it binds, an editor painted early (red because
+its join ran out first) shows the projection. Binding replaces that tree and
+keeps a caret placed on it by block id where its text still exists, else
+drops it; history maps the selection onto the room only once bound (the
+@slate-yjs/core patch).
 Item rooms (quizzes, flashcard sets, standalone diagrams and mindmaps) have
 the same 30 s from their token request (`ItemRoom.start`); one not synced by
 then goes offline, the room's connection error (Epo 2026-10-23).
@@ -1601,6 +1624,21 @@ design, option d), and the nudge's release file on 2026-10-17.
   into view, a peer's change never does; Epo 2026-10-22, 2026-10-23) raised
   `CLIENT_PROTOCOL` to 13 and `MIN_SOURCE` to 13; `MIN_MATERIAL` stays 7. Its
   deploy request names "client protocol 12 -> 13, source 12 -> 13".
+  Phase 0 of the tombstone work (pin 870dc1661: yrs collects an item next to
+  a collected unit, as Yjs does; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to
+  14 and `MIN_SOURCE` to 14; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 13 -> 14, source 13 -> 14".
+  The Office agent's short paragraph ids and malformed-id refusals (pin
+  faacf7887: a DOCX paraId alone names its one paragraph, and a malformed
+  slide, shape, paragraph or table id is refused as malformed, showing the
+  read's form; Epo 2026-10-24, Q222 and Q223) raised `CLIENT_PROTOCOL` to 15
+  and `MIN_SOURCE` to 15; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 14 -> 15, source 14 -> 15".
+  The Undo redo rule (pin d5b87cd17 and the yjs patch: a restored copy
+  keeps its traced right neighbour only when it lies after its left; Epo
+  2026-10-24, Q247-Q250) raised `CLIENT_PROTOCOL` to 16 and both minimums to
+  16, so note and item tabs without the rule reload. Its deploy request names
+  "client protocol 15 -> 16, material 7 -> 16, source 15 -> 16".
 
 #### When to bump
 

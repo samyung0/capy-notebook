@@ -41,3 +41,4 @@ export const QUIZ_PARTS_MAX = 100;
 export const QUIZ_QUESTION_PARTS_MAX = 7;
 export const CHAT_CHARACTER_LIMIT = 5000;
 export const COMMENT_CHARACTER_LIMIT = 3000;
+export const VOICE_INPUT_MAX_SECONDS = 120;

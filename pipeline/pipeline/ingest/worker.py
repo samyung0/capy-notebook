@@ -57,11 +57,17 @@ from ..jobs import (
     backoff_s,
     is_retryable,
     policy_for,
+    policy_key,
     provider_wait_backoff_s,
 )
 from ..parse import caption_cache, parser_client
 from ..retrieval import accounting, indexing, models, store
-from ..retrieval.chunking import CHUNKER_VERSION, Chunk, chunk_markdown
+from ..retrieval.chunking import (
+    CHUNKER_VERSION,
+    Chunk,
+    chunk_markdown,
+    chunk_transcript,
+)
 from ..retrieval.confidence import VLM_RECOVERY, score_chunks, vlm_pages
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
@@ -73,6 +79,8 @@ log = logging.getLogger("capy.worker")
 
 _RESOURCE_DIGITAL_PAGE = "digital_parse_page"
 _RESOURCE_VLM_PAGE = "vlm_ingest_page"
+# Read only by an audio job, which fails explicitly without it (_rate).
+_RESOURCE_AUDIO_SECOND = "audio_transcription_second"
 _REQUIRED_RESOURCE_RATES = {
     _RESOURCE_DIGITAL_PAGE,
     _RESOURCE_VLM_PAGE,
@@ -869,6 +877,16 @@ def _read_name(file_id: str) -> str:
         return db.file_name(cur, file_id)
 
 
+def _audio_context(workspace_id: str, name: str) -> str:
+    """The text sent ahead of a recording so names come out right: the
+    workspace's title and the file's name."""
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT name FROM workspaces WHERE id=%s", (workspace_id,))
+        row = cur.fetchone()
+    title = str(row[0]) if row else ""
+    return f"Workspace: {title}\nFile: {name}"
+
+
 def _account_allows_ingest(file_id: str, payload: dict, check_credits: bool) -> bool:
     """Stage gate: owner lifecycle/storage, actor lifecycle, optionally credits.
 
@@ -905,12 +923,15 @@ def _first_claim(job: dict, payload: dict) -> bool:
     """True for the first attempt of a job that is not a parse continuation.
 
     Busy-provider and capacity re-pends hand the attempt back, so a re-claimed
-    job would look first again; the wait counter tells them apart.
+    job would look first again; the wait counter and a stored transcription
+    task tell them apart.
     """
     return (
         int(job.get("attempts") or 1) == 1
         and int(job.get("provider_waits") or 0) == 0
         and not payload.get("parseJobId")
+        # An audio job polling its transcription task was admitted before.
+        and not payload.get("filetrans")
     )
 
 
@@ -1140,14 +1161,19 @@ def _yield_for_capacity(
     backoff_s: int = YIELD_BACKOFF_S,
     outcome: str = "capacity_wait",
     count_provider_wait: bool = False,
+    progress: tuple[str, int, str] = ("queued", 5, "pending"),
 ) -> None:
-    """Give the slot back to the queue. File stays pending; attempt is undone.
+    """Give the slot back to the queue. The attempt is undone; the file shows
+    ``progress`` (stage, percent, status): pending and queued, or processing
+    while an audio job's transcription task runs.
 
     A provider that stayed busy is the same wait with its own counter, so the
-    worker can cap how often one job comes back for the same model. A note
-    index job (no ``file_id``) keeps its note's job pointer and sends no
-    progress.
+    worker can cap how often one job comes back for the same model. An audio
+    job between polls of its task (``transcription_poll``) is not an error,
+    and counts as queued only once its delay is over. A note index job (no
+    ``file_id``) keeps its note's job pointer and sends no progress.
     """
+    stage, percent, file_status = progress
     attempt = int(job.get("attempts") or 1)
     payload = job.get("payload") or {}
     with db.connect() as conn, conn.cursor() as cur:
@@ -1158,18 +1184,27 @@ def _yield_for_capacity(
                 cur, job["id"], attempt, backoff_s=backoff_s
             )
         else:
-            db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
+            db.release_job_for_capacity(
+                cur,
+                job["id"],
+                attempt,
+                backoff_s=backoff_s,
+                poll=outcome == "transcription_poll",
+            )
         if file_id:
-            db.set_file_status(cur, file_id, "pending")
+            db.set_file_status(cur, file_id, file_status)
         cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
         row = cur.fetchone()
+        category = {"capacity_wait": "capacity", "provider_busy": "provider"}.get(
+            outcome, ""
+        )
         db.finish_job_attempt(
             cur,
             attempt_id=telemetry.current_attempt_id(),
             outcome=outcome,
             snapshot=telemetry.snapshot(),
-            error_category="capacity" if outcome == "capacity_wait" else "provider",
-            error_code=outcome,
+            error_category=category,
+            error_code=outcome if category else "",
             next_retry_at=row[0] if row else None,
         )
         conn.commit()
@@ -1177,9 +1212,9 @@ def _yield_for_capacity(
         _publish_progress(
             workspace_id,
             file_id,
-            "queued",
-            5,
-            status="pending",
+            stage,
+            percent,
+            status=file_status,
             message=f"{name}: {message}",
         )
     log.info("ingest %s %s", name, message)
@@ -1207,6 +1242,8 @@ def _pipeline_identity(
         direct = f"direct:tabular:{cfg.tabular_text_version}"
     elif processing_plan.route == ingest_plan.IMAGE_CAPTION:
         direct = "direct:image"
+    elif processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION:
+        direct = "direct:filetrans"
     else:
         direct = ""
     if direct:
@@ -1520,11 +1557,14 @@ async def _chunks_for(
     file_id: str,
     source_sha256: str,
     job_id: str | None = None,
+    attempt: int = 1,
     last_wait: bool = False,
+    transcript_url: str = "",
 ) -> tuple[list[Chunk], list[int], bytes | None]:
     """Parse one source into chunks, the 1-based pages the VLM left unread,
     and the parse's page-1 image for the card thumbnail. ``last_wait``: the
-    job's busy re-pend is spent (see ``_read_vlm_pages``)."""
+    job's busy re-pend is spent (see ``_read_vlm_pages``). ``transcript_url``:
+    the result link of the audio task this claim already polled."""
     source_revision = int(payload.get("sourceRevision") or 0)
     source_etag = str(payload.get("sourceETag") or "")
 
@@ -1547,6 +1587,7 @@ async def _chunks_for(
 
     direct = {
         ingest_plan.IMAGE_CAPTION: "image",
+        ingest_plan.AUDIO_TRANSCRIPTION: "audio",
         ingest_plan.DELIMITED_TEXT: "tabular",
     }.get(processing_plan.route)
     if direct:
@@ -1562,7 +1603,7 @@ async def _chunks_for(
         _publish_progress(
             ws,
             file_id,
-            "captioning" if direct == "image" else "indexing",
+            {"image": "captioning", "audio": "transcribing"}.get(direct, "indexing"),
             20,
             status="processing",
         )
@@ -1589,6 +1630,28 @@ async def _chunks_for(
                 figures_captioned=0 if caption_cached else 1,
                 figures_applied=1,
             )
+        elif direct == "audio":
+            if not local_path:
+                raise RetryableError("local audio source is missing")
+            _set_stage("audio_transcription")
+            (
+                sentences,
+                derived_key,
+                derived_size,
+            ) = await source_text.transcribe_audio_source(
+                job_id=str(job_id),
+                attempt=attempt,
+                stored=payload.get("filetrans"),
+                local_path=local_path,
+                source_sha256=source_sha256,
+                blob_path=str(payload["blobPath"]),
+                context=await asyncio.to_thread(_audio_context, ws, name),
+                second_rate_micros=_rate(_RESOURCE_AUDIO_SECOND)["creditMicrosPerUnit"],
+                credit_user_id=None
+                if payload.get("paidBy") == "system"
+                else str(payload.get("actorUserId") or ""),
+                transcript_url=transcript_url,
+            )
         else:
             if not local_path:
                 raise RetryableError("local delimited source is missing")
@@ -1612,6 +1675,8 @@ async def _chunks_for(
                     str(payload.get("actorUserId") or ""),
                 )
         _publish_progress(ws, file_id, "indexing", 50, status="processing")
+        if direct == "audio":
+            return chunk_transcript(sentences), [], None
         if direct == "tabular":
             # Every row carries its own headers, so a table chunks with no
             # overlap: a carried row would only repeat in the next chunk.
@@ -1864,6 +1929,24 @@ async def _process_ingest_job_bound(job: dict) -> None:
             job_stage=telemetry.current_stage(),
         )
         await _process_ingest_job(job, payload, file_id, ws, kind, processing_plan)
+    except source_text.FiletransWait as wait:
+        # The transcription task runs at Alibaba; the job polls it next claim.
+        name = await asyncio.to_thread(_read_name, file_id)
+        await asyncio.to_thread(
+            _yield_for_capacity,
+            job,
+            file_id,
+            ws,
+            name,
+            int(payload["sourceRevision"]),
+            str(payload.get("sourceETag") or ""),
+            str(payload.get("actorUserId") or ""),
+            "transcribing",
+            wait.delay_s,
+            "transcription_poll",
+            progress=("transcribing", 20, "processing"),
+        )
+        raise
     except CapacityWait:
         name = await asyncio.to_thread(_read_name, file_id)
         await asyncio.to_thread(
@@ -1875,7 +1958,9 @@ async def _process_ingest_job_bound(job: dict) -> None:
             int(payload["sourceRevision"]),
             str(payload.get("sourceETag") or ""),
             str(payload.get("actorUserId") or ""),
-            "waiting for parser capacity",
+            "waiting for provider capacity"
+            if processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION
+            else "waiting for parser capacity",
             YIELD_BACKOFF_S,
             "capacity_wait",
         )
@@ -2261,6 +2346,34 @@ async def _process_parts_bound(
         _publish_done(ws, file_id, missing)
 
 
+async def _refuse_admission(
+    job: dict, payload: dict, file_id: str, ws: str, name: str
+) -> None:
+    """End the file failed and uncharged, as an ingest the account cannot
+    take: locked, over quota, or without the credits an audio task's
+    measured cost needs."""
+    note = f"{name}: ingest refused because the account is locked or over quota."
+    indexed = await asyncio.to_thread(
+        _finish_fail,
+        file_id=file_id,
+        job_id=job["id"],
+        error=note,
+        attempt=int(job.get("attempts") or 1),
+        reservation_id=_reservation_id(payload),
+        source_revision=int(payload["sourceRevision"]),
+        source_etag=str(payload.get("sourceETag") or ""),
+        actor_user_id=str(payload.get("actorUserId") or ""),
+        workspace_id=ws,
+        error_category="accounting",
+        error_code="ingest_admission_refused",
+    )
+    if indexed is None:
+        return
+    _publish_progress(
+        ws, file_id, "failed", 100, status="failed", message=note, indexed=indexed
+    )
+
+
 async def _process_ingest_job(
     job: dict,
     payload: dict,
@@ -2294,30 +2407,24 @@ async def _process_ingest_job(
     if not await asyncio.to_thread(
         _account_allows_ingest, file_id, payload, _first_claim(job, payload)
     ):
-        note = f"{name}: ingest refused because the account is locked or over quota."
-        indexed = await asyncio.to_thread(
-            _finish_fail,
-            file_id=file_id,
-            job_id=job["id"],
-            error=note,
-            attempt=attempt,
-            reservation_id=_reservation_id(payload),
-            source_revision=source_revision,
-            source_etag=source_etag,
-            actor_user_id=str(payload.get("actorUserId") or ""),
-            workspace_id=ws,
-            error_category="accounting",
-            error_code="ingest_admission_refused",
-        )
-        if indexed is None:
-            return
-        _publish_progress(
-            ws, file_id, "failed", 100, status="failed", message=note, indexed=indexed
-        )
+        await _refuse_admission(job, payload, file_id, ws, name)
         return
     if payload.get("partsOnly") is True:
         await _process_parts_bound(job, payload, file_id, ws, name)
         return
+    transcript_url = ""
+    filetrans = payload.get("filetrans")
+    if (
+        processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION
+        and isinstance(filetrans, dict)
+        and filetrans.get("taskId")
+    ):
+        # Polled before the source is fetched or hashed: most of these claims
+        # only find the task still running and re-pend.
+        _set_stage("audio_transcription")
+        payload["filetrans"], transcript_url = await source_text.poll_task(
+            filetrans, job_id=job["id"], attempt=attempt
+        )
     _publish_progress(ws, file_id, "queued", 5, status="pending")
 
     if processing_plan.route == ingest_plan.STORE_ONLY:
@@ -2468,8 +2575,14 @@ async def _process_ingest_job(
             file_id=file_id,
             source_sha256=source_sha256,
             job_id=job["id"],
+            attempt=attempt,
             last_wait=int(job.get("provider_waits") or 0) >= PROVIDER_WAITS_MAX,
+            transcript_url=transcript_url,
         )
+    except source_text.AudioCreditsRefused:
+        await _refuse_admission(job, payload, file_id, ws, name)
+        await asyncio.to_thread(cleanup_source)
+        return
     except parser_client.ParserClientError:
         artifact = payload.get("parseArtifact")
         repair_attempts = int(payload.get("artifactRepairAttempts") or 0)
@@ -2829,7 +2942,7 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
         await asyncio.to_thread(_settle_published_source_refresh, job["id"], payload)
         return
     job_type = (job.get("type") or "").strip()
-    policy = POLICIES.get(job_type)
+    policy = POLICIES.get(policy_key(job_type, payload))
     attempts = int(job.get("attempts") or 1)
     error_category, error_code, _provider_status = telemetry.classify_error(exc)
     if isinstance(exc, TimeoutError):

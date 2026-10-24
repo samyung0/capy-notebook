@@ -27,8 +27,9 @@ import (
 type chatStreamReq struct {
 	ConversationID string `json:"conversationId"`
 	Text           string `json:"text"`
-	// Library is the per-turn switch: the shared knowledge library is a source.
-	Library bool `json:"library"`
+	// WorkspaceOnly is the per-message switch: on, only the workspace's files
+	// and materials are sources (Epo 2026-10-24).
+	WorkspaceOnly bool `json:"workspaceOnly"`
 	// OpenResource is the file or material the learner has open, if any.
 	OpenResource *chatOpenResource `json:"openResource"`
 }
@@ -69,8 +70,8 @@ func chatQueryTooLong(text string) bool {
 
 // pipeChatEvent is one event line from the Python retrieval service.
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
-// tool_end | citations | checkpoint | turn_checkpoint | pending_sources | done |
-// error.
+// tool_progress | tool_end | citations | checkpoint | turn_checkpoint |
+// pending_sources | done | error.
 type pipeChatEvent struct {
 	Type              string                      `json:"type"`
 	SentryEventID     string                      `json:"sentryEventId,omitempty"`
@@ -88,6 +89,8 @@ type pipeChatEvent struct {
 	Effects           []agenttools.ResourceEffect `json:"effects,omitempty"`
 	StartedAt         string                      `json:"startedAt,omitempty"` // tool_start
 	EndedAt           string                      `json:"endedAt,omitempty"`   // tool_end
+	Applied           *int                        `json:"applied,omitempty"`   // tool_progress; tool_end with commands unapplied
+	Total             *int                        `json:"total,omitempty"`     // pointers so 0 survives
 	Citations         []store.Citation            `json:"citations,omitempty"`
 	Version           int                         `json:"version,omitempty"`
 	TokenCount        int                         `json:"tokenCount,omitempty"`
@@ -192,7 +195,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := a.s.AddUserMessage(ctx, userID, conv.ID, req.Text); err != nil {
+	if _, err := a.s.AddUserMessage(ctx, userID, conv.ID, req.Text, req.WorkspaceOnly); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -237,8 +240,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		"modelDisplayName": cfg.DisplayName(),
 	})
 
-	// library.read is granted per turn with the Library switch, to any role
-	// that can chat; writing from it still needs the role's write operations.
+	// library.read is granted to any role that can chat, whatever the
+	// Workspace only switch says: the pipeline answers the library tools as
+	// unavailable while it is on, so the offered tools never change with it.
+	// Writing from the library still needs the role's write operations.
 	operations := agenttools.OperationsForRole(string(access.role))
 	turn.role = string(access.role)
 	if access.readOnly || access.full {
@@ -250,9 +255,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				(access.readOnly && op == agenttools.OpTrashRestore)
 		})
 	}
-	if req.Library {
-		operations = append(operations, agenttools.OpLibraryRead)
-	}
+	operations = append(operations, agenttools.OpLibraryRead)
 
 	streamErr := a.relayChat(pipeCtx, userID, operations, conv, turn, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
 		run.mu.Lock()
@@ -347,11 +350,11 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // chatTurn is the trusted per-turn context the pipeline receives beside the
-// query: the Library switch, the open item as stored (never the browser's
+// query: the Workspace only switch, the open item as stored (never the browser's
 // title), whether study progress is on for the requester here, and their
 // study preferences.
 type chatTurn struct {
-	library bool
+	workspaceOnly bool
 	// The requester's workspace role, said on the turn context's open line.
 	role             string
 	openResource     map[string]string
@@ -360,7 +363,7 @@ type chatTurn struct {
 }
 
 func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chatStreamReq) (chatTurn, error) {
-	turn := chatTurn{library: req.Library}
+	turn := chatTurn{workspaceOnly: req.WorkspaceOnly}
 	if o := req.OpenResource; o != nil && o.ID != "" {
 		title, found, err := a.s.ChatOpenResource(ctx, wsID, o.Kind, o.ID)
 		if err != nil {
@@ -428,6 +431,9 @@ func (a *api) relayChat(
 		if len(m.ToolEvidence) > 0 {
 			row["toolEvidence"] = m.ToolEvidence
 		}
+		if m.WorkspaceOnly != nil {
+			row["workspaceOnly"] = *m.WorkspaceOnly
+		}
 		history = append(history, row)
 	}
 	body := map[string]any{
@@ -440,7 +446,7 @@ func (a *api) relayChat(
 		"assistantMessageId": assistantID,
 		"spendSessionId":     spendSessionID,
 		"locale":             a.userLocale(ctx, userID),
-		"library":            turn.library,
+		"workspaceOnly":      turn.workspaceOnly,
 		"openResource":       turn.openResource,
 		"role":               turn.role,
 		"studyProgress":      turn.studyProgress,

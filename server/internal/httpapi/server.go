@@ -20,6 +20,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
 
+	"github.com/samyung0/capy-notebook/server/internal/alibaba"
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
@@ -75,6 +76,9 @@ type Config struct {
 	// Jev grades open quiz parts. Nil (no JEV_TYPESAFE_API_KEY) makes grading
 	// answer 503 rather than falling back to another model.
 	Jev *jev.Client
+	// Voice transcribes chat voice input. Nil (no ALIBABA_MODELSTUDIO_KEY or
+	// _URL) makes voice input answer 503 voice_unavailable.
+	Voice *alibaba.Client
 	// PipelineSecret authenticates the retrieval service's and the ingest
 	// host's callbacks into /api/internal/*. Empty disables those routes and
 	// therefore Drive/OneDrive imports, which need the import worker.
@@ -115,13 +119,15 @@ type api struct {
 	stripeGetCheckout    func(sessionID string) (billing.CheckoutSession, error)
 	stripeExpireCheckout func(sessionID string) error
 	// Credit top-up and auto-reload calls, replaced by tests.
-	stripeTopUpMethod   func(string) (store.PaymentMethod, error)
-	stripeSetupMethod   func(string) (store.PaymentMethod, error)
-	stripeVoidInvoice   func(string) error
-	stripeReloadOutcome func(string) (billing.ReloadResult, error)
-	streamMu            sync.Mutex
-	streamByUser        map[string]int
-	streamTotal         int
+	stripeTopUpMethod func(string) (store.PaymentMethod, error)
+	stripeSetupMethod func(string) (store.PaymentMethod, error)
+	// The card a Pro Checkout saved, for the starter grant.
+	stripeSubscriptionMethod func(string) (store.PaymentMethod, error)
+	stripeVoidInvoice        func(string) error
+	stripeReloadOutcome      func(string) (billing.ReloadResult, error)
+	streamMu                 sync.Mutex
+	streamByUser             map[string]int
+	streamTotal              int
 	// uploads admits the gateway uploads (upload_queue.go).
 	uploads *uploadQueue
 	// undos run the requests for one chat Undo step one at a time
@@ -168,11 +174,12 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeGetCheckout:    billing.GetCheckoutSession,
 		stripeExpireCheckout: billing.ExpireCheckoutSession,
 
-		stripeTopUpMethod:   billing.TopUpPaymentMethod,
-		stripeSetupMethod:   billing.SetupPaymentMethod,
-		stripeVoidInvoice:   billing.VoidInvoice,
-		stripeReloadOutcome: billing.ReloadOutcome,
-		streamByUser:        make(map[string]int),
+		stripeTopUpMethod:        billing.TopUpPaymentMethod,
+		stripeSetupMethod:        billing.SetupPaymentMethod,
+		stripeSubscriptionMethod: billing.SubscriptionPaymentMethod,
+		stripeVoidInvoice:        billing.VoidInvoice,
+		stripeReloadOutcome:      billing.ReloadOutcome,
+		streamByUser:             make(map[string]int),
 	}
 	a.uploads = newUploadQueue(func(batch string, removed bool) {
 		if removed {
@@ -419,6 +426,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"code":    "operation_conflict",
 			"message": "this operation id was already used with a different request",
+		})
+		return
+	}
+	if errors.Is(err, store.ErrAudioTranscribing) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "audio_transcribing",
+			"message": audioTranscribingDetail,
 		})
 		return
 	}

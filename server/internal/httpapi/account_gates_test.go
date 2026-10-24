@@ -555,6 +555,8 @@ func chatKeepsReadAndDeleteTools(t *testing.T, lapsedDays int) {
 		}
 		want = append(want, string(op))
 	}
+	// The shared library is read with every chat.
+	want = append(want, string(agenttools.OpLibraryRead))
 	if got := chat(owner); !slices.Equal(got, want) {
 		t.Fatalf("over-quota owner's chat operations = %v, want %v", got, want)
 	}

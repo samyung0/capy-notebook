@@ -15,9 +15,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import shutil
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -33,6 +34,7 @@ from . import (
     evidence,
     library,
     models,
+    openui,
     pending,
     pending_hints,
     scripted,
@@ -79,6 +81,7 @@ from .response_guard import (
     FLAGGED_CODE,
     FLAGGED_MESSAGE,
     ResponseGuard,
+    contains_arg_markup,
     contains_tool_protocol,
 )
 from .search import Passage
@@ -154,7 +157,7 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
     def named(found: str) -> str:
         return labels.get(found, found)
 
-    if name in ("search_workspace", "search_knowledge"):
+    if name in ("search_workspace", "search_knowledge", "search_web"):
         detail = str(args.get("query") or "")
     elif name == "read_knowledge":
         detail = named(_excerpt_id(name, args))
@@ -223,7 +226,9 @@ def _client_error(exc: BaseException) -> dict[str, Any]:
     )
 
 
-def _busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
+def busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
+    """The in-stream provider_busy error: a busy model call, or a chat that
+    waited past its budget for a process slot (service.py)."""
     event = events.error(models.BUSY_ERROR, models.BUSY_ERROR_CODE)
     event["retryAfterSeconds"] = models.busy_retry_after_s(exc)
     return _with_usage(event)
@@ -317,6 +322,9 @@ async def run_agent(
             client=client,
             script=script,
         ):
+            if event["type"] in ("done", "error"):
+                for frame in close_cut_edits(ctx):
+                    yield frame
             if event["type"] == "error":
                 with_turn_state(event, ctx)
             ended = ended or event["type"] in ("done", "error")
@@ -365,15 +373,13 @@ async def _run_turn(
         yield _with_usage(events.error(str(exc), "model_unavailable"))
         return
 
-    if ctx.library:
-        # A library that is down or empty leaves the turn on the workspace
-        # alone rather than failing it.
-        try:
-            await tools.load_library_catalog(ctx)
-        except Exception:  # any failure to reach the library
-            log.warning("knowledge library unavailable for this turn", exc_info=True)
-        if not ctx.library_catalog:
-            ctx.library = False
+    # Loaded whatever the Workspace only switch says, so the tool list does
+    # not change with it. A library that is down or empty leaves its tools off
+    # this turn rather than failing it.
+    try:
+        await tools.load_library_catalog(ctx)
+    except Exception:  # any failure to reach the library
+        log.warning("knowledge library unavailable for this turn", exc_info=True)
     ctx.chapters, open_chapter = await store.workspace_chapters(
         ctx.workspace_id, ctx.open_resource.get("id")
     )
@@ -393,16 +399,24 @@ async def _run_turn(
     schemas = tools.schemas_for(ctx)
     if spec.provider_slug == "zai":
         schemas = [*schemas, ASK_USER_SCHEMA]
+    # A viewer is offered no write tool, and told so.
+    can_write = any(s["function"]["name"] in WRITE_TOOLS for s in schemas)
     messages = chat_prompts.chat_messages(
         locale=locale,
         checkpoint=checkpoint,
         history=prior,
         query=query,
-        library=ctx.library,
-        # A viewer is offered no write tool, and told so.
-        writes=any(s["function"]["name"] in WRITE_TOOLS for s in schemas),
+        workspace_only=ctx.workspace_only,
+        writes=can_write,
     )
     query_msg = messages[-1]
+    # Q221 (Epo 2026-10-24): a first-turn reply that is only an AskUser
+    # question goes back to the model once, so the learner gets the answer
+    # before the offer; a learner who cannot write is asked for the answer
+    # alone. Until it is sent back, a reply streams nothing before a part
+    # other than the question shows (_ANSWER_PART).
+    send_back_ok = not prior and not (checkpoint or {}).get("summary")
+    sent_back = False
     # Unindexed edits matching the user's words, not hinted earlier in the
     # conversation, follow the message as source data (Epo 2026-10-20).
     earlier = {
@@ -474,10 +488,20 @@ async def _run_turn(
     # A tools-off response that called tools anyway gets one more response.
     refused_off = False
 
-    while writes or step < planning_cap or terminal_pending or refused_off:
+    # The response after a send-back runs even past the planning cap.
+    send_back_pending = False
+
+    while (
+        writes
+        or step < planning_cap
+        or terminal_pending
+        or refused_off
+        or send_back_pending
+    ):
         if _client_gone(client):
             budget.stop_reason = STOP_CLIENT_GONE
             return
+        send_back_pending = False
         terminal_call = terminal_pending
         terminal_pending = False
         building = writes > 0
@@ -501,7 +525,7 @@ async def _run_turn(
                     writes,
                 )
         else:
-            tools_off = terminal_call or step == planning_cap - 1
+            tools_off = terminal_call or step >= planning_cap - 1
         tools_off = tools_off or refused_off
         # A tools-off call still sends the tools under the default tool_choice;
         # only the turn context says tools are off. Dropping them, or sending
@@ -522,8 +546,7 @@ async def _run_turn(
             # Captures ride outside ``messages``, every one until the answer, so
             # the budget holds them all.
             image_tokens = capture.image_tokens(ctx.captures)
-            if ctx.library:
-                ctx.library_evidence.activate(messages, ctx.library_reads)
+            ctx.library_evidence.activate(messages, ctx.library_reads)
             allowance = ""
             if building and not tools_off:
                 allowance = (
@@ -586,9 +609,8 @@ async def _run_turn(
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
                 return
-            if ctx.library:
-                # Compacted IDs/summaries cannot stand in for retained full reads.
-                ctx.library_evidence.activate(messages, ctx.library_reads)
+            # Compacted IDs/summaries cannot stand in for retained full reads.
+            ctx.library_evidence.activate(messages, ctx.library_reads)
             ctx.skills_read = skills.retained(messages)
             _append_turn_context(
                 messages,
@@ -600,6 +622,7 @@ async def _run_turn(
                 messages,
                 ctx.pending_images,
                 spec.provider_slug,
+                {c["callId"]: int(c["estimatedImageTokens"]) for c in ctx.captures},
             )
             budget.estimated_input_tokens += compact.request_context(
                 request_messages, spec, schemas=active_schemas
@@ -653,6 +676,10 @@ async def _run_turn(
             # grows as statements complete and is settled in reading order.
             started = False
             sent_citations: list[dict[str, Any]] = []
+            # A reply the send-back may return is held until it shows a part
+            # other than the question.
+            holding = send_back_ok and not sent_back
+            held = ""
             try:
                 while True:
                     ev = await pending_q.get()
@@ -661,6 +688,11 @@ async def _run_turn(
                     if ev.kind != "text" or not ev.text:
                         continue
                     prose = renderer.push(guard.push(ev.text))
+                    if holding and prose:
+                        held += prose
+                        if not _ANSWER_PART.search(renderer.raw):
+                            continue
+                        prose, held, holding = held, "", False
                     if prose and not _client_gone(client):
                         if not started:
                             yield events.block_start(block_id)
@@ -715,7 +747,7 @@ async def _run_turn(
         except elitellm.ProviderBusy as exc:
             log.warning("agent step: provider busy: %s", exc)
             if not _client_gone(client):
-                yield _busy_error(exc)
+                yield busy_error(exc)
             budget.stop_reason = STOP_ERROR
             return
         except Exception as exc:
@@ -739,7 +771,29 @@ async def _run_turn(
             budget.stop_reason = STOP_CLIENT_GONE
             return
 
-        if guard.flagged or contains_tool_protocol(assembled.text):
+        # GLM sometimes writes its AskUser call as text in its own call
+        # markup; it is read back as the call it meant.
+        text_ask = (
+            text_ask_user(assembled.text)
+            if spec.provider_slug == "zai" and not renderer.answer_shaped
+            else None
+        )
+        if text_ask is not None:
+            prose, ask_call = text_ask
+            assembled = replace(
+                assembled,
+                text=prose,
+                tool_calls=[*assembled.tool_calls, ask_call],
+                provider_message=(
+                    {**assembled.provider_message, "content": prose}
+                    if assembled.provider_message
+                    else {}
+                ),
+            )
+        leaked = contains_tool_protocol(assembled.text) or (
+            not renderer.answer_shaped and contains_arg_markup(assembled.text)
+        )
+        if (guard.flagged and text_ask is None) or leaked:
             if not tools_off:
                 budget.stop_reason = STOP_ERROR
                 yield _flagged_error()
@@ -769,7 +823,17 @@ async def _run_turn(
 
         calls = assembled.tool_calls
         text = assembled.text.strip()
-        asked = None if renderer.answer_shaped else ask_user_answer(calls, text)
+        asked = (
+            None
+            if renderer.answer_shaped
+            else ask_user_answer(calls, text, len(ctx.citations))
+        )
+        ask_only = (
+            send_back_ok
+            and not sent_back
+            and not started
+            and _ask_only(renderer, text, asked)
+        )
         if asked is not None:
             calls, text = [], asked
         state = accounting.current()
@@ -856,16 +920,16 @@ async def _run_turn(
                     if event.get("type") == "_tool_message":
                         continue
                     if event.get("type") == "activity":
-                        activity.append(event["block"])
+                        # Counted by block: a cut Office edit's tool_end
+                        # comes in a later batch, or at the turn's end.
+                        block = event["block"]
+                        activity.append(block)
+                        if block["callId"] in write_calls:
+                            if block["outcome"] == "succeeded":
+                                writes += 1
+                            else:
+                                write_errors += 1
                         continue
-                    if (
-                        event.get("type") == "tool_end"
-                        and event.get("callId") in write_calls
-                    ):
-                        if event.get("outcome") == "succeeded":
-                            writes += 1
-                        else:
-                            write_errors += 1
                     yield event
             except pending.SourceChanged as exc:
                 yield _with_usage(events.error(str(exc), exc.code))
@@ -918,6 +982,13 @@ async def _run_turn(
                         message["content"] += notice
             if exhausted and state and state.terminal_call_allowed:
                 terminal_pending = True
+            continue
+
+        if text and ask_only and not terminal_call and not exhausted:
+            # Nothing of the reply was shown; the next response answers.
+            sent_back = True
+            send_back_pending = True
+            messages.extend(_send_back(assembled, asked, writes=can_write))
             continue
 
         if text:
@@ -1075,11 +1146,120 @@ ASK_USER_SCHEMA = {
 ASK_USER_MAX = 3
 
 
-def ask_user_answer(calls: list[ToolCall], prose: str) -> str | None:
+# A statement of an answer part other than the question: a reply holding one
+# is not only an AskUser question (Q221).
+_ANSWER_PART = re.compile(
+    r"^\s*[A-Za-z_]\w*\s*=\s*(?!Answer\b|AskUser\b)[A-Z]\w*\s*\(", re.MULTILINE
+)
+
+
+def _ask_only(renderer: LangRenderer, prose: str, asked: str | None) -> bool:
+    """The reply is only AskUser questions: a tool-called AskUser with no
+    prose, or a program whose parts are only AskUser components."""
+    if asked is not None:
+        return not prose
+    if not renderer.answer_shaped:
+        return False
+    try:
+        names = {call.name for call in openui.walk(openui.parse(renderer.text))}
+    except openui.ParseError:
+        return False
+    return ASK_USER in names and names <= {"Answer", ASK_USER}
+
+
+def _send_back(
+    assembled: AssembledResponse, asked: str | None, *, writes: bool
+) -> list[dict[str, Any]]:
+    """The reply as sent, then the send-back: as the result of each AskUser
+    call when the model called the tool, else as a user message. A learner who
+    cannot write gets the texts that ask for the answer alone."""
+    assistant = dict(assembled.provider_message)
+    assistant.setdefault("role", "assistant")
+    assistant.setdefault("content", assembled.text)
+    if assembled.output_items:
+        assistant["output_items"] = assembled.output_items
+    asks = [call for call in assembled.tool_calls if call.name == ASK_USER]
+    if asked is None or not asks:
+        assistant.pop("tool_calls", None)
+        text = chat_prompts.SEND_BACK if writes else chat_prompts.SEND_BACK_READ_ONLY
+        return [assistant, {"role": "user", "content": text}]
+    assistant["tool_calls"] = [
+        {
+            "id": call.id,
+            "type": "function",
+            "function": {"name": call.name, "arguments": call.arguments},
+        }
+        for call in asks
+    ]
+    return [
+        assistant,
+        *(
+            {
+                "role": "tool",
+                "tool_call_id": call.id,
+                "content": chat_prompts.SEND_BACK_TOOL
+                if writes
+                else chat_prompts.SEND_BACK_TOOL_READ_ONLY,
+            }
+            for call in asks
+        ),
+    ]
+
+
+# GLM's own call markup, which it sometimes writes as text: AskUser, then
+# <arg_key>name</arg_key><arg_value>value</arg_value> pairs (2026-10-24).
+_TEXT_ASK = re.compile(r"(?:<tool_call>\s*)?AskUser\s*(?=<arg_key>)")
+_TEXT_ARG = re.compile(
+    r"<arg_key>\s*(\w+)\s*</arg_key>\s*<arg_value>(.*?)"
+    r"(?=</arg_value>|<arg_key>|</tool_call>|$)",
+    re.DOTALL,
+)
+
+
+def text_ask_user(text: str) -> tuple[str, ToolCall] | None:
+    """The prose before an AskUser call written as text, and the call, or
+    None when the text holds no such call with a question."""
+    match = _TEXT_ASK.search(text)
+    if match is None:
+        return None
+    args = {key: value.strip() for key, value in _TEXT_ARG.findall(text[match.end() :])}
+    if not args.get("question"):
+        return None
+    arguments = {key: args[key] for key in ("question", "choices") if key in args}
+    call = ToolCall(
+        id="text_ask_user",
+        name=ASK_USER,
+        arguments=json.dumps(arguments, ensure_ascii=False),
+    )
+    return text[: match.start()].strip(), call
+
+
+# Citation markers in prose: [3] or [1, 2].
+_MARKERS = re.compile(r"\s*\[(\d+(?:\s*,\s*\d+)*)\]")
+
+
+def _cited(prose: str, known: int) -> tuple[str, list[int]]:
+    """The prose without its citation markers, and the passages they name:
+    an Md carries its passages as numbers, not as markers in its text.
+    Markers naming no shown passage stay as written."""
+    cited: list[int] = []
+
+    def take(match: re.Match[str]) -> str:
+        numbers = [int(n) for n in re.findall(r"\d+", match.group(1))]
+        if not all(1 <= n <= known for n in numbers):
+            return match.group(0)
+        cited.extend(n for n in numbers if n not in cited)
+        return ""
+
+    return _MARKERS.sub(take, prose).strip(), cited
+
+
+def ask_user_answer(calls: list[ToolCall], prose: str, known: int) -> str | None:
     """A response that calls AskUser as a tool meant to end the turn on its
     questions: the answer program with its prose and one AskUser component per
     call that carries a question, at most ASK_USER_MAX, or None when none does
-    (Epo 2026-10-14)."""
+    (Epo 2026-10-14). The prose keeps its citations to the ``known`` shown
+    passages."""
     asks = []
     for call in calls:
         if call.name != ASK_USER or len(asks) == ASK_USER_MAX:
@@ -1111,8 +1291,10 @@ def ask_user_answer(calls: list[ToolCall], prose: str) -> str | None:
     names = [f"ask{n}" for n in range(1, len(asks) + 1)]
     lines = [f"{name} = {ask}" for name, ask in zip(names, asks, strict=True)]
     if prose:
+        body, cited = _cited(prose, known)
+        passages = f", {json.dumps(cited)}" if cited else ""
         names.insert(0, "intro")
-        lines.insert(0, f"intro = Md({json.dumps(prose, ensure_ascii=False)})")
+        lines.insert(0, f"intro = Md({json.dumps(body, ensure_ascii=False)}{passages})")
     return f"root = Answer([{', '.join(names)}])\n" + "\n".join(lines)
 
 
@@ -1244,6 +1426,53 @@ def _tool_end(call: ToolCall, result: ToolResult, run: _Run) -> dict[str, Any]:
     )
 
 
+def _office_frames(
+    ctx: ToolContext,
+    name: str,
+    result: ToolResult,
+    end: dict[str, Any],
+    block: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """A call's closing frames. An Office edit the engine cut at a per-call
+    limit sends tool_progress instead and its row stays in progress, its block
+    keeping the counts a turn ending now leaves it with; the turn's next
+    landed edit of the same file closes it as done after its own frames (Epo
+    2026-10-23, Q171)."""
+    if name != "edit_office_document" or not result.effects:
+        return [end]
+    file_id = str((result.effects[0].get("resource") or {}).get("id") or "")
+    earlier = ctx.cut_edits.pop(file_id, None)
+    frames = [end]
+    if result.progress:
+        block["applied"], block["total"] = result.progress
+        ctx.cut_edits[file_id] = block
+        frames = [events.tool_progress(block["callId"], *result.progress)]
+    if earlier:
+        del earlier["applied"], earlier["total"]
+        frames.append(_closing_end(earlier))
+    return frames
+
+
+def _closing_end(block: dict[str, Any]) -> dict[str, Any]:
+    """The tool_end of a cut Office edit, as its block stands."""
+    return events.tool_end(
+        block["callId"],
+        block["outcome"],
+        effects=block.get("effects"),
+        ended_at=block["endedAt"],
+        applied=block.get("applied"),
+        total=block.get("total"),
+    )
+
+
+def close_cut_edits(ctx: ToolContext) -> list[dict[str, Any]]:
+    """At the turn's end, the Office edits still cut close with their counts:
+    the rows show the commands not applied."""
+    frames = [_closing_end(block) for block in ctx.cut_edits.values()]
+    ctx.cut_edits.clear()
+    return frames
+
+
 async def _run_tools(
     calls: list[ToolCall],
     ctx: ToolContext,
@@ -1316,9 +1545,11 @@ async def _run_tools(
         results.append((call, result))
         run = runs[call_id]
         _keep_evidence(call, result)
+        end = _tool_end(call, result, run)
+        block = _activity(call, name, run, result, ctx)
         return [
-            _tool_end(call, result, run),
-            {"type": "activity", "block": _activity(call, name, run, result, ctx)},
+            *_office_frames(ctx, name, result, end, block),
+            {"type": "activity", "block": block},
         ]
 
     if work:
@@ -1372,11 +1603,9 @@ async def _run_tools(
     # list is sent with the answer, renumbered, as its markers appear.
     for call, result in ordered:
         text = _result_text(result, tools.assign_citations(ctx, result.passages))
-        if ctx.library:
-            args = _parse_args(call.arguments)
-            ctx.library_evidence.observe(
-                call.name, args, result, text, ctx.library_reads
-            )
+        ctx.library_evidence.observe(
+            call.name, _parse_args(call.arguments), result, text, ctx.library_reads
+        )
         result.text_parts = [text]
         message = {"role": "tool", "tool_call_id": call.id, "content": text}
         if result.tail:

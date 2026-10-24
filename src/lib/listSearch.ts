@@ -1,4 +1,5 @@
 import type {
+  EditorAssetAccess,
   FileKind,
   FileListParams,
   FileListSort,
@@ -138,8 +139,11 @@ export const MATERIAL_SORTS: MaterialListSort[] = [
 ];
 export const MATERIAL_SORT_DEFAULT: MaterialListSort = 'updated';
 
+export const EDITOR_ASSET_ACCESS: EditorAssetAccess[] = ['open', 'lost'];
+
 /** The Files page: the tab, then the Files or Blocks tab's own sort and
- * filters (`location` is Blocks only); Trash keeps none. */
+ * filters (`location` is Blocks only); Embeds keeps only its access filter,
+ * Trash none. */
 export type FilesSearch = {
   tab?: FilesTab;
   sort?: FileListSort | MaterialListSort;
@@ -147,10 +151,13 @@ export type FilesSearch = {
   kind?: string;
   workspace?: string;
   location?: MaterialListLocation;
+  access?: EditorAssetAccess;
 };
 export function parseFilesSearch(search: Record<string, unknown>): FilesSearch {
   const tab = one(FILES_TABS, search.tab);
   if (tab === 'trash') return { tab };
+  if (tab === 'embeds')
+    return { access: one(EDITOR_ASSET_ACCESS, search.access), tab };
   const blocks = tab === 'blocks';
   return {
     dir: dirOf(search.dir),

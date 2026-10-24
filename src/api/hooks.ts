@@ -62,6 +62,8 @@ import type {
   Customization,
   DeletionPreflight,
   EditableQuiz,
+  EditorAssetAccess,
+  EditorAssetPage,
   FileLinks,
   FileListParams,
   FilePage,
@@ -145,6 +147,7 @@ import type {
   UsageEventParams,
   UsageReport,
   User,
+  VoiceTranscription,
   WireMessage,
   Workspace,
   WorkspaceCollaborator,
@@ -1205,6 +1208,37 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
     placeholderData: keepPreviousData,
   });
 
+/** The images and audio the caller pays for (M16), newest first, each marked
+ * when its note can no longer be opened: the Files page's Embeds tab. A new
+ * access filter loads afresh, so its notice never sits over the previous
+ * filter's rows. */
+export const useEditorAssets = (access?: EditorAssetAccess) =>
+  useInfiniteQuery({
+    getNextPageParam: (last: EditorAssetPage) => last.nextCursor || undefined,
+    initialPageParam: '',
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<EditorAssetPage>(
+        `/editor-assets${listSearch({ access }, pageParam)}`
+      ),
+    queryKey: qk.editorAssets(access),
+  });
+
+/** Deletes one of them at once, wherever it sits: nothing restores it, and
+ * its note shows it as removed by its uploader. */
+export function useDeleteEditorAsset() {
+  const qc = useQueryClient();
+  return useMutation({
+    // Its confirmation shows the failure.
+    meta: { errorToast: false },
+    mutationFn: (assetId: string) =>
+      api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.editorAssetsRoot });
+      qc.invalidateQueries({ queryKey: qk.usage });
+    },
+  });
+}
+
 /** The dashboard recents: newest files across every workspace the caller is
  * a member of. The first page covers the card, which shows 20 items. */
 export const recentFilesQuery = () => ({
@@ -1264,9 +1298,10 @@ function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
 
 /** Deleting a file moves it to the trash; the owner can restore it from
  * Files › Trash for 30 days. Its bytes stay charged until purged. */
-export function useDeleteFile(wsId: string) {
+export function useDeleteFile(wsId: string, options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (id: string) => api.del<void>(`/files/${id}`),
     onSuccess: () => invalidateAfterFileDelete(qc, wsId),
   });
@@ -1596,6 +1631,7 @@ export function useUploadSource(wsId: string) {
       parseMode,
       estimatedCreditMicros,
       pageCount,
+      durationSeconds,
       batchId,
       batchTotal,
       onQueued,
@@ -1622,6 +1658,9 @@ export function useUploadSource(wsId: string) {
       /** The analysed page count of a fast-parse document; the gateway
        * refuses one past the policy's maxPages. */
       pageCount?: number;
+      /** An audio file's length as the browser read it, in whole seconds;
+       * the gateway refuses one past the policy's audioMaxDurationSeconds. */
+      durationSeconds?: number;
       /** The upload's place in the gateway's line while it waits, 0 once
        * its turn comes (uploadWithTicket). */
       onQueued?: (position: number) => void;
@@ -1636,6 +1675,7 @@ export function useUploadSource(wsId: string) {
         chapterId: chapterId ?? null,
         chapterName: chapterName ?? null,
         contentType: file.type || 'application/octet-stream',
+        durationSeconds: durationSeconds || undefined,
         estimatedCreditMicros: estimatedCreditMicros || undefined,
         kind,
         name: file.name,
@@ -1731,6 +1771,19 @@ export const messagesQuery = (convId: string | null) =>
   });
 export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
   useQuery({ ...messagesQuery(convId), meta: queryMeta(options) });
+
+/** Transcribes a chat voice recording for the composer; it shows failures
+ * inline, and the user records again (nothing retries). */
+export function useTranscribeVoice(wsId: string) {
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (clip: Blob) =>
+      api.postBlob<VoiceTranscription>(
+        `/workspaces/${wsId}/voice-transcriptions`,
+        clip
+      ),
+  });
+}
 
 export const useArchivedConversations = (
   wsId: string,

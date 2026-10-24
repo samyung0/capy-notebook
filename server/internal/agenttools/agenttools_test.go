@@ -189,7 +189,7 @@ func TestRetentionBetweenMessages(t *testing.T) {
 			"list_sources", "create_material", "add_questions", "add_question_media", "create_deck",
 			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document",
 		},
-		RetainCitedPassages: {"search_workspace", "read_document"},
+		RetainCitedPassages: {"search_workspace", "read_document", "search_web"},
 		RetainUsedExcerpts:  {"read_knowledge"},
 		RetainNone: {
 			"capture_page", "read_study_progress", "search_knowledge", "capture_knowledge_page", "read_skill",

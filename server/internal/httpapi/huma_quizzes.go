@@ -190,7 +190,15 @@ func (a *api) quizOutputWithAccess(ctx context.Context, id string, res store.Qui
 	if res.CanEdit, res.CanEditContent, err = a.canEditMaterial(ctx, id, role); err != nil {
 		return nil, hErr(err)
 	}
-	return &quizOutput{Body: apimodel.FromQuiz(res)}, nil
+	out := &quizOutput{Body: apimodel.FromQuiz(res)}
+	var assetIDs []string
+	for _, q := range out.Body.Questions {
+		assetIDs = append(assetIDs, questions.AssetIDs(q)...)
+	}
+	if out.Body.RemovedAssetIDs, err = a.s.MissingEditorAssetIDs(ctx, assetIDs); err != nil {
+		return nil, hErr(err)
+	}
+	return out, nil
 }
 
 // deleteQuiz moves the quiz material into the trash.

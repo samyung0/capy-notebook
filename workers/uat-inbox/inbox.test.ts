@@ -31,7 +31,7 @@ function incoming(from: string) {
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=utf-8',
     '',
-    'Open https://app.uat.capynotebook.com',
+    'Open https://uat-app.capynotebook.com',
   ].join('\r\n');
   return {
     from,
@@ -66,7 +66,7 @@ describe('UAT journey inbox', () => {
       subject: 'Your Capy Notebook account deletion is scheduled',
       to,
     });
-    expect(message.text.trim()).toBe('Open https://app.uat.capynotebook.com');
+    expect(message.text.trim()).toBe('Open https://uat-app.capynotebook.com');
     expect(message.headers['list-unsubscribe']).toContain(
       '/api/email/unsubscribe'
     );

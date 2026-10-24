@@ -34,6 +34,25 @@ def platform_api_key(provider_slug: str) -> str:
     return _env(env_name_for_provider(provider_slug))
 
 
+# A shared secret (PIPELINE_SECRET, PARSER_TOKEN) has at least this many
+# characters unless APP_ENV is local development or e2e; a missing or unknown
+# APP_ENV is checked, as the gateway checks its own (Epo 2026-10-24).
+SECRET_MIN_LENGTH = 32
+SHORT_SECRET_ENVS = frozenset({"development", "e2e"})
+
+
+def secret(key: str, environ: Mapping[str, str] = os.environ) -> str:
+    """The secret under ``key``; a set one below the floor refuses to boot."""
+    value = environ.get(key, "")
+    if (
+        value
+        and len(value) < SECRET_MIN_LENGTH
+        and environ.get("APP_ENV") not in SHORT_SECRET_ENVS
+    ):
+        raise ValueError(f"{key} must be at least {SECRET_MIN_LENGTH} characters")
+    return value
+
+
 def uat_only_flag(key: str, environ: Mapping[str, str] = os.environ) -> bool:
     """A UAT-only switch: exactly ``true`` or unset, and refused unless the
     process reports to Sentry as ``uat``. UAT keeps APP_ENV=production to
@@ -72,7 +91,7 @@ class Config:
     # than writing materials here, so authorization and storage quota stay in
     # one place. Unset disables those tools instead of bypassing the checks.
     gateway_url: str = _env("GATEWAY_URL", "")
-    pipeline_secret: str = _env("PIPELINE_SECRET", "")
+    pipeline_secret: str = secret("PIPELINE_SECRET")
     # Same 32-byte value as the Go gateway. Retrieval decrypts user keys here
     # so the plaintext never crosses the gateway hop.
     llm_credentials_key: str = _env("LLM_CREDENTIALS_KEY", "")
@@ -120,6 +139,12 @@ class Config:
     ingest_provider_timeout_s: float = float(
         _env("CAPY_INGEST_PROVIDER_TIMEOUT_S", "120")
     )
+    # Uploaded audio is transcribed by Alibaba Model Studio's Filetrans task
+    # API. The URL is the workspace's OpenAI-compatible base (ending in
+    # /compatible-mode/v1); the task API sits on the same host. Unset fails
+    # audio ingest explicitly.
+    alibaba_modelstudio_key: str = _env("ALIBABA_MODELSTUDIO_KEY", "")
+    alibaba_modelstudio_url: str = _env("ALIBABA_MODELSTUDIO_URL", "")
     # ---- provider imports (Drive / OneDrive) -----------------------------
     # The import worker streams one provider file into B2 per claim and needs
     # GATEWAY_URL + PIPELINE_SECRET for the download grant and completion.
@@ -141,7 +166,7 @@ class Config:
     # ---- persistent parse service ----------------------------------------
     # In production the ingest worker and parser both run on the Netcup ingest host.
     parser_url: str = _env("PARSER_URL", "")
-    parser_token: str = _env("PARSER_TOKEN", "")
+    parser_token: str = secret("PARSER_TOKEN")
     # One document request end to end: its wait for a parse child and its
     # parse, each bounded by CAPY_PARSE_DOCUMENT_TIMEOUT (600 s, twice the
     # slowest parse measured; with 8 queued over 7 children one wait round),
@@ -273,6 +298,28 @@ def require_all_or_none(group: str, values: dict[str, str]) -> None:
     if missing and len(missing) != len(values):
         raise ValueError(f"{group} must be fully set or fully unset; missing {missing}")
 
+
+require_all_or_none(
+    "ALIBABA_MODELSTUDIO_*",
+    {
+        "ALIBABA_MODELSTUDIO_KEY": cfg.alibaba_modelstudio_key,
+        "ALIBABA_MODELSTUDIO_URL": cfg.alibaba_modelstudio_url,
+    },
+)
+
+# The workspace's OpenAI-compatible base; the task API is the same host
+# without this path.
+MODELSTUDIO_BASE_PATH = "/compatible-mode/v1"
+
+
+def require_modelstudio_url(url: str) -> None:
+    if url and not url.endswith(MODELSTUDIO_BASE_PATH):
+        raise ValueError(
+            f"ALIBABA_MODELSTUDIO_URL must end with {MODELSTUDIO_BASE_PATH}"
+        )
+
+
+require_modelstudio_url(cfg.alibaba_modelstudio_url)
 
 require_all_or_none(
     "KNOWLEDGE_BASE_B2_*",

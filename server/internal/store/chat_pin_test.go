@@ -107,7 +107,7 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddUserMessage(ctx, userID, conv.ID, "checkpoint question"); err != nil {
+	if _, err := s.AddUserMessage(ctx, userID, conv.ID, "checkpoint question", false); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SlotChat)
@@ -133,7 +133,7 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 205 {
-		if _, err := s.AddUserMessage(ctx, userID, conv.ID, fmt.Sprintf("turn-%03d", i)); err != nil {
+		if _, err := s.AddUserMessage(ctx, userID, conv.ID, fmt.Sprintf("turn-%03d", i), false); err != nil {
 			t.Fatal(err)
 		}
 	}

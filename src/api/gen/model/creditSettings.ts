@@ -16,4 +16,5 @@ export interface CreditSettings {
   reloadThresholdMicros: number;
   spendingLimitCents?: number;
   spentThisMonthCents: number;
+  starterAvailable: boolean;
 }

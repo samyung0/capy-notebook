@@ -24,6 +24,8 @@ export interface Quiz {
   privacy: Privacy;
   provenance?: Provenance;
   questions: QuizQuestionsItem[];
+  /** @nullable */
+  removedAssetIds?: string[] | null;
   revision: number;
   sharePath?: string;
   workspaceId: string;

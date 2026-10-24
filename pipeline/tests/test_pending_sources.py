@@ -206,8 +206,11 @@ async def test_generation_fits_full_provider_request_without_trimming_pending(
         == "Generated cards"
     )
     assert compact.fits_request(sent, spec)
+    # Measuring keeps each message's estimate on it under "_tokens".
     assert [
-        message for message in sent if message.get("_kind") == "pending_sources"
+        {k: v for k, v in message.items() if k != "_tokens"}
+        for message in sent
+        if message.get("_kind") == "pending_sources"
     ] == ([expected_changes] if with_pending else [])
     next_passage = workflows.Passage.from_row(read_rows[len(passages)])
     larger = context + "\n\n" + next_passage.as_context(len(passages) + 1)

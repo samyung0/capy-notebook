@@ -44,6 +44,11 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "order": ["DigitalOcean", "Z.AI"],
         "allow_fallbacks": False,
     },
+    # A chat choice (decision 2026-10-24, Q224): Together only.
+    "minimax/minimax-m3.1-flash": {
+        "order": ["together"],
+        "allow_fallbacks": False,
+    },
 }
 # The zai pin keeps its catalog identity; OpenRouter names the model with an
 # org prefix.
@@ -228,10 +233,21 @@ def deepseek_thinking_body(thinking: str) -> dict[str, Any]:
     return {"thinking": {"type": "enabled"}, "reasoning_effort": effort}
 
 
+# OpenRouter's effort for each thinking level a MiniMax row offers.
+MINIMAX_EFFORTS = {
+    "minimax/minimax-m3.1-flash": {"low": "low", "mid": "medium", "high": "high"},
+}
+
+
 def openrouter_reasoning(spec: ModelConfig, thinking: str) -> dict[str, Any]:
     """GLM cannot turn reasoning off, and a request without an effort reasons
     as at max, so every GLM request names its effort (decision 2026-10-21).
-    The DeepSeek pins run with reasoning off."""
+    MiniMax reasons at the chat pin's effort too. The DeepSeek pins run with
+    reasoning off."""
+    if spec.model_slug in MINIMAX_EFFORTS:
+        if thinking not in MINIMAX_EFFORTS[spec.model_slug]:
+            raise RegistryError("MiniMax supports only low, mid, or high reasoning")
+        return {"effort": MINIMAX_EFFORTS[spec.model_slug][thinking]}
     if spec.provider_slug != "zai":
         return {"enabled": False}
     if thinking not in ("low", "high", "max"):
@@ -504,45 +520,6 @@ def _flat_tools(schemas: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
             }
         )
     return out
-
-
-def context_components(
-    spec: ModelConfig,
-    messages: list[dict[str, Any]],
-    *,
-    tools: list[dict[str, Any]] | None = None,
-    response_format: dict[str, Any] | None = None,
-    reasoning: bool | None = None,
-    input_items: list[dict[str, Any]] | None = None,
-) -> tuple[Any, Any, Any]:
-    """Return provider-shaped content split for context accounting."""
-    thinking = _thinking_for_call(spec, reasoning)
-    if _uses_responses(spec, thinking, bool(tools)):
-        items = list(input_items or [])
-        system = [item for item in items if item.get("role") == "system"]
-        conversation = [item for item in items if item.get("role") != "system"]
-        schemas: list[Any] = list(_flat_tools(tools))
-        if response_format:
-            schemas.append({"text": {"format": response_format}})
-        return system, conversation, schemas
-    if spec.provider_slug == "anthropic":
-        body = anthropic_request(
-            spec,
-            messages,
-            temperature=None,
-            tools=tools,
-            max_tokens=None,
-            thinking=thinking,
-        )
-        schemas = list(body.get("tools") or [])
-        return body.get("system") or "", body.get("messages") or [], schemas
-
-    system = [message for message in messages if message.get("role") == "system"]
-    conversation = [message for message in messages if message.get("role") != "system"]
-    schemas = list(tools or [])
-    if response_format:
-        schemas.append(response_format)
-    return system, conversation, schemas
 
 
 def _interactive() -> bool:

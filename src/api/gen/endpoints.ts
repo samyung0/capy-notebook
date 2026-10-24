@@ -67,6 +67,7 @@ import type {
   DeletionPreflight,
   Detail,
   Discussion,
+  EditorAssetPage,
   ErrorModel,
   Event,
   File,
@@ -95,6 +96,7 @@ import type {
   LearningProgress,
   ListAttemptsParams,
   ListConversationsParams,
+  ListEditorAssetsParams,
   ListModelsParams,
   ListNotificationsParams,
   ListOwnedFilesParams,
@@ -202,6 +204,7 @@ import type {
   UsageEventPage,
   UsageReport,
   User,
+  VoiceTranscription,
   Workspace,
   WorkspaceAttemptsOutputBody,
   WorkspaceCollaborator,
@@ -2503,6 +2506,113 @@ const res = await fetch(getReportEditIncidentUrl(),
 
   const data: reportEditIncidentResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as reportEditIncidentResponse
+}
+
+
+
+export type listEditorAssetsResponse200 = {
+  data: EditorAssetPage
+  status: 200
+}
+
+export type listEditorAssetsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listEditorAssetsResponseSuccess = (listEditorAssetsResponse200) & {
+  headers: Headers;
+};
+export type listEditorAssetsResponseError = (listEditorAssetsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listEditorAssetsResponse = (listEditorAssetsResponseSuccess | listEditorAssetsResponseError)
+
+export const getListEditorAssetsUrl = (params?: ListEditorAssetsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/editor-assets?${stringifiedParams}` : `/api/editor-assets`
+}
+
+/**
+ * @summary List the images and audio the caller pays for, each marked when its note can no longer be opened
+ */
+export const listEditorAssets = async (params?: ListEditorAssetsParams, options?: RequestInit): Promise<listEditorAssetsResponse> => {
+
+  const res = await fetch(getListEditorAssetsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listEditorAssetsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listEditorAssetsResponse
+}
+
+
+
+export type deleteEditorAssetResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteEditorAssetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteEditorAssetResponseSuccess = (deleteEditorAssetResponse204) & {
+  headers: Headers;
+};
+export type deleteEditorAssetResponseError = (deleteEditorAssetResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteEditorAssetResponse = (deleteEditorAssetResponseSuccess | deleteEditorAssetResponseError)
+
+export const getDeleteEditorAssetUrl = (assetId: string,) => {
+
+
+
+
+  return `/api/editor-assets/${assetId}`
+}
+
+/**
+ * @summary Delete an image or audio clip the caller pays for in a note it can no longer open
+ */
+export const deleteEditorAsset = async (assetId: string, options?: RequestInit): Promise<deleteEditorAssetResponse> => {
+
+  const res = await fetch(getDeleteEditorAssetUrl(assetId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteEditorAssetResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteEditorAssetResponse
 }
 
 
@@ -11156,6 +11266,71 @@ const res = await fetch(getTransferWorkspaceUrl(id),
 
   const data: transferWorkspaceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as transferWorkspaceResponse
+}
+
+
+
+export type transcribeVoiceResponse200 = {
+  data: VoiceTranscription
+  status: 200
+}
+
+export type transcribeVoiceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type transcribeVoiceResponseSuccess = (transcribeVoiceResponse200) & {
+  headers: Headers;
+};
+export type transcribeVoiceResponseError = (transcribeVoiceResponseDefault) & {
+  headers: Headers;
+};
+
+export type transcribeVoiceResponse = (transcribeVoiceResponseSuccess | transcribeVoiceResponseError)
+
+export const getTranscribeVoiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/voice-transcriptions`
+}
+
+/**
+ * @summary Transcribe a chat voice recording for the composer
+ */
+export const transcribeVoice = async (id: string,
+    transcribeVoiceBody: Blob, options?: RequestInit): Promise<transcribeVoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getTranscribeVoiceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'audio/mp4', ...getHeaders(options?.headers) },
+    body: transcribeVoiceBody
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: transcribeVoiceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as transcribeVoiceResponse
 }
 
 

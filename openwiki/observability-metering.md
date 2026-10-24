@@ -318,10 +318,10 @@ Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
 ingest failures keep their explicit reporting, except `InputLimitError`: a user
 file over a documented limit (page or scanned-page count, figures and table
-rows, image pixels, CSV/TSV columns per row or searchable text) fails the job
-with the limit's attempt `error_code` (`page_limit`, `scanned_page_limit`,
-`element_limit`, `image_pixel_limit`,
-`tabular_column_limit`, `tabular_text_limit`) and logs at
+rows, image pixels, audio duration, CSV/TSV columns per row or searchable text)
+fails the job with the limit's attempt `error_code` (`page_limit`,
+`scanned_page_limit`, `element_limit`, `image_pixel_limit`,
+`audio_duration_limit`, `tabular_column_limit`, `tabular_text_limit`) and logs at
 info, with no Sentry event. The file itself ends ready and unindexed with
 `files.index_limit` (see Ingest limits in
 [agentic-retrieval.md](agentic-retrieval.md)). A refused Office rebase is the same kind of
@@ -387,7 +387,10 @@ request's events with the caller's `trace_id`, and a source rebuild's (which
 runs outside any request, on a room unload or the sweep) with its `file_id`. Go, Python, and collaboration exclude request
 bodies and internal authentication headers from Sentry because requests carry
 note content, prompts, and service credentials. Python stack locals are also
-excluded.
+excluded. The pipeline's `before_breadcrumb` (`obs._before_breadcrumb`) keeps
+an outgoing HTTP request's breadcrumb (http.client, so requests, and httpx)
+and httpx's own request log line without the URL's query or fragment, where a
+signed link such as a transcript's result link carries its signature.
 
 Chat and generate fail with `ai_unavailable` when retrieval is unreachable;
 they do not invent a local answer. Ops fallbacks that keep the response
@@ -561,7 +564,11 @@ named provider directly. These exact routing exceptions are allowed:
   reasoning-off call runs at and `high` the chat default.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
-  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`. Every OpenRouter
+  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`, except MiniMax 3.1
+  Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
+  migration `0112_chat_sources.sql`), which sends the chat pin's effort
+  (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
+  goes to Together alone. Every OpenRouter
   model, GLM included, takes its provider list from `OPENROUTER_ROUTING` in
   `pipeline/elitellm/client.py`: an
   ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
@@ -732,7 +739,9 @@ whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Fla
 where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400, OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
-price, its first route, decision 2026-10-21), embedding 40, reranker 50.
+price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
+1200 (Together's list price, its only route, 2026-10-24), embedding 40,
+reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
@@ -796,7 +805,7 @@ month by `surface`, which the Usage tab draws as one credit bar coloured by area
 faint at the end. `GET /api/usage/events` keyset-pages the actor's `usage_events`
 rows newest first (`before` cursor from the previous page's `next`, 20 rows at
 most) for the Detailed usage tab: kind (`llm`, `embedding`, `rerank`,
-`parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
+`audio`, `web_search`, `parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
 tokens and credits. It does not use a separate analytics table and does not show
 USD. `GET /api/billing/invoices` reads the customer's latest 12 non-draft Stripe
 invoices live for the Subscription tab (a user with no Stripe customer gets an
@@ -817,9 +826,8 @@ ledger is small enough for indexed live queries.
 Decisions: `human/observability-metering.md` (2026-10-15/16). Prices: $1 buys
 1,000 credits (`store.CreditsMicrosForCents`).
 
-**Balance.** `user_credits.purchased_micros` never expires and is signed: its
-column default is the one-off 800-credit starter grant, a negative value is
-credits owed. Two SQL functions in `0088_purchased_credits.sql` are the only
+**Balance.** `user_credits.purchased_micros` never expires and is signed: it
+starts at zero, a negative value is credits owed. Two SQL functions in `0088_purchased_credits.sql` are the only
 writers of spend, called by the gateway (`credits.go`) and the ingest worker
 (`pipeline/pipeline/store/db.py`) with the actor's monthly limit:
 `spend_user_credits` takes the monthly allowance first and the rest from the
@@ -827,6 +835,19 @@ purchased balance (it may go negative: overrun from already-admitted work stays
 owed), and `roll_user_credits` rolls the period, taking owed credits off the new
 allowance first and recording them in `carried_micros` (the Usage tab's "Owed
 from <month>" row); what the allowance cannot cover stays owed.
+
+**Starter grant.** The one-off 800 credits (`store.StarterGrantMicros`) come
+with the first saved card, not with the account (Epo 2026-10-24).
+`GrantStarterCredits` runs from the webhooks that save a card: the setup
+Checkout (Add a card), a paid top-up and a Pro subscription Checkout (its
+subscription's default payment method). It inserts into `starter_grants`
+(migration 0109), keyed once per account and once per card key, and adds the
+credits in the same transaction, so a replayed or concurrent event adds
+nothing. The card key is Stripe's card fingerprint; no other card data is
+stored there. Only a card earns the grant: a Link method has no fingerprint
+and earns none, and nothing derived from its email is kept (Epo 2026-10-24). Rows are kept when an
+account is purged, so a recreated account cannot claim the same card again.
+`CreditSettings.starterAvailable` drives the offer on the Subscription tab.
 
 **Gate.** Available is `max(limit − used, 0) + purchased − reserved`. At zero
 or below new work is refused unless a started reload's 60-second window is open
@@ -943,7 +964,9 @@ begin(session)  →  provider call  →  settle(call id, measured usage)
 A current session reserves 0 credits in `provider_sessions.reserved_micros`.
 The column records the session's contribution when a future workflow takes an
 estimated credit hold. Platform
-chat, generate and editor share `ConcurrentLLMLeases` (5). The gate is
+chat, generate and editor share `ConcurrentLLMLeases` (5); a chat voice
+clip's reserved session (`reserved_micros` above zero) neither takes nor
+counts as one, since its hold bounds it. The gate is
 `used + reserved >= limit` plus that cap, the same check as
 `AssertCreditsAvailable`. BYOK chat has a session for idempotent usage events
 but does not consume a concurrency slot and skips the platform used+reserved
@@ -957,7 +980,12 @@ That exact call id remains settleable against a `settled` or `released` session
 until its `receipt_deadline_at`. Python sets the deadline from the longest a
 call can legitimately run, plus five minutes: the interactive stream backstop
 (`CAPY_INTERACTIVE_STREAM_MAX_S`, 10 minutes) for every interactive call, the
-ingest provider timeout (120 s) for ingest; direct SQL callers get the
+ingest provider timeout (120 s) for ingest, and an hour for an audio
+transcription task (`open_call(provider_timeout_s=…)`), renewed with its gate
+lease by each claim that polls the task (`accounting.renew_call`), so it spans
+the job's re-pends, and abandoned as `lifecycle`/`job_ended` with its lease
+freed when the job ends unsettled (`jobs_end_filetrans_call`); direct SQL
+callers get the
 column's default 12-hour-five-minute window. The additional five minutes are
 receipt-only settlement grace.
 
@@ -1063,8 +1091,15 @@ response as an error rather than finalizing a partial stream as complete.
 ### Where tokens are captured
 
 `pipeline/pipeline/retrieval/models.py` is the single boundary for token-reporting
-LLM and embedding calls. Any new provider path must go through it or open and
-settle its own metered call explicitly, or it is invisible and silently free.
+LLM and embedding calls. Audio transcription is the non-token exception:
+`pipeline/pipeline/ingest/source_text.py` opens its `audio` call under its own
+12-task gate and settles measured seconds through `accounting.settle_units`
+(ingest sessions only), which writes `units` / `unit` on the call and its
+usage event. Chat voice input is the gateway's own provider call: Go opens
+it (`OpenProviderCall`) and settles its seconds through `SettleProviderCall`
+(below). Any new provider path must go through one of these boundaries or
+open and settle its own metered call explicitly, or it is invisible and
+silently free.
 
 A contextvar accumulator (`obs.Usage`) still aggregates request telemetry.
 Chat, generate and editor bind a `RequestAccounting` context when the
@@ -1159,6 +1194,19 @@ never metered. Only a
 request past its own 15-second bound stays open for its receipt window like
 any other uncertain call; any failure keeps fused order instead of failing the
 search.
+
+The agent's `search_web` (DeepSeek's web search) has its own usage kind,
+`web_search`, on the chat session that ran it (decision 2026-10-24). The
+pipeline opens its `provider_calls` row (`deepseek` / `search`) before the
+request and settles it with `units`: 1 for a search that returned results, 0
+for an empty one; a failed search abandons the row unbilled. The gateway
+accepts units only on this kind, at most 1 and with no tokens, and prices a
+unit at the active `web_search` resource rate (1,800,000 micros, 1.8 credits,
+from DeepSeek's $0.75 per 1,000 searches), charged like LLM tokens on a
+platform-paid session. The usage row's `unit` is `search` and its catalog
+columns are empty. Once a session's credits run out, the pipeline's call open
+refuses a search, as it refuses any call but the terminal one. The cap of 3
+counted searches per message is the agent's (agentic-retrieval.md).
 
 Streamed completions send `stream_options={"include_usage": True}`. **Without
 it an OpenAI-compatible stream reports no usage at all**, which is how the
@@ -1277,6 +1325,65 @@ waiting in the queue; the parse event's metadata carries both snapshots
 (`digitalPageRate`, `vlmPageRate`). Standalone image captions bill their
 tokens only.
 
+Audio is priced per second. `audio_transcription_second` (uploads) and
+`voice_input_second` (chat voice input) are both 16,667 microcredits a second,
+one credit a minute (`0111_audio_transcription.sql`, Epo's proposal of
+2026-10-23 at two to three times the standard markup because transcription
+capacity is capped). Uploads are version 2, since 0001 seeded a version 1 at
+another price that 0079 deleted; voice input is version 1. An upload's charge
+is whole seconds (ceil) of the worker's measured duration (ffmpeg reading
+every packet, not the container header) or the last sentence's end, whichever
+is later, at the job's snapshotted rate. It is settled on the task's call
+(opened by the claim that submitted it) by the claim that finds the task
+succeeded, only when the transcript has sentences. A failed, refused or lost
+task is free, and so is a transcript whose speech ends past two hours
+(`audio_duration_limit`); a task that heard no speech settles as a successful
+call at zero credits (`no_speech`). A job pays for its audio once: a claim
+after a worker died between the settlement and the job's end settles the same
+receipt, which applies once, and a later call on the same session (after a
+lost cache) settles at zero. The user's Retry of a job that lost its cache and
+then failed later is a new job and pays again, a rare case. `GET /api/source-upload-policy` also returns
+`audioSecondCreditMicros` and `audioMaxDurationSeconds` (7,200); the upload
+dialog shows the estimate from the length the browser reads, and the worker's
+measured duration remains authoritative. A file whose length the browser
+cannot read is refused before upload (no estimate is possible), and the upload
+request requires `durationSeconds` for audio, so the credit-estimate gate
+always has a number. The worker applies the same gate again before it
+submits, on the measured length (`ceil(seconds) ×
+audio_transcription_second` against `db.actor_has_credits`' headroom, the
+pipeline's copy of `creditHeadroomNumerator` / `creditHeadroomDenominator`),
+which is the only gate an imported recording meets; a refusal is the
+`ingest_admission_refused` failure, uncharged and with no task.
+
+Chat voice input (`server/internal/httpapi/voice.go`,
+[agentic-retrieval.md](agentic-retrieval.md#chat-voice-input)) is charged by
+the gateway. Before the call it opens a `chat` session with
+`BeginReservedSession`, which admits like any interactive request and then
+holds the two-minute maximum (`CreditsForAudioSeconds(120,
+voice_input_second)`, 2 credits at version 1) in the session's and the
+user's `reserved_micros`, so the hold counts against every other gate while
+the call runs. It takes none of the five concurrent LLM leases: open chat
+streams never refuse a clip, and a clip never refuses a stream. It opens one
+`audio` provider call (`alibaba`,
+`qwen-audio-3.1-asr-flash`, purpose `transcription`). On a transcript it
+closes the session, which takes the hold back, and then settles
+ceil(`end_time` / 1000) seconds, at most the 120 held, through
+`SettleProviderCall` (a closed
+session still takes the receipt of a call opened under it, and the spend's
+own check sees the user's credits rather than the hold): kind `audio` with
+`units` and `unit = 'seconds'`, priced at the `voice_input_second` rate
+active when it settles, with the provider's token counts on the call. The
+pipeline's receipt endpoint sends no units, so it cannot settle audio.
+A provider 429 or failure, text with no `end_time` (no length to charge), a
+span past 125 s, blank text or a browser that left abandons the call
+uncharged (`AbandonProviderCall`, with the provider status and code, or the
+request's own reason) and releases the session. A call is settled once by
+its id; a settle that fails still answers the text and leaves the call to
+end uncharged (a receipt past its window abandons it as `receipt_timeout`,
+any other failure leaves it open until the sweep does), so a voice input is
+under-charged, never charged twice. Alibaba also bills tokens; those stay
+telemetry like every other provider price.
+
 ### Source refreshes and maintenance republishes
 
 The page fee applies to a file's first parse only; parsing runs on the
@@ -1334,7 +1441,10 @@ whole-host CPU/memory separate from per-worker cgroups and page billing.
 
 Every queue claim opens `ingest_job_attempts` in the same transaction as the
 claim. Terminal success, retry, capacity wait, supersession, and failure close
-that exact row. The lease reaper closes rows abandoned by a dead worker as
+that exact row; an audio job re-pending to poll its transcription task again
+closes it as `transcription_poll`, with no error category, and counts as
+queued (`jobs.queued_at`, the oldest-queued figures) only once its poll is
+due. The lease reaper closes rows abandoned by a dead worker as
 `lease_expired`. An exhausted parse or ingest lease also closes its credit
 reservation and source-fenced file state in that transaction. Capacity waits
 may decrement the visible
@@ -1353,7 +1463,7 @@ primary database and can add optional column-limited read DSNs for UAT/local.
 ### Pricing is policy
 
 Token work is priced from the resolved `model_configs` row. Non-token policy
-(digital and VLM pages, and email) is versioned in
+(digital and VLM pages, audio seconds, email, and web searches) is versioned in
 `resource_credit_rates`; `figure_caption_call` rows remain for history but none
 is active. The Ops usage page edits these
 rates by inserting a new active version and recording an operator audit event.
@@ -1475,8 +1585,11 @@ import routes) carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
-file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Credits remain the money bound;
-these limits only stop abuse patterns.
+file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Chat voice
+input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
+with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
+person talking, apart from the chat allowance the turns they send then use.
+Credits remain the money bound; these limits only stop abuse patterns.
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.
@@ -1518,6 +1631,15 @@ non-ingest leases in Postgres (cap 5). A replica that dies mid-stream leaves a r
 sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
+The retrieval process bounds itself behind those per-user caps (Epo
+2026-10-24): at most 64 chat and generate requests at once, past which a
+generate request answers the existing 503 `provider_busy` with `Retry-After`
+and a chat waits up to 60 s in arrival order (its stream sends the
+`waiting_capacity` phase, then the in-stream `provider_busy` error if the wait
+runs out); deck scripts, renders and captures on a pool of two threads of their
+own; one Office capture at a time
+([agentic-retrieval.md](agentic-retrieval.md#process-capacity)).
+
 **Per-model outbound concurrency** bounds what reaches a provider.
 `model_capacities` stores `concurrency_total` and `interactive_reserve` per
 provider/model, independently of versioned `model_configs`. Ops exposes
@@ -1556,7 +1678,9 @@ production values are GLM 150/125 and Qwen embedding 200/80; local development
 keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
 rows: DeepSeek Flash 2500/1500, GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 and V4.1 Flash 1017 64/0 (ingest-only,
-so no interactive reserve; page reads lease the `vlm_page` gate instead), Qwen
+so no interactive reserve; page reads lease the `vlm_page` gate instead),
+MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together held 16
+calls at once in the 2026-10-23 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an
 environment that already has rows changes them in Ops.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
@@ -1730,7 +1854,8 @@ Worth knowing before trusting a dashboard:
 - **Page captures in context telemetry.** `provider_calls.context_*` and the
   turn's `estimatedInputTokens` count an attached `capture_page` JPEG by its
   28-px patch estimate (about 2,240 for a 1568×1120 render), not by its base64
-  text; the provider's reported input is the billed figure.
+  text, taken from the capture's record instead of decoding the image again;
+  the provider's reported input is the billed figure.
 - **Cached input tokens.** Ops shows cached-read and cache-write tokens when the
   provider proves them. Missing or anomalous cache detail is charged as normal
   input, so the safe failure direction is an overcharge relative to cache cost.
@@ -1740,9 +1865,14 @@ Worth knowing before trusting a dashboard:
   context remain, but a provider failure may not expose final token usage. Real
   provider spend can therefore exceed the ledger; health shows these attempts.
 - **Context composition accuracy.** Providers report total input, not the three
-  local categories. The estimator includes serialized request framing and is
-  useful for trends and window pressure, but the actual-minus-estimated delta
-  must remain visible and the categories must not be treated as invoice data.
+  local categories. The estimator counts each message's provider-shaped JSON
+  (CJK characters one token each, other characters three to a token) once, when
+  the message enters the loop's history, and keeps it on the message
+  (`accounting.keep_tokens`; counted again if the message changes): a request
+  sums those plus its tool schemas, so no model call walks the whole context
+  on the event loop (Epo 2026-10-24, Q238; counting version 3). It is useful
+  for trends and window pressure, but the actual-minus-estimated delta must
+  remain visible and the categories must not be treated as invoice data.
 - **The gateway's in-process event stream cap** (10,000 global / 7 per user)
   is still per-replica and unrelated to the Redis limiter. `GET /api/stream`
   is the one SSE stream a tab holds: streams do not hold a Redis connection

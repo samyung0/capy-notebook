@@ -14,8 +14,8 @@ that file.
 After the [hostname setup](deployment-runbook.md#102-app-hostname-transition),
 verify these before redirecting old browser pages:
 
-- TLS and the SPA work at `https://app.uat.capynotebook.com`. Both app hosts
-  retain tunnel-backed DNS, their site route and their scriptless `/api/*` route.
+- TLS and the SPA work at `https://uat-app.capynotebook.com`. Every app host
+  retains tunnel-backed DNS, its site route and its scriptless `/api/*` route.
   Anonymous API requests return the expected 401, signed-in requests return JSON,
   and an SSE connection delivers a heartbeat. API responses stay uncached with
   `no-store`/`nosniff`, and API requests do not invoke the site Worker.
@@ -111,7 +111,7 @@ the updated ignored `.env.uat` through `env:push`, then redeploy.
 
 Verify with a real signup, not with the dashboard's test button alone:
 
-1. Sign up a synthetic account on `app.uat.capynotebook.com`.
+1. Sign up a synthetic account on `uat-app.capynotebook.com`.
 2. Clerk's delivery log shows `200` for the `user.created` delivery.
 3. `select type, processed_at, error from webhook_events order by created_at desc limit 5;` shows the event processed with no error.
 
@@ -131,7 +131,7 @@ users on their first request, and webhooks are only checked here.
 ### Two-step verification
 
 Set up in [deployment-runbook §12.3](deployment-runbook.md#123-clerk-a-separate-uat-application).
-Signed in on `app.uat.capynotebook.com`, Settings → Account shows a
+Signed in on `uat-app.capynotebook.com`, Settings → Account shows a
 "Two-step verification" row. A missing row means the Account Portal user
 profile is off. Manage opens `accounts.uat.capynotebook.com` in a new tab, and
 its security section offers an authenticator app and no SMS codes.
@@ -224,7 +224,7 @@ a different Clerk instance than the gateway's secret key.
   the Editor session.
 - `user_storage` moves after an upload and after a delete. Quota accounting is
   described in [`backend-storage-quota.md`](backend-storage-quota.md).
-- `APP_URL` is `https://app.uat.capynotebook.com`. Stripe returns and product email
+- `APP_URL` is `https://uat-app.capynotebook.com`. Stripe returns and product email
   links follow it, so they will point at the deployed SPA even when the person
   clicking is on a dev hostname. That is expected.
 - Provider keys are UAT keys with their own budget. Inference and parse metering
@@ -269,11 +269,11 @@ Clerk development instance. Point a local gateway at the UAT database only with
   include `X-Robots-Tag: noindex, nofollow`. Changing to private returns the
   same 404 as a missing workspace once the cached copy expires (five minutes). Full file/material/quiz routes
   reject anonymous requests.
-- `/assets/*` on both app hosts is Worker `capy-notebook-assets-uat`
-  (deployment-runbook §1): `curl -sI https://app.uat.capynotebook.com/assets/capy-missing.js`
+- `/assets/*` on every app host is Worker `capy-notebook-assets-uat`
+  (deployment-runbook §1): `curl -sI https://uat-app.capynotebook.com/assets/capy-missing.js`
   returns `404` with `Cache-Control: no-store` and no `text/html` (Deploy UAT's
   release check does the same), and a chunk the page loads (find one in
-  `curl -s https://app.uat.capynotebook.com/ | grep -o '/assets/[^"]*\.js' | head -1`)
+  `curl -s https://uat-app.capynotebook.com/ | grep -o '/assets/[^"]*\.js' | head -1`)
   returns `200` with `Cache-Control: public, max-age=31536000, immutable`. A
   `200 text/html` for the missing name means the route is not attached: the
   SPA fallback is answering, and the year-long header would pin it.

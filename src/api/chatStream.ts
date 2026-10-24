@@ -44,6 +44,8 @@ export interface ChatStreamHandlers {
   onPhase?: (phase: ChatPhase) => void;
   onStart?: (e: StreamStart) => void;
   onToolEnd?: (callId: string, result: ToolEndEvent) => void;
+  /** A running call's commands applied so far, of all. */
+  onToolProgress?: (callId: string, progress: ToolProgress) => void;
   /** `startedAt` is the retrieval service's clock (RFC 3339). */
   onToolStart?: (
     callId: string,
@@ -53,8 +55,14 @@ export interface ChatStreamHandlers {
   ) => void;
 }
 
-/** Terminal result of one tool call, in the shared agent-tool contract shape. */
-export interface ToolEndEvent {
+export interface ToolProgress {
+  applied: number;
+  total: number;
+}
+
+/** Terminal result of one tool call, in the shared agent-tool contract shape;
+ * `applied` of `total` only when it ended with commands unapplied. */
+export interface ToolEndEvent extends Partial<ToolProgress> {
   effects?: ResourceEffect[];
   /** The retrieval service's clock (RFC 3339). */
   endedAt?: string;
@@ -72,25 +80,26 @@ const TOOL_OUTCOMES: readonly ToolOutcome[] = [
 
 export interface ChatStreamBody {
   conversationId?: string;
-  /** The per-turn Library switch: the shared knowledge library is a source. */
-  library: boolean;
   /** What the learner has open; the server looks up its title. */
   openResource?: { id: string; kind: 'file' | 'material' };
   text: string;
+  /** The per-message Workspace only switch: on, only the workspace's files
+   * and materials are sources. */
+  workspaceOnly: boolean;
 }
 
-/** The Library switch starts on in every chat panel. */
-export const LIBRARY_DEFAULT = true;
+/** Workspace only starts off in every chat panel (Epo 2026-10-24). */
+export const WORKSPACE_ONLY_DEFAULT = false;
 
 /** One turn's switches. Only the open item's id and kind leave the browser;
  * the server looks up its title. */
 export function chatTurn(
-  library: boolean,
+  workspaceOnly: boolean,
   open: { id: string; kind: 'file' | 'material' } | null | undefined
-): Pick<ChatStreamBody, 'library' | 'openResource'> {
+): Pick<ChatStreamBody, 'workspaceOnly' | 'openResource'> {
   return {
-    library,
     openResource: open ? { id: open.id, kind: open.kind } : undefined,
+    workspaceOnly,
   };
 }
 
@@ -191,6 +200,7 @@ export async function streamChat(
       .join('\n');
     if (!data) return;
     let ev: {
+      applied?: number;
       fileIds?: string[];
       omitted?: boolean;
       blockId?: string;
@@ -217,6 +227,7 @@ export async function streamChat(
       status?: ChatStatus;
       text?: string;
       tokenCount?: number;
+      total?: number;
       type: string;
       version?: number;
     };
@@ -271,13 +282,27 @@ export async function streamChat(
           );
         }
         break;
+      case 'tool_progress':
+        if (
+          ev.callId &&
+          typeof ev.applied === 'number' &&
+          typeof ev.total === 'number'
+        ) {
+          handlers.onToolProgress?.(ev.callId, {
+            applied: ev.applied,
+            total: ev.total,
+          });
+        }
+        break;
       case 'tool_end':
         if (ev.callId && TOOL_OUTCOMES.includes(ev.outcome as ToolOutcome)) {
           handlers.onToolEnd?.(ev.callId, {
+            applied: ev.applied,
             effects: Array.isArray(ev.effects) ? ev.effects : undefined,
             endedAt: ev.endedAt,
             error: ev.error,
             outcome: ev.outcome as ToolOutcome,
+            total: ev.total,
           });
         }
         break;

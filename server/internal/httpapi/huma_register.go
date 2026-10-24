@@ -77,9 +77,15 @@ func conflictError(code, detail string) error {
 	}
 }
 
+// audioTranscribingDetail is the copy for store.ErrAudioTranscribing.
+const audioTranscribingDetail = "This recording is still being transcribed; try again when it finishes"
+
 func mapHTTPError(err error) error {
 	if err == nil {
 		return nil
+	}
+	if errors.Is(err, store.ErrAudioTranscribing) {
+		return conflictError("audio_transcribing", audioTranscribingDetail)
 	}
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return huma.Error400BadRequest(err.Error())
@@ -406,7 +412,7 @@ func newUnexpectedError(status int, traceID string) *unexpectedError {
 // typedServerCodes are the 5xx codes the browser gives their own copy; a 5xx
 // carrying anything else in errors[] (an error's text, even one word) is
 // unexpected. src/lib/errors.ts keeps the same list.
-var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full"}
+var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full", "transcription_failed", "voice_unavailable"}
 
 func typedServerError(details []*huma.ErrorDetail) bool {
 	return len(details) > 0 && !slices.ContainsFunc(details, func(detail *huma.ErrorDetail) bool {
@@ -571,6 +577,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerTags(api)
 	a.registerChat(api)
 	a.registerContent(api)
+	a.registerEditorAssets(api)
 	a.registerThumbnails(api)
 	a.registerSourceUploads(api)
 	a.registerGenerate(api)
@@ -586,6 +593,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerAnonymousMaterials(api)
 	a.registerBillingIntegrations(api)
 	a.registerEditIncidents(api)
+	a.registerVoice(api)
 }
 
 func quotaError(detail map[string]any) *huma.ErrorModel {

@@ -236,7 +236,7 @@ async def test_two_knowledge_captures_side_by_side_at_fifteen_attach_one(
 
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
-    ctx = ToolContext(workspace_id="ws_1", library=True, images_taken=15)
+    ctx = ToolContext(workspace_id="ws_1", images_taken=15)
     results = await asyncio.gather(
         *(
             tools._capture_knowledge_page(
@@ -392,6 +392,56 @@ def _jpeg(width: int, height: int) -> bytes:
     return buffer.getvalue()
 
 
+def test_injected_captures_keep_their_estimate_without_a_decode(monkeypatch):
+    """(security regression: rate-limit audit Q238) The request built for a
+    model call carries its capture images with their recorded pixel estimate,
+    so measuring it decodes no image; the estimate equals the decoded one."""
+    from pipeline.registry import ModelConfig
+    from pipeline.retrieval import models
+
+    decoded: list = []
+    real = capture._image_bytes
+    monkeypatch.setattr(
+        capture, "_image_bytes", lambda part: decoded.append(part) or real(part)
+    )
+    spec = ModelConfig(
+        version=1,
+        provider_name="Z.ai",
+        model_name="GLM",
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        platform_enabled=True,
+        byok_enabled=False,
+        thinking_levels=("low", "high"),
+        default_thinking="high",
+    )
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "capture_page", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "c1", "content": "Captured page 1."},
+    ]
+    images = {"c1": ("capture_page result 1", capture.data_url(_jpeg(560, 280)))}
+
+    kept = capture.inject_images(
+        messages, images, "zai", {"c1": capture.patch_tokens(560, 280)}
+    )
+    measured = models.measure_request_context(kept, model=spec)
+    assert decoded == []
+
+    fresh = capture.inject_images(messages, images, "zai")
+    assert models.measure_request_context(fresh, model=spec) == measured
+    assert decoded
+
+
 def test_context_measurement_counts_images_by_pixels_not_base64():
     """A 1568 px JPEG is ~300 KB of base64, which the JSON counter would read
     as ~100k tokens; the request is measured with the patch estimate instead."""
@@ -542,7 +592,7 @@ async def test_knowledge_capture_refuses_a_withheld_page_as_withheld(monkeypatch
 
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
-    ctx = ToolContext(workspace_id="ws_1", library=True)
+    ctx = ToolContext(workspace_id="ws_1")
     refused = await tools._capture_knowledge_page(
         {"excerpt_id": "e_1", "page": 339, "_tool_call_id": "a"}, ctx
     )
@@ -566,7 +616,7 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
 
     monkeypatch.setattr(tools.library, "capture_target", _target)
     monkeypatch.setattr(capture, "render_knowledge", _render)
-    ctx = ToolContext(workspace_id="ws_1", library=True)
+    ctx = ToolContext(workspace_id="ws_1")
 
     outside = await tools._capture_knowledge_page(
         {"excerpt_id": "e_1", "page": 400, "_tool_call_id": "a"}, ctx
@@ -853,6 +903,53 @@ def test_image_capture_refuses_a_decompression_bomb_as_too_large(monkeypatch):
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
     with pytest.raises(capture.CaptureUnavailable, match="too large"):
         capture._image_capture(row, 1, None, 200)
+
+
+def test_image_capture_decodes_a_large_photo_at_the_capture_size(monkeypatch):
+    """A 64-megapixel JPEG decodes at a reduced scale, never at full size, and
+    the capture keeps its size and format (Q239)."""
+    import io
+
+    from PIL import Image, ImageFile
+
+    photo = io.BytesIO()
+    Image.new("L", (8000, 8000), 128).save(photo, "JPEG")
+    decoded: list[int] = []
+    real_load = ImageFile.ImageFile.load
+
+    def load(self):
+        answer = real_load(self)
+        decoded.append(self.width * self.height)
+        return answer
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", load)
+    jpeg, _box, size = capture.image_jpeg(photo, [0, 0, 500, 1000], 200)
+    assert size == (100, 200)
+    assert Image.open(io.BytesIO(jpeg)).format == "JPEG"
+    # The 1/8 DCT scale: one megapixel decoded for a 200-pixel capture.
+    assert decoded and max(decoded) <= 1000 * 1000
+
+
+@pytest.mark.parametrize("format_name", ["JPEG", "TIFF"])
+def test_a_reduced_capture_stands_an_oriented_photo_upright(format_name):
+    """Pillow turns a TIFF upright as it loads and exif_transpose turns a
+    JPEG: either way the reduced capture is upright, at its full-size shape."""
+    import io
+
+    from PIL import Image
+
+    photo = Image.new("RGB", (800, 400), "blue")
+    photo.paste("red", (0, 0, 400, 400))
+    exif = Image.Exif()
+    exif[0x0112] = 6  # shown turned a quarter clockwise
+    source = io.BytesIO()
+    photo.save(source, format_name, exif=exif)
+
+    jpeg, _box, size = capture.image_jpeg(source, None, 100)
+    assert size == (50, 100)
+    upright = Image.open(io.BytesIO(jpeg))
+    assert upright.getpixel((25, 10))[0] > 200  # the red half on top
+    assert upright.getpixel((25, 90))[2] > 200
 
 
 def test_image_capture_refuses_formats_pillow_cannot_read(monkeypatch):

@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/Icon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { CardGrid } from '@/features/flashcards/CardView';
 import { ResultCardTile } from '@/features/flashcards/FlashcardResult';
+import { RemovedAssetsContext } from '@/features/materials/MediaAssetView';
 import { TextView } from '@/features/questions/TextView';
 import type { QuestionBlock, TextBlock } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
@@ -101,6 +102,8 @@ export function reviewResultMeta(s: PastReview) {
 
 type Order = 'order' | 'hardest' | 'easiest';
 
+const GRADED_COPIES = { ids: new Set<string>() };
+
 export function ReviewResultBody({
   result,
   onAgain,
@@ -125,95 +128,99 @@ export function ReviewResultBody({
   const sum = (list: ReviewAnswer[], key: 'correct' | 'total') =>
     list.reduce((total, a) => total + (a[key] ?? 0), 0);
   return (
-    <div>
-      <div className="mb-6.5 flex items-center justify-between gap-3">
-        {result.better > 0 ? (
-          <span className="inline-flex items-center gap-1 font-bold text-[13px] text-tint-success-fg">
-            <Icon name="arrowUp" size={14} />
-            {m.review_result_better({ count: result.better })}
-          </span>
-        ) : (
-          <span />
-        )}
-        <UnderlineLink accent onClick={onAgain}>
-          {againLabel}
-        </UnderlineLink>
-      </div>
-      <div
-        className={cn(
-          'grid border-divider border-b pb-5.5',
-          questions.length > 0 && cards.length > 0 && 'sm:grid-cols-2'
-        )}
-      >
+    // Graded copies: a missing image keeps the plain empty box, even inside a
+    // session that names its items' removed images (Q270).
+    <RemovedAssetsContext.Provider value={GRADED_COPIES}>
+      <div>
+        <div className="mb-6.5 flex items-center justify-between gap-3">
+          {result.better > 0 ? (
+            <span className="inline-flex items-center gap-1 font-bold text-[13px] text-tint-success-fg">
+              <Icon name="arrowUp" size={14} />
+              {m.review_result_better({ count: result.better })}
+            </span>
+          ) : (
+            <span />
+          )}
+          <UnderlineLink accent onClick={onAgain}>
+            {againLabel}
+          </UnderlineLink>
+        </div>
+        <div
+          className={cn(
+            'grid border-divider border-b pb-5.5',
+            questions.length > 0 && cards.length > 0 && 'sm:grid-cols-2'
+          )}
+        >
+          {questions.length > 0 && (
+            <ScoreHalf
+              bar={OUTCOMES.map((o) => ({
+                count: questions.filter((a) => outcomeOf(a) === o).length,
+                label: LEGEND_LABEL[o](),
+                tone: OUTCOME_TONE[o],
+              }))}
+              className={cn(cards.length > 0 && 'pb-4.5 sm:pr-7 sm:pb-0')}
+              label={questionsLabel}
+              score={`${formatPoints(sum(questions, 'correct'))} / ${formatPoints(sum(questions, 'total'))}`}
+              unit={m.result_marks()}
+            />
+          )}
+          {cards.length > 0 && (
+            <ScoreHalf
+              bar={CARD_RATINGS.map((r) => ({
+                count: cards.filter((a) => ratingOf(a) === r).length,
+                label: RATING_LABEL[r](),
+                tone: RATING_TONE[r],
+              }))}
+              className={cn(
+                questions.length > 0 &&
+                  'border-divider border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-7'
+              )}
+              label={cardsLabel}
+              score={`${cards.filter((a) => a.rating >= 3).length} / ${cards.length}`}
+              unit={m.flashcards_result_good()}
+            />
+          )}
+        </div>
         {questions.length > 0 && (
-          <ScoreHalf
-            bar={OUTCOMES.map((o) => ({
-              count: questions.filter((a) => outcomeOf(a) === o).length,
-              label: LEGEND_LABEL[o](),
-              tone: OUTCOME_TONE[o],
-            }))}
-            className={cn(cards.length > 0 && 'pb-4.5 sm:pr-7 sm:pb-0')}
-            label={questionsLabel}
-            score={`${formatPoints(sum(questions, 'correct'))} / ${formatPoints(sum(questions, 'total'))}`}
-            unit={m.result_marks()}
-          />
+          <SortedSection
+            items={numbered.filter(({ item }) => item.kind === 'question')}
+            title={questionsLabel}
+          >
+            {(shown) => (
+              <ol>
+                {shown.map(({ item, n }) => (
+                  <QuestionRow
+                    item={item}
+                    key={`${item.materialId}/${item.itemId}`}
+                    n={n}
+                  />
+                ))}
+              </ol>
+            )}
+          </SortedSection>
         )}
         {cards.length > 0 && (
-          <ScoreHalf
-            bar={CARD_RATINGS.map((r) => ({
-              count: cards.filter((a) => ratingOf(a) === r).length,
-              label: RATING_LABEL[r](),
-              tone: RATING_TONE[r],
-            }))}
-            className={cn(
-              questions.length > 0 &&
-                'border-divider border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-7'
+          <SortedSection
+            items={numbered.filter(({ item }) => item.kind === 'card')}
+            title={cardsLabel}
+          >
+            {(shown) => (
+              <CardGrid>
+                {shown.map(({ item, n }) => (
+                  <ResultCardTile
+                    card={{ back: item.back ?? '', front: item.front ?? '' }}
+                    key={`${item.materialId}/${item.itemId}`}
+                    n={n}
+                    ratings={[item.rating]}
+                  />
+                ))}
+              </CardGrid>
             )}
-            label={cardsLabel}
-            score={`${cards.filter((a) => a.rating >= 3).length} / ${cards.length}`}
-            unit={m.flashcards_result_good()}
-          />
+          </SortedSection>
         )}
+        {footer}
       </div>
-      {questions.length > 0 && (
-        <SortedSection
-          items={numbered.filter(({ item }) => item.kind === 'question')}
-          title={questionsLabel}
-        >
-          {(shown) => (
-            <ol>
-              {shown.map(({ item, n }) => (
-                <QuestionRow
-                  item={item}
-                  key={`${item.materialId}/${item.itemId}`}
-                  n={n}
-                />
-              ))}
-            </ol>
-          )}
-        </SortedSection>
-      )}
-      {cards.length > 0 && (
-        <SortedSection
-          items={numbered.filter(({ item }) => item.kind === 'card')}
-          title={cardsLabel}
-        >
-          {(shown) => (
-            <CardGrid>
-              {shown.map(({ item, n }) => (
-                <ResultCardTile
-                  card={{ back: item.back ?? '', front: item.front ?? '' }}
-                  key={`${item.materialId}/${item.itemId}`}
-                  n={n}
-                  ratings={[item.rating]}
-                />
-              ))}
-            </CardGrid>
-          )}
-        </SortedSection>
-      )}
-      {footer}
-    </div>
+    </RemovedAssetsContext.Provider>
   );
 }
 
