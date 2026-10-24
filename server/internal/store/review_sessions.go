@@ -379,6 +379,10 @@ type ReviewSession struct {
 	Done     []ReviewAnswer `json:"done" nullable:"false"`
 	Answered int            `json:"answered"`
 	Total    int            `json:"total"`
+	// RemovedAssetIDs are the card and question images of Items that no
+	// longer exist (M16), shown as removed. Done are graded copies, whose
+	// missing images keep the plain empty box (Q270).
+	RemovedAssetIDs []string `json:"removedAssetIds,omitempty"`
 }
 
 // ReviewAnswer is an item answered earlier in a session with what was

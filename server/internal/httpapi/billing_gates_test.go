@@ -471,17 +471,35 @@ func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := doReq(t, fx.handler, http.MethodGet, "/api/editor-assets/lost", fx.actorID, nil)
+	rec := doReq(t, fx.handler, http.MethodGet, "/api/editor-assets?access=lost", fx.actorID, nil)
 	expectStatus(t, rec, http.StatusOK, "the removed member's lost media")
-	var lost store.LostEditorAssetPage
+	var lost store.EditorAssetPage
 	if err := json.Unmarshal(rec.Body.Bytes(), &lost); err != nil {
 		t.Fatal(err)
 	}
 	if len(lost.Items) != 2 {
 		t.Fatalf("lost media = %+v, want both images", lost.Items)
 	}
+	// One per page: the cursor reaches the second and the end.
+	var paged []string
+	for path := "/api/editor-assets?access=lost&limit=1"; path != ""; {
+		rec := doReq(t, fx.handler, http.MethodGet, path, fx.actorID, nil)
+		expectStatus(t, rec, http.StatusOK, path)
+		var page store.EditorAssetPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || len(page.Items) != 1 || len(paged) > 1 {
+			t.Fatalf("%s = %s, %v", path, rec.Body.String(), err)
+		}
+		paged = append(paged, page.Items[0].ID)
+		path = ""
+		if page.NextCursor != "" {
+			path = "/api/editor-assets?access=lost&limit=1&cursor=" + page.NextCursor
+		}
+	}
+	if len(paged) != 2 || paged[0] != lost.Items[0].ID || paged[1] != lost.Items[1].ID {
+		t.Fatalf("paged %v, want %s then %s", paged, lost.Items[0].ID, lost.Items[1].ID)
+	}
 	for _, item := range lost.Items {
-		if item.MaterialTitle != note.Title {
+		if item.MaterialTitle != note.Title || !item.LostAccess || item.MaterialID != "" {
 			t.Fatalf("lost image %s is under %q, want the note's title %q", item.ID, item.MaterialTitle, note.Title)
 		}
 	}
@@ -503,6 +521,132 @@ func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 		if !slices.Equal(body.RemovedAssetIDs, []string{read.want}) {
 			t.Fatalf("%s removedAssetIds = %v, want only its own deleted image %s", read.path, body.RemovedAssetIDs, read.want)
 		}
+	}
+}
+
+// Study names the card images their uploader deleted, as the editor does
+// (Epo 2026-10-24, M16): the set read flashcard study uses, a new review
+// session and the items a continued one has still to answer list the removed
+// image. Answered items and a session's result are graded copies, which keep
+// the plain empty box (Q270), so they name none.
+func TestStudyReadsNameRemovedImages(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	assetID := fmt.Sprintf("asset_m16_study_%d", time.Now().UnixNano())
+	card := materialdoc.Card{ID: "c1", Front: "Cell", Back: "Unit of life"}
+	other := materialdoc.Card{ID: "c2", Front: "Atom", Back: "Unit of matter"}
+	plain, err := materialdoc.FlashcardsDocument([]materialdoc.Card{card, other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "flashcards", Title: "Cells", Content: plain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, set.ID)
+	_, upload, err := fx.store.CreateEditorAssetReservation(ctx, store.NewEditorAssetReservation{
+		AssetID: assetID, UploadID: assetID + "_up", WorkspaceID: fx.workspaceID, MaterialID: set.ID, CreatedBy: fx.actorID,
+		Name: "cell.png", Purpose: "image", ObjectPath: "editor-assets/" + assetID + "/blob.png",
+		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.store.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+		t.Fatal(err)
+	}
+	card.Image = &materialdoc.CardImage{AssetID: assetID}
+	cards, err := materialdoc.FlashcardsDocument([]materialdoc.Card{card, other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, set.ID, cards); err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, "/api/editor-assets/"+assetID, fx.actorID, nil),
+		http.StatusNoContent, "its payer deleting it")
+
+	removed := func(path string, want ...string) {
+		t.Helper()
+		rec := doReq(t, fx.handler, http.MethodGet, path, fx.ownerID, nil)
+		expectStatus(t, rec, http.StatusOK, path)
+		var body struct{ RemovedAssetIDs []string }
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(body.RemovedAssetIDs, want) {
+			t.Fatalf("%s removedAssetIds = %v, want %v; %s", path, body.RemovedAssetIDs, want, rec.Body.String())
+		}
+	}
+	rate := func(session, itemID string, items ...string) {
+		t.Helper()
+		refs := make([]any, len(items))
+		for i, id := range items {
+			refs[i] = map[string]any{"materialId": set.ID, "itemId": id}
+		}
+		expectStatus(t, doReq(t, fx.handler, http.MethodPost, "/api/review/ratings", fx.ownerID, map[string]any{
+			"materialId": set.ID, "itemId": itemID, "rating": 1,
+			"session": map[string]any{"id": session, "workspaceId": fx.workspaceID, "group": "workspace", "items": refs},
+		}), http.StatusNoContent, "rating "+itemID)
+	}
+	removed("/api/flashcards/"+set.ID, assetID)
+	// One session answers the other card first, with the imaged one still to
+	// answer; another answers the imaged card.
+	const pending, answered = "2b6f7c1d-4e5a-4b3c-9d8e-0f1a2b3c4d5e", "7c1d2b6f-5a4e-4c3b-8e9d-1a0f2b3c4d5e"
+	rate(pending, "c2", "c1", "c2")
+	rate(answered, "c1", "c1")
+	removed("/api/review/sessions/"+pending, assetID)
+	removed("/api/review/sessions/" + answered)
+	removed("/api/review/sessions/" + answered + "/result")
+	// Rated cards are due: a new session has the imaged card to answer.
+	removed("/api/workspaces/"+fx.workspaceID+"/review", assetID)
+}
+
+// An editor that still edits the owner's note deletes its image from its
+// Embeds tab (Q273): the note's content keeps the node, and the owner's next
+// read names it as removed. The owner, who did not add it, cannot delete it.
+func TestEditorDeletesItsImageInANoteItStillEdits(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	assetID := fmt.Sprintf("asset_q273_%d", time.Now().UnixNano())
+	note, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "note", Title: "Shared note", Content: noteTestContent(t, "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, note.ID)
+	_, upload, err := fx.store.CreateEditorAssetReservation(ctx, store.NewEditorAssetReservation{
+		AssetID: assetID, UploadID: assetID + "_up", WorkspaceID: fx.workspaceID, MaterialID: note.ID, CreatedBy: fx.actorID,
+		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/" + assetID + "/blob.png",
+		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.store.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := materialdoc.Marshal(materialdoc.Envelope{SchemaVersion: materialdoc.SchemaVersion, Value: []map[string]any{
+		{"type": "img", "id": "img-1", "assetId": assetID, "children": []any{map[string]any{"text": ""}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, note.ID, content); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/editor-assets/" + assetID
+	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.ownerID, nil), http.StatusNotFound, "the owner deleting it")
+	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.actorID, nil), http.StatusNoContent, "its payer deleting it")
+	rec := doReq(t, fx.handler, http.MethodGet, "/api/materials/"+note.ID, fx.ownerID, nil)
+	expectStatus(t, rec, http.StatusOK, "the owner's read")
+	var read struct{ RemovedAssetIDs []string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &read); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(read.RemovedAssetIDs, []string{assetID}) || !strings.Contains(rec.Body.String(), `"assetId":"`+assetID+`"`) {
+		t.Fatalf("owner's read = %s; want the node kept and named as removed", rec.Body.String())
 	}
 }
 
