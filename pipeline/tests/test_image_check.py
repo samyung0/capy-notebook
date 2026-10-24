@@ -68,8 +68,6 @@ def encoded(image: Image.Image, kind: str) -> bytes:
     ("data", "found"),
     [
         (png_header(2401, 10), ("png", 2401, 10)),
-        (heif(b"avif", 4032, 3024), ("avif", 4032, 3024)),
-        (heif(b"heic", 4032, 3024), ("heic", 4032, 3024)),
         ((FIXTURES / "photo.jpg").read_bytes(), ("jpeg", 3000, 2000)),
         (encoded(Image.new("RGB", (31, 17)), "GIF"), ("gif", 31, 17)),
         (encoded(Image.new("RGB", (31, 17)), "WEBP"), ("webp", 31, 17)),
@@ -85,8 +83,6 @@ def encoded(image: Image.Image, kind: str) -> bytes:
     ],
     ids=[
         "png",
-        "avif",
-        "heic",
         "jpeg",
         "gif",
         "webp",
@@ -106,11 +102,27 @@ def test_size_reads_headers(data, found):
         (FIXTURES / "photo.jp2").read_bytes(),
         encoded(Image.new("RGB", (31, 17)), "BMP"),
         b"<svg/>",
+        heif(b"avif", 4032, 3024),
+        heif(b"heic", 4032, 3024),
     ],
-    ids=["tiff", "jp2", "bmp", "svg"],
+    ids=["tiff", "jp2", "bmp", "svg", "avif", "heic"],
 )
 def test_other_formats_are_not_measured(data):
     assert image_check.size(data) is None
+
+
+def test_jpeg_frames_go_does_not_read_are_unreadable():
+    """Review r2 N2: lossless, hierarchical and arithmetic frames are refused
+    as the gateway refuses them."""
+    for marker in (0xC3, 0xC5, 0xC9, 0xCF):
+        data = (
+            b"\xff\xd8\xff"
+            + bytes([marker])
+            + b"\x00\x11\x08\x00\x10\x00\x20"
+            + b"\0" * 20
+        )
+        with pytest.raises(image_check.Unreadable):
+            image_check.size(data)
 
 
 def _refused(call) -> str:
@@ -220,6 +232,32 @@ EMF = b"\x01\x00\x00\x00" + b"\0" * 36 + b" EMF" + b"\0" * 20
             {"word/media/hdphoto1.wdp": b"II\xbc\x01" + b"\0" * 8},
             "office_image_unsupported",
         ),
+        # Review r2 S1: any other image format, wherever it sits.
+        (
+            {
+                "word/_rels/document.xml.rels": rels("image pics\\a.webp"),
+                "word/pics/a.webp": b"RIFF\0\0\0\0WEBPVP8L\0\0\0\0",
+            },
+            "office_image_unsupported",
+        ),
+        (
+            {"word/embeddings/x.bin": b"BM" + b"\0" * 12 + b"\x28\0\0\0"},
+            "office_image_unsupported",
+        ),
+        ({"word/x.dat": b"II*\x00\x08\x00\x00\x00"}, "office_image_unsupported"),
+        ({"word/x.dat": b"\x00\x00\x01\x00\x01\x00"}, "office_image_unsupported"),
+        (
+            {"word/x.dat": b"\x00\x00\x00\x0cjP  \r\n\x87\n"},
+            "office_image_unsupported",
+        ),
+        # Review r2 N1: a part named as relationships is checked too.
+        (
+            {
+                "word/_rels/document.xml.rels": rels("image media/a.rels"),
+                "word/media/a.rels": b"<svg/>",
+            },
+            "office_image_unsupported",
+        ),
     ],
     ids=[
         "over-cap",
@@ -235,6 +273,12 @@ EMF = b"\x01\x00\x00\x00" + b"\0" * 36 + b" EMF" + b"\0" * 20
         "svg-named-png",
         "bmp",
         "jpeg-xr",
+        "webp-backslash-target",
+        "bmp-outside-pictures",
+        "tiff-outside-pictures",
+        "ico-outside-pictures",
+        "jp2-outside-pictures",
+        "svg-named-rels",
     ],
 )
 def test_office_check_refuses_pictures_by_content(parts, code):
@@ -265,9 +309,60 @@ def test_office_check_refuses_packages_it_cannot_read_whole():
     many = office({f"word/p{i}.xml": b"<p/>" for i in range(4097)})
     assert _refused(lambda: check(many, 2 * MB)) == "office_unreadable"
     # Refused by the check itself, before CPython's own read would refuse it.
-    with pytest.raises(image_check.Refused, match="overlapping entries") as overlap:
+    with pytest.raises(image_check.Refused, match="one contiguous") as overlap:
         check(_overlapped(), 2 * MB)
     assert overlap.value.code == "office_unreadable"
     under = png_header(800, 600) + b"\0" * (2 * MB - 100)
     big = office({f"word/media/image{i}.png": under for i in range(130)})
     assert _refused(lambda: check(big, 2 * MB)) == "office_unreadable"
+
+
+def test_office_check_refuses_anything_but_one_archive():
+    """Security regression (Q348, review r2 B2): two archives in one file,
+    whichever comes last, data before the archive, or an end record that
+    miscounts the directory are refused, so no zip reader that falls back to
+    another archive finds parts the check never read."""
+    clean = office({"word/document.xml": b"<w:document/>"})
+    hidden = office({"word/media/image1.emf": EMF})
+    miscounted = bytearray(clean)
+    end = miscounted.rindex(b"PK\x05\x06")
+    struct.pack_into("<HH", miscounted, end + 8, 2, 2)
+    for data in (
+        hidden + clean,
+        clean + hidden,
+        b"MZ\x90\x00" + clean,
+        bytes(miscounted),
+    ):
+        assert (
+            _refused(lambda data=data: image_check.check_office(data, 2 * MB))
+            == "office_unreadable"
+        )
+    image_check.check_office(clean, 2 * MB)
+
+
+def test_relationships_are_read_within_the_budget_left(monkeypatch):
+    """Review r2 S2: each relationships part is read only a byte past what is
+    left of the budget, so the check inflates at most that much before it
+    refuses, never a whole budget per part."""
+    budget = 64 << 10
+    monkeypatch.setattr(image_check, "MAX_INFLATED", budget)
+    inflated = []
+    original = zipfile.ZipExtFile.read
+
+    def counted(self, n=-1):
+        body = original(self, n)
+        inflated.append(len(body))
+        return body
+
+    monkeypatch.setattr(zipfile.ZipExtFile, "read", counted)
+    padding = b" " * (40 << 10)
+    big = office(
+        {
+            "word/_rels/document.xml.rels": b"<Relationships>" + padding,
+            "ppt/_rels/presentation.xml.rels": b"<Relationships>" + padding,
+        }
+    )
+    assert (
+        _refused(lambda: image_check.check_office(big, 2 * MB)) == "office_unreadable"
+    )
+    assert sum(inflated) <= budget + 1

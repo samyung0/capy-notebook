@@ -234,6 +234,22 @@ func TestCheckOfficeRefusesPicturesByContent(t *testing.T) {
 			"office_image_unsupported",
 		},
 		"a BMP picture": {[]part{{"word/media/image1.bmp", []byte("BM\x00\x00\x00\x00")}}, "office_image_unsupported"},
+		"a WebP reached through a backslash target": {
+			[]part{rels(`image pics\a.webp`), {"word/pics/a.webp", []byte("RIFF\x00\x00\x00\x00WEBPVP8L\x00\x00\x00\x00")}},
+			"office_image_unsupported",
+		},
+		"a BMP outside the picture parts": {
+			[]part{{"word/embeddings/x.bin", append([]byte("BM\x00\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00"), 40, 0, 0, 0)}},
+			"office_image_unsupported",
+		},
+		"a TIFF outside the picture parts": {[]part{{"word/x.dat", []byte("II*\x00\x08\x00\x00\x00")}}, "office_image_unsupported"},
+		"an ICO outside the picture parts": {[]part{{"word/x.dat", []byte("\x00\x00\x01\x00\x01\x00")}}, "office_image_unsupported"},
+		"a JPEG 2000 outside the picture parts": {
+			[]part{{"word/x.dat", []byte("\x00\x00\x00\x0cjP  \r\n\x87\n")}}, "office_image_unsupported",
+		},
+		"an SVG named as relationships": {
+			[]part{rels("image media/a.rels"), {"word/media/a.rels", []byte("<svg/>")}}, "office_image_unsupported",
+		},
 		"a JPEG XR picture": {
 			[]part{rels("image media/hdphoto1.wdp"), {"word/media/hdphoto1.wdp", []byte("II\xbc\x01\x08\x00\x00\x00")}},
 			"office_image_unsupported",
@@ -279,6 +295,78 @@ func TestCheckOfficeRefusesPackagesItCannotReadWhole(t *testing.T) {
 	overlapped := overlappedZip(t)
 	if code := refusal(t, CheckOffice(overlapped, overlapped.Size(), testCap)); code != "office_unreadable" {
 		t.Fatalf("overlapping entries: code = %s", code)
+	}
+}
+
+// Security regression (Q348, review r2 B1): an entry whose attributes call it
+// a directory is still a part (the editors' zip readers go by its name), so
+// an EMF or a decompression-bomb PNG marked as one is refused.
+func TestCheckOfficeReadsEntriesMarkedAsDirectories(t *testing.T) {
+	emf := make([]byte, 64)
+	copy(emf, []byte{1, 0, 0, 0})
+	copy(emf[40:], " EMF")
+	for data, code := range map[string]string{
+		string(emf):                     "office_vector_image",
+		string(pngHeader(60000, 60000)): "office_image_too_large",
+	} {
+		var out bytes.Buffer
+		archive := zip.NewWriter(&out)
+		// MS-DOS attributes (creator 0) with the directory bit.
+		writer, err := archive.CreateHeader(&zip.FileHeader{Name: "word/media/image1.png", Method: zip.Deflate, ExternalAttrs: 0x10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer.Write([]byte(data))
+		if err := archive.Close(); err != nil {
+			t.Fatal(err)
+		}
+		file := bytes.NewReader(out.Bytes())
+		reader, err := zip.NewReader(file, file.Size())
+		if err != nil || !reader.File[0].FileInfo().IsDir() {
+			t.Fatalf("the entry is not marked as a directory: %v", err)
+		}
+		if got := refusal(t, CheckOffice(file, file.Size(), testCap)); got != code {
+			t.Errorf("code = %s, want %s", got, code)
+		}
+	}
+}
+
+// Security regression (Q348, review r2 B2): a package holding two archives,
+// whichever comes last, is refused, so no zip reader that falls back to the
+// other one finds parts the check never read.
+func TestCheckOfficeRefusesAnythingButOneArchive(t *testing.T) {
+	emf := make([]byte, 64)
+	copy(emf, []byte{1, 0, 0, 0})
+	copy(emf[40:], " EMF")
+	raw := func(file *bytes.Reader) []byte {
+		out := make([]byte, file.Size())
+		file.ReadAt(out, 0)
+		return out
+	}
+	clean := raw(officeFile(t, part{"word/document.xml", []byte("<w:document/>")}))
+	hidden := raw(officeFile(t, part{"word/media/image1.emf", emf}))
+	for name, data := range map[string][]byte{
+		"a clean package after another":  append(append([]byte(nil), hidden...), clean...),
+		"a clean package before another": append(append([]byte(nil), clean...), hidden...),
+		"bytes before the archive":       append([]byte("MZ\x90\x00"), clean...),
+	} {
+		file := bytes.NewReader(data)
+		if got := refusal(t, CheckOffice(file, file.Size(), testCap)); got != "office_unreadable" {
+			t.Errorf("%s: code = %s", name, got)
+		}
+	}
+	// The end record's count is the directory's.
+	miscounted := append([]byte(nil), clean...)
+	end := bytes.LastIndex(miscounted, []byte("PK\x05\x06"))
+	binary.LittleEndian.PutUint16(miscounted[end+8:], 2)
+	binary.LittleEndian.PutUint16(miscounted[end+10:], 2)
+	file := bytes.NewReader(miscounted)
+	if got := refusal(t, CheckOffice(file, file.Size(), testCap)); got != "office_unreadable" {
+		t.Errorf("a miscounted end record: code = %s", got)
+	}
+	file = bytes.NewReader(clean)
+	if err := CheckOffice(file, file.Size(), testCap); err != nil {
+		t.Fatalf("the clean package alone refused: %v", err)
 	}
 }
 

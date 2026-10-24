@@ -49,9 +49,10 @@ _TIMEOUT_S = 120
 # largest real document (1,475 pages) and 22 KiB for the densest page
 # (Korean), so 32 MiB holds that page density over 1,400 pages.
 _MAX_ANSWER = 32 << 20
-# One picture of an Office file, or a HEIC source, has 10 s (Q347, the limit
-# Claude picked): a 12 MP HEIC converts in about 0.4 s, a picture compresses
-# in about a second.
+# One picture of an Office file, or a HEIC source, has 10 s of CPU (Q347,
+# the limit Claude picked): a 12 MP HEIC converts in about 0.4 s, a picture
+# compresses in about a second. Its wall deadline is twice that, since the
+# ingest host's parsers share its cores.
 _PICTURE_CPU_S = 10
 _MODE_LIMITS = {"picture": _PICTURE_CPU_S}
 _SYSTEM = ("/usr", "/lib", "/lib64", "/etc/ld.so.cache")
@@ -75,7 +76,7 @@ class PixelLimit(ValueError):
 
 def _policy(source: Path | None, cpu_s: int | None = None) -> capy_sandbox.Policy:
     """The helper's sandbox: its interpreter and code, plus ``source``;
-    ``cpu_s`` narrows its CPU time and deadline."""
+    ``cpu_s`` narrows its CPU time, with a wall deadline twice that."""
     return capy_sandbox.Policy(
         limits={**_LIMITS, "CPU": cpu_s} if cpu_s else _LIMITS,
         blocked=frozenset({"setsid", "setpgid", "fork"}),
@@ -85,7 +86,7 @@ def _policy(source: Path | None, cpu_s: int | None = None) -> capy_sandbox.Polic
             *([str(source)] if source is not None else []),
         ),
         env={key: os.environ[key] for key in ("PYTHONPATH",) if key in os.environ},
-        timeout_s=cpu_s or _TIMEOUT_S,
+        timeout_s=2 * cpu_s if cpu_s else _TIMEOUT_S,
     )
 
 
@@ -159,7 +160,7 @@ def _decode(
         )
     except subprocess.TimeoutExpired:
         raise DecodeFailed(
-            f"{mode} decode exceeded {cpu_s or _TIMEOUT_S} seconds"
+            f"{mode} decode exceeded {2 * cpu_s if cpu_s else _TIMEOUT_S} seconds"
         ) from None
     except capy_sandbox.OutputLimit:
         raise DecodeFailed(f"{mode} decode answered over {limit} bytes") from None
@@ -259,7 +260,8 @@ _HEIC_MAX_OUTPUT = 64 << 20
 def heic_jpeg(data: bytes) -> bytes:
     """A HEIC/HEIF picture as a JPEG (Epo 2026-10-24, Q353), which the source
     rule then shrinks. heif-dec runs under the decode policy with the
-    picture's 10 s, writing only into its own temporary folder."""
+    picture's 10 s of CPU (20 s wall), writing only into its own temporary
+    folder."""
     tool = shutil.which(_HEIF_DEC)
     if tool is None:
         raise DecodeFailed(f"{_HEIF_DEC} is not installed")
@@ -271,14 +273,14 @@ def heic_jpeg(data: bytes) -> bytes:
             blocked=frozenset({"setsid", "setpgid", "fork"}),
             read=(*_SYSTEM, str(source)),
             write=(temp, "/dev/null"),
-            timeout_s=_PICTURE_CPU_S,
+            timeout_s=2 * _PICTURE_CPU_S,
         )
         argv = [tool, "-q", str(_HEIC_JPEG_QUALITY), str(source), str(target)]
         try:
             completed = capy_sandbox.run(argv, policy, max_output=1 << 20)
         except subprocess.TimeoutExpired:
             raise DecodeFailed(
-                f"heic decode exceeded {_PICTURE_CPU_S} seconds"
+                f"heic decode exceeded {2 * _PICTURE_CPU_S} seconds"
             ) from None
         except capy_sandbox.OutputLimit:
             raise DecodeFailed("heic decode answered too much") from None

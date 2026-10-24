@@ -556,6 +556,9 @@ def test_the_pipeline_image_carries_heif_dec_without_an_encoder() -> None:
         if "install" in line and "libheif" in line
     )
     assert "--no-install-recommends" in line and "libheif-plugin-libde265" in line
+    # The build converts a HEIC with it (review r2 N8).
+    assert "RUN heif-dec -q 90 /tmp/smoke.heic /tmp/smoke.jpg" in pipeline
+    assert "COPY e2e/fixtures/files/images/photo.heic /tmp/smoke.heic" in pipeline
     assert "x265" not in pipeline.replace("no x265", "")
 
 
@@ -816,7 +819,8 @@ def test_each_office_picture_and_heic_gets_its_own_ten_seconds(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """(security regression: Q347, Q353) One picture's helper, and libheif's
-    tool, run with 10 s of CPU and a 10 s deadline, not the file's 120 s."""
+    tool, run with 10 s of CPU and a 20 s deadline, not the file's 120 s
+    (review r2 N4: a busy host does not remove a normal picture)."""
     policies = []
 
     def run(argv, policy, **_kwargs):
@@ -829,7 +833,7 @@ def test_each_office_picture_and_heic_gets_its_own_ten_seconds(
     monkeypatch.setattr(decode.shutil, "which", lambda _name: "/usr/bin/heif-dec")
     assert decode.office_picture(b"", image_max_bytes=1, max_pixels=64) == "keep"
     assert decode.heic_jpeg(b"heic") == b"\xff\xd8\xff"
-    assert [(p.limits["CPU"], p.timeout_s) for p in policies] == [(10, 10), (10, 10)]
+    assert [(p.limits["CPU"], p.timeout_s) for p in policies] == [(10, 20), (10, 20)]
     assert policies[1].limits["FSIZE"] > 0 and "/dev/null" in policies[1].write
 
 

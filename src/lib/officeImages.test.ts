@@ -448,6 +448,55 @@ describe('compressOfficeImages', () => {
   }, 60_000);
 });
 
+describe('compressOfficeImages after a removal', () => {
+  /** Swaps a package's added EMF for a PNG that does not decode. */
+  function broken(parts: Record<string, Uint8Array>, emf: string) {
+    delete parts[emf];
+    const name = emf.slice(emf.lastIndexOf('/') + 1);
+    parts[emf.replace(name, 'broken.png')] = smallPng().subarray(0, 12);
+    for (const path of Object.keys(parts))
+      if (path.endsWith('.rels'))
+        parts[path] = strToU8(
+          strFromU8(parts[path]).replace(name, 'broken.png')
+        );
+    return parts;
+  }
+
+  it('opens a PPTX whose undecodable picture and stray SVG went, and an XLSX whose undecodable picture went', async () => {
+    // Review r2 N9, N12.
+    const deck = broken(pptx(), 'ppt/media/image99.emf');
+    deck['ppt/embeddings/icon.svg'] = strToU8(
+      '<svg xmlns="http://www.w3.org/2000/svg"/>'
+    );
+    const slides = await compressOfficeImages(pack(deck, 'deck.pptx'), 2 * MB);
+    expect(slides.removed).toBe(2);
+    const slidesBytes = new Uint8Array(await slides.file.arrayBuffer());
+    const slidesOut = unzipSync(slidesBytes);
+    expect('ppt/media/broken.png' in slidesOut).toBe(false);
+    expect('ppt/embeddings/icon.svg' in slidesOut).toBe(false);
+    expect(strFromU8(slidesOut['ppt/slides/slide1.xml'])).not.toContain(
+      'Visio drawing'
+    );
+    await expect(seedOffice('pptx', slidesBytes)).resolves.toBeTruthy();
+
+    const book = broken(xlsx(), 'xl/media/image2.emf');
+    const sheets = await compressOfficeImages(
+      pack(book, 'grades.xlsx'),
+      2 * MB
+    );
+    expect(sheets.removed).toBe(1);
+    const sheetsBytes = new Uint8Array(await sheets.file.arrayBuffer());
+    const sheetsOut = unzipSync(sheetsBytes);
+    expect('xl/media/broken.png' in sheetsOut).toBe(false);
+    expect(
+      strFromU8(sheetsOut['xl/drawings/drawing1.xml']).match(
+        /<xdr:oneCellAnchor>/g
+      )
+    ).toHaveLength(1);
+    await expect(seedOffice('xlsx', sheetsBytes)).resolves.toBeTruthy();
+  }, 60_000);
+});
+
 describe('removePictures', () => {
   it('removes a PPTX OLE frame whole, with the alternate content around it, and counts it once', () => {
     const xml =

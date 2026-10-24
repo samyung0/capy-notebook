@@ -114,6 +114,24 @@ func TestInternalFileRefusesADeckPicturePastThePixelLimit(t *testing.T) {
 	}
 }
 
+// Security regression (Q346, review r2 N5): an agent's file takes the upload
+// name rule, so a bidi-spoofed or path name is refused and nothing stored.
+func TestInternalFileRefusesAnUnsafeName(t *testing.T) {
+	fx := openDeckFiles(t)
+	for _, name := range []string{"invoice\u202etpp.pptx", "a/b.pptx"} {
+		msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)
+		body := fx.body(msgID, fx.editor)
+		body["name"] = name
+		rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/files", pipeSecret, body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_input") {
+			t.Fatalf("%q: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if fx.blobs(t) != 0 {
+		t.Fatal("a refused name left a blob behind")
+	}
+}
+
 func (fx deckFileFixture) blobs(t *testing.T) int {
 	t.Helper()
 	listing, err := fx.mem.ListObjects(context.Background(), "sources/", "", 100)

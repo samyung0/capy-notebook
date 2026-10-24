@@ -13,7 +13,6 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
-	"cmp"
 	"encoding/binary"
 	"encoding/xml"
 	"errors"
@@ -241,6 +240,24 @@ func Vector(name string, head []byte) bool {
 // doctype.
 var svgRoot = regexp.MustCompile(`^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]`)
 
+// OtherImage reports an image format a browser may decode that an Office
+// picture may not be (Q344), by signature: WebP, AVIF, HEIF, BMP, TIFF, ICO
+// or CUR, JPEG XR and JPEG 2000.
+func OtherImage(head []byte) bool {
+	has := func(prefix string) bool { return bytes.HasPrefix(head, []byte(prefix)) }
+	switch Format(head) {
+	case "webp", "avif", "heic":
+		return true
+	}
+	// A bitmap's DIB header names its own size.
+	bitmap := has("BM") && len(head) >= 18 &&
+		slices.Contains([]uint32{12, 40, 52, 56, 64, 108, 124}, binary.LittleEndian.Uint32(head[14:]))
+	icon := (has("\x00\x00\x01\x00") || has("\x00\x00\x02\x00")) && len(head) >= 6 &&
+		binary.LittleEndian.Uint16(head[4:]) > 0
+	return bitmap || icon || has("II*\x00") || has("MM\x00*") || has("II\xbc\x01") ||
+		has("\x00\x00\x00\x0cjP  \r\n\x87\n") || has("\xff\x4f\xff\x51")
+}
+
 // SVG reports an SVG picture, by name or by its root element.
 func SVG(name string, head []byte) bool {
 	switch strings.ToLower(path.Ext(name)) {
@@ -282,22 +299,30 @@ func CheckSourceImage(r io.Reader) error {
 
 // CheckOffice reads an Office package part by part, classifying each by its
 // content, not its name (Q348). It refuses a package it cannot read whole:
-// one that does not open, over MaxEntries, with overlapping entries, a part
-// that does not open, or over MaxInflated read in all. In any part it
-// refuses an EMF, WMF or SVG picture and a PNG, JPEG or GIF over maxBytes
-// (counted as it inflates, never trusting the directory) or MaxSide; a
-// picture part (an image relationship's target, or a media part nothing else
-// targets) must be one of those three. Other parts (XML, embedded objects,
-// fonts, audio and video) pass after their head is read.
+// one that is not a single archive from its first byte to its end record
+// (contiguous), over MaxEntries, with a part that does not open, or over
+// MaxInflated read in all. In any part it refuses an EMF, WMF or SVG
+// picture, any image format but PNG, JPEG or GIF (OtherImage), and a PNG,
+// JPEG or GIF over maxBytes (counted as it inflates, never trusting the
+// directory) or MaxSide; a picture part (an image relationship's target, or
+// a media part nothing else targets) must be one of those three. Other parts
+// (XML, embedded objects, fonts, audio and video) pass after their head is
+// read. A directory is a name ending in "/", never an attribute, as the
+// editors' zip readers see it.
 func CheckOffice(r io.ReaderAt, size, maxBytes int64) error {
+	end, err := readDirectoryEnd(r, size)
+	if err != nil {
+		return unreadablePackage("the file is not a zip package")
+	}
+	// From the end record, before the directory is loaded.
+	if end.entries > MaxEntries {
+		return unreadablePackage(fmt.Sprintf("the package has more than %d entries", MaxEntries))
+	}
 	archive, err := zip.NewReader(r, size)
 	if err != nil {
 		return unreadablePackage("the file is not a zip package")
 	}
-	if len(archive.File) > MaxEntries {
-		return unreadablePackage(fmt.Sprintf("the package has more than %d entries", MaxEntries))
-	}
-	if err := overlapping(archive.File); err != nil {
+	if err := contiguous(r, archive.File, end); err != nil {
 		return err
 	}
 	check := &officeCheck{maxBytes: maxBytes}
@@ -306,7 +331,7 @@ func CheckOffice(r io.ReaderAt, size, maxBytes int64) error {
 		return err
 	}
 	for _, file := range archive.File {
-		if file.FileInfo().IsDir() || strings.HasSuffix(file.Name, ".rels") {
+		if strings.HasSuffix(file.Name, "/") {
 			continue
 		}
 		if err := check.part(file, pictures[file.Name]); err != nil {
@@ -320,27 +345,141 @@ func unreadablePackage(detail string) error {
 	return &Refusal{Code: "office_unreadable", Detail: detail}
 }
 
-// overlapping refuses entries whose data share bytes: a bomb points many
-// directory records at one compressed stream.
-func overlapping(files []*zip.File) error {
-	type span struct{ start, end uint64 }
-	spans := make([]span, 0, len(files))
+// directoryEnd is what a package's end-of-central-directory record (its
+// ZIP64 record where present) says: its entries, where its central directory
+// starts and how long it is, and where that record starts.
+type directoryEnd struct {
+	entries, dirStart, dirSize, recordStart uint64
+}
+
+// readDirectoryEnd reads the end record whose comment runs to the end of the
+// file.
+func readDirectoryEnd(r io.ReaderAt, size int64) (directoryEnd, error) {
+	const recordLen = 22
+	tail := min(size, recordLen+0xffff)
+	buf := make([]byte, tail)
+	if _, err := r.ReadAt(buf, size-tail); err != nil && err != io.EOF {
+		return directoryEnd{}, err
+	}
+	for i := len(buf) - recordLen; i >= 0; i-- {
+		record := buf[i:]
+		if string(record[:4]) != "PK\x05\x06" || i+recordLen+int(binary.LittleEndian.Uint16(record[20:])) != len(buf) {
+			continue
+		}
+		end := directoryEnd{
+			entries:     uint64(binary.LittleEndian.Uint16(record[10:])),
+			dirSize:     uint64(binary.LittleEndian.Uint32(record[12:])),
+			dirStart:    uint64(binary.LittleEndian.Uint32(record[16:])),
+			recordStart: uint64(size-tail) + uint64(i),
+		}
+		if end.entries == 0xffff || end.dirSize == 0xffffffff || end.dirStart == 0xffffffff {
+			return readZip64End(r, end.recordStart)
+		}
+		return end, nil
+	}
+	return directoryEnd{}, errors.New("no end of central directory record")
+}
+
+// readZip64End reads the ZIP64 end record its locator, just before the end
+// record at eocd, names; the record must end where the locator starts.
+func readZip64End(r io.ReaderAt, eocd uint64) (directoryEnd, error) {
+	notZip64 := errors.New("no ZIP64 end record")
+	if eocd < 20+56 {
+		return directoryEnd{}, notZip64
+	}
+	locator := make([]byte, 20)
+	if _, err := r.ReadAt(locator, int64(eocd-20)); err != nil || string(locator[:4]) != "PK\x06\x07" {
+		return directoryEnd{}, notZip64
+	}
+	at := binary.LittleEndian.Uint64(locator[8:])
+	record := make([]byte, 56)
+	if at > eocd-20-56 {
+		return directoryEnd{}, notZip64
+	}
+	if _, err := r.ReadAt(record, int64(at)); err != nil || string(record[:4]) != "PK\x06\x06" ||
+		at+12+binary.LittleEndian.Uint64(record[4:]) != eocd-20 {
+		return directoryEnd{}, notZip64
+	}
+	return directoryEnd{
+		entries:     binary.LittleEndian.Uint64(record[32:]),
+		dirSize:     binary.LittleEndian.Uint64(record[40:]),
+		dirStart:    binary.LittleEndian.Uint64(record[48:]),
+		recordStart: at,
+	}, nil
+}
+
+var notOneArchive = &Refusal{Code: "office_unreadable", Detail: "the package is not one contiguous zip archive"}
+
+// contiguous refuses a package that is not one archive laid out as Office
+// writers lay it out (Q348): local entries one after another from byte 0,
+// each followed only by its data and an optional data descriptor, then the
+// central directory, ending where the end record starts, which counts the
+// entries the directory holds. A second archive before or after it, data
+// between entries, or two directory records for one entry are refused, so
+// no zip reader can find other parts than the ones checked here.
+func contiguous(r io.ReaderAt, files []*zip.File, end directoryEnd) error {
+	if uint64(len(files)) != end.entries || end.dirStart+end.dirSize != end.recordStart {
+		return notOneArchive
+	}
+	byData := make(map[int64]*zip.File, len(files))
 	for _, file := range files {
-		start, err := file.DataOffset()
-		if err != nil || start < 0 {
+		at, err := file.DataOffset()
+		if err != nil {
 			return unreadablePackage(fmt.Sprintf("%s cannot be read", file.Name))
 		}
-		if file.CompressedSize64 > 0 {
-			spans = append(spans, span{uint64(start), uint64(start) + file.CompressedSize64})
+		byData[at] = file
+	}
+	if len(byData) != len(files) {
+		return notOneArchive
+	}
+	var at int64
+	header := make([]byte, 30)
+	for range files {
+		if _, err := r.ReadAt(header, at); err != nil || string(header[:4]) != "PK\x03\x04" {
+			return notOneArchive
+		}
+		data := at + 30 + int64(binary.LittleEndian.Uint16(header[26:])) + int64(binary.LittleEndian.Uint16(header[28:]))
+		file := byData[data]
+		if file == nil {
+			return notOneArchive
+		}
+		at = data + int64(file.CompressedSize64)
+		if file.Flags&0x8 != 0 {
+			next, ok := afterDescriptor(r, at, int64(end.dirStart))
+			if !ok {
+				return notOneArchive
+			}
+			at = next
 		}
 	}
-	slices.SortFunc(spans, func(a, b span) int { return cmp.Compare(a.start, b.start) })
-	for i := 1; i < len(spans); i++ {
-		if spans[i].start < spans[i-1].end {
-			return unreadablePackage("the package has overlapping entries")
-		}
+	if at != int64(end.dirStart) {
+		return notOneArchive
 	}
 	return nil
+}
+
+// afterDescriptor finds the end of the data descriptor at `at`: 12 or 20
+// bytes, or 16 or 24 with its signature, whichever the next local entry or
+// the central directory follows.
+func afterDescriptor(r io.ReaderAt, at, dirStart int64) (int64, bool) {
+	signature := make([]byte, 4)
+	if _, err := r.ReadAt(signature, at); err != nil {
+		return 0, false
+	}
+	lengths := []int64{12, 20}
+	if string(signature) == "PK\x07\x08" {
+		lengths = []int64{16, 24}
+	}
+	for _, length := range lengths {
+		next := at + length
+		if next == dirStart {
+			return next, true
+		}
+		if _, err := r.ReadAt(signature, next); err == nil && string(signature) == "PK\x03\x04" {
+			return next, true
+		}
+	}
+	return 0, false
 }
 
 // officeCheck holds one package's limits and what its reads inflated.
@@ -390,7 +529,7 @@ func (c *officeCheck) pictureParts(files []*zip.File) (map[string]bool, error) {
 	pictures := map[string]bool{}
 	other := map[string]bool{}
 	for _, file := range files {
-		if file.FileInfo().IsDir() || !strings.HasSuffix(file.Name, ".rels") {
+		if strings.HasSuffix(file.Name, "/") || !strings.HasSuffix(file.Name, ".rels") {
 			continue
 		}
 		part, err := c.open(file)
@@ -479,7 +618,7 @@ func (c *officeCheck) part(file *zip.File, picture bool) error {
 	// A small buffer: a part that is neither a picture nor an image is
 	// inflated only this far.
 	reader := bufio.NewReaderSize(part, 4<<10)
-	head, err := reader.Peek(512)
+	head, err := reader.Peek(4 << 10)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
 		var refusal *Refusal
 		if errors.As(err, &refusal) {
@@ -497,7 +636,7 @@ func (c *officeCheck) part(file *zip.File, picture bool) error {
 		return unsupported
 	case slices.Contains(officeFormats, format):
 		return c.raster(file.Name, reader)
-	case picture:
+	case picture, OtherImage(head):
 		return unsupported
 	}
 	return nil

@@ -11,6 +11,7 @@ import {
   isTooManyIngestLeasesError,
   isWorkspaceLimitError,
 } from '@/api/client';
+import { updateFileBodyNameMax } from '@/api/gen/validators';
 import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { CopyError } from './copyError';
@@ -291,7 +292,7 @@ function codeCopy(code: string): ErrorDescription | null {
     // File names on upload and rename (Q346).
     case 'invalid_name':
       return {
-        description: m.error_invalid_name_body(),
+        description: m.error_invalid_name_body({ max: updateFileBodyNameMax }),
         title: m.error_invalid_name_title(),
       };
     case 'file_extension_changed':

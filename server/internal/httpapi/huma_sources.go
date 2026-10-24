@@ -514,6 +514,33 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 	return out, err
 }
 
+// admitImport decides one imported file from its provider metadata: a
+// refusal code (invalid_name by the upload's name rule, Q346; file_too_large
+// past the per-file cap before any download, Q345; unsupported_file), or
+// the size it reserves, its kind and its parse mode.
+func admitImport(meta integrations.ImportFileMetadata, parseMode string, maxBytes int64) (code string, reserved int64, kind, mode string) {
+	if !fieldlimits.ValidFileName(meta.Name) {
+		return "invalid_name", 0, "", ""
+	}
+	if meta.Size != nil {
+		reserved = *meta.Size
+	} else if meta.ExportMIME != "" {
+		reserved = min(maxBytes, integrations.GoogleExportMaxBytes())
+	}
+	if reserved < 0 || reserved > maxBytes {
+		return "file_too_large", 0, "", ""
+	}
+	kind = integrations.KindFromName(meta.Name)
+	mode = parseMode
+	if mode == "" {
+		mode = sourceupload.DefaultParseMode(meta.Name, kind)
+	}
+	if err := sourceupload.Validate(meta.Name, kind, mode, reserved, maxBytes); err != nil {
+		return "unsupported_file", 0, "", ""
+	}
+	return "", reserved, kind, mode
+}
+
 func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*sourceImportOutput, error) {
 	actor := userID(ctx)
 	wsID := in.ID
@@ -664,35 +691,11 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			continue
 		}
 		meta.Name = strings.TrimSpace(meta.Name)
-		if !fieldlimits.ValidFileName(meta.Name) {
+		code, reservedSize, kind, mode := admitImport(meta, in.Body.ParseMode, maxBytes)
+		if code != "" {
 			rejected = append(rejected, apimodel.SourceImportRejected{
 				FileID: ref.ID,
-				Code:   "invalid_name",
-			})
-			continue
-		}
-		reservedSize := int64(0)
-		if meta.Size != nil {
-			reservedSize = *meta.Size
-		} else if meta.ExportMIME != "" {
-			reservedSize = min(maxBytes, integrations.GoogleExportMaxBytes())
-		}
-		if reservedSize < 0 || reservedSize > maxBytes {
-			rejected = append(rejected, apimodel.SourceImportRejected{
-				FileID: ref.ID,
-				Code:   "file_too_large",
-			})
-			continue
-		}
-		kind := integrations.KindFromName(meta.Name)
-		mode := in.Body.ParseMode
-		if mode == "" {
-			mode = sourceupload.DefaultParseMode(meta.Name, kind)
-		}
-		if err := sourceupload.Validate(meta.Name, kind, mode, reservedSize, maxBytes); err != nil {
-			rejected = append(rejected, apimodel.SourceImportRejected{
-				FileID: ref.ID,
-				Code:   "unsupported_file",
+				Code:   code,
 			})
 			continue
 		}

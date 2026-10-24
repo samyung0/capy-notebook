@@ -765,8 +765,9 @@ HD Photo beside a picture's own blip (`asvg:svgBlip`, `a14:imgLayer`) goes
 with only its `a:ext`, the PNG or JPEG staying and the removal uncounted. EMF
 and WMF parts nothing refers to, and document thumbnails in those formats
 (`docProps/thumbnail.emf` with its package relationship, Q348), go too,
-uncounted. Then every relationship nothing refers to any more goes, and the
-parts nothing targets. The count (a fallback copy is not counted twice)
+uncounted. An SVG part outside the picture parts (found by name or root
+element) goes as well, counted when nothing showed it. Then every
+relationship nothing refers to any more goes, and the parts nothing targets. The count (a fallback copy is not counted twice)
 reaches a warning toast after the upload: "N pictures Capy can't show were
 removed".
 
@@ -774,6 +775,7 @@ removed".
 refused before the import host downloads or compresses it (the import request
 and the download are bounded by it). The import worker compresses an imported
 Office file the same way, one sandboxed call per picture with a 10 s CPU limit
+and a 20 s wall-clock deadline (the ingest host's parsers share its cores)
 inside the 768 MiB sandbox (Q347, `decode.py` mode `picture`); a picture past
 its limit, or one Pillow cannot decode, is removed and counted like any other.
 The completion carries the count (`source_import_jobs.removed_pictures`, read
@@ -784,9 +786,10 @@ over 5 megapixels, is re-saved the same way and stored as `<stem>.jpg` or
 `<stem>.png`: what Pillow reads directly, and HEIC/HEIF through libheif's
 decode-only `heif-dec` from the image's Debian packages (`libheif-examples`
 and `libheif-plugin-libde265`, LGPL-3.0, no x265 encoder; Q353), run in the
-same sandbox with the same 10 s limit, which converts a 12 MP iPhone photo to
-JPEG in about 0.4 s. One that still does not decode is refused with
-`image_unreadable`.
+same sandbox with the same limits, which converts a 12 MP iPhone photo to
+JPEG in about 0.4 s. The image build converts the shared HEIC fixture with
+`heif-dec`, so a packaging slip fails the build. One that still does not
+decode is refused with `image_unreadable`.
 
 **Image files the browser cannot decode.** HEIC/HEIF, TIFF and JPEG 2000 go
 through decoders loaded only when such a file is picked (Q294, Q333,
@@ -805,15 +808,28 @@ same check before storing (`pipeline/pipeline/ingest/image_check.py`). A
 refusal is final: a 400 whose first error is the code below, shown in the
 transfer row, with no retry.
 
+Both readers of an Office file hold it to one zip archive, so that every zip
+reader (the gateway's, the worker's, the collaboration server's) sees the
+same parts: local entries from byte 0, each followed directly by the next
+(after its data descriptor, if any), the central directory right after the
+last, and the end record (or its ZIP64 record) right after that, with the
+entry count it names. The entry cap is read from the end record before the
+directory loads. An entry counts as a folder only when its name ends in `/`,
+never by its attributes, and every part, `.rels` included, is classified by
+its bytes.
+
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Editor image     | not PNG, JPEG, WebP, GIF or AVIF by its bytes, its header gives no size, or over 2,400 px on either side                                        | `image_unreadable`, `image_too_large`                                                        |
-| Office file      | not a zip, over 4,096 entries, overlapping entries, a part that does not read, or past 256 MiB inflated in all                                    | `office_unreadable`                                                                          |
+| Office file      | not a zip, over 4,096 entries, not one contiguous archive (above), a part that does not read, or past 256 MiB inflated in all                     | `office_unreadable`                                                                          |
 | Office file      | an EMF or WMF part (by name or signature); an SVG part; a picture part that is not PNG, JPEG or GIF by its bytes, or whose header gives no size   | `office_vector_image`, `office_image_unsupported`                                            |
+| Office file      | any part whose bytes are WebP, AVIF, HEIF, BMP, TIFF, ICO or CUR, JPEG XR or JPEG 2000                                                            | `office_image_unsupported`                                                                   |
 | Office file      | a PNG, JPEG or GIF part over the image cap (counted as it inflates) or 2,400 px                                                                    | `office_image_too_large`                                                                     |
 | Image source     | not PNG, JPEG, GIF or WebP by its bytes, or its header gives no size; over 5 megapixels                                                           | `image_unreadable`, `source_image_too_large`                                                 |
 
-A GIF's size is its logical screen widened to its first frame. The editor
+A GIF's size is its logical screen widened to its first frame. A JPEG's size
+comes from a baseline, extended or progressive frame (SOF0 to SOF2, what Go
+reads); any other frame gives no size, in both checks. The editor
 image's byte cap stays the reservation's check; a bank figure keeps its flat
 4 MiB cap. The collaboration server refuses a Word or PowerPoint edit that
 adds a picture that is not a PNG, JPEG or GIF, is over the plan image cap
@@ -832,6 +848,9 @@ the trimmed empty-name check existed on all three before. A rename that
 changes the file's extension is refused (`file_extension_changed`), since the
 extension names the file's kind and the checks its upload passed. Upload and
 rename answer 422 `invalid_name`; an import is rejected with `invalid_name`.
+Both copies name the 120-character limit. A file the agent stores (a chat
+deck, `internal_files.go`) takes the same rule and is refused with 400
+`invalid_input`.
 
 ## Yjs storage growth
 

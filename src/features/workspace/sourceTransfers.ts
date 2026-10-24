@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { USE_MSW } from '@/api/auth';
 import { api, isApiError, qk } from '@/api/client';
+import { updateFileBodyNameMax } from '@/api/gen/validators';
 import type { useImportSources, useUploadSource } from '@/api/hooks';
 import { ingestSlotsQuery } from '@/api/hooks';
 import { queryClient } from '@/api/queryClient';
@@ -170,7 +171,7 @@ export function sourceImportFailureReason(code: string) {
     case 'provider_download_refused':
       return m.source_import_file_unavailable();
     case 'invalid_name':
-      return m.source_import_invalid_name();
+      return m.source_import_invalid_name({ max: updateFileBodyNameMax });
     case 'source_import_cancelled':
       return m.source_import_cancelled();
     // The import worker's image checks (Epo 2026-10-24).

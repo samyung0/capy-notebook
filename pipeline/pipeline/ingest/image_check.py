@@ -6,10 +6,11 @@ code.
 
 - An image source is a PNG, JPEG, GIF or WebP of at most
   SOURCE_IMAGE_MAX_PIXELS.
-- An Office package is read whole within MAX_ENTRIES entries, MAX_INFLATED
-  bytes inflated and no overlapping entries, part by part by content: no
-  EMF, WMF or SVG anywhere, a PNG, JPEG or GIF within the payer's image cap
-  and IMAGE_MAX_SIDE on each side, and a picture part holds nothing else.
+- An Office package is one contiguous zip archive, read whole within
+  MAX_ENTRIES entries and MAX_INFLATED bytes inflated, part by part by
+  content: no EMF, WMF, SVG or image format but PNG, JPEG or GIF anywhere, a
+  PNG, JPEG or GIF within the payer's image cap and IMAGE_MAX_SIDE on each
+  side, and a picture part holds nothing else.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ MAX_INFLATED = MAX_EXPANDED
 # A JPEG's frame header follows its metadata segments, each at most 64 KiB.
 _HEADER_BYTES = 1 << 20
 # A part that is no picture is read this far.
-_HEAD_BYTES = 512
+_HEAD_BYTES = 4096
 _HEIF_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"mif1", b"msf1"}
 SOURCE_FORMATS = {"png", "jpeg", "gif", "webp"}
 OFFICE_FORMATS = {"png", "jpeg", "gif"}
@@ -72,9 +73,12 @@ def _jpeg(data: bytes) -> tuple[int, int]:
             at += 2
             continue
         length = struct.unpack(">H", data[at + 2 : at + 4])[0]
-        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+        # Baseline, extended and progressive frames, the ones Go reads.
+        if marker in (0xC0, 0xC1, 0xC2):
             height, width = struct.unpack(">HH", data[at + 5 : at + 9])
             return width, height
+        if 0xC3 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            raise Unreadable("jpeg frame type not read")
         at += 2 + length
     raise Unreadable("jpeg frame header not found")
 
@@ -112,41 +116,10 @@ def _webp(data: bytes) -> tuple[int, int]:
     raise Unreadable("webp chunk unknown")
 
 
-def _heif(data: bytes) -> tuple[int, int]:
-    best = (0, 0)
-
-    def walk(body: bytes, depth: int) -> None:
-        nonlocal best
-        while len(body) >= 8 and depth < 8:
-            size, kind = struct.unpack(">I4s", body[:8])
-            header = 8
-            if size == 1 and len(body) >= 16:
-                size, header = struct.unpack(">Q", body[8:16])[0], 16
-            elif size == 0:
-                size = len(body)
-            if size < header or size > len(body):
-                return
-            box = body[header:size]
-            if kind == b"meta" and len(box) >= 4:
-                walk(box[4:], depth + 1)
-            elif kind in (b"iprp", b"ipco"):
-                walk(box, depth + 1)
-            elif kind == b"ispe" and len(box) >= 12:
-                width, height = struct.unpack(">II", box[4:12])
-                if width * height > best[0] * best[1]:
-                    best = (width, height)
-            body = body[size:]
-
-    walk(data, 0)
-    if not all(best):
-        raise Unreadable("heif extents missing")
-    return best
-
-
 def size(data: bytes) -> tuple[str, int, int] | None:
-    """An image's format, width and height from its header; None for a format
-    it does not measure. Raises Unreadable for a known one whose header does
-    not parse."""
+    """An image's format, width and height from its header (PNG, JPEG, GIF or
+    WebP); None for a format it does not measure. Raises Unreadable for a
+    known one whose header does not parse."""
     head = data[:_HEADER_BYTES]
     found = image_format(head)
     try:
@@ -158,8 +131,6 @@ def size(data: bytes) -> tuple[str, int, int] | None:
             width, height = _gif(head)
         elif found == "webp":
             width, height = _webp(head)
-        elif found in ("avif", "heic"):
-            width, height = _heif(head)
         else:
             return None
     except (struct.error, IndexError) as exc:
@@ -189,37 +160,130 @@ def _unreadable(message: str) -> Refused:
     return Refused("office_unreadable", message)
 
 
-def _overlapping(data: bytes, infos: list[zipfile.ZipInfo]) -> bool:
-    """Whether two entries' data share bytes: a bomb points many directory
-    records at one compressed stream."""
-    spans = []
-    for info in infos:
-        local = data[info.header_offset : info.header_offset + 30]
-        if len(local) < 30 or local[:4] != b"PK\x03\x04":
-            raise _unreadable(f"{info.filename} cannot be read")
+def other_image(head: bytes) -> bool:
+    """An image format a browser may decode that an Office picture may not
+    be (Q344), by signature: WebP, AVIF, HEIF, BMP, TIFF, ICO or CUR, JPEG XR
+    and JPEG 2000."""
+    if image_format(head) in ("webp", "avif", "heic"):
+        return True
+    bitmap = (
+        head[:2] == b"BM"
+        and len(head) >= 18
+        and struct.unpack("<I", head[14:18])[0] in (12, 40, 52, 56, 64, 108, 124)
+    )
+    icon = (
+        head[:4] in (b"\x00\x00\x01\x00", b"\x00\x00\x02\x00")
+        and len(head) >= 6
+        and struct.unpack("<H", head[4:6])[0] > 0
+    )
+    return (
+        bitmap
+        or icon
+        or head.startswith(
+            (
+                b"II*\x00",
+                b"MM\x00*",
+                b"II\xbc\x01",
+                b"\x00\x00\x00\x0cjP  \r\n\x87\n",
+                b"\xff\x4f\xff\x51",
+            )
+        )
+    )
+
+
+def _end_record(data: bytes) -> tuple[int, int, int, int]:
+    """The package's entries, where its central directory starts and how
+    long it is, and where its end record (ZIP64 where present) starts: the
+    end record whose comment runs to the end of the file."""
+    floor = max(0, len(data) - 22 - 0xFFFF)
+    at = len(data) - 22
+    while at >= floor:
+        at = data.rfind(b"PK\x05\x06", floor, at + 4)
+        if at < 0:
+            break
+        if at + 22 + struct.unpack("<H", data[at + 20 : at + 22])[0] == len(data):
+            entries, dir_size, dir_start = struct.unpack(
+                "<xxxxxxxxxxHII", data[at : at + 20]
+            )
+            if entries == 0xFFFF or 0xFFFFFFFF in (dir_size, dir_start):
+                return _zip64_end(data, at)
+            return entries, dir_start, dir_size, at
+        at -= 1
+    raise _unreadable("the file is not a zip package")
+
+
+def _zip64_end(data: bytes, eocd: int) -> tuple[int, int, int, int]:
+    """The ZIP64 end record the locator just before ``eocd`` names, which
+    must end where the locator starts."""
+    locator = data[eocd - 20 : eocd]
+    if eocd < 20 + 56 or locator[:4] != b"PK\x06\x07":
+        raise _unreadable("the file is not a zip package")
+    record_at = struct.unpack("<Q", locator[8:16])[0]
+    record = data[record_at : record_at + 56]
+    if (
+        record_at > eocd - 20 - 56
+        or record[:4] != b"PK\x06\x06"
+        or record_at + 12 + struct.unpack("<Q", record[4:12])[0] != eocd - 20
+    ):
+        raise _unreadable("the file is not a zip package")
+    entries, dir_size, dir_start = struct.unpack("<QQQ", record[32:56])
+    return entries, dir_start, dir_size, record_at
+
+
+def _contiguous(data: bytes, infos: list[zipfile.ZipInfo], end: tuple) -> bool:
+    """Whether the package is one archive as Office writers lay it out
+    (Q348): local entries one after another from byte 0, each followed only
+    by its data and an optional data descriptor, then the central directory,
+    ending where the end record starts, which counts the entries the
+    directory holds. A second archive before or after it, data between
+    entries, or two directory records for one entry make it False, so no zip
+    reader can find other parts than the ones checked here."""
+    entries, dir_start, dir_size, record_start = end
+    if len(infos) != entries or dir_start + dir_size != record_start:
+        return False
+    by_offset = {info.header_offset: info for info in infos}
+    if len(by_offset) != len(infos):
+        return False
+    at = 0
+    for _ in infos:
+        info = by_offset.get(at)
+        local = data[at : at + 30]
+        if info is None or len(local) < 30 or local[:4] != b"PK\x03\x04":
+            return False
         name_len, extra_len = struct.unpack("<HH", local[26:30])
-        start = info.header_offset + 30 + name_len + extra_len
-        if info.compress_size:
-            spans.append((start, start + info.compress_size))
-    spans.sort()
-    return any(spans[i][0] < spans[i - 1][1] for i in range(1, len(spans)))
+        at += 30 + name_len + extra_len + info.compress_size
+        if info.flag_bits & 0x8:
+            lengths = (16, 24) if data[at : at + 4] == b"PK\x07\x08" else (12, 20)
+            following = [
+                at + length
+                for length in lengths
+                if at + length == dir_start
+                or data[at + length : at + length + 4] == b"PK\x03\x04"
+            ]
+            if not following:
+                return False
+            at = following[0]
+    return at == dir_start
 
 
 def check_office(data: bytes, image_max_bytes: int) -> None:
-    """Refuses an Office package the check cannot read whole (not a zip, over
-    MAX_ENTRIES, overlapping entries, a part that does not open, or past
-    MAX_INFLATED read in all), and, by content, an EMF, WMF or SVG picture, a
-    PNG, JPEG or GIF over ``image_max_bytes`` or IMAGE_MAX_SIDE on a side,
-    and a picture part holding anything else."""
+    """Refuses an Office package the check cannot read whole (not one
+    contiguous zip archive, over MAX_ENTRIES, a part that does not open, or
+    past MAX_INFLATED read in all), and, by content, an EMF, WMF or SVG
+    picture, any image format but PNG, JPEG or GIF, a PNG, JPEG or GIF over
+    ``image_max_bytes`` or IMAGE_MAX_SIDE on a side, and a picture part
+    holding anything else."""
+    end = _end_record(data)
+    # From the end record, before the directory is loaded.
+    if end[0] > MAX_ENTRIES:
+        raise _unreadable(f"the package has more than {MAX_ENTRIES} entries")
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
         infos = archive.infolist()
     except (zipfile.BadZipFile, ValueError) as exc:
         raise _unreadable("the file is not a zip package") from exc
-    if len(infos) > MAX_ENTRIES:
-        raise _unreadable(f"the package has more than {MAX_ENTRIES} entries")
-    if _overlapping(data, infos):
-        raise _unreadable("the package has overlapping entries")
+    if not _contiguous(data, infos, end):
+        raise _unreadable("the package is not one contiguous zip archive")
     inflated = 0
 
     def read(info: zipfile.ZipInfo, limit: int) -> bytes:
@@ -243,10 +307,12 @@ def check_office(data: bytes, image_max_bytes: int) -> None:
     rels = {}
     for info in infos:
         if not info.is_dir() and info.filename.endswith(".rels"):
-            rels[info.filename] = read(info, MAX_INFLATED).decode("utf-8", "replace")
+            # Never past the budget left: a byte past it refuses.
+            body = read(info, MAX_INFLATED - inflated + 1)
+            rels[info.filename] = body.decode("utf-8", "replace")
     pictures = picture_parts([info.filename for info in infos], rels)
     for info in infos:
-        if info.is_dir() or info.filename.endswith(".rels"):
+        if info.is_dir():
             continue
         head = read(info, _HEAD_BYTES)
         found = image_format(head)
@@ -263,7 +329,7 @@ def check_office(data: bytes, image_max_bytes: int) -> None:
             _check_raster(
                 info.filename, read(info, image_max_bytes + 1), image_max_bytes
             )
-        elif info.filename in pictures:
+        elif info.filename in pictures or other_image(head):
             raise Refused(
                 "office_image_unsupported",
                 f"{info.filename} is not a PNG, JPEG or GIF picture",

@@ -409,3 +409,18 @@ def test_a_picture_past_its_time_is_removed_like_an_unreadable_one():
     assert removed >= 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "ppt/media/image1.png" not in archive.namelist()
+
+
+def test_an_svg_outside_the_pictures_goes_counted():
+    """Review r2 N12: an SVG part no picture relationship names is removed and
+    counted, since the checks refuse it."""
+
+    def edit(parts):
+        parts["word/embeddings/icon.svg"] = SVG
+
+    package, removed = images.compress_office(
+        _package("exchange-plan.docx", edit), _picture
+    )
+    assert removed == 1
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        assert "word/embeddings/icon.svg" not in archive.namelist()

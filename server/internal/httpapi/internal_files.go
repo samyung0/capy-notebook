@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -180,6 +181,13 @@ type agentFile struct {
 func (a *api) storeAgentFile(w http.ResponseWriter, ctx context.Context, f agentFile) (store.AgentOperation, bool) {
 	if a.blob == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "blob store not configured"})
+		return store.AgentOperation{}, false
+	}
+	// The upload's name rule (Q346): an agent names files too.
+	if !fieldlimits.ValidFileName(f.name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code": "invalid_input", "message": "a file name holds no control, bidi or path characters and at most 120 characters",
+		})
 		return store.AgentOperation{}, false
 	}
 	kind := kindFromName(f.name)
