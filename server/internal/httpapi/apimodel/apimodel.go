@@ -88,7 +88,6 @@ type (
 	Notification       = store.Notification
 	NotificationPage   = store.NotificationPage
 	NotificationPrefs  = store.NotificationPrefs
-	Canvas             = store.Canvas
 	PublicQuiz         = store.PublicQuiz
 	SearchResult       = store.SearchResult
 	WorkspaceStats     = store.WorkspaceStats

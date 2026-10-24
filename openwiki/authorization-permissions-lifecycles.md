@@ -894,22 +894,20 @@ Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 Events, tasks, labels, notifications, integrations, billing, search, quiz
 attempt history, and study progress and review state are scoped to the
 authenticated user's own rows, not to a workspace role. Frozen users delete events, tasks and labels but
-neither create nor edit them (the Schedule page hides event and label Edit),
-and cannot create or save thinking canvases (the Canvas page is read-only);
+neither create nor edit them (the Schedule page hides event and label Edit);
 account settings (profile, locale, model preferences, LLM keys, notification
 preferences, account deletion), notification read markers, quiz attempts,
 study progress and review ratings stay open. A frozen account edits nothing
 else: deleting a single flashcard and saving or deleting a PDF private
 annotation are edits and refused, while trashing whole files, materials and
 sets stays allowed.
-Planner, preference, credential, attempt, and canvas writes recheck account
+Planner, preference, credential and attempt writes recheck account
 lifecycle under the user-row lock in the mutation transaction rather than
 relying only on middleware admission.
-These rows sit outside storage, so their counts are capped (rate-limit audit
-M9 and H6, `server/internal/store/row_caps.go`): 5,000 schedule events per
-user (409 `event_limit`) and 100 thinking canvases per user (409
-`canvas_limit`), each canvas's stored scene at most 512 KiB (413
-`canvas_too_large`). The canvas list returns names and dates, never scenes.
+These rows sit outside storage, so their count is capped (rate-limit audit
+M9, `server/internal/store/row_caps.go`): 5,000 schedule events per user
+(409 `event_limit`). The thinking canvas was removed whole (Epo 2026-10-24,
+Q242; migration `0110` drops its table).
 
 Source: [schedule lifecycle gates](../server/internal/httpapi/huma_schedule.go#L47).
 

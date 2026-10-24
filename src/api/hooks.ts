@@ -107,7 +107,6 @@ import type {
   ReviewResult,
   ReviewSession,
   ReviewStart,
-  SaveCanvasReq,
   SearchResult,
   SetModelPrefsReq,
   SetStudyItemReq,
@@ -120,7 +119,6 @@ import type {
   StudySummary,
   Tag,
   Task,
-  ThinkingCanvas,
   TopUpReq,
   TrashActionReq,
   TrashItem,
@@ -3008,42 +3006,6 @@ export function useDeleteTask() {
       refetchIfLast(qc, qk.tasks, () =>
         qc.invalidateQueries({ queryKey: qk.tasks })
       ),
-  });
-}
-
-/* ---------------- thinking ---------------- */
-export const canvasesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<ThinkingCanvas[]>('/thinking'),
-    queryKey: qk.thinking,
-  });
-export const useCanvases = (options?: QueryUiOptions) =>
-  useQuery({ ...canvasesQuery(), meta: queryMeta(options) });
-
-export const canvasQuery = (id: string) =>
-  queryOptions({
-    enabled: !!id,
-    queryFn: () => api.get<ThinkingCanvas>(`/thinking/${id}`),
-    queryKey: qk.canvas(id),
-  });
-export const useCanvas = (id: string, options?: QueryUiOptions) =>
-  useQuery({ ...canvasQuery(id), meta: queryMeta(options) });
-export function useCreateCanvas() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      api.post<ThinkingCanvas>('/thinking', { name }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
-  });
-}
-export function useSaveCanvas(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    meta: { errorToast: false },
-    mutationFn: (body: SaveCanvasReq) =>
-      api.put<ThinkingCanvas>(`/thinking/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
   });
 }
 

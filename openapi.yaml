@@ -983,28 +983,6 @@ components:
         - netTokens
         - access
       type: object
-    Canvas:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/Canvas.json
-          format: uri
-          readOnly: true
-          type: string
-        id:
-          type: string
-        name:
-          type: string
-        scene: {}
-        updatedAt:
-          format: date-time
-          type: string
-      required:
-        - id
-        - name
-        - updatedAt
-      type: object
     Card:
       additionalProperties: false
       properties:
@@ -1440,19 +1418,6 @@ components:
           type: string
       required:
         - answers
-      type: object
-    CreateCanvasReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateCanvasReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 120
-          type: string
       type: object
     CreateCommentReq:
       additionalProperties: false
@@ -5080,28 +5045,12 @@ components:
         - reviewedBy
         - reviewerName
       type: object
-    SaveCanvasReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SaveCanvasReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 120
-          minLength: 1
-          type: string
-        scene: {}
-      type: object
     SearchKind:
       enum:
         - workspace
         - file
         - event
         - flashcards
-        - thinking
       type: string
     SearchResult:
       additionalProperties: false
@@ -11313,106 +11262,6 @@ paths:
       summary: Update a task
       tags:
         - Schedule
-  /api/thinking:
-    get:
-      operationId: listCanvases
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Canvas"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List thinking canvases (without scenes)
-      tags:
-        - Thinking
-    post:
-      operationId: createCanvas
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCanvasReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Create a canvas
-      tags:
-        - Thinking
-  /api/thinking/{id}:
-    get:
-      operationId: getCanvas
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get a canvas
-      tags:
-        - Thinking
-    put:
-      operationId: saveCanvas
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SaveCanvasReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Save a canvas
-      tags:
-        - Thinking
   /api/trash:
     get:
       operationId: listTrash

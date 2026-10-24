@@ -377,15 +377,6 @@ type UpdateConversationReq struct {
 	Archived *bool              `json:"archived,omitempty" doc:"true archives and unpins; false puts the thread back in the list"`
 }
 
-type CreateCanvasReq struct {
-	Name MaterialTitle `json:"name,omitempty"`
-}
-
-type SaveCanvasReq struct {
-	Name  *MaterialTitle `json:"name,omitempty" minLength:"1"`
-	Scene any            `json:"scene,omitempty"`
-}
-
 type BillingCheckoutReq struct {
 	PlanTier string `json:"planTier" enum:"pro"`
 }

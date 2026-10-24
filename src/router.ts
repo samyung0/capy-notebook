@@ -10,8 +10,6 @@ import {
   attemptQuery,
   attemptsQuery,
   billingQuery,
-  canvasesQuery,
-  canvasQuery,
   cardsQuery,
   chaptersQuery,
   conversationsQuery,
@@ -227,7 +225,6 @@ const appRoutes = [
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
       qc.prefetchInfiniteQuery(recentFilesQuery());
       qc.prefetchInfiniteQuery(recentMaterialsQuery());
-      qc.prefetchQuery(canvasesQuery());
     },
     path: '/',
   }),
@@ -470,22 +467,6 @@ const appRoutes = [
     },
     path: '/tasks',
   }),
-  ...(features.thinking
-    ? [
-        page(
-          '/thinking',
-          () => import('@/routes/Thinking'),
-          ({ context: { queryClient: qc } }) =>
-            qc.prefetchQuery(canvasesQuery())
-        ),
-        page(
-          '/thinking/$canvasId',
-          () => import('@/routes/Canvas'),
-          ({ context: { queryClient: qc }, params }) =>
-            qc.prefetchQuery(canvasQuery(params.canvasId))
-        ),
-      ]
-    : []),
   ...(features.explore
     ? [
         page(

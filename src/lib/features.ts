@@ -23,8 +23,6 @@ export const features = {
   schedule: flag('VITE_FEATURE_SCHEDULE', false),
   /** Tasks page. */
   tasks: flag('VITE_FEATURE_TASKS', false),
-  /** Thinking space (canvas) pages. */
-  thinking: flag('VITE_FEATURE_THINKING', false),
 } as const;
 
 export type FeatureName = keyof typeof features;

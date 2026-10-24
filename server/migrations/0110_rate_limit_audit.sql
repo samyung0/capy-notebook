@@ -32,3 +32,7 @@ CREATE TABLE credit_checkouts (
   expires_at   timestamptz NOT NULL,
   PRIMARY KEY (user_id, kind)
 );
+
+-- The thinking canvas is removed whole (Epo 2026-10-24, Q242): no data
+-- exists, and a replacement is planned.
+DROP TABLE canvases;

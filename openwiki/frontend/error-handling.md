@@ -545,7 +545,7 @@ Reload remembers the selected button but does not replay actions.
 **New account: every list empty**, first in the panel under Empty states,
 answers every list a new account sees (workspaces, files, materials, attempts,
 Learning and question bank progress, reviews, notifications, tasks, calendar,
-canvases, trash, tags, search) with an empty result, and stays on across pages
+trash, tags, search) with an empty result, and stays on across pages
 and reloads until Reset, so each page's empty state can be checked directly.
 Explicit source fixtures retain their checkpoint identities and epochs in
 session storage; their drafts use the real IndexedDB code in the separate

@@ -175,7 +175,6 @@ var Columns = map[string]int{
 	"events.title":                     EventTitle,
 	"events.location":                  EventLocation,
 	"tasks.title":                      TaskTitle,
-	"canvases.name":                    MaterialTitle,
 	"workspace_invites.email":          Email,
 	"conversations.title":              ConversationTitle,
 	"editor_assets.name":               FileName,

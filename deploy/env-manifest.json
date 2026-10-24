@@ -1011,10 +1011,6 @@
       "kind": "variable",
       "targets": ["workflow", "build"]
     },
-    "VITE_FEATURE_THINKING": {
-      "kind": "variable",
-      "targets": ["workflow", "build"]
-    },
     "VITE_GOOGLE_PICKER_API_KEY": {
       "kind": "variable",
       "targets": ["workflow", "build"]

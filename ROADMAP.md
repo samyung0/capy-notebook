@@ -25,7 +25,7 @@ lifecycle work.
 
 **Radix → Base UI.** `@base-ui/react` is already a dependency; a lot of chrome is still Radix. A full migrate is visual and a11y risk across every dialog. Parked until the product loop is boring. Do not mix a migrate into the phone week.
 
-**PostHog feature flags.** Flags today are Vite env (`VITE_FEATURE_EXPLORE`, `VITE_FEATURE_THINKING`). You want schedule/tasks gated the same way on the first box, compile-time is enough. PostHog (and “kill switch without redeploy”) waits until you have more than one deploy and a reason to flip a flag for one user. Empty `VITE_POSTHOG_KEY` already disables analytics.
+**PostHog feature flags.** Flags today are Vite env (`VITE_FEATURE_EXPLORE`). You want schedule/tasks gated the same way on the first box, compile-time is enough. PostHog (and “kill switch without redeploy”) waits until you have more than one deploy and a reason to flip a flag for one user. Empty `VITE_POSTHOG_KEY` already disables analytics.
 
 **China product.** Clerk + Cloudflare + B2 and the current overseas ingest host fail or degrade from the mainland. Alipay/WeChat via Airwallex needs the right merchant entity (HK can do some of that later). CAC filings if you offer genAI there. Parked: one international codebase, zh as a UI language only. A later China deploy swaps vendors (auth, payments, models, storage), not a second Vite app.
 

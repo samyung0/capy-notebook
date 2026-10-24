@@ -333,7 +333,6 @@ export const qk = {
   attempts: (params?: unknown) => ['attempts', params ?? null] as const,
   attemptsRoot: ['attempts'] as const,
   billing: ['billing'] as const,
-  canvas: (id: string) => ['canvas', id] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
   chapters: (wsId: string) => ['workspace', wsId, 'chapters'] as const,
@@ -392,7 +391,6 @@ export const qk = {
   studyPlans: (wsId: string) => ['workspace', wsId, 'study', 'plans'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
-  thinking: ['thinking'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
   usageEvents: (params?: unknown) =>

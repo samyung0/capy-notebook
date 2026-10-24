@@ -51,8 +51,6 @@ describe('frontend error normalization', () => {
   });
 
   it.each([
-    ['canvas_limit', 409, m.error_canvas_limit_title()],
-    ['canvas_too_large', 413, m.error_canvas_too_large_title()],
     ['grading_limit', 429, m.error_grading_limit_title()],
     ['invite_recently_sent', 429, m.error_invite_recently_sent_title()],
     ['invite_limit', 429, m.error_invite_limit_title()],

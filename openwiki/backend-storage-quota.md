@@ -755,7 +755,7 @@ direction.
 | Workspace name / description | 80 / 500 |
 | Chapter name (add, update, upload, import) | 60 |
 | File name (upload, import, rename, editor asset) | 120 |
-| Material, quiz, flashcard set, canvas, generate title | 120 |
+| Material, quiz, flashcard set, generate title | 120 |
 | Conversation title | 60 |
 | Event title / location | 60 / 100 |
 | Task title | 80 |

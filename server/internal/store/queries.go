@@ -171,20 +171,6 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT id, name FROM canvases WHERE user_id=$2 AND lower(name) LIKE $1
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var id, name string
-		if err := rows.Scan(&id, &name); err != nil {
-			return nil, err
-		}
-		out = append(out, SearchResult{ID: id, Kind: "thinking", Title: name, Href: "/thinking/" + id})
-	}
-	rows.Close()
-
 	if len(out) > 20 {
 		out = out[:20]
 	}
@@ -2591,97 +2577,6 @@ func (s *Store) DeleteTask(ctx context.Context, userID, id string) error {
 		return ErrNotFound
 	}
 	return tx.Commit(ctx)
-}
-
-/* ------------------------------------------------------------ thinking space */
-
-// ListCanvases lists a user's canvases without their scenes.
-func (s *Store) ListCanvases(ctx context.Context, userID string) ([]Canvas, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, name, updated_at FROM canvases WHERE user_id=$1 ORDER BY updated_at DESC`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Canvas{}
-	for rows.Next() {
-		var c Canvas
-		if err := rows.Scan(&c.ID, &c.Name, &c.UpdatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) GetCanvas(ctx context.Context, userID, id string) (Canvas, error) {
-	var c Canvas
-	err := s.pool.QueryRow(ctx, `SELECT id, name, updated_at, scene
-		FROM canvases WHERE id=$1 AND user_id=$2`, id, userID).
-		Scan(&c.ID, &c.Name, &c.UpdatedAt, &c.Scene)
-	if isNoRows(err) {
-		return c, ErrNotFound
-	}
-	return c, err
-}
-
-func (s *Store) CreateCanvas(ctx context.Context, userID, name string) (Canvas, error) {
-	id := uid("cv")
-	now := time.Now().UTC()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Canvas{}, err
-	}
-	defer tx.Rollback(ctx)
-	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
-		return Canvas{}, err
-	}
-	if err := assertCanvasRoomTx(ctx, tx, userID); err != nil {
-		return Canvas{}, err
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO canvases (id, user_id, name, updated_at)
-		VALUES ($1,$2,$3,$4)`, id, userID, name, now); err != nil {
-		return Canvas{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Canvas{}, err
-	}
-	return Canvas{ID: id, Name: name, UpdatedAt: now}, nil
-}
-
-func (s *Store) SaveCanvas(
-	ctx context.Context,
-	userID, id string,
-	name *string,
-	scene json.RawMessage,
-) (Canvas, error) {
-	var scenePtr []byte
-	if scene != nil {
-		scenePtr = []byte(scene)
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Canvas{}, err
-	}
-	defer tx.Rollback(ctx)
-	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
-		return Canvas{}, err
-	}
-	var c Canvas
-	err = tx.QueryRow(ctx, `UPDATE canvases SET
-		name=COALESCE($3,name), scene=COALESCE($4,scene), updated_at=now()
-		WHERE id=$1 AND user_id=$2
-		RETURNING id, name, updated_at, scene`, id, userID, name, scenePtr).
-		Scan(&c.ID, &c.Name, &c.UpdatedAt, &c.Scene)
-	if isNoRows(err) {
-		return Canvas{}, ErrNotFound
-	}
-	if err != nil {
-		return Canvas{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Canvas{}, err
-	}
-	return c, nil
 }
 
 func nullStr(s string) *string {

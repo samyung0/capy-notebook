@@ -229,9 +229,6 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM tasks WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM canvases WHERE user_id=$1`, userID); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(ctx, `DELETE FROM labels WHERE user_id=$1`, userID); err != nil {
 		return err
 	}

@@ -257,16 +257,6 @@ function codeCopy(code: string): ErrorDescription | null {
         title: m.error_upload_queue_full_title(),
       };
     // Count and size caps on rows kept outside storage, and daily caps.
-    case 'canvas_limit':
-      return {
-        description: m.error_canvas_limit_body(),
-        title: m.error_canvas_limit_title(),
-      };
-    case 'canvas_too_large':
-      return {
-        description: m.error_canvas_too_large_body(),
-        title: m.error_canvas_too_large_title(),
-      };
     case 'grading_limit':
       return {
         description: m.error_grading_limit_body(),

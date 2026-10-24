@@ -13,5 +13,4 @@ export const SearchKind = {
   file: 'file',
   event: 'event',
   flashcards: 'flashcards',
-  thinking: 'thinking',
 } as const;

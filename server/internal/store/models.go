@@ -641,13 +641,6 @@ type NotificationPrefs struct {
 	EmailBilling         bool `json:"emailBilling"`
 }
 
-type Canvas struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	UpdatedAt time.Time       `json:"updatedAt"`
-	Scene     json.RawMessage `json:"scene,omitempty"`
-}
-
 type SearchResult struct {
 	ID       string     `json:"id"`
 	Kind     SearchKind `json:"kind"`

@@ -29,7 +29,6 @@ import type {
   ReportEditIncidentReq,
   SourceFile,
   Task,
-  ThinkingCanvas,
   TrashItem,
   User,
   WireMessage,
@@ -1881,11 +1880,6 @@ export const accountStatus: AccountStatus = {
   storageUsedBytes: 128 * 1024 * 1024,
   userId: user.id,
 };
-
-export const canvases: ThinkingCanvas[] = [
-  { id: 'cv_1', name: 'Bio mind map', updatedAt: hours(4) },
-  { id: 'cv_2', name: 'Essay brainstorm', updatedAt: days(2) },
-];
 
 /* ---------------- study materials (mindmaps / diagrams) ---------------- */
 const ownerCapabilities = {

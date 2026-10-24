@@ -1133,14 +1133,6 @@ export const handlers = [
           subtitle: mt.workspaceName,
           title: mt.title,
         });
-    for (const c of db.canvases)
-      if (c.name.toLowerCase().includes(q))
-        results.push({
-          href: `/thinking/${c.id}`,
-          id: c.id,
-          kind: 'thinking',
-          title: c.name,
-        });
     return HttpResponse.json(results.slice(0, 20));
   }),
 
@@ -3251,32 +3243,6 @@ export const handlers = [
     const i = db.tasks.findIndex((x) => x.id === params.id);
     if (i >= 0) db.tasks.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
-  }),
-
-  /* ---------------- thinking space ---------------- */
-  http.get('/api/thinking', async () => HttpResponse.json(db.canvases)),
-  http.get('/api/thinking/:id', async ({ params }) => {
-    const c = db.canvases.find((x) => x.id === params.id);
-    return c ? HttpResponse.json(c) : new HttpResponse(null, { status: 404 });
-  }),
-  http.post('/api/thinking', async ({ request }) => {
-    const body = (await request.json()) as { name: string };
-    const c = {
-      id: uid('cv'),
-      name: body.name,
-      updatedAt: new Date().toISOString(),
-    };
-    db.canvases.unshift(c);
-    return HttpResponse.json(c, { status: 201 });
-  }),
-  http.put('/api/thinking/:id', async ({ params, request }) => {
-    const c = db.canvases.find((x) => x.id === params.id);
-    if (!c) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as { scene?: unknown; name?: string };
-    if (body.scene !== undefined) c.scene = body.scene;
-    if (body.name) c.name = body.name;
-    c.updatedAt = new Date().toISOString();
-    return HttpResponse.json(c);
   }),
 
   /* ---------------- explore ---------------- */

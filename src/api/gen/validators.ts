@@ -5490,7 +5490,7 @@ export const SearchResponseItem = zod.object({
   "href": zod.string(),
   "iconId": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['workspace', 'file', 'event', 'flashcards', 'thinking']),
+  "kind": zod.enum(['workspace', 'file', 'event', 'flashcards']),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A flashcard set\'s list-card preview, or {text} for a text file; see openwiki/thumbnails.md'),
   "subtitle": zod.string().optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail'),
@@ -5650,80 +5650,6 @@ export const UpdateTaskResponse = zod.object({
   "id": zod.string(),
   "meta": zod.string().optional(),
   "title": zod.string()
-})
-
-
-/**
- * @summary List thinking canvases (without scenes)
- */
-export const ListCanvasesResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string(),
-  "name": zod.string(),
-  "scene": zod.unknown().optional(),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-export const ListCanvasesResponse = zod.array(ListCanvasesResponseItem)
-
-
-/**
- * @summary Create a canvas
- */
-export const createCanvasBodyNameMax = 120;
-
-
-
-export const CreateCanvasBody = zod.object({
-  "name": zod.string().max(createCanvasBodyNameMax).optional()
-})
-
-export const CreateCanvasResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string(),
-  "name": zod.string(),
-  "scene": zod.unknown().optional(),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-
-
-/**
- * @summary Get a canvas
- */
-export const GetCanvasParams = zod.object({
-  "id": zod.string()
-})
-
-export const GetCanvasResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string(),
-  "name": zod.string(),
-  "scene": zod.unknown().optional(),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-
-
-/**
- * @summary Save a canvas
- */
-export const SaveCanvasParams = zod.object({
-  "id": zod.string()
-})
-
-export const saveCanvasBodyNameMax = 120;
-
-
-
-export const SaveCanvasBody = zod.object({
-  "name": zod.string().min(1).max(saveCanvasBodyNameMax).optional(),
-  "scene": zod.unknown().optional()
-})
-
-export const SaveCanvasResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string(),
-  "name": zod.string(),
-  "scene": zod.unknown().optional(),
-  "updatedAt": zod.iso.datetime({"offset":true})
 })
 
 
