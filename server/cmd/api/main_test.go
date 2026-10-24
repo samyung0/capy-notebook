@@ -201,14 +201,14 @@ func TestProductionNeedsTheTurnstileSecret(t *testing.T) {
 // TestTurnstileTokensMustComeFromTheAppHosts (security regression:
 // rate-limit audit r2 N-2, Q308). Outside development and e2e a token must
 // have been solved on one of the environment's app origins; UAT's lists
-// give its widget's three hosts. A deployed gateway with no app host refuses
+// give uat and local.uat. A deployed gateway with no app host refuses
 // to boot (security regression: rate-limit audit r3 S-2, Q350).
 func TestTurnstileTokensMustComeFromTheAppHosts(t *testing.T) {
 	got, err := turnstileHosts("production",
 		"https://uat.capynotebook.com",
-		"https://uat.capynotebook.com", "https://app.uat.capynotebook.com",
-		"https://uat.capynotebook.com", "https://app.uat.capynotebook.com", "https://local.uat.capynotebook.com")
-	want := []string{"uat.capynotebook.com", "app.uat.capynotebook.com", "local.uat.capynotebook.com"}
+		"https://uat.capynotebook.com",
+		"https://uat.capynotebook.com", "https://local.uat.capynotebook.com")
+	want := []string{"uat.capynotebook.com", "local.uat.capynotebook.com"}
 	if err != nil || !slices.Equal(got, want) {
 		t.Fatalf("turnstile hosts = %v, %v, want %v", got, err, want)
 	}

@@ -1210,7 +1210,7 @@ per IP with the data centre (`cf.colo.id`).
   (Q244; [observability-metering.md](observability-metering.md#6-rate-limiting)).
 - `capy_share_pages_rate_limit` covers the shared pages a visitor opens,
   `/share/` and `/w/` on the app hosts of both environments (`app`,
-  `app.uat`, `uat`): past 600 requests a minute from one address,
+  `uat`): past 600 requests a minute from one address,
   a Managed Challenge. On Pro a challenge action must set
   `mitigation_timeout` 0, so the rule throttles (each request past the rate
   is challenged) rather than holding a challenge for a set time. The rule
@@ -1226,7 +1226,7 @@ and the managed WAF rulesets stay off until they are tested on chosen routes
 
 **WAF custom rules.** `capy_block_internal_paths` blocks `/api/internal/` and
 `/internal/` on every public host of both environments (`api`, `uat-api`,
-`app`, `app.uat`, `uat`, `collab`, `uat-collab`). Nothing legitimate reaches
+`app`, `uat`, `collab`, `uat-collab`). Nothing legitimate reaches
 them through Cloudflare: retrieval and collaboration call the gateway on the
 Docker network, the ingest hosts over WireGuard (`GATEWAY_URL` on the private
 address), and the local lane over its private routes. A caller that needs an
@@ -1595,8 +1595,8 @@ with siteverify before grading (Epo 2026-10-24, Q271; observability-metering
 
 1. Cloudflare dashboard → Turnstile → Add widget. Mode **Managed**. Hostnames:
    the environment's app hosts that serve share pages (UAT:
-   `app.uat.capynotebook.com`, `uat.capynotebook.com` and
-   `local.uat.capynotebook.com`; production: its app hostname). One widget
+   `uat.capynotebook.com` and `local.uat.capynotebook.com`; production: its
+   app hostname). One widget
    per environment, so a leaked UAT key cannot pass production checks.
 2. GitHub environment (`uat`, `production`): variable
    `VITE_TURNSTILE_SITE_KEY` (the widget's site key, built into the share

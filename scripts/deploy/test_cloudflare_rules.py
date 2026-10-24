@@ -262,7 +262,6 @@ class RulesFileTest(unittest.TestCase):
             "api",
             "uat-api",
             "app",
-            "app.uat",
             "uat",
             "collab",
             "uat-collab",
@@ -293,7 +292,7 @@ class RulesFileTest(unittest.TestCase):
     def test_shared_pages_are_challenged_past_600_a_minute(self):
         """Security regression: rate-limit audit Q324 (the zone on Pro)."""
         share = rule(CONFIG["phases"], "http_ratelimit", "capy_share_pages_rate_limit")
-        for host in ("app", "app.uat", "uat"):
+        for host in ("app", "uat"):
             self.assertIn(f'"{host}.capynotebook.com"', share["expression"])
         for path in ("/share/", "/w/"):
             self.assertIn(
