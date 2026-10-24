@@ -594,6 +594,22 @@ and learners' progress (below); the bank has its own migrations and roles. See
 [deployment-runbook.md](deployment-runbook.md) for provisioning, environment
 values, public/private buckets, local tunnel, comment recipient and backups.
 
+### Comments
+
+An editor's comment (1-2,000 characters) is not mailed on its own (Epo
+2026-10-24, Q243). `POST /api/bank/questions/{id}/comments` stores a notice in
+the app database's `bank_comment_notices`: the question's edit link, exam,
+subject and topic labels, its number, the author's name and address and the
+text, addressed to `BANK_COMMENT_EMAIL`. The API's digest job
+(`server/cmd/api/bank_comment_digest.go`) runs at start and every 4 hours and
+sends each recipient one email holding all of its unsent notices, then marks
+them sent; a failed send leaves them for the next run. A batch keeps its
+notices row-locked until it commits and a concurrent replica skips locked
+rows, so no notice is sent twice unless the commit fails after its email went
+out. A notice whose author has requested account deletion is held, and the
+purge deletes it. Comments have no rate class. This is temporary until a
+shared pipeline for content notices (reports, feedback, forums) exists.
+
 Each source has a `kind`. A `library` source names an excerpt, book and the
 version it was written from; the excerpt id ends with that version's `_v<n>`.
 Reads resolve the credit from the version's row in the library database,

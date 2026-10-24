@@ -89,7 +89,6 @@ type Config struct {
 	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
 	// APP_ENV=e2e.
 	MailRecorder     mail.Recorder
-	MailSender       mail.Sender
 	Bank             *bank.Store
 	BankAssets       bank.AssetWriter
 	BankAssetsURL    string

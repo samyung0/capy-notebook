@@ -246,7 +246,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE author_id=$1`, userID); err != nil {
 		return err
 	}
-	for _, table := range []string{"review_sessions", "study_plans", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants"} {
+	for _, table := range []string{"review_sessions", "study_plans", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants", "bank_comment_notices"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}

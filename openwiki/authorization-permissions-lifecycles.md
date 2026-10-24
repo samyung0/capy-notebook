@@ -831,6 +831,10 @@ Details live in [study-progress.md](study-progress.md).
   owner, never deleted. Copying bank questions into a quiz (`POST
   /api/bank/copy`) is a content write: it needs edit access to the workspace,
   and frozen accounts and full payers of the quiz are refused.
+- Bank comment notices (`bank_comment_notices`, see
+  [question-bank.md](question-bank.md#comments)) hold the author's name and
+  address until the digest sends them; a deletion-pending author's notices are
+  held and `PurgeUser` deletes them.
 - Signed-out visitors keep their study in the browser only (see Anonymous
   quizzes and flashcards); they record nothing on the bank.
 

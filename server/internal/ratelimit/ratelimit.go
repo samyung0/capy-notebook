@@ -68,9 +68,6 @@ type Config struct {
 	// StripeSession counts the Stripe Checkout and portal sessions one user's
 	// requests create; a reused open Checkout takes none.
 	StripeSession Rule
-	// BankComment applies to question-bank comments, each an email to the
-	// bank's maintainers.
-	BankComment Rule
 	// SharePage applies, per share token, to the site Worker's reads of
 	// /api/public/ that carry a valid ShareReadHeader, instead of the
 	// anonymous per-address bucket every Worker read would otherwise share.
@@ -96,7 +93,6 @@ func DefaultConfig() Config {
 		// Epo 2026-10-11: 60 captures an hour per user.
 		Thumbnail:     Rule{Limit: 60, Window: time.Hour},
 		Integration:   Rule{Limit: 30, Window: time.Minute},
-		BankComment:   Rule{Limit: 30, Window: time.Hour, Burst: 10},
 		StripeSession: Rule{Limit: 10, Window: time.Hour},
 		// The signed-in base rate, so a share link buys no more API reads
 		// than its owner's account; it covers a cold page with a few hundred

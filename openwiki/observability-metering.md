@@ -1514,9 +1514,11 @@ The rate-limit audit (Epo 2026-10-24) added these classes:
 | Class | Routes | Limit | Key |
 | --- | --- | --- | --- |
 | Integration | `/api/integrations*` and `PATCH /api/me` (each reads Clerk, whose Backend API limit the whole instance shares) | 30/minute | user |
-| Bank comment | `POST /api/bank/questions/{id}/comments` (each sends an email) | 30/hour, burst 10 | user |
 | Stripe session | subscription Checkout, top-up, card setup, portal, portal cancel (`checkout_limit`) | 10/hour | user |
 | Share page | the site Worker's signed reads of `/api/public/` | 300/minute | share token |
+
+Question-bank comments have no class: they are stored and emailed as a
+digest every 4 hours ([question-bank.md](question-bank.md#comments)).
 
 The Integration class counts by method and path; the limiter never reads a
 body. Import routes take the upload and the integration budgets. Clerk's

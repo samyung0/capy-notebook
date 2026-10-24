@@ -33,6 +33,19 @@ CREATE TABLE credit_checkouts (
   PRIMARY KEY (user_id, kind)
 );
 
+-- A question-bank comment is stored as a notice; a job every 4 hours sends
+-- each recipient one email holding its unsent notices and marks them sent
+-- (Epo 2026-10-24, Q243). Temporary until a shared pipeline for content
+-- notices exists. The account purge deletes an author's notices.
+CREATE TABLE bank_comment_notices (
+  id         text PRIMARY KEY,
+  user_id    text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient  text NOT NULL,
+  body       text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  sent_at    timestamptz
+);
+
 -- The thinking canvas is removed whole (Epo 2026-10-24, Q242): no data
 -- exists, and a replacement is planned.
 DROP TABLE canvases;

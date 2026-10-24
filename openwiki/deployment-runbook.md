@@ -2354,7 +2354,9 @@ content. Never point the ordinary app migrator at `bank`.
    the expected image content type, immutable cache headers and a Cloudflare
    cache hit after warming.
 4. Production comments require `BANK_COMMENT_EMAIL` and the existing email
-   backend, sender identity and `APP_URL`. Sending is direct and user-retryable.
+   backend, sender identity and `APP_URL`. Comments are stored and emailed as
+   one digest per recipient every 4 hours
+   ([question-bank.md](question-bank.md#comments)).
 5. Install the updated `library-db-backup.sh` only after the bank exists. Add
    the `BANK_PRIVATE_B2_*` entries from `deploy/library-db.env.example` to the
    host's mode-0600 `.env`. Use a bucket-scoped write-only backup key. The script

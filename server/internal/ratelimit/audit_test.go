@@ -166,27 +166,6 @@ func TestShareReadHeaderMatchesTheWorker(t *testing.T) {
 	}
 }
 
-// TestBankCommentEmailsAreCapped (security regression: rate-limit audit L7).
-// Each bank comment sends an email; past a burst of 10 the next is refused,
-// while other bank routes and discussion comments pass.
-func TestBankCommentEmailsAreCapped(t *testing.T) {
-	rdb := testRedis(t, "user:base:user:u_bank", "bank-comment:user:u_bank")
-	handler := passthrough(New(rdb, DefaultConfig()), "u_bank")
-	for i := 1; i <= 10; i++ {
-		if rec := serve(handler, http.MethodPost, "/api/bank/questions/q_1/comments", nil); rec.Code != http.StatusNoContent {
-			t.Fatalf("comment %d: status %d", i, rec.Code)
-		}
-	}
-	if rec := serve(handler, http.MethodPost, "/api/bank/questions/q_2/comments", nil); rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("comment 11: status %d, want 429", rec.Code)
-	}
-	for _, path := range []string{"/api/bank/questions/q_2/review", "/api/discussions/d_1/comments"} {
-		if rec := serve(handler, http.MethodPost, path, nil); rec.Code != http.StatusNoContent {
-			t.Fatalf("%s: status %d", path, rec.Code)
-		}
-	}
-}
-
 // TestIntegrationRoutesStopAt30AMinute (security regression: rate-limit audit
 // M12). The Clerk-backed routes share one per-user bucket of 30 a minute.
 func TestIntegrationRoutesStopAt30AMinute(t *testing.T) {
