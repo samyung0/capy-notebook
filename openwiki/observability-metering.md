@@ -735,7 +735,8 @@ development and e2e, whose test keys name no app host), answers 403
 `captcha_failed`, and a siteverify that cannot answer 503
 `captcha_unavailable`, refusing rather than skipping the check; the page shows
 both under Submit (Q308). A deployed gateway refuses Cloudflare's published
-test secrets at boot. Signed-in checks take no token, a signed-in
+test secrets at boot, and an empty app host list, which would check no host
+(Q350; `turnstileHosts`, `server/cmd/api/main.go`). Signed-in checks take no token, a signed-in
 visitor's check of a quiz embedded in a shared note included (Q311). Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
 is reporting only, because the client chooses it. Rows older than 30 days are pruned by the API's
 maintenance loop. No browser fingerprinting is used.

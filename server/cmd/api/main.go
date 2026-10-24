@@ -168,10 +168,11 @@ var turnstileTestSecrets = []string{
 // been solved on (Q308): the app hosts of APP_URL, CORS_ALLOWED_ORIGINS and
 // COLLABORATION_ALLOWED_ORIGINS (UAT's lists hold uat-app, app.uat, uat and
 // local.uat). Development and e2e use Cloudflare's test keys, whose tokens
-// name no app host, so they check none.
-func turnstileHosts(appEnv string, origins ...string) []string {
+// name no app host, so they check none. Elsewhere an empty list would check
+// no host, so the gateway refuses to boot (Q350).
+func turnstileHosts(appEnv string, origins ...string) ([]string, error) {
 	if appEnv == "development" || appEnv == "e2e" {
-		return nil
+		return nil, nil
 	}
 	var hosts []string
 	for _, origin := range origins {
@@ -183,7 +184,10 @@ func turnstileHosts(appEnv string, origins ...string) []string {
 			hosts = append(hosts, host)
 		}
 	}
-	return hosts
+	if len(hosts) == 0 {
+		return nil, errors.New("no app host for Turnstile tokens: APP_URL, CORS_ALLOWED_ORIGINS and COLLABORATION_ALLOWED_ORIGINS name none")
+	}
+	return hosts, nil
 }
 
 func validateAuthConfiguration(
@@ -404,6 +408,11 @@ func main() {
 	if err := validateTurnstileSecret(appEnv, turnstileSecret); err != nil {
 		log.Fatal(err)
 	}
+	// Read only by Config below, so dropping it there fails the build.
+	turnstileTokenHosts, err := turnstileHosts(appEnv, append(append([]string{appURL}, corsOrigins...), authorizedParties...)...)
+	if err != nil {
+		log.Fatal(err)
+	}
 	var pipe *pipeline.Client
 	if u := env("PIPELINE_URL", ""); u != "" {
 		pipe = pipeline.New(u, pipeSecret)
@@ -561,7 +570,7 @@ func main() {
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),
 		BankCommentEmail:       env("BANK_COMMENT_EMAIL", ""),
 		TurnstileSecret:        turnstileSecret,
-		TurnstileHosts:         turnstileHosts(appEnv, append(append([]string{appURL}, corsOrigins...), authorizedParties...)...),
+		TurnstileHosts:         turnstileTokenHosts,
 		ReleaseSHA:             env("RELEASE_SHA", ""),
 		APIDocs:                appEnv == "development",
 		ClerkSecretKey:         clerkSecret,

@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -66,6 +67,38 @@ func TestSignedOutChecksNeedATurnstileToken(t *testing.T) {
 	}
 	if rec := gradeSignedOut(h, path, `{`+answers+`,"turnstileToken":"turnstile-ok"}`); rec.Code != http.StatusOK {
 		t.Fatalf("passing token → %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestSignedOutChecksTakeTokensFromTheAppHosts (security regression:
+// rate-limit audit r3 S-2, Q350). The Turnstile hosts in Config reach the
+// siteverify client New builds: a token solved on another host is a 403
+// captcha_failed, one solved on an app host is graded.
+func TestSignedOutChecksTakeTokensFromTheAppHosts(t *testing.T) {
+	siteverify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := "evil.example"
+		if r.FormValue("response") == "app-token" {
+			host = "app.example"
+		}
+		_, _ = fmt.Fprintf(w, `{"success":true,"hostname":%q}`, host)
+	}))
+	t.Cleanup(siteverify.Close)
+	httpapi.SetTurnstileVerifyURL(t, siteverify.URL)
+	h, st, _ := openGradingAPIWith(t, "full", httpapi.Config{
+		TurnstileSecret: "real-secret", TurnstileHosts: []string{"app.example"},
+	})
+	path := "/api/public/quizzes/" + store.ShareToken(nil, gradingQuiz(t, h, "link")) + "/grade"
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM anonymous_grading_usage WHERE ip_hash=$1`,
+			st.AnonymousIPHash("198.51.100.61"))
+	})
+	answers := `{"answers":{"open-a":"Because."},"turnstileToken":`
+	rec := gradeSignedOut(h, path, answers+`"other-token"}`)
+	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "captcha_failed" {
+		t.Fatalf("token from another host → %d %s, want 403 captcha_failed", rec.Code, rec.Body.String())
+	}
+	if rec := gradeSignedOut(h, path, answers+`"app-token"}`); rec.Code != http.StatusOK {
+		t.Fatalf("token from an app host → %d %s", rec.Code, rec.Body.String())
 	}
 }
 

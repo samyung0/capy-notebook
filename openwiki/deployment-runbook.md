@@ -1607,7 +1607,9 @@ with siteverify before grading (Epo 2026-10-24, Q271; observability-metering
    `scripts/env/config.py` refuses a build without the site key and an app
    render without the secret, and a production gateway does not boot without
    the secret or with one of Cloudflare's published test secrets
-   (`validateTurnstileSecret`, Q308).
+   (`validateTurnstileSecret`, Q308), or when `APP_URL`,
+   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` name no host to
+   check tokens against (`turnstileHosts`, Q350).
 3. Deploy, open a shared quiz signed out and submit: the check is graded. A
    403 `captcha_failed` means the token did not verify (wrong key pair, or a
    host siteverify names that is not among the gateway's `APP_URL`,

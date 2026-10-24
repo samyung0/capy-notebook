@@ -23,6 +23,12 @@ import (
 // choice: "zero", "partial" or "full".
 func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32) {
 	t.Helper()
+	return openGradingAPIWith(t, choice, httpapi.Config{CaptchaVerifier: testCaptcha})
+}
+
+// openGradingAPIWith is openGradingAPI with cfg's Turnstile settings.
+func openGradingAPIWith(t *testing.T, choice string, cfg httpapi.Config) (http.Handler, *store.Store, *atomic.Int32) {
+	t.Helper()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -48,10 +54,9 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 		t.Fatal(err)
 	}
 	st.SetModelRegistry(reg)
-	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
-		E2EAuth: true, E2ESecret: "e2e-test-secret", E2EUserIDs: []string{"u_owner", "u_editor", "u_viewer", "u_other"},
-		ModelRegistry: reg, Jev: jev.NewForTest("key", srv.URL), CaptchaVerifier: testCaptcha,
-	})
+	cfg.E2EAuth, cfg.E2ESecret, cfg.E2EUserIDs = true, "e2e-test-secret", []string{"u_owner", "u_editor", "u_viewer", "u_other"}
+	cfg.ModelRegistry, cfg.Jev = reg, jev.NewForTest("key", srv.URL)
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", cfg)
 	return h, st, &calls
 }
 

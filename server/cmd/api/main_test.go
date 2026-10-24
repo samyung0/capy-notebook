@@ -201,18 +201,22 @@ func TestProductionNeedsTheTurnstileSecret(t *testing.T) {
 // TestTurnstileTokensMustComeFromTheAppHosts (security regression:
 // rate-limit audit r2 N-2, Q308). Outside development and e2e a token must
 // have been solved on one of the environment's app origins; UAT's lists
-// give its widget's four hosts.
+// give its widget's four hosts. A deployed gateway with no app host refuses
+// to boot (security regression: rate-limit audit r3 S-2, Q350).
 func TestTurnstileTokensMustComeFromTheAppHosts(t *testing.T) {
-	got := turnstileHosts("production",
+	got, err := turnstileHosts("production",
 		"https://app.uat.capynotebook.com",
 		"https://uat-app.capynotebook.com", "https://app.uat.capynotebook.com", "https://uat.capynotebook.com",
 		"https://uat-app.capynotebook.com", "https://app.uat.capynotebook.com", "https://uat.capynotebook.com",
 		"https://local.uat.capynotebook.com")
 	want := []string{"app.uat.capynotebook.com", "uat-app.capynotebook.com", "uat.capynotebook.com", "local.uat.capynotebook.com"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("turnstile hosts = %v, want %v", got, want)
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("turnstile hosts = %v, %v, want %v", got, err, want)
 	}
-	if got := turnstileHosts("e2e", "http://localhost:5173"); got != nil {
-		t.Fatalf("e2e turnstile hosts = %v, want none", got)
+	if got, err := turnstileHosts("e2e", "http://localhost:5173"); got != nil || err != nil {
+		t.Fatalf("e2e turnstile hosts = %v, %v, want none", got, err)
+	}
+	if _, err := turnstileHosts("production", "", "not a url"); err == nil {
+		t.Fatal("production booted with no Turnstile host")
 	}
 }
