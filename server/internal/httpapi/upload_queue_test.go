@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -482,6 +483,46 @@ func TestUploadQueueFullLineSpendsNoClassToken(t *testing.T) {
 	}
 	if *asked != before {
 		t.Fatalf("a refused ticket spent %d class tokens, want 0", *asked-before)
+	}
+}
+
+// The line is checked and the class token spent in one step under the lock:
+// a ticket for the last place that arrives while another asks its class is
+// refused after it, spending no token (Q350; security regression: rate-limit
+// audit r3 N-1).
+func TestUploadQueueChecksTheLineAndSpendsTheClassTokenAtOnce(t *testing.T) {
+	q := newUploadQueue(nil)
+	asked, _ := classByUser(q, map[string]bool{})
+	fillBudget(t, q)
+	for i := 1; i < uploadQueuePerUser; i++ {
+		takeOrFail(t, q, "u0", i)
+	}
+	before := *asked
+	admit := q.admitClass
+	var once sync.Once
+	var otherErr error
+	otherDone := make(chan struct{})
+	q.admitClass = func(ctx context.Context, user string) (time.Duration, error) {
+		once.Do(func() {
+			// u0's other ticket for the last place arrives meanwhile.
+			go func() {
+				_, otherErr = q.take("u0", "sources:ws", uploadClaim{size: 1})
+				close(otherDone)
+			}()
+			select {
+			case <-otherDone:
+			case <-time.After(100 * time.Millisecond):
+			}
+		})
+		return admit(ctx, user)
+	}
+	takeOrFail(t, q, "u0", uploadQueuePerUser)
+	<-otherDone
+	if errorMessage(otherErr) != "upload_queue_full" {
+		t.Fatalf("the other ticket for the last place: %v", otherErr)
+	}
+	if *asked != before+1 {
+		t.Fatalf("%d class tokens spent, want 1", *asked-before)
 	}
 }
 

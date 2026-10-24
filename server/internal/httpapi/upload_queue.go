@@ -40,7 +40,10 @@ const (
 	// uploadUserSlots counts a user's running uploads and held turns.
 	uploadUserSlots = 4
 	// uploadQueueMax bounds waiting tickets that spent their class token
-	// (Epo 2026-10-24, Q318: 2,000; a ticket is a small in-memory record).
+	// when they took their place (Epo 2026-10-24, Q318: 2,000; a ticket is a
+	// small in-memory record). The bound is soft: a ticket the class admits
+	// later joins them without a check, past 2,000 if the line is full, and
+	// each user's 20 still bounds memory (Q350).
 	uploadQueueMax     = 2000
 	uploadQueuePerUser = 20
 	// uploadBodyRate is the slowest an upload's body may arrive on average:
@@ -174,12 +177,11 @@ func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, 
 		return uploadTurn{}, huma.Error413RequestEntityTooLarge("the upload is larger than the gateway's upload budget")
 	}
 	t := &uploadTicket{id: randID("utk"), user: user, target: target, claim: claim}
-	// A ticket the line would refuse spends no class token (Q307). The check
-	// repeats below, since another ticket may take the last place meanwhile.
+	// The line is checked and the class token spent in one step under the
+	// lock, so a ticket the line refuses spends no class token (Q307, Q350).
 	q.mu.Lock()
-	err := q.roomLocked(t)
-	q.mu.Unlock()
-	if err != nil {
+	defer q.mu.Unlock()
+	if err := q.roomLocked(t); err != nil {
 		return uploadTurn{}, err
 	}
 	retry, err := q.askClass(user)
@@ -189,14 +191,15 @@ func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, 
 			Detail: "try again shortly", Errors: []*huma.ErrorDetail{{Message: "rate_limit_unavailable"}},
 		}
 	}
-	q.mu.Lock()
-	defer q.mu.Unlock()
 	t.overClass = retry > 0
 	if !t.overClass && q.startsLocked(t) {
 		q.tickets[t.id] = t
 		q.grantLocked(t)
 		return uploadTurn{TicketID: t.id}, nil
 	}
+	// A ticket the class refused spent no token; it still needs a place in
+	// its user's share, which the check above skipped if it would have
+	// started.
 	if err := q.roomLocked(t); err != nil {
 		return uploadTurn{}, err
 	}
