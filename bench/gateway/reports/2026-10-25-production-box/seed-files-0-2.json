@@ -1,0 +1,336 @@
+{
+  "users": 2,
+  "from": 1792863331,
+  "to": 1792863353,
+  "measured_seconds": 22.726425362,
+  "overall": {
+    "label": "overall",
+    "count": 2869,
+    "per_second": 126.24070676760046,
+    "p50_ms": 6.543752,
+    "p95_ms": 15.615297,
+    "p99_ms": 20.223286,
+    "max_ms": 40.620495,
+    "error_rate": 0
+  },
+  "labels": [
+    {
+      "label": "POST /api/workspaces/{id}/sources/uploads",
+      "count": 706,
+      "per_second": 31.065158235596346,
+      "p50_ms": 12.285892,
+      "p95_ms": 18.238829,
+      "p99_ms": 23.032494,
+      "max_ms": 40.620495,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/workspaces/{id}/sources/uploads/tickets",
+      "count": 706,
+      "per_second": 31.065158235596346,
+      "p50_ms": 5.047271,
+      "p95_ms": 7.363026,
+      "p99_ms": 12.360082,
+      "max_ms": 25.395409,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/workspaces/{id}/materials",
+      "count": 350,
+      "per_second": 15.40057419611717,
+      "p50_ms": 7.158663,
+      "p95_ms": 11.422957,
+      "p99_ms": 16.65818,
+      "max_ms": 23.012768,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/files/{id}/thumbnail",
+      "count": 233,
+      "per_second": 10.252382250558002,
+      "p50_ms": 6.019059,
+      "p95_ms": 10.288523,
+      "p99_ms": 13.700862,
+      "max_ms": 17.530203,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/review/ratings",
+      "count": 200,
+      "per_second": 8.800328112066953,
+      "p50_ms": 4.207709,
+      "p95_ms": 6.405193,
+      "p99_ms": 9.530996,
+      "max_ms": 10.906791,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/quizzes/{id}/attempts",
+      "count": 150,
+      "per_second": 6.600246084050215,
+      "p50_ms": 7.425603,
+      "p95_ms": 14.639218,
+      "p99_ms": 19.354809,
+      "max_ms": 20.223286,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/materials/{id}/editor-assets/uploads/tickets",
+      "count": 150,
+      "per_second": 6.600246084050215,
+      "p50_ms": 4.552844,
+      "p95_ms": 7.213877,
+      "p99_ms": 16.348259,
+      "max_ms": 17.919792,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/materials/{id}/editor-assets/uploads",
+      "count": 150,
+      "per_second": 6.600246084050215,
+      "p50_ms": 12.494213,
+      "p95_ms": 20.1569,
+      "p99_ms": 24.530972,
+      "max_ms": 34.83724,
+      "error_rate": 0
+    },
+    {
+      "label": "DELETE /api/files/{id}",
+      "count": 60,
+      "per_second": 2.640098433620086,
+      "p50_ms": 2.974919,
+      "p95_ms": 7.146891,
+      "p99_ms": 19.52089,
+      "max_ms": 19.52089,
+      "error_rate": 0
+    },
+    {
+      "label": "DELETE /api/materials/{id}",
+      "count": 59,
+      "per_second": 2.5960967930597514,
+      "p50_ms": 3.349491,
+      "p95_ms": 4.603709,
+      "p99_ms": 7.044751,
+      "max_ms": 7.044751,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/review/sessions/{id}/finish",
+      "count": 40,
+      "per_second": 1.7600656224133908,
+      "p50_ms": 1.836849,
+      "p95_ms": 2.763585,
+      "p99_ms": 3.709505,
+      "max_ms": 3.709505,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/review",
+      "count": 40,
+      "per_second": 1.7600656224133908,
+      "p50_ms": 2.970351,
+      "p95_ms": 6.647987,
+      "p99_ms": 8.846625,
+      "max_ms": 8.846625,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/files",
+      "count": 8,
+      "per_second": 0.35201312448267813,
+      "p50_ms": 1.806393,
+      "p95_ms": 3.911584,
+      "p99_ms": 3.911584,
+      "max_ms": 3.911584,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/materials",
+      "count": 8,
+      "per_second": 0.35201312448267813,
+      "p50_ms": 1.370837,
+      "p95_ms": 1.777838,
+      "p99_ms": 1.777838,
+      "max_ms": 1.777838,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/workspaces",
+      "count": 5,
+      "per_second": 0.22000820280167385,
+      "p50_ms": 5.308528,
+      "p95_ms": 10.475694,
+      "p99_ms": 10.475694,
+      "max_ms": 10.475694,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces",
+      "count": 3,
+      "per_second": 0.1320049216810043,
+      "p50_ms": 24.96975,
+      "p95_ms": 26.711922,
+      "p99_ms": 26.711922,
+      "max_ms": 26.711922,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/quizzes/{id}",
+      "count": 1,
+      "per_second": 0.044001640560334766,
+      "p50_ms": 6.970541,
+      "p95_ms": 6.970541,
+      "p99_ms": 6.970541,
+      "max_ms": 6.970541,
+      "error_rate": 0
+    }
+  ],
+  "streams": {
+    "ended": 0,
+    "failed": 0,
+    "open_at_end": 0,
+    "opened": 0,
+    "refused": 0
+  },
+  "timeline": [
+    {
+      "t": 1792863331,
+      "requests": 120,
+      "errors": 0,
+      "p95_ms": 19.023787
+    },
+    {
+      "t": 1792863332,
+      "requests": 107,
+      "errors": 0,
+      "p95_ms": 16.25374
+    },
+    {
+      "t": 1792863333,
+      "requests": 109,
+      "errors": 0,
+      "p95_ms": 18.600254
+    },
+    {
+      "t": 1792863334,
+      "requests": 114,
+      "errors": 0,
+      "p95_ms": 15.541868
+    },
+    {
+      "t": 1792863335,
+      "requests": 121,
+      "errors": 0,
+      "p95_ms": 13.804346
+    },
+    {
+      "t": 1792863336,
+      "requests": 116,
+      "errors": 0,
+      "p95_ms": 16.390799
+    },
+    {
+      "t": 1792863337,
+      "requests": 125,
+      "errors": 0,
+      "p95_ms": 13.54511
+    },
+    {
+      "t": 1792863338,
+      "requests": 129,
+      "errors": 0,
+      "p95_ms": 14.781575
+    },
+    {
+      "t": 1792863339,
+      "requests": 105,
+      "errors": 0,
+      "p95_ms": 19.31311
+    },
+    {
+      "t": 1792863340,
+      "requests": 122,
+      "errors": 0,
+      "p95_ms": 14.42015
+    },
+    {
+      "t": 1792863341,
+      "requests": 121,
+      "errors": 0,
+      "p95_ms": 15.155265
+    },
+    {
+      "t": 1792863342,
+      "requests": 98,
+      "errors": 0,
+      "p95_ms": 21.64606
+    },
+    {
+      "t": 1792863343,
+      "requests": 124,
+      "errors": 0,
+      "p95_ms": 15.484912
+    },
+    {
+      "t": 1792863344,
+      "requests": 117,
+      "errors": 0,
+      "p95_ms": 14.873889
+    },
+    {
+      "t": 1792863345,
+      "requests": 118,
+      "errors": 0,
+      "p95_ms": 14.3509
+    },
+    {
+      "t": 1792863346,
+      "requests": 119,
+      "errors": 0,
+      "p95_ms": 14.873918
+    },
+    {
+      "t": 1792863347,
+      "requests": 127,
+      "errors": 0,
+      "p95_ms": 14.040779
+    },
+    {
+      "t": 1792863348,
+      "requests": 125,
+      "errors": 0,
+      "p95_ms": 15.214287
+    },
+    {
+      "t": 1792863349,
+      "requests": 117,
+      "errors": 0,
+      "p95_ms": 16.60508
+    },
+    {
+      "t": 1792863350,
+      "requests": 112,
+      "errors": 0,
+      "p95_ms": 15.501063
+    },
+    {
+      "t": 1792863351,
+      "requests": 104,
+      "errors": 0,
+      "p95_ms": 19.624985
+    },
+    {
+      "t": 1792863352,
+      "requests": 215,
+      "errors": 0,
+      "p95_ms": 10.882977
+    },
+    {
+      "t": 1792863353,
+      "requests": 204,
+      "errors": 0,
+      "p95_ms": 5.252475
+    }
+  ],
+  "pass": true
+}

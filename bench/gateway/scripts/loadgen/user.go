@@ -22,30 +22,40 @@ type user struct {
 	rng               *rand.Rand
 	tab               tab
 	skip              map[string]bool
+	heavy             bool // isHeavy: reads long lists to the end
 }
 
 // call sends one request and records it under label (the route template).
 // An answer outside want counts as an error; out, when given, receives the
 // decoded JSON body.
 func (u *user) call(ctx context.Context, method, path, label string, body, out any, want ...int) error {
+	if body == nil {
+		return u.callRaw(ctx, method, path, label, "", nil, out, want...)
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	return u.callRaw(ctx, method, path, label, "application/json", raw, out, want...)
+}
+
+// callRaw is call with a body already encoded as contentType: a multipart
+// upload or an image.
+func (u *user) callRaw(ctx context.Context, method, path, label, contentType string, body []byte, out any, want ...int) error {
 	if u.skip[method+" "+label] {
 		return nil
 	}
 	var reader io.Reader
 	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		reader = bytes.NewReader(raw)
+		reader = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u.target+path, reader)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+u.token)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	started := time.Now()
 	res, err := u.api.Do(req)

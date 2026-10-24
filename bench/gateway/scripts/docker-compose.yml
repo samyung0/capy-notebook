@@ -1,8 +1,10 @@
 # The gateway load test's stack (bench/README.md, gateway). Postgres and Redis
 # are production's images with production's (default) settings; the gateway is
-# the loadtest build (server.Dockerfile) under APP_ENV=e2e for the memory blob
-# store, with Clerk, the rate limiter and Sentry on as in production. The load
-# generator stands in for Clerk's API and Sentry's ingest.
+# the loadtest build (server.Dockerfile) under APP_ENV=e2e, with Clerk, the
+# rate limiter and Sentry on as in production. The load generator stands in for
+# Clerk's API and Sentry's ingest, and the collaboration stress test's fake S3
+# for B2 (run tls.sh first for its certificate), so uploads and thumbnail links
+# go through the gateway's B2 client and its signing.
 #
 # Each service has its own cores so the generator never takes the gateway's
 # CPU: the defaults suit a 4 vCPU box.
@@ -33,6 +35,23 @@ services:
       timeout: 3s
       retries: 20
 
+  s3:
+    image: node:22-alpine
+    command: ["node", "/fake/fake-s3.mjs"]
+    cpuset: ${LOADGEN_CPUSET:-2,3}
+    volumes:
+      - ../../collaboration/scripts/fake-s3.mjs:/fake/fake-s3.mjs:ro
+      - ../.tls:/stress/tls:ro
+    networks:
+      default:
+        aliases:
+          - s3.bench.backblazeb2.com
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9000/capy"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
   loadgen:
     build: ./loadgen
     command: ["serve"]
@@ -42,6 +61,7 @@ services:
       ORIGIN: https://app.loadtest.test
     volumes:
       - ../.results:/results
+      - ../fixtures:/fixtures:ro
     ulimits:
       nofile:
         soft: 524288
@@ -56,7 +76,14 @@ services:
       APP_ENV: e2e
       ADDR: ":8080"
       MIGRATE: "true"
-      BLOB_BACKEND: memory
+      BLOB_BACKEND: b2
+      B2_ENDPOINT: https://s3.bench.backblazeb2.com:9443
+      B2_REGION: us-west-004
+      B2_BUCKET: capy
+      B2_KEY_ID: bench
+      B2_APP_KEY: bench
+      B2_FORCE_PATH_STYLE: "true"
+      SSL_CERT_FILE: /tls/cert.pem
       # Production's pool is pgx's default (4 here); 8 is the planned size.
       DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable&pool_max_conns=${POOL_MAX_CONNS:-8}
       REDIS_URL: redis://redis:6379/0
@@ -72,16 +99,23 @@ services:
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       CAPY_PARSE_MAX_PAGES: "1400"
       CAPY_PARSE_OCR_PAGE_CAP: "500"
+      # Seeding uploads hundreds of files per heavy user, past the upload
+      # allowance; runs keep the limiter on.
+      RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-false}
       # Every page reads bank progress. With the bank configured that costs
       # the main-database reads production pays; the simulated users never
       # answer bank questions, so the bank database itself (empty here) is
       # never queried.
       BANK_DATABASE_URL: postgres://capy:capy@db:5432/postgres?sslmode=disable
       BANK_EDITOR_DATABASE_URL: postgres://capy:capy@db:5432/postgres?sslmode=disable
+    volumes:
+      - ../.tls:/tls:ro
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      s3:
         condition: service_healthy
       loadgen:
         condition: service_started

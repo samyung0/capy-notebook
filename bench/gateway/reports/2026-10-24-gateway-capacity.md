@@ -347,6 +347,7 @@ repository:
 
 ```sh
 cd bench/gateway/scripts
+./tls.sh    # since 2026-10-25 the stack's B2 is a fake S3 with this certificate
 docker compose up -d --build
 docker compose exec loadgen /loadgen setup -users 6000 -parallel 32
 RAMP=2m DURATION=5m ./ladder.sh 250 400

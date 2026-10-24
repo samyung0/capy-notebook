@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,8 +30,8 @@ type material struct {
 }
 
 type space struct {
-	id                    string
-	notes, quizzes, decks []string
+	id                          string
+	notes, quizzes, decks, pdfs []string
 }
 
 // tab is the per-session state the browser would hold: its query cache's
@@ -38,15 +40,17 @@ type tab struct {
 	mu         sync.Mutex
 	fetched    map[string]time.Time
 	spaces     []string
+	pdfs       map[string][]string // per workspace, from its last file list
 	stopStream context.CancelFunc
 }
 
 // get fetches path unless the cache still holds it fresh; force refetches
-// regardless, as an invalidation or a page's always-refetch does.
+// regardless, as an invalidation or a page's always-refetch does. out is
+// left alone when nothing is fetched.
 func (u *user) get(ctx context.Context, path, label string, force bool, out any) error {
 	u.tab.mu.Lock()
 	at, ok := u.tab.fetched[path]
-	if !force && ok && time.Since(at) < staleAfter && out == nil {
+	if !force && ok && time.Since(at) < staleAfter {
 		u.tab.mu.Unlock()
 		return nil
 	}
@@ -102,16 +106,33 @@ func (u *user) dashboard(ctx context.Context) {
 				u.tab.mu.Unlock()
 			}
 		},
-		func() { _ = u.get(ctx, "/api/files?scope=member", "/api/files", false, nil) },
-		func() { _ = u.get(ctx, dashboardMaterials, "/api/materials", false, nil) },
+		func() { _ = u.get(ctx, "/api/files?scope=member", "/api/files?scope=member", false, nil) },
+		func() { _ = u.get(ctx, dashboardMaterials, "/api/materials?scope=member", false, nil) },
 		func() { _ = u.get(ctx, "/api/thinking", "/api/thinking", false, nil) },
 	)
 	u.openStream(ctx, "")
 }
 
+// workspaceFileList fetches a workspace's files and keeps its PDFs to open.
+func (u *user) workspaceFileList(ctx context.Context, ws string, force bool) {
+	var files []workspaceFile
+	if u.get(ctx, "/api/workspaces/"+ws+"/files", "/api/workspaces/{id}/files", force, &files) != nil || files == nil {
+		return
+	}
+	var pdfs []string
+	for _, f := range files {
+		if f.Kind == "pdf" {
+			pdfs = append(pdfs, f.ID)
+		}
+	}
+	u.tab.mu.Lock()
+	u.tab.pdfs[ws] = pdfs
+	u.tab.mu.Unlock()
+}
+
 func (u *user) refetchTree(ctx context.Context, ws string) {
 	all(
-		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/files", "/api/workspaces/{id}/files", true, nil) },
+		func() { u.workspaceFileList(ctx, ws, true) },
 		func() {
 			_ = u.get(ctx, "/api/workspaces/"+ws+"/materials", "/api/workspaces/{id}/materials", true, nil)
 		},
@@ -125,7 +146,7 @@ func (u *user) openWorkspace(ctx context.Context, ws string) *space {
 	all(
 		func() { _ = u.get(ctx, "/api/workspaces/"+ws, "/api/workspaces/{id}", true, nil) },
 		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/chapters", "/api/workspaces/{id}/chapters", false, nil) },
-		func() { _ = u.get(ctx, "/api/workspaces/"+ws+"/files", "/api/workspaces/{id}/files", false, nil) },
+		func() { u.workspaceFileList(ctx, ws, false) },
 		func() {
 			_ = u.get(ctx, "/api/workspaces/"+ws+"/materials", "/api/workspaces/{id}/materials", true, &items)
 		},
@@ -134,6 +155,9 @@ func (u *user) openWorkspace(ctx context.Context, ws string) *space {
 		},
 		func() { _ = u.get(ctx, workspaceList, "/api/workspaces", false, nil) },
 	)
+	u.tab.mu.Lock()
+	sp.pdfs = u.tab.pdfs[ws]
+	u.tab.mu.Unlock()
 	for _, m := range items {
 		switch m.Kind {
 		case "note":
@@ -270,19 +294,147 @@ func (u *user) studyCards(ctx context.Context, sp *space) {
 }
 
 // learning is a page outside the workspace: the stream reconnects without
-// it, and again with it on the way back.
+// it, and again with it on the way back. Its result lists page by offset; a
+// heavy user reads them to the end, and now and then opens Past reviews.
 func (u *user) learning(ctx context.Context, sp *space) {
 	u.openStream(ctx, "")
 	all(
-		func() { _ = u.get(ctx, "/api/attempts?limit=30", "/api/attempts", false, nil) },
+		func() { _ = u.get(ctx, "/api/attempts?limit=30", "/api/attempts p1", false, nil) },
 		func() { _ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", false, nil) },
 		func() { _ = u.get(ctx, "/api/review/overview", "/api/review/overview", false, nil) },
 		func() { _ = u.get(ctx, "/api/learning/plans", "/api/learning/plans", false, nil) },
 	)
 	// The Results tab's list under a second cache key.
-	_ = u.get(ctx, "/api/attempts?limit=30&kinds=", "/api/attempts", false, nil)
+	_ = u.get(ctx, "/api/attempts?limit=30&kinds=", "/api/attempts p1", false, nil)
+	if u.heavy {
+		u.scrollOffset(ctx, "/api/attempts?limit=30", "/api/attempts", 2, 0, 4*time.Second)
+	}
+	if u.rng.IntN(3) == 0 {
+		pages := 1
+		if u.heavy {
+			pages = 0
+		}
+		u.scrollOffset(ctx, "/api/review/sessions?limit=30", "/api/review/sessions", 1, pages, 4*time.Second)
+	}
 	u.think(ctx, 30*time.Second)
 	u.openWorkspace(ctx, sp.id)
+}
+
+// pageLabel names a page of a list by its number, the 6th and later together.
+func pageLabel(label string, n int) string {
+	if n >= 6 {
+		return label + " p6+"
+	}
+	return fmt.Sprintf("%s p%d", label, n)
+}
+
+func withQuery(path, param string) string {
+	if strings.Contains(path, "?") {
+		return path + "&" + param
+	}
+	return path + "?" + param
+}
+
+// scroll reads a cursor-paged list the way its infinite query does as the
+// user scrolls: a page, a look at its rows, the next page, up to pages (0
+// for all of them, as select all fetches them).
+func (u *user) scroll(ctx context.Context, path, label string, pages int, look time.Duration) {
+	cursor := ""
+	for n := 1; ctx.Err() == nil; n++ {
+		p := path
+		if cursor != "" {
+			p = withQuery(path, "cursor="+url.QueryEscape(cursor))
+		}
+		var page struct {
+			NextCursor string `json:"nextCursor"`
+		}
+		if u.call(ctx, http.MethodGet, p, pageLabel(label, n), nil, &page) != nil || page.NextCursor == "" || n == pages {
+			return
+		}
+		cursor = page.NextCursor
+		u.think(ctx, look)
+	}
+}
+
+// scrollOffset is scroll for Learning's lists, 30 to a page by offset, from
+// page first.
+func (u *user) scrollOffset(ctx context.Context, path, label string, first, pages int, look time.Duration) {
+	for n := first; ctx.Err() == nil; n++ {
+		p := path
+		if n > 1 {
+			p = withQuery(path, "offset="+strconv.Itoa((n-1)*30))
+		}
+		var page struct {
+			More bool `json:"more"`
+		}
+		if u.call(ctx, http.MethodGet, p, pageLabel(label, n), nil, &page) != nil || !page.More || n-first+1 == pages {
+			return
+		}
+		u.think(ctx, look)
+	}
+}
+
+// fileListPaths are the Files page's lists as its tabs send them: files by
+// each sort (name and workspace ascending first), Blocks by its default
+// sort, Embeds and Trash.
+var fileListPaths = []struct{ path, label string }{
+	{"/api/files?dir=desc&sort=added", "/api/files sort=added"},
+	{"/api/files?dir=asc&sort=name", "/api/files sort=name"},
+	{"/api/files?dir=asc&sort=workspace", "/api/files sort=workspace"},
+	{"/api/files?dir=desc&sort=size", "/api/files sort=size"},
+	{"/api/materials?dir=desc&sort=updated", "/api/materials sort=updated"},
+	{"/api/materials?dir=asc&sort=title", "/api/materials sort=title"},
+	{"/api/materials?dir=asc&sort=workspace", "/api/materials sort=workspace"},
+	{"/api/editor-assets", "/api/editor-assets"},
+	{"/api/trash", "/api/trash"},
+}
+
+// filesPage is the Files page outside any workspace: one of its tabs and
+// sorts, read down as far as the user scrolls (a heavy user to the end), and
+// one visit in twenty a select all, which loads every page at once.
+func (u *user) filesPage(ctx context.Context, sp *space) {
+	u.openStream(ctx, "")
+	_ = u.get(ctx, workspaceList, "/api/workspaces", false, nil)
+	pages, look := 1+u.rng.IntN(2), 4*time.Second
+	if u.heavy {
+		pages = 0
+	}
+	if u.rng.IntN(20) == 0 {
+		pages, look = 0, 0
+	}
+	var list = fileListPaths[0]
+	switch n := u.rng.IntN(100); {
+	case n < 35:
+	case n < 50:
+		list = fileListPaths[1+u.rng.IntN(3)]
+	case n < 70:
+		list = fileListPaths[4]
+	case n < 75:
+		list = fileListPaths[5+u.rng.IntN(2)]
+	case n < 85:
+		list = fileListPaths[7]
+	default:
+		list = fileListPaths[8]
+	}
+	u.scroll(ctx, list.path, list.label, pages, look)
+	u.think(ctx, 20*time.Second)
+	u.openWorkspace(ctx, sp.id)
+}
+
+// openFile opens one of the workspace's PDFs: its row, then its links and
+// annotations together (src/features/files/FileViewer.tsx). The bytes come
+// from B2, not the gateway.
+func (u *user) openFile(ctx context.Context, sp *space) {
+	id := pick(u, sp.pdfs)
+	if id == "" {
+		return
+	}
+	_ = u.call(ctx, http.MethodGet, "/api/files/"+id, "/api/files/{id}", nil, nil)
+	all(
+		func() { _ = u.get(ctx, "/api/files/"+id+"/links", "/api/files/{id}/links", false, nil) },
+		func() { _ = u.get(ctx, "/api/files/"+id+"/annotations", "/api/files/{id}/annotations", false, nil) },
+	)
+	u.think(ctx, 60*time.Second)
 }
 
 func (u *user) studyTab(ctx context.Context, sp *space) {
@@ -349,6 +501,7 @@ func (u *user) notifications(ctx context.Context) {
 // only its stream's keep-alive and access recheck.
 func (u *user) idle(ctx context.Context) {
 	u.tab.fetched = map[string]time.Time{}
+	u.tab.pdfs = map[string][]string{}
 	if u.call(ctx, http.MethodGet, "/api/me", "/api/me", nil, nil) != nil {
 		return
 	}
@@ -371,6 +524,7 @@ func (u *user) idle(ctx context.Context) {
 // works inside workspaces, now and then refocusing the window (GET /me).
 func (u *user) session(ctx context.Context) {
 	u.tab.fetched = map[string]time.Time{}
+	u.tab.pdfs = map[string][]string{}
 	defer func() {
 		u.tab.mu.Lock()
 		if u.tab.stopStream != nil {
@@ -404,22 +558,26 @@ func (u *user) session(ctx context.Context) {
 				_ = u.call(ctx, http.MethodGet, "/api/me", "/api/me", nil, nil)
 			}
 			switch n := u.rng.IntN(100); {
-			case n < 35:
+			case n < 30:
 				u.openNote(ctx, sp)
-			case n < 50:
+			case n < 43:
 				u.takeQuiz(ctx, sp)
-			case n < 65:
+			case n < 56:
 				u.studyCards(ctx, sp)
-			case n < 73:
+			case n < 64:
 				u.learning(ctx, sp)
-			case n < 80:
+			case n < 70:
 				u.studyTab(ctx, sp)
-			case n < 85:
+			case n < 75:
 				u.createNote(ctx, sp)
-			case n < 91:
+			case n < 80:
 				u.rename(ctx, sp)
-			default:
+			case n < 87:
 				u.notifications(ctx)
+			case n < 95:
+				u.openFile(ctx, sp)
+			default:
+				u.filesPage(ctx, sp)
 			}
 		}
 		u.dashboard(ctx)
@@ -484,7 +642,7 @@ func (u *user) provision(ctx context.Context) error {
 	}
 	for _, w := range list {
 		path := "/api/workspaces/" + w.ID + "/materials"
-		bodies := []any{noteBody("Cell structure"), noteBody("Photosynthesis"), noteBody("Genetics"), quizMaterial(), deckMaterial()}
+		bodies := []any{noteBody("Cell structure"), noteBody("Photosynthesis"), noteBody("Genetics"), quizMaterial(), deckMaterial("Cell terms")}
 		for _, body := range bodies {
 			if err := u.call(ctx, http.MethodPost, path, "/api/workspaces/{id}/materials", body, nil, http.StatusCreated); err != nil {
 				return err
@@ -545,7 +703,7 @@ func quizMaterial() map[string]any {
 	}}
 }
 
-func deckMaterial() map[string]any {
+func deckMaterial(title string) map[string]any {
 	var cards []any
 	for i := 1; i <= 12; i++ {
 		cards = append(cards, map[string]any{
@@ -555,7 +713,7 @@ func deckMaterial() map[string]any {
 			},
 		})
 	}
-	return map[string]any{"kind": "flashcards", "title": "Cell terms", "content": map[string]any{
+	return map[string]any{"kind": "flashcards", "title": title, "content": map[string]any{
 		"schemaVersion": 1, "value": []any{map[string]any{"type": "flashcards", "id": "deck", "children": cards}},
 	}}
 }
