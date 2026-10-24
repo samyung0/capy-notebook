@@ -35,17 +35,15 @@ func TestAnonymousGradingRefusesAForgedTokenUnread(t *testing.T) {
 	}
 }
 
-// TestAnonymousGradingCountsIPv6By64AndPerLink (security regression:
-// rate-limit audit M6). Every address of one IPv6 /64 shares the per-address
-// daily cap, and one shared item's link stops at its own daily cap whatever
-// the address.
-func TestAnonymousGradingCountsIPv6By64AndPerLink(t *testing.T) {
+// TestAnonymousGradingCountsIPv6By64 (security regression: rate-limit audit
+// M6). Every address of one IPv6 /64 shares the per-address daily cap.
+func TestAnonymousGradingCountsIPv6By64(t *testing.T) {
 	h, st, calls := openGradingAPI(t, "full")
 	ctx := context.Background()
-	id := gradingQuiz(t, h, "link")
-	token := store.ShareToken(nil, id)
+	token := store.ShareToken(nil, gradingQuiz(t, h, "link"))
+	ipHash := st.AnonymousIPHash("2001:db8:5:6::/64")
 	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM anonymous_grading_usage WHERE link_id=$1`, id)
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM anonymous_grading_usage WHERE ip_hash=$1`, ipHash)
 	})
 	grade := func(ip string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+token+"/grade",
@@ -60,19 +58,12 @@ func TestAnonymousGradingCountsIPv6By64AndPerLink(t *testing.T) {
 		t.Fatalf("first grade → %d %s", rec.Code, rec.Body.String())
 	}
 	if _, err := st.Pool().Exec(ctx, `UPDATE anonymous_grading_usage SET parts=$2 WHERE ip_hash=$1`,
-		st.AnonymousIPHash("2001:db8:5:6::/64"), store.AnonymousGradingPartsPerIP); err != nil {
-		t.Fatal(err)
-	}
-	if rec := grade("2001:db8:5:6:ffff::2"); rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("another address of the /64 → %d, want 429", rec.Code)
-	}
-	if _, err := st.Pool().Exec(ctx, `INSERT INTO anonymous_grading_usage (day, ip_hash, local_id, link_id, parts)
-		VALUES ((now() AT TIME ZONE 'UTC')::date, 'elsewhere', '', $1, $2)`, id, store.AnonymousGradingPartsPerLink); err != nil {
+		ipHash, store.AnonymousGradingPartsPerIP); err != nil {
 		t.Fatal(err)
 	}
 	before := calls.Load()
-	if rec := grade("198.51.100.77"); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "anonymous_grading_limit") {
-		t.Fatalf("a fresh address on a spent link → %d %s, want 429", rec.Code, rec.Body.String())
+	if rec := grade("2001:db8:5:6:ffff::2"); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "anonymous_grading_limit") {
+		t.Fatalf("another address of the /64 → %d %s, want 429", rec.Code, rec.Body.String())
 	}
 	if calls.Load() != before {
 		t.Fatal("a refused grade reached Jev")

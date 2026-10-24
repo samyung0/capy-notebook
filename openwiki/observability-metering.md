@@ -705,15 +705,16 @@ still graded.
 
 Anonymous grading has no actor, so it is kept in `anonymous_grading_usage` per
 UTC day, salted client-address hash (HMAC with `SHARE_LINK_SECRET`; an IPv6
-address by its /64), shared item (the quiz, or the note holding an embedded
-quiz) and the random id the browser keeps in IndexedDB. The share token is
-verified before the body is read. Parts are counted before any Jev call and
-stay counted when grading fails. Caps: 300 graded parts per address hash per
-day (generous because a classroom shares one IP), 2,000 per shared item per
-day and 50,000 per day overall; over any, the API answers 429
-`anonymous_grading_limit` and the page asks the visitor to sign in. The local
-id is reporting only, because the client chooses it. Rows older than 30 days
-are pruned by the API's maintenance loop. No browser fingerprinting is used.
+address by its /64) and the random id the browser keeps in IndexedDB. The
+share token is verified before the body is read. Parts are counted before any
+Jev call and stay counted when grading fails. Caps: 300 graded parts per
+address hash per day (generous because a classroom shares one IP) and 50,000
+per day overall; over either, the API answers 429 `anonymous_grading_limit`
+and the page asks the visitor to sign in. There is no per-shared-item cap: a
+captcha token on each signed-out answer check is the planned next layer (Epo
+2026-10-24, vendor not chosen yet). The local id is reporting only, because
+the client chooses it. Rows older than 30 days are pruned by the API's
+maintenance loop. No browser fingerprinting is used.
 The visitor's grading post goes straight to `/api/public/.../grade`, so it
 carries the visitor's own address and takes the anonymous class (60/minute
 per address) rather than the AI class, whose 15/minute burst would stop a

@@ -261,7 +261,7 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 	if err != nil {
 		return nil, storedContentError(ctx, id, err)
 	}
-	return a.gradeAnonymous(ctx, id, quiz.Questions, in.Body)
+	return a.gradeAnonymous(ctx, quiz.Questions, in.Body)
 }
 
 // gradeAnonymousNoteQuiz grades a quiz the shared note embeds and references;
@@ -275,12 +275,12 @@ func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNote
 	if err != nil {
 		return nil, storedContentError(ctx, id, err)
 	}
-	return a.gradeAnonymous(ctx, id, stored, in.Body)
+	return a.gradeAnonymous(ctx, stored, in.Body)
 }
 
 // gradeAnonymous grades a signed-out attempt against the stored questions
-// under the anonymous daily caps; linkID is the shared item.
-func (a *api) gradeAnonymous(ctx context.Context, linkID string, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuizOutput, error) {
+// under the anonymous daily caps.
+func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuizOutput, error) {
 	qs, err := decodeStoredQuestions(stored)
 	if err != nil {
 		return nil, hErr(err)
@@ -296,7 +296,7 @@ func (a *api) gradeAnonymous(ctx context.Context, linkID string, stored json.Raw
 		}
 		ip, _ := ctx.Value(clientIPKey{}).(string)
 		ipHash = a.s.AnonymousIPHash(ip)
-		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, linkID, body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
+		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
 			return nil, &huma.ErrorModel{
 				Status: http.StatusTooManyRequests, Title: http.StatusText(http.StatusTooManyRequests),
 				Detail: "sign in to keep grading open answers today", Errors: []*huma.ErrorDetail{{Message: "anonymous_grading_limit"}},
@@ -314,7 +314,7 @@ func (a *api) gradeAnonymous(ctx context.Context, linkID string, stored json.Raw
 		return nil, huma.Error422UnprocessableEntity("there are no questions to grade")
 	}
 	if len(plan.open) > 0 {
-		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, linkID, body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
+		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
 		}
 	}
