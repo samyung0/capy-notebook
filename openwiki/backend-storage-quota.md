@@ -419,10 +419,13 @@ their 429. The line holds 2,000 waiting tickets that spent their class token
 ticket waiting only on its class counts toward its user's 20 alone, and its
 wait clock (the 30 s before it blocks) restarts when the class admits it
 (Q307). Past either limit the ticket is refused with a typed 503,
-`upload_queue_full` (busy, try again), before it spends a class token: the
-line is checked and the token spent in one step under the line's lock
-(Q350). The 2,000 is soft for tickets the class admits later, which join
-without a check; each user's 20 still bounds the line. The browser long-polls
+`upload_queue_full` (busy, try again), before it spends a class token: a
+ticket takes its place under the line's lock, then spends its token outside
+it, so a slow Redis delays only that ticket (Q350). While it asks it holds
+its place and counts toward both limits, but gets no turn and blocks
+nothing. The 2,000 is soft: a ticket the class admits later joins without a
+check, as does one that would have started at once. Each user's 20 holds from
+the moment a ticket takes its place. The browser long-polls
 `GET /api/uploads/tickets/{id}?position=N`, which answers at once when the
 turn comes, when the ticket's place differs from N but no sooner than 2 s
 after the ask (so a fast line costs a browser one poll per 2 s, inside the

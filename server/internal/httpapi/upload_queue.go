@@ -39,11 +39,13 @@ const (
 	uploadRunMax = 256
 	// uploadUserSlots counts a user's running uploads and held turns.
 	uploadUserSlots = 4
-	// uploadQueueMax bounds waiting tickets that spent their class token
-	// when they took their place (Epo 2026-10-24, Q318: 2,000; a ticket is a
-	// small in-memory record). The bound is soft: a ticket the class admits
-	// later joins them without a check, past 2,000 if the line is full, and
-	// each user's 20 still bounds memory (Q350).
+	// uploadQueueMax bounds waiting tickets that spend or spent their class
+	// token as they take their place (Epo 2026-10-24, Q318: 2,000; a ticket
+	// is a small in-memory record). The bound is soft: a ticket the class
+	// admits later joins them without a check, as does one that would have
+	// started at once, past 2,000 if the line is full. Each user's 20 holds
+	// from the moment a ticket takes its place, so memory stays bounded
+	// (Q350).
 	uploadQueueMax     = 2000
 	uploadQueuePerUser = 20
 	// uploadBodyRate is the slowest an upload's body may arrive on average:
@@ -133,6 +135,10 @@ type uploadTicket struct {
 	// overClass is set while the ticket waits for its user's upload rate
 	// class; it neither gets a turn nor blocks the line until cleared.
 	overClass bool
+	// asking is set while take spends the ticket's class token outside the
+	// lock: the ticket holds its place and counts toward the line's limits,
+	// but neither gets a turn nor blocks the line until the class answers.
+	asking bool
 }
 
 type uploadQueue struct {
@@ -176,40 +182,44 @@ func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, 
 	if claim.size > uploadBudget {
 		return uploadTurn{}, huma.Error413RequestEntityTooLarge("the upload is larger than the gateway's upload budget")
 	}
-	t := &uploadTicket{id: randID("utk"), user: user, target: target, claim: claim}
-	// The line is checked and the class token spent in one step under the
-	// lock, so a ticket the line refuses spends no class token (Q307, Q350).
+	t := &uploadTicket{id: randID("utk"), user: user, target: target, claim: claim, asking: true}
+	// The ticket takes its place before it spends its class token, so a
+	// ticket the line refuses spends none (Q307, Q350). The token is spent
+	// outside the lock: a slow Redis delays only this ticket.
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	if err := q.roomLocked(t); err != nil {
+		q.mu.Unlock()
 		return uploadTurn{}, err
 	}
+	q.tickets[t.id] = t
+	q.line = append(q.line, t)
+	q.mu.Unlock()
 	retry, err := q.askClass(user)
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	t.asking = false
 	if err != nil {
+		q.dropLocked(t)
 		return uploadTurn{}, &huma.ErrorModel{
 			Status: http.StatusServiceUnavailable, Title: http.StatusText(http.StatusServiceUnavailable),
 			Detail: "try again shortly", Errors: []*huma.ErrorDetail{{Message: "rate_limit_unavailable"}},
 		}
 	}
-	t.overClass = retry > 0
-	if !t.overClass && q.startsLocked(t) {
-		q.tickets[t.id] = t
-		q.grantLocked(t)
+	if retry > 0 {
+		// Refused by its class, it spent nothing and keeps its place,
+		// counting toward its user's share alone (Q307).
+		t.overClass = true
+		q.after(retry, func() { q.recheckClass(t) })
+		return uploadTurn{TicketID: t.id, Position: q.positionLocked(t)}, nil
+	}
+	// It spent its token, so it keeps its place: its turn now if the line
+	// grants it, else its wait clock starts.
+	t.queued = time.Now()
+	q.advanceLocked()
+	if t.turn != nil {
 		return uploadTurn{TicketID: t.id}, nil
 	}
-	// A ticket the class refused spent no token; it still needs a place in
-	// its user's share, which the check above skipped if it would have
-	// started.
-	if err := q.roomLocked(t); err != nil {
-		return uploadTurn{}, err
-	}
-	t.queued = time.Now()
-	q.tickets[t.id] = t
-	q.line = append(q.line, t)
-	if t.overClass {
-		q.after(retry, func() { q.recheckClass(t) })
-	}
-	return uploadTurn{TicketID: t.id, Position: len(q.line)}, nil
+	return uploadTurn{TicketID: t.id, Position: q.positionLocked(t)}, nil
 }
 
 func (q *uploadQueue) askClass(user string) (time.Duration, error) {
@@ -253,15 +263,12 @@ func (q *uploadQueue) startsLocked(t *uploadTicket) bool {
 	return q.active[t.user] < uploadUserSlots && q.fitsLocked(t) && !q.blockedLocked()
 }
 
-// roomLocked refuses a ticket that would wait when its user already has
-// uploadQueuePerUser waiting, or when the line already holds uploadQueueMax
-// tickets that spent their class token; one waiting only on its class counts
-// toward its user's share alone (Q307).
+// roomLocked refuses a ticket taking its place when its user already has
+// uploadQueuePerUser waiting, or, unless it would start at once, when the
+// line already holds uploadQueueMax tickets not waiting on their class; one
+// waiting only on its class counts toward its user's share alone (Q307).
 func (q *uploadQueue) roomLocked(t *uploadTicket) error {
-	if !t.overClass && q.startsLocked(t) {
-		return nil
-	}
-	if q.waitingLocked(t.user) >= uploadQueuePerUser || (!t.overClass && q.classedLocked() >= uploadQueueMax) {
+	if q.waitingLocked(t.user) >= uploadQueuePerUser || (!q.startsLocked(t) && q.classedLocked() >= uploadQueueMax) {
 		return uploadQueueFull()
 	}
 	return nil
@@ -287,7 +294,7 @@ func (q *uploadQueue) fitsLocked(t *uploadTicket) bool {
 // it: one under its user's share that does not fit and has waited
 // uploadBlockAfter.
 func (q *uploadQueue) blocksLocked(t *uploadTicket) bool {
-	return !t.overClass && q.active[t.user] < uploadUserSlots && !q.fitsLocked(t) &&
+	return !t.overClass && !t.asking && q.active[t.user] < uploadUserSlots && !q.fitsLocked(t) &&
 		time.Since(t.queued) >= uploadBlockAfter
 }
 
@@ -364,7 +371,7 @@ func (q *uploadQueue) dropLocked(t *uploadTicket) {
 func (q *uploadQueue) advanceLocked() {
 	for i := 0; i < len(q.line); {
 		next := q.line[i]
-		if !next.overClass && q.active[next.user] < uploadUserSlots && q.fitsLocked(next) {
+		if !next.overClass && !next.asking && q.active[next.user] < uploadUserSlots && q.fitsLocked(next) {
 			q.line = slices.Delete(q.line, i, i+1)
 			q.grantLocked(next)
 			continue

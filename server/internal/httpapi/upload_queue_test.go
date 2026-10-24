@@ -486,10 +486,10 @@ func TestUploadQueueFullLineSpendsNoClassToken(t *testing.T) {
 	}
 }
 
-// The line is checked and the class token spent in one step under the lock:
-// a ticket for the last place that arrives while another asks its class is
-// refused after it, spending no token (Q350; security regression: rate-limit
-// audit r3 N-1).
+// A ticket takes its place before it spends its class token: a ticket for
+// the last place that arrives while another asks its class finds the place
+// taken and spends no token (Q350; security regression: rate-limit audit r3
+// N-1).
 func TestUploadQueueChecksTheLineAndSpendsTheClassTokenAtOnce(t *testing.T) {
 	q := newUploadQueue(nil)
 	asked, _ := classByUser(q, map[string]bool{})
@@ -523,6 +523,57 @@ func TestUploadQueueChecksTheLineAndSpendsTheClassTokenAtOnce(t *testing.T) {
 	}
 	if *asked != before+1 {
 		t.Fatalf("%d class tokens spent, want 1", *asked-before)
+	}
+}
+
+// A class check that stalls delays only its own ticket: another user's take
+// and a waiting ticket's poll complete meanwhile, and the stalled ticket
+// gets its place once the class answers (Q350; security regression:
+// rate-limit audit r3 N-1).
+func TestUploadQueueSlowClassDelaysOnlyItsTicket(t *testing.T) {
+	q := newUploadQueue(nil)
+	fillBudget(t, q)
+	waiting := takeOrFail(t, q, "w", 1)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var released sync.Once
+	t.Cleanup(func() { released.Do(func() { close(release) }) })
+	q.admitClass = func(_ context.Context, user string) (time.Duration, error) {
+		if user == "slow" {
+			close(entered)
+			<-release
+		}
+		return 0, nil
+	}
+	slow := make(chan error, 1)
+	go func() {
+		_, err := q.take("slow", "sources:ws", uploadClaim{size: 1})
+		slow <- err
+	}()
+	<-entered
+	calls := make(chan error, 2)
+	go func() {
+		_, err := q.take("b", "sources:ws", uploadClaim{size: 1})
+		calls <- err
+	}()
+	go func() {
+		_, err := q.wait(context.Background(), waiting.TicketID, "w", -1)
+		calls <- err
+	}()
+	// The bound only ends a stuck run; the test counts completed calls.
+	stuck := time.After(10 * time.Second)
+	for completed := 0; completed < 2; completed++ {
+		select {
+		case err := <-calls:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-stuck:
+			t.Fatalf("%d of 2 calls completed while a class check stalled", completed)
+		}
+	}
+	released.Do(func() { close(release) })
+	if err := <-slow; err != nil {
+		t.Fatal(err)
 	}
 }
 
