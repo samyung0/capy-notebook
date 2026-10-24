@@ -237,6 +237,19 @@ The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.
 
+Undo and Redo restore a deleted list item as a copy placed by tracing its old
+neighbours' `redone` links. The copy keeps the right neighbour its trace finds
+only when that lies after its left neighbour; otherwise it takes the item now
+after the left, as a local insert does (Epo 2026-10-24). The check walks at
+most 4,096 items and past that takes the item after the left. Without the rule
+a trace through a copy an earlier Undo made, later split by typing, can give a
+right origin before the origin, and each replica then places the copy by its
+own block boundaries, so peers and reloads read the text in another order.
+Yjs has it through our pnpm patch (`redoItem` in `patches/yjs@13.6.31.patch`)
+and the fork's yrs in `Item::redo` (`third_party/yrs/src/block.rs`), so
+browser notes and items, the server's agent Undo and the Office editors all
+follow it.
+
 ### Room presence
 
 Developer Epo decided the avatar group and verified cursor labels on
@@ -1620,6 +1633,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   read's form; Epo 2026-10-24, Q222 and Q223) raised `CLIENT_PROTOCOL` to 15
   and `MIN_SOURCE` to 15; `MIN_MATERIAL` stays 7. Its deploy request names
   "client protocol 14 -> 15, source 14 -> 15".
+  The Undo redo rule (pin 831832ddb and the yjs patch: a restored copy
+  keeps its traced right neighbour only when it lies after its left; Epo
+  2026-10-24, Q247-Q250) raised `CLIENT_PROTOCOL` to 16 and both minimums to
+  16, so note and item tabs without the rule reload. Its deploy request names
+  "client protocol 15 -> 16, material 7 -> 16, source 15 -> 16".
 
 #### When to bump
 
