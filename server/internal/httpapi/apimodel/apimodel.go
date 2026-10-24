@@ -185,6 +185,8 @@ type SourceUploadPolicy struct {
 	AllowNoExtension             bool                          `json:"allowNoExtension"`
 	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
 	VLMIngestPageCreditMicros    int64                         `json:"vlmIngestPageCreditMicros"`
+	AudioSecondCreditMicros      int64                         `json:"audioSecondCreditMicros"`
+	AudioMaxDurationSeconds      int                           `json:"audioMaxDurationSeconds"`
 }
 
 type Material struct {
@@ -462,6 +464,12 @@ type GradedQuiz struct {
 	Correct   float64          `json:"correct"`
 	Total     float64          `json:"total"`
 	Questions []map[string]any `json:"questions" nullable:"false"`
+}
+
+// VoiceTranscription is a chat voice recording's text, for the composer to
+// insert where the user edits and sends it; nothing is sent or stored.
+type VoiceTranscription struct {
+	Text string `json:"text"`
 }
 
 // GradedQuestion is one checked question, keyed and awarded like GradedQuiz.

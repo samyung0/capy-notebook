@@ -173,6 +173,7 @@ export type {
   UsageEventPage,
   UsageReport,
   User,
+  VoiceTranscription,
   Workspace,
   WorkspaceCollaborator,
   WorkspaceMember,

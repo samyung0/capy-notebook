@@ -1277,8 +1277,11 @@ export const ListMessagesResponseItem = zod.object({
   "pageStart": zod.int().optional(),
   "regions": zod.array(zod.object({
   "bbox": zod.array(zod.number()).nullable(),
+  "end_ms": zod.int().optional(),
   "page": zod.int(),
-  "space": zod.string()
+  "space": zod.string(),
+  "speaker": zod.int().optional(),
+  "start_ms": zod.int().optional()
 })).nullish(),
   "snippet": zod.string()
 })).nullish(),
@@ -1733,7 +1736,7 @@ export const ListOwnedFilesResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -1832,7 +1835,7 @@ export const GetFileResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -1920,7 +1923,7 @@ export const UpdateFileResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -2208,7 +2211,7 @@ export const CloneFileResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -5623,6 +5626,8 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "accept": zod.string(),
   "allowNoExtension": zod.boolean(),
+  "audioMaxDurationSeconds": zod.int(),
+  "audioSecondCreditMicros": zod.int(),
   "digitalParsePageCreditMicros": zod.int(),
   "kinds": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
@@ -6636,7 +6641,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -7061,7 +7066,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
@@ -7696,6 +7701,19 @@ export const TransferWorkspaceResponse = zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(transferWorkspaceResponseTagsItemValueMax)
 }))
+})
+
+
+/**
+ * @summary Transcribe a chat voice recording for the composer
+ */
+export const TranscribeVoiceParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const TranscribeVoiceResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "text": zod.string()
 })
 
 

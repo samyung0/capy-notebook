@@ -318,10 +318,10 @@ Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
 ingest failures keep their explicit reporting, except `InputLimitError`: a user
 file over a documented limit (page or scanned-page count, figures and table
-rows, image pixels, CSV/TSV columns per row or searchable text) fails the job
-with the limit's attempt `error_code` (`page_limit`, `scanned_page_limit`,
-`element_limit`, `image_pixel_limit`,
-`tabular_column_limit`, `tabular_text_limit`) and logs at
+rows, image pixels, audio duration, CSV/TSV columns per row or searchable text)
+fails the job with the limit's attempt `error_code` (`page_limit`,
+`scanned_page_limit`, `element_limit`, `image_pixel_limit`,
+`audio_duration_limit`, `tabular_column_limit`, `tabular_text_limit`) and logs at
 info, with no Sentry event. The file itself ends ready and unindexed with
 `files.index_limit` (see Ingest limits in
 [agentic-retrieval.md](agentic-retrieval.md)). A refused Office rebase is the same kind of
@@ -387,7 +387,10 @@ request's events with the caller's `trace_id`, and a source rebuild's (which
 runs outside any request, on a room unload or the sweep) with its `file_id`. Go, Python, and collaboration exclude request
 bodies and internal authentication headers from Sentry because requests carry
 note content, prompts, and service credentials. Python stack locals are also
-excluded.
+excluded. The pipeline's `before_breadcrumb` (`obs._before_breadcrumb`) keeps
+an outgoing HTTP request's breadcrumb (http.client, so requests, and httpx)
+and httpx's own request log line without the URL's query or fragment, where a
+signed link such as a transcript's result link carries its signature.
 
 Chat and generate fail with `ai_unavailable` when retrieval is unreachable;
 they do not invent a local answer. Ops fallbacks that keep the response
@@ -796,7 +799,7 @@ month by `surface`, which the Usage tab draws as one credit bar coloured by area
 faint at the end. `GET /api/usage/events` keyset-pages the actor's `usage_events`
 rows newest first (`before` cursor from the previous page's `next`, 20 rows at
 most) for the Detailed usage tab: kind (`llm`, `embedding`, `rerank`,
-`parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
+`audio`, `parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
 tokens and credits. It does not use a separate analytics table and does not show
 USD. `GET /api/billing/invoices` reads the customer's latest 12 non-draft Stripe
 invoices live for the Subscription tab (a user with no Stripe customer gets an
@@ -955,7 +958,9 @@ begin(session)  →  provider call  →  settle(call id, measured usage)
 A current session reserves 0 credits in `provider_sessions.reserved_micros`.
 The column records the session's contribution when a future workflow takes an
 estimated credit hold. Platform
-chat, generate and editor share `ConcurrentLLMLeases` (5). The gate is
+chat, generate and editor share `ConcurrentLLMLeases` (5); a chat voice
+clip's reserved session (`reserved_micros` above zero) neither takes nor
+counts as one, since its hold bounds it. The gate is
 `used + reserved >= limit` plus that cap, the same check as
 `AssertCreditsAvailable`. BYOK chat has a session for idempotent usage events
 but does not consume a concurrency slot and skips the platform used+reserved
@@ -969,7 +974,12 @@ That exact call id remains settleable against a `settled` or `released` session
 until its `receipt_deadline_at`. Python sets the deadline from the longest a
 call can legitimately run, plus five minutes: the interactive stream backstop
 (`CAPY_INTERACTIVE_STREAM_MAX_S`, 10 minutes) for every interactive call, the
-ingest provider timeout (120 s) for ingest; direct SQL callers get the
+ingest provider timeout (120 s) for ingest, and an hour for an audio
+transcription task (`open_call(provider_timeout_s=…)`), renewed with its gate
+lease by each claim that polls the task (`accounting.renew_call`), so it spans
+the job's re-pends, and abandoned as `lifecycle`/`job_ended` with its lease
+freed when the job ends unsettled (`jobs_end_filetrans_call`); direct SQL
+callers get the
 column's default 12-hour-five-minute window. The additional five minutes are
 receipt-only settlement grace.
 
@@ -1075,8 +1085,15 @@ response as an error rather than finalizing a partial stream as complete.
 ### Where tokens are captured
 
 `pipeline/pipeline/retrieval/models.py` is the single boundary for token-reporting
-LLM and embedding calls. Any new provider path must go through it or open and
-settle its own metered call explicitly, or it is invisible and silently free.
+LLM and embedding calls. Audio transcription is the non-token exception:
+`pipeline/pipeline/ingest/source_text.py` opens its `audio` call under its own
+12-task gate and settles measured seconds through `accounting.settle_units`
+(ingest sessions only), which writes `units` / `unit` on the call and its
+usage event. Chat voice input is the gateway's own provider call: Go opens
+it (`OpenProviderCall`) and settles its seconds through `SettleProviderCall`
+(below). Any new provider path must go through one of these boundaries or
+open and settle its own metered call explicitly, or it is invisible and
+silently free.
 
 A contextvar accumulator (`obs.Usage`) still aggregates request telemetry.
 Chat, generate and editor bind a `RequestAccounting` context when the
@@ -1289,6 +1306,65 @@ waiting in the queue; the parse event's metadata carries both snapshots
 (`digitalPageRate`, `vlmPageRate`). Standalone image captions bill their
 tokens only.
 
+Audio is priced per second. `audio_transcription_second` (uploads) and
+`voice_input_second` (chat voice input) are both 16,667 microcredits a second,
+one credit a minute (`0111_audio_transcription.sql`, Epo's proposal of
+2026-10-23 at two to three times the standard markup because transcription
+capacity is capped). Uploads are version 2, since 0001 seeded a version 1 at
+another price that 0079 deleted; voice input is version 1. An upload's charge
+is whole seconds (ceil) of the worker's measured duration (ffmpeg reading
+every packet, not the container header) or the last sentence's end, whichever
+is later, at the job's snapshotted rate. It is settled on the task's call
+(opened by the claim that submitted it) by the claim that finds the task
+succeeded, only when the transcript has sentences. A failed, refused or lost
+task is free, and so is a transcript whose speech ends past two hours
+(`audio_duration_limit`); a task that heard no speech settles as a successful
+call at zero credits (`no_speech`). A job pays for its audio once: a claim
+after a worker died between the settlement and the job's end settles the same
+receipt, which applies once, and a later call on the same session (after a
+lost cache) settles at zero. The user's Retry of a job that lost its cache and
+then failed later is a new job and pays again, a rare case. `GET /api/source-upload-policy` also returns
+`audioSecondCreditMicros` and `audioMaxDurationSeconds` (7,200); the upload
+dialog shows the estimate from the length the browser reads, and the worker's
+measured duration remains authoritative. A file whose length the browser
+cannot read is refused before upload (no estimate is possible), and the upload
+request requires `durationSeconds` for audio, so the credit-estimate gate
+always has a number. The worker applies the same gate again before it
+submits, on the measured length (`ceil(seconds) ×
+audio_transcription_second` against `db.actor_has_credits`' headroom, the
+pipeline's copy of `creditHeadroomNumerator` / `creditHeadroomDenominator`),
+which is the only gate an imported recording meets; a refusal is the
+`ingest_admission_refused` failure, uncharged and with no task.
+
+Chat voice input (`server/internal/httpapi/voice.go`,
+[agentic-retrieval.md](agentic-retrieval.md#chat-voice-input)) is charged by
+the gateway. Before the call it opens a `chat` session with
+`BeginReservedSession`, which admits like any interactive request and then
+holds the two-minute maximum (`CreditsForAudioSeconds(120,
+voice_input_second)`, 2 credits at version 1) in the session's and the
+user's `reserved_micros`, so the hold counts against every other gate while
+the call runs. It takes none of the five concurrent LLM leases: open chat
+streams never refuse a clip, and a clip never refuses a stream. It opens one
+`audio` provider call (`alibaba`,
+`qwen-audio-3.1-asr-flash`, purpose `transcription`). On a transcript it
+closes the session, which takes the hold back, and then settles
+ceil(`end_time` / 1000) seconds, at most the 120 held, through
+`SettleProviderCall` (a closed
+session still takes the receipt of a call opened under it, and the spend's
+own check sees the user's credits rather than the hold): kind `audio` with
+`units` and `unit = 'seconds'`, priced at the `voice_input_second` rate
+active when it settles, with the provider's token counts on the call. The
+pipeline's receipt endpoint sends no units, so it cannot settle audio.
+A provider 429 or failure, text with no `end_time` (no length to charge), a
+span past 125 s, blank text or a browser that left abandons the call
+uncharged (`AbandonProviderCall`, with the provider status and code, or the
+request's own reason) and releases the session. A call is settled once by
+its id; a settle that fails still answers the text and leaves the call to
+end uncharged (a receipt past its window abandons it as `receipt_timeout`,
+any other failure leaves it open until the sweep does), so a voice input is
+under-charged, never charged twice. Alibaba also bills tokens; those stay
+telemetry like every other provider price.
+
 ### Source refreshes and maintenance republishes
 
 The page fee applies to a file's first parse only; parsing runs on the
@@ -1346,7 +1422,10 @@ whole-host CPU/memory separate from per-worker cgroups and page billing.
 
 Every queue claim opens `ingest_job_attempts` in the same transaction as the
 claim. Terminal success, retry, capacity wait, supersession, and failure close
-that exact row. The lease reaper closes rows abandoned by a dead worker as
+that exact row; an audio job re-pending to poll its transcription task again
+closes it as `transcription_poll`, with no error category, and counts as
+queued (`jobs.queued_at`, the oldest-queued figures) only once its poll is
+due. The lease reaper closes rows abandoned by a dead worker as
 `lease_expired`. An exhausted parse or ingest lease also closes its credit
 reservation and source-fenced file state in that transaction. Capacity waits
 may decrement the visible
@@ -1365,7 +1444,7 @@ primary database and can add optional column-limited read DSNs for UAT/local.
 ### Pricing is policy
 
 Token work is priced from the resolved `model_configs` row. Non-token policy
-(digital and VLM pages, and email) is versioned in
+(digital and VLM pages, audio seconds, and email) is versioned in
 `resource_credit_rates`; `figure_caption_call` rows remain for history but none
 is active. The Ops usage page edits these
 rates by inserting a new active version and recording an operator audit event.
@@ -1487,8 +1566,11 @@ import routes) carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
-file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Credits remain the money bound;
-these limits only stop abuse patterns.
+file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Chat voice
+input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
+with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
+person talking, apart from the chat allowance the turns they send then use.
+Credits remain the money bound; these limits only stop abuse patterns.
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.

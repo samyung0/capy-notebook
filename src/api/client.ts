@@ -310,6 +310,14 @@ export const api = {
       body: body === undefined ? undefined : JSON.stringify(body),
       method: 'POST',
     }),
+  /** A raw body sent as its own type, such as a recorded clip. */
+  postBlob: <T>(path: string, body: Blob, options?: RequestOptions) =>
+    request<T>(path, {
+      ...options,
+      body,
+      headers: { 'Content-Type': body.type },
+      method: 'POST',
+    }),
   put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, {
       ...options,

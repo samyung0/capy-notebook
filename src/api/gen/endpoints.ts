@@ -204,6 +204,7 @@ import type {
   UsageEventPage,
   UsageReport,
   User,
+  VoiceTranscription,
   Workspace,
   WorkspaceAttemptsOutputBody,
   WorkspaceCollaborator,
@@ -11265,6 +11266,71 @@ const res = await fetch(getTransferWorkspaceUrl(id),
 
   const data: transferWorkspaceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as transferWorkspaceResponse
+}
+
+
+
+export type transcribeVoiceResponse200 = {
+  data: VoiceTranscription
+  status: 200
+}
+
+export type transcribeVoiceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type transcribeVoiceResponseSuccess = (transcribeVoiceResponse200) & {
+  headers: Headers;
+};
+export type transcribeVoiceResponseError = (transcribeVoiceResponseDefault) & {
+  headers: Headers;
+};
+
+export type transcribeVoiceResponse = (transcribeVoiceResponseSuccess | transcribeVoiceResponseError)
+
+export const getTranscribeVoiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/voice-transcriptions`
+}
+
+/**
+ * @summary Transcribe a chat voice recording for the composer
+ */
+export const transcribeVoice = async (id: string,
+    transcribeVoiceBody: Blob, options?: RequestInit): Promise<transcribeVoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getTranscribeVoiceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'audio/mp4', ...getHeaders(options?.headers) },
+    body: transcribeVoiceBody
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: transcribeVoiceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as transcribeVoiceResponse
 }
 
 

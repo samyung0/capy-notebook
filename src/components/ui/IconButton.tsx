@@ -15,6 +15,8 @@ const iconButtonVariants = cva(BASE_BUTTON_STYLE, {
       lg: 'p-2.5 [&>svg]:size-6',
       md: 'p-2.5 [&>svg]:size-5',
       sm: 'p-2.5 [&>svg]:size-4.5',
+      // ToolbarButton's box and icon (--toolbar-button, --toolbar-icon).
+      toolbar: 'size-(--toolbar-button) [&>svg]:size-(--toolbar-icon)',
       xs: 'p-1 [&>svg]:size-4.5',
     },
     variant: {
