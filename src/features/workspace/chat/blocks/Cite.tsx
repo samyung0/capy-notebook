@@ -61,19 +61,15 @@ export function Cites({ passages }: { passages?: number[] }) {
   );
 }
 
-/** Sources under a table or chart, with per-row attribution when rows cite
- * their own passages. */
+/** Sources under a table, chart or embed. */
 export function CiteFooter({
   passages,
-  rows,
   note,
 }: {
   passages?: number[];
-  rows?: { index: number; passages?: number[] }[];
   note?: string;
 }) {
-  const cited = rows?.filter((row) => row.passages?.length) ?? [];
-  if (!(passages?.length || cited.length || note)) return null;
+  if (!(passages?.length || note)) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-muted text-xs">
       {note ? <span>{note}</span> : null}
@@ -83,12 +79,6 @@ export function CiteFooter({
           <Cites passages={passages} />
         </span>
       ) : null}
-      {cited.map((row) => (
-        <span key={row.index}>
-          {m.chat_table_row({ n: row.index + 1 })}
-          <Cites passages={row.passages} />
-        </span>
-      ))}
     </div>
   );
 }

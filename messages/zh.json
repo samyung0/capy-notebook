@@ -780,7 +780,6 @@
   "chat_tool_failed": "此步骤失败。",
   "chat_source_number": "来源 {n}",
   "chat_sources": "来源",
-  "chat_table_row": "第 {n} 行",
   "chat_code_download": "下载代码",
   "chat_chart_values": "数值",
   "chat_chart_illustrative": "示意数值",
