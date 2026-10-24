@@ -4,8 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListEditorAssetsAccess } from './listEditorAssetsAccess.ts';
 
-export type ListLostEditorAssetsParams = {
+export type ListEditorAssetsParams = {
+/**
+ * Only media in notes the caller can open, or only those it cannot
+ */
+access?: ListEditorAssetsAccess;
 /**
  * @minimum 1
  * @maximum 100
