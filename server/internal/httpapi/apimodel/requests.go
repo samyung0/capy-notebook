@@ -172,21 +172,24 @@ type TransferWorkspaceReq struct {
 	RecipientID string `json:"recipientId" minLength:"1"`
 }
 
+// Comments are plain fields (Epo 2026-10-24): a discussion holds its block
+// id, anchor range and quote, each comment its plain text; the store refuses
+// whitespace-only text and control characters but newline and tab.
 type CreateDiscussionReq struct {
-	BlockID       *string          `json:"blockId,omitempty"`
-	AnchorStart   []byte           `json:"anchorStart,omitempty" maxLength:"4096"`
-	AnchorEnd     []byte           `json:"anchorEnd,omitempty" maxLength:"4096"`
-	AnchorVersion int              `json:"anchorVersion" minimum:"1"`
-	AnchorQuote   string           `json:"anchorQuote,omitempty" maxLength:"1000"`
-	ContentRich   []map[string]any `json:"contentRich" minItems:"1"`
+	BlockID       *string     `json:"blockId,omitempty" minLength:"1" maxLength:"128"`
+	AnchorStart   []byte      `json:"anchorStart,omitempty" maxLength:"4096"`
+	AnchorEnd     []byte      `json:"anchorEnd,omitempty" maxLength:"4096"`
+	AnchorVersion int         `json:"anchorVersion" minimum:"1"`
+	AnchorQuote   string      `json:"anchorQuote,omitempty" maxLength:"1000"`
+	Text          CommentText `json:"text" minLength:"1"`
 }
 
 type CreateCommentReq struct {
-	ContentRich []map[string]any `json:"contentRich" minItems:"1"`
+	Text CommentText `json:"text" minLength:"1"`
 }
 
 type UpdateCommentReq struct {
-	ContentRich []map[string]any `json:"contentRich" minItems:"1"`
+	Text CommentText `json:"text" minLength:"1"`
 }
 
 type CreateQuizReq struct {

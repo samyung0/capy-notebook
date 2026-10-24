@@ -10,10 +10,11 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// TestCommentJSONAndCountAreCapped (security regression: rate-limit audit
-// M9). A comment's JSON stops at 32 KiB even within the character limit, and
-// a note past its live comment count answers 409 comment_limit.
-func TestCommentJSONAndCountAreCapped(t *testing.T) {
+// TestCommentsArePlainText (security regression: rate-limit audit M9). A
+// comment is plain text of at most 3,000 characters: more is refused, a rich
+// payload is refused, a plain comment and its edit round-trip, and a note past
+// its live comment count answers 409 comment_limit.
+func TestCommentsArePlainText(t *testing.T) {
 	h, st, _ := openGradingAPI(t, "full")
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/materials", "u_owner",
 		map[string]any{"kind": "note", "title": "Comment caps " + strings.Repeat("x", 4)})
@@ -24,30 +25,46 @@ func TestCommentJSONAndCountAreCapped(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id=$1`, note.ID)
 	})
-	comment := func(children []any) map[string]any {
-		return map[string]any{"anchorVersion": 1, "contentRich": []any{map[string]any{"type": "p", "children": children}}}
-	}
-	// Empty leaves add bytes and no characters.
-	leaves := make([]any, 0, 4000)
-	for range 4000 {
-		leaves = append(leaves, map[string]any{"text": ""})
-	}
-	leaves = append(leaves, map[string]any{"text": "hi"})
 	path := "/api/materials/" + note.ID + "/discussions"
-	if rec := doReq(t, h, http.MethodPost, path, "u_owner", comment(leaves)); rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("a 44 KB comment → %d, want 422", rec.Code)
+	long := map[string]any{"anchorVersion": 1, "blockId": "b1", "text": strings.Repeat("光", 3001)}
+	if rec := doReq(t, h, http.MethodPost, path, "u_owner", long); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("3,001 characters → %d, want 422", rec.Code)
 	}
-	small := comment([]any{map[string]any{"text": "hi"}})
-	rec = doReq(t, h, http.MethodPost, path, "u_owner", small)
-	var discussion struct{ ID string }
-	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &discussion) != nil {
-		t.Fatalf("a small comment → %d %s", rec.Code, rec.Body.String())
+	rich := map[string]any{"anchorVersion": 1, "blockId": "b1", "text": "hi",
+		"contentRich": []any{map[string]any{"type": "p", "children": []any{map[string]any{"text": "hi"}}}}}
+	if rec := doReq(t, h, http.MethodPost, path, "u_owner", rich); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a rich payload → %d, want 422", rec.Code)
 	}
-	if _, err := st.Pool().Exec(context.Background(), `INSERT INTO material_comments (id, discussion_id, user_id, content_rich)
-		SELECT 'com_http_cap_' || n, $1, 'u_owner', '[{"type":"p","children":[{"text":"x"}]}]'
+
+	text := "First line\nsecond " + strings.Repeat("光", 2980)
+	rec = doReq(t, h, http.MethodPost, path, "u_owner", map[string]any{"anchorVersion": 1, "blockId": "b1", "text": text})
+	var discussion struct {
+		ID       string
+		Comments []struct{ ID, Text string }
+	}
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &discussion) != nil ||
+		len(discussion.Comments) != 1 || discussion.Comments[0].Text != text {
+		t.Fatalf("a plain comment → %d %s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPatch, "/api/comments/"+discussion.Comments[0].ID, "u_owner", map[string]any{"text": "Edited"})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"text":"Edited"`) {
+		t.Fatalf("edit → %d %s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodGet, path, "u_owner", nil)
+	var listed []struct {
+		Comments []struct{ Text string }
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &listed) != nil ||
+		len(listed) != 1 || listed[0].Comments[0].Text != "Edited" {
+		t.Fatalf("list → %d %s", rec.Code, rec.Body.String())
+	}
+
+	if _, err := st.Pool().Exec(context.Background(), `INSERT INTO material_comments (id, discussion_id, user_id, text)
+		SELECT 'com_http_cap_' || n, $1, 'u_owner', 'x'
 		FROM generate_series(2, $2::int) n`, discussion.ID, store.CommentsPerNote); err != nil {
 		t.Fatal(err)
 	}
+	small := map[string]any{"anchorVersion": 1, "text": "hi"}
 	if rec := doReq(t, h, http.MethodPost, path, "u_owner", small); rec.Code != http.StatusConflict || errorCode(t, rec) != "comment_limit" {
 		t.Fatalf("a comment past the cap → %d %s, want 409 comment_limit", rec.Code, rec.Body.String())
 	}

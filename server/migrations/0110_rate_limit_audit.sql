@@ -41,6 +41,15 @@ CREATE TABLE bank_comment_notices (
   sent_at    timestamptz
 );
 
+-- Note comments are plain text of at most 3,000 characters (Epo 2026-10-24):
+-- no rich content and no JSON byte cap. Existing comments keep the one
+-- paragraph's text both writers sent.
+ALTER TABLE material_comments ADD COLUMN text text NOT NULL DEFAULT ''
+  CHECK (char_length(text) <= 3000);
+UPDATE material_comments SET text = left(COALESCE(content_rich #>> '{0,children,0,text}', ''), 3000);
+ALTER TABLE material_comments ALTER COLUMN text DROP DEFAULT;
+ALTER TABLE material_comments DROP COLUMN content_rich;
+
 -- The thinking canvas is removed whole (Epo 2026-10-24, Q242): no data
 -- exists, and a replacement is planned.
 DROP TABLE canvases;

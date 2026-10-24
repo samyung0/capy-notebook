@@ -556,16 +556,17 @@ type Discussion struct {
 }
 
 type Comment struct {
-	ID              string          `json:"id"`
-	DiscussionID    string          `json:"discussionId"`
-	UserID          string          `json:"userId"`
-	AuthorName      string          `json:"authorName"`
-	AuthorAvatarURL string          `json:"authorAvatarUrl,omitempty"`
-	ContentRich     json.RawMessage `json:"contentRich"`
-	IsEdited        bool            `json:"isEdited"`
-	IsDeleted       bool            `json:"isDeleted"`
-	CreatedAt       time.Time       `json:"createdAt"`
-	UpdatedAt       time.Time       `json:"updatedAt"`
+	ID              string `json:"id"`
+	DiscussionID    string `json:"discussionId"`
+	UserID          string `json:"userId"`
+	AuthorName      string `json:"authorName"`
+	AuthorAvatarURL string `json:"authorAvatarUrl,omitempty"`
+	// Text is empty for a deleted comment.
+	Text      string    `json:"text"`
+	IsEdited  bool      `json:"isEdited"`
+	IsDeleted bool      `json:"isDeleted"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // MaterialRef is one row in the unified left-panel materials list, aggregating

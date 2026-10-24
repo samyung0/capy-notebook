@@ -1247,7 +1247,6 @@ components:
           type: string
         authorName:
           type: string
-        contentRich: {}
         createdAt:
           format: date-time
           type: string
@@ -1259,6 +1258,8 @@ components:
           type: boolean
         isEdited:
           type: boolean
+        text:
+          type: string
         updatedAt:
           format: date-time
           type: string
@@ -1269,7 +1270,7 @@ components:
         - discussionId
         - userId
         - authorName
-        - contentRich
+        - text
         - isEdited
         - isDeleted
         - createdAt
@@ -1428,15 +1429,12 @@ components:
           format: uri
           readOnly: true
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
-        - contentRich
+        - text
       type: object
     CreateConversationReq:
       additionalProperties: false
@@ -1477,17 +1475,16 @@ components:
           minimum: 1
           type: integer
         blockId:
+          maxLength: 128
+          minLength: 1
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
         - anchorVersion
-        - contentRich
+        - text
       type: object
     CreateEmbeddedMaterialReq:
       additionalProperties: false
@@ -6607,15 +6604,12 @@ components:
           format: uri
           readOnly: true
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
-        - contentRich
+        - text
       type: object
     UpdateConversationReq:
       additionalProperties: false

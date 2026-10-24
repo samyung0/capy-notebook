@@ -1151,23 +1151,24 @@ export const UpdateMaterialCommentParams = zod.object({
   "id": zod.string()
 })
 
+export const updateMaterialCommentBodyTextMax = 3000;
 
 
 
 export const UpdateMaterialCommentBody = zod.object({
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
+  "text": zod.string().min(1).max(updateMaterialCommentBodyTextMax)
 })
 
 export const UpdateMaterialCommentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
-  "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
+  "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
@@ -1325,23 +1326,24 @@ export const CreateMaterialCommentParams = zod.object({
   "id": zod.string()
 })
 
+export const createMaterialCommentBodyTextMax = 3000;
 
 
 
 export const CreateMaterialCommentBody = zod.object({
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
+  "text": zod.string().min(1).max(createMaterialCommentBodyTextMax)
 })
 
 export const CreateMaterialCommentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
-  "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
+  "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
@@ -3433,12 +3435,12 @@ export const ListMaterialDiscussionsResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
-  "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
+  "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })),
@@ -3466,6 +3468,9 @@ export const createMaterialDiscussionBodyAnchorQuoteMax = 1000;
 export const createMaterialDiscussionBodyAnchorStartMax = 4096;
 
 
+export const createMaterialDiscussionBodyBlockIdMax = 128;
+
+export const createMaterialDiscussionBodyTextMax = 3000;
 
 
 
@@ -3474,8 +3479,8 @@ export const CreateMaterialDiscussionBody = zod.object({
   "anchorQuote": zod.string().max(createMaterialDiscussionBodyAnchorQuoteMax).optional(),
   "anchorStart": zod.string().max(createMaterialDiscussionBodyAnchorStartMax).optional(),
   "anchorVersion": zod.int().min(1),
-  "blockId": zod.string().optional(),
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
+  "blockId": zod.string().min(1).max(createMaterialDiscussionBodyBlockIdMax).optional(),
+  "text": zod.string().min(1).max(createMaterialDiscussionBodyTextMax)
 })
 
 export const CreateMaterialDiscussionResponse = zod.object({
@@ -3491,12 +3496,12 @@ export const CreateMaterialDiscussionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
-  "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
+  "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })),

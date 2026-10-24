@@ -515,8 +515,11 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - A note holds at most 500 comments in its open discussions: each
   discussion's opening comment and every reply, deleted ones included (a
   deleted comment keeps its row in the thread, so deleting frees no place;
-  deleting a whole discussion does) (409 `comment_limit`). A comment's JSON is at most 32 KiB (422), well above the
-  3,000-character box (rate-limit audit M9, `server/internal/store/row_caps.go`).
+  deleting a whole discussion does) (409 `comment_limit`; rate-limit audit
+  M9, `server/internal/store/row_caps.go`). A comment is plain text of at most
+  3,000 characters and carries no rich content, so there is no byte cap
+  beyond the routes' 64 KiB body limit
+  ([plate-editor.md](frontend/plate-editor.md#relational-comments-with-yjs-anchors)).
 - Signed-in viewers get read-only collaboration tokens for content documents
   (never quiz keys): the collaboration server joins them read-only, relays no
   awareness to or from them and sends them no comment relays (Epo 2026-10-10)

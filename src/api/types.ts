@@ -441,18 +441,9 @@ export type CreateEmbeddedMaterialReq = Omit<
   GenCreateEmbeddedMaterialReq,
   'questions'
 > & { questions?: Question[] };
-export type CreateDiscussionReq = Omit<
-  GenCreateDiscussionReq,
-  'contentRich'
-> & {
-  contentRich: import('@/features/materials/document').MaterialValue;
-};
-export type CreateCommentReq = Omit<GenCreateCommentReq, 'contentRich'> & {
-  contentRich: import('@/features/materials/document').MaterialValue;
-};
-export type UpdateCommentReq = Omit<GenUpdateCommentReq, 'contentRich'> & {
-  contentRich: import('@/features/materials/document').MaterialValue;
-};
+export type CreateDiscussionReq = GenCreateDiscussionReq;
+export type CreateCommentReq = GenCreateCommentReq;
+export type UpdateCommentReq = GenUpdateCommentReq;
 
 /** Ownership moves through the transfer endpoint, never through an invite or a
  * role change, so those bodies exclude it. */
@@ -688,13 +679,8 @@ export type {
 } from './gen/model';
 
 /* ---------------- Plate collaboration ---------------- */
-export type MaterialComment = Omit<GenComment, 'contentRich'> & {
-  contentRich: import('@/features/materials/document').MaterialValue | null;
-};
-
-export type MaterialDiscussion = Omit<GenDiscussion, 'comments'> & {
-  comments: MaterialComment[];
-};
+export type MaterialComment = GenComment;
+export type MaterialDiscussion = GenDiscussion;
 
 export type {
   BrowserSourceSession as SourceSession,

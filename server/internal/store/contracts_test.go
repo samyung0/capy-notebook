@@ -2,8 +2,10 @@ package store
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
@@ -68,21 +70,15 @@ func TestInviteTokensAreBearerSafe(t *testing.T) {
 	}
 }
 
-func TestCommentContentMustBePlateNodes(t *testing.T) {
-	valid, err := json.Marshal(materialdoc.Empty().Value)
-	if err != nil {
-		t.Fatal(err)
+func TestCommentTextMustBePlain(t *testing.T) {
+	for _, valid := range []string{"hi", "two\nlines\tand a tab", strings.Repeat("光", fieldlimits.Comment)} {
+		if err := validateCommentText(valid); err != nil {
+			t.Errorf("plain text %.20q refused: %v", valid, err)
+		}
 	}
-	if err := validateRichContent(valid); err != nil {
-		t.Fatalf("valid Plate fragment was rejected: %v", err)
-	}
-	for _, invalid := range []json.RawMessage{
-		json.RawMessage(`[]`),
-		json.RawMessage(`[{"type":"p","children":[]}]`),
-		json.RawMessage(`{"type":"p"}`),
-	} {
-		if err := validateRichContent(invalid); err == nil {
-			t.Errorf("invalid Plate fragment was accepted: %s", invalid)
+	for _, invalid := range []string{"", " \n\t", strings.Repeat("a", fieldlimits.Comment+1), "a\x00b", "a\rb", "a\u0085b"} {
+		if err := validateCommentText(invalid); err == nil {
+			t.Errorf("text %.20q accepted", invalid)
 		}
 	}
 }

@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -23,20 +22,20 @@ func TestRowCapsRefuseThePastTheLimitRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rich := json.RawMessage(`[{"type":"p","children":[{"text":"hi"}]}]`)
+	commentText := "hi"
 
-	discussion, err := s.CreateCommentDiscussion(ctx, note.ID, owner, nil, nil, nil, 1, "", rich)
+	discussion, err := s.CreateCommentDiscussion(ctx, note.ID, owner, nil, nil, nil, 1, "", commentText)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The opening comment and 497 more leave room for two replies.
-	if _, err := s.pool.Exec(ctx, `INSERT INTO material_comments (id, discussion_id, user_id, content_rich)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO material_comments (id, discussion_id, user_id, text)
 		SELECT 'com_cap_' || n, $1, $2, $3 FROM generate_series(2, $4::int) n`,
-		discussion.ID, owner, rich, CommentsPerNote-2); err != nil {
+		discussion.ID, owner, commentText, CommentsPerNote-2); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
-		reply, err := s.AddComment(ctx, discussion.ID, owner, rich)
+		reply, err := s.AddComment(ctx, discussion.ID, owner, commentText)
 		if err != nil {
 			t.Fatalf("reply under the cap: %v", err)
 		}
@@ -44,10 +43,10 @@ func TestRowCapsRefuseThePastTheLimitRow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.AddComment(ctx, discussion.ID, owner, rich); !errors.Is(err, ErrTooManyComments) {
+	if _, err := s.AddComment(ctx, discussion.ID, owner, commentText); !errors.Is(err, ErrTooManyComments) {
 		t.Fatalf("reply after replies and deletes filled the cap: %v, want ErrTooManyComments", err)
 	}
-	if _, err := s.CreateCommentDiscussion(ctx, note.ID, owner, nil, nil, nil, 1, "", rich); !errors.Is(err, ErrTooManyComments) {
+	if _, err := s.CreateCommentDiscussion(ctx, note.ID, owner, nil, nil, nil, 1, "", commentText); !errors.Is(err, ErrTooManyComments) {
 		t.Fatalf("discussion past the cap: %v, want ErrTooManyComments", err)
 	}
 

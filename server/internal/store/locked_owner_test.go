@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -35,7 +34,7 @@ func TestLockedOwnerHidesWorkspaceContentFromMembers(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	f := editorAssetFixture{t: t, s: s, ctx: ctx}
-	rich := json.RawMessage(`[{"type":"p","children":[{"text":"hello"}]}]`)
+	commentText := "hello"
 	for _, state := range []string{"suspended", "deletion_pending"} {
 		t.Run(state, func(t *testing.T) {
 			f.t = t
@@ -78,7 +77,7 @@ func TestLockedOwnerHidesWorkspaceContentFromMembers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			discussion, err := s.CreateCommentDiscussion(ctx, note.ID, member, nil, nil, nil, 1, "", rich)
+			discussion, err := s.CreateCommentDiscussion(ctx, note.ID, member, nil, nil, nil, 1, "", commentText)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,7 +131,7 @@ func TestLockedOwnerHidesWorkspaceContentFromMembers(t *testing.T) {
 			if _, err := s.CreateConversation(ctx, member, ws.ID, ""); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("member chat = %v, want not found", err)
 			}
-			if _, err := s.AddComment(ctx, discussion.ID, member, rich); !errors.Is(err, ErrNotFound) {
+			if _, err := s.AddComment(ctx, discussion.ID, member, commentText); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("member comment = %v, want not found", err)
 			}
 			roomy := planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 10 << 20}

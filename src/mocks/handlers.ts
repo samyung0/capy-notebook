@@ -2300,7 +2300,7 @@ export const handlers = [
       anchorQuote?: string;
       anchorStart?: string;
       anchorVersion?: number;
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
+      text: string;
     };
     if (body.anchorVersion == null || body.anchorVersion < 1) {
       return HttpResponse.json(
@@ -2319,12 +2319,12 @@ export const handlers = [
       comments: [
         {
           authorName: db.user.name,
-          contentRich: body.contentRich,
           createdAt: now,
           discussionId: '',
           id: uid('comment'),
           isDeleted: false,
           isEdited: false,
+          text: body.text,
           updatedAt: now,
           userId: db.user.id,
         },
@@ -2344,18 +2344,16 @@ export const handlers = [
   http.post('/api/discussions/:id/comments', async ({ params, request }) => {
     const discussion = mockDiscussions.find((item) => item.id === params.id);
     if (!discussion) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as {
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
-    };
+    const body = (await request.json()) as { text: string };
     const now = new Date().toISOString();
     const comment: MaterialDiscussion['comments'][number] = {
       authorName: db.user.name,
-      contentRich: body.contentRich,
       createdAt: now,
       discussionId: discussion.id,
       id: uid('comment'),
       isDeleted: false,
       isEdited: false,
+      text: body.text,
       updatedAt: now,
       userId: db.user.id,
     };
@@ -2372,15 +2370,13 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/comments/:id', async ({ params, request }) => {
-    const body = (await request.json()) as {
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
-    };
+    const body = (await request.json()) as { text: string };
     for (const discussion of mockDiscussions) {
       const comment = discussion.comments.find(
         (entry) => entry.id === params.id
       );
       if (!comment) continue;
-      comment.contentRich = body.contentRich;
+      comment.text = body.text;
       comment.isEdited = true;
       comment.updatedAt = new Date().toISOString();
       return HttpResponse.json(comment);
@@ -2394,7 +2390,7 @@ export const handlers = [
       );
       if (!entry) continue;
       entry.isDeleted = true;
-      entry.contentRich = null;
+      entry.text = '';
       return new HttpResponse(null, { status: 204 });
     }
     return new HttpResponse(null, { status: 404 });
