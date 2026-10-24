@@ -142,6 +142,7 @@ func renderTypeScriptLimits() []byte {
 	out.Write(renderQuestionTypeScriptLimits())
 	fmt.Fprintf(&out, "export const CHAT_CHARACTER_LIMIT = %d;\n", fieldlimits.ChatMessage)
 	fmt.Fprintf(&out, "export const COMMENT_CHARACTER_LIMIT = %d;\n", fieldlimits.Comment)
+	fmt.Fprintf(&out, "export const FILE_NAME_CHARACTER_LIMIT = %d;\n", fieldlimits.FileName)
 	fmt.Fprintf(&out, "export const VOICE_INPUT_MAX_SECONDS = %d;\n", fieldlimits.VoiceInputSeconds)
 	fmt.Fprintf(&out, "export const IMAGE_MAX_SIDE = %d;\n", imagecheck.MaxSide)
 	fmt.Fprintf(&out, "export const SOURCE_IMAGE_MAX_PIXELS = %d;\n", imagecheck.SourceMaxPixels)

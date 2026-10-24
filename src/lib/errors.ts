@@ -11,7 +11,9 @@ import {
   isTooManyIngestLeasesError,
   isWorkspaceLimitError,
 } from '@/api/client';
-import { updateFileBodyNameMax } from '@/api/gen/validators';
+// The generated limits, not the validators: this module loads on the
+// summary page, whose script builds no Zod schema (zodJitless.ts).
+import { FILE_NAME_CHARACTER_LIMIT } from '@/api/limits.generated';
 import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { CopyError } from './copyError';
@@ -292,7 +294,9 @@ function codeCopy(code: string): ErrorDescription | null {
     // File names on upload and rename (Q346).
     case 'invalid_name':
       return {
-        description: m.error_invalid_name_body({ max: updateFileBodyNameMax }),
+        description: m.error_invalid_name_body({
+          max: FILE_NAME_CHARACTER_LIMIT,
+        }),
         title: m.error_invalid_name_title(),
       };
     case 'file_extension_changed':
