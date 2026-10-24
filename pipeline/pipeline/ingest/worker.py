@@ -1647,6 +1647,9 @@ async def _chunks_for(
                 blob_path=str(payload["blobPath"]),
                 context=await asyncio.to_thread(_audio_context, ws, name),
                 second_rate_micros=_rate(_RESOURCE_AUDIO_SECOND)["creditMicrosPerUnit"],
+                credit_user_id=None
+                if payload.get("paidBy") == "system"
+                else str(payload.get("actorUserId") or ""),
                 transcript_url=transcript_url,
             )
         else:
@@ -2343,6 +2346,34 @@ async def _process_parts_bound(
         _publish_done(ws, file_id, missing)
 
 
+async def _refuse_admission(
+    job: dict, payload: dict, file_id: str, ws: str, name: str
+) -> None:
+    """End the file failed and uncharged, as an ingest the account cannot
+    take: locked, over quota, or without the credits an audio task's
+    measured cost needs."""
+    note = f"{name}: ingest refused because the account is locked or over quota."
+    indexed = await asyncio.to_thread(
+        _finish_fail,
+        file_id=file_id,
+        job_id=job["id"],
+        error=note,
+        attempt=int(job.get("attempts") or 1),
+        reservation_id=_reservation_id(payload),
+        source_revision=int(payload["sourceRevision"]),
+        source_etag=str(payload.get("sourceETag") or ""),
+        actor_user_id=str(payload.get("actorUserId") or ""),
+        workspace_id=ws,
+        error_category="accounting",
+        error_code="ingest_admission_refused",
+    )
+    if indexed is None:
+        return
+    _publish_progress(
+        ws, file_id, "failed", 100, status="failed", message=note, indexed=indexed
+    )
+
+
 async def _process_ingest_job(
     job: dict,
     payload: dict,
@@ -2376,26 +2407,7 @@ async def _process_ingest_job(
     if not await asyncio.to_thread(
         _account_allows_ingest, file_id, payload, _first_claim(job, payload)
     ):
-        note = f"{name}: ingest refused because the account is locked or over quota."
-        indexed = await asyncio.to_thread(
-            _finish_fail,
-            file_id=file_id,
-            job_id=job["id"],
-            error=note,
-            attempt=attempt,
-            reservation_id=_reservation_id(payload),
-            source_revision=source_revision,
-            source_etag=source_etag,
-            actor_user_id=str(payload.get("actorUserId") or ""),
-            workspace_id=ws,
-            error_category="accounting",
-            error_code="ingest_admission_refused",
-        )
-        if indexed is None:
-            return
-        _publish_progress(
-            ws, file_id, "failed", 100, status="failed", message=note, indexed=indexed
-        )
+        await _refuse_admission(job, payload, file_id, ws, name)
         return
     if payload.get("partsOnly") is True:
         await _process_parts_bound(job, payload, file_id, ws, name)
@@ -2567,6 +2579,10 @@ async def _process_ingest_job(
             last_wait=int(job.get("provider_waits") or 0) >= PROVIDER_WAITS_MAX,
             transcript_url=transcript_url,
         )
+    except source_text.AudioCreditsRefused:
+        await _refuse_admission(job, payload, file_id, ws, name)
+        await asyncio.to_thread(cleanup_source)
+        return
     except parser_client.ParserClientError:
         artifact = payload.get("parseArtifact")
         repair_attempts = int(payload.get("artifactRepairAttempts") or 0)

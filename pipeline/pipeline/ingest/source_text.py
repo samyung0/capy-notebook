@@ -273,6 +273,11 @@ class FiletransTerminalError(FiletransError, TerminalError):
     pass
 
 
+class AudioCreditsRefused(TerminalError):
+    """The measured task would cost more than the account's credits admit:
+    refused before any task or charge."""
+
+
 class FiletransWait(CapacityWait):
     """The job's task was submitted or is still running: the job re-pends
     without spending an attempt and polls it after ``delay_s``."""
@@ -528,6 +533,14 @@ def _task_in_flight(source_sha256: str, job_id: str) -> bool:
         return db.filetrans_task_in_flight(cur, source_sha256, job_id)
 
 
+def _credits_cover(user_id: str, cost_micros: int) -> bool:
+    with db.connect() as conn, conn.cursor() as cur:
+        covered = db.actor_has_credits(cur, user_id, cost_micros)
+        # The check may start an armed auto-reload (claim_credit_reload).
+        conn.commit()
+    return covered
+
+
 async def _provider_failure(
     state: dict[str, Any], job_id: str, attempt: int, reason: int | str
 ) -> NoReturn:
@@ -578,9 +591,12 @@ async def _submit_task(
     source_sha256: str,
     blob_path: str,
     context: str,
+    second_rate_micros: int,
+    credit_user_id: str | None,
 ) -> NoReturn:
-    """Measure the source, take a gate lease, submit one task and store it
-    with the job, which then re-pends."""
+    """Measure the source, check its cost against the account's credits,
+    take a gate lease, submit one task and store it with the job, which then
+    re-pends."""
     if not cfg.alibaba_modelstudio_key:
         raise TerminalError("audio transcription is not configured")
     if await asyncio.to_thread(_task_in_flight, source_sha256, job_id):
@@ -592,6 +608,12 @@ async def _submit_task(
         raise InputLimitError(
             "audio_duration_limit", "audio is longer than the two-hour limit"
         )
+    if credit_user_id is not None and not await asyncio.to_thread(
+        _credits_cover, credit_user_id, math.ceil(duration) * second_rate_micros
+    ):
+        # The browser upload's credit gate on the measured length, which also
+        # holds an import (Drive, OneDrive) that no browser measured.
+        raise AudioCreditsRefused("audio transcription would pass the credits left")
     call_id = await _open_task_call()
     try:
         # Read-only, this one object, and long enough for Alibaba to fetch it.
@@ -763,6 +785,7 @@ async def transcribe_audio_source(
     blob_path: str,
     context: str,
     second_rate_micros: int,
+    credit_user_id: str | None,
     transcript_url: str = "",
 ) -> tuple[list[dict[str, Any]], str, int]:
     """The source's transcript sentences, its cache key and the key's size,
@@ -770,7 +793,9 @@ async def transcribe_audio_source(
 
     A cached transcript of the same bytes is reused. Otherwise a job with no
     stored task (``stored``, the payload's ``filetrans``) measures the source
-    against the two-hour limit and submits one task under the 12-task gate,
+    against the two-hour limit and, unless the job is system-paid
+    (``credit_user_id`` None), its cost against the actor's credits, and
+    submits one task under the 12-task gate,
     and a job with one polls it, unless the worker's ``poll_task`` already
     found it succeeded (``stored`` is then its state and ``transcript_url``
     its result link). Only a usable transcript is charged: whole seconds of
@@ -800,6 +825,8 @@ async def transcribe_audio_source(
                 source_sha256=source_sha256,
                 blob_path=blob_path,
                 context=context,
+                second_rate_micros=second_rate_micros,
+                credit_user_id=credit_user_id,
             )
         if not transcript_url:
             state, transcript_url = await poll_task(

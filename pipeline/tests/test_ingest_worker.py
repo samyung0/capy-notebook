@@ -1350,20 +1350,11 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     worker._cleanup_payload_source(job["payload"])
 
 
-async def test_a_running_transcription_task_re_pends_its_job_as_processing(
-    monkeypatch, tmp_path
-):
-    """While its task runs at Alibaba an audio job gives its claim back with
-    the attempt undone, after the task's poll delay, as a poll rather than a
-    capacity wait, and its file shows transcribing rather than queued. The
-    poll comes first: a claim that finds the task running neither fetches,
-    hashes nor measures the source. Once it succeeded, the claim takes the
-    source and finishes with the result link it polled."""
-    from pipeline.ingest import source_text
-
-    yields: list[tuple] = []
+def _audio_job(monkeypatch, tmp_path, filetrans=None):
+    """An audio ingest job with its database, bucket and providers faked:
+    the job, what touched the source (``fetch``), and the re-pends."""
     touched: list[str] = []
-    stored = {"taskId": "task-1", "callId": "pc_1", "sha256": "ab" * 32}
+    yields: list[tuple] = []
 
     async def _pin(_ws):
         return object()
@@ -1378,25 +1369,6 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
 
     async def _no_donor(**_k):
         return None
-
-    polls = [source_text.FiletransWait(7), "https://result.test/r.json"]
-
-    async def _poll(state, *, job_id, attempt):
-        assert (state, job_id, attempt) == (stored, "job_audio", 1)
-        answer = polls.pop(0)
-        if isinstance(answer, Exception):
-            raise answer
-        return {**state, "callId": "pc_2"}, answer
-
-    async def _finish(**kwargs):
-        assert kwargs["stored"] == {**stored, "callId": "pc_2"}
-        assert kwargs["transcript_url"] == "https://result.test/r.json"
-        assert touched == ["fetch"]
-        raise source_text.FiletransWait(9)
-
-    def _measured(_path):
-        touched.append("measure")
-        return 60.0
 
     class FakeS3:
         def get_object(self, **_kwargs):
@@ -1420,9 +1392,6 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
     monkeypatch.setattr(worker.store, "find_ready_donor", _no_donor)
     monkeypatch.setattr(worker, "_set_file_status", lambda *_a, **_k: None)
     monkeypatch.setattr(worker, "_audio_context", lambda *_a: "Workspace: Bio")
-    monkeypatch.setattr(worker.source_text, "poll_task", _poll)
-    monkeypatch.setattr(worker.source_text, "transcribe_audio_source", _finish)
-    monkeypatch.setattr(worker.source_text, "audio_duration_seconds", _measured)
     monkeypatch.setattr(
         worker, "_yield_for_capacity", lambda *a, **k: yields.append((a, k))
     )
@@ -1452,7 +1421,7 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
                 "object_storage_write",
             ],
         },
-        filetrans=stored,
+        **({"filetrans": filetrans} if filetrans else {}),
     )
     payload["resourceRates"]["audio_transcription_second"] = {
         "version": 2,
@@ -1462,6 +1431,44 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
     for key in ("parseArtifact", "parseJobId"):
         payload.pop(key)
     job = {"id": "job_audio", "type": "ingest", "attempts": 1, "payload": payload}
+    return job, touched, yields
+
+
+async def test_a_running_transcription_task_re_pends_its_job_as_processing(
+    monkeypatch, tmp_path
+):
+    """While its task runs at Alibaba an audio job gives its claim back with
+    the attempt undone, after the task's poll delay, as a poll rather than a
+    capacity wait, and its file shows transcribing rather than queued. The
+    poll comes first: a claim that finds the task running neither fetches,
+    hashes nor measures the source. Once it succeeded, the claim takes the
+    source and finishes with the result link it polled."""
+    from pipeline.ingest import source_text
+
+    stored = {"taskId": "task-1", "callId": "pc_1", "sha256": "ab" * 32}
+    job, touched, yields = _audio_job(monkeypatch, tmp_path, stored)
+    polls = [source_text.FiletransWait(7), "https://result.test/r.json"]
+
+    async def _poll(state, *, job_id, attempt):
+        assert (state, job_id, attempt) == (stored, "job_audio", 1)
+        answer = polls.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return {**state, "callId": "pc_2"}, answer
+
+    async def _finish(**kwargs):
+        assert kwargs["stored"] == {**stored, "callId": "pc_2"}
+        assert kwargs["transcript_url"] == "https://result.test/r.json"
+        assert touched == ["fetch"]
+        raise source_text.FiletransWait(9)
+
+    def _measured(_path):
+        touched.append("measure")
+        return 60.0
+
+    monkeypatch.setattr(worker.source_text, "poll_task", _poll)
+    monkeypatch.setattr(worker.source_text, "transcribe_audio_source", _finish)
+    monkeypatch.setattr(worker.source_text, "audio_duration_seconds", _measured)
 
     with pytest.raises(source_text.FiletransWait):
         await worker.process_ingest_job(job)
@@ -1474,6 +1481,40 @@ async def test_a_running_transcription_task_re_pends_its_job_as_processing(
     with pytest.raises(source_text.FiletransWait):
         await worker.process_ingest_job(job)
     assert yields[1][0][8] == 9 and touched == ["fetch"]
+    worker._cleanup_payload_source(job["payload"])
+
+
+async def test_an_audio_task_the_credits_cannot_cover_ends_the_file_refused(
+    monkeypatch, tmp_path
+):
+    """The measured cost failed the credit gate before any task: the file
+    ends failed as an ingest the account cannot take, uncharged, and the
+    actor's credits were what was checked."""
+    from pipeline.ingest import source_text
+
+    job, _touched, yields = _audio_job(monkeypatch, tmp_path)
+    failed: list[dict] = []
+
+    async def _refused(**kwargs):
+        assert kwargs["credit_user_id"] == job["payload"]["actorUserId"]
+        raise source_text.AudioCreditsRefused("over the credits left")
+
+    def _finish_fail(**kwargs):
+        failed.append(kwargs)
+        return False
+
+    monkeypatch.setattr(worker.source_text, "transcribe_audio_source", _refused)
+    monkeypatch.setattr(worker, "_finish_fail", _finish_fail)
+    monkeypatch.setattr(worker, "_publish_progress", lambda *_a, **_k: None)
+
+    await worker.process_ingest_job(job)
+
+    (refusal,) = failed
+    assert (refusal["error_category"], refusal["error_code"]) == (
+        "accounting",
+        "ingest_admission_refused",
+    )
+    assert "locked or over quota" in refusal["error"] and not yields
     worker._cleanup_payload_source(job["payload"])
 
 

@@ -1258,6 +1258,47 @@ def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
         )
 
 
+def test_an_audio_cost_is_held_to_the_upload_estimate_headroom(workspace):
+    """An audio task's measured cost passes while it lands at most 30% of the
+    monthly limit past what is available, the browser upload's gate."""
+    import psycopg
+
+    uid = workspace.user_id
+    credit = 1_000_000
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            limit = db._credit_limit_micros(cur, uid)
+        before = conn.execute(
+            "SELECT used_micros, purchased_micros FROM user_credits WHERE user_id = %s",
+            (uid,),
+        ).fetchone()
+        try:
+            conn.execute(
+                """
+                INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+                VALUES (%s, %s, 0)
+                ON CONFLICT (user_id) DO UPDATE
+                  SET used_micros = EXCLUDED.used_micros, purchased_micros = 0
+                """,
+                (uid, limit - 10 * credit),
+            )
+            headroom = limit * 3 // 10
+            with conn.cursor() as cur:
+                assert db.actor_has_credits(cur, uid, 10 * credit + headroom)
+                assert not db.actor_has_credits(cur, uid, 10 * credit + headroom + 1)
+                assert db.actor_has_credits(cur, uid)
+        finally:
+            conn.execute(
+                "UPDATE user_credits SET used_micros = %s, purchased_micros = %s"
+                " WHERE user_id = %s",
+                (
+                    before[0] if before else 0,
+                    before[1] if before else 800 * credit,
+                    uid,
+                ),
+            )
+
+
 def test_actor_credits_spend_purchased_balance_and_admit_a_pending_reload(workspace):
     import psycopg
 

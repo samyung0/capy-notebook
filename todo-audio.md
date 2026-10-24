@@ -230,7 +230,11 @@ Second review fixes (2026-10-24):
       Delete is disabled while an audio file processes. Cascades still end
       the job; any job end with a task stored frees its lease and abandons
       its call at once (0109 trigger `jobs_end_filetrans_call`).
-- [ ] Waiting on Epo: a length check for imported (Drive/OneDrive) audio.
+- [x] Imported audio (Epo 2026-10-24, "check before submit"): before any
+      task the worker holds the measured cost to the browser upload's
+      credit gate (0.3x the monthly limit past what is available), which
+      also rechecks browser uploads; a refusal is the
+      `ingest_admission_refused` failure, uncharged.
 
 ## Part B: voice input (Flash)
 

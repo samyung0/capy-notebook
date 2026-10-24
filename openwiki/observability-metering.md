@@ -1317,7 +1317,12 @@ dialog shows the estimate from the length the browser reads, and the worker's
 measured duration remains authoritative. A file whose length the browser
 cannot read is refused before upload (no estimate is possible), and the upload
 request requires `durationSeconds` for audio, so the credit-estimate gate
-always has a number.
+always has a number. The worker applies the same gate again before it
+submits, on the measured length (`ceil(seconds) ×
+audio_transcription_second` against `db.actor_has_credits`' headroom, the
+pipeline's copy of `creditHeadroomNumerator` / `creditHeadroomDenominator`),
+which is the only gate an imported recording meets; a refusal is the
+`ingest_admission_refused` failure, uncharged and with no task.
 
 Chat voice input (`server/internal/httpapi/voice.go`,
 [agentic-retrieval.md](agentic-retrieval.md#chat-voice-input)) is charged by

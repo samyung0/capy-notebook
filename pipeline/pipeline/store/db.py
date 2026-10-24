@@ -2531,13 +2531,22 @@ def _credit_limit_micros(cur, user_id: str) -> int:
     return int(cur.fetchone()[0])
 
 
-def actor_has_credits(cur, user_id: str) -> bool:
+# The upload estimate's headroom: a job may land at most this share of the
+# monthly limit past what is available (creditHeadroomNumerator and
+# creditHeadroomDenominator in server/internal/store/credits.go).
+_CREDIT_HEADROOM = (3, 10)
+
+
+def actor_has_credits(cur, user_id: str, estimate_micros: int = 0) -> bool:
     """Unlocked lifecycle and credits check for ingest claim time.
 
     Available is the monthly allowance left plus the purchased balance minus
     reservations; at zero, work is still admitted during a started auto-reload's
     60-second window, or when this claim starts an armed one
-    (claim_credit_reload).
+    (claim_credit_reload). ``estimate_micros`` (an audio task's measured cost)
+    adds the browser upload's estimate gate (Go ``AssertCreditsForEstimate``):
+    refused when the cost would land more than 30% of the monthly limit past
+    what is available.
     """
     if not user_id:
         return False
@@ -2584,7 +2593,13 @@ def actor_has_credits(cur, user_id: str) -> bool:
         # Mirrors roll_user_credits: owed credits come off the new allowance.
         used = min(max(-purchased, 0), limit)
         purchased += used
-    if max(limit - used, 0) + purchased - reserved > 0 or reload_pending:
-        return True
-    cur.execute("SELECT claim_credit_reload(%s)", (user_id,))
-    return bool(cur.fetchone()[0])
+    available = max(limit - used, 0) + purchased - reserved
+    if available <= 0 and not reload_pending:
+        cur.execute("SELECT claim_credit_reload(%s)", (user_id,))
+        if not cur.fetchone()[0]:
+            return False
+    numerator, denominator = _CREDIT_HEADROOM
+    return (
+        estimate_micros <= 0
+        or (estimate_micros - available) * denominator <= limit * numerator
+    )

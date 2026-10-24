@@ -1334,7 +1334,18 @@ transcript, so identical uploads make one task. A worker without
    browser recorders write) or an MP4 whose header boxes name a shorter one
    is measured all the same. An MP4 edit list still applies, as in playback.
    Over two hours is the `audio_duration_limit` index limit, before any task
-   or charge; a file ffmpeg cannot read fails at once.
+   or charge; a file ffmpeg cannot read fails at once. Then the measured
+   cost, ceil(seconds) at the job's `audio_transcription_second` rate, faces
+   the browser upload's credit gate (Epo 2026-10-24, "check before submit"):
+   it may land at most 0.3x the monthly limit past the actor's available
+   credits (`db.actor_has_credits` with the estimate, the same rule as Go's
+   `AssertCreditsForEstimate`). This holds imported audio (Drive, OneDrive),
+   which no browser measured, and rechecks a browser upload on its measured
+   length; a system-paid job is not checked. A refusal ends the file as an
+   ingest the account cannot take (failed, `accounting` /
+   `ingest_admission_refused`, "ingest refused because the account is locked
+   or over quota"), before any gate lease, link or task, with nothing
+   charged.
 2. The call opens its `provider_calls` row (kind `audio`) under its own gate:
    at most 12 tasks in flight per environment (`provider_capacity_leases`,
    key `filetrans`, one unit a task), counted across every worker and every

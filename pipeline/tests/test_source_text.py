@@ -387,7 +387,15 @@ class _Flow:
         self.cache: dict[str, bytes] = {}
         self.gate_full = False
         self.in_flight = False
+        # The actor's credit gate: whether it admits, and the costs it saw.
+        self.credits_cover = True
+        self.costs: list[tuple[str, int]] = []
+        self.credit_user_id: str | None = "u_1"
         events = self.events
+
+        def credits_cover(user_id, cost):
+            self.costs.append((user_id, cost))
+            return self.credits_cover
 
         @asynccontextmanager
         async def no_lock(_identity):
@@ -453,6 +461,7 @@ class _Flow:
         monkeypatch.setattr(source_text.blobstore, "presign_get", presign)
         monkeypatch.setattr(source_text, "audio_duration_seconds", lambda _p: duration)
         monkeypatch.setattr(source_text, "_task_in_flight", lambda *_a: self.in_flight)
+        monkeypatch.setattr(source_text, "_credits_cover", credits_cover)
         monkeypatch.setattr(source_text, "_store_state", store)
         monkeypatch.setattr(source_text, "_submit", submit)
         monkeypatch.setattr(source_text, "_poll", poll)
@@ -474,6 +483,7 @@ class _Flow:
             blob_path="sources/lecture.mp3",
             context="Workspace: Bio",
             second_rate_micros=16_667,
+            credit_user_id=self.credit_user_id,
             transcript_url=transcript_url,
         )
 
@@ -996,6 +1006,26 @@ async def test_a_full_gate_or_another_jobs_task_waits_without_a_task(monkeypatch
         await flow.claim()
     assert wait.value.delay_s == 30
     assert flow.events == [] and flow.payload == {}
+
+
+@pytest.mark.asyncio
+async def test_a_task_past_the_credits_left_is_refused_before_any_call(monkeypatch):
+    """The browser upload's credit gate on the measured cost, for imports
+    too: refused with no gate lease, no link and no task; a system-paid job
+    is not checked."""
+    flow = _Flow(monkeypatch)
+    flow.credits_cover = False
+
+    with pytest.raises(source_text.AudioCreditsRefused):
+        await flow.claim()
+
+    assert flow.costs == [("u_1", 61 * 16_667)]
+    assert flow.events == [] and flow.payload == {}
+
+    flow.credit_user_id = None
+    with pytest.raises(source_text.FiletransWait):
+        await flow.claim()
+    assert len(flow.costs) == 1 and flow.kinds().count("submit") == 1
 
 
 @pytest.mark.asyncio
