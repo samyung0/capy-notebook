@@ -726,10 +726,9 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
 /// The version gate: a JOIN or draft send without the client protocol (a tab
 /// from before the gate), below its family's minimum (`MIN_MATERIAL`,
 /// `MIN_SOURCE`, read from `protocol.rs`) or above the server's own (a
-/// rollback) is refused as `collaboration-outdated` before any lookup; one
-/// below the server's own still joins a material room (the DOCX engine round's
-/// pin raised only `MIN_SOURCE`). A refused draft send stores nothing and is
-/// counted by family.
+/// rollback) is refused as `collaboration-outdated` before any lookup; the
+/// family's minimum itself still joins a material room. A refused draft send
+/// stores nothing and is counted by family.
 #[tokio::test]
 async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let Some(env) = env() else { return };
@@ -760,7 +759,7 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
         assert_eq!(reason, "collaboration-outdated", "{protocol:?}");
     }
     let mut previous = Client::open(server.port).await;
-    let protocol = client_protocol() - 1;
+    let protocol = protocol_constant("MIN_MATERIAL");
     previous
         .send(0, &join_payload(&room, &write, Some(protocol)))
         .await;
