@@ -518,7 +518,7 @@ func TestUploadQueueFullLineSpendsNoClassToken(t *testing.T) {
 // the last place that arrives while another asks its class finds the place
 // taken and spends no token (Q350; security regression: rate-limit audit r3
 // N-1).
-func TestUploadQueueChecksTheLineAndSpendsTheClassTokenAtOnce(t *testing.T) {
+func TestUploadQueueTakesItsPlaceBeforeSpendingTheClassToken(t *testing.T) {
 	q := newUploadQueue(nil)
 	asked, _ := classByUser(q, map[string]bool{})
 	fillBudget(t, q)

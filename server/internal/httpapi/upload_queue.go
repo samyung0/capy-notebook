@@ -42,10 +42,11 @@ const (
 	// uploadQueueMax bounds waiting tickets that spend or spent their class
 	// token as they take their place (Epo 2026-10-24, Q318: 2,000; a ticket
 	// is a small in-memory record). The bound is soft: a ticket the class
-	// admits later joins them without a check, as does one that would have
-	// started at once, past 2,000 if the line is full. Each user's 20 holds
-	// from the moment a ticket takes its place, so memory stays bounded
-	// (Q350).
+	// admits later joins them without a check, and under a burst so can
+	// tickets that would start at once as they take their place but do not
+	// once their class answers, past 2,000 if the line is full. Each user's
+	// 20 holds from the moment a ticket takes its place, so memory stays
+	// bounded (Q350).
 	uploadQueueMax     = 2000
 	uploadQueuePerUser = 20
 	// uploadBodyRate is the slowest an upload's body may arrive on average:

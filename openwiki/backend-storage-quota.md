@@ -424,7 +424,8 @@ ticket takes its place under the line's lock, then spends its token outside
 it, so a slow Redis delays only that ticket (Q350). While it asks it holds
 its place and counts toward both limits, but gets no turn and blocks
 nothing. The 2,000 is soft: a ticket the class admits later joins without a
-check, as does one that would have started at once. Each user's 20 holds from
+check, and under a burst so can tickets that would start at once as they take
+their place but do not once their class answers. Each user's 20 holds from
 the moment a ticket takes its place. The browser long-polls
 `GET /api/uploads/tickets/{id}?position=N`, which answers at once when the
 turn comes, when the ticket's place differs from N but no sooner than 2 s
