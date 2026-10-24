@@ -1,0 +1,972 @@
+{
+  "users": 3000,
+  "measured_seconds": 120,
+  "overall": {
+    "label": "overall",
+    "count": 64466,
+    "per_second": 537.2166666666667,
+    "p50_ms": 25.250904,
+    "p95_ms": 2068.5798,
+    "p99_ms": 3327.4731,
+    "max_ms": 4240.234,
+    "error_rate": 0
+  },
+  "labels": [
+    {
+      "label": "GET /api/learning/progress",
+      "count": 8272,
+      "per_second": 68.93333333333334,
+      "p50_ms": 19.59982,
+      "p95_ms": 2064.051,
+      "p99_ms": 2233.8938,
+      "max_ms": 2314.3838,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/review/ratings",
+      "count": 6847,
+      "per_second": 57.05833333333333,
+      "p50_ms": 15.190588,
+      "p95_ms": 1309.4509,
+      "p99_ms": 1673.9038,
+      "max_ms": 1820.8923,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/materials",
+      "count": 4684,
+      "per_second": 39.03333333333333,
+      "p50_ms": 177.30592,
+      "p95_ms": 888.4331,
+      "p99_ms": 1023.2287,
+      "max_ms": 1075.1099,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/notifications/unread-count",
+      "count": 3789,
+      "per_second": 31.575,
+      "p50_ms": 299.8409,
+      "p95_ms": 652.668,
+      "p99_ms": 785.32587,
+      "max_ms": 812.57837,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/chapters",
+      "count": 3705,
+      "per_second": 30.875,
+      "p50_ms": 370.38245,
+      "p95_ms": 901.75854,
+      "p99_ms": 1022.24445,
+      "max_ms": 1080.8484,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/files",
+      "count": 3372,
+      "per_second": 28.1,
+      "p50_ms": 550.277,
+      "p95_ms": 1160.7261,
+      "p99_ms": 1275.5702,
+      "max_ms": 1311.8384,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/stream (open)",
+      "count": 2717,
+      "per_second": 22.641666666666666,
+      "p50_ms": 209.50009,
+      "p95_ms": 590.1006,
+      "p99_ms": 783.6308,
+      "max_ms": 797.82056,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/materials/{id}/collaboration-token",
+      "count": 2713,
+      "per_second": 22.608333333333334,
+      "p50_ms": 14.133226,
+      "p95_ms": 3180.4429,
+      "p99_ms": 3454.625,
+      "max_ms": 3750.299,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/me",
+      "count": 2526,
+      "per_second": 21.05,
+      "p50_ms": 12.912441,
+      "p95_ms": 1908.6061,
+      "p99_ms": 1990.9043,
+      "max_ms": 2050.2388,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials/{id}",
+      "count": 2315,
+      "per_second": 19.291666666666668,
+      "p50_ms": 14.319265,
+      "p95_ms": 3269.9495,
+      "p99_ms": 3596.9944,
+      "max_ms": 3731.2688,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials/{id}/discussions",
+      "count": 2305,
+      "per_second": 19.208333333333332,
+      "p50_ms": 6.066104,
+      "p95_ms": 740.7146,
+      "p99_ms": 997.77466,
+      "max_ms": 1071.0342,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/materials/{id}/collaboration-token (read)",
+      "count": 2197,
+      "per_second": 18.308333333333334,
+      "p50_ms": 14.298065,
+      "p95_ms": 3147.048,
+      "p99_ms": 3503.8909,
+      "max_ms": 3737.6626,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/quizzes/{id}",
+      "count": 1970,
+      "per_second": 16.416666666666668,
+      "p50_ms": 18.065212,
+      "p95_ms": 3737.623,
+      "p99_ms": 4111.763,
+      "max_ms": 4230.231,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/study",
+      "count": 1962,
+      "per_second": 16.35,
+      "p50_ms": 685.5537,
+      "p95_ms": 2672.6565,
+      "p99_ms": 2715.4077,
+      "max_ms": 2741.2336,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/flashcards/{id}",
+      "count": 1868,
+      "per_second": 15.566666666666666,
+      "p50_ms": 20.431095,
+      "p95_ms": 3798.5125,
+      "p99_ms": 4167.971,
+      "max_ms": 4240.234,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/flashcards/{id}/cards",
+      "count": 1836,
+      "per_second": 15.3,
+      "p50_ms": 6.788697,
+      "p95_ms": 763.5154,
+      "p99_ms": 998.7859,
+      "max_ms": 1062.0182,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}",
+      "count": 1552,
+      "per_second": 12.933333333333334,
+      "p50_ms": 1277.1674,
+      "p95_ms": 2194.0938,
+      "p99_ms": 2274.9395,
+      "max_ms": 2290.2312,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/recent",
+      "count": 1026,
+      "per_second": 8.55,
+      "p50_ms": 822.9744,
+      "p95_ms": 1241.1343,
+      "p99_ms": 1300.5491,
+      "max_ms": 1317.3073,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/conversations",
+      "count": 958,
+      "per_second": 7.983333333333333,
+      "p50_ms": 634.3877,
+      "p95_ms": 954.67114,
+      "p99_ms": 1046.2347,
+      "max_ms": 1072.7598,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/attempts",
+      "count": 879,
+      "per_second": 7.325,
+      "p50_ms": 5.525191,
+      "p95_ms": 478.70898,
+      "p99_ms": 641.998,
+      "max_ms": 794.8977,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/quizzes/{id}/attempts",
+      "count": 878,
+      "per_second": 7.316666666666666,
+      "p50_ms": 25.159954,
+      "p95_ms": 1898.9652,
+      "p99_ms": 2473.3752,
+      "max_ms": 2539.3723,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/members",
+      "count": 627,
+      "per_second": 5.225,
+      "p50_ms": 500.91748,
+      "p95_ms": 1009.8665,
+      "p99_ms": 1058.0691,
+      "max_ms": 1074.2686,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/notifications/read",
+      "count": 594,
+      "per_second": 4.95,
+      "p50_ms": 3.573816,
+      "p95_ms": 512.1686,
+      "p99_ms": 704.4499,
+      "max_ms": 792.70465,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/notifications",
+      "count": 592,
+      "per_second": 4.933333333333334,
+      "p50_ms": 3.884486,
+      "p95_ms": 507.60782,
+      "p99_ms": 778.0944,
+      "max_ms": 787.80725,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces",
+      "count": 466,
+      "per_second": 3.8833333333333333,
+      "p50_ms": 999.61884,
+      "p95_ms": 1285.8439,
+      "p99_ms": 1302.588,
+      "max_ms": 1312.6753,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/bank/progress",
+      "count": 466,
+      "per_second": 3.8833333333333333,
+      "p50_ms": 737.0257,
+      "p95_ms": 1022.31055,
+      "p99_ms": 1059.407,
+      "max_ms": 1070.4976,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files",
+      "count": 450,
+      "per_second": 3.75,
+      "p50_ms": 474.6399,
+      "p95_ms": 756.2953,
+      "p99_ms": 791.46454,
+      "max_ms": 806.195,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/thinking",
+      "count": 450,
+      "per_second": 3.75,
+      "p50_ms": 474.38684,
+      "p95_ms": 758.0559,
+      "p99_ms": 793.764,
+      "max_ms": 804.2889,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/review/overview",
+      "count": 442,
+      "per_second": 3.683333333333333,
+      "p50_ms": 35.445183,
+      "p95_ms": 3287.3809,
+      "p99_ms": 3601.6978,
+      "max_ms": 3646.0393,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/learning/plans",
+      "count": 435,
+      "per_second": 3.625,
+      "p50_ms": 6.664805,
+      "p95_ms": 473.0807,
+      "p99_ms": 643.89264,
+      "max_ms": 793.824,
+      "error_rate": 0
+    },
+    {
+      "label": "PATCH /api/materials/{id}/metadata",
+      "count": 425,
+      "per_second": 3.5416666666666665,
+      "p50_ms": 19.50601,
+      "p95_ms": 1532.9369,
+      "p99_ms": 1717.3169,
+      "max_ms": 1801.0417,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/study/attempts",
+      "count": 401,
+      "per_second": 3.341666666666667,
+      "p50_ms": 8.798172,
+      "p95_ms": 1196.2579,
+      "p99_ms": 1408.1765,
+      "max_ms": 1528.208,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/study/plans",
+      "count": 399,
+      "per_second": 3.325,
+      "p50_ms": 5.816546,
+      "p95_ms": 764.90875,
+      "p99_ms": 957.33057,
+      "max_ms": 1046.3429,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/workspaces/{id}/materials",
+      "count": 348,
+      "per_second": 2.9,
+      "p50_ms": 30.858728,
+      "p95_ms": 2031.5786,
+      "p99_ms": 2221.697,
+      "max_ms": 2310.6094,
+      "error_rate": 0
+    }
+  ],
+  "streams": {
+    "ended": 0,
+    "failed": 0,
+    "open_at_end": 0,
+    "opened": 7453,
+    "refused": 0
+  },
+  "timeline": [
+    {
+      "t": 1792849642,
+      "requests": 17,
+      "errors": 0
+    },
+    {
+      "t": 1792849643,
+      "requests": 909,
+      "errors": 0
+    },
+    {
+      "t": 1792849644,
+      "requests": 1168,
+      "errors": 0
+    },
+    {
+      "t": 1792849645,
+      "requests": 821,
+      "errors": 0
+    },
+    {
+      "t": 1792849646,
+      "requests": 1180,
+      "errors": 0
+    },
+    {
+      "t": 1792849647,
+      "requests": 1162,
+      "errors": 0
+    },
+    {
+      "t": 1792849648,
+      "requests": 883,
+      "errors": 0
+    },
+    {
+      "t": 1792849649,
+      "requests": 1247,
+      "errors": 0
+    },
+    {
+      "t": 1792849650,
+      "requests": 933,
+      "errors": 0
+    },
+    {
+      "t": 1792849651,
+      "requests": 1202,
+      "errors": 0
+    },
+    {
+      "t": 1792849652,
+      "requests": 1233,
+      "errors": 0
+    },
+    {
+      "t": 1792849653,
+      "requests": 889,
+      "errors": 0
+    },
+    {
+      "t": 1792849654,
+      "requests": 1335,
+      "errors": 0
+    },
+    {
+      "t": 1792849655,
+      "requests": 1151,
+      "errors": 0
+    },
+    {
+      "t": 1792849656,
+      "requests": 742,
+      "errors": 0
+    },
+    {
+      "t": 1792849657,
+      "requests": 1265,
+      "errors": 0
+    },
+    {
+      "t": 1792849658,
+      "requests": 1175,
+      "errors": 0
+    },
+    {
+      "t": 1792849659,
+      "requests": 734,
+      "errors": 0
+    },
+    {
+      "t": 1792849660,
+      "requests": 1194,
+      "errors": 0
+    },
+    {
+      "t": 1792849661,
+      "requests": 1129,
+      "errors": 0
+    },
+    {
+      "t": 1792849662,
+      "requests": 775,
+      "errors": 0
+    },
+    {
+      "t": 1792849663,
+      "requests": 916,
+      "errors": 0
+    },
+    {
+      "t": 1792849664,
+      "requests": 1077,
+      "errors": 0
+    },
+    {
+      "t": 1792849665,
+      "requests": 735,
+      "errors": 0
+    },
+    {
+      "t": 1792849666,
+      "requests": 832,
+      "errors": 0
+    },
+    {
+      "t": 1792849667,
+      "requests": 984,
+      "errors": 0
+    },
+    {
+      "t": 1792849668,
+      "requests": 831,
+      "errors": 0
+    },
+    {
+      "t": 1792849669,
+      "requests": 581,
+      "errors": 0
+    },
+    {
+      "t": 1792849670,
+      "requests": 654,
+      "errors": 0
+    },
+    {
+      "t": 1792849671,
+      "requests": 579,
+      "errors": 0
+    },
+    {
+      "t": 1792849672,
+      "requests": 553,
+      "errors": 0
+    },
+    {
+      "t": 1792849673,
+      "requests": 554,
+      "errors": 0
+    },
+    {
+      "t": 1792849674,
+      "requests": 494,
+      "errors": 0
+    },
+    {
+      "t": 1792849675,
+      "requests": 498,
+      "errors": 0
+    },
+    {
+      "t": 1792849676,
+      "requests": 508,
+      "errors": 0
+    },
+    {
+      "t": 1792849677,
+      "requests": 523,
+      "errors": 0
+    },
+    {
+      "t": 1792849678,
+      "requests": 493,
+      "errors": 0
+    },
+    {
+      "t": 1792849679,
+      "requests": 518,
+      "errors": 0
+    },
+    {
+      "t": 1792849680,
+      "requests": 499,
+      "errors": 0
+    },
+    {
+      "t": 1792849681,
+      "requests": 499,
+      "errors": 0
+    },
+    {
+      "t": 1792849682,
+      "requests": 559,
+      "errors": 0
+    },
+    {
+      "t": 1792849683,
+      "requests": 494,
+      "errors": 0
+    },
+    {
+      "t": 1792849684,
+      "requests": 459,
+      "errors": 0
+    },
+    {
+      "t": 1792849685,
+      "requests": 312,
+      "errors": 0
+    },
+    {
+      "t": 1792849686,
+      "requests": 442,
+      "errors": 0
+    },
+    {
+      "t": 1792849687,
+      "requests": 455,
+      "errors": 0
+    },
+    {
+      "t": 1792849688,
+      "requests": 435,
+      "errors": 0
+    },
+    {
+      "t": 1792849689,
+      "requests": 420,
+      "errors": 0
+    },
+    {
+      "t": 1792849690,
+      "requests": 410,
+      "errors": 0
+    },
+    {
+      "t": 1792849691,
+      "requests": 398,
+      "errors": 0
+    },
+    {
+      "t": 1792849692,
+      "requests": 473,
+      "errors": 0
+    },
+    {
+      "t": 1792849693,
+      "requests": 378,
+      "errors": 0
+    },
+    {
+      "t": 1792849694,
+      "requests": 402,
+      "errors": 0
+    },
+    {
+      "t": 1792849695,
+      "requests": 406,
+      "errors": 0
+    },
+    {
+      "t": 1792849696,
+      "requests": 382,
+      "errors": 0
+    },
+    {
+      "t": 1792849697,
+      "requests": 448,
+      "errors": 0
+    },
+    {
+      "t": 1792849698,
+      "requests": 390,
+      "errors": 0
+    },
+    {
+      "t": 1792849699,
+      "requests": 388,
+      "errors": 0
+    },
+    {
+      "t": 1792849700,
+      "requests": 422,
+      "errors": 0
+    },
+    {
+      "t": 1792849701,
+      "requests": 433,
+      "errors": 0
+    },
+    {
+      "t": 1792849702,
+      "requests": 438,
+      "errors": 0
+    },
+    {
+      "t": 1792849703,
+      "requests": 436,
+      "errors": 0
+    },
+    {
+      "t": 1792849704,
+      "requests": 491,
+      "errors": 0
+    },
+    {
+      "t": 1792849705,
+      "requests": 414,
+      "errors": 0
+    },
+    {
+      "t": 1792849706,
+      "requests": 428,
+      "errors": 0
+    },
+    {
+      "t": 1792849707,
+      "requests": 352,
+      "errors": 0
+    },
+    {
+      "t": 1792849708,
+      "requests": 452,
+      "errors": 0
+    },
+    {
+      "t": 1792849709,
+      "requests": 381,
+      "errors": 0
+    },
+    {
+      "t": 1792849710,
+      "requests": 291,
+      "errors": 0
+    },
+    {
+      "t": 1792849711,
+      "requests": 368,
+      "errors": 0
+    },
+    {
+      "t": 1792849712,
+      "requests": 389,
+      "errors": 0
+    },
+    {
+      "t": 1792849713,
+      "requests": 406,
+      "errors": 0
+    },
+    {
+      "t": 1792849714,
+      "requests": 368,
+      "errors": 0
+    },
+    {
+      "t": 1792849715,
+      "requests": 384,
+      "errors": 0
+    },
+    {
+      "t": 1792849716,
+      "requests": 367,
+      "errors": 0
+    },
+    {
+      "t": 1792849717,
+      "requests": 401,
+      "errors": 0
+    },
+    {
+      "t": 1792849718,
+      "requests": 327,
+      "errors": 0
+    },
+    {
+      "t": 1792849719,
+      "requests": 366,
+      "errors": 0
+    },
+    {
+      "t": 1792849720,
+      "requests": 311,
+      "errors": 0
+    },
+    {
+      "t": 1792849721,
+      "requests": 369,
+      "errors": 0
+    },
+    {
+      "t": 1792849722,
+      "requests": 413,
+      "errors": 0
+    },
+    {
+      "t": 1792849723,
+      "requests": 392,
+      "errors": 0
+    },
+    {
+      "t": 1792849724,
+      "requests": 388,
+      "errors": 0
+    },
+    {
+      "t": 1792849725,
+      "requests": 320,
+      "errors": 0
+    },
+    {
+      "t": 1792849726,
+      "requests": 352,
+      "errors": 0
+    },
+    {
+      "t": 1792849727,
+      "requests": 380,
+      "errors": 0
+    },
+    {
+      "t": 1792849728,
+      "requests": 361,
+      "errors": 0
+    },
+    {
+      "t": 1792849729,
+      "requests": 350,
+      "errors": 0
+    },
+    {
+      "t": 1792849730,
+      "requests": 321,
+      "errors": 0
+    },
+    {
+      "t": 1792849731,
+      "requests": 356,
+      "errors": 0
+    },
+    {
+      "t": 1792849732,
+      "requests": 387,
+      "errors": 0
+    },
+    {
+      "t": 1792849733,
+      "requests": 350,
+      "errors": 0
+    },
+    {
+      "t": 1792849734,
+      "requests": 342,
+      "errors": 0
+    },
+    {
+      "t": 1792849735,
+      "requests": 340,
+      "errors": 0
+    },
+    {
+      "t": 1792849736,
+      "requests": 392,
+      "errors": 0
+    },
+    {
+      "t": 1792849737,
+      "requests": 356,
+      "errors": 0
+    },
+    {
+      "t": 1792849738,
+      "requests": 339,
+      "errors": 0
+    },
+    {
+      "t": 1792849739,
+      "requests": 316,
+      "errors": 0
+    },
+    {
+      "t": 1792849740,
+      "requests": 391,
+      "errors": 0
+    },
+    {
+      "t": 1792849741,
+      "requests": 346,
+      "errors": 0
+    },
+    {
+      "t": 1792849742,
+      "requests": 285,
+      "errors": 0
+    },
+    {
+      "t": 1792849743,
+      "requests": 385,
+      "errors": 0
+    },
+    {
+      "t": 1792849744,
+      "requests": 368,
+      "errors": 0
+    },
+    {
+      "t": 1792849745,
+      "requests": 341,
+      "errors": 0
+    },
+    {
+      "t": 1792849746,
+      "requests": 337,
+      "errors": 0
+    },
+    {
+      "t": 1792849747,
+      "requests": 378,
+      "errors": 0
+    },
+    {
+      "t": 1792849748,
+      "requests": 355,
+      "errors": 0
+    },
+    {
+      "t": 1792849749,
+      "requests": 378,
+      "errors": 0
+    },
+    {
+      "t": 1792849750,
+      "requests": 353,
+      "errors": 0
+    },
+    {
+      "t": 1792849751,
+      "requests": 342,
+      "errors": 0
+    },
+    {
+      "t": 1792849752,
+      "requests": 363,
+      "errors": 0
+    },
+    {
+      "t": 1792849753,
+      "requests": 426,
+      "errors": 0
+    },
+    {
+      "t": 1792849754,
+      "requests": 335,
+      "errors": 0
+    },
+    {
+      "t": 1792849755,
+      "requests": 391,
+      "errors": 0
+    },
+    {
+      "t": 1792849756,
+      "requests": 354,
+      "errors": 0
+    },
+    {
+      "t": 1792849757,
+      "requests": 364,
+      "errors": 0
+    },
+    {
+      "t": 1792849758,
+      "requests": 370,
+      "errors": 0
+    },
+    {
+      "t": 1792849759,
+      "requests": 357,
+      "errors": 0
+    },
+    {
+      "t": 1792849760,
+      "requests": 438,
+      "errors": 0
+    },
+    {
+      "t": 1792849761,
+      "requests": 335,
+      "errors": 0
+    },
+    {
+      "t": 1792849762,
+      "requests": 302,
+      "errors": 0
+    }
+  ],
+  "pass": false,
+  "fail_reason": "p95 2069 ms"
+}

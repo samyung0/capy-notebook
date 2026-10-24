@@ -1,0 +1,14 @@
+== users-3000-skipmat-1024-1342: FAIL p95 2216 ms
+   539 req/s (0.180 per user), p50 25 p95 2216 p99 3476 max 4789 ms, errors 0.00%, streams {'ended': 0, 'failed': 0, 'open_at_end': 0, 'opened': 7441, 'refused': 0}
+   server   cpu mean 0.60 p95 0.85 cores, memory peak 506 MiB
+   db       cpu mean 0.70 p95 0.89 cores, memory peak 742 MiB
+   redis    cpu mean 0.05 p95 0.08 cores, memory peak 5 MiB
+   loadgen  cpu mean 0.22 p95 0.47 cores, memory peak 328 MiB
+   cores cpu0 64%, cpu1 78%, cpu2 29%, cpu3 27%
+   postgres backends (mean) active/- 0.2, active/Client 0.0, active/IO 0.1, idle/- 0.1, idle/Client 8.2, idle in transaction/- 0.0, idle in transaction/Client 0.4
+   pool waits: 245312 acquires waited 33801.5 s in all, 12 windows with waits, 3 with every connection taken at the line
+   gateway warnings and errors: 8
+     {"time":"2026-10-24T13:43:29.099359977Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"5f69783d9c07f158f95eb49dd3cc2fd7","method":"GET","path":"/api/stream","status":503,"duration_ms":121,"bytes":75,"ip":"10.0.2.2","client_aborted":true}
+     {"time":"2026-10-24T13:43:31.942009701Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"633a01326bad9ef3bfbb3b12d6d6be35","method":"GET","path":"/api/stream","status":500,"duration_ms":368,"bytes":124,"ip":"10.0.2.2","client_aborted":true}
+     {"time":"2026-10-24T13:43:33.331204511Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"5d4bffd5aee0c00080aeb4627de2ea29","method":"GET","path":"/api/stream","status":500,"duration_ms":643,"bytes":124,"ip":"10.0.2.2","client_aborted":true}
+   slowest routes (p95): GET /api/flashcards/{id} 4131 ms, GET /api/quizzes/{id} 3970 ms, GET /api/materials/{id} 3527 ms, GET /api/review/overview 3471 ms, POST /api/materials/{id}/collaboration-token 3374 ms

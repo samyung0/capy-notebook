@@ -26,6 +26,7 @@ place (Epo 2026-10-10).
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency. Update rates one user's editing sends, scored against the server's allowance | `pnpm bench:stress` (Docker), `pnpm bench:rates` |
 | [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
+| [`gateway/`](gateway/)     | Go gateway capacity: signed-in browser sessions replayed against the API with their event streams, per-route latency and errors, gateway and Postgres CPU, waits for a pooled connection | `bench/gateway/scripts/step.sh <users>` (bench host) |
 | [`parity/`](parity/)       | Office feature parity per format against Google Docs, Sheets and Slides: hand-assigned view, edit, save and collab statuses, each Y backed by a test on the pin; ranked remaining work | `python3 bench/parity/scripts/parity.py` (CI: `--check`) |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
@@ -148,6 +149,50 @@ be watched under presence and concurrent edits. Its tokens are minted with
 `COLLABORATION_SECRET` for `--user`, whom the server checks for access to the
 room. Phase two's UAT collaboration load test is planned on top of it
 (human/review-automation.md).
+
+### gateway
+
+The Go gateway under signed-in users, on a box shaped like production (the
+2026-10-24 run used the production box, where nothing is deployed). The
+stack (`gateway/scripts/docker-compose.yml`) is production's Postgres and
+Redis images at their default settings, and the gateway built with the
+`loadtest` tag (`server/cmd/api/loadtest.go`) under `APP_ENV=e2e` for the
+memory blob store. That build points the Clerk SDK at the generator, which
+signs each user's session token and serves the JWKS and profiles, so every
+request pays for the token check, the account read and the rate limiter as
+in production; Sentry reports go to the generator too. The gateway, Postgres
+with Redis, and the generator each get their own cores (`*_CPUSET`), and the
+pool is `POOL_MAX_CONNS` (8).
+
+`gateway/scripts/loadgen` is the generator (Go, standard library only).
+`setup -users N` signs each user in once, which provisions the account and
+its starter workspace through the Clerk path, then adds a second workspace,
+three notes, a quiz and a flashcard set in each, and one attempt per quiz.
+`run -users N` replays browser tabs: the requests the frontend sends per
+page and action (root, shell, loaders and mounted queries, the pages that
+fetch twice, react-query's five-minute staleness), one event stream per tab
+that reconnects on every move into or out of a workspace and drives the
+refetches the stream's open, `tree` and `notification` events cause, and
+think time between actions. Chat, uploads, Office and the question bank's
+pages are left out: their cost is in other services. Users start over the
+ramp, then the run measures for the duration and applies the pass rule
+p95 < 500 ms, p99 < 1 s, errors < 1%.
+
+`run -idle` holds tabs open on a workspace that send nothing after loading,
+and `-skip "<METHOD> <route>"` leaves one route out of every tab, to see
+what the rest costs without it.
+
+`gateway/scripts/step.sh <users> [ramp] [duration] [run args...]` runs one
+step on the host with `sample.sh` beside it (each container's CPU and
+memory, each core's busy share, Postgres backends by wait type, once a
+second) and keeps the gateway's `db pool waits` lines and its warnings and
+errors; `ladder.sh <users>... [-- run args]` runs steps until one fails, and
+`analyze.py <step>...` summarizes them over the measured window. Steps write
+to the gitignored `gateway/.results/<step>/`. For a diagnosis,
+`docker-compose.statements.yml` loads `pg_stat_statements` (read with
+`statements.sql`) and the loadtest build serves Go's profiles on `:6060`
+inside the bench network. Reports live in `gateway/reports/`: the
+[2026-10-24 production-box run](gateway/reports/2026-10-24-gateway-capacity.md).
 
 ### parity
 

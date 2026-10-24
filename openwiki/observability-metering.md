@@ -138,6 +138,17 @@ masked, link targets are not). Cloudflare Workers Logs keep
 the site Worker's request URLs (`/w/*`, `/share/*`, `/p/*`), accepted as a
 trusted platform log (Sam 2026-10-19).
 
+The gateway logs one `db pool waits` line (info, `component` `db_pool`,
+`server/cmd/api/db_pool.go`) per 10 s window in which a request found no idle
+Postgres connection in the pool: `waits` (those acquires), `wait_ms` (their
+summed wait), `acquired` and `max` at the line. Opening a new connection
+under `max` counts too, so a few after a start or a quiet spell are normal.
+Lines every window with `acquired` at `max` mean requests queue for a
+connection: slow statements holding the connections (the gateway's CPU then
+sits idle), a busy gateway core delaying the goroutines that hold them, or
+a pool too small for the load. A larger pool helps only the last (the
+[2026-10-24 load test](../bench/gateway/reports/2026-10-24-gateway-capacity.md)).
+
 The collaboration server logs one `collab_health` line per minute
 (`collaboration-rs/crates/server/src/health.rs`, a background task; counting a message is an
 atomic increment, nothing allocates):

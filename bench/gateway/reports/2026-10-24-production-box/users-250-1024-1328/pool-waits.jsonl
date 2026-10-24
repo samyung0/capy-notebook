@@ -1,0 +1,7 @@
+{"time":"2026-10-24T13:28:53.588458324Z","level":"INFO","msg":"db pool waits","service":"gateway","env":"e2e","trace_id":"b28e08c3e6a75fc7d80b1b5e1ec61035","component":"db_pool","waits":30,"wait_ms":27,"acquired":2,"max":8}
+{"time":"2026-10-24T13:29:03.588711659Z","level":"INFO","msg":"db pool waits","service":"gateway","env":"e2e","trace_id":"69765060ca5377141ac8827366a7a22c","component":"db_pool","waits":144,"wait_ms":127,"acquired":1,"max":8}
+{"time":"2026-10-24T13:29:13.58889985Z","level":"INFO","msg":"db pool waits","service":"gateway","env":"e2e","trace_id":"3d2ceead969b455451284fa6a4900b98","component":"db_pool","waits":103,"wait_ms":65,"acquired":1,"max":8}
+{"time":"2026-10-24T13:29:23.589368451Z","level":"INFO","msg":"db pool waits","service":"gateway","env":"e2e","trace_id":"0f93223bd5a5064975dbd9b34685547c","component":"db_pool","waits":139,"wait_ms":81,"acquired":1,"max":8}
+{"time":"2026-10-24T13:29:33.588724584Z","level":"INFO","msg":"db pool waits","service":"gateway","env":"e2e","trace_id":"5e48cd9bf7d91ca035cee98daf3d58c0","component":"db_pool","waits":226,"wait_ms":180,"acquired":2,"max":8}
+{"time":"2026-10-24T13:29:43.588891272Z","level":"INFO","msg":"db pool waits","service":"gateway","env":"e2e","trace_id":"636749ea120a9da95db6f6c468658b07","component":"db_pool","waits":126,"wait_ms":95,"acquired":1,"max":8}
+{"time":"2026-10-24T13:29:53.588565455Z","level":"INFO","msg":"db pool waits","service":"gateway","env":"e2e","trace_id":"bec1dcb509d4a268c9b5787b28a5cc07","component":"db_pool","waits":53,"wait_ms":23,"acquired":1,"max":8}

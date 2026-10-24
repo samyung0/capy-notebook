@@ -1,0 +1,95 @@
+# The gateway load test's stack (bench/README.md, gateway). Postgres and Redis
+# are production's images with production's (default) settings; the gateway is
+# the loadtest build (server.Dockerfile) under APP_ENV=e2e for the memory blob
+# store, with Clerk, the rate limiter and Sentry on as in production. The load
+# generator stands in for Clerk's API and Sentry's ingest.
+#
+# Each service has its own cores so the generator never takes the gateway's
+# CPU: the defaults suit a 4 vCPU box.
+name: capy-gwbench
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    environment:
+      POSTGRES_USER: capy
+      POSTGRES_PASSWORD: capy
+      POSTGRES_DB: capy
+    cpuset: ${DB_CPUSET:-1}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'psql -U capy -d capy -c "SELECT 1" >/dev/null 2>&1']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4.11-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541
+    cpuset: ${DB_CPUSET:-1}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  loadgen:
+    build: ./loadgen
+    command: ["serve"]
+    cpuset: ${LOADGEN_CPUSET:-2,3}
+    environment:
+      TARGET: http://server:8080
+      ORIGIN: https://app.loadtest.test
+    volumes:
+      - ../.results:/results
+    ulimits:
+      nofile:
+        soft: 524288
+        hard: 524288
+
+  server:
+    build:
+      context: ../../../server
+      dockerfile: ../bench/gateway/scripts/server.Dockerfile
+    cpuset: ${SERVER_CPUSET:-0}
+    environment:
+      APP_ENV: e2e
+      ADDR: ":8080"
+      MIGRATE: "true"
+      BLOB_BACKEND: memory
+      # Production's pool is pgx's default (4 here); 8 is the planned size.
+      DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable&pool_max_conns=${POOL_MAX_CONNS:-8}
+      REDIS_URL: redis://redis:6379/0
+      CLERK_SECRET_KEY: sk_test_loadtest
+      CLERK_WEBHOOK_SECRET: whsec_bG9hZHRlc3Qtd2ViaG9vay1zZWNyZXQ=
+      LOADTEST_CLERK_API_URL: http://loadgen:9000/v1
+      COLLABORATION_ALLOWED_ORIGINS: https://app.loadtest.test
+      SENTRY_DSN: http://loadtest@loadgen:9000/1
+      APP_URL: https://app.loadtest.test
+      COLLABORATION_SECRET: loadtest-collaboration-secret-0123456789abcdef
+      SHARE_LINK_SECRET: loadtest-share-link-secret-0123456789abcdef
+      COLLABORATION_URL: wss://collab.loadtest.test
+      COLLABORATION_INTERNAL_URL: http://collaboration:1234
+      CAPY_PARSE_MAX_PAGES: "1400"
+      CAPY_PARSE_OCR_PAGE_CAP: "500"
+      # Every page reads bank progress. With the bank configured that costs
+      # the main-database reads production pays; the simulated users never
+      # answer bank questions, so the bank database itself (empty here) is
+      # never queried.
+      BANK_DATABASE_URL: postgres://capy:capy@db:5432/postgres?sslmode=disable
+      BANK_EDITOR_DATABASE_URL: postgres://capy:capy@db:5432/postgres?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      loadgen:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  pgdata:
