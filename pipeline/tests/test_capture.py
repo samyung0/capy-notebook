@@ -905,6 +905,53 @@ def test_image_capture_refuses_a_decompression_bomb_as_too_large(monkeypatch):
         capture._image_capture(row, 1, None, 200)
 
 
+def test_image_capture_decodes_a_large_photo_at_the_capture_size(monkeypatch):
+    """A 64-megapixel JPEG decodes at a reduced scale, never at full size, and
+    the capture keeps its size and format (Q239)."""
+    import io
+
+    from PIL import Image, ImageFile
+
+    photo = io.BytesIO()
+    Image.new("L", (8000, 8000), 128).save(photo, "JPEG")
+    decoded: list[int] = []
+    real_load = ImageFile.ImageFile.load
+
+    def load(self):
+        answer = real_load(self)
+        decoded.append(self.width * self.height)
+        return answer
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", load)
+    jpeg, _box, size = capture.image_jpeg(photo, [0, 0, 500, 1000], 200)
+    assert size == (100, 200)
+    assert Image.open(io.BytesIO(jpeg)).format == "JPEG"
+    # The 1/8 DCT scale: one megapixel decoded for a 200-pixel capture.
+    assert decoded and max(decoded) <= 1000 * 1000
+
+
+@pytest.mark.parametrize("format_name", ["JPEG", "TIFF"])
+def test_a_reduced_capture_stands_an_oriented_photo_upright(format_name):
+    """Pillow turns a TIFF upright as it loads and exif_transpose turns a
+    JPEG: either way the reduced capture is upright, at its full-size shape."""
+    import io
+
+    from PIL import Image
+
+    photo = Image.new("RGB", (800, 400), "blue")
+    photo.paste("red", (0, 0, 400, 400))
+    exif = Image.Exif()
+    exif[0x0112] = 6  # shown turned a quarter clockwise
+    source = io.BytesIO()
+    photo.save(source, format_name, exif=exif)
+
+    jpeg, _box, size = capture.image_jpeg(source, None, 100)
+    assert size == (50, 100)
+    upright = Image.open(io.BytesIO(jpeg))
+    assert upright.getpixel((25, 10))[0] > 200  # the red half on top
+    assert upright.getpixel((25, 90))[2] > 200
+
+
 def test_image_capture_refuses_formats_pillow_cannot_read(monkeypatch):
     data = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
     row = _image_row(data, "logo.svg")
