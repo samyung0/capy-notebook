@@ -11,7 +11,7 @@ export interface PlanLimits {
 }
 
 /**
- * Explicit product-copy snapshot of `plan_limits` (initial schema plus 0069, 0070 and 0112,
+ * Explicit product-copy snapshot of `plan_limits` (initial schema plus 0069, 0070 and 0113,
  * Pro's 10,000 credits set directly in UAT on 2026-10-15, and Free's 200 monthly
  * credits set there on 2026-10-16; the 800-credit starter grant comes with the first saved card, migration 0109).
  * This is intentionally not fetched through an API. Changing a value is an

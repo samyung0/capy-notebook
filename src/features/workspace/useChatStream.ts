@@ -278,7 +278,7 @@ export function useChatStream(workspaceId: string) {
   const send = useCallback(
     async (
       text: string,
-      turn: Pick<ChatStreamBody, 'library' | 'openResource'>
+      turn: Pick<ChatStreamBody, 'workspaceOnly' | 'openResource'>
     ) => {
       const trimmed = text.trim();
       const key = activeRef.current;

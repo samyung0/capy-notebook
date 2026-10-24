@@ -135,7 +135,7 @@ it.each([
     const onToolEnd = vi.fn();
     await streamChat(
       'ws_bio',
-      { library: false, text: 'Preview "quotes" and\nnewlines' },
+      { text: 'Preview "quotes" and\nnewlines', workspaceOnly: false },
       {
         onBlockDelta: (id, text) => {
           blocks.set(id, (blocks.get(id) ?? '') + text);

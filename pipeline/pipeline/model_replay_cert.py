@@ -27,6 +27,8 @@ MODEL_LIST_ENDPOINTS: dict[str, str | None] = {
     "deepseek": "https://api.deepseek.com/models",
     "openai": "https://api.openai.com/v1/models",
     "zai": None,
+    # The OpenRouter chat pins are elitellm's allowlist, not a model list.
+    "openrouter": None,
 }
 
 

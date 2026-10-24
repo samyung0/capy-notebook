@@ -14,7 +14,7 @@ This page is the accounting contract.
 
 ## Product plan limits
 
-`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0112`) is the canonical backend
+`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0113`) is the canonical backend
 catalog for every numeric limit that may vary by subscription plan:
 
 | Limit                           |                       Free |                        Pro |

@@ -40,9 +40,10 @@ class SeedTest(unittest.TestCase):
             "STRIPE_PRICE_PRO": "price_synthetic",
         }
         seed.validate_config(values)
-        self.assertEqual(seed.APP_URL, "https://app.uat.capynotebook.com")
+        self.assertEqual(seed.APP_URL, "https://uat-app.capynotebook.com")
         for changed in (
             {"DEPLOYMENT_APP_URL": "https://uat.capynotebook.com"},
+            {"DEPLOYMENT_APP_URL": "https://app.uat.capynotebook.com"},
             {"DEPLOYMENT_APP_URL": "https://app.capynotebook.com"},
             {"DEPLOYMENT_APP_URL": "https://capynotebook.com"},
             {"DEPLOYMENT_API_URL": "https://api.capynotebook.com"},

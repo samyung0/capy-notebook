@@ -530,7 +530,6 @@ async def test_a_library_figure_goes_after_the_question_text(monkeypatch):
     goes to Go to store as the quiz's own asset, its caption carries the
     printed credit, and the excerpt listing it is credited."""
     ctx = _ctx(monkeypatch)
-    ctx.library = True
     ctx.library_reads.note("e_1", 0, "1.1")
     figure = library.Figure(
         id="fig_1", book_title="B", page=3, bbox=[0, 0, 500, 500],
@@ -791,6 +790,7 @@ async def test_a_refused_write_also_names_its_question_problems(monkeypatch):
     """An excerpt refusal carries the call's question problems too, so one
     resend fixes both."""
     ctx = _ctx(monkeypatch)
+    ctx.workspace_only = True
     result = await tools.write_questions(
         {
             "title": "T",

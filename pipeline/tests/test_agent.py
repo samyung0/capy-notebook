@@ -621,7 +621,6 @@ def _library_ctx(monkeypatch) -> ToolContext:
         user_id="u1",
         operations=frozenset(contract.OPERATIONS),
         assistant_message_id="m_1",
-        library=True,
     )
     ctx._scope_outline = {
         "chapters": [],
@@ -1504,9 +1503,10 @@ async def test_checkpoint_rewrite_does_not_duplicate_the_question(monkeypatch):
 
     assert any(e["type"] == "checkpoint" for e in events)
     contents = [m.get("content") for m in seen[0]["messages"]]
-    assert contents.count("current question") == 1
+    asked = agent.chat_prompts.with_mode_line("current question", False)
+    assert contents.count(asked) == 1
     assert len(folded["turns"]) == len(history)
-    assert folded["current_user_message"] == "current question"
+    assert folded["current_user_message"] == asked
 
 
 async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypatch):
@@ -3295,7 +3295,7 @@ async def test_a_mermaid_expectation_is_its_stored_source(monkeypatch):
 async def test_a_write_naming_unread_excerpts_credits_them(monkeypatch):
     """Named excerpts are credited whether this turn read them or not (Epo
     2026-10-14): no refusal sends the model back to read them."""
-    ctx = ToolContext(workspace_id="ws", library=True)
+    ctx = ToolContext(workspace_id="ws")
 
     async def _provenance(excerpt_ids):
         return [_book(*excerpt_ids)]
@@ -3792,7 +3792,6 @@ def _build_ctx(**kwargs) -> ToolContext:
         user_id="u1",
         operations=frozenset(contract.OPERATIONS),
         assistant_message_id="m_1",
-        library=True,
         **kwargs,
     )
 
@@ -3820,7 +3819,7 @@ async def test_a_library_that_is_down_or_empty_leaves_the_turn_on_the_workspace(
         events = await _collect("teach me regression", ctx)
 
         offered = {tool["function"]["name"] for tool in seen[0]["tools"]}
-        assert not ctx.library and "search_knowledge" not in offered
+        assert "search_knowledge" not in offered
         assert events[-1]["telemetry"]["stopReason"] == "answer"
     assert "pool timeout" in caplog.text
 
@@ -4241,7 +4240,9 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         m["content"] for m in seen[0]["messages"] if m.get("_kind") == "turn_context"
     )
     assert ("- a Section" in context) == (followup == "reuse")
-    assert bool(second[-1]["toolEvidence"]["libraryExcerpts"]) == (followup == "reuse")
+    assert bool(second[-1]["toolEvidence"].get("libraryExcerpts")) == (
+        followup == "reuse"
+    )
     ordinary = await agent.evidence.history_turns(
         history, ToolContext(workspace_id="ws_1")
     )
@@ -4503,7 +4504,7 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
         ("Where should we start?", ["Beginner", "I code already"])
     ]
     assert "One quick question" in openui.to_text(program)
-    assert agent.ask_user_answer([_call("AskUser", "{}")], "x") is None, (
+    assert agent.ask_user_answer([_call("AskUser", "{}")], "x", 0) is None, (
         "no question, no answer"
     )
     # Every AskUser call is a question, up to the format's three (Epo 2026-10-14).
@@ -4511,7 +4512,7 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
         _call("AskUser", json.dumps({"question": f"Q{n}?", "choices": []}), f"a{n}")
         for n in range(1, 5)
     ]
-    program = openui.parse(agent.ask_user_answer(many, ""), strict=True)
+    program = openui.parse(agent.ask_user_answer(many, "", 0), strict=True)
     asked = [c.prop("question") for c in openui.walk(program) if c.name == "AskUser"]
     assert asked == ["Q1?", "Q2?", "Q3?"]
 
@@ -4804,7 +4805,9 @@ async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeyp
     assert ctx.hinted == {("f_1", "c1")}
     messages = seen[0]["messages"]
     query = next(i for i, m in enumerate(messages) if m.get("_kind") == "query")
-    assert messages[query]["content"] == "How many phases does mitosis have?"
+    assert messages[query]["content"] == agent.chat_prompts.with_mode_line(
+        "How many phases does mitosis have?", False
+    )
     hint = messages[query + 1]
     assert hint["_kind"] == agent.pending_hints.KIND
     assert (
@@ -5175,9 +5178,10 @@ async def test_an_office_edit_after_office_building_alone_needs_editing(monkeypa
     events = await _collect("Center the intro", _owner_ctx())
     refused = next(e for e in events if e["type"] == "tool_end" and e["callId"] == "c3")
     assert refused["error"]["message"] == skills.refusal([skills.EDITING], write=True)
-    assert "Editing or creating one also needs the editing skill" in skills.SKILLS[
-        skills.OFFICE_BUILDING
-    ].text(False)
+    assert (
+        "Editing or creating one also needs the editing skill"
+        in skills.SKILLS[skills.OFFICE_BUILDING].text()
+    )
 
 
 async def test_office_tools_need_the_office_building_skill(monkeypatch):

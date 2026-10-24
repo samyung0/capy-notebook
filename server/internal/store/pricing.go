@@ -33,6 +33,8 @@ const (
 	ResourceAudioSecond      = "audio_transcription_second"
 	ResourceVoiceInputSecond = "voice_input_second"
 	ResourceEmailMessage     = "email_message"
+	// One search_web search that returned results (decision 2026-10-24).
+	ResourceWebSearch = "web_search"
 )
 
 var ingestResourceKeys = []string{
