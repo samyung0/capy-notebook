@@ -69,3 +69,35 @@ func TestCommentsArePlainText(t *testing.T) {
 		t.Fatalf("a comment past the cap → %d %s, want 409 comment_limit", rec.Code, rec.Body.String())
 	}
 }
+
+// TestCommentDiscussionBoundsAreEnforced (security regression: rate-limit
+// audit r2 N-7, Q313). Block ids are 1 to 128 characters, a quote with a bidi
+// control is refused, and a body past the 64 KiB cap is refused before it is
+// read whole.
+func TestCommentDiscussionBoundsAreEnforced(t *testing.T) {
+	h, st, _ := openGradingAPI(t, "full")
+	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/materials", "u_owner",
+		map[string]any{"kind": "note", "title": "Comment bounds " + strings.Repeat("x", 4)})
+	var note struct{ ID string }
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &note) != nil {
+		t.Fatalf("create note → %d %s", rec.Code, rec.Body.String())
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id=$1`, note.ID)
+	})
+	path := "/api/materials/" + note.ID + "/discussions"
+	for _, id := range []string{"", strings.Repeat("b", 129)} {
+		body := map[string]any{"anchorVersion": 1, "blockId": id, "text": "hi"}
+		if rec := doReq(t, h, http.MethodPost, path, "u_owner", body); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("a %d-character block id → %d, want 422", len(id), rec.Code)
+		}
+	}
+	bidi := map[string]any{"anchorVersion": 1, "blockId": "b1", "anchorQuote": "quote\u202Eetouq", "text": "hi"}
+	if rec := doReq(t, h, http.MethodPost, path, "u_owner", bidi); rec.Code != http.StatusBadRequest {
+		t.Errorf("a quote with a bidi override → %d, want 400", rec.Code)
+	}
+	huge := map[string]any{"anchorVersion": 1, "blockId": "b1", "text": "hi", "anchorQuote": strings.Repeat("q", 64<<10)}
+	if rec := doReq(t, h, http.MethodPost, path, "u_owner", huge); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("a body past 64 KiB → %d, want 413", rec.Code)
+	}
+}

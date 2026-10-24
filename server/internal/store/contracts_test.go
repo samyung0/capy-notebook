@@ -83,6 +83,36 @@ func TestCommentTextMustBePlain(t *testing.T) {
 	}
 }
 
+// TestCommentFieldsRefuseBidiControls (security regression: rate-limit audit
+// r2 N-7, Q313). Text, quote and block id refuse bidi overrides and isolates
+// and control characters but newline and tab; zero-width joiners stay.
+func TestCommentFieldsRefuseBidiControls(t *testing.T) {
+	family := "\U0001F468\u200D\U0001F469\u200D\U0001F467"
+	if err := validateCommentText(family); err != nil {
+		t.Fatalf("an emoji joined by zero-width joiners refused: %v", err)
+	}
+	for _, bidi := range []string{"\u202A", "\u202E", "\u2066", "\u2069"} {
+		if err := validateCommentText("a" + bidi + "b"); err == nil {
+			t.Errorf("text with %U accepted", []rune(bidi)[0])
+		}
+		if err := validateRelativeAnchor([]byte{1}, []byte{2}, 1, "a"+bidi+"b"); err == nil {
+			t.Errorf("quote with %U accepted", []rune(bidi)[0])
+		}
+		id := "b" + bidi
+		if err := validateBlockID(&id); err == nil {
+			t.Errorf("block id with %U accepted", []rune(bidi)[0])
+		}
+	}
+	for _, id := range []string{"", strings.Repeat("b", 129), "b\x00"} {
+		if err := validateBlockID(&id); err == nil {
+			t.Errorf("block id %.20q accepted", id)
+		}
+	}
+	if id := strings.Repeat("b", 128); validateBlockID(&id) != nil {
+		t.Error("a 128-character block id refused")
+	}
+}
+
 func TestCommentRelativeAnchorBounds(t *testing.T) {
 	if err := validateRelativeAnchor([]byte{1}, []byte{2}, 1, "quoted text"); err != nil {
 		t.Fatalf("valid relative anchor was rejected: %v", err)

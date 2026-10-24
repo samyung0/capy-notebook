@@ -46,8 +46,8 @@ func scanRevisionComment(row pgx.Row) (Comment, error) {
 }
 
 // validateCommentText accepts plain text of 1 to fieldlimits.Comment
-// characters that is not only whitespace and holds no control character but a
-// newline or tab (Epo 2026-10-24: comments are strictly validated plain text).
+// characters that is not only whitespace (Epo 2026-10-24: comments are
+// strictly validated plain text; plainField).
 func validateCommentText(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("%w: a comment needs text", materialdoc.ErrInvalid)
@@ -55,10 +55,34 @@ func validateCommentText(text string) error {
 	if utf8.RuneCountInString(text) > fieldlimits.Comment {
 		return fmt.Errorf("%w: a comment is at most %d characters", materialdoc.ErrInvalid, fieldlimits.Comment)
 	}
-	for _, r := range text {
-		if unicode.IsControl(r) && r != '\n' && r != '\t' {
-			return fmt.Errorf("%w: a comment holds plain text only", materialdoc.ErrInvalid)
+	if !plainField(text) {
+		return fmt.Errorf("%w: a comment holds plain text only", materialdoc.ErrInvalid)
+	}
+	return nil
+}
+
+// plainField is whether a comment field (text, quote, block id) holds no
+// control character but a newline or tab and no bidi override or isolate
+// (U+202A-U+202E, U+2066-U+2069); zero-width joiners, which emoji and some
+// scripts need, stay (Q313).
+func plainField(s string) bool {
+	for _, r := range s {
+		if (unicode.IsControl(r) && r != '\n' && r != '\t') ||
+			(r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) {
+			return false
 		}
+	}
+	return true
+}
+
+// validateBlockID accepts a discussion's block id of 1 to 128 characters in
+// plain text (Q313).
+func validateBlockID(blockID *string) error {
+	if blockID == nil {
+		return nil
+	}
+	if n := utf8.RuneCountInString(*blockID); n < 1 || n > 128 || !plainField(*blockID) {
+		return fmt.Errorf("%w: a block id is 1 to 128 plain characters", materialdoc.ErrInvalid)
 	}
 	return nil
 }
@@ -75,6 +99,9 @@ func validateRelativeAnchor(start, end []byte, version int, quote string) error 
 	}
 	if utf8.RuneCountInString(quote) > 1000 {
 		return fmt.Errorf("%w: comment anchor quote is too large", materialdoc.ErrInvalid)
+	}
+	if !plainField(quote) {
+		return fmt.Errorf("%w: a comment anchor quote holds plain text only", materialdoc.ErrInvalid)
 	}
 	return nil
 }
@@ -348,6 +375,9 @@ func (s *Store) CreateCommentDiscussion(
 		return Discussion{}, err
 	}
 	if err := validateRelativeAnchor(anchorStart, anchorEnd, anchorVersion, anchorQuote); err != nil {
+		return Discussion{}, err
+	}
+	if err := validateBlockID(blockID); err != nil {
 		return Discussion{}, err
 	}
 	discussionID, commentID := uid("disc"), uid("com")

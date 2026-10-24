@@ -2540,8 +2540,11 @@ Comments and threads remain relational. A discussion stores:
 Comments are plain fields (Epo 2026-10-24): each comment holds its
 discussion, author and plain text of at most 3,000 characters (`text`, the
 only size rule; no rich content and no JSON byte cap). Go refuses text that is
-empty, only whitespace or holds a control character other than newline and
-tab, and any field the schema does not name. The comment box and the AI's
+empty or only whitespace, and any field the schema does not name. Every
+comment field (text, quote, block id) refuses control characters other than
+newline and tab and the bidi override and isolate characters (U+202A-U+202E,
+U+2066-U+2069); zero-width joiners, which emoji and some scripts need, stay
+(Epo 2026-10-24, Q313). The comment box and the AI's
 comments both send one plain text; the thread shows it as written. The
 discussion and comment routes take bodies of at most 64 KiB, which fits the
 largest valid discussion. The JSON API base64-encodes relative positions;
