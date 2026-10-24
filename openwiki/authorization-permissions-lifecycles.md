@@ -402,9 +402,12 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   address.
 - An owner sends at most 50 invites per UTC day, new rows and resends alike
   (429 `invite_limit`), and typing an address again within 10 minutes of its
-  last send is refused with 429 `invite_recently_sent` (no new token, no
-  email). Both apply the same way to every address, with or without an
-  account, so they tell the inviter nothing (Epo 2026-10-24, rate-limit audit
+  last send, cancelled since or not, is refused with 429
+  `invite_recently_sent` (no new token, no email). An account invited under
+  another address in those 10 minutes gets no second notification or email:
+  the new row is listed as sent but stays inert until a resend after the
+  wait. All of this applies the same way to every address, with or without
+  an account, so it tells the inviter nothing (Epo 2026-10-24, rate-limit audit
   M8; `server/internal/store/collaboration.go`). Inviting someone the owner
   already sees in the roster (a current member's user id, the owner's own id
   or email) sends nothing, so it skips both and answers as before; a member

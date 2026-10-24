@@ -38,6 +38,8 @@ func TestPendingInvitesListEveryTypedAddress(t *testing.T) {
 		if err := s.CreateWorkspaceInvite(ctx, ws.ID, address, RoleViewer, owner); err != nil {
 			t.Fatalf("invite %q: %v", address, err)
 		}
+		// Past the resend wait, so the invitee's second address reaches them too.
+		ageInvitesPastCooldown(t, s, ws.ID)
 	}
 	// Typing an address again (past the resend cooldown) refreshes its row.
 	ageInvitesPastCooldown(t, s, ws.ID)

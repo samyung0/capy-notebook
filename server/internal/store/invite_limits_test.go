@@ -68,3 +68,63 @@ func TestInviteResendWaitsAndOwnersHaveADailyCap(t *testing.T) {
 		t.Fatalf("refused invite left %d rows (%v)", rows, err)
 	}
 }
+
+// TestInviteWaitHoldsAcrossCancelsAndAddresses (security regression:
+// rate-limit audit M8, review L-1). Cancelling an invite does not restart the
+// resend wait for its address, and an account invited under one address gets
+// no second notification or email under another within the wait: that row is
+// stored inert and answered as sent, so the answer is the same for every
+// address.
+func TestInviteWaitHoldsAcrossCancelsAndAddresses(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_invite_wait_owner")
+	invitee := newBlobTestUser(t, s, "u_invite_wait_invitee")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Invite wait", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const address = "nobody-wait@example.test"
+	if err := s.CreateWorkspaceInvite(ctx, ws.ID, address, RoleViewer, owner); err != nil {
+		t.Fatal(err)
+	}
+	var inviteID string
+	if err := s.pool.QueryRow(ctx, `SELECT id FROM workspace_invites WHERE workspace_id=$1 AND email=$2`,
+		ws.ID, address).Scan(&inviteID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CancelWorkspaceInvite(ctx, owner, ws.ID, inviteID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateWorkspaceInvite(ctx, ws.ID, address, RoleViewer, owner); !errors.Is(err, ErrInviteRecentlySent) {
+		t.Fatalf("invite again after a cancel: %v, want ErrInviteRecentlySent", err)
+	}
+
+	reached := func() (notices, emails int) {
+		t.Helper()
+		if err := s.pool.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM notifications WHERE user_id=$1 AND kind=$2),
+			(SELECT count(*) FROM email_outbox WHERE user_id=$1 AND template='workspace-invite')`,
+			invitee, NotifWorkspaceInvite).Scan(&notices, &emails); err != nil {
+			t.Fatal(err)
+		}
+		return notices, emails
+	}
+	email := invitee + "@example.test"
+	if err := s.CreateWorkspaceInvite(ctx, ws.ID, invitee, RoleViewer, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateWorkspaceInvite(ctx, ws.ID, email, RoleViewer, owner); err != nil {
+		t.Fatalf("invite by email after the id: %v, want it answered as sent", err)
+	}
+	if notices, emails := reached(); notices != 1 || emails != 1 {
+		t.Fatalf("notifications=%d emails=%d after id then email, want 1 each", notices, emails)
+	}
+	ageInvitesPastCooldown(t, s, ws.ID)
+	if err := s.CreateWorkspaceInvite(ctx, ws.ID, email, RoleViewer, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, emails := reached(); emails != 2 {
+		t.Fatalf("emails=%d after the wait, want 2", emails)
+	}
+}
