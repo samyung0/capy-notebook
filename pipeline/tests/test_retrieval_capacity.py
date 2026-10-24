@@ -1,19 +1,21 @@
 """The retrieval process's own capacity (rate-limit audit M13, Epo 2026-10-24):
-chat and generate requests past the process's request slots answer
-provider_busy, Office captures past their slots answer busy instead of
-queueing at the parser, and page renders run on the render pool instead of
-the default executor every model call's admission uses."""
+generate requests past the process's request slots answer provider_busy and
+chats wait for a slot in arrival order (Q268), Office captures past their
+slots answer busy instead of queueing at the parser, and page renders run on
+the render pool instead of the default executor every model call's admission
+uses."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from pipeline.retrieval import capture, contract, limits
+from pipeline.retrieval import capture, contract, limits, models
 from pipeline.retrieve import service
 
 SECRET = "s" * 32
@@ -36,10 +38,10 @@ GENERATE = {
 }
 
 
-def test_chat_and_generate_answer_busy_past_the_request_slots(monkeypatch):
-    """(security regression: rate-limit audit M13) A full process answers the
-    existing 503 provider_busy with Retry-After; a finished request gives its
-    slot back."""
+def test_generate_answers_busy_past_the_request_slots(monkeypatch):
+    """(security regression: rate-limit audit M13) A full process answers a
+    generate request the existing 503 provider_busy with Retry-After; a
+    finished request gives its slot back."""
     monkeypatch.setattr(service.cfg, "pipeline_secret", SECRET)
     monkeypatch.setattr(limits, "REQUEST_SLOTS", limits.Slots(1))
     runs: list[str] = []
@@ -62,11 +64,10 @@ def test_chat_and_generate_answer_busy_past_the_request_slots(monkeypatch):
     assert limits.REQUEST_SLOTS.used == 0
 
     assert limits.REQUEST_SLOTS.take()  # another request is running
-    for path, body in (("/chat/stream", CHAT), ("/generate", GENERATE)):
-        busy = http.post(path, json=body, headers=headers)
-        assert busy.status_code == 503
-        assert busy.headers["Retry-After"] == "5"
-        assert busy.json()["code"] == "provider_busy"
+    busy = http.post("/generate", json=GENERATE, headers=headers)
+    assert busy.status_code == 503
+    assert busy.headers["Retry-After"] == "5"
+    assert busy.json()["code"] == "provider_busy"
     assert runs == ["chat", "generate"]
     assert limits.REQUEST_SLOTS.used == 1
 
@@ -139,3 +140,126 @@ async def test_page_renders_run_on_the_render_pool(monkeypatch, tmp_path):
     assert len(threads) == 2
     assert all(name.startswith("capy-render") for name in threads)
     assert limits._render_pool._max_workers == limits.RENDER_THREADS
+
+
+WAITING = {"type": "phase", "phase": "waiting_capacity"}
+
+
+class _ChatStream:
+    """One /chat/stream response driven over ASGI; ``left`` set is the client
+    hanging up."""
+
+    def __init__(self, query: str) -> None:
+        self.left = asyncio.Event()
+        self.frames: list[dict] = []
+        self.task = asyncio.create_task(self._run(query))
+
+    async def _run(self, query: str) -> None:
+        response = await service.chat_stream(
+            service.ChatStreamReq(**CHAT | {"query": query})
+        )
+
+        async def receive() -> dict:
+            await self.left.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message: dict) -> None:
+            if message["type"] == "http.response.body" and message.get("body"):
+                text = message["body"].decode().removeprefix("data: ")
+                self.frames.append(json.loads(text))
+
+        await response({"type": "http"}, receive, send)
+
+
+async def _until(condition) -> None:
+    """Let the loop run until ``condition`` holds, a bounded number of steps."""
+    for _ in range(1000):
+        if condition():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("the streams never got there")
+
+
+def _chats(monkeypatch) -> list[str]:
+    """Chats that ran, in order; each ends at once and frees its slot."""
+    monkeypatch.setattr(limits, "REQUEST_SLOTS", limits.Slots(1))
+    runs: list[str] = []
+
+    async def events(req):
+        runs.append(req.query)
+        yield service._sse({"type": "done"})
+
+    monkeypatch.setattr(service, "_chat_events", events)
+    assert limits.REQUEST_SLOTS.take()  # another request is running
+    return runs
+
+
+async def test_a_chat_past_the_slots_waits_and_takes_the_freed_slot(monkeypatch):
+    """(security regression: rate-limit audit Q268) A full process does not
+    turn a chat away: its stream says once that it is waiting, then runs the
+    turn when a slot frees, and gives the slot back."""
+    runs = _chats(monkeypatch)
+    chat = _ChatStream("waits")
+    await _until(lambda: chat.frames)
+    assert chat.frames == [WAITING] and runs == []
+
+    limits.REQUEST_SLOTS.release()
+    await _until(chat.task.done)
+    chat.task.result()
+    assert chat.frames == [WAITING, {"type": "done"}]
+    assert runs == ["waits"]
+    assert limits.REQUEST_SLOTS.used == 0
+
+
+async def test_a_chat_that_waits_past_its_budget_ends_busy(monkeypatch):
+    """(security regression: rate-limit audit Q268) Past its wait the stream
+    ends with the provider_busy event a busy model call sends, never running
+    the turn."""
+    runs = _chats(monkeypatch)
+    monkeypatch.setattr(limits, "CHAT_SLOT_WAIT_S", 0)
+    chat = _ChatStream("late")
+    await _until(chat.task.done)
+    chat.task.result()
+
+    assert chat.frames == [
+        WAITING,
+        {
+            "type": "error",
+            "message": models.BUSY_ERROR,
+            "code": "provider_busy",
+            "retryAfterSeconds": 5,
+        },
+    ]
+    assert runs == []
+    assert limits.REQUEST_SLOTS.used == 1
+
+
+async def test_waiting_chats_take_slots_in_arrival_order(monkeypatch):
+    """(security regression: rate-limit audit Q268) Freed slots go to the
+    chats waiting longest first."""
+    runs = _chats(monkeypatch)
+    chats = []
+    for query in ["first", "second", "third"]:
+        chat = _ChatStream(query)
+        await _until(lambda chat=chat: chat.frames == [WAITING])
+        chats.append(chat)
+
+    limits.REQUEST_SLOTS.release()
+    await _until(lambda: all(chat.task.done() for chat in chats))
+    assert runs == ["first", "second", "third"]
+    assert limits.REQUEST_SLOTS.used == 0
+
+
+async def test_a_chat_that_leaves_while_waiting_gives_up_its_place(monkeypatch):
+    """(security regression: rate-limit audit Q268) A client that hangs up
+    while waiting leaves the queue; the freed slot goes to the next chat."""
+    runs = _chats(monkeypatch)
+    gone, kept = _ChatStream("gone"), _ChatStream("kept")
+    await _until(lambda: gone.frames == kept.frames == [WAITING])
+
+    gone.left.set()
+    await _until(gone.task.done)
+    limits.REQUEST_SLOTS.release()
+    await _until(kept.task.done)
+    assert runs == ["kept"] and gone.frames == [WAITING]
+    assert limits.REQUEST_SLOTS.used == 0
