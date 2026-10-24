@@ -165,6 +165,32 @@ async def test_a_message_allows_sixteen_images(monkeypatch, rendered):
         assert refused.text() == tools.IMAGE_LIMIT
 
 
+async def test_dropped_captures_still_count_toward_the_sixteen(monkeypatch):
+    """(Q349) The image budget drops old captures from the requests, but each
+    capture still counts toward the 16 per message: the 17th is refused with
+    the limit sentence as before."""
+
+    async def _render_file(*_args):
+        return _jpeg(8, 8), [0.0, 0.0, 1000.0, 1000.0], (1568, 1568)
+
+    monkeypatch.setattr(capture, "render_file", _render_file)
+    ctx = _ctx(2)
+    for n in range(1, 17):
+        result = await tools._capture_page(
+            {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+        )
+        assert not result.refused
+        ctx.images_sent.update(ctx.pending_images)  # a request carried it
+        tools.keep_images_within_budget(ctx)
+    assert len(ctx.pending_images) < 16  # the budget dropped some
+    later = await tools._capture_page(
+        {"file_id": "f_1", "page": 2, "_tool_call_id": "k17"}, ctx
+    )
+    assert later.refused and later.error_code == "limit_reached"
+    assert later.text() == tools.IMAGE_LIMIT
+    assert ctx.images_taken == 16 and "k17" not in ctx.pending_images
+
+
 async def test_source_change_images_share_the_cap(monkeypatch, rendered):
     """resolve_source_change's images count with the page captures both ways:
     a 16th image from a capture carries the sentence, and a source change's
@@ -491,7 +517,8 @@ def test_context_measurement_counts_images_by_pixels_not_base64():
         {"callId": "k1", "estimatedImageTokens": 10},
         {"callId": "k2", "estimatedImageTokens": 5},
     ]
-    assert capture.image_tokens(captures) == 15
+    attached = {"k1": ("capture 1", "u1"), "k2": ("capture 2", "u2")}
+    assert capture.image_tokens(captures, attached) == 15
 
 
 def test_a_folded_capture_stays_attached_after_the_turn_note():

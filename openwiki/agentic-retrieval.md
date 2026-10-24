@@ -3981,11 +3981,29 @@ budget count each attached image by its 28-px patch estimate
 (`estimatedImageTokens`) rather than by decoding the image for every call
 (Q238); the captures ride outside the
 compacted history, so their estimate is passed to compaction as extra weight.
-A capture is attached after its own tool result, and every capture stays
-attached until the turn's answer (Epo 2026-10-21): once live compaction folds
-its exchange into the turn note, `capture.inject_images` attaches its image
-right after the note, and `capture.image_tokens` counts every capture of the
-turn. A user message attaches 16 images, `capture_page`,
+A capture is attached after its own tool result, and live compaction drops
+none (Epo 2026-10-21): once it folds an exchange into the turn note,
+`capture.inject_images` attaches the exchange's images right after the note,
+and `capture.image_tokens` counts every image still attached.
+A turn's page captures (`capture_page`, `capture_knowledge_page`) stay within
+an image budget of 25,000 tokens by that patch estimate (`tools.IMAGE_BUDGET`;
+Epo 2026-10-24, Q349). Before each model call `tools.keep_images_within_budget`
+checks the total; only when new captures take it past the budget does it drop
+the oldest captures an earlier request carried, at once, until at most 12,500
+remains (`IMAGE_BUDGET_AFTER_DROP`). A capture no request has carried yet
+(`ToolContext.images_sent`) is never dropped, so the model sees each capture at
+least once. Drops come in batches, so between them every request starts the
+same and the provider's cached prefix holds. A dropped capture leaves
+`ToolContext.pending_images`, which frees its encoded part (Q299), and its
+one-line note takes the image's place in every later request: "capture_page
+result 3: bio.pdf page 4: image dropped to keep this turn's images within
+budget; capture the page again to see it." (`ToolContext.capture_notes`). The
+note counts as text, not as an image. At the 1568 px edge a full page is about
+2,200 to 2,500 tokens, so the budget holds about ten full pages. A
+`resolve_source_change` image is not a page capture: the budget neither counts
+nor drops it. A dropped capture still counts toward the 16 below, and a deck
+slide asking for one finds it no longer available.
+A user message attaches 16 images, `capture_page`,
 `capture_knowledge_page` and `resolve_source_change`'s image changes together
 (`tools.MAX_IMAGES`, Epo 2026-10-22; counted in `ToolContext.images_taken` and
 checked again after the render, since a response's image calls run side by

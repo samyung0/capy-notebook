@@ -3636,6 +3636,118 @@ async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
     assert with_image.total_tokens - without.total_tokens == 2
 
 
+async def test_captures_past_the_image_budget_drop_the_oldest_in_one_batch(
+    monkeypatch,
+):
+    """(Q349) A turn's page captures stay within 25k patch tokens: under it
+    every capture rides in the request; the capture batch that takes the turn
+    past it drops the oldest captures earlier requests carried, at once, until
+    at most 12.5k remains, never one the model has not seen yet; each dropped
+    capture leaves exactly one note naming its page, the dropped images leave
+    the request, the turn and the compaction budget, and the next request
+    starts the same, with no further drop."""
+    jpeg = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(jpeg, "JPEG")
+    side = 1568  # the capture edge: 56 x 56 patches, 3,136 tokens each
+
+    async def _render_file(_workspace_id, _file_id, _page, _bbox, _max_edge):
+        return jpeg.getvalue(), [0.0, 0.0, 1000.0, 1000.0], (side, side)
+
+    def captures(*pages: int) -> AssembledResponse:
+        return _assembled(
+            "",
+            [
+                _call("capture_page", f'{{"file_id":"f_1","page":{n}}}', f"k{n}")
+                for n in pages
+            ],
+        )
+
+    stream, seen = _script_stream(
+        [
+            captures(1, 2),
+            captures(3, 4),
+            captures(5, 6),
+            captures(7, 8, 9, 10),  # 31,360 tokens: past the budget
+            captures(11),
+            _assembled(_answer(("Seen.", [1]))),
+        ]
+    )
+
+    async def _run(name, args, ctx):
+        assert name == "capture_page"
+        return await agent.tools._capture_page(args, ctx)
+
+    extras: list[int] = []
+    compact = agent.compact.compact_messages
+
+    async def _compact(messages, spec, *, extra=0, **kwargs):
+        extras.append(extra)
+        return await compact(messages, spec, extra=extra, **kwargs)
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    monkeypatch.setattr(agent.capture, "render_file", _render_file)
+    monkeypatch.setattr(agent.compact, "compact_messages", _compact)
+    ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 1}],
+    }
+    agent.tools.assign_citations(
+        ctx,
+        [_passage(chunk_id=f"c{n}", page_start=n, page_end=n) for n in range(1, 12)],
+    )
+    events = await _collect("q", ctx)
+    assert events[-1]["type"] == "done"
+
+    def parts(request: dict) -> list[dict]:
+        return [
+            part
+            for message in request["messages"]
+            if isinstance(message.get("content"), list)
+            for part in message["content"]
+        ]
+
+    def shown(request: dict) -> list[int]:
+        """The pages of the request's images, in request order."""
+        found = parts(request)
+        return [
+            int(found[i - 1]["text"].split("\n")[0].rsplit(" ", 1)[1])
+            for i, part in enumerate(found)
+            if part["type"] == "image_url"
+        ]
+
+    def notes(request: dict) -> list[str]:
+        return [
+            part["text"]
+            for part in parts(request)
+            if part["type"] == "text" and "image dropped" in part["text"]
+        ]
+
+    assert [shown(request) for request in seen] == [
+        [],
+        [1, 2],
+        [1, 2, 3, 4],
+        [1, 2, 3, 4, 5, 6],
+        [7, 8, 9, 10],
+        [7, 8, 9, 10, 11],
+    ]
+    # A response's captures run side by side, so their numbers follow the
+    # order they finish in; each note names its page.
+    dropped = [ctx.capture_notes[f"k{n}"] for n in range(1, 7)]
+    assert all(
+        f"bio.pdf page {n}: image dropped" in dropped[n - 1] for n in range(1, 7)
+    )
+    assert [notes(request) for request in seen[:4]] == [[]] * 4
+    assert notes(seen[4]) == notes(seen[5]) == dropped
+    assert sorted(ctx.pending_images) == ["k10", "k11", "k7", "k8", "k9"]
+    # The request after the drop starts as the drop's own request did.
+    before = seen[4]["messages"][:-1]  # its turn context comes last
+    assert seen[5]["messages"][: len(before)] == before
+    # The compaction budget counts the four kept captures, not all ten.
+    assert abs(extras[4] - extras[0] - 4 * (side // 28) ** 2) < 100
+
+
 async def test_a_compacted_turn_still_sends_every_capture(monkeypatch):
     """Live compaction folds the capture's exchange into the turn note; its
     image still rides with every later request of the turn, and the budget
@@ -3751,6 +3863,10 @@ async def test_attached_captures_count_against_the_compaction_budget(monkeypatch
                 "bytes": 1,
                 "estimatedImageTokens": 2240,
             }
+        )
+        ctx.pending_images[args["_tool_call_id"]] = (
+            "capture_page result 1",
+            agent.capture.data_url(b"jpeg"),
         )
         return ToolResult(text_parts=["Captured page 1."])
 

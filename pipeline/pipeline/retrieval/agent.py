@@ -631,7 +631,8 @@ async def _run_turn(
 
             # Captures ride outside ``messages``, every one until the answer, so
             # the budget holds them all.
-            image_tokens = capture.image_tokens(ctx.captures)
+            tools.keep_images_within_budget(ctx)  # Q349
+            image_tokens = capture.image_tokens(ctx.captures, ctx.pending_images)
             ctx.library_evidence.activate(messages, ctx.library_reads)
             allowance = ""
             if building and not tools_off:
@@ -719,7 +720,9 @@ async def _run_turn(
                 ctx.pending_images,
                 spec.provider_slug,
                 {c["callId"]: int(c["estimatedImageTokens"]) for c in ctx.captures},
+                tools.dropped_images(ctx),
             )
+            ctx.images_sent.update(ctx.pending_images)
             budget.estimated_input_tokens += compact.request_context(
                 request_messages, spec, schemas=active_schemas
             ).total_tokens

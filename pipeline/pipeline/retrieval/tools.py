@@ -239,6 +239,10 @@ class ToolContext:
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
     pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Page captures by call id, with the note that takes the image's place if
+    # the image budget drops it, and the images a request has carried (Q349).
+    capture_notes: dict[str, str] = field(default_factory=dict)
+    images_sent: set[str] = field(default_factory=set)
     # Images this message attached: page captures and source-change images.
     images_taken: int = 0
     # search_web calls this message that count toward its cap, failures that
@@ -677,6 +681,15 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
 # source change past the cap fails with its own reason.
 MAX_IMAGES = 16
 IMAGE_LIMIT = "capture_page limit reached, do not call capture_page anymore."
+# A turn's page captures stay within this many image tokens, counted with the
+# patch estimate the context accounting uses (capture.patch_tokens). A new
+# capture that takes them past it drops the oldest ones a request has already
+# carried until at most IMAGE_BUDGET_AFTER_DROP remains, each leaving a note;
+# drops come in batches, so the requests between them start the same and the
+# provider's cached prefix holds (Epo 2026-10-24, Q349). A dropped capture still
+# counts toward MAX_IMAGES.
+IMAGE_BUDGET = 25_000
+IMAGE_BUDGET_AFTER_DROP = IMAGE_BUDGET // 2
 SOURCE_IMAGE_LIMIT = (
     "resolve_source_change: this message's image limit is reached, so the "
     "change's image cannot be attached."
@@ -696,6 +709,42 @@ def _source_image_limit(ctx: ToolContext) -> ToolResult | None:
     if ctx.images_taken >= MAX_IMAGES:
         return _failed(SOURCE_IMAGE_LIMIT, code="limit_reached")
     return None
+
+
+def keep_images_within_budget(ctx: ToolContext) -> None:
+    """Before a model call: past IMAGE_BUDGET, drop the oldest page captures a
+    request has carried until IMAGE_BUDGET_AFTER_DROP remains. A capture no
+    request has carried yet is never dropped, so the model sees each once."""
+    kept = [
+        record
+        for record in ctx.captures
+        if record["callId"] in ctx.capture_notes
+        and record["callId"] in ctx.pending_images
+    ]
+    total = sum(int(record["estimatedImageTokens"]) for record in kept)
+    if total <= IMAGE_BUDGET:
+        return
+    for record in kept:
+        if total <= IMAGE_BUDGET_AFTER_DROP or record["callId"] not in ctx.images_sent:
+            return
+        del ctx.pending_images[record["callId"]]
+        total -= int(record["estimatedImageTokens"])
+
+
+def dropped_images(ctx: ToolContext) -> dict[str, str]:
+    """The notes of the page captures the image budget dropped, by call id."""
+    return {
+        call_id: note
+        for call_id, note in ctx.capture_notes.items()
+        if call_id not in ctx.pending_images
+    }
+
+
+def _dropped_note(label: str) -> str:
+    return (
+        f"{label}: image dropped to keep this turn's images within budget; "
+        "capture the page again to see it."
+    )
 
 
 def _imaged(ctx: ToolContext, text: str) -> ToolResult:
@@ -763,6 +812,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         f"capture_page result {n}: {label}",
         capture.data_url(jpeg),
     )
+    ctx.capture_notes[call_id] = _dropped_note(f"capture_page result {n}: {label}")
     numbers = "".join(f"[{i}]" for i in existing)
     result = _imaged(
         ctx,
@@ -1076,6 +1126,9 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
     ctx.pending_images[call_id] = (
         f"capture_knowledge_page result {n}: {label}",
         capture.data_url(jpeg),
+    )
+    ctx.capture_notes[call_id] = _dropped_note(
+        f"capture_knowledge_page result {n}: {label}"
     )
     return _imaged(
         ctx,
