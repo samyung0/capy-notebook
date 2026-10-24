@@ -13,7 +13,7 @@ import (
 )
 
 // Daily caps on signed-out grading. Classrooms share one address, so the
-// per-address cap (an IPv6 /64 is one address) is generous; the global cap
+// per-address cap (an IPv6 /56 is one address) is generous; the global cap
 // protects the Jev key's quota.
 const (
 	AnonymousGradingPartsPerIP  = 300

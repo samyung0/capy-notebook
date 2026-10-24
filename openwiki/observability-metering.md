@@ -705,7 +705,7 @@ still graded.
 
 Anonymous grading has no actor, so it is kept in `anonymous_grading_usage` per
 UTC day, salted client-address hash (HMAC with `SHARE_LINK_SECRET`; an IPv6
-address by its /64) and the random id the browser keeps in IndexedDB. The
+address by its /56) and the random id the browser keeps in IndexedDB. The
 share token is verified before the body is read. Parts are counted before any
 Jev call and stay counted when grading fails. Caps: 300 graded parts per
 address hash per day (generous because a classroom shares one IP) and 50,000
@@ -1542,7 +1542,8 @@ forged or stale header is an anonymous read. Workers Cache entries are
 unchanged (each query string keeps its own).
 
 Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its
-/64 (`obs.ClientAddress`). `Retry-After` is rounded up, so a client that
+/56 and IPv4 by the address (`obs.ClientAddress`; Epo 2026-10-24, Q246): the
+anonymous limiter, signed-out grading's allowance and signed-out share reads. `Retry-After` is rounded up, so a client that
 waits exactly that long gets through.
 
 **Waiting instead of an immediate 429** (Epo 2026-10-24, Q268;

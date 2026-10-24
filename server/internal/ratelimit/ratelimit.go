@@ -1,5 +1,5 @@
 // Package ratelimit is the gateway's request limiter: per user, per route
-// class, and per client address (IPv6 by its /64) for signed-out callers.
+// class, and per client address (IPv6 by its /56) for signed-out callers.
 //
 // The edge adds one rule only (deploy/cloudflare/rules.json, Free plan): per IP
 // over ten seconds on /api/public/. Everything else, chat and uploads included,

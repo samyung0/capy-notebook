@@ -35,13 +35,13 @@ func TestAnonymousGradingRefusesAForgedTokenUnread(t *testing.T) {
 	}
 }
 
-// TestAnonymousGradingCountsIPv6By64 (security regression: rate-limit audit
-// M6). Every address of one IPv6 /64 shares the per-address daily cap.
-func TestAnonymousGradingCountsIPv6By64(t *testing.T) {
+// TestAnonymousGradingCountsIPv6By56 (security regression: rate-limit audit
+// M6, Q246). Every address of one IPv6 /56 shares the per-address daily cap.
+func TestAnonymousGradingCountsIPv6By56(t *testing.T) {
 	h, st, calls := openGradingAPI(t, "full")
 	ctx := context.Background()
 	token := store.ShareToken(nil, gradingQuiz(t, h, "link"))
-	ipHash := st.AnonymousIPHash("2001:db8:5:6::/64")
+	ipHash := st.AnonymousIPHash("2001:db8:5:600::/56")
 	t.Cleanup(func() {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM anonymous_grading_usage WHERE ip_hash=$1`, ipHash)
 	})
@@ -54,7 +54,7 @@ func TestAnonymousGradingCountsIPv6By64(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		return rec
 	}
-	if rec := grade("2001:db8:5:6::1"); rec.Code != http.StatusOK {
+	if rec := grade("2001:db8:5:600::1"); rec.Code != http.StatusOK {
 		t.Fatalf("first grade → %d %s", rec.Code, rec.Body.String())
 	}
 	if _, err := st.Pool().Exec(ctx, `UPDATE anonymous_grading_usage SET parts=$2 WHERE ip_hash=$1`,
@@ -62,8 +62,8 @@ func TestAnonymousGradingCountsIPv6By64(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := calls.Load()
-	if rec := grade("2001:db8:5:6:ffff::2"); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "anonymous_grading_limit") {
-		t.Fatalf("another address of the /64 → %d %s, want 429", rec.Code, rec.Body.String())
+	if rec := grade("2001:db8:5:6ff:ffff::2"); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "anonymous_grading_limit") {
+		t.Fatalf("another address of the /56 → %d %s, want 429", rec.Code, rec.Body.String())
 	}
 	if calls.Load() != before {
 		t.Fatal("a refused grade reached Jev")

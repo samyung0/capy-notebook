@@ -82,15 +82,16 @@ func TestSentryTransactionsAndRefererAreScrubbed(t *testing.T) {
 	}
 }
 
-// TestClientAddressFoldsIPv6To64 (security regression: rate-limit audit M6).
-// Every address of one IPv6 /64 is one limiter and grading key, as the
-// collaboration server counts sockets; IPv4 stays whole.
-func TestClientAddressFoldsIPv6To64(t *testing.T) {
+// TestClientAddressFoldsIPv6To56 (security regression: rate-limit audit M6,
+// Q246). Every address of one IPv6 /56 is one limiter, grading and share-read
+// key; IPv4 stays whole.
+func TestClientAddressFoldsIPv6To56(t *testing.T) {
 	for ip, want := range map[string]string{
-		"2001:db8:1:2:aaaa::1":    "2001:db8:1:2::/64",
-		"2001:db8:1:2:bbbb::ffff": "2001:db8:1:2::/64",
-		"::ffff:192.0.2.7":        "192.0.2.7",
-		"192.0.2.7":               "192.0.2.7",
+		"2001:db8:1:200:aaaa::1":   "2001:db8:1:200::/56",
+		"2001:db8:1:2ff:bbbb::fff": "2001:db8:1:200::/56",
+		"2001:db8:1:300::1":        "2001:db8:1:300::/56",
+		"::ffff:192.0.2.7":         "192.0.2.7",
+		"192.0.2.7":                "192.0.2.7",
 	} {
 		r := httptest.NewRequest(http.MethodGet, "/api/public/quizzes/x", nil)
 		r.Header.Set("CF-Connecting-IP", ip)

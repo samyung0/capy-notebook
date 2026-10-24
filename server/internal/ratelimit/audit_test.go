@@ -86,19 +86,19 @@ func TestRetryAfterRoundsUp(t *testing.T) {
 	}
 }
 
-// TestAnonymousBucketCountsIPv6By64 (security regression: rate-limit audit
-// M6). Two addresses of one IPv6 /64 share the anonymous bucket.
-func TestAnonymousBucketCountsIPv6By64(t *testing.T) {
-	rdb := testRedis(t, "ip:base:ip:2001:db8:7:9::/64")
+// TestAnonymousBucketCountsIPv6By56 (security regression: rate-limit audit
+// M6, Q246). Two addresses of one IPv6 /56 share the anonymous bucket.
+func TestAnonymousBucketCountsIPv6By56(t *testing.T) {
+	rdb := testRedis(t, "ip:base:ip:2001:db8:7:900::/56")
 	handler := passthrough(New(rdb, Config{Anonymous: Rule{Limit: 1, Window: time.Hour}}), "")
 	from := func(ip string) func(*http.Request) {
 		return func(r *http.Request) { r.Header.Set("CF-Connecting-IP", ip) }
 	}
-	if rec := serve(handler, http.MethodGet, "/api/public/notes/n", from("2001:db8:7:9::1")); rec.Code != http.StatusNoContent {
+	if rec := serve(handler, http.MethodGet, "/api/public/notes/n", from("2001:db8:7:900::1")); rec.Code != http.StatusNoContent {
 		t.Fatalf("first: status %d", rec.Code)
 	}
-	if rec := serve(handler, http.MethodGet, "/api/public/notes/n", from("2001:db8:7:9:ffff::2")); rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("same /64: status %d, want 429", rec.Code)
+	if rec := serve(handler, http.MethodGet, "/api/public/notes/n", from("2001:db8:7:9ff:ffff::2")); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("same /56: status %d, want 429", rec.Code)
 	}
 }
 

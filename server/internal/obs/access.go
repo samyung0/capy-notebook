@@ -123,14 +123,15 @@ func ClientIP(r *http.Request) string {
 	return host
 }
 
-// ClientAddress is ClientIP as limits count it: an IPv6 address by its /64,
-// the block one host is given, as the collaboration server counts sockets
-// (collaboration-rs/crates/server/src/http.rs client_address).
+// ClientAddress is ClientIP as every limit keyed by a signed-out visitor's
+// address counts it: an IPv6 address by its /56 (Epo 2026-10-24, Q246), so a
+// host that hands out addresses from a larger block than a /64 is still one
+// key.
 func ClientAddress(r *http.Request) string {
 	return FoldAddress(ClientIP(r))
 }
 
-// FoldAddress turns an IPv6 address into its /64 ("2001:db8:1:2::/64") and
+// FoldAddress turns an IPv6 address into its /56 ("2001:db8:1:200::/56") and
 // leaves IPv4 (also IPv4-mapped IPv6) and unparsable values as they are.
 func FoldAddress(ip string) string {
 	addr, err := netip.ParseAddr(ip)
@@ -141,7 +142,7 @@ func FoldAddress(ip string) string {
 	if addr.Is4() {
 		return addr.String()
 	}
-	prefix, err := addr.Prefix(64)
+	prefix, err := addr.Prefix(56)
 	if err != nil {
 		return ip
 	}

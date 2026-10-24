@@ -223,7 +223,7 @@ type gradedQuizOutput struct {
 // for a quiz embedded in a shared note, POST
 // /api/public/notes/{token}/quizzes/{quizId}/grade, reached directly, not
 // through the site Worker. Nothing is stored; the daily caps key on the client
-// address (an IPv6 /64) and the shared item, and count only the open parts Jev
+// address (an IPv6 /56), and count only the open parts Jev
 // grades. A forged token is refused before the body is read.
 func (a *api) registerAnonymousGrading(api huma.API) {
 	clientIP := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
