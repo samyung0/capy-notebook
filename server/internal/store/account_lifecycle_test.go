@@ -1290,3 +1290,45 @@ func TestPurgeStripsTheAccountFromJobsItRequested(t *testing.T) {
 		t.Fatalf("job still names the purged account: %v %v", named, err)
 	}
 }
+
+// A receipt the account acted as in another owner's workspace, with no
+// conversation, goes with the purge; another user's receipt stays (Q355;
+// security regression: rate-limit audit r3 N-3).
+func TestPurgeDeletesTheAccountsAgentReceipts(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	leaver := newBlobTestUser(t, s, "u_purge_receipts")
+	owner := newBlobTestUser(t, s, "u_receipts_owner")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Theirs", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, theirs := uid("op"), uid("op")
+	for id, actor := range map[string]string{mine: leaver, theirs: owner} {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO agent_operations (id, kind, request_hash, actor_user_id, workspace_id, outcome)
+			VALUES ($1, 'edit_document', 'hash', $2, $3, 'succeeded')`, id, actor, ws.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.RequestAccountDeletion(ctx, leaver, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeUser(ctx, leaver); err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	rows, err := s.pool.Query(ctx, `SELECT id FROM agent_operations WHERE id = ANY($1)`, []string{mine, theirs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		left = append(left, id)
+	}
+	if err := rows.Err(); err != nil || len(left) != 1 || left[0] != theirs {
+		t.Fatalf("receipts left %v, want only the other user's %s (%v)", left, theirs, err)
+	}
+}

@@ -273,6 +273,12 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM source_import_jobs WHERE actor_user_id=$1`, userID); err != nil {
 		return err
 	}
+	// The agent's receipts matter only in the actor's own chats, deleted
+	// above; those without a conversation, in other owners' workspaces too,
+	// go with them. Only the actor can Undo or read one (Epo 2026-10-24, Q355).
+	if _, err := tx.Exec(ctx, `DELETE FROM agent_operations WHERE actor_user_id=$1`, userID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `UPDATE jobs SET payload=payload-'actorUserId'
 		WHERE payload->>'actorUserId'=$1`, userID); err != nil {
 		return err

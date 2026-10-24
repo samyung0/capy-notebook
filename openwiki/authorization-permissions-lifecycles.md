@@ -1599,7 +1599,10 @@ pays for in other people's workspaces goes too: its uploads, materials, and
 the images and audio it added to their notes, which then read as removed by
 their uploader (M16). A job it ran or requested in another owner's workspace
 stays with that file, without its id (`actorUserId` and `requestedBy` are
-stripped from the payload).
+stripped from the payload). Every agent receipt it acted as
+(`agent_operations`) goes, those with no conversation in other owners'
+workspaces too: only the actor can Undo or read a receipt, and its chats are
+already gone (Epo 2026-10-24, Q355).
 Remaining cross-account attribution is anonymized. Profile PII is scrubbed;
 pseudonymous billing, usage, provider, storage, and audit ledgers may remain
 under their own retention requirements. The account's editing incidents
