@@ -1374,34 +1374,38 @@ export const ReportEditIncidentResponse = zod.void()
 
 
 /**
- * @summary List the images and audio the caller pays for in materials it can no longer open
+ * @summary List the images and audio the caller pays for, each marked when its note can no longer be opened
  */
-export const listLostEditorAssetsQueryLimitDefault = 40;
-export const listLostEditorAssetsQueryLimitMax = 100;
+export const listEditorAssetsQueryLimitDefault = 40;
+export const listEditorAssetsQueryLimitMax = 100;
 
 
 
-export const ListLostEditorAssetsQueryParams = zod.object({
-  "limit": zod.int().min(1).max(listLostEditorAssetsQueryLimitMax).default(listLostEditorAssetsQueryLimitDefault),
+export const ListEditorAssetsQueryParams = zod.object({
+  "access": zod.enum(['open', 'lost']).optional().describe('Only media in notes the caller can open, or only those it cannot'),
+  "limit": zod.int().min(1).max(listEditorAssetsQueryLimitMax).default(listEditorAssetsQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListLostEditorAssetsResponse = zod.object({
+export const ListEditorAssetsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "assetId": zod.string(),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "lostAccess": zod.boolean(),
+  "materialId": zod.string().optional(),
   "materialTitle": zod.string(),
   "name": zod.string(),
   "purpose": zod.enum(['image', 'audio']),
-  "sizeBytes": zod.int()
+  "sizeBytes": zod.int(),
+  "workspaceName": zod.string()
 })),
   "nextCursor": zod.string().optional()
 })
 
 
 /**
- * @summary Delete an image or audio clip the caller pays for in another account's material
+ * @summary Delete an image or audio clip the caller pays for in a note it can no longer open
  */
 export const DeleteEditorAssetParams = zod.object({
   "assetId": zod.string()
@@ -1566,6 +1570,7 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2472,6 +2477,7 @@ export const CreateFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2547,6 +2553,7 @@ export const GetFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2651,6 +2658,7 @@ export const UpdateFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2730,6 +2738,7 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -5490,6 +5499,7 @@ export const ResumeReviewSessionResponse = zod.object({
   "question": zod.record(zod.string(), zod.unknown()).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "total": zod.int()
 })
 
@@ -7199,6 +7209,7 @@ export const GetWorkspaceReviewResponse = zod.object({
   "question": zod.record(zod.string(), zod.unknown()).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "total": zod.int()
 })
 

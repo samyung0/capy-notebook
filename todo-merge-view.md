@@ -11,9 +11,13 @@ drafts). Queued for later, nothing below decided yet:
 - **Conflicts shown in the editor.** Mark what conflicts directly in the Plate
   and Office editors (highlighting, or an error icon on the conflicting block)
   instead of only listing it in a separate sheet.
-- **Several documents at once.** Stored drafts are sent from any open Capy page
-  (on page load, on coming back online, when a tab becomes visible), not only
-  when a document's room opens. Several notes can therefore need the merge
-  view while the user is on an unrelated page. Decide how to present that, for
-  example one app-wide notice listing the documents with edits to review, each
-  opening its document. Applying a piece needs the document open and synced.
+- **Several documents at once** (decided, Q296 in
+  `human/frontend/error-handling.md`). Stored drafts are sent from any open
+  Capy page, and most land without anyone noticing. Drafts the server cannot
+  apply wait on the device. Show one app-wide banner saying how many notes
+  have edits to review and that drafts expire 7 days after their last edit,
+  linking to each note; opening a note downloads it and runs the merge view
+  there, under the usual room limits. A dismissed banner leaves a warning icon
+  on those notes in the file list until they are resolved or expire. Offline,
+  the banner says there are unsynced edits to sync once online. Nothing is
+  downloaded before a note opens.
