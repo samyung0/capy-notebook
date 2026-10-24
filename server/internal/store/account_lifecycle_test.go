@@ -1231,3 +1231,38 @@ func TestPurgeDeletesTheAccountsJobHistory(t *testing.T) {
 		t.Fatalf("host job keeps the purged actor %q", *actor)
 	}
 }
+
+// TestPurgeDeletesCheckoutsAndDailyCounters (security regression: rate-limit
+// audit r2 N-10, Q315). A purged account's open Checkout page (its URL and
+// amount) and its daily grading and invite counters go with it.
+func TestPurgeDeletesCheckoutsAndDailyCounters(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	leaver := newBlobTestUser(t, s, "u_purge_checkouts")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO credit_checkouts (user_id, kind, amount_cents, session_id, url, expires_at)
+		VALUES ($1, 'topup', 1000, $2, 'https://checkout.example.test/c', now() + interval '1 hour')`,
+		leaver, uid("cs")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO grading_usage (day, user_id, parts) VALUES (current_date, $1, 3)`, leaver); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO invite_usage (day, user_id, invites) VALUES (current_date, $1, 2)`, leaver); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestAccountDeletion(ctx, leaver, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeUser(ctx, leaver); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM credit_checkouts WHERE user_id=$1)
+		+ (SELECT count(*) FROM grading_usage WHERE user_id=$1)
+		+ (SELECT count(*) FROM invite_usage WHERE user_id=$1)`, leaver).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("%d checkout or counter rows survived the purge", left)
+	}
+}
