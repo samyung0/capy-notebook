@@ -19,7 +19,7 @@ use yrs::{Doc, ReadTxn, StateVector, Transact};
 
 use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
 use crate::auth::{Access, Context, RoomName};
-use crate::client_ids::{self, Binding, ClientIds};
+use crate::client_ids::{self, ClientIds};
 use crate::drafts::{Class, Refused};
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::markers::{self, Contributor, Markers};
@@ -79,7 +79,9 @@ pub enum RoomCmd {
         inside: bool,
         reply: oneshot::Sender<Result<(), String>>,
     },
-    Leave(MemberKey),
+    /// A channel's Leave; `clean`: its tab holds no unsent edits for the
+    /// document (Q236).
+    Leave(MemberKey, bool),
     Sync(MemberKey, bytes::Bytes),
     Awareness(MemberKey, bytes::Bytes),
     QueryAwareness(MemberKey),
@@ -87,8 +89,6 @@ pub enum RoomCmd {
     Token(MemberKey, Context),
     /// A store's I/O finished.
     Stored(Box<StoreDone>),
-    /// A channel's client ids were stored (or not), off the room's task.
-    IdsStored(MemberKey, Box<client_ids::Store>, Result<(), String>),
     /// A projection finished.
     Projected(i64, Result<(), String>),
     /// Store now (if anything is unsaved) and answer once it is durable.
@@ -257,9 +257,8 @@ struct Member {
     /// The session's client id, bound at join (Q213): the only id its
     /// awareness goes under.
     client: u64,
-    /// Its token turned writable and its id's store is running: it stays
-    /// read-only until the id is the user's (Q226).
-    storing: bool,
+    /// Its DOCX layout worker's client id, bound at join (Q219).
+    worker: Option<u64>,
     /// Awareness client ids this channel holds (its session's, or none).
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
@@ -268,15 +267,6 @@ struct Member {
     acks: u64,
     /// Its step 1 and awareness query waiting for its user's open budget.
     opening: Option<Opening>,
-}
-
-/// A JOIN waiting on its new client id's store.
-struct PendingJoin {
-    context: Context,
-    out: Outbox,
-    socket: String,
-    inside: bool,
-    reply: oneshot::Sender<Result<(), String>>,
 }
 
 /// A member's latest step 1 and awareness query while they wait on its
@@ -453,10 +443,8 @@ pub struct Room {
     name: String,
     doc: Doc,
     members: HashMap<MemberKey, Member>,
-    /// Which user each client id was assigned to (Q213).
+    /// Which user each client id was recorded to (Q213).
     client_ids: ClientIds,
-    /// Joins waiting on their new id's store, which runs off this task.
-    pending_joins: HashMap<MemberKey, PendingJoin>,
     awareness: HashMap<u64, AwarenessEntry>,
     changed_awareness: BTreeSet<u64>,
     /// Presence changed since it last went out; when it may go next.
@@ -875,7 +863,6 @@ async fn run(
         doc,
         members: HashMap::new(),
         client_ids,
-        pending_joins: HashMap::new(),
         awareness: HashMap::new(),
         changed_awareness: BTreeSet::new(),
         presence_dirty: false,
@@ -1047,8 +1034,7 @@ impl Room {
     }
 
     fn unloadable(&self) -> bool {
-        // A join waiting on its id's store is a member to be.
-        let empty = self.members.is_empty() && self.pending_joins.is_empty();
+        let empty = self.members.is_empty();
         if self.discard_pending.is_some() || !self.forced_unload.is_empty() {
             return empty && !self.store.running;
         }
@@ -1074,29 +1060,19 @@ impl Room {
                 inside,
                 reply,
             } => {
-                let taken = self.taken_ids();
-                match self.client_ids.bind(&context, client, taken) {
-                    Err(reason) => {
-                        let _ = reply.send(Err(reason));
-                    }
-                    Ok(Binding::Bound(client)) => {
-                        let answer = self.join(key, context, client, out, socket, inside);
-                        let _ = reply.send(answer);
-                    }
-                    Ok(Binding::Store(store)) => {
-                        let pending = PendingJoin {
-                            context,
-                            out,
-                            socket,
-                            inside,
-                            reply,
-                        };
-                        self.pending_joins.insert(key, pending);
-                        self.store_ids(key, store);
-                    }
-                }
+                let (history, live) = (self.in_history(), self.live_ids());
+                let answer = self
+                    .client_ids
+                    .bind(&context, client, history, live)
+                    .and_then(|bound| self.join(key, context, bound, out, socket, inside));
+                let _ = reply.send(answer);
             }
-            RoomCmd::Leave(key) => self.leave(key),
+            RoomCmd::Leave(key, clean) => {
+                if clean {
+                    self.left_clean(key);
+                }
+                self.leave(key);
+            }
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
                 Some(since) => self.on_step1(key, since).await,
                 None => self.on_sync(key, &payload),
@@ -1105,21 +1081,10 @@ impl Room {
             RoomCmd::QueryAwareness(key) => self.on_query(key),
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
-                let taken = self.taken_ids();
-                let mut store = None;
                 if let Some(member) = self.members.get_mut(&key) {
-                    if context.access == Access::Write && !member.storing {
-                        match self.client_ids.upgrade(member.client, &context, taken) {
-                            Ok(found) => {
-                                member.storing = found.is_some();
-                                store = found;
-                            }
-                            // Another user's id: the channel stays read-only.
-                            Err(_) => member.storing = true,
-                        }
-                    }
-                    member.read_only =
-                        member.held_read_only || context.access == Access::Read || member.storing;
+                    // A token turned writable: the channel's bound id is its
+                    // own, recorded at its first accepted write (Q226 M1).
+                    member.read_only = member.held_read_only || context.access == Access::Read;
                     // A narrowed writer of a source room leaves its presence.
                     let was = in_presence(member, &self.kind);
                     let renamed = member.context.identity != context.identity;
@@ -1130,11 +1095,7 @@ impl Room {
                         self.mark_presence();
                     }
                 }
-                if let Some(store) = store {
-                    self.store_ids(key, store);
-                }
             }
-            RoomCmd::IdsStored(key, store, result) => self.ids_stored(key, *store, result),
             RoomCmd::Stored(done) => self.stored(*done),
             RoomCmd::Projected(version, result) => self.projected(version, result),
             RoomCmd::Persist(reply) => {
@@ -1224,7 +1185,7 @@ impl Room {
             RoomCmd::RestoreAccess => {
                 for member in self.members.values_mut() {
                     member.held_read_only = false;
-                    member.read_only = member.context.access == Access::Read || member.storing;
+                    member.read_only = member.context.access == Access::Read;
                 }
                 self.view_dirty = true;
             }
@@ -2278,7 +2239,7 @@ impl Room {
         &mut self,
         key: MemberKey,
         context: Context,
-        client: u64,
+        bound: client_ids::Bound,
         out: Outbox,
         socket: String,
         inside: bool,
@@ -2315,8 +2276,8 @@ impl Room {
                 out,
                 socket,
                 inside,
-                client,
-                storing: false,
+                client: bound.client,
+                worker: bound.worker,
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
@@ -2379,7 +2340,6 @@ impl Room {
     }
 
     fn leave(&mut self, key: MemberKey) {
-        self.pending_joins.remove(&key);
         let Some(member) = self.members.remove(&key) else {
             return;
         };
@@ -2689,28 +2649,29 @@ impl Room {
                 "client update changed collaboration metadata",
             );
         }
-        // A writer adds structs only under its user's client ids (Q213), and
-        // a source room's editor under reserved copy ids too (M5).
+        // A writer adds structs only under ids its user holds (Q213): ones
+        // recorded to the user or bound to one of the user's live channels
+        // (a draft send has none of its own), and a source room's editor
+        // under reserved copy ids too (M5).
         let source = matches!(self.kind, Kindly::Source(_));
+        let bound: Vec<u64> = self
+            .members
+            .values()
+            .filter(|member| member.context.user_id == context.user_id)
+            .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+            .collect();
         if let Some(client) = client_ids::foreign(&self.doc.transact(), &update, |id| {
             self.client_ids.owned_by(id, &context.user_id)
+                || bound.contains(&id)
                 || (source && client_ids::RESERVED.contains(&id))
         }) {
             return self.foreign_update_refused(context, client, bytes.len());
         }
+        // The first accepted write under an id in this room's life records
+        // it as the user's (Q236), or refreshes its row (M3).
         let written = client_ids::written(&self.doc.transact(), &update);
-        if let Some(touch) = self.client_ids.first_writes(&context.user_id, &written) {
-            let db = self.app.db.clone();
-            let room = self.name.clone();
-            tokio::spawn(async move {
-                if let Err(error) = touch.run(&db).await {
-                    log(
-                        Level::Warn,
-                        "client id write time not recorded",
-                        json!({ "error": error, "room": room }),
-                    );
-                }
-            });
+        if let Some(rows) = self.client_ids.first_writes(&context.user_id, &written) {
+            self.write_rows(rows);
         }
         // Admission and apply run off the runtime's workers while the room
         // waits, unless the update is a small edit of a few structs (REVIEW2
@@ -3539,63 +3500,52 @@ impl Room {
     }
 
     /// This room's registry handle (none once it unloaded).
-    /// Whether an id is taken in this room: held in its state, bound to a
-    /// live channel, or the room's own (Q213, Q226).
-    fn taken_ids(&self) -> impl Fn(u64) -> bool + use<> {
+    /// Whether the room's state holds structs under an id (Q213).
+    fn in_history(&self) -> impl Fn(u64) -> bool + use<> {
         let held = self.doc.transact().state_vector();
-        let own = self.doc.client_id().get();
-        let bound: HashSet<u64> = self.members.values().map(|m| m.client).collect();
-        move |id| id == own || bound.contains(&id) || held.get(&yrs::block::ClientID::new(id)) > 0
+        move |id| held.get(&yrs::block::ClientID::new(id)) > 0
     }
 
-    /// Stores a channel's new ids off the room's task (Q226): a slow
-    /// database stalls only that channel, never the room's other members.
-    fn store_ids(&mut self, key: MemberKey, store: client_ids::Store) {
-        let Some(handle) = self.own_handle() else {
-            self.ids_stored(key, store, Err("collaboration room is closing".into()));
+    /// Whether an id is bound to a live channel (a session's or its DOCX
+    /// worker's) or is the room's own (Q213, Q226).
+    fn live_ids(&self) -> impl Fn(u64) -> bool + use<> {
+        let own = self.doc.client_id().get();
+        let bound: HashSet<u64> = self
+            .members
+            .values()
+            .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+            .collect();
+        move |id| id == own || bound.contains(&id)
+    }
+
+    /// A clean Leave (Q236): the channel's recorded ids expire.
+    fn left_clean(&mut self, key: MemberKey) {
+        let Some(member) = self.members.get(&key) else {
             return;
         };
-        let db = self.app.db.clone();
-        tokio::spawn(async move {
-            let result = store.run(&db).await;
-            let _ = handle
-                .tx
-                .send(RoomCmd::IdsStored(key, Box::new(store), result))
-                .await;
-        });
+        let ids: Vec<u64> = std::iter::once(member.client)
+            .chain(member.worker)
+            .collect();
+        let user = member.context.user_id.clone();
+        if let Some(rows) = self.client_ids.left_clean(&user, &ids) {
+            self.write_rows(rows);
+        }
     }
 
-    /// A store finished: the waiting join goes ahead (or is refused), or the
-    /// upgraded channel turns writable.
-    fn ids_stored(&mut self, key: MemberKey, store: client_ids::Store, result: Result<(), String>) {
-        self.client_ids.stored(&store, &result);
-        if let Some(pending) = self.pending_joins.remove(&key) {
-            let answer = result.and_then(|()| {
-                self.join(
-                    key,
-                    pending.context,
-                    store.client,
-                    pending.out,
-                    pending.socket,
-                    pending.inside,
-                )
-            });
-            let _ = pending.reply.send(answer);
-            return;
-        }
-        if let Some(member) = self.members.get_mut(&key) {
-            if result.is_err() {
+    /// Writes client-id rows off the room's task (Q226 M4): a slow database
+    /// stalls no channel.
+    fn write_rows(&self, rows: client_ids::Rows) {
+        let db = self.app.db.clone();
+        let room = self.name.clone();
+        tokio::spawn(async move {
+            if let Err(error) = rows.run(&db).await {
                 log(
                     Level::Warn,
-                    "a writable token's client id was not stored",
-                    json!({ "room": self.name, "user_id": member.context.user_id }),
+                    "client id rows not written",
+                    json!({ "error": error, "room": room }),
                 );
-                return;
             }
-            member.storing = false;
-            member.read_only = member.held_read_only || member.context.access == Access::Read;
-            self.view_dirty = true;
-        }
+        });
     }
 
     fn own_handle(&self) -> Option<RoomHandle> {

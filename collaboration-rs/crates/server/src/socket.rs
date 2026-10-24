@@ -717,7 +717,10 @@ impl Connection {
                 return false;
             };
             if let Some(joined) = self.remove_joined(channel).await {
-                let _ = joined.tx.send(RoomCmd::Leave((self.id, channel))).await;
+                let _ = joined
+                    .tx
+                    .send(RoomCmd::Leave((self.id, channel), false))
+                    .await;
             }
             self.forget(channel);
             // A bad token is refused here, before any lookup, so it never
@@ -890,7 +893,9 @@ impl Connection {
                 self.remove_joined(channel).await;
                 self.timers
                     .retain(|(_, timer_channel), _| *timer_channel != channel);
-                RoomCmd::Leave(key)
+                // One byte: 0 when the tab holds no unsent edits for the
+                // document (Q236); anything else keeps its rows.
+                RoomCmd::Leave(key, message.payload.as_ref() == [0])
             }
             Kind::Token => {
                 self.token(channel, &message.payload).await;
@@ -922,7 +927,10 @@ impl Connection {
         let room = self.remove_joined(channel).await;
         self.forget(channel);
         if let Some(room) = room {
-            let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            let _ = room
+                .tx
+                .send(RoomCmd::Leave((self.id, channel), false))
+                .await;
         }
     }
 
@@ -960,7 +968,10 @@ impl Connection {
         self.remove_joined(channel).await;
         self.timers
             .retain(|(_, timer_channel), _| *timer_channel != channel);
-        let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+        let _ = room
+            .tx
+            .send(RoomCmd::Leave((self.id, channel), false))
+            .await;
     }
 
     /// Takes a joined channel off this socket and gives back its room (the
@@ -1001,7 +1012,7 @@ impl Connection {
         };
         self.send(embed, Kind::Closed, &protocol::closed(0, reason));
         self.forget(embed);
-        let _ = room.tx.send(RoomCmd::Leave((self.id, embed))).await;
+        let _ = room.tx.send(RoomCmd::Leave((self.id, embed), false)).await;
     }
 
     /// An embed of `name` joins inside `note`: the note's earlier channel of
@@ -1149,7 +1160,7 @@ impl Connection {
             if let Err(unsent) = tx.send((channel, attempt, name, context, result)) {
                 // The socket closed meanwhile: leave the room it joined.
                 if let (.., Ok(handle)) = unsent.0 {
-                    let _ = handle.tx.send(RoomCmd::Leave(key)).await;
+                    let _ = handle.tx.send(RoomCmd::Leave(key, false)).await;
                 }
             }
         });
@@ -1176,7 +1187,10 @@ impl Connection {
             }
         };
         if !current {
-            let _ = handle.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            let _ = handle
+                .tx
+                .send(RoomCmd::Leave((self.id, channel), false))
+                .await;
             return;
         }
         // An embed's note may have left while its room loaded.
@@ -1187,7 +1201,10 @@ impl Connection {
         if let Some((note, note_attempt)) = parent
             && !self.note_joined(note, note_attempt)
         {
-            let _ = handle.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            let _ = handle
+                .tx
+                .send(RoomCmd::Leave((self.id, channel), false))
+                .await;
             self.refuse(channel, &Refusal::note_closed());
             return;
         }
@@ -1289,7 +1306,7 @@ impl Connection {
                     &protocol::closed(4401, "collaboration token expired"),
                 );
                 if let Some(room) = self.remove_joined(channel).await {
-                    let _ = room.tx.try_send(RoomCmd::Leave((self.id, channel)));
+                    let _ = room.tx.try_send(RoomCmd::Leave((self.id, channel), false));
                 }
             } else {
                 self.send(channel, Kind::TokenRequest, &[]);
@@ -1347,7 +1364,10 @@ impl Connection {
     async fn close_all(&mut self) {
         for (channel, state) in self.channels.drain() {
             if let Channel::Joined { room, .. } = state {
-                let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+                let _ = room
+                    .tx
+                    .send(RoomCmd::Leave((self.id, channel), false))
+                    .await;
             }
         }
     }

@@ -16,6 +16,51 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
+// Security regression (Epo 2026-10-24, Q236): a material token request that
+// presents the session's previous token is offered its client id again, and
+// another user's previous token gives nothing of its own. Fails if the
+// endpoint ignores the previous token or re-grants another user's id.
+func TestAMaterialTokenOffersThePreviousTokensClientIDAgain(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	t.Cleanup(st.Close)
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
+		AuthDisabled:        true,
+		E2EAuth:             true,
+		E2ESecret:           "e2e-test-secret",
+		E2EUserIDs:          []string{"u_owner", "u_editor"},
+		CollaborationSecret: "collab-test-secret",
+	})
+	mint := func(user string, body any) (string, float64) {
+		t.Helper()
+		rec := doReq(t, h, http.MethodPost, "/api/materials/note_e2e_private/collaboration-token", user, body)
+		var out struct {
+			Token string `json:"token"`
+		}
+		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &out) != nil {
+			t.Fatalf("%s token = %d body=%s", user, rec.Code, rec.Body.String())
+		}
+		payload, err := base64.RawURLEncoding.DecodeString(strings.Split(out.Token, ".")[1])
+		var claims struct {
+			ClientID float64 `json:"clientId"`
+		}
+		if err != nil || json.Unmarshal(payload, &claims) != nil {
+			t.Fatalf("claims: %v", err)
+		}
+		return out.Token, claims.ClientID
+	}
+	previous, id := mint("u_editor", nil)
+	if _, again := mint("u_editor", map[string]string{"previousToken": previous}); again != id {
+		t.Fatalf("regranted id %v, previous %v", again, id)
+	}
+	if _, other := mint("u_owner", map[string]string{"previousToken": previous}); other == id {
+		t.Fatalf("another user's previous token gave its id %v", id)
+	}
+}
+
 // Signed-in viewers watch notes and live items through read-only rooms (Epo,
 // 2026-10-10): their token says read, an editor's write, and a stranger gets
 // none. The collaboration server closes a read channel that writes.

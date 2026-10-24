@@ -1,16 +1,17 @@
-//! Yjs client ids the server assigned (Epo 2026-10-23, Q213). Every
-//! collaboration token offers a fresh id (`clientId`, minted by Go). A Y.Doc
-//! takes the id of its first token joined with write access and keeps it for
-//! life, naming it in every JOIN. The room remembers which user each id was
-//! assigned to: a write JOIN with a new id stores it (one row per new Y.Doc,
-//! keyed by document and id), and the room keeps the record in memory from
-//! its load on, so reconnects and update checks read no database. It admits
-//! an update's structs past what the room holds only under ids of the
-//! writer's user (any of them: stored drafts of earlier sessions too). The
+//! Yjs client ids the server assigned (Epo 2026-10-23, Q213; Q236). Every
+//! collaboration token offers an id (`clientId`, minted by Go): a fresh one,
+//! or the id of the session's previous token, which a reconnect presents to
+//! keep its id. A JOIN binds its channel to the id its Y.Doc names, in
+//! memory, and the room records the id as its user's at the first accepted
+//! write under it (one row per id, keyed by document), keeping the record in
+//! memory from its load on, so reconnects and update checks read no
+//! database. It admits an update's structs past what the room holds only
+//! under ids of the writer's user: any recorded one (stored drafts of
+//! earlier sessions too) or one bound to a live channel of the user. The
 //! server's own writes (markers, agent edits, repairs, Undo, children passes)
 //! go under the room's client and never through admission. A DOCX editing
 //! session is offered a second id for its editor's resident layout worker
-//! (`workerClientId`, Q219), stored by the same join.
+//! (`workerClientId`, Q219), bound and recorded the same way.
 
 use std::collections::{HashMap, HashSet};
 
@@ -18,18 +19,19 @@ use deadpool_postgres::Pool;
 use yrs::block::ClientID;
 use yrs::{ReadTxn, Update, UpdateBlock};
 
-use crate::auth::{Access, Context, RoomName};
+use crate::auth::{Context, RoomName};
 
-/// Why a JOIN was refused under this rule: its id is another user's, an id
-/// offered again, one already in use or being stored. The browser joins
-/// again with a fresh token (a Y.Doc not bound yet takes that token's id; a
-/// bound one names its own again).
+/// Why a JOIN was refused under this rule: its id is another user's, or one
+/// a live channel holds. The browser joins again with a fresh token, without
+/// its previous one (a Y.Doc that never wrote takes the fresh token's id;
+/// one that wrote names its own again).
 pub const REFUSED_REASON: &str = "collaboration-client-id";
 
-/// Why a JOIN was refused: its id is not the one its token offers and the
-/// room holds it for no user (never assigned, or a bound Y.Doc whose row was
-/// cleared). No retry binds it: the browser does not retry, and its edits
-/// under the id are re-applied under an assigned one (Epo 2026-10-24).
+/// Why a JOIN was refused: the room holds its id for no user: not the one
+/// its token offers and unrecorded (never assigned, or a row that was
+/// cleared), or unrecorded with structs in the document's history.
+/// No retry binds it: the browser does not retry, and its edits under the
+/// id are re-applied under an assigned one (Epo 2026-10-24).
 pub const UNASSIGNED_REASON: &str = "collaboration-unassigned-id";
 
 /// Client ids reserved for derived override-seed copies (Epo 2026-10-24,
@@ -53,100 +55,89 @@ enum Document {
     Source { file_id: String },
 }
 
-/// One document's record: which user each assigned id belongs to, and the
-/// ids whose store is still running (reserved: no one else may take them).
+/// One document's record: which user each recorded id belongs to, and the
+/// ids whose last write this room's life has recorded.
 pub struct ClientIds {
     document: Document,
     owners: HashMap<u64, String>,
-    pending: HashSet<u64>,
-    /// Ids whose last write this room's life has recorded (M3).
-    touched: HashSet<u64>,
+    written: HashSet<u64>,
 }
 
-/// Rows whose last write time a room's first write under them refreshes
-/// (M3), off the room's task.
-pub struct Touch {
+/// The ids a JOIN binds its channel to: its session's and, on a DOCX write
+/// token, its layout worker's.
+pub struct Bound {
+    pub client: u64,
+    pub worker: Option<u64>,
+}
+
+/// Rows to write off the room's task (a slow database stalls no channel).
+pub struct Rows {
     ids: Vec<i64>,
     user: String,
     document: Document,
+    change: Change,
 }
 
-impl Touch {
+enum Change {
+    /// A first accepted write in this room's life: the row is recorded, or
+    /// its last write time refreshed (M3).
+    Written,
+    /// A clean Leave: the row expires, and the next room load clears it.
+    Expired,
+}
+
+impl Rows {
     pub async fn run(&self, db: &Pool) -> Result<(), String> {
         let connection = db.get().await.map_err(|error| error.to_string())?;
-        match &self.document {
-            Document::Material { material_id, keys } => {
+        let changed = match (&self.document, &self.change) {
+            (Document::Material { material_id, keys }, Change::Written) => {
                 connection
                     .execute(
-                        "UPDATE material_yjs_client_ids SET last_write_at=now()
+                        "INSERT INTO material_yjs_client_ids (material_id, document, client_id, user_id)
+                         SELECT $1, $2, unnest($3::bigint[]), $4
+                         ON CONFLICT (material_id, document, client_id) DO UPDATE
+                         SET last_write_at=now(), expired=false
+                         WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
+                        &[material_id, &document_name(*keys), &self.ids, &self.user],
+                    )
+                    .await
+            }
+            (Document::Source { file_id }, Change::Written) => {
+                connection
+                    .execute(
+                        "INSERT INTO source_document_client_ids (file_id, client_id, user_id)
+                         SELECT $1, unnest($2::bigint[]), $3
+                         ON CONFLICT (file_id, client_id) DO UPDATE
+                         SET last_write_at=now(), expired=false
+                         WHERE source_document_client_ids.user_id=EXCLUDED.user_id",
+                        &[file_id, &self.ids, &self.user],
+                    )
+                    .await
+            }
+            (Document::Material { material_id, keys }, Change::Expired) => {
+                connection
+                    .execute(
+                        "UPDATE material_yjs_client_ids SET expired=true
                          WHERE material_id=$1 AND document=$2 AND client_id=ANY($3) AND user_id=$4",
                         &[material_id, &document_name(*keys), &self.ids, &self.user],
                     )
                     .await
             }
-            Document::Source { file_id } => {
+            (Document::Source { file_id }, Change::Expired) => {
                 connection
                     .execute(
-                        "UPDATE source_document_client_ids SET last_write_at=now()
+                        "UPDATE source_document_client_ids SET expired=true
                          WHERE file_id=$1 AND client_id=ANY($2) AND user_id=$3",
                         &[file_id, &self.ids, &self.user],
                     )
                     .await
             }
         }
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-    }
-}
-
-/// What a JOIN's id check decided.
-pub enum Binding {
-    /// Bound as it is: a reconnect of a stored id, or a reader's id, which
-    /// is never stored.
-    Bound(u64),
-    /// New ids to store as the user's before the channel joins.
-    Store(Store),
-}
-
-/// Ids to store as one user's, off the room's task (a slow database stalls
-/// only the channel waiting on them). Reserved in the record until
-/// [ClientIds::stored] settles them.
-pub struct Store {
-    pub client: u64,
-    ids: Vec<u64>,
-    user: String,
-    document: Document,
-}
-
-impl Store {
-    /// Stores the ids in one insert. A row already there (another server
-    /// process stored it first) refuses.
-    pub async fn run(&self, db: &Pool) -> Result<(), String> {
-        let connection = db.get().await.map_err(|error| error.to_string())?;
-        let ids: Vec<i64> = self.ids.iter().map(|&id| id as i64).collect();
-        let stored = match &self.document {
-            Document::Material { material_id, keys } => {
-                connection
-                    .execute(
-                        "INSERT INTO material_yjs_client_ids (material_id, document, client_id, user_id)
-                         SELECT $1, $2, unnest($3::bigint[]), $4 ON CONFLICT DO NOTHING",
-                        &[material_id, &document_name(*keys), &ids, &self.user],
-                    )
-                    .await
-            }
-            Document::Source { file_id } => {
-                connection
-                    .execute(
-                        "INSERT INTO source_document_client_ids (file_id, client_id, user_id)
-                         SELECT $1, unnest($2::bigint[]), $3 ON CONFLICT DO NOTHING",
-                        &[file_id, &ids, &self.user],
-                    )
-                    .await
-            }
-        }
         .map_err(|error| error.to_string())?;
-        if stored != self.ids.len() as u64 {
-            return Err(REFUSED_REASON.into());
+        // A written id's row is another user's only if another server
+        // process recorded it first.
+        if matches!(self.change, Change::Written) && changed != self.ids.len() as u64 {
+            return Err("a client id's row belongs to another user".into());
         }
         Ok(())
     }
@@ -154,8 +145,9 @@ impl Store {
 
 impl ClientIds {
     /// The record of `name`'s document as stored, after clearing its rows
-    /// unwritten for 7 days (M3: one scan per room load, no scheduled job;
-    /// an id stays out of reach once in the document's history).
+    /// expired by a clean Leave or unwritten for 7 days (M3: one scan per
+    /// room load, no scheduled job; an id stays out of reach once in the
+    /// document's history).
     pub async fn load(db: &Pool, name: &RoomName) -> Result<Self, String> {
         let document = match name {
             RoomName::Material {
@@ -174,7 +166,7 @@ impl ClientIds {
                 client
                     .execute(
                         "DELETE FROM material_yjs_client_ids WHERE material_id=$1 AND document=$2
-                         AND last_write_at < now() - make_interval(days => $3)",
+                         AND (expired OR last_write_at < now() - make_interval(days => $3))",
                         &[material_id, &document_name(*keys), &UNUSED_DAYS],
                     )
                     .await
@@ -183,7 +175,7 @@ impl ClientIds {
                 client
                     .execute(
                         "DELETE FROM source_document_client_ids WHERE file_id=$1
-                         AND last_write_at < now() - make_interval(days => $2)",
+                         AND (expired OR last_write_at < now() - make_interval(days => $2))",
                         &[file_id, &UNUSED_DAYS],
                     )
                     .await
@@ -215,134 +207,93 @@ impl ClientIds {
         Ok(ClientIds {
             document,
             owners,
-            pending: HashSet::new(),
-            touched: HashSet::new(),
+            written: HashSet::new(),
         })
     }
 
-    /// Every id assigned to a user, for the server's own id draws (Q226).
+    /// Every id recorded to a user, for the server's own id draws (Q226).
     pub fn ids(&self) -> HashSet<u64> {
-        self.owners.keys().chain(&self.pending).copied().collect()
+        self.owners.keys().copied().collect()
     }
 
-    /// Whether `client` was assigned to `user`.
+    /// Whether `client` is recorded to `user`.
     pub fn owned_by(&self, client: u64, user: &str) -> bool {
         self.owners.get(&client).is_some_and(|owner| owner == user)
     }
 
-    /// Whether `client` is assigned to anyone, or being stored: the server
-    /// never writes under it.
-    pub fn assigned(&self, client: u64) -> bool {
-        self.owners.contains_key(&client) || self.pending.contains(&client)
-    }
-
-    /// The id a JOIN binds its channel to, or why it is refused. `declared`
-    /// is the Y.Doc's id from the JOIN; `taken` says whether the room's
-    /// state already has structs under an id, a live channel is bound to it,
-    /// or it is the room's own. An id assigned to this user binds as it is
-    /// when the token offers another (a reconnect). A new id must be the
-    /// token's own and free; a writer's is stored before the channel joins
-    /// ([Binding::Store]), a reader's binds for the channel's life only (its
-    /// awareness), since it never writes. An id offered again, even to its
-    /// own user, is refused: two Y.Docs on one id would write over each
-    /// other's clocks. A write token's worker id (DOCX) follows the same
-    /// rule and is stored with the session's id; a reconnect, whose session
-    /// id is stored already, stores none.
+    /// The ids a JOIN binds its channel to, or why it is refused. `declared`
+    /// is the Y.Doc's id from the JOIN; `history` says whether the room's
+    /// state already has structs under an id, `live` whether a live channel
+    /// is bound to it or it is the room's own. An id recorded to this user
+    /// binds as it is (a reconnect, whichever id its token offers). An
+    /// unrecorded id must be the one its token offers (fresh, or the previous
+    /// token's again, Q236), outside the history (else the room no longer
+    /// holds it: unassigned) and not live (two channels never share an
+    /// unrecorded id). A DOCX write token's worker id binds by the same rule.
+    /// Nothing is recorded until a write under the id is accepted.
     pub fn bind(
-        &mut self,
+        &self,
         context: &Context,
         declared: Option<u64>,
-        taken: impl Fn(u64) -> bool,
-    ) -> Result<Binding, String> {
+        history: impl Fn(u64) -> bool,
+        live: impl Fn(u64) -> bool,
+    ) -> Result<Bound, String> {
         let Some(client) = declared else {
             return Err(REFUSED_REASON.into());
         };
         let offered = context.client_id.map(u64::from) == Some(client);
-        match self.owners.get(&client) {
-            Some(owner) if *owner == context.user_id && !offered => {
-                return Ok(Binding::Bound(client));
-            }
-            Some(_) => return Err(REFUSED_REASON.into()),
-            None => {}
-        }
-        if self.pending.contains(&client) {
-            return Err(REFUSED_REASON.into());
-        }
-        if !offered {
-            return Err(UNASSIGNED_REASON.into());
-        }
-        if taken(client) {
-            return Err(REFUSED_REASON.into());
-        }
-        if context.access != Access::Write {
-            return Ok(Binding::Bound(client));
-        }
-        self.reserve(client, context, taken).map(Binding::Store)
-    }
-
-    /// The store a channel whose token turned writable needs: its bound id
-    /// (and a DOCX token's worker id) stored as a writable JOIN stores them,
-    /// or none when the id is the user's already. Refused when another user
-    /// holds it.
-    pub fn upgrade(
-        &mut self,
-        client: u64,
-        context: &Context,
-        taken: impl Fn(u64) -> bool,
-    ) -> Result<Option<Store>, String> {
-        match self.owners.get(&client) {
-            Some(owner) if *owner == context.user_id => return Ok(None),
-            Some(_) => return Err(REFUSED_REASON.into()),
-            None if self.pending.contains(&client) => return Err(REFUSED_REASON.into()),
-            None => {}
-        }
-        self.reserve(client, context, taken).map(Some)
-    }
-
-    /// Reserves `client` and the token's worker id for `context`'s user.
-    fn reserve(
-        &mut self,
-        client: u64,
-        context: &Context,
-        taken: impl Fn(u64) -> bool,
-    ) -> Result<Store, String> {
         let worker = context.worker_client_id.map(u64::from);
-        if worker.is_some_and(|id| self.assigned(id) || taken(id)) {
-            return Err(REFUSED_REASON.into());
-        }
-        let ids: Vec<u64> = [Some(client), worker].into_iter().flatten().collect();
-        self.pending.extend(&ids);
-        Ok(Store {
-            client,
-            ids,
-            user: context.user_id.clone(),
-            document: self.document.clone(),
-        })
+        let check = |id: u64, offered: bool| match self.owners.get(&id) {
+            Some(owner) if *owner == context.user_id => Ok(()),
+            Some(_) => Err(REFUSED_REASON),
+            None if !offered || history(id) => Err(UNASSIGNED_REASON),
+            None if live(id) => Err(REFUSED_REASON),
+            None => Ok(()),
+        };
+        check(client, offered)
+            .and_then(|()| worker.map_or(Ok(()), |id| check(id, true)))
+            .map_err(String::from)?;
+        Ok(Bound { client, worker })
     }
 
-    /// The rows of `written` (ids `user` just wrote under) whose last write
-    /// this room's life has not recorded yet; marks them.
-    pub fn first_writes(&mut self, user: &str, written: &[u64]) -> Option<Touch> {
-        let ids: Vec<i64> = written
-            .iter()
-            .filter(|&&id| self.owned_by(id, user) && self.touched.insert(id))
-            .map(|&id| id as i64)
-            .collect();
-        (!ids.is_empty()).then(|| Touch {
+    /// The rows of `written` (ids just written under, each recorded to the
+    /// writer's user or bound to one of its channels) that this room's life
+    /// has not recorded a write under yet: recorded as `user`'s, in memory
+    /// now and in the database off the room's task. Reserved copy ids are
+    /// never recorded.
+    pub fn first_writes(&mut self, user: &str, written: &[u64]) -> Option<Rows> {
+        let mut ids = Vec::new();
+        for &id in written {
+            if !RESERVED.contains(&id) && self.written.insert(id) {
+                self.owners.insert(id, user.to_owned());
+                ids.push(id as i64);
+            }
+        }
+        (!ids.is_empty()).then(|| self.rows(ids, user, Change::Written))
+    }
+
+    /// A clean Leave (the tab holds no unsent edits for the document): the
+    /// channel's ids recorded to `user` expire, so a later JOIN naming them
+    /// is refused (they are in the document's history) and the next room
+    /// load clears their rows.
+    pub fn left_clean(&mut self, user: &str, ids: &[u64]) -> Option<Rows> {
+        let mut expired = Vec::new();
+        for &id in ids {
+            if self.owned_by(id, user) {
+                self.owners.remove(&id);
+                self.written.remove(&id);
+                expired.push(id as i64);
+            }
+        }
+        (!expired.is_empty()).then(|| self.rows(expired, user, Change::Expired))
+    }
+
+    fn rows(&self, ids: Vec<i64>, user: &str, change: Change) -> Rows {
+        Rows {
             ids,
             user: user.to_owned(),
             document: self.document.clone(),
-        })
-    }
-
-    /// Settles a store: its ids are the user's once it committed, and free
-    /// again when it failed.
-    pub fn stored(&mut self, store: &Store, result: &Result<(), String>) {
-        for id in &store.ids {
-            self.pending.remove(id);
-            if result.is_ok() {
-                self.owners.insert(*id, store.user.clone());
-            }
+            change,
         }
     }
 }

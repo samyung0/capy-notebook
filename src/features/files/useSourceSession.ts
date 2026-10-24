@@ -1008,14 +1008,14 @@ export function useSourceSession(
           if (!number)
             for (const resolve of unsyncedWaiters.splice(0)) resolve();
         },
-        token: async () => {
+        token: async (previousToken) => {
           let token: SourceCollaborationToken;
           try {
             token =
               initialToken ??
               (await api.post<SourceCollaborationToken>(
                 `/files/${fileId}/collaboration-token`,
-                {}
+                previousToken ? { previousToken } : {}
               ));
           } catch (error) {
             tokenError = error;
@@ -1037,6 +1037,8 @@ export function useSourceSession(
           }
           return token.token;
         },
+        // Stored drafts not yet covered by a receipt (Q236).
+        unsent: () => !!recorder?.unsaved,
         url: credentials.url,
       });
       officeMark('provider');

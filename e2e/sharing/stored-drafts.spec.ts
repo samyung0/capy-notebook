@@ -1,50 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type {
-  APIRequestContext,
-  BrowserContext,
-  Page,
-  WebSocketRoute,
-} from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { users } from '../fixtures/seed';
 import { uploadSourceFile } from '../helpers/api';
+import { collaborationLink } from '../helpers/collaboration';
 import { expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 import { m } from '../i18n';
-
-/**
- * The context's collaboration sockets pass through the test, so going offline
- * closes them for certain and keeps new ones closed until back online.
- */
-async function collaborationLink(context: BrowserContext) {
-  const port = process.env.E2E_COLLABORATION_PORT;
-  let up = true;
-  const open: WebSocketRoute[] = [];
-  await context.routeWebSocket(
-    (url) => url.port === port,
-    (socket) => {
-      if (!up) {
-        void socket.close();
-        return;
-      }
-      open.push(socket, socket.connectToServer());
-    }
-  );
-  return {
-    async down(page: Page) {
-      up = false;
-      await context.setOffline(true);
-      for (const socket of open.splice(0)) await socket.close();
-      // Chromium's offline emulation does not reliably fire the event.
-      await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    },
-    async up(page: Page) {
-      up = true;
-      await context.setOffline(false);
-      await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    },
-  };
-}
 
 /** How many rows of a document the owner's device stores, read in `page`
  * (the page's drafts worker answers after every write it was sent). */

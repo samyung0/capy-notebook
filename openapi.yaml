@@ -3074,6 +3074,9 @@ components:
             - content
             - keys
           type: string
+        previousToken:
+          maxLength: 8192
+          type: string
       type: object
     MaterialIndexOutputBody:
       additionalProperties: false
@@ -5477,6 +5480,19 @@ components:
         - access
         - expiresAt
         - epoch
+      type: object
+    SourceCollaborationTokenBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceCollaborationTokenBody.json
+          format: uri
+          readOnly: true
+          type: string
+        previousToken:
+          maxLength: 8192
+          type: string
       type: object
     SourceEpochReset:
       additionalProperties: false
@@ -8976,6 +8992,11 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceCollaborationTokenBody"
       responses:
         "201":
           content:

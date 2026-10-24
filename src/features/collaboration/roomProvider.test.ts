@@ -244,7 +244,7 @@ it('reports a refusal with its reason and rejoins on the same socket', async () 
  * channel); from then on it keeps that id for life, naming it in every JOIN
  * whatever the token offers, so the server binds the same id and the Undo
  * stack survives. */
-it('takes the token client ids until a writable join binds them, then keeps them', async () => {
+it('takes the token client ids until the document writes under them, then keeps them', async () => {
   const tokens = [
     token('first', clientIdOf('first'), 11),
     token('second', clientIdOf('second'), 22),
@@ -300,6 +300,73 @@ it('takes the token client ids until a writable join binds them, then keeps them
   expect(provider.awareness.clientID).toBe(clientIdOf('second'));
   // The DOCX layout worker's id (Q219) is kept with the document's.
   expect(provider.workerClientId).toBe(22);
+});
+
+it('presents its previous token and keeps the ids it offers again, written or not', async () => {
+  // Q236: Go offers a reconnect its previous ids again, so an Office editor
+  // holding them (its replica and DOCX layout worker) needs no reload.
+  const id = clientIdOf('first');
+  const asked: (string | undefined)[] = [];
+  const { document, join, provider, socket } = await joined({
+    token: async (previous) => {
+      asked.push(previous);
+      return asked.length === 1
+        ? token('first', id, 11)
+        : token('again', id, 11);
+    },
+  });
+  socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  const [again] = socket.take(MessageKind.Join);
+  expect(asked).toEqual([undefined, token('first', id, 11)]);
+  const reader = new Reader(again.payload);
+  reader.varString();
+  reader.varString();
+  reader.varUint();
+  expect(reader.varUint()).toBe(id);
+  expect(document.clientID).toBe(id);
+  expect(provider.workerClientId).toBe(11);
+});
+
+it('asks for fresh ids after the room refused its client id', async () => {
+  // A live channel holds the id (two sessions presented one token).
+  const asked: (string | undefined)[] = [];
+  const { join, provider, socket } = await joined({
+    token: async (previous) => {
+      asked.push(previous);
+      return token(`t${asked.length}`);
+    },
+  });
+  socket.deliver(
+    message(join.channel, MessageKind.Refused, text('collaboration-client-id'))
+  );
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  expect(asked).toEqual([undefined, undefined]);
+});
+
+it('says on Leave whether the tab still holds unsent edits', async () => {
+  // Q236: only a clean Leave lets the room expire the session's ids.
+  let drafts = false;
+  for (const [edit, stored, unsent] of [
+    [false, false, 0],
+    [false, true, 1],
+    [true, false, 1],
+  ] as const) {
+    drafts = stored;
+    const { document, join, provider, socket } = await joined({
+      unsent: () => drafts,
+    });
+    socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+    // Unacknowledged.
+    if (edit) document.getText('content').insert(0, 'typed');
+    provider.disconnect();
+    const [leave] = socket.take(MessageKind.Leave);
+    expect([...leave.payload]).toEqual([unsent]);
+  }
 });
 
 it('keeps taking token ids while its joins are read-only', async () => {

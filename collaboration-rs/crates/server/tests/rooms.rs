@@ -463,6 +463,15 @@ impl Client {
         self.doc.client_id().get()
     }
 
+    /// Leaves its channel as a browser tab does (Q236): `unsent` when it
+    /// still holds unsent edits for the document. Later JOINs go on the next
+    /// channel of the same socket.
+    async fn leave(&mut self, unsent: bool) {
+        self.send(3, &[u8::from(unsent)]).await;
+        self.channel += 1;
+        self.inbox.clear();
+    }
+
     /// Reads messages until one of `kind` arrives (applying syncs), or times out.
     async fn until(&mut self, kind: u8) -> Option<Vec<u8>> {
         if let Some(index) = self.inbox.iter().position(|m| m.kind == kind) {
@@ -2200,13 +2209,14 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
     .await;
     let (user, room, mut client) = writer(&env, server.port, "crowd").await;
     let write = token(&room, &user, "write");
-    // Channel 2's session: each re-JOIN names its id with a fresh token.
+    // Channel 2's session: each re-JOIN names its id with a token that
+    // offers it again (Q236: it never wrote).
     let rejoin = token(&room, &user, "write");
     let rejoined = token_client_id(&rejoin).expect("client id");
     let join = || {
         join_payload_as(
             &room,
-            &token(&room, &user, "write"),
+            &token_offering(&room, &user, "write", rejoined),
             Some(client_protocol()),
             rejoined,
         )
@@ -2397,7 +2407,8 @@ async fn a_join_costs_one_message_of_the_users_allowance() {
     let Some(env) = env() else { return };
     let server = start_configured(&env, env.api.as_deref(), &SLOW_ALLOWANCE).await;
     let (user, room, mut client) = writer(&env, server.port, "joins").await;
-    // One session joining again and again, its id with a fresh token each time.
+    // One session joining again and again, its id with a token that offers
+    // it again each time (Q236: it never wrote).
     let first = token(&room, &user, "write");
     let id = token_client_id(&first).expect("client id");
     let mut first = Some(join_payload(&room, &first, Some(client_protocol())));
@@ -2406,7 +2417,7 @@ async fn a_join_costs_one_message_of_the_users_allowance() {
         let join = first.take().unwrap_or_else(|| {
             join_payload_as(
                 &room,
-                &token(&room, &user, "write"),
+                &token_offering(&room, &user, "write", id),
                 Some(client_protocol()),
                 id,
             )
@@ -2542,16 +2553,13 @@ async fn a_member_writes_awareness_only_under_its_own_client_id() {
     assert_eq!(states, expected);
 }
 
-/// Security regression (Q213, in-place GC P1): a Y.Doc keeps its client id
-/// for life. Reconnecting with a fresh token it names its kept id, which
-/// binds unchanged, and its next edit lands. A token offering an id already
-/// assigned (here the kept one, which Go's random draw may repeat) is
-/// refused, the retry naming the kept id with another token joins, and a
-/// new Y.Doc offered that id is refused too. Fails if a reconnect needs a
-/// new id, or one id can bind a second time from a fresh offer (two Y.Docs
-/// would write over each other's clocks).
+/// Security regression (Q213, Q236): a Y.Doc that wrote keeps its client id
+/// across reconnects: naming it with a fresh token, or with a token that
+/// offers it again (a reconnect presenting its previous token), binds it
+/// unchanged, and the next edit lands. Fails if a reconnect of a writer
+/// needs a new id.
 #[tokio::test]
-async fn a_bound_session_keeps_its_client_id_and_no_id_is_assigned_twice() {
+async fn a_session_keeps_its_client_id_across_reconnects() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "kept").await;
@@ -2562,9 +2570,8 @@ async fn a_bound_session_keeps_its_client_id_and_no_id_is_assigned_twice() {
     session.type_text("-a").await;
     session.until(6).await.expect("ack");
     let kept = session.id();
-    // A reconnect: the same document on a new channel, a fresh token.
-    session.channel += 1;
-    session.inbox.clear();
+    // A reconnect with a fresh token names the kept id.
+    session.leave(true).await;
     assert_eq!(
         session.joined(&room, &token(&room, &user, "write")).await,
         1
@@ -2572,32 +2579,19 @@ async fn a_bound_session_keeps_its_client_id_and_no_id_is_assigned_twice() {
     assert_eq!(session.id(), kept);
     session.type_text("-b").await;
     session.until(6).await.expect("ack after the reconnect");
-    // A token offering the kept id again is refused; the retry names it.
-    session.channel += 1;
-    session.inbox.clear();
-    session
-        .join(&room, &token_offering(&room, &user, "write", kept))
-        .await;
-    let refused = text_payload(&session.until(2).await.expect("refused"));
-    assert_eq!(refused, "collaboration-client-id");
-    session.channel += 1;
+    // A reconnect whose token offers the kept id again.
+    session.leave(true).await;
     assert_eq!(
-        session.joined(&room, &token(&room, &user, "write")).await,
+        session
+            .joined(&room, &token_offering(&room, &user, "write", kept))
+            .await,
         1
     );
     session.type_text("-c").await;
-    session.until(6).await.expect("ack after the retry");
-    // A new document offered the same id never binds to it.
-    let mut fresh = Client::open(server.port).await;
-    let offer = token_offering(&room, &user, "write", kept);
-    fresh
-        .send(
-            0,
-            &join_payload_as(&room, &offer, Some(client_protocol()), kept),
-        )
-        .await;
-    let refused = text_payload(&fresh.until(2).await.expect("refused"));
-    assert_eq!(refused, "collaboration-client-id");
+    session
+        .until(6)
+        .await
+        .expect("ack after the second reconnect");
     let mut reader = Client::open(server.port).await;
     reader.joined(&room, &token(&room, &user, "write")).await;
     assert!(
@@ -2605,6 +2599,213 @@ async fn a_bound_session_keeps_its_client_id_and_no_id_is_assigned_twice() {
         "{}",
         reader.block_text()
     );
+}
+
+/// Security regression (Q236): a session's id is recorded at the first
+/// accepted write under it, not at its JOIN. Fails if a JOIN records it, or
+/// a write does not.
+#[tokio::test]
+async fn a_client_id_is_recorded_at_its_first_accepted_write_not_at_join() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    let id = writer.id();
+    // A JOIN alone: its writable join and sync went through, nothing written.
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &token(&room, &user, "write")).await;
+    assert!(other.settle(|c| c.block_text() == "base").await);
+    assert_eq!(id_rows(&env, &room, id).await, 0, "a JOIN records nothing");
+    writer.type_text("-a").await;
+    writer.until(6).await.expect("ack");
+    assert!(
+        id_rows_reach(&env, &room, id, 1).await,
+        "the first accepted write records the id"
+    );
+    assert_eq!(id_rows(&env, &room, other.id()).await, 0);
+}
+
+/// Security regression (Q236): an Office session (its editor's id, and a
+/// DOCX layout worker's) that wrote nothing keeps both ids after its room
+/// unloaded when its reconnect's token offers them again, as Go re-grants
+/// them from the previous token, so the editor needs no reload; the edits
+/// under both land and record them. Fails if such a reconnect is refused or
+/// its edits are.
+#[tokio::test]
+async fn a_session_that_never_wrote_keeps_its_regranted_ids_after_its_room_unloaded() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let (client_id, worker) = (fresh_client_id(), fresh_client_id());
+    let mut first = Client::open(server.port).await;
+    let grant = token_with_worker(&room, &user, client_id, worker);
+    assert_eq!(first.joined(&room, &grant).await, 1);
+    assert!(first.settle(|c| source_text(c) == "base").await);
+    assert_eq!(first.id(), client_id);
+    drop(first);
+    wait_unloaded(server.port).await;
+    let mut back = Client::open(server.port).await;
+    back.send(
+        0,
+        &join_payload_as(
+            &room,
+            &token_with_worker(&room, &user, client_id, worker),
+            Some(client_protocol()),
+            client_id,
+        ),
+    )
+    .await;
+    assert_eq!(back.until(1).await.expect("the reconnect joins"), [1]);
+    let sv = back.doc.transact().state_vector().encode_v1();
+    back.send(5, &sync(0, &sv)).await;
+    assert!(back.settle(|c| source_text(c) == "base").await);
+    for (id, text) in [(worker, "w-"), (client_id, "c-")] {
+        let edit = typed_as(&back, id, text);
+        back.doc
+            .transact_mut()
+            .apply_update(Update::decode_v1(&edit).expect("edit"))
+            .expect("apply");
+        back.send(5, &sync(2, &edit)).await;
+        back.until(6).await.expect("the edit is acknowledged");
+        assert!(id_rows_reach(&env, &room, id, 1).await, "{text} recorded");
+    }
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        reader.settle(|c| source_text(c) == "c-w-base").await,
+        "{}",
+        source_text(&reader)
+    );
+}
+
+/// Security regression (Q236): a session that typed but never had a write
+/// accepted, reconnecting after its room unloaded, gets its id back with a
+/// token that offers it again and its edit lands; with a fresh token instead
+/// (its previous one too old or refused) its JOIN is refused as
+/// `collaboration-unassigned-id`, never retried. Fails if either answer
+/// changes.
+#[tokio::test]
+async fn a_typed_but_unaccepted_session_gets_its_id_back_only_with_a_regrant() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut session) = writer(&env, server.port, "base").await;
+    let id = session.id();
+    let unsent = session.typed("-offline");
+    session.leave(true).await;
+    wait_unloaded(server.port).await;
+    let fresh = token(&room, &user, "write");
+    session
+        .send(
+            0,
+            &join_payload_as(&room, &fresh, Some(client_protocol()), id),
+        )
+        .await;
+    let reason = text_payload(&session.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-unassigned-id");
+    session.channel += 1;
+    session.inbox.clear();
+    assert_eq!(
+        session
+            .joined(&room, &token_offering(&room, &user, "write", id))
+            .await,
+        1
+    );
+    assert_eq!(session.id(), id);
+    session.send(5, &sync(2, &unsent)).await;
+    session.until(6).await.expect("the offline edit lands");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        reader.settle(|c| c.block_text() == "base-offline").await,
+        "{}",
+        reader.block_text()
+    );
+}
+
+/// Security regression (Q236): two sessions presenting the same previous
+/// token are offered the same unrecorded id; the first JOIN binds it and the
+/// second is refused as `collaboration-client-id` while the first is live,
+/// so two documents never write under one id. Fails if both bind.
+#[tokio::test]
+async fn one_regranted_id_binds_one_live_session() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let id = fresh_client_id();
+    let grant = token_offering(&room, &user, "write", id);
+    let mut first = Client::open(server.port).await;
+    first
+        .send(
+            0,
+            &join_payload_as(&room, &grant, Some(client_protocol()), id),
+        )
+        .await;
+    assert_eq!(first.until(1).await.expect("the first joins"), [1]);
+    let mut second = Client::open(server.port).await;
+    second
+        .send(
+            0,
+            &join_payload_as(&room, &grant, Some(client_protocol()), id),
+        )
+        .await;
+    let reason = text_payload(&second.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-client-id");
+}
+
+/// Security regression (Q236): a clean Leave (the tab holds no unsent edits)
+/// expires the session's row, so its id never binds again and the next room
+/// load clears the row; a Leave with unsent edits keeps it. Fails if a clean
+/// Leave leaves the id bindable or its row in place, or if an unclean one
+/// expires it.
+#[tokio::test]
+async fn a_clean_leave_expires_the_sessions_row() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut clean) = writer(&env, server.port, "base").await;
+    clean.type_text("-a").await;
+    clean.until(6).await.expect("ack");
+    let mut kept = Client::open(server.port).await;
+    kept.joined(&room, &token(&room, &user, "write")).await;
+    assert!(kept.settle(|c| c.block_text() == "base-a").await);
+    kept.type_text("-b").await;
+    kept.until(6).await.expect("ack");
+    let (gone, stays) = (clean.id(), kept.id());
+    assert!(id_rows_reach(&env, &room, gone, 1).await);
+    assert!(id_rows_reach(&env, &room, stays, 1).await);
+    clean.leave(false).await;
+    kept.leave(true).await;
+    // The expired id no longer binds, even offered again.
+    clean
+        .send(
+            0,
+            &join_payload_as(
+                &room,
+                &token_offering(&room, &user, "write", gone),
+                Some(client_protocol()),
+                gone,
+            ),
+        )
+        .await;
+    let reason = text_payload(&clean.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-unassigned-id");
+    assert_eq!(
+        kept.joined(&room, &token(&room, &user, "write")).await,
+        1,
+        "a Leave with unsent edits keeps the id"
+    );
+    kept.leave(true).await;
+    wait_unloaded(server.port).await;
+    let mut opener = Client::open(server.port).await;
+    opener.joined(&room, &token(&room, &user, "read")).await;
+    assert!(opener.settle(|c| c.block_text() == "base-a-b").await);
+    assert_eq!(
+        id_rows(&env, &room, gone).await,
+        0,
+        "the expired row cleared"
+    );
+    assert_eq!(id_rows(&env, &room, stays).await, 1);
 }
 
 /// An update over `from`'s state appending `text` to its first block under
@@ -2789,10 +2990,9 @@ async fn every_join_guard_refuses_a_client_id_it_may_not_bind() {
 }
 
 /// Security regression (Q226, binding review M1): a channel that joined
-/// with a read token and whose refreshed token is writable has its id
-/// stored as a writable join stores it, so its edits land and a reconnect
-/// naming the id joins. Fails if a refresh to write stores nothing: the
-/// first edit is refused as under an unassigned id.
+/// with a read token and whose refreshed token is writable writes under its
+/// bound id, its first write records it, and a reconnect naming the id
+/// joins. Fails if the refreshed channel's edits are refused.
 #[tokio::test]
 async fn a_channel_whose_token_turns_writable_stores_its_id_and_its_edits_land() {
     let Some(env) = env() else { return };
@@ -2807,7 +3007,7 @@ async fn a_channel_whose_token_turns_writable_stores_its_id_and_its_edits_land()
     let mut refresh = Vec::new();
     varbytes(&mut refresh, token(&room, &user, "write").as_bytes());
     client.send(11, &refresh).await;
-    // The refresh and the id's store run before the edit.
+    // The refresh lands before the edit.
     tokio::time::sleep(Duration::from_millis(500)).await;
     let before = client.doc.transact().state_vector();
     client
@@ -2841,13 +3041,13 @@ async fn a_channel_whose_token_turns_writable_stores_its_id_and_its_edits_land()
     );
 }
 
-/// Security regression (Q226, binding review M4): a new session's id is
-/// stored off the room's task, so while that insert waits on the database
-/// (held here by a table lock) the room's other members keep exchanging
-/// edits, and the session joins once the insert goes through. Fails if the
-/// room waits on the insert.
+/// Security regression (Q226, binding review M4; Q236): a session's id is
+/// recorded at its first accepted write off the room's task, so while that
+/// insert waits on the database (held here by a table lock) the write is
+/// acknowledged and reaches the room's other members, and the row appears
+/// once the lock goes. Fails if the room waits on the insert.
 #[tokio::test]
-async fn a_held_client_id_insert_stalls_only_its_joining_channel() {
+async fn a_held_client_id_insert_stalls_no_channel() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (owner, editor, room) = shared_note(&env, "base").await;
@@ -2861,8 +3061,6 @@ async fn a_held_client_id_insert_stalls_only_its_joining_channel() {
     lock.batch_execute("BEGIN; LOCK TABLE material_yjs_client_ids IN SHARE MODE")
         .await
         .expect("lock");
-    let mut joining = Client::open(server.port).await;
-    joining.join(&room, &token(&room, &editor, "write")).await;
     a.type_text("-a").await;
     a.until(6).await.expect("ack while the insert waits");
     assert!(
@@ -2870,22 +3068,17 @@ async fn a_held_client_id_insert_stalls_only_its_joining_channel() {
         "{}",
         b.block_text()
     );
+    assert_eq!(id_rows(&env, &room, a.id()).await, 0);
     lock.batch_execute("ROLLBACK").await.expect("unlock");
-    assert_eq!(
-        joining
-            .until(1)
-            .await
-            .expect("joins once the insert goes through"),
-        [1]
-    );
+    assert!(id_rows_reach(&env, &room, a.id(), 1).await);
 }
 
 /// Security regression (Q226 M3, Epo 2026-10-24): a room's first write
 /// under an id refreshes its row's last write time, a room load clears rows
-/// unwritten for 7 days, and an id in the document's history is never
-/// assigned again though its row is gone. Fails if the first write leaves
-/// the row's time alone (a writing session's row would be cleared), if a
-/// load clears nothing, or if a cleared id can be bound.
+/// unwritten for 7 days, and an id in the document's history is never bound
+/// again though its row is gone. Fails if the first write leaves the row's
+/// time alone (a writing session's row would be cleared), if a load clears
+/// nothing, or if a cleared id can be bound.
 #[tokio::test]
 async fn unused_client_id_rows_clear_at_a_room_load_and_their_ids_stay_taken() {
     let Some(env) = env() else { return };
@@ -2902,70 +3095,59 @@ async fn unused_client_id_rows_clear_at_a_room_load_and_their_ids_stay_taken() {
         .await
         .expect("age the row");
     };
-    let rows = async |id: u64| -> i64 {
-        pg.query_one(
-            "SELECT count(*) FROM material_yjs_client_ids WHERE material_id=$1 AND client_id=$2",
-            &[&material, &(id as i64)],
-        )
-        .await
-        .expect("count")
-        .get(0)
-    };
     let reload = async || {
         wait_unloaded(server.port).await;
         let mut opener = Client::open(server.port).await;
         opener.joined(&room, &token(&room, &editor, "read")).await;
         assert!(opener.settle(|c| c.block_text().starts_with("base")).await);
     };
-    // The owner's row, stored by its join, ages before its first write.
     let mut first = Client::open(server.port).await;
     first.joined(&room, &token(&room, &owner, "write")).await;
     assert!(first.settle(|c| c.block_text() == "base").await);
     let id = first.id();
-    age(id).await;
     first.type_text("-a").await;
     first.until(6).await.expect("ack");
-    drop(first);
+    assert!(id_rows_reach(&env, &room, id, 1).await);
+    first.leave(true).await;
+    reload().await;
+    // Aged while the room is loaded, the row is refreshed by its first write
+    // in this room life.
+    first.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(first.settle(|c| c.block_text() == "base-a").await);
+    age(id).await;
+    first.type_text("-b").await;
+    first.until(6).await.expect("ack");
+    first.leave(true).await;
     reload().await;
     assert_eq!(
-        rows(id).await,
+        id_rows(&env, &room, id).await,
         1,
         "a row written to in its room's life is kept"
     );
     // Unwritten for 8 days: the next load clears it.
     age(id).await;
     reload().await;
-    assert_eq!(rows(id).await, 0, "a row unwritten for 7 days is cleared");
-    // Its id stays in the document's history: never assigned again.
-    let mut later = Client::open(server.port).await;
-    later
-        .send(
-            0,
-            &join_payload_as(
-                &room,
-                &token_offering(&room, &editor, "write", id),
-                Some(client_protocol()),
-                id,
-            ),
-        )
-        .await;
-    let reason = text_payload(&later.until(2).await.expect("refused"));
-    assert_eq!(reason, "collaboration-client-id");
-    // Its document's reconnect hears that no retry binds it.
-    let mut again = Client::open(server.port).await;
-    again
-        .send(
-            0,
-            &join_payload_as(
-                &room,
-                &token(&room, &owner, "write"),
-                Some(client_protocol()),
-                id,
-            ),
-        )
-        .await;
-    let reason = text_payload(&again.until(2).await.expect("refused"));
-    assert_eq!(reason, "collaboration-unassigned-id");
+    assert_eq!(
+        id_rows(&env, &room, id).await,
+        0,
+        "a row unwritten for 7 days is cleared"
+    );
+    // Its id stays in the document's history: no JOIN binds it again,
+    // whether its token offers it or not.
+    for (user, offer) in [
+        (&editor, token_offering(&room, &editor, "write", id)),
+        (&owner, token(&room, &owner, "write")),
+    ] {
+        let mut later = Client::open(server.port).await;
+        later
+            .send(
+                0,
+                &join_payload_as(&room, &offer, Some(client_protocol()), id),
+            )
+            .await;
+        let reason = text_payload(&later.until(2).await.expect("refused"));
+        assert_eq!(reason, "collaboration-unassigned-id", "{user}");
+    }
 }
 
 /// A client id in the range reserved for override-seed copies (M5).
@@ -5544,14 +5726,13 @@ fn typed_as(client: &Client, id: u64, text: &str) -> Vec<u8> {
         .encode_state_as_update_v1(&client.doc.transact().state_vector())
 }
 
-/// Security regression (Q219, Epo 2026-10-23): a DOCX session's second id,
-/// for its editor's resident layout worker, is stored by the join that
-/// stores the session's own, so the worker's edits land; a reconnect's token
-/// offers another worker id, which nothing stores, and an edit under it is
-/// refused. Fails if the worker id is not stored with the session's (every
-/// DOCX keystroke refused) or if any token's worker id is.
+/// Security regression (Q219, Q236): a DOCX session's second id, for its
+/// editor's resident layout worker, binds with the session's own at its
+/// JOIN, so the worker's edits land, and its first write records it while
+/// the session's id, unwritten, stays unrecorded. Fails if a worker's edits
+/// are refused (every DOCX keystroke) or its id is not recorded.
 #[tokio::test]
-async fn a_sessions_worker_client_id_is_stored_with_its_own_and_only_then() {
+async fn a_sessions_worker_client_id_binds_with_its_own_and_is_recorded_when_it_writes() {
     let Some(env) = env() else { return };
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
@@ -5574,27 +5755,8 @@ async fn a_sessions_worker_client_id_is_stored_with_its_own_and_only_then() {
         .until(6)
         .await
         .expect("the worker's edit is acknowledged");
-    // A reconnect: the stored session id with a fresh token and worker id.
-    client.channel += 1;
-    client.inbox.clear();
-    let later = fresh_client_id();
-    let rejoin = token_with_worker(&room, &user, fresh_client_id(), later);
-    client
-        .send(
-            0,
-            &join_payload_as(&room, &rejoin, Some(client_protocol()), client_id),
-        )
-        .await;
-    assert!(client.until(1).await.is_some(), "the reconnect joins");
-    client
-        .send(5, &sync(2, &typed_as(&client, later, "x-")))
-        .await;
-    let closed = client.until(4).await.expect("the channel closes");
-    assert!(
-        String::from_utf8_lossy(&closed).contains("client id"),
-        "{}",
-        String::from_utf8_lossy(&closed)
-    );
+    assert!(id_rows_reach(&env, &room, worker, 1).await);
+    assert_eq!(id_rows(&env, &room, client_id).await, 0);
     let mut reader = Client::open(server.port).await;
     assert_eq!(reader.joined(&room, &token(&room, &user, "write")).await, 1);
     assert!(
@@ -8746,9 +8908,9 @@ async fn a_draft_send_loads_an_unloaded_room_which_unloads_after_its_store() {
     let server = start(&env).await;
     let (user, material) = note(&env, "base").await;
     let room = format!("material:{material}:schema:1");
-    let drafts = {
+    let (drafts, id) = {
         let reader = synced(server.port, &room, &user, "base").await;
-        drafted(&reader.doc, typed_into_note(" sent"))
+        (drafted(&reader.doc, typed_into_note(" sent")), reader.id())
     };
     // The tab's room unloads (nothing to store); the send loads it again.
     for _ in 0..50 {
@@ -8758,6 +8920,17 @@ async fn a_draft_send_loads_an_unloaded_room_which_unloads_after_its_store() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     assert_eq!(active_rooms(server.port).await, 0);
+    // The tab's id is its user's, as a first accepted write would have
+    // recorded it (Q236).
+    db(&env)
+        .await
+        .execute(
+            "INSERT INTO material_yjs_client_ids (material_id, document, client_id, user_id)
+             VALUES ($1, 'content', $2, $3)",
+            &[&material, &(id as i64), &user],
+        )
+        .await
+        .expect("record the id");
     let (status, receipt) = send_drafts(
         server.port,
         &room,
@@ -9031,6 +9204,39 @@ async fn a_text_source_draft_send_applies_and_answers_once_checkpointed() {
         "{}",
         source_text(&editor)
     );
+}
+
+/// Rows recording `id` for the document of `room` (a material's content or
+/// a source file's).
+async fn id_rows(env: &Env, room: &str, id: u64) -> i64 {
+    let (query, document) = match room.split(':').next() {
+        Some("source") => (
+            "SELECT count(*) FROM source_document_client_ids WHERE file_id=$1 AND client_id=$2",
+            room.split(':').nth(1).expect("a file"),
+        ),
+        _ => (
+            "SELECT count(*) FROM material_yjs_client_ids WHERE material_id=$1 AND client_id=$2",
+            material_of(room),
+        ),
+    };
+    db(env)
+        .await
+        .query_one(query, &[&document, &(id as i64)])
+        .await
+        .expect("count")
+        .get(0)
+}
+
+/// Waits for `id`'s rows to reach `want` (rows are written off the room's
+/// task).
+async fn id_rows_reach(env: &Env, room: &str, id: u64, want: i64) -> bool {
+    for _ in 0..50 {
+        if id_rows(env, room, id).await == want {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
 }
 
 async fn wait_unloaded(port: u16) {

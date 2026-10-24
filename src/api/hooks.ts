@@ -2269,14 +2269,22 @@ export function useDeleteMaterialDiscussion(materialId: string) {
 
 /** A room token; `keys` asks for a quiz's keys document (editors who can
  * write only, live-items), `read` for a read channel whatever the user may do
- * (a View or a study page, which never write: REVIEW5 N2). */
+ * (a View or a study page, which never write: REVIEW5 N2). `previousToken`,
+ * the session's last token for the room, asks for its client id again
+ * (Q236). */
 export const getMaterialCollaborationToken = (
   materialId: string,
-  { access, document }: { access?: 'read'; document?: 'keys' } = {}
+  {
+    access,
+    document,
+    previousToken,
+  }: { access?: 'read'; document?: 'keys'; previousToken?: string } = {}
 ) =>
   api.post<MaterialCollaborationToken>(
     `/materials/${materialId}/collaboration-token`,
-    document || access ? { access, document } : undefined
+    document || access || previousToken
+      ? { access, document, previousToken }
+      : undefined
   );
 
 export function useMaterialCollaborationToken(

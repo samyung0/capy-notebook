@@ -92,6 +92,56 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID strin
 	}
 }
 
+// regrantMaxAge is how old a previous token may be and still give its
+// client ids again (Epo 2026-10-24, Q236): the unsent-edit expiry.
+const regrantMaxAge = 7 * 24 * time.Hour
+
+// regrantedClientIDs returns the client ids a reconnecting session's
+// previous token offered (Epo 2026-10-24, Q236), so its Y.Doc keeps its id:
+// the token must carry our signature, name this user and this room, and be
+// issued at most 7 days before now; its expiry is otherwise ignored. ok is
+// false for anything else, and the caller offers fresh ids. The caller's
+// own access check runs first: a previous token never grants access.
+func regrantedClientIDs(secret, previous, userID, room string, now time.Time) (client, worker uint32, ok bool) {
+	parts := strings.Split(previous, ".")
+	if secret == "" || len(parts) != 3 {
+		return 0, 0, false
+	}
+	header, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	var alg struct {
+		Alg string `json:"alg"`
+	}
+	if json.Unmarshal(header, &alg) != nil || alg.Alg != "HS256" {
+		return 0, 0, false
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return 0, 0, false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(parts[0] + "." + parts[1]))
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return 0, 0, false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	var claims collaborationClaims
+	if json.Unmarshal(payload, &claims) != nil {
+		return 0, 0, false
+	}
+	issued := time.Unix(claims.IssuedAt, 0)
+	if claims.Subject != userID || claims.Room != room || claims.ClientID == 0 ||
+		issued.Before(now.Add(-regrantMaxAge)) || issued.After(now) {
+		return 0, 0, false
+	}
+	return claims.ClientID, claims.WorkerClientID, true
+}
+
 // forkClientIDs are the ids BetterOffice writes seeds under within the
 // uint32 range: the DOCX seed (0) and a standalone PPTX (1). No session
 // draws them (M5).

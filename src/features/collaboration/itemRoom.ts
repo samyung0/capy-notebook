@@ -379,7 +379,7 @@ export class ItemRoom {
         if (number === 0) this.requestReceipt();
       },
       parent: this.options.inside ?? undefined,
-      token: async () => {
+      token: async (previousToken) => {
         if (cached) {
           const token = cached;
           cached = null;
@@ -387,10 +387,10 @@ export class ItemRoom {
         }
         let fresh: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
         try {
-          fresh = await getMaterialCollaborationToken(
-            this.materialId,
-            this.tokenRequest()
-          );
+          fresh = await getMaterialCollaborationToken(this.materialId, {
+            ...this.tokenRequest(),
+            previousToken,
+          });
         } catch (error) {
           this.tokenError = error;
           throw error;
@@ -406,6 +406,8 @@ export class ItemRoom {
         this.set({ access: now });
         return fresh.token;
       },
+      // Stored drafts not yet covered by a receipt (Q236).
+      unsent: () => !!this.recorder?.unsaved,
       url: first.url,
     });
     if (this.provider instanceof RoomProvider)

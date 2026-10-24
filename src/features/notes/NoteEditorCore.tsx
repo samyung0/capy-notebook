@@ -1027,11 +1027,12 @@ export function NoteEditorCore({
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
-                    token: async () => {
+                    token: async (previousToken?: string) => {
                       let token: MaterialCollaborationToken;
                       try {
                         token = await getMaterialCollaborationToken(
-                          material.id
+                          material.id,
+                          { previousToken }
                         );
                       } catch (error) {
                         tokenError.current = error;
@@ -1053,6 +1054,8 @@ export function NoteEditorCore({
                       }
                       return token.token;
                     },
+                    // Stored drafts not yet covered by a receipt (Q236).
+                    unsent: () => !!recorder.current?.unsaved,
                     url: collaborationToken.url,
                   },
                   // The capy-sync room provider (features/collaboration/platePlugin).

@@ -246,7 +246,19 @@ func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpoint
 	}
 	return &sourceCheckpointOutput{Body: saved}, nil
 }
-func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborationTokenInput) (*sourceTokenOutput, error) {
+
+// SourceCollaborationTokenBody carries the session's last token for this
+// room, even expired: the new token offers its client ids again (Q236).
+type SourceCollaborationTokenBody struct {
+	PreviousToken string `json:"previousToken,omitempty" maxLength:"8192"`
+}
+
+type sourceCollaborationTokenInput struct {
+	ID   string                        `path:"id"`
+	Body *SourceCollaborationTokenBody `required:"false"`
+}
+
+func (a *api) createSourceCollaborationToken(ctx context.Context, in *sourceCollaborationTokenInput) (*sourceTokenOutput, error) {
 	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
@@ -259,10 +271,19 @@ func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborat
 		return nil, hErr(err)
 	}
 	claims := newCollaborationClaims(userID(ctx), session.Room, session.Access, me.Name, me.AvatarURL, randID("collab"), int(session.Epoch))
+	var worker uint32
+	if in.Body != nil && in.Body.PreviousToken != "" {
+		if client, previousWorker, ok := regrantedClientIDs(a.cfg.CollaborationSecret, in.Body.PreviousToken, userID(ctx), session.Room, time.Now()); ok {
+			claims.ClientID, worker = client, previousWorker
+		}
+	}
 	// A DOCX editor's resident layout worker writes under an id of its own
-	// (Q219).
+	// (Q219), the previous token's again on a reconnect.
 	if session.Format == "docx" && session.Access == "write" {
-		claims.WorkerClientID = newClientID(claims.ClientID)
+		if worker == 0 {
+			worker = newClientID(claims.ClientID)
+		}
+		claims.WorkerClientID = worker
 	}
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {

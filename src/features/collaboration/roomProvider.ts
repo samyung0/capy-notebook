@@ -53,7 +53,13 @@ export interface RoomProviderConfig {
   parent?: NoteSeat;
   /** The socket to join on; the tab's shared one for the URL by default. */
   socket?: CollabSocket;
-  token: () => Promise<string>;
+  /** A room token. `previous`, the last one this provider used (even
+   * expired), asks for its client ids again (Q236): a reconnect keeps them. */
+  token: (previous?: string) => Promise<string>;
+  /** Whether the tab holds unsent edits for the document beyond the
+   * unacknowledged updates (stored drafts not yet covered by a receipt): a
+   * Leave says so, and only a clean one expires the session's ids (Q236). */
+  unsent?: () => boolean;
   url: string;
 }
 
@@ -69,6 +75,10 @@ export const OLDEST_CLOSED_REASON = 'collaboration-oldest-closed';
 /** Why the server closed an embed's channel: its note joined one past its
  * cap of embed channels (`EMBED_CLOSED_REASON`, same file). */
 export const EMBED_CLOSED_REASON = 'collaboration-embed-closed';
+/** Why the server refused a JOIN's client id: a live channel holds it, or
+ * it is another user's (`REFUSED_REASON`, collaboration-rs/crates/server/src/
+ * client_ids.rs). */
+const CLIENT_ID_REFUSED_REASON = 'collaboration-client-id';
 /** Why the server closed or refused an embed's channel: its note's channel
  * is not joined (`NOTE_CLOSED_REASON`, same file). */
 const NOTE_CLOSED_REASON = 'collaboration-note-closed';
@@ -141,12 +151,11 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private destroyed = false;
   /** A note's room: the seat its embeds join inside. */
   private noteSeat: NoteSeat | null = null;
-  /** The client id is kept for the document's life: a writable JOINED bound
-   * it, or the document wrote under a token's id (a read channel whose token
-   * turned writable, Q226 M1). */
-  private bound = false;
   /** The document took a token's client id. */
   private adopted = false;
+  /** The last token this provider used: the next token request presents it
+   * so the room keeps the session's ids (Q236). */
+  private previousToken: string | undefined;
   /** A DOCX session's second id, for its editor's resident layout worker
    * (Q219): taken with the document's and kept with it. */
   workerClientId: number | undefined;
@@ -193,7 +202,10 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     this.config.parent?.delete(this);
     this.unpark();
     const joined = this.channel !== null;
-    if (joined) this.send(MessageKind.Leave);
+    // 0: the tab holds no unsent edits for the document, so the room may
+    // expire the session's ids (Q236).
+    const unsent = this.unsyncedChanges > 0 || this.config.unsent?.() === true;
+    if (joined) this.send(MessageKind.Leave, Uint8Array.of(unsent ? 1 : 0));
     this.endChannel();
     this.socket.detach(this);
     if (joined) this.config.onDisconnect?.();
@@ -275,10 +287,12 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     if (channel !== this.channel) return;
     switch (kind) {
       case MessageKind.Joined:
-        this.joined(payload[0] === 1);
+        this.joined();
         return;
       case MessageKind.Refused: {
         const reason = readText(payload);
+        // A live channel holds the id: the retry asks for fresh ids.
+        if (reason === CLIENT_ID_REFUSED_REASON) this.previousToken = undefined;
         this.endChannel();
         // An embed whose note left meanwhile joins again with the note.
         if (reason !== NOTE_CLOSED_REASON)
@@ -344,8 +358,9 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       }
       case MessageKind.TokenRequest:
         void this.config
-          .token()
+          .token(this.previousToken)
           .then((token) => {
+            this.previousToken = token;
             if (this.isAuthenticated) this.send(MessageKind.Token, text(token));
           })
           // Unanswered, the server closes the room at expiry and the client
@@ -453,7 +468,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private async sendJoin(channel: number) {
     let token: string;
     try {
-      token = await this.config.token();
+      token = await this.config.token(this.previousToken);
     } catch (error) {
       if (this.channel !== channel) return;
       this.endChannel();
@@ -472,13 +487,10 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       this.endChannel();
       return;
     }
-    if (
-      !this.bound &&
-      this.adopted &&
-      Y.getState(this.document.store, this.document.clientID) > 0
-    )
-      this.bound = true;
-    if (!this.bound) {
+    this.previousToken = token;
+    // The document keeps its ids once it wrote under them (Q236); before,
+    // it takes the token's, which a reconnect's token offers again.
+    if (!this.wrote()) {
       try {
         const ids = tokenClientIds(token);
         this.adopt(ids.clientId);
@@ -514,8 +526,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     }
   }
 
-  private joined(writable: boolean) {
-    if (writable) this.bound = true;
+  private joined() {
     this.assertBound();
     // A join after a timeout counts afresh from here, so waiters on the
     // unsynced count see it go to zero only after the resync.
@@ -611,11 +622,23 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     this.sendUpdate(SyncKind.Update, update);
   };
 
-  /** Once bound, the document writes under the id the room bound (Q226 L3).
-   * One Yjs moved to another id would have every change refused, so it stops
-   * here, explicitly. */
+  /** Whether the document (or its DOCX layout worker) wrote under the ids
+   * it took from a token. */
+  private wrote() {
+    const { store } = this.document;
+    return (
+      this.adopted &&
+      (Y.getState(store, this.awareness.clientID) > 0 ||
+        (this.workerClientId !== undefined &&
+          Y.getState(store, this.workerClientId) > 0))
+    );
+  }
+
+  /** The document writes under the id it took (Q226 L3). One Yjs moved to
+   * another id would have every change refused, so it stops here,
+   * explicitly. */
   private assertBound() {
-    if (this.bound && this.document.clientID !== this.awareness.clientID) {
+    if (this.adopted && this.document.clientID !== this.awareness.clientID) {
       this.endChannel();
       throw new Error('The collaboration document left its assigned client id');
     }

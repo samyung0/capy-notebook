@@ -2234,6 +2234,14 @@ export const CreateSourceCollaborationTokenParams = zod.object({
   "id": zod.string()
 })
 
+export const createSourceCollaborationTokenBodyPreviousTokenMax = 8192;
+
+
+
+export const CreateSourceCollaborationTokenBody = zod.object({
+  "previousToken": zod.string().max(createSourceCollaborationTokenBodyPreviousTokenMax).optional()
+})
+
 export const CreateSourceCollaborationTokenResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
@@ -3430,9 +3438,14 @@ export const CreateMaterialCollaborationTokenParams = zod.object({
   "id": zod.string()
 })
 
+export const createMaterialCollaborationTokenBodyPreviousTokenMax = 8192;
+
+
+
 export const CreateMaterialCollaborationTokenBody = zod.object({
   "access": zod.enum(['read']).optional(),
-  "document": zod.enum(['content', 'keys']).optional()
+  "document": zod.enum(['content', 'keys']).optional(),
+  "previousToken": zod.string().max(createMaterialCollaborationTokenBodyPreviousTokenMax).optional()
 })
 
 export const CreateMaterialCollaborationTokenResponse = zod.object({

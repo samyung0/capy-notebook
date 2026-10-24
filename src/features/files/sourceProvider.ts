@@ -46,7 +46,10 @@ export interface SourceProviderConfig {
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;
-  token: () => Promise<string>;
+  /** A room token; `previous` asks for its client ids again (Q236). */
+  token: (previous?: string) => Promise<string>;
+  /** Stored drafts not yet covered by a receipt (`RoomProvider`). */
+  unsent?: () => boolean;
   url: string;
 }
 

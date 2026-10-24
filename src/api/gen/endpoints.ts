@@ -154,6 +154,7 @@ import type {
   SourceCheckpoint,
   SourceCheckpointSaved,
   SourceCollaborationToken,
+  SourceCollaborationTokenBody,
   SourceEpochReset,
   SourceEpochResetOutputBody,
   SourceFailureInputBody,
@@ -3446,14 +3447,29 @@ export const getCreateSourceCollaborationTokenUrl = (id: string,) => {
 /**
  * @summary Create source room token
  */
-export const createSourceCollaborationToken = async (id: string, options?: RequestInit): Promise<createSourceCollaborationTokenResponse> => {
+export const createSourceCollaborationToken = async (id: string,
+    sourceCollaborationTokenBody?: NonReadonly<SourceCollaborationTokenBody>, options?: RequestInit): Promise<createSourceCollaborationTokenResponse> => {
 
-  const res = await fetch(getCreateSourceCollaborationTokenUrl(id),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateSourceCollaborationTokenUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sourceCollaborationTokenBody)
   }
 )
 

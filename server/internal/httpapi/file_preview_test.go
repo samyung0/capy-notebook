@@ -372,7 +372,7 @@ func TestDocxSourceTokenOffersAWorkerClientID(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
-	claims := func(name string) map[string]any {
+	upload := func(name string) string {
 		t.Helper()
 		file, err := uploadSource(ctx, st, workspace.ID, "u_owner", name, 100, "sources/"+name)
 		if err != nil {
@@ -381,26 +381,38 @@ func TestDocxSourceTokenOffersAWorkerClientID(t *testing.T) {
 		if _, _, err := memory.Put("sources/"+name, bytes.NewReader([]byte("PK-source"))); err != nil {
 			t.Fatal(err)
 		}
-		rec := doReq(t, handler, http.MethodPost, "/api/files/"+file.ID+"/collaboration-token", "u_owner", nil)
-		var body struct {
+		return file.ID
+	}
+	mint := func(fileID string, body any) (string, map[string]any) {
+		t.Helper()
+		rec := doReq(t, handler, http.MethodPost, "/api/files/"+fileID+"/collaboration-token", "u_owner", body)
+		var out struct {
 			Token string `json:"token"`
 		}
-		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
-			t.Fatalf("%s token = %d body=%s", name, rec.Code, rec.Body.String())
+		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &out) != nil {
+			t.Fatalf("token = %d body=%s", rec.Code, rec.Body.String())
 		}
-		parts := strings.Split(body.Token, ".")
-		var out map[string]any
+		parts := strings.Split(out.Token, ".")
+		var claims map[string]any
 		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-		if err != nil || json.Unmarshal(payload, &out) != nil {
-			t.Fatalf("%s claims: %v", name, err)
+		if err != nil || json.Unmarshal(payload, &claims) != nil {
+			t.Fatalf("claims: %v", err)
 		}
-		return out
+		return out.Token, claims
 	}
-	docx := claims("report.docx")
+	docxID := upload("report.docx")
+	previous, docx := mint(docxID, nil)
 	if worker, _ := docx["workerClientId"].(float64); worker == 0 || worker == docx["clientId"] {
 		t.Fatalf("docx claims = %v", docx)
 	}
-	if xlsx := claims("book.xlsx"); xlsx["workerClientId"] != nil {
+	if _, xlsx := mint(upload("book.xlsx"), nil); xlsx["workerClientId"] != nil {
 		t.Fatalf("xlsx claims = %v", xlsx)
+	}
+	// Security regression (Q236): a reconnect presenting its previous token
+	// is offered both ids again, so its editor and layout worker keep them.
+	// Fails if the endpoint ignores the previous token.
+	_, again := mint(docxID, map[string]string{"previousToken": previous})
+	if again["clientId"] != docx["clientId"] || again["workerClientId"] != docx["workerClientId"] {
+		t.Fatalf("regranted claims = %v, previous = %v", again, docx)
 	}
 }
