@@ -63,14 +63,17 @@ type withExtra struct {
 
 func (w withExtra) Scan(dest ...any) error { return w.row.Scan(append(dest, w.extra...)...) }
 
-// memberWorkspace is the Member predicate on a workspace id column: the
-// caller ($1) is a member and the owner's account is live (not deleted,
-// pending deletion or suspended), the same rule as ListWorkspaces. The query
-// must JOIN users AS owner on the workspace owner.
-func memberWorkspace(column string) string {
-	return `EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=` + column + ` AND wm.user_id=$1)
-		AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL`
-}
+// visibleWorkspacesSQL lists the workspaces a Member listing shows to the
+// caller ($1): those they own, and those they are a member of whose owner's
+// account is live (not deleted, pending deletion or suspended), the same rule
+// as ListWorkspaces. Lists filter on it with IN, which Postgres looks up by
+// index; the same conditions as an OR across the joined tables read every
+// user's rows on each call (bench/gateway, 2026-10-24).
+const visibleWorkspacesSQL = `SELECT id FROM workspaces WHERE user_id=$1
+	UNION ALL
+	SELECT vm.workspace_id FROM workspace_members vm
+		JOIN workspaces vw ON vw.id=vm.workspace_id JOIN users vo ON vo.id=vw.user_id
+	WHERE vm.user_id=$1 AND vo.deleted_at IS NULL AND vo.deletion_requested_at IS NULL AND vo.suspended_at IS NULL`
 
 const listPageMax = 100
 
@@ -238,7 +241,8 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	// workspaces and those it belongs to under a live owner (Sam 2026-10-19).
 	where := ` WHERE m.owner_user_id=$1`
 	if f.Member {
-		where = ` WHERE ((m.workspace_id IS NULL AND m.owner_user_id=$1) OR w.user_id=$1 OR (` + memberWorkspace("m.workspace_id") + `))`
+		where = ` WHERE m.id IN (SELECT id FROM materials WHERE workspace_id IS NULL AND owner_user_id=$1
+			UNION ALL SELECT id FROM materials WHERE workspace_id IN (` + visibleWorkspacesSQL + `))`
 	}
 	where += ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($2)`
 	if len(f.WorkspaceIDs) > 0 {
@@ -271,8 +275,6 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
 			m.preview, `+lostMaterialSQL+`
 		FROM materials m
-		LEFT JOIN workspaces w ON w.id=m.workspace_id
-		LEFT JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN chapters c ON c.id=m.chapter_id`+where+
 		orderClause(sort, "m.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
@@ -381,7 +383,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	// Recent) what it can open (Sam 2026-10-19).
 	where := ` WHERE f.user_id=$1 AND f.trashed_at IS NULL`
 	if f.Member {
-		where = ` WHERE (w.user_id=$1 OR (` + memberWorkspace("w.id") + `)) AND f.trashed_at IS NULL`
+		where = ` WHERE f.workspace_id IN (` + visibleWorkspacesSQL + `) AND f.trashed_at IS NULL`
 	}
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)
@@ -399,7 +401,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+fileWorkspaceNameSQL+`, `+lostAccessSQL("f.workspace_id", "$1")+
-		` FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN users owner ON owner.id=w.user_id`+
+		` FROM files f JOIN workspaces w ON w.id=f.workspace_id`+
 		where+orderClause(sort, "f.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return FilePage{}, err
