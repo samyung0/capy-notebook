@@ -733,6 +733,10 @@ def test_a_decode_answer_past_its_cap_is_a_failed_decode(
         ("caption", b'{"jpeg": "not base64!"}'),
         ("thumbnail", b'{"webp": 7}'),
         ("page", b"[]"),
+        ("office", b'{"package": "AA==", "removed": -1}'),
+        ("office", b'{"unchanged": true, "removed": 0}'),
+        ("source_image", b'{"image": "AA==", "format": "webp"}'),
+        ("source_image", b'{"keep": true, "image": "AA=="}'),
     ],
 )
 def test_a_decode_answer_off_its_modes_shape_is_a_failed_decode(
@@ -753,6 +757,8 @@ def test_a_decode_answer_off_its_modes_shape_is_a_failed_decode(
         "caption": lambda: decode.caption_jpeg(source, max_edge=8, max_pixels=64),
         "thumbnail": lambda: decode.thumbnail_webp(source, "png", max_pixels=64),
         "page": lambda: decode.page_webp(b""),
+        "office": lambda: decode.office_images(b"", image_max_bytes=1, max_pixels=64),
+        "source_image": lambda: decode.source_image(b"", max_bytes=1, max_pixels=64),
     }
     with pytest.raises(decode.DecodeFailed):
         calls[call]()
@@ -775,6 +781,37 @@ def test_a_pixel_limit_carries_the_workers_own_message(
         with pytest.raises(decode.PixelLimit) as caught:
             decode.caption_jpeg(Path("image.png"), max_edge=8, max_pixels=64)
         assert str(caught.value) == message
+
+
+@linux
+def test_the_image_rules_run_in_the_helper() -> None:
+    """An imported Office file is compressed, and an image source shrunk to
+    5 megapixels, inside the decode helper (Epo 2026-10-24)."""
+    import io
+    import zipfile
+
+    images = ROOT / "e2e/fixtures/files/images"
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("word/media/image1.jpg", (images / "photo.jpg").read_bytes())
+    package, removed = decode.office_images(
+        out.getvalue(), image_max_bytes=2 << 20, max_pixels=100_000_000
+    )
+    assert removed == 0 and package is not None
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        assert archive.read("word/media/image1.jpg")[:3] == b"\xff\xd8\xff"
+    shrunk, kind = decode.source_image(
+        (images / "photo.jpg").read_bytes(), max_bytes=30 << 20, max_pixels=100_000_000
+    )
+    assert kind == "jpeg" and shrunk[:3] == b"\xff\xd8\xff"
+    assert (
+        decode.source_image(
+            (images / "photo.heic").read_bytes(),
+            max_bytes=30 << 20,
+            max_pixels=100_000_000,
+        )
+        == "unreadable"
+    )
 
 
 @linux

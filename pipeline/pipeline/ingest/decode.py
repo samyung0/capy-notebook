@@ -15,6 +15,9 @@ anything else is a failed decode.
 - ``caption``: an image as the JPEG the caption model reads.
 - ``thumbnail``: an image's first frame as the list card's WebP.
 - ``page``: the parser's page-1 PNG from the bundle as the card's WebP.
+- ``office``: an imported Office file with its pictures compressed and its
+  EMF and WMF pictures removed (images.py, Epo 2026-10-24).
+- ``source_image``: an imported image source shrunk to 5 megapixels.
 
 ``audio_seconds`` runs ffmpeg itself, not this module, under the same policy.
 """
@@ -43,6 +46,9 @@ _TIMEOUT_S = 120
 # largest real document (1,475 pages) and 22 KiB for the densest page
 # (Korean), so 32 MiB holds that page density over 1,400 pages.
 _MAX_ANSWER = 32 << 20
+# An Office file comes back whole, base64: up to the 30 MiB largest per-file
+# cap, as a third more.
+_MAX_ANSWERS = {"office": 48 << 20}
 _SYSTEM = ("/usr", "/lib", "/lib64", "/etc/ld.so.cache")
 # The card thumbnail: 200 px wide, cropped from the top at twice that (the
 # parser's page1.png follows the same rule, parser/odl/capture.py).
@@ -105,12 +111,27 @@ def _pixel_limit(value: object) -> bool:
     return type(value) is str and value in _PIXEL_LIMITS
 
 
+def _count(value: object) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _format(value: object) -> bool:
+    return value in ("png", "jpeg")
+
+
 # Each mode's possible answers: their keys and what each key holds.
 _ANSWERS = {
     "evidence": ({"page_texts": _texts, "visible_headings": _indices},),
     "caption": ({"limit": _pixel_limit}, {"raw": _true}, {"jpeg": _string}),
     "thumbnail": ({"none": _true}, {"webp": _string}),
     "page": ({"webp": _string},),
+    "office": ({"package": _string, "removed": _count}, {"unchanged": _true}),
+    "source_image": (
+        {"keep": _true},
+        {"unreadable": _true},
+        {"too_large": _true},
+        {"image": _string, "format": _format},
+    ),
 }
 
 
@@ -118,14 +139,15 @@ def _decode(
     mode: str, *args: object, source: Path | None = None, data: bytes | None = None
 ) -> dict:
     argv = [sys.executable, "-m", __name__, mode, *map(str, args)]
+    limit = _MAX_ANSWERS.get(mode, _MAX_ANSWER)
     try:
         completed = capy_sandbox.run(
-            argv, _policy(source), input=data, max_output=_MAX_ANSWER
+            argv, _policy(source), input=data, max_output=limit
         )
     except subprocess.TimeoutExpired:
         raise DecodeFailed(f"{mode} decode exceeded {_TIMEOUT_S} seconds") from None
     except capy_sandbox.OutputLimit:
-        raise DecodeFailed(f"{mode} decode answered over {_MAX_ANSWER} bytes") from None
+        raise DecodeFailed(f"{mode} decode answered over {limit} bytes") from None
     if completed.returncode != 0:
         detail = completed.stderr.decode(errors="replace").strip()[-500:]
         raise DecodeFailed(f"{mode} decode exited {completed.returncode}: {detail}")
@@ -181,6 +203,30 @@ def thumbnail_webp(path: Path, format_name: str, *, max_pixels: int) -> bytes | 
 def page_webp(png: bytes) -> bytes:
     """The parser's page-1 PNG as the card WebP."""
     return _bytes(_decode("page", data=png), "webp")
+
+
+def office_images(
+    data: bytes, *, image_max_bytes: int, max_pixels: int
+) -> tuple[bytes | None, int]:
+    """An imported Office file with its pictures compressed and its EMF and
+    WMF pictures removed, or None when nothing changed, and how many pictures
+    were removed where they show."""
+    answer = _decode("office", image_max_bytes, max_pixels, data=data)
+    if "unchanged" in answer:
+        return None, 0
+    return _bytes(answer, "package"), answer["removed"]
+
+
+def source_image(
+    data: bytes, *, max_bytes: int, max_pixels: int
+) -> tuple[bytes, str] | str:
+    """An imported image source shrunk to 5 megapixels as (bytes, "png" or
+    "jpeg"), or "keep" (within it), "unreadable" (Pillow cannot decode it,
+    as HEIC) or "too_large" (no size fits the per-file cap)."""
+    answer = _decode("source_image", max_bytes, max_pixels, data=data)
+    if "image" in answer:
+        return _bytes(answer, "image"), answer["format"]
+    return next(iter(answer))
 
 
 # ffmpeg's progress report: a few key=value blocks, the last one ending with
@@ -441,6 +487,35 @@ def _page(png: bytes) -> dict:
         return {"webp": _webp(image.convert("RGB"))}
 
 
+def _office(data: bytes, image_max_bytes: int, max_pixels: int) -> dict:
+    from . import images
+
+    package, removed = images.compress_office(data, image_max_bytes, max_pixels)
+    if package is None:
+        return {"unchanged": True}
+    return {"package": base64.b64encode(package).decode(), "removed": removed}
+
+
+def _source_image(data: bytes, max_bytes: int, max_pixels: int) -> dict:
+    from PIL import UnidentifiedImageError
+
+    from ..generated.limits import SOURCE_IMAGE_MAX_PIXELS
+    from . import images
+
+    try:
+        result = images.compress(
+            data, max_bytes, max_pixels, max_pixels=SOURCE_IMAGE_MAX_PIXELS
+        )
+    except images.TooLarge:
+        return {"too_large": True}
+    except (OSError, UnidentifiedImageError, ValueError):
+        return {"unreadable": True}
+    if result is None:
+        return {"keep": True}
+    encoded, kind = result
+    return {"image": base64.b64encode(encoded).decode(), "format": kind}
+
+
 def main(argv: list[str]) -> None:
     mode, *args = argv
     if mode == "evidence":
@@ -451,6 +526,10 @@ def main(argv: list[str]) -> None:
         answer = _thumbnail(args[0], args[1], int(args[2]))
     elif mode == "page":
         answer = _page(sys.stdin.buffer.read())
+    elif mode == "office":
+        answer = _office(sys.stdin.buffer.read(), int(args[0]), int(args[1]))
+    elif mode == "source_image":
+        answer = _source_image(sys.stdin.buffer.read(), int(args[0]), int(args[1]))
     else:
         raise SystemExit(f"unknown decode mode {mode!r}")
     sys.stdout.write(json.dumps(answer))

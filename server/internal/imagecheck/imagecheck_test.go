@@ -7,6 +7,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"image"
+	"os"
 	"testing"
 
 	"golang.org/x/image/tiff"
@@ -171,6 +172,25 @@ func TestCheckOffice(t *testing.T) {
 		file := officeFile(t, c.parts)
 		if code := refusal(t, CheckOffice(file, file.Size(), cap)); code != c.code {
 			t.Errorf("%s: code = %s, want %s", name, code, c.code)
+		}
+	}
+}
+
+// The shared fixtures the browser and the import worker compress
+// (e2e/fixtures/files/images): HEIC, JPEG 2000 and TIFF sizes read from their
+// headers as the browser's decoders read them.
+func TestSizeReadsTheSharedFixtures(t *testing.T) {
+	for _, name := range []string{"photo.heic", "photo.jp2", "photo.tif", "photo.jpg"} {
+		data, err := os.ReadFile("../../../e2e/fixtures/files/images/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		width, height, ok, err := Size(bytes.NewReader(data))
+		if err != nil || !ok || width != 3000 || height != 2000 {
+			t.Errorf("%s: Size = %d, %d, %v, %v", name, width, height, ok, err)
+		}
+		if refusal(t, CheckSourceImage(bytes.NewReader(data))) != "source_image_too_large" {
+			t.Errorf("%s: a 6 MP source passed", name)
 		}
 	}
 }

@@ -7,6 +7,11 @@ credentials, then reports completion so the gateway finalizes the file and
 enqueues the ordinary parse or ingest job. A parse or ingest job therefore only
 exists once the bytes are durably in B2.
 
+Before the bytes are stored (Epo 2026-10-24) an Office file has its pictures
+compressed and its EMF and WMF pictures removed, and an image source is shrunk
+to 5 megapixels, both in the sandboxed decode helper; then the header check
+(image_check.py) refuses what still breaks the image rules, finally.
+
 Retry scheduling is the ``jobs`` row's; the gateway's attempt lease only fences
 stale callbacks. A retryable error releases that lease before the requeue so
 the next claim acquires immediately instead of waiting for it to expire.
@@ -24,7 +29,7 @@ import requests
 from ..config import cfg
 from ..jobs import CapacityWait, RetryableError, TerminalError
 from ..store import blobstore, db
-from . import pinned_http, telemetry
+from . import decode, image_check, pinned_http, telemetry
 
 log = logging.getLogger("capy.import")
 
@@ -200,6 +205,63 @@ def _download(grant: dict, max_bytes: int) -> bytearray:
     return body
 
 
+def _prepare(data: bytes, acquired: dict) -> tuple[bytes, dict]:
+    """The bytes to store and what the completion reports beside them: an
+    Office file compressed, an image source shrunk (with its new name and
+    type when its format changed), each checked from its headers."""
+    name = str(acquired.get("name") or "")
+    extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if extension in {"docx", "pptx", "xlsx"}:
+        image_max_bytes = int(acquired.get("imageMaxBytes") or 0)
+        if image_max_bytes <= 0:
+            raise ImportRetry("acquire_invalid", "acquire response names no image cap")
+        try:
+            package, removed = decode.office_images(
+                data, image_max_bytes=image_max_bytes, max_pixels=cfg.image_max_pixels
+            )
+        except decode.DecodeFailed as exc:
+            # Stored as it is when the helper fails; the check decides.
+            log.warning("office images not compressed: %s", exc)
+            package, removed = None, 0
+        stored = package if package is not None else data
+        try:
+            image_check.check_office(stored, image_max_bytes)
+        except image_check.Refused as exc:
+            raise ImportFailure(exc.code, str(exc)) from exc
+        return stored, {"removedPictures": removed}
+    if acquired.get("kind") != "image" or extension == "svg":
+        return data, {}
+    try:
+        shrunk = decode.source_image(
+            data,
+            max_bytes=int(acquired.get("maxBytes") or 0),
+            max_pixels=cfg.image_max_pixels,
+        )
+    except decode.DecodeFailed as exc:
+        log.warning("image source not shrunk: %s", exc)
+        shrunk = "unreadable"
+    if shrunk == "too_large":
+        raise ImportFailure("file_too_large", "no size of the image fits the file cap")
+    landed: dict = {}
+    if isinstance(shrunk, tuple):
+        data, kind = shrunk
+        stem = name.rsplit(".", 1)[0] if "." in name else name
+        landed = (
+            {"name": f"{stem}.png", "contentType": "image/png"}
+            if kind == "png"
+            else {"name": f"{stem}.jpg", "contentType": "image/jpeg"}
+        )
+    try:
+        image_check.check_source(data)
+    except image_check.Refused as exc:
+        # One this Pillow cannot decode (HEIC: pillow-heif bundles the GPL
+        # x265, so it is not used) is stored only within the limit; past it
+        # the user is asked to save it as JPEG or PNG (Editor, 2026-10-24).
+        code = "image_unreadable" if shrunk == "unreadable" else exc.code
+        raise ImportFailure(code, str(exc)) from exc
+    return data, landed
+
+
 def _run(job: dict) -> None:
     payload = job.get("payload") or {}
     import_id = str(payload.get("importJobId") or "")
@@ -230,27 +292,34 @@ def _run(job: dict) -> None:
             "invalid_payload", "import object path is outside incoming/"
         )
 
+    landed: dict = {}
     if acquired.get("resumeComplete"):
         actual = int(acquired.get("declaredSize") or 0)
     else:
         telemetry.stage("download")
         data = _download(acquired.get("download") or {}, max_bytes)
+        telemetry.stage("images")
+        stored, landed = _prepare(bytes(data), acquired)
         telemetry.stage("upload")
         try:
             blobstore.write_bytes(
                 object_path,
-                data,
-                str(acquired.get("contentType") or "application/octet-stream"),
+                stored,
+                str(
+                    landed.get("contentType")
+                    or acquired.get("contentType")
+                    or "application/octet-stream"
+                ),
             )
         except Exception as exc:
             raise ImportRetry("b2_upload_failed", f"B2 upload failed: {exc}") from exc
-        actual = len(data)
+        actual = len(stored)
         telemetry.record(source_bytes=actual)
 
     telemetry.stage("complete")
     status, completed = _gateway(
         "/api/internal/import/complete",
-        {"jobId": import_id, "attemptToken": token, "actualSize": actual},
+        {"jobId": import_id, "attemptToken": token, "actualSize": actual, **landed},
     )
     if status != 200:
         _raise_for_gateway(status, completed, "complete")
