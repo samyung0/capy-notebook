@@ -69,6 +69,13 @@ The frontend and browser E2E CI jobs reuse compiled browser WASM through
 hash validation still runs before consuming the restored artifacts. This cache
 does not cover the separate collaboration Docker build.
 
+`e2e_stack` (WebKit) and `e2e_mermaid_engines` (Firefox and WebKit) install
+their browsers through `.github/actions/playwright-browsers`, which keeps the
+system packages' `.deb` files in the Actions cache, keyed on the runner image,
+the browsers and the Playwright version. The runners' Ubuntu mirror sometimes
+serves them at a few KB/s, so an uncached install that slow hits the step's
+10-minute timeout; rerun the job.
+
 [`scripts/dev/hosts.test.mjs`](../scripts/dev/hosts.test.mjs) checks macOS/Windows
 elevation command construction and argument quoting, hosts paths, idempotent
 edits, backup preservation, line endings, aliases and conflicting mappings.
