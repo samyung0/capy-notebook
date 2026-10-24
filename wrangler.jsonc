@@ -75,10 +75,14 @@
       "placement": { "region": "aws:eu-central-1" },
       "workers_dev": false,
       "preview_urls": false,
-      // Both app hosts point to capy-uat and need separate scriptless /api/* routes.
-      // Keep the old host for browser draft recovery until the runbook §1.0.2 cutover.
+      // Every app host points to capy-uat and needs its own scriptless /api/* route.
+      // uat-app replaces app.uat (Q291); the old hosts stay until the runbook §1.0.2 cutover.
       // Each host's /assets/* belongs to the assets Worker (wrangler.assets.jsonc).
       "routes": [
+        {
+          "pattern": "uat-app.capynotebook.com/*",
+          "zone_name": "capynotebook.com"
+        },
         {
           "pattern": "app.uat.capynotebook.com/*",
           "zone_name": "capynotebook.com"
