@@ -379,6 +379,23 @@ func TestWebSearchChargesOnlyASearchWithResults(t *testing.T) {
 	}
 }
 
+// Migration 0112's MiniMax row carries Together's list price at 2,000 micros
+// per dollar per million tokens, vision and the chat temperature (Q224).
+func TestMiniMaxJoinsTheChatChoicesAtItsListPrice(t *testing.T) {
+	s := openAccessTestStore(t)
+	var ok bool
+	if err := s.pool.QueryRow(context.Background(), `
+		SELECT micros_per_input_token=300 AND micros_per_cached_input_token=30
+		   AND micros_per_output_token=1200 AND slots=ARRAY['chat']
+		   AND capabilities=ARRAY['vision'] AND params->>'temperature'='0.2'
+		   AND NOT byok_enabled
+		  FROM model_configs
+		 WHERE provider_slug='openrouter' AND model_slug='minimax/minimax-m3.1-flash'
+		   AND enabled`).Scan(&ok); err != nil || !ok {
+		t.Fatalf("MiniMax row: %v, %v", ok, err)
+	}
+}
+
 func TestListUsageEventsPagesNewestFirst(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
