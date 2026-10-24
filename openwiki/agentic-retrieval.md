@@ -4968,7 +4968,8 @@ rules); charts stop growing at 480px and diagrams at min(60vh, 32rem) tall.
 Raised `k` markers come from
 the message's citation list by `n` and follow the last paragraph of the text
 they back (Streamdown's root is `display: contents` so that paragraph can run
-inline); tables and charts put their sources under the block, and the
+inline); tables and charts put their own sources under the block, a table
+row's sources are raised at the end of its last cell (Q358), and the
 message's sources are neutral badges under the model name. A web result's
 entry takes a row of its own: the page title links to the page in a new tab
 (http(s) only, `chat/webCitation.ts`) beside its site, which truncates within
