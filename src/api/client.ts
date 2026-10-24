@@ -340,6 +340,11 @@ export const qk = {
   conversations: (wsId: string) =>
     ['workspace', wsId, 'conversations'] as const,
   deletionPreflight: ['account', 'deletion'] as const,
+  /** The images and audio the caller pays for (the Embeds tab), all or one
+   * access filter. */
+  editorAssets: (access?: string) =>
+    ['editor-assets', access ?? 'all'] as const,
+  editorAssetsRoot: ['editor-assets'] as const,
   eventStream: ['event-stream'] as const,
   events: ['events'] as const,
   exploreFlashcardSets: ['explore', 'flashcardSets'] as const,
@@ -361,8 +366,6 @@ export const qk = {
   learningProgress: ['learning', 'progress'] as const,
   /** Everything under Learning: progress and plans. */
   learningRoot: ['learning'] as const,
-  /** The caller's images and audio in notes it can no longer open. */
-  lostMedia: ['editor-assets', 'lost'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,

@@ -132,6 +132,12 @@ workspace; writes need read access plus an account that can sign in
 | `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop), with answered of total. Another user's session is 404. |
 | `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
 | `POST /api/review/sessions/{id}/finish` | Ends a session before its last item. |
+
+The new-session, Continue and result reads also carry `removedAssetIds`: the
+card and question images of their items that their uploader deleted, or that
+went with the uploader's account (M16, Epo 2026-10-24). The session and its
+result show each as removed by its uploader, as flashcard study does from the
+set read's own list and a quiz attempt from the quiz's.
 | `GET /api/review/sessions?sort=&dir=&workspaceId=&has=&offset=&limit=` | Past reviews: finished sessions with their quiz marks and cards remembered (Good or Easy). Sort date, quiz, cards or time; `has` quiz and/or flashcards. |
 | `GET /api/review/overview` | Learning's Review tab, below. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |

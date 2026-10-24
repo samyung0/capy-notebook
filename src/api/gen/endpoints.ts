@@ -67,6 +67,7 @@ import type {
   DeletionPreflight,
   Detail,
   Discussion,
+  EditorAssetPage,
   ErrorModel,
   Event,
   File,
@@ -95,7 +96,7 @@ import type {
   LearningProgress,
   ListAttemptsParams,
   ListConversationsParams,
-  ListLostEditorAssetsParams,
+  ListEditorAssetsParams,
   ListModelsParams,
   ListNotificationsParams,
   ListOwnedFilesParams,
@@ -106,7 +107,6 @@ import type {
   ListUsageEventsParams,
   ListWorkspacesParams,
   LocaleInputBody,
-  LostEditorAssetPage,
   Material,
   MaterialChildrenInputBody,
   MaterialChildrenOutputBody,
@@ -2509,26 +2509,26 @@ const res = await fetch(getReportEditIncidentUrl(),
 
 
 
-export type listLostEditorAssetsResponse200 = {
-  data: LostEditorAssetPage
+export type listEditorAssetsResponse200 = {
+  data: EditorAssetPage
   status: 200
 }
 
-export type listLostEditorAssetsResponseDefault = {
+export type listEditorAssetsResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type listLostEditorAssetsResponseSuccess = (listLostEditorAssetsResponse200) & {
+export type listEditorAssetsResponseSuccess = (listEditorAssetsResponse200) & {
   headers: Headers;
 };
-export type listLostEditorAssetsResponseError = (listLostEditorAssetsResponseDefault) & {
+export type listEditorAssetsResponseError = (listEditorAssetsResponseDefault) & {
   headers: Headers;
 };
 
-export type listLostEditorAssetsResponse = (listLostEditorAssetsResponseSuccess | listLostEditorAssetsResponseError)
+export type listEditorAssetsResponse = (listEditorAssetsResponseSuccess | listEditorAssetsResponseError)
 
-export const getListLostEditorAssetsUrl = (params?: ListLostEditorAssetsParams,) => {
+export const getListEditorAssetsUrl = (params?: ListEditorAssetsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -2540,15 +2540,15 @@ export const getListLostEditorAssetsUrl = (params?: ListLostEditorAssetsParams,)
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/api/editor-assets/lost?${stringifiedParams}` : `/api/editor-assets/lost`
+  return stringifiedParams.length > 0 ? `/api/editor-assets?${stringifiedParams}` : `/api/editor-assets`
 }
 
 /**
- * @summary List the images and audio the caller pays for in materials it can no longer open
+ * @summary List the images and audio the caller pays for, each marked when its note can no longer be opened
  */
-export const listLostEditorAssets = async (params?: ListLostEditorAssetsParams, options?: RequestInit): Promise<listLostEditorAssetsResponse> => {
+export const listEditorAssets = async (params?: ListEditorAssetsParams, options?: RequestInit): Promise<listEditorAssetsResponse> => {
 
-  const res = await fetch(getListLostEditorAssetsUrl(params),
+  const res = await fetch(getListEditorAssetsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2560,8 +2560,8 @@ export const listLostEditorAssets = async (params?: ListLostEditorAssetsParams, 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listLostEditorAssetsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listLostEditorAssetsResponse
+  const data: listEditorAssetsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listEditorAssetsResponse
 }
 
 
@@ -2594,7 +2594,7 @@ export const getDeleteEditorAssetUrl = (assetId: string,) => {
 }
 
 /**
- * @summary Delete an image or audio clip the caller pays for in another account's material
+ * @summary Delete an image or audio clip the caller pays for in a note it can no longer open
  */
 export const deleteEditorAsset = async (assetId: string, options?: RequestInit): Promise<deleteEditorAssetResponse> => {
 

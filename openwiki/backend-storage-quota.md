@@ -114,23 +114,30 @@ deleted, deleting or suspended owner's workspace also loses its name there
 (`workspaceNameSQL`; the card reads "Unavailable workspace"), as every other
 read of it answers 404, yet its payer still trashes and purges what it pays
 for there (`lockWorkspacePayerTx`, which needs only the payer live; Sam
-2026-10-19). Images and audio it added to someone else's note, quiz or set
-that it can no longer open (`lostAccessSQL` on the workspace of the material,
-or of its note when embedded) have their own section on the Files tab
-(`GET /api/editor-assets/lost`, `ListLostEditorAssets` on
-`editor_assets_payer_idx`, migration 0110: name, size, added time and the
-note's title, blank once that workspace's owner is no longer live), with
-Delete only (`DELETE /api/editor-assets/{assetId}`,
-`DeleteEditorAsset`, open to the payer of media in a material it does not pay
-for, whether or not it can open it). Deleting one is final, because a trashed
-asset would come back with the note's next save. The note keeps the node:
+2026-10-19). Every image and audio clip it pays for is listed on the Files
+page's Embeds tab (Epo 2026-10-24; `GET /api/editor-assets`,
+`ListEditorAssets` on `editor_assets_payer_idx`, migration 0110), named by
+its note's current title (an embedded quiz's or set's note), with its kind,
+size, workspace and added time, and `lostAccess` once the payer can no longer
+open that note (`lostAccessSQL` on the note's workspace). The tab's filter
+(`access=open|lost`) shows one kind. Title and workspace name are blank once
+that workspace's owner is no longer live. Media in a trashed note or set the
+payer can still open are left out; they go with that material's trash and
+purge. One it can open opens its note, where it is removed like any node; one
+it cannot open has Delete only (`DELETE /api/editor-assets/{assetId}`,
+`DeleteEditorAsset`: the payer, and only while it cannot open the note).
+Deleting one is final, because a trashed asset would come back with the
+note's next save. The note keeps the node:
 the material response lists the ids its own content references that no
 longer exist in `removedAssetIds` (`MissingEditorAssetIDs`), and an embedded
-quiz's or set's own response (quiz or material) lists its own. The app shows
-each such block as removed by its uploader instead of loading it; when a
-block fails to load while the material is open, it fetches the material's
-list again, so media deleted meanwhile read as removed too. Media in the payer's
-own materials go with their nodes and their material's trash instead.
+quiz's or set's own response (quiz or material) lists its own, as do the
+study reads: the flashcard set (`MaterialRemovedAssetIDs`), a review session
+and its result (`removedReviewAssets`), while a quiz attempt reads the quiz's.
+The app shows each such block as removed by its uploader instead of loading
+it, in the editor, embeds and study screens; when a block fails to load while
+the material is open, it fetches the material's list again, so media deleted
+meanwhile read as removed too (not in a review session, which a new fetch
+would replace). A past attempt's result page keeps its old empty box.
 Deleting an account deletes everything it pays for, in other people's
 workspaces too (`PurgeUser`), its images and audio in other people's notes
 included, which then read as removed. For a workspace material, `owner_user_id` is only the payer:

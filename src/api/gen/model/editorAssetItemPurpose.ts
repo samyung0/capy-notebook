@@ -5,10 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type LostEditorAssetPurpose = typeof LostEditorAssetPurpose[keyof typeof LostEditorAssetPurpose];
+export type EditorAssetItemPurpose = typeof EditorAssetItemPurpose[keyof typeof EditorAssetItemPurpose];
 
 
-export const LostEditorAssetPurpose = {
+export const EditorAssetItemPurpose = {
   image: 'image',
   audio: 'audio',
 } as const;

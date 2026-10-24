@@ -12,5 +12,7 @@ export interface ReviewResult {
   readonly $schema?: string;
   better: number;
   items: ReviewAnswer[];
+  /** @nullable */
+  removedAssetIds?: string[] | null;
   session: PastReview;
 }

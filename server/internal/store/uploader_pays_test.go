@@ -628,13 +628,15 @@ func TestFullUploaderIsRefusedWhileTheNoteStaysEditable(t *testing.T) {
 	}
 }
 
-// A removed member keeps paying for its images in the owner's note, an
-// embedded set's included, and deletes them from its Files page, which lists
-// them under the note it can no longer open. Neither another editor nor the
-// note's owner deletes them, and a payer does not delete media in its own
-// notes there. A suspended or deleting owner's note title is hidden from the
-// list, and the payer still deletes there (Sam 2026-10-19). The note, and the
-// set for its card image, then read each deleted one as removed.
+// The Embeds tab lists every image and audio clip its payer pays for under its
+// note (an embedded set's under the set's note), marked once the payer can no
+// longer open that note (Epo 2026-10-24). A member keeps paying for its images
+// in the owner's note after its removal and deletes them only then; neither
+// another editor nor the owner deletes them, and nobody deletes media in a
+// note it can open there. Media in a trashed note are listed only once their
+// payer has lost the note. A suspended or deleting owner's note title is
+// hidden, and the payer still deletes (Sam 2026-10-19). The note, and the set
+// for its card image, then read each deleted one as removed.
 func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -660,16 +662,42 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	lost := func(user string) []LostEditorAsset {
+	list := func(user string, access EditorAssetAccess) []EditorAssetItem {
 		t.Helper()
-		page, err := s.ListLostEditorAssets(ctx, user, 0, "")
+		page, err := s.ListEditorAssets(ctx, user, access, 0, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		return page.Items
 	}
-	if got := lost(editor); len(got) != 0 {
-		t.Fatalf("listed while the editor can open the note: %+v", got)
+	lost := func(user string) []EditorAssetItem { return list(user, EditorAssetsLost) }
+	// Both kinds, each under the note it opens (the set's card image too).
+	expect := func(got []EditorAssetItem, lostAccess bool, ids ...string) {
+		t.Helper()
+		var gotIDs []string
+		for _, item := range got {
+			gotIDs = append(gotIDs, item.ID)
+			wantMaterial := note.ID
+			if lostAccess {
+				wantMaterial = ""
+			}
+			if item.LostAccess != lostAccess || item.MaterialID != wantMaterial || item.MaterialTitle != note.Title ||
+				item.WorkspaceName != ws.Name || item.SizeBytes != 100 {
+				t.Fatalf("item %+v, want lostAccess %v under %q opening %q", item, lostAccess, note.Title, wantMaterial)
+			}
+		}
+		slices.Sort(gotIDs)
+		slices.Sort(ids)
+		if !slices.Equal(gotIDs, ids) {
+			t.Fatalf("listed %v, want %v", gotIDs, ids)
+		}
+	}
+	expect(list(editor, ""), false, image.ID, cardImage.ID)
+	expect(list(editor, EditorAssetsOpen), false, image.ID, cardImage.ID)
+	expect(lost(editor), true)
+	expect(list(owner, ""), false, ownImage.ID)
+	if err := s.DeleteEditorAsset(ctx, editor, image.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleting an image in a note its payer can open = %v, want not found", err)
 	}
 	if err := s.RemoveWorkspaceMember(ctx, owner, ws.ID, editor); err != nil {
 		t.Fatal(err)
@@ -677,15 +705,21 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	if got := usage(editor); got.UsedBytes != 200 {
 		t.Fatalf("removed editor uses %d, want its two images' 200 bytes", got.UsedBytes)
 	}
-	got := lost(editor)
-	if len(got) != 2 || got[0].MaterialTitle != note.Title || got[1].MaterialTitle != note.Title ||
-		got[0].Name != "figure.png" || got[0].SizeBytes != 100 {
-		t.Fatalf("lost media = %+v, want both images under %q", got, note.Title)
+	expect(lost(editor), true, image.ID, cardImage.ID)
+	expect(list(editor, ""), true, image.ID, cardImage.ID)
+	expect(list(editor, EditorAssetsOpen), false)
+	expect(lost(owner), true)
+	// The owner trashes the note: its own image goes with the note's trash,
+	// while the removed editor's stay listed.
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id=$2,
+		purge_after=now() + interval '30 days' WHERE id=$1`, note.ID, uid("trash")); err != nil {
+		t.Fatal(err)
 	}
-	if got := lost(owner); len(got) != 0 {
-		t.Fatalf("owner's lost media = %+v, want none", got)
-	}
-	for _, actor := range []string{other, owner} {
+	expect(list(owner, ""), false)
+	expect(lost(editor), true, image.ID, cardImage.ID)
+	// Nor does an account that cannot open the note either.
+	stranger := newBlobTestUser(t, s, "u_m16_lost_stranger")
+	for _, actor := range []string{other, owner, stranger} {
 		if err := s.DeleteEditorAsset(ctx, actor, image.ID); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("%s deleting the editor's image = %v, want not found", actor, err)
 		}

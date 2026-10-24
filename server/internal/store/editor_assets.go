@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
@@ -595,80 +596,109 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 	return ownerID, nil
 }
 
-// LostEditorAsset is an image or audio clip the caller pays for in another
-// account's material it can no longer open (M16). The Files page lists it
-// under that material with its name and size, for deletion only.
-type LostEditorAsset struct {
+// EditorAssetItem is an image or audio clip the caller pays for, wherever it
+// sits (M16). The Files page's Embeds tab lists it under its note's title:
+// one the caller can open opens that note, one it cannot is deleted there.
+type EditorAssetItem struct {
 	ID        string    `json:"assetId"`
 	Name      string    `json:"name"`
 	Purpose   string    `json:"purpose" enum:"image,audio"`
 	SizeBytes int64     `json:"sizeBytes"`
 	CreatedAt time.Time `json:"createdAt"`
-	// MaterialTitle names the note, quiz or set it sits in (an embedded quiz's
-	// or set's note), blank once that workspace's owner is no longer live.
+	// MaterialID is the note, quiz or set it sits in (an embedded quiz's or
+	// set's note), to open; empty when LostAccess.
+	MaterialID string `json:"materialId,omitempty"`
+	// MaterialTitle and WorkspaceName are blank once that workspace's owner is
+	// no longer live.
 	MaterialTitle string `json:"materialTitle"`
+	WorkspaceName string `json:"workspaceName"`
+	// LostAccess: the caller can no longer open its note (lostAccessSQL).
+	LostAccess bool `json:"lostAccess"`
 }
 
-type LostEditorAssetPage struct {
-	Items      []LostEditorAsset `json:"items" nullable:"false"`
+type EditorAssetPage struct {
+	Items      []EditorAssetItem `json:"items" nullable:"false"`
 	NextCursor string            `json:"nextCursor,omitempty"`
 }
 
-var lostEditorAssetSort = listSort{column: "a.created_at", kind: "time"}
+// EditorAssetAccess narrows ListEditorAssets to media in notes the caller can
+// open or to those it cannot; empty lists both.
+type EditorAssetAccess string
 
-// ListLostEditorAssets pages, newest first, through the images and audio the
-// user pays for in materials another account pays for, in workspaces the user
-// can no longer reach (lostAccessSQL, as for files). Media in the user's own
-// materials go with those materials.
-func (s *Store) ListLostEditorAssets(ctx context.Context, userID string, limit int, cursor string) (LostEditorAssetPage, error) {
+const (
+	EditorAssetsOpen EditorAssetAccess = "open"
+	EditorAssetsLost EditorAssetAccess = "lost"
+)
+
+var editorAssetSort = listSort{column: "a.created_at", kind: "time"}
+
+// ListEditorAssets pages, newest first, through the images and audio the user
+// pays for (editor_assets_payer_idx). Media in a trashed note or set it can
+// still open are left out: they go with that material's trash and purge.
+func (s *Store) ListEditorAssets(
+	ctx context.Context,
+	userID string,
+	access EditorAssetAccess,
+	limit int,
+	cursor string,
+) (EditorAssetPage, error) {
 	if limit <= 0 || limit > listPageMax {
 		limit = listPageMax
 	}
-	clause, cursorArgs, err := cursorClause(lostEditorAssetSort, "a.id", false, cursor, 2)
+	filter := `(l.lost OR (m.trashed_at IS NULL AND top.trashed_at IS NULL))`
+	switch access {
+	case EditorAssetsOpen:
+		filter = `NOT l.lost AND m.trashed_at IS NULL AND top.trashed_at IS NULL`
+	case EditorAssetsLost:
+		filter = `l.lost`
+	}
+	clause, cursorArgs, err := cursorClause(editorAssetSort, "a.id", false, cursor, 2)
 	if err != nil {
-		return LostEditorAssetPage{}, err
+		return EditorAssetPage{}, err
 	}
 	args := append([]any{userID}, cursorArgs...)
 	args = append(args, limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT a.id, a.name, a.purpose, a.size_bytes, a.created_at,
-			CASE WHEN `+liveWorkspaceSQL("top.workspace_id")+` THEN top.title ELSE '' END
+			CASE WHEN l.lost THEN '' ELSE top.id END,
+			`+workspaceNameSQL("top.workspace_id", "top.title")+`,
+			`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`, l.lost
 		FROM editor_assets a
 		JOIN materials m ON m.id=a.material_id
 		JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
-		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND m.owner_user_id<>$1
-			AND `+lostAccessSQL("top.workspace_id", "$1")+clause+
-		orderClause(lostEditorAssetSort, "a.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
+		CROSS JOIN LATERAL (SELECT `+lostAccessSQL("top.workspace_id", "$1")+` AS lost) l
+		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND `+filter+clause+
+		orderClause(editorAssetSort, "a.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
-		return LostEditorAssetPage{}, err
+		return EditorAssetPage{}, err
 	}
-	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (LostEditorAsset, error) {
-		var item LostEditorAsset
-		return item, row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt, &item.MaterialTitle)
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EditorAssetItem, error) {
+		var item EditorAssetItem
+		return item, row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt,
+			&item.MaterialID, &item.MaterialTitle, &item.WorkspaceName, &item.LostAccess)
 	})
 	if err != nil {
-		return LostEditorAssetPage{}, err
+		return EditorAssetPage{}, err
 	}
-	page := LostEditorAssetPage{Items: items}
+	page := EditorAssetPage{Items: items}
 	if len(items) > limit {
 		last := items[limit-1]
 		page.Items = items[:limit]
-		page.NextCursor = encodeListCursor(cursorPrimary(lostEditorAssetSort, last.CreatedAt, "", 0), last.ID)
+		page.NextCursor = encodeListCursor(cursorPrimary(editorAssetSort, last.CreatedAt, "", 0), last.ID)
 	}
 	return page, nil
 }
 
-// DeleteEditorAsset deletes an image or audio clip its payer added to another
-// account's material, whether or not the payer can still open it (M16). It
-// goes at once: a trashed asset would come back with the material's next
-// save. The material keeps the node, which then reads as removed
-// (MissingEditorAssetIDs). Media in the payer's own materials go with their
-// nodes and their material's trash instead.
+// DeleteEditorAsset deletes an image or audio clip its payer can no longer
+// open (M16): one it can open, it removes in its note instead. It goes at
+// once: a trashed asset would come back with the material's next save. The
+// material keeps the node, which then reads as removed
+// (MissingEditorAssetIDs).
 func (s *Store) DeleteEditorAsset(ctx context.Context, payerID, assetID string) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		var workspaceID string
-		err := tx.QueryRow(ctx, `SELECT a.workspace_id FROM editor_assets a JOIN materials m ON m.id=a.material_id
+		err := tx.QueryRow(ctx, `SELECT a.workspace_id FROM editor_assets a
 			WHERE a.id=$1 AND a.user_id=$2 AND a.status='ready' AND a.workspace_id IS NOT NULL
-				AND m.owner_user_id<>$2`, assetID, payerID).Scan(&workspaceID)
+				AND `+lostAccessSQL("a.workspace_id", "$2"), assetID, payerID).Scan(&workspaceID)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
@@ -688,6 +718,24 @@ func (s *Store) DeleteEditorAsset(ctx context.Context, payerID, assetID string) 
 		}
 		return err
 	})
+}
+
+// MaterialRemovedAssetIDs is MissingEditorAssetIDs for the images and audio a
+// material's stored content references.
+func (s *Store) MaterialRemovedAssetIDs(ctx context.Context, materialID string) ([]string, error) {
+	var content string
+	err := s.pool.QueryRow(ctx, `SELECT content FROM materials WHERE id=$1`, materialID).Scan(&content)
+	if isNoRows(err) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	ids, err := materialdoc.EditorAssetIDs(content)
+	if err != nil {
+		return nil, err
+	}
+	return s.MissingEditorAssetIDs(ctx, ids)
 }
 
 // MissingEditorAssetIDs returns the ids, of those a material's content

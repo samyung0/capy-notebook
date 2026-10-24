@@ -379,6 +379,9 @@ type ReviewSession struct {
 	Done     []ReviewAnswer `json:"done" nullable:"false"`
 	Answered int            `json:"answered"`
 	Total    int            `json:"total"`
+	// RemovedAssetIDs are the card and question images of Items and Done
+	// that no longer exist (M16), shown as removed.
+	RemovedAssetIDs []string `json:"removedAssetIds,omitempty"`
 }
 
 // ReviewAnswer is an item answered earlier in a session with what was
@@ -987,6 +990,8 @@ type ReviewResult struct {
 	Session PastReview     `json:"session"`
 	Items   []ReviewAnswer `json:"items" nullable:"false"`
 	Better  int            `json:"better"`
+	// RemovedAssetIDs is ReviewSession's for Items.
+	RemovedAssetIDs []string `json:"removedAssetIds,omitempty"`
 }
 
 func (s *Store) ReviewSessionResult(ctx context.Context, userID, id string) (ReviewResult, error) {

@@ -438,9 +438,9 @@ func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := doReq(t, fx.handler, http.MethodGet, "/api/editor-assets/lost", fx.actorID, nil)
+	rec := doReq(t, fx.handler, http.MethodGet, "/api/editor-assets?access=lost", fx.actorID, nil)
 	expectStatus(t, rec, http.StatusOK, "the removed member's lost media")
-	var lost store.LostEditorAssetPage
+	var lost store.EditorAssetPage
 	if err := json.Unmarshal(rec.Body.Bytes(), &lost); err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 		t.Fatalf("lost media = %+v, want both images", lost.Items)
 	}
 	for _, item := range lost.Items {
-		if item.MaterialTitle != note.Title {
+		if item.MaterialTitle != note.Title || !item.LostAccess || item.MaterialID != "" {
 			t.Fatalf("lost image %s is under %q, want the note's title %q", item.ID, item.MaterialTitle, note.Title)
 		}
 	}
@@ -471,6 +471,75 @@ func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 			t.Fatalf("%s removedAssetIds = %v, want only its own deleted image %s", read.path, body.RemovedAssetIDs, read.want)
 		}
 	}
+}
+
+// Study names the card images their uploader deleted, as the editor does
+// (Epo 2026-10-24): the set read flashcard study uses, a new review session,
+// a continued one and its result list the removed image (M16).
+func TestStudyReadsNameRemovedImages(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	assetID := fmt.Sprintf("asset_m16_study_%d", time.Now().UnixNano())
+	card := materialdoc.Card{ID: "c1", Front: "Cell", Back: "Unit of life"}
+	plain, err := materialdoc.FlashcardsDocument([]materialdoc.Card{card})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "flashcards", Title: "Cells", Content: plain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, set.ID)
+	_, upload, err := fx.store.CreateEditorAssetReservation(ctx, store.NewEditorAssetReservation{
+		AssetID: assetID, UploadID: assetID + "_up", WorkspaceID: fx.workspaceID, MaterialID: set.ID, CreatedBy: fx.actorID,
+		Name: "cell.png", Purpose: "image", ObjectPath: "editor-assets/" + assetID + "/blob.png",
+		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.store.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+		t.Fatal(err)
+	}
+	card.Image = &materialdoc.CardImage{AssetID: assetID}
+	cards, err := materialdoc.FlashcardsDocument([]materialdoc.Card{card})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, set.ID, cards); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`,
+		fx.workspaceID, fx.actorID); err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, "/api/editor-assets/"+assetID, fx.actorID, nil),
+		http.StatusNoContent, "its payer deleting it")
+
+	removed := func(path string) {
+		t.Helper()
+		rec := doReq(t, fx.handler, http.MethodGet, path, fx.ownerID, nil)
+		expectStatus(t, rec, http.StatusOK, path)
+		var body struct{ RemovedAssetIDs []string }
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(body.RemovedAssetIDs, []string{assetID}) {
+			t.Fatalf("%s removedAssetIds = %v, want the deleted card image; %s", path, body.RemovedAssetIDs, rec.Body.String())
+		}
+	}
+	removed("/api/flashcards/" + set.ID)
+	// A rated card is due for review: the rating records its session.
+	const sessionID = "2b6f7c1d-4e5a-4b3c-9d8e-0f1a2b3c4d5e"
+	expectStatus(t, doReq(t, fx.handler, http.MethodPost, "/api/review/ratings", fx.ownerID, map[string]any{
+		"materialId": set.ID, "itemId": "c1", "rating": 1,
+		"session": map[string]any{"id": sessionID, "workspaceId": fx.workspaceID, "group": "workspace",
+			"items": []any{map[string]any{"materialId": set.ID, "itemId": "c1"}}},
+	}), http.StatusNoContent, "rating the card in a session")
+	removed("/api/workspaces/" + fx.workspaceID + "/review")
+	removed("/api/review/sessions/" + sessionID)
+	removed("/api/review/sessions/" + sessionID + "/result")
 }
 
 // The upload checks again what its ticket checked: a file within the cap when

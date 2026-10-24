@@ -39,9 +39,9 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
+import { EmbedsTab } from '@/features/files/EmbedsTab';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
 import { formatFileSize } from '@/features/files/fileUtils';
-import { LostMedia } from '@/features/files/LostMedia';
 import {
   clearOnBlank,
   SelectionAction,
@@ -78,7 +78,7 @@ import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 export default function Files() {
   const navigate = useNavigate();
-  const { tab = 'files' } = useSearch({ from: '/auth-shell/files' });
+  const { tab = 'files', access } = useSearch({ from: '/auth-shell/files' });
   const [view, changeView] = useListView(PREF_KEYS.filesView);
   const [busy, setBusy] = useState(false);
   const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
@@ -113,6 +113,7 @@ export default function Files() {
           tabs={[
             { label: m.files_tab_files(), value: 'files' },
             { label: m.files_tab_blocks(), value: 'blocks' },
+            { label: m.files_tab_embeds(), value: 'embeds' },
             { label: m.files_tab_trash(), value: 'trash' },
           ]}
           value={tab}
@@ -121,6 +122,19 @@ export default function Files() {
       {tab === 'trash' ? (
         <TrashTab
           onBusyChange={setBusy}
+          onViewChange={changeView}
+          view={view}
+        />
+      ) : tab === 'embeds' ? (
+        <EmbedsTab
+          access={access}
+          onAccessChange={(next) =>
+            void navigate({
+              replace: true,
+              search: { access: next, tab: 'embeds' },
+              to: '/files',
+            })
+          }
           onViewChange={changeView}
           view={view}
         />
@@ -320,11 +334,6 @@ function ActiveFiles({
             />
           </div>
         )}
-        {/* After the last page, so it does not move down as pages load. */}
-        {kinds.length === 0 &&
-          workspaceIds.length === 0 &&
-          !isLoading &&
-          !hasNextPage && <LostMedia view={view} />}
       </PageBody>
       <ConfirmDialog
         body={m.files_delete_selected_body({

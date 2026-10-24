@@ -1949,6 +1949,60 @@ components:
         - updatedAt
         - comments
       type: object
+    EditorAssetItem:
+      additionalProperties: false
+      properties:
+        assetId:
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        lostAccess:
+          type: boolean
+        materialId:
+          type: string
+        materialTitle:
+          type: string
+        name:
+          type: string
+        purpose:
+          enum:
+            - image
+            - audio
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+        workspaceName:
+          type: string
+      required:
+        - assetId
+        - name
+        - purpose
+        - sizeBytes
+        - createdAt
+        - materialTitle
+        - workspaceName
+        - lostAccess
+      type: object
+    EditorAssetPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/EditorAssetPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/EditorAssetItem"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
+      type: object
     Envelope:
       additionalProperties: false
       properties:
@@ -2319,6 +2373,11 @@ components:
           $ref: "#/components/schemas/Privacy"
         provenance:
           $ref: "#/components/schemas/Provenance"
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         revision:
           format: int64
           type: integer
@@ -2887,52 +2946,6 @@ components:
           type: string
       required:
         - locale
-      type: object
-    LostEditorAsset:
-      additionalProperties: false
-      properties:
-        assetId:
-          type: string
-        createdAt:
-          format: date-time
-          type: string
-        materialTitle:
-          type: string
-        name:
-          type: string
-        purpose:
-          enum:
-            - image
-            - audio
-          type: string
-        sizeBytes:
-          format: int64
-          type: integer
-      required:
-        - assetId
-        - name
-        - purpose
-        - sizeBytes
-        - createdAt
-        - materialTitle
-      type: object
-    LostEditorAssetPage:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/LostEditorAssetPage.json
-          format: uri
-          readOnly: true
-          type: string
-        items:
-          items:
-            $ref: "#/components/schemas/LostEditorAsset"
-          type: array
-        nextCursor:
-          type: string
-      required:
-        - items
       type: object
     Material:
       additionalProperties: false
@@ -4224,6 +4237,11 @@ components:
           $ref: "#/components/schemas/Privacy"
         provenance:
           $ref: "#/components/schemas/Provenance"
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         revision:
           format: int64
           type: integer
@@ -4929,6 +4947,11 @@ components:
           items:
             $ref: "#/components/schemas/ReviewAnswer"
           type: array
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         session:
           $ref: "#/components/schemas/PastReview"
       required:
@@ -4973,6 +4996,11 @@ components:
             - fading
             - learned
           type: string
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         total:
           format: int64
           type: integer
@@ -8564,10 +8592,20 @@ paths:
       summary: Report an editing incident
       tags:
         - Editing
-  /api/editor-assets/lost:
+  /api/editor-assets:
     get:
-      operationId: listLostEditorAssets
+      operationId: listEditorAssets
       parameters:
+        - description: Only media in notes the caller can open, or only those it cannot
+          explode: false
+          in: query
+          name: access
+          schema:
+            description: Only media in notes the caller can open, or only those it cannot
+            enum:
+              - open
+              - lost
+            type: string
         - explode: false
           in: query
           name: limit
@@ -8589,7 +8627,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LostEditorAssetPage"
+                $ref: "#/components/schemas/EditorAssetPage"
           description: OK
         default:
           content:
@@ -8597,7 +8635,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List the images and audio the caller pays for in materials it can no longer open
+      summary: List the images and audio the caller pays for, each marked when its note can no longer be opened
       tags:
         - Content
   /api/editor-assets/{assetId}:
@@ -8618,7 +8656,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Delete an image or audio clip the caller pays for in another account's material
+      summary: Delete an image or audio clip the caller pays for in a note it can no longer open
       tags:
         - Content
   /api/events:

@@ -62,6 +62,8 @@ import type {
   Customization,
   DeletionPreflight,
   EditableQuiz,
+  EditorAssetAccess,
+  EditorAssetPage,
   FileLinks,
   FileListParams,
   FilePage,
@@ -76,7 +78,6 @@ import type {
   ItemAttempts,
   Label,
   LearningProgress,
-  LostEditorAssetPage,
   Material,
   MaterialCollaborationToken,
   MaterialComment,
@@ -1206,24 +1207,23 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
     placeholderData: keepPreviousData,
   });
 
-/** The images and audio the caller pays for in other accounts' notes, quizzes
- * and sets it can no longer open (M16), newest first: the Files page lists
- * them for deletion only. */
-export const useLostMedia = () =>
+/** The images and audio the caller pays for (M16), newest first, each marked
+ * when its note can no longer be opened: the Files page's Embeds tab. */
+export const useEditorAssets = (access?: EditorAssetAccess) =>
   useInfiniteQuery({
-    getNextPageParam: (last: LostEditorAssetPage) =>
-      last.nextCursor || undefined,
+    getNextPageParam: (last: EditorAssetPage) => last.nextCursor || undefined,
     initialPageParam: '',
+    placeholderData: keepPreviousData,
     queryFn: ({ pageParam }: { pageParam: string }) =>
-      api.get<LostEditorAssetPage>(
-        `/editor-assets/lost${listSearch({}, pageParam)}`
+      api.get<EditorAssetPage>(
+        `/editor-assets${listSearch({ access }, pageParam)}`
       ),
-    queryKey: qk.lostMedia,
+    queryKey: qk.editorAssets(access),
   });
 
-/** Deletes one of them at once: nothing restores it, and the note shows it as
- * removed by its uploader. */
-export function useDeleteLostMedia() {
+/** Deletes one in a note the caller can no longer open, at once: nothing
+ * restores it, and the note shows it as removed by its uploader. */
+export function useDeleteEditorAsset() {
   const qc = useQueryClient();
   return useMutation({
     // Its confirmation shows the failure.
@@ -1231,7 +1231,7 @@ export function useDeleteLostMedia() {
     mutationFn: (assetId: string) =>
       api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.lostMedia });
+      qc.invalidateQueries({ queryKey: qk.editorAssetsRoot });
       qc.invalidateQueries({ queryKey: qk.usage });
     },
   });
