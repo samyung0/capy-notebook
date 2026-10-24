@@ -217,7 +217,8 @@ caps as the quiz grade, stores nothing, and returns 404 for any quiz the note do
 signed-in visitor's check goes instead to `POST /api/shared/notes/{token}/quizzes/{quizId}/check`: the same
 share-token checks, graded under the user's daily grading parts with no captcha, storing nothing (Epo 2026-10-24,
 Q311). The page takes it only once the session is known to be signed in; while it is signed out, failed or not
-yet settled, the check takes the captcha route.
+yet settled, the check takes the captcha route. A note page loads Clerk to learn the session only when the note
+embeds a quiz (`src/share/islands.tsx`, Q350).
 Embedded quizzes and flashcard sets are named by a random UUID that is never displayed, and they are left out of
 every materials listing, Explore, search and the workspace quiz count.
 
