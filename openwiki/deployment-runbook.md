@@ -1216,10 +1216,10 @@ per IP with the data centre (`cf.colo.id`).
   `uat-app`, `app.uat`, `uat`): past 600 requests a minute from one address,
   a Managed Challenge. On Pro a challenge action must set
   `mitigation_timeout` 0, so the rule throttles (each request past the rate
-  is challenged) rather than holding a challenge for a set time. `/p/` is left
-  out although Q324 names it: it serves only images and audio the pages load,
-  and a challenge answer to those breaks them; it stays behind the Workers
-  Cache and the Go share bucket.
+  is challenged) rather than holding a challenge for a set time. The rule
+  matches `/share/` and `/w/` only: `/p/` serves the pages' images and audio,
+  which cannot answer a challenge, so it stays bounded by the gateway's
+  per-visitor share-read class (Epo 2026-10-24, Q329).
 
 Everything else has no edge limit. A rule must leave `/webhooks/` out: Stripe
 and Clerk burst deliveries and retries from small sets of IPs, and rate
