@@ -447,6 +447,24 @@ func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
 	if len(lost.Items) != 2 {
 		t.Fatalf("lost media = %+v, want both images", lost.Items)
 	}
+	// One per page: the cursor reaches the second and the end.
+	var paged []string
+	for path := "/api/editor-assets?access=lost&limit=1"; path != ""; {
+		rec := doReq(t, fx.handler, http.MethodGet, path, fx.actorID, nil)
+		expectStatus(t, rec, http.StatusOK, path)
+		var page store.EditorAssetPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || len(page.Items) != 1 || len(paged) > 1 {
+			t.Fatalf("%s = %s, %v", path, rec.Body.String(), err)
+		}
+		paged = append(paged, page.Items[0].ID)
+		path = ""
+		if page.NextCursor != "" {
+			path = "/api/editor-assets?access=lost&limit=1&cursor=" + page.NextCursor
+		}
+	}
+	if len(paged) != 2 || paged[0] != lost.Items[0].ID || paged[1] != lost.Items[1].ID {
+		t.Fatalf("paged %v, want %s then %s", paged, lost.Items[0].ID, lost.Items[1].ID)
+	}
 	for _, item := range lost.Items {
 		if item.MaterialTitle != note.Title || !item.LostAccess || item.MaterialID != "" {
 			t.Fatalf("lost image %s is under %q, want the note's title %q", item.ID, item.MaterialTitle, note.Title)

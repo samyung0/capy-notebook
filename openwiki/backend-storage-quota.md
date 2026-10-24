@@ -120,12 +120,15 @@ page's Embeds tab (Epo 2026-10-24; `GET /api/editor-assets`,
 its note's current title (an embedded quiz's or set's note), with its kind,
 size, workspace and added time, and `lostAccess` once the payer can no longer
 open that note (`lostAccessSQL` on the note's workspace). The tab's filter
-(`access=open|lost`) shows one kind. Title and workspace name are blank once
+(`access=open|lost`) shows one kind, loaded afresh on each switch; pages are
+keyset (newest first, ties by id) within the caller's own rows. Title and workspace name are blank once
 that workspace's owner is no longer live. Media in a trashed note or set the
 payer can still open are left out; they go with that material's trash and
 purge. One it can open opens its note, where it is removed like any node; one
 it cannot open has Delete only (`DELETE /api/editor-assets/{assetId}`,
-`DeleteEditorAsset`: the payer, and only while it cannot open the note).
+`DeleteEditorAsset`: the payer, and only while it cannot open the note,
+decided under the workspace row lock an invite or link also takes; the list
+and the delete both read the note's workspace).
 Deleting one is final, because a trashed asset would come back with the
 note's next save. The note keeps the node:
 the material response lists the ids its own content references that no

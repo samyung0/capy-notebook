@@ -1208,12 +1208,13 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
   });
 
 /** The images and audio the caller pays for (M16), newest first, each marked
- * when its note can no longer be opened: the Files page's Embeds tab. */
+ * when its note can no longer be opened: the Files page's Embeds tab. A new
+ * access filter loads afresh, so its notice never sits over the previous
+ * filter's rows. */
 export const useEditorAssets = (access?: EditorAssetAccess) =>
   useInfiniteQuery({
     getNextPageParam: (last: EditorAssetPage) => last.nextCursor || undefined,
     initialPageParam: '',
-    placeholderData: keepPreviousData,
     queryFn: ({ pageParam }: { pageParam: string }) =>
       api.get<EditorAssetPage>(
         `/editor-assets${listSearch({ access }, pageParam)}`

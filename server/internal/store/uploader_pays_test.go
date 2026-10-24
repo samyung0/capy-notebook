@@ -696,6 +696,20 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 	expect(list(editor, EditorAssetsOpen), false, image.ID, cardImage.ID)
 	expect(lost(editor), true)
 	expect(list(owner, ""), false, ownImage.ID)
+	// The owner's own set in the note, its row then trashed (the block cut)
+	// while the note stays: its card image leaves the owner's list.
+	ownSet, err := s.CreateEmbeddedMaterial(ctx, owner, note.ID, EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"front", "back"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownCardImage := f.ready(owner, ws.ID, ownSet.ID)
+	expect(list(owner, EditorAssetsOpen), false, ownImage.ID, ownCardImage.ID)
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id=$2,
+		purge_after=now() + interval '30 days' WHERE id=$1`, ownSet.ID, uid("trash")); err != nil {
+		t.Fatal(err)
+	}
+	expect(list(owner, ""), false, ownImage.ID)
+	expect(list(owner, EditorAssetsOpen), false, ownImage.ID)
 	if err := s.DeleteEditorAsset(ctx, editor, image.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleting an image in a note its payer can open = %v, want not found", err)
 	}
@@ -716,6 +730,7 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(list(owner, ""), false)
+	expect(list(owner, EditorAssetsOpen), false)
 	expect(lost(editor), true, image.ID, cardImage.ID)
 	// Nor does an account that cannot open the note either.
 	stranger := newBlobTestUser(t, s, "u_m16_lost_stranger")
@@ -740,8 +755,8 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, item := range lost(editor) {
-			if item.MaterialTitle != "" {
-				t.Fatalf("after %q the lost list shows %q, want the title hidden", step.lock, item.MaterialTitle)
+			if item.MaterialTitle != "" || item.WorkspaceName != "" {
+				t.Fatalf("after %q the lost list shows %q in %q, want both hidden", step.lock, item.MaterialTitle, item.WorkspaceName)
 			}
 		}
 		if err := s.DeleteEditorAsset(ctx, editor, step.asset.ID); err != nil {
@@ -760,6 +775,126 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 		if removed, err := s.MissingEditorAssetIDs(ctx, check.refs); err != nil || !slices.Equal(removed, check.want) {
 			t.Fatalf("removed of %v = %v, %v; want %v", check.refs, removed, err, check.want)
 		}
+	}
+}
+
+// The Embeds listing pages newest first, ties by id, one row per page with
+// limit 1; a cursor, even one naming another account's asset, only moves
+// within the caller's own rows (M16).
+func TestEmbedsListPagesWithinTheCallersRows(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_m16_page_owner")
+	editor := newBlobTestUser(t, s, "u_m16_page_editor")
+	ws, note, _ := m16Note(t, s, owner, editor)
+	f := editorAssetFixture{t: t, s: s, ctx: ctx}
+	var mine []EditorAsset
+	for range 3 {
+		mine = append(mine, f.ready(owner, ws.ID, note.ID))
+	}
+	theirs := f.ready(editor, ws.ID, note.ID)
+	// Two added at the same instant, one a day earlier.
+	tie := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	for i, at := range []time.Time{tie, tie, tie.Add(-24 * time.Hour)} {
+		if _, err := s.pool.Exec(ctx, `UPDATE editor_assets SET created_at=$2 WHERE id=$1`, mine[i].ID, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE editor_assets SET created_at=$2 WHERE id=$1`, theirs.ID, tie); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{mine[0].ID, mine[1].ID}
+	slices.Sort(want)
+	slices.Reverse(want)
+	want = append(want, mine[2].ID)
+
+	var got []string
+	cursor := ""
+	for page := 0; page < 4; page++ {
+		res, err := s.ListEditorAssets(ctx, owner, "", 1, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range res.Items {
+			got = append(got, item.ID)
+		}
+		if len(res.Items) != 1 || (res.NextCursor == "") != (len(got) == len(want)) {
+			t.Fatalf("page %d = %d items, next %q", page, len(res.Items), res.NextCursor)
+		}
+		if res.NextCursor == "" {
+			break
+		}
+		cursor = res.NextCursor
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("paged %v, want %v (newest first, ties by id)", got, want)
+	}
+	for _, cursor := range []string{
+		encodeListCursor(cursorPrimary(editorAssetSort, time.Now().Add(time.Hour), "", 0), "~"),
+		encodeListCursor(cursorPrimary(editorAssetSort, tie, "", 0), theirs.ID),
+	} {
+		res, err := s.ListEditorAssets(ctx, owner, "", 0, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range res.Items {
+			if item.ID == theirs.ID {
+				t.Fatalf("a crafted cursor listed another account's asset %s", theirs.ID)
+			}
+		}
+	}
+}
+
+// Access is decided under the workspace lock: a delete that saw the payer
+// locked out, then waited on the lock while the payer was invited back,
+// refuses, since the payer can open the note again (M16).
+func TestEmbedDeleteDecidesAccessUnderTheLock(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_m16_race_owner")
+	editor := newBlobTestUser(t, s, "u_m16_race_editor")
+	ws, note, _ := m16Note(t, s, owner, editor)
+	image := editorAssetFixture{t: t, s: s, ctx: ctx}.ready(editor, ws.ID, note.ID)
+	if err := s.RemoveWorkspaceMember(ctx, owner, ws.ID, editor); err != nil {
+		t.Fatal(err)
+	}
+	invite, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer invite.Rollback(ctx)
+	// An invite accept takes the workspace row first, as the delete does.
+	if _, err := invite.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR UPDATE`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.DeleteEditorAsset(ctx, editor, image.ID) }()
+	waiting := false
+	for range 500 {
+		var n int
+		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
+			WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%FROM workspaces WHERE id=$1 FOR UPDATE%'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if waiting = n > 0; waiting {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !waiting {
+		t.Fatal("the delete never waited on the workspace lock")
+	}
+	if _, err := invite.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'editor')`, ws.ID, editor); err != nil {
+		t.Fatal(err)
+	}
+	if err := invite.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete after the payer was invited back = %v, want not found", err)
+	}
+	if !(editorAssetFixture{t: t, s: s, ctx: ctx}).exists(image.ID) {
+		t.Fatal("the image was deleted from a note its payer can open again")
 	}
 }
 

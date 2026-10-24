@@ -632,6 +632,12 @@ const (
 
 var editorAssetSort = listSort{column: "a.created_at", kind: "time"}
 
+// editorAssetNoteJoin joins an asset (a) to its material (m) and that
+// material's note (top: an embedded quiz's or set's note, else itself). The
+// listing and the delete both decide access on top.workspace_id.
+const editorAssetNoteJoin = ` JOIN materials m ON m.id=a.material_id
+		JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)`
+
 // ListEditorAssets pages, newest first, through the images and audio the user
 // pays for (editor_assets_payer_idx). Media in a trashed note or set it can
 // still open are left out: they go with that material's trash and purge.
@@ -662,9 +668,7 @@ func (s *Store) ListEditorAssets(
 			CASE WHEN l.lost THEN '' ELSE top.id END,
 			`+workspaceNameSQL("top.workspace_id", "top.title")+`,
 			`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`, l.lost
-		FROM editor_assets a
-		JOIN materials m ON m.id=a.material_id
-		JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
+		FROM editor_assets a`+editorAssetNoteJoin+`
 		CROSS JOIN LATERAL (SELECT `+lostAccessSQL("top.workspace_id", "$1")+` AS lost) l
 		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND `+filter+clause+
 		orderClause(editorAssetSort, "a.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
@@ -696,23 +700,27 @@ func (s *Store) ListEditorAssets(
 func (s *Store) DeleteEditorAsset(ctx context.Context, payerID, assetID string) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		var workspaceID string
-		err := tx.QueryRow(ctx, `SELECT a.workspace_id FROM editor_assets a
-			WHERE a.id=$1 AND a.user_id=$2 AND a.status='ready' AND a.workspace_id IS NOT NULL
-				AND `+lostAccessSQL("a.workspace_id", "$2"), assetID, payerID).Scan(&workspaceID)
+		err := tx.QueryRow(ctx, `SELECT top.workspace_id FROM editor_assets a`+editorAssetNoteJoin+`
+			WHERE a.id=$1 AND a.user_id=$2 AND a.status='ready' AND top.workspace_id IS NOT NULL`,
+			assetID, payerID).Scan(&workspaceID)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
-		// Only the payer's account must be live, as for its files there.
+		// Only the payer's account must be live, as for its files there. The
+		// workspace row lock also holds off an invite or link joining it, so
+		// access is decided under it, in the delete.
 		if _, err := s.lockWorkspacePayerTx(ctx, tx, workspaceID, payerID); err != nil {
 			return err
 		}
 		if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `DELETE FROM editor_assets WHERE id=$1`, assetID)
+		tag, err := tx.Exec(ctx, `DELETE FROM editor_assets a USING materials m, materials top
+			WHERE a.id=$1 AND m.id=a.material_id AND top.id=COALESCE(m.parent_material_id, m.id)
+				AND `+lostAccessSQL("top.workspace_id", "$2"), assetID, payerID)
 		if err == nil && tag.RowsAffected() == 0 {
 			err = ErrNotFound
 		}
