@@ -422,7 +422,8 @@ def _undo_admission_sync(call_id: str) -> None:
 
 
 async def release_call(call_id: str) -> None:
-    """Free the call's capacity lease once the provider is done. Best effort.
+    """Free the call's capacity lease once the provider is done, unless its
+    settlement freed it already (``settle``). Best effort.
 
     A lease that cannot be released expires with the receipt window.
     """
@@ -534,7 +535,7 @@ def _open_call_sync(
             )
             if lease is not None:
                 # Last, so the model-wide advisory lock covers only the
-                # delete, sum and insert, never the row locks above.
+                # lease insert, never the row locks above.
                 key, capacity = lease
                 admitted = db.acquire_provider_capacity(
                     cur,
@@ -606,7 +607,9 @@ async def settle(
     credit_micros: int | None = None,
 ) -> RequestAccounting | None:
     """``credit_micros`` replaces token pricing for an ingest call billed per
-    unit (a VLM page read)."""
+    unit (a VLM page read). An applied settlement frees the call's capacity
+    lease in its own transaction (Q298), so ``release_call`` has nothing left
+    to do; a failed one leaves the lease to ``release_call``."""
     state = current()
     if state is None:
         return None
@@ -625,6 +628,7 @@ async def settle(
                 deadline=state.receipt_deadlines.get(call_id),
             )
         )
+        state.leased_calls.discard(call_id)
         state.settled_calls += 1
         return state
     payload = {
@@ -649,6 +653,7 @@ async def settle(
         if deadline is not None
         else _post_settlement(payload)
     )
+    state.leased_calls.discard(call_id)  # the gateway freed it (Q298)
     if kind != KIND_RERANK:
         # A rerank settles in the background, so its reply can land after a
         # newer LLM settlement and must not roll these flags back.

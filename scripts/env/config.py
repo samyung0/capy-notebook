@@ -213,6 +213,9 @@ def render(values, environment, output, revision):
     # (Epo 2026-10-24, rate-limit audit; runbook §1.1).
     app["RETRIEVAL_MEM_LIMIT"] = "3g" if production else "1536m"
     app["RETRIEVAL_CPUS"] = "2" if production else "1"
+    # Its chat and generate turns in progress: 96 in production's 3 GiB, half
+    # that in UAT's 1.5 GiB (Epo 2026-10-24, Q338, Q343).
+    app["RETRIEVAL_TURN_SLOTS"] = "96" if production else "48"
     private_write(output / "app.env", dotenv(app))
     build = build_values(values, environment, revision)
     private_write(output / "build.json", json.dumps(build))

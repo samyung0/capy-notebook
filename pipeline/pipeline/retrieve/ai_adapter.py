@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .. import elitellm, obs, registry
 from ..prompts import editor as editor_prompts
-from ..retrieval import accounting, models
+from ..retrieval import accounting, limits, models
 from ..retrieval.chunking import clip_to_tokens
 
 log = logging.getLogger("capy.retrieve.ai")
@@ -121,6 +121,20 @@ def _busy_http_exception(exc: elitellm.ProviderBusy) -> HTTPException:
         },
         headers={"Retry-After": str(seconds)},
     )
+
+
+def _refuse_past_capacity() -> None:
+    """Editor AI calls never wait (Q268) and are not turns (Q338): at the
+    turns-in-progress ceiling or with every call slot taken they answer 503
+    provider_busy before starting a response (Q339, Q359). The call still
+    takes its own slot (``bind_call_slots``), answering busy if another call
+    took the last one meanwhile."""
+    if limits.TURN_SLOTS.full() or limits.CALL_SLOTS.full():
+        raise _busy_http_exception(
+            elitellm.ProviderBusy(
+                models.CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        )
 
 
 def _editor_spec(req: PlateCommandReq | PlateCopilotReq):
@@ -625,6 +639,8 @@ async def _text_events(request: Request, prompt: str, spec: Any) -> AsyncIterato
 async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterator[str]:
     """One named tool. ``comment`` is unused by the current menu but kept."""
     token = accounting.bind(req.spendSessionId) if req.spendSessionId else None
+    # Past the process's call slots an editor AI call answers busy at once (Q268).
+    slots = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
     try:
         tool_name = _require_tool(req)
         yield _sse({"type": "start"})
@@ -697,6 +713,7 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
             )
         )
     finally:
+        limits.reset_call_slots(slots)
         if token is not None:
             accounting.reset(token)
         if not await request.is_disconnected():
@@ -709,6 +726,7 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
 
 @router.post("/command")
 async def plate_command(req: PlateCommandReq, request: Request):
+    _refuse_past_capacity()
     try:
         spec = _editor_spec(req)
         _ensure_provider(spec)
@@ -741,7 +759,9 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
             'If no meaningful continuation is possible, return "0".'
         )
     )
+    _refuse_past_capacity()
     token = accounting.bind(req.spendSessionId) if req.spendSessionId else None
+    slots = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
     try:
         spec = _editor_spec(req)
         _ensure_provider(spec)
@@ -788,6 +808,7 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
             },
         ) from exc
     finally:
+        limits.reset_call_slots(slots)
         if token is not None:
             accounting.reset(token)
     text = response.choices[0].message.content if response.choices else ""

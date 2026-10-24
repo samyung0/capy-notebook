@@ -422,7 +422,9 @@ class _Flow:
             events.append(("abandon",))
 
         async def settle_units(**kwargs):
+            # The settlement frees the call's lease in its own transaction.
             self.calls[kwargs["call_id"]] = "applied"
+            self.leases.discard(kwargs["call_id"])
             events.append(
                 ("settle", kwargs["units"], kwargs["unit"], kwargs["credit_micros"])
             )
@@ -562,8 +564,8 @@ async def test_a_running_task_re_pends_with_growing_delays_then_settles_once(
     assert delays == [2, 3, 4, 7]
     assert flow.kinds().count("submit") == 1
     assert flow.events.count(("renew", "filetrans", 3600)) == 4
-    # Charged ceil(60.2) seconds once, then the lease is freed.
-    assert flow.events[-2:] == [("settle", 61, "seconds", 61 * 16_667), ("release",)]
+    # Charged ceil(60.2) seconds once; the settlement frees the lease.
+    assert flow.events[-1] == ("settle", 61, "seconds", 61 * 16_667)
     assert flow.leases == set()
 
     # The cached transcript serves the next claim with no task or charge.
@@ -699,7 +701,7 @@ async def test_a_task_whose_call_ran_out_unpolled_is_polled_and_settles_once(
     sentences, _key, _size = await flow.claim()
 
     assert [sentence["text"] for sentence in sentences] == ["Hello."]
-    assert flow.kinds() == ["renew", "poll", "open", "settle", "release"]
+    assert flow.kinds() == ["renew", "poll", "open", "settle"]
     (new_call,) = flow.calls
     assert new_call != "pc_1" and flow.calls[new_call] == "applied"
     # Stored before the settlement, so a crash after it renews the new call.
@@ -849,7 +851,7 @@ async def test_a_task_the_worker_found_succeeded_is_not_polled_again(monkeypatch
     flow.payload = state
     await flow.claim(transcript_url=url)
 
-    assert flow.kinds() == ["renew", "poll", "settle", "release"]
+    assert flow.kinds() == ["renew", "poll", "settle"]
 
 
 @pytest.mark.asyncio
@@ -938,7 +940,7 @@ async def test_a_recording_with_no_speech_is_ready_unindexed_and_free(monkeypatc
         await flow.run()
 
     assert outcome.value.code == "no_speech"
-    assert flow.events[-2:] == [("settle", 61, "seconds", 0), ("release",)]
+    assert flow.events[-1] == ("settle", 61, "seconds", 0)
     assert "abandon" not in flow.kinds() and not flow.cache
 
 
