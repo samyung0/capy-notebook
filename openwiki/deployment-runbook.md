@@ -1205,7 +1205,7 @@ identity events.
 
 **WAF custom rules.** `capy_block_internal_paths` blocks `/api/internal/` and
 `/internal/` on every public host of both environments (`api`, `uat-api`,
-`app`, `app.uat`, `uat`, `collab`, `uat-collab`). Nothing legitimate reaches
+`app`, `app.uat`, `uat-app`, `uat`, `collab`, `uat-collab`). Nothing legitimate reaches
 them through Cloudflare: retrieval and collaboration call the gateway on the
 Docker network, the ingest hosts over WireGuard (`GATEWAY_URL` on the private
 address), and the local lane over its private routes. A caller that needs an

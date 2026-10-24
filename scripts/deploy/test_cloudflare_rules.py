@@ -263,6 +263,7 @@ class RulesFileTest(unittest.TestCase):
             "uat-api",
             "app",
             "app.uat",
+            "uat-app",
             "uat",
             "collab",
             "uat-collab",

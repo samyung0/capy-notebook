@@ -5,7 +5,7 @@
       {
         "ref": "capy_block_internal_paths",
         "description": "Internal service routes are reached over the private network only, never through Cloudflare",
-        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\" \"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\" \"collab.capynotebook.com\" \"uat-collab.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/api/internal/\") or starts_with(http.request.uri.path, \"/internal/\"))",
+        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\" \"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat-app.capynotebook.com\" \"uat.capynotebook.com\" \"collab.capynotebook.com\" \"uat-collab.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/api/internal/\") or starts_with(http.request.uri.path, \"/internal/\"))",
         "action": "block",
         "enabled": true
       },
