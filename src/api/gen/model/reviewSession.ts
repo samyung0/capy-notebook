@@ -21,5 +21,7 @@ export interface ReviewSession {
   items: ReviewItem[];
   /** Omitted for a review started from the workspace list */
   mode?: ReviewSessionMode;
+  /** @nullable */
+  removedAssetIds?: string[] | null;
   total: number;
 }
