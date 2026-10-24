@@ -15,6 +15,8 @@ anything else is a failed decode.
 - ``caption``: an image as the JPEG the caption model reads.
 - ``thumbnail``: an image's first frame as the list card's WebP.
 - ``page``: the parser's page-1 PNG from the bundle as the card's WebP.
+
+``audio_seconds`` runs ffmpeg itself, not this module, under the same policy.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import unicodedata
@@ -178,6 +181,57 @@ def thumbnail_webp(path: Path, format_name: str, *, max_pixels: int) -> bytes | 
 def page_webp(png: bytes) -> bytes:
     """The parser's page-1 PNG as the card WebP."""
     return _bytes(_decode("page", data=png), "webp")
+
+
+# ffmpeg's progress report: a few key=value blocks, the last one ending with
+# progress=end.
+_MAX_PROGRESS = 1 << 20
+
+
+def audio_seconds(path: Path) -> float:
+    """The length of the first audio stream, in seconds, measured from its
+    packets: ffmpeg copies every packet to the null muxer (nothing is
+    decoded) and reports where the last one ends. A container that names no
+    duration (a browser recording's WebM) or a wrong one (edited MP4 header
+    boxes) is measured all the same. An MP4 edit list still applies, as it
+    does when the file plays."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise DecodeFailed("ffmpeg is not installed")
+    argv = [
+        ffmpeg,
+        "-nostdin",
+        "-v",
+        "error",
+        "-i",
+        str(path),
+        "-map",
+        "0:a:0",
+        "-c",
+        "copy",
+        "-f",
+        "null",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+        "-",
+    ]
+    try:
+        completed = capy_sandbox.run(argv, _policy(path), max_output=_MAX_PROGRESS)
+    except subprocess.TimeoutExpired:
+        raise DecodeFailed(f"audio probe exceeded {_TIMEOUT_S} seconds") from None
+    except capy_sandbox.OutputLimit:
+        raise DecodeFailed("audio probe answered too much") from None
+    if completed.returncode != 0:
+        detail = completed.stderr.decode(errors="replace").strip()[-500:]
+        raise DecodeFailed(f"audio probe exited {completed.returncode}: {detail}")
+    lines = completed.stdout.decode(errors="replace").split()
+    times = [
+        line[len("out_time_us=") :] for line in lines if line.startswith("out_time_us=")
+    ]
+    if not lines or lines[-1] != "progress=end" or not times or not times[-1].isdigit():
+        raise DecodeFailed("audio probe found no packet times")
+    return int(times[-1]) / 1_000_000
 
 
 # ------------------------------------------------------------ helper side

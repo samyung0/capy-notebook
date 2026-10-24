@@ -127,7 +127,7 @@ describe('upload batch limits', () => {
     expect(needsIngestJob('image.avif', 'image', 'none')).toBe(true);
     expect(needsIngestJob('data.csv', 'sheet', 'none')).toBe(true);
     expect(needsIngestJob('archive.bin', 'unknown', 'none')).toBe(false);
-    expect(needsIngestJob('recording.mp3', 'audio', 'none')).toBe(false);
+    expect(needsIngestJob('recording.mp3', 'audio', 'none')).toBe(true);
   });
 
   it('detects a terminal ingest status from the file cache', () => {

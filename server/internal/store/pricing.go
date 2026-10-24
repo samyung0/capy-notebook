@@ -30,6 +30,8 @@ const (
 const (
 	ResourceDigitalParsePage = "digital_parse_page"
 	ResourceVLMIngestPage    = "vlm_ingest_page"
+	ResourceAudioSecond      = "audio_transcription_second"
+	ResourceVoiceInputSecond = "voice_input_second"
 	ResourceEmailMessage     = "email_message"
 	// One search_web search that returned results (decision 2026-10-24).
 	ResourceWebSearch = "web_search"
@@ -38,6 +40,7 @@ const (
 var ingestResourceKeys = []string{
 	ResourceDigitalParsePage,
 	ResourceVLMIngestPage,
+	ResourceAudioSecond,
 }
 
 type ResourceRate struct {
@@ -151,4 +154,13 @@ func CreditsForTokens(rates TokenRates, kind string, inputTokens, outputTokens, 
 		return uncached*rates.MicrosPerInputToken + cached*rates.MicrosPerCachedInputToken + outputTokens*rates.MicrosPerInputToken
 	}
 	return uncached*rates.MicrosPerInputToken + cached*rates.MicrosPerCachedInputToken + outputTokens*rates.MicrosPerOutputToken
+}
+
+// CreditsForAudioSeconds prices whole seconds of audio; callers round the
+// measured duration up.
+func CreditsForAudioSeconds(seconds, rate int64) int64 {
+	if seconds <= 0 {
+		return 0
+	}
+	return seconds * rate
 }

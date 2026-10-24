@@ -16,6 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	svix "github.com/svix/svix-webhooks/go"
 
+	"github.com/samyung0/capy-notebook/server/internal/alibaba"
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
@@ -294,6 +295,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	voice, err := alibaba.New(env("ALIBABA_MODELSTUDIO_KEY", ""), env("ALIBABA_MODELSTUDIO_URL", ""))
+	if err != nil {
+		log.Fatal(err)
+	}
 	for i := range e2eUserIDs {
 		e2eUserIDs[i] = strings.TrimSpace(e2eUserIDs[i])
 	}
@@ -501,6 +506,7 @@ func main() {
 		RateLimit:              rateLimitConfig(appEnv),
 		ModelRegistry:          modelReg,
 		Jev:                    jev.New(env("JEV_TYPESAFE_API_KEY", "")),
+		Voice:                  voice,
 	}
 	if mailRecorder != nil {
 		cfg.MailRecorder = mailRecorder

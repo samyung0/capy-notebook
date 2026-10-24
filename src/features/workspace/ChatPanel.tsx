@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { chatTurn, WORKSPACE_ONLY_DEFAULT } from '@/api/chatStream';
 import { useConversations, useMe, useMessages } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
@@ -30,6 +31,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
+import { audioStartMs, formatClock } from '@/features/files/citationRegions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
@@ -44,14 +46,19 @@ import { ChatTrace, type UndoHandlers } from './chat/ChatTrace';
 import { LangAnswer } from './chat/LangAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
+import { useVoiceInput, VoiceButton } from './chat/VoiceInput';
+import { insertTranscript } from './chat/voiceRecording';
 import { sourceEntryId, webHref, webMeta } from './chat/webCitation';
 import type { TabAction } from './PanelTabRow';
 import { toChatMessage, useChatStream } from './useChatStream';
 import { useProcessFileChanges } from './useProcessFileChanges';
 
-/** Page label for a citation, absent for sources with no page model (txt/md
- * and anything stored without parsing). */
+/** Page label for a citation, or a transcript passage's start time; absent
+ * for sources with no page model (txt/md and anything stored without
+ * parsing). */
 function pageLabel(c: Citation): string | null {
+  const start = audioStartMs(c.regions);
+  if (start !== undefined) return formatClock(start);
   if (!c.pageStart) return null;
   return c.pageEnd && c.pageEnd !== c.pageStart
     ? `pp. ${c.pageStart}–${c.pageEnd}`
@@ -309,6 +316,31 @@ export function ChatPanel({
   const { data: history } = useMessages(selectId, { errorBoundary: false });
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const dockFieldRef = useRef<HTMLTextAreaElement>(null);
+
+  // A transcript goes where the caret is (over a selection) in the field on
+  // screen, the dock's or the composer's, or at the end while the questions
+  // hide the composer; it is never sent by itself.
+  function insertVoice(transcript: string) {
+    const field = dock && !pageOpen ? dockFieldRef.current : fieldRef.current;
+    if (!field) {
+      setText(
+        (value) =>
+          insertTranscript(value, transcript, value.length, value.length).value
+      );
+      return;
+    }
+    const inserted = insertTranscript(
+      field.value,
+      transcript,
+      field.selectionStart,
+      field.selectionEnd
+    );
+    flushSync(() => setText(inserted.value));
+    field.focus({ preventScroll: true });
+    field.setSelectionRange(inserted.caret, inserted.caret);
+  }
 
   const lightPair = userColorPairDark(color);
 
@@ -326,6 +358,13 @@ export function ChatPanel({
         ? extractQuestions(last.content)
         : [],
     [last, streaming, dismissedId]
+  );
+  // The questions take the composer's place, and a recording stops with it;
+  // the dock on the file has no questions.
+  const voice = useVoiceInput(
+    workspaceId,
+    insertVoice,
+    (!!dock && !pageOpen) || questions.length === 0
   );
 
   // Seed local state when a previously-saved conversation is opened.
@@ -496,90 +535,113 @@ export function ChatPanel({
             questions={questions}
           />
         ) : (
-          <div
-            className={cn(
-              'flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none'
-            )}
-          >
-            <Textarea
-              aria-invalid={overLimit || undefined}
-              aria-label={m.chat_placeholder()}
+          <>
+            <div
               className={cn(
-                // 16px on phones, which zoom the page into smaller fields.
-                'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0 max-sm:text-base'
+                'flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none'
               )}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                // The chosen send key sends; the other one adds a new line.
-                // An IME's Enter confirms its candidate and never sends.
-                if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
-                if (e.shiftKey !== (sendKey === 'shift_enter')) return;
-                e.preventDefault();
-                submit();
-              }}
-              placeholder={m.chat_placeholder()}
-              rows={2}
-              value={text}
-            />
-            <div className="flex items-center gap-2">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      aria-pressed={workspaceOnly}
-                      className={cn(
-                        'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
-                        workspaceOnly &&
-                          'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
-                      )}
-                      iconLeft="lock"
-                      onClick={() => setWorkspaceOnly((value) => !value)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {m.chat_workspace_only()}
-                    </Button>
-                  }
-                />
-                <TooltipContent>{m.chat_workspace_only_hint()}</TooltipContent>
-              </Tooltip>
-              <span className="ml-auto" />
-              <CharCount max={CHAT_CHARACTER_LIMIT} value={textLength(text)} />
-              <IconButton
-                className="p-2.5"
-                disabled={!streaming && overLimit}
-                icon="send"
-                iconClassName={cn(
-                  'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
-                  streaming
-                    ? 'scale-25 opacity-0 blur-[2px]'
-                    : 'scale-100 opacity-100 blur-none'
+            >
+              <Textarea
+                aria-invalid={overLimit || undefined}
+                aria-label={m.chat_placeholder()}
+                className={cn(
+                  // 16px on phones, which zoom the page into smaller fields.
+                  'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0 max-sm:text-base'
                 )}
-                label={streaming ? m.chat_stop() : m.chat_send()}
-                onClick={streaming ? stop : submit}
-                size="sm"
-                variant={streaming ? 'ghost' : 'accent'}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    'pointer-events-none absolute inset-0 grid place-items-center transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  // The chosen send key sends; the other one adds a new line.
+                  // An IME's Enter confirms its candidate and never sends.
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+                  if (e.shiftKey !== (sendKey === 'shift_enter')) return;
+                  e.preventDefault();
+                  submit();
+                }}
+                placeholder={m.chat_placeholder()}
+                ref={fieldRef}
+                rows={2}
+                value={text}
+              />
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-pressed={workspaceOnly}
+                        className={cn(
+                          'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
+                          workspaceOnly &&
+                            'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
+                        )}
+                        iconLeft="lock"
+                        onClick={() => setWorkspaceOnly((value) => !value)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {m.chat_workspace_only()}
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    {m.chat_workspace_only_hint()}
+                  </TooltipContent>
+                </Tooltip>
+                <span className="ml-auto" />
+                <CharCount
+                  max={CHAT_CHARACTER_LIMIT}
+                  value={textLength(text)}
+                />
+                {voice.supported && (
+                  <VoiceButton
+                    elapsedMs={voice.elapsedMs}
+                    onToggle={voice.toggle}
+                    phase={voice.phase}
+                  />
+                )}
+                <IconButton
+                  disabled={!streaming && overLimit}
+                  icon="send"
+                  // A purple plane on no background; dimmed while disabled.
+                  iconClassName={cn(
+                    'fill-current text-action-accent transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
                     streaming
-                      ? 'scale-100 opacity-100 blur-none'
-                      : 'scale-25 opacity-0 blur-[2px]'
+                      ? 'scale-25 opacity-0 blur-[2px]'
+                      : 'scale-100 opacity-100 blur-none'
                   )}
+                  label={streaming ? m.chat_stop() : m.chat_send()}
+                  onClick={streaming ? stop : submit}
+                  size="toolbar"
+                  variant="ghost-hover"
                 >
-                  {/* Flush with the send button's bottom-right edge, not centred in its padding */}
-                  <span className="translate-0.5 grid size-6.5 place-items-center rounded-full border-2 border-action-accent">
-                    <Icon
-                      className="size-3 fill-current text-action-accent"
-                      name="stop"
-                    />
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'pointer-events-none absolute inset-0 grid place-items-center transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                      streaming
+                        ? 'scale-100 opacity-100 blur-none'
+                        : 'scale-25 opacity-0 blur-[2px]'
+                    )}
+                  >
+                    <span className="grid size-(--toolbar-icon) place-items-center rounded-full border-2 border-action-accent">
+                      <Icon
+                        className="size-2 fill-current text-action-accent"
+                        name="stop"
+                      />
+                    </span>
                   </span>
-                </span>
-              </IconButton>
+                </IconButton>
+              </div>
             </div>
-          </div>
+            {voice.error && (
+              <p
+                className="mt-2 px-1 text-sm text-tint-error-fg"
+                data-error-surface="inline"
+                role="alert"
+              >
+                {voice.error}
+              </p>
+            )}
+          </>
         )}
         {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}
         <p className="mt-2 text-center text-[11px] text-fg-muted">
@@ -665,6 +727,7 @@ export function ChatPanel({
                 }
               : undefined
           }
+          fieldRef={dockFieldRef}
           office={dock.office}
           onOpenHistory={() => {
             withViewTransition(() => {
@@ -678,6 +741,7 @@ export function ChatPanel({
           overLimit={overLimit}
           sendDisabled={!text.trim() || overLimit}
           text={text}
+          voice={voice}
         />
       )}
     </div>

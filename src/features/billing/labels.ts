@@ -20,6 +20,8 @@ export function kindLabel(kind: string): string {
       return m.billing_kind_caption();
     case 'parse':
       return m.billing_kind_parse();
+    case 'audio':
+      return m.billing_kind_audio();
     case 'email':
       return m.billing_kind_email();
     case 'web_search':

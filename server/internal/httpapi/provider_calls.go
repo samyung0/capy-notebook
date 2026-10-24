@@ -36,6 +36,12 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 		a.fail(w, err)
 		return
 	}
+	// The pipeline settles units only for a web search, counted in searches;
+	// audio seconds are the gateway's own (voice input).
+	unit := ""
+	if req.Kind == store.KindWebSearch {
+		unit = "search"
+	}
 	settlement, err := a.s.SettleProviderCall(r.Context(), req.SessionID, store.ProviderCallUsage{
 		CallID:           req.CallID,
 		Kind:             req.Kind,
@@ -52,6 +58,7 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 		ModelVersion:     req.ModelVersion,
 		ServedBy:         req.ServedBy,
 		Units:            req.Units,
+		Unit:             unit,
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "spend session not found"})

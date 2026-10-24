@@ -327,7 +327,7 @@ func TestWebSearchChargesOnlyASearchWithResults(t *testing.T) {
 	before := mustBalance(t, s, userID)
 	found := ProviderCallUsage{
 		CallID: "pc_web_found", Kind: KindWebSearch, Purpose: "agent",
-		Provider: "deepseek", Model: "search", Units: 1,
+		Provider: "deepseek", Model: "search", Units: 1, Unit: "search",
 	}
 	empty := found
 	empty.CallID, empty.Units = "pc_web_empty", 0
@@ -346,8 +346,8 @@ func TestWebSearchChargesOnlyASearchWithResults(t *testing.T) {
 		t.Fatalf("a replay with other units settled: %v", err)
 	}
 	for _, bad := range []ProviderCallUsage{
-		{CallID: "pc_web_two", Kind: KindWebSearch, Purpose: "agent", Units: 2},
-		{CallID: "pc_web_tokens", Kind: KindWebSearch, Purpose: "agent", Units: 1, InputTokens: 5},
+		{CallID: "pc_web_two", Kind: KindWebSearch, Purpose: "agent", Units: 2, Unit: "search"},
+		{CallID: "pc_web_tokens", Kind: KindWebSearch, Purpose: "agent", Units: 1, Unit: "search", InputTokens: 5},
 		{CallID: "pc_llm_units", Kind: KindLLM, Purpose: "agent", Thinking: "high", Units: 1},
 	} {
 		if _, err := s.SettleProviderCall(ctx, sessionID, bad); !errors.Is(err, ErrInvalidProviderCall) {
@@ -662,6 +662,30 @@ func TestBeginProviderSessionCapsOpenLeases(t *testing.T) {
 	got := mustBalance(t, s, userID)
 	if got.ReservedMicros != 0 {
 		t.Fatalf("reserved=%d, want 0", got.ReservedMicros)
+	}
+}
+
+// A voice clip's reserved session neither takes one of the LLM leases nor
+// counts against them: five open chat streams leave the microphone working,
+// and an open clip leaves room for five streams.
+func TestReservedSessionTakesNoLLMLease(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	llm, embed := platformSessionRates()
+	if _, err := s.BeginReservedSession(ctx, userID, "", SurfaceChat, 2_000_000); err != nil {
+		t.Fatalf("first clip: %v", err)
+	}
+	for i := range ConcurrentLLMLeases {
+		if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, ""); err != nil {
+			t.Fatalf("stream %d beside a clip: %v", i, err)
+		}
+	}
+	if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, ""); !errors.Is(err, ErrTooManyLLMLeases) {
+		t.Fatalf("sixth stream: %v, want ErrTooManyLLMLeases", err)
+	}
+	if _, err := s.BeginReservedSession(ctx, userID, "", SurfaceChat, 2_000_000); err != nil {
+		t.Fatalf("clip beside five streams: %v", err)
 	}
 }
 

@@ -62,6 +62,9 @@ type Config struct {
 	// Thumbnail applies to browser thumbnail captures of edited Office files,
 	// on top of the per-file minimum interval the handler enforces.
 	Thumbnail Rule
+	// Voice applies to chat voice input, a few recordings a minute from a
+	// person talking; it leaves the chat allowance to the turns they send.
+	Voice Rule
 }
 
 // DefaultConfig is tuned for a single-seat free tier: generous enough that
@@ -79,6 +82,7 @@ func DefaultConfig() Config {
 		Incident:      Rule{Limit: 60, Window: time.Hour, Burst: 20},
 		// Epo 2026-10-11: 60 captures an hour per user.
 		Thumbnail: Rule{Limit: 60, Window: time.Hour},
+		Voice:     Rule{Limit: 60, Window: time.Hour, Burst: 6},
 	}
 }
 

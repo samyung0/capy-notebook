@@ -2125,7 +2125,12 @@ refuses the file if it really is over. Office text-less estimates miss
 slide-master text, so they warn from 95% and never block. The upload sends the
 page count, and the gateway refuses a fast-parse reservation above `maxPages`. Images and audio do not enter the
 browser page analysis queue: the ingest worker captions images (a cost
-deliberately absent from the page-based estimate) and stores audio without indexing.
+deliberately absent from the page-based estimate) and transcribes audio. A
+local audio row reads its length from the file's metadata instead: it shows
+"reading", the minutes and expected credits at `audioSecondCreditMicros`, or
+"unreadable" (the worker checks it), and blocks submit while reading or past
+`audioMaxDurationSeconds` (two hours). The upload sends the whole seconds as
+`durationSeconds`, which the gateway refuses past the same limit.
 The server-owned page rates (0.4 credits per page with a text layer,
 `digitalParsePageCreditMicros`, and 1.0 credit per page the VLM reads,
 `vlmIngestPageCreditMicros`) are returned by `source-upload-policy`; the

@@ -79,7 +79,7 @@ def _spec(provider_slug: str, model_id: str) -> ModelConfig:
         levels = ("low", "high", "max")
         default = "max"
     elif provider_slug == "openrouter":
-        # MiniMax 3.1 Flash's catalog levels (migration 0111).
+        # MiniMax 3.1 Flash's catalog levels (migration 0112).
         levels = ("low", "mid", "high")
         default = "high"
     else:

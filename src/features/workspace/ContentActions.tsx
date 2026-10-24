@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from 'react';
+import { isApiError } from '@/api/client';
 import {
   updateFileBodyNameMax,
   updateMaterialBodyTitleMax,
@@ -17,12 +18,20 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Menu, type MenuItem, type MenuProps } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
-import { formatFileSize } from '@/features/files/fileUtils';
+import { fileIsTranscribing, formatFileSize } from '@/features/files/fileUtils';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { errorCopy } from '@/lib/errors';
 import { CloneItemDialog } from './CloneItemDialog';
 import type { ContentActionTarget } from './contentActionTarget';
+
+/** Why the server refused to trash a file, as the trash dialog shows it. */
+export function trashErrorMessage(error: unknown): string {
+  return isApiError(error) && error.code === 'audio_transcribing'
+    ? m.trash_audio_transcribing()
+    : errorCopy(error, m.source_try_again());
+}
 
 export function ContentActions({
   showMove = true,
@@ -78,7 +87,10 @@ export function ContentActions({
 }) {
   const { mutateAsync: updateFile } = useUpdateFile(workspaceId);
   const { mutate: moveFile } = useMoveFile(workspaceId);
-  const { mutate: deleteFile } = useDeleteFile(workspaceId);
+  const { isPending: deletingFile, mutateAsync: deleteFile } = useDeleteFile(
+    workspaceId,
+    { errorToast: false }
+  );
   const { mutateAsync: updateMaterial } = useUpdateMaterial(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: deleteMaterial } = useDeleteMaterial(workspaceId);
@@ -86,6 +98,7 @@ export function ContentActions({
   const [renameOpen, setRenameOpen] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
 
@@ -135,7 +148,17 @@ export function ContentActions({
             danger: true,
             icon: 'trash' as const,
             label: m.action_delete(),
-            onClick: () => setConfirmOpen(true),
+            onClick: () => {
+              setDeleteError(null);
+              setConfirmOpen(true);
+            },
+            // The server refuses until the transcription's job ends.
+            ...(content.type === 'file' && fileIsTranscribing(content)
+              ? {
+                  description: m.trash_audio_transcribing_hint(),
+                  disabled: true,
+                }
+              : {}),
           },
         ]
       : beforeDeleteItems),
@@ -164,15 +187,23 @@ export function ContentActions({
     }
   };
 
-  const deleteContent = () => {
-    if (!content || (beforeDelete && !beforeDelete())) return false;
+  const deleteContent = async () => {
+    if (!content || (beforeDelete && !beforeDelete())) {
+      setConfirmOpen(false);
+      return;
+    }
     if (content.type === 'file') {
-      deleteFile(content.id);
+      try {
+        await deleteFile(content.id);
+      } catch (error) {
+        setDeleteError(trashErrorMessage(error));
+        return;
+      }
     } else {
       deleteMaterial(content.id);
     }
+    setConfirmOpen(false);
     onDeleted?.();
-    return true;
   };
 
   return (
@@ -241,11 +272,13 @@ export function ContentActions({
           />
 
           <TrashConfirmDialog
+            error={deleteError}
+            isSubmitting={deletingFile}
             name={content.name}
-            onClose={() => setConfirmOpen(false)}
-            onConfirm={() => {
-              if (deleteContent()) setConfirmOpen(false);
+            onClose={() => {
+              if (!deletingFile) setConfirmOpen(false);
             }}
+            onConfirm={() => void deleteContent()}
             open={confirmOpen}
           />
 
