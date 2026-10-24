@@ -1409,6 +1409,17 @@ impl Sources {
             .map(|query| crate::edit::parse(query, "office query"))
             .transpose()?;
         let session = self.gateway.session(file_id, actor).await?;
+        // The by-id read is busy before any download when its room's
+        // engine already holds a queue (the Editor's lane calls).
+        if query.as_ref().is_some_and(|query| query.ids.is_some()) {
+            self.engines
+                .admit(
+                    crate::engine::Lane::Background,
+                    &session.room,
+                    crate::engine::office::calls::IDS_READ_QUEUE,
+                )
+                .map_err(crate::edit::office_error)?;
+        }
         let job = Job::default();
         let (base, sha) = self.bound_base(&session, Reader::Job(&job)).await?;
         let mut layers = self.durable_layers(&session, &base, &sha, &job).await?;

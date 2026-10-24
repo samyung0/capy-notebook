@@ -170,13 +170,15 @@ type internalDocumentsInspectReq struct {
 }
 
 // officeInspectQuery is inspect_office_document's arguments: an XLSX sheet
-// and range, a DOCX or PPTX page, a PPTX slide.
+// and range, a DOCX or PPTX page, a PPTX slide, or in any format the ids of
+// pictures and charts an earlier read listed (Epo 2026-10-24, Q278, Q284).
 type officeInspectQuery struct {
-	Sheet string `json:"sheet"`
-	Range string `json:"range"`
-	Start int    `json:"start"`
-	Count int    `json:"count"`
-	Slide int    `json:"slide"`
+	Sheet string   `json:"sheet"`
+	Range string   `json:"range"`
+	Start int      `json:"start"`
+	Count int      `json:"count"`
+	Slide int      `json:"slide"`
+	IDs   []string `json:"ids"`
 }
 
 // officeToolsMessage answers an Office file sent to the general document
@@ -270,6 +272,9 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 		}
 		var query *store.OfficeQuery
 		switch {
+		case len(req.Office.IDs) > 0:
+			// Pictures and charts by id; the engine bounds the call and its answer.
+			query = &store.OfficeQuery{IDs: req.Office.IDs}
 		case format == "xlsx":
 			query = &store.OfficeQuery{Sheet: req.Office.Sheet, Range: req.Office.Range}
 		case format == "docx":
