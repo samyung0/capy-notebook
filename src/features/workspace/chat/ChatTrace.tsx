@@ -187,15 +187,14 @@ function ThinkingRow({
     <div className={ROW}>
       <ActivityIcon kind="think" running={running} />
       <span className="min-w-0 truncate">
-        {waiting === 'waiting_limit'
-          ? m.chat_trace_waiting_limit()
-          : waiting === 'waiting_capacity'
-            ? m.chat_trace_waiting_capacity()
-            : running
-              ? m.chat_trace_thinking()
-              : seconds
-                ? m.chat_trace_thought_for({ seconds })
-                : m.chat_trace_thought()}
+        {/* The limiter's and an AI slot's waits read the same (Q300). */}
+        {waiting
+          ? m.chat_trace_waiting()
+          : running
+            ? m.chat_trace_thinking()
+            : seconds
+              ? m.chat_trace_thought_for({ seconds })
+              : m.chat_trace_thought()}
       </span>
     </div>
   );

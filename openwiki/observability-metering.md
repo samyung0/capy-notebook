@@ -1672,7 +1672,9 @@ line instead (Q282), and only an import request keeps the browser's retry
 AI process slot is the other half of the contract: it sends
 `{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 60 s, Q293) and
 ends the stream with the in-stream `provider_busy` error when the wait runs
-out. The chat trace shows both phases as a waiting row.
+out. The chat trace shows both phases as the same row, the thinking hourglass
+with "Waiting" (Epo 2026-10-24, Q300: limit and captcha copy says what the
+user sees and can do, not slots, limiters or vendors).
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.

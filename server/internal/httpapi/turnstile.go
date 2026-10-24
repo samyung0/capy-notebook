@@ -91,13 +91,13 @@ func (a *api) checkCaptcha(ctx context.Context, token string) error {
 	case errors.Is(err, ErrCaptchaFailed):
 		return &huma.ErrorModel{
 			Status: http.StatusForbidden, Title: http.StatusText(http.StatusForbidden),
-			Detail: "the human check did not pass, try again", Errors: []*huma.ErrorDetail{{Message: "captcha_failed"}},
+			Detail: "we couldn't check your answers; submit them again", Errors: []*huma.ErrorDetail{{Message: "captcha_failed"}},
 		}
 	default:
 		obs.Log(ctx).Warn("turnstile siteverify failed", "error", err)
 		return &huma.ErrorModel{
 			Status: http.StatusServiceUnavailable, Title: http.StatusText(http.StatusServiceUnavailable),
-			Detail: "the human check is unavailable, try again", Errors: []*huma.ErrorDetail{{Message: "captcha_unavailable"}},
+			Detail: "checking answers is unavailable right now; try again in a moment", Errors: []*huma.ErrorDetail{{Message: "captcha_unavailable"}},
 		}
 	}
 }
