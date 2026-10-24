@@ -787,6 +787,77 @@ func TestSweepThenLateProviderCallChargesOnce(t *testing.T) {
 	}
 }
 
+// A settled call's capacity lease goes in its settlement transaction, so the
+// AI process makes no round trip of its own to free it (security regression:
+// rate-limit audit M13, Q298).
+func TestSettlementFreesTheCallsCapacityLease(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID, err := s.BeginProviderSession(
+		ctx,
+		userID,
+		"",
+		SurfaceChat,
+		models.PaidByPlatform,
+		RatesFromConfig(llmCfg),
+		TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := ProviderCallUsage{
+		CallID:      "pc_leased",
+		Kind:        KindLLM,
+		Purpose:     "agent",
+		Thinking:    models.ThinkingInstant,
+		Provider:    "deepseek",
+		Model:       "deepseek-v4-flash",
+		InputTokens: 1,
+	}
+	mustInsertProviderCall(t, s, sessionID, call)
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO provider_capacity_leases (id, provider, units, expires_at)
+		VALUES ($1, 'deepseek:deepseek-v4-flash', 1, now() + interval '1 minute'),
+		       ('pc_running', 'deepseek:deepseek-v4-flash', 1, now() + interval '1 minute')`,
+		call.CallID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SettleProviderCall(ctx, sessionID, call); err != nil {
+		t.Fatal(err)
+	}
+	var leases []string
+	rows, err := s.pool.Query(ctx, `SELECT id FROM provider_capacity_leases
+		WHERE id IN ($1, 'pc_running') ORDER BY id`, call.CallID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		leases = append(leases, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(leases) != 1 || leases[0] != "pc_running" {
+		t.Fatalf("leases after settlement = %v, want only the running call's", leases)
+	}
+}
+
 func TestSweepAbandonsOnlyProviderCallsPastReceiptDeadline(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

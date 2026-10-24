@@ -731,13 +731,24 @@ export runs about 4 s of CPU in ppt-master subprocesses of about 75 MiB; a
 page render adds about 25 MiB. An image capture decodes reduced only from a
 JPEG (Q239): at Pillow's pixel limit (89 megapixels) a JPEG capture adds about
 90 MiB, a PNG, GIF or TIFF 0.4 to 0.8 GiB and a WebP 1.3 GiB; a 12-megapixel
-photo about 55 MiB. A full-length chat turn (a 250,000-token history with 16
-captures) holds about 11 MiB. Two render threads (`retrieval/limits.py`) bound
-the decodes running at once, and 64 request slots the turns: production's
-worst case, 64 full-length turns beside two 89-megapixel WebP captures, is
-about 3.4 GiB, over its 3 GiB only then (with PNG or JPEG captures about
-2.3 GiB); UAT's 1.5 GiB holds one worst-case WebP capture beside the idle
-service, not beside many full-length turns. Docker lets a container with
+photo about 55 MiB; at the 5-megapixel source limit (Q286) a capture adds at
+most about 130 MiB (a WebP). Two render threads (`retrieval/limits.py`) bound
+the decodes running at once. A chat turn holds its history and captures while
+it waits or runs tools (7.4 MiB with 16 page captures, 1.6 MiB near the
+context window, 0.1 MiB for a typical turn) and its model call adds the
+encoded request while it runs (about 21 MiB with 16 captures); 64 call slots
+bound the calls in flight and the turn slots the turns in progress: 96 in
+production and 48 on UAT (Epo 2026-10-24, Q338, Q343), rendered by
+`scripts/env/config.py` as `RETRIEVAL_TURN_SLOTS`, which compose passes as
+`CAPY_TURN_SLOTS`. Production's worst case, 96 turns with 16 captures each,
+64 of them in a call, beside two 5-megapixel captures, is about 2.4 GiB
+live; such a load peaked at 2.7 to 3.2 GiB in the measurement. Retrieval runs
+with the collaboration service's allocator settings below (Q343), which cut
+the idle level after 64 capture-heavy calls from 2.97 to 2.24 GiB. Captures
+check no pixel size of their own (Q342): until the 5-megapixel upload check is
+live, Pillow's 89-megapixel limit stands, where one WebP capture adds
+1.3 GiB. UAT's 1.5 GiB holds one worst-case capture beside the idle service,
+not beside many turns with captures. Docker lets a container with
 `mem_limit` and no `memswap_limit` use as much swap again, so the kill comes
 later than the RAM figure. A container over its limit is killed and restarted
 (`restart: unless-stopped`), failing only its own streams. Check after a
@@ -752,7 +763,8 @@ It prints `3221225472 2000000000` in production and `1610612736 1000000000` on U
 The collaboration service runs with `MALLOC_ARENA_MAX=2`,
 `MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
 (`docker-compose.prod.yml`, UAT and production; the engine processes
-inherit them, Epo 2026-10-17). Room loads replay on tokio's blocking
+inherit them, Epo 2026-10-17), and retrieval with the same three (both
+compose files, Q343). Room loads replay on tokio's blocking
 threads, each with its own glibc arena, and glibc raises its mmap
 threshold as large blocks are freed, so without them memory freed after
 peers leave stays in the process: 411-467 MiB kept, against ~90 MiB with

@@ -252,7 +252,17 @@ worker lays the updates out as it lays out a keystroke (changed paragraphs
 re-measured, changed pages rebuilt) and answers with a delta of the changed
 pages. Frame requests run one at a time and a burst costs one request in flight
 plus one more; every reply is applied in place, only the newest is rendered,
-and a page whose positions shifted rebuilds its mirror. A request's timeout
+and a page whose positions only shifted keeps its mirror and content-control
+overlay nodes and rewrites their position attributes (`data-doc-start`,
+`data-doc-end`, `data-sdt-pos`) in place; a page with new content rebuilds them.
+Charts, shapes and text boxes are named by their embed's yrs item and block
+content controls by their child story (inline ones by their embed's item), not
+by their position, so text typed before them leaves their layout equal and the
+layout settles after the edited page (Epo 2026-10-24, Q351). A block control's
+widget finds its control by that story. The main thread's position projection
+(display positions to stories and paragraphs) follows typed text in place: one
+transaction that only inserted text into one story moves the positions after
+it, and any other change reads the stories again. A request's timeout
 starts when the worker begins it; a request the worker never starts gives up
 after 60 s. Either way the main thread then takes over, and editing continues on
 the main thread's frames rather than failing the editor. Range and caret queries

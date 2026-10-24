@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { chatTurn, WORKSPACE_ONLY_DEFAULT } from './chatStream';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { chatTurn, streamChat, WORKSPACE_ONLY_DEFAULT } from './chatStream';
+
+vi.mock('./auth', () => ({
+  authHeaders: async () => ({ Authorization: 'Bearer token' }),
+  USE_MSW: false,
+}));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('the per-turn chat body', () => {
   it('starts with Workspace only off', () => {
@@ -16,5 +25,80 @@ describe('the per-turn chat body', () => {
       openResource: { id: 'f_1', kind: 'file' },
       workspaceOnly: true,
     });
+  });
+});
+
+/** The handler calls one streamed turn makes, in order. */
+async function handled(events: object[]): Promise<string[]> {
+  const body = events
+    .map(
+      (ev) => `data: ${JSON.stringify(ev)}
+
+`
+    )
+    .join('');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(body))
+  );
+  const seen: string[] = [];
+  await streamChat(
+    'ws_1',
+    { text: 'hi', workspaceOnly: false },
+    {
+      onBlockStart: (id) => seen.push(`block ${id}`),
+      onDone: () => seen.push('done'),
+      onPhase: (phase) => seen.push(phase),
+      onStart: () => seen.push('start'),
+      onToolEnd: (id) => seen.push(`end ${id}`),
+      onToolStart: (id) => seen.push(`tool ${id}`),
+    }
+  );
+  return seen;
+}
+
+describe('the waiting phase', () => {
+  it('shows for each wait in a turn until the next event of any kind (Q300)', async () => {
+    const seen = await handled([
+      { conversationId: 'c_1', messageId: 'm_1', type: 'start' },
+      { phase: 'waiting_limit', type: 'phase' },
+      { blockId: 'b_1', type: 'block_start' },
+      { phase: 'running_tools', type: 'phase' },
+      { callId: 't_1', name: 'search', type: 'tool_start' },
+      { phase: 'waiting_capacity', type: 'phase' },
+      { callId: 't_1', outcome: 'succeeded', type: 'tool_end' },
+      { status: 'complete', type: 'done' },
+    ]);
+
+    expect(seen).toEqual([
+      'start',
+      'waiting_limit',
+      'planning',
+      'block b_1',
+      'running_tools',
+      'tool t_1',
+      'waiting_capacity',
+      'running_tools',
+      'end t_1',
+      'done',
+    ]);
+  });
+
+  it('shows the phase the server sends when the slot arrives once (Q359)', async () => {
+    const seen = await handled([
+      { conversationId: 'c_1', messageId: 'm_1', type: 'start' },
+      { phase: 'waiting_capacity', type: 'phase' },
+      { phase: 'planning', type: 'phase' },
+      { blockId: 'b_1', type: 'block_start' },
+      { status: 'complete', type: 'done' },
+    ]);
+
+    expect(seen).toEqual([
+      'start',
+      'waiting_capacity',
+      'planning',
+      'block b_1',
+      'done',
+    ]);
   });
 });

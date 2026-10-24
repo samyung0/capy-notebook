@@ -3029,29 +3029,67 @@ The retrieval service is one uvicorn process for chat, generate and the editor
 AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
 `retrieval/limits.py`):
 
-- **Requests.** At most 64 `/chat/stream` and `/generate` requests run at once
-  (`REQUEST_SLOTS`). Past that a generate request is answered before any work
+- **Model calls.** At most 64 model calls are in flight at once (`CALL_SLOTS`;
+  Epo 2026-10-24, inner-turn slots). Every model call (an agent response, the
+  compaction summarizer, a generate or editor AI call) takes a slot for its
+  request and response, retries included (`models.call_slot`), and gives it
+  back once the call is settled and its lease released (`_tracked_call`, Q359),
+  so while a turn runs tools another user's call can use the slot. A slow or
+  failing settlement keeps its call's slot until it ends, at most the receipt
+  deadline, and calls then queue behind settlements rather than provider
+  work. A chat turn's call that finds the slots full waits up to 60 s
+  (`CHAT_SLOT_WAIT_S`, Q293) behind the calls already waiting: it joins the
+  queue the moment it is refused (`Slots.join`, Q359), and a freed slot passes
+  straight to the one waiting longest (`Slots.wait_for`). The stream sends
+  `{"type":"phase","phase":"waiting_capacity"}` each time a call waits, and
+  `{"type":"phase","phase":"planning"}` the moment it gets its slot, before
+  anything of the call (Q359; a chat's model calls all run in the planning
+  phase): from the response step, or around the checkpoint and compaction for
+  the summarizer (`agent._while_waiting`). The SPA shows a waiting phase until
+  the next event; a non-phase event puts back the phase from before the wait,
+  for a wait that ends some other way (`chatStream.streamChat`, Q300). Past
+  the 60 s the stream ends with the in-stream `provider_busy` error a busy
+  model call sends (`retryAfterSeconds` 5). A call waiting when the Go hop
+  drops or the user presses Stop leaves the queue at once and starts nothing,
+  and after that no call starts, the summarizer's included, and no slot phase
+  is sent (`ClientDrop.left`, Q359). A waiting call cancelled as a slot
+  is handed to it passes the slot to the next waiter. Generate and the editor
+  AI routes have no waiting status (Q268): past the 64 their call answers the
+  existing 503 `provider_busy` at once, before reaching the provider. Embedding
+  and rerank calls inside tools take no slot, and the ingest worker binds no
+  slot policy.
+- **Turns in progress.** At most 96 chat turns and generate requests run
+  at once in production and 48 on UAT (`TURN_SLOTS` from `CAPY_TURN_SLOTS`,
+  which compose takes from the rendered `RETRIEVAL_TURN_SLOTS`; Q338, Q343): a
+  turn holds its history and captures in memory while it waits or runs tools,
+  so the ceiling comes from a memory measurement (below), halved for UAT's
+  1.5 GiB. Past it a generate request is answered before any work
   with the existing 503 `provider_busy` (`retryAfterSeconds` and `Retry-After`
   5 s), which Go maps to the same retryable error as a busy model. A chat
   waits instead (Epo 2026-10-24, Q268; `service._admitted_chat`): its stream
-  starts at once, sends `{"type":"phase","phase":"waiting_capacity"}` once, and
-  waits up to 60 s (`CHAT_SLOT_WAIT_S`, Q293) for a slot. Waiters take slots in
-  arrival order, a freed slot passing straight to the one waiting longest
-  (`Slots.wait`), and a client that hangs up while waiting leaves the queue.
-  Past the 60 s the stream ends with the in-stream `provider_busy` error a
-  busy model call sends (`retryAfterSeconds` 5); after a slot it carries on
-  as any turn. A stream holds its slot until its response ends however it
-  ends (`service._SlotStream`). The Go limits come first: 5 open chat
-  sessions per user and the AI route class.
+  starts at once, sends the waiting phase and waits up to 60 s for a turn
+  slot in arrival order, sending the planning phase when it gets one (Q359); a
+  client that hangs up while waiting leaves the queue, and past the 60 s the
+  stream ends with the in-stream `provider_busy` error. A stream holds its
+  turn slot until its response ends however it ends (`service._SlotStream`).
+  The editor AI routes are not turns (Q338) but check the ceiling: at it, or
+  with every call slot taken, `/plate-ai/command` and `/plate-ai/copilot`
+  answer the 503 `provider_busy` before starting a response
+  (`ai_adapter._refuse_past_capacity`, Q339, Q359). The Go limits come first:
+  5 open chat sessions per user and the AI route class.
 - **Render pool.** Deck scripts (the checker and exporter), page renders,
   image and Office captures and capture downloads run on two threads of their
   own (`render_thread`), never on the default executor, where every model
   call's accounting admission and settlement run: a slow export or a large
   decode queues behind its own kind and never delays another user's next
-  model call. Two threads also bound side-by-side image decodes: at Pillow's
-  pixel limit (89 megapixels) a JPEG capture peaks about 90 MiB above the
-  idle process, a PNG or TIFF 0.4 to 0.8 GiB, a WebP 1.3 GiB (capture_page
-  below).
+  model call. Two threads also bound side-by-side image decodes: at the
+  5-megapixel source limit (Q286) a capture peaks at most about 130 MiB
+  above the idle process (a WebP; about 85 MiB for JPEG, PNG and TIFF), a
+  2,400-pixel square image about 145 MiB; at Pillow's pixel limit
+  (89 megapixels), which bounds sources until the 5-megapixel upload check is
+  live (captures check no pixel size of their own, Q342), a JPEG capture
+  about 90 MiB, a PNG or TIFF 0.4 to 0.8 GiB, a WebP 1.3 GiB
+  (capture_page below).
 - **Office captures.** One at a time per process (`OFFICE_CAPTURE_SLOTS`; see
   `capture_page` under Tools).
 
@@ -3095,13 +3133,61 @@ full-length turn): with the cap at 64, turns of four 3-second calls (about
 29 s at full length); 256 at once, 128 waited out their 30 s. Turns of three
 10-second calls (about 32 s, longer than that wait) arriving 96 or 128 at
 once: every chat past the 64 timed out (32 and 64), so with real turn lengths
-a burst past the cap mostly ended busy rather than queueing. A full-length turn holds about 11 MiB of the process (64 of them
-about 0.7 GiB), a typical one well under 1 MiB. Before the change a sync pool of
-8 instead of 4 lowered the p95 only past the point where the loop saturated,
-so the pools keep their defaults. Eight 24-second blocking jobs on the
-default executor, as parallel deck exports were, held every admission for
-their whole length (p95 24 s); on the render pool admission was unaffected
-(p95 0.12 s).
+a burst past the cap mostly ended busy rather than queueing. Eight 24-second
+blocking jobs on the default executor, as parallel deck exports were, held
+every admission for their whole length (p95 24 s); on the render pool
+admission was unaffected (p95 0.12 s).
+
+The cap then counted whole requests; it now counts model calls (inner-turn
+slots, above). The same harness, re-run with per-call slots on turns that
+respect the context window (a: 660,000 characters and 2 captures, near the
+window; b: 80,000 characters and 16 page captures of 360 KB; c: the typical
+80,000 characters), measured the changes that went with it (Epo 2026-10-24,
+Q297-Q299):
+
+- **Admission lock.** Admission sweeps expired leases before the model-wide
+  lock (`FOR UPDATE SKIP LOCKED`) and holds the lock for one conditional
+  insert that counts the unexpired leases it sees once the lock is held
+  (`db.acquire_provider_capacity`). With 64 admissions at once the statements
+  under the lock went from 7.0 to 3.5 ms (a) and 2.7 to 1.9 ms (c) at the
+  median; the rest of the lock's hold is the commit.
+- **Lease with the settlement.** A settled call's lease is deleted in its
+  settlement transaction (the gateway's `settleProviderCallAtomic`, or the
+  local ingest settlement), so the 256 separate release transactions of 64
+  turns' 256 calls are gone; a failed settlement or an abandoned call still
+  releases its own.
+- **Captures encoded once.** A capture's data URL is made once as a string
+  JSON leaves as it is (`elitellm.client.RawJson`), and request bodies copy it
+  in (`encode_json`). With 16 captures building a call's body on the event
+  loop went from 18.2 to 2.2 ms, and with the loop no longer holding the GIL
+  for it the database steps sped up: the statements under the lock from 18.7
+  to 3.5 ms, admission p95 from 1.9 to 1.1 s.
+- **Sync pool.** At 4 connections the default executor's eight threads
+  queued for one (p95 0.1 to 0.2 s); at 8 the wait is gone and 12 or 16
+  changed nothing measurable. The retrieval service's pool is 8
+  (`CAPY_DB_SYNC_POOL_MAX_SIZE` in compose).
+
+With all of it, 64 calls admitted at once still take about 1 s at p95 (0.8
+to 1.6 s across the shapes and runs), so 64 stays; most of each admission's time
+under the lock is the commit, which waits on the test container's disk.
+With 1.5 s of tools between calls, 96 or 128 turns keep at most 64 calls in
+flight: admission p95 stays at 0.6 to 1.7 s and the waits move to the call
+slots (p95 3.3 to 4.2 s).
+
+Memory per turn (tracemalloc): while it waits or runs tools a turn holds
+7.4 MiB with 16 captures, 1.6 MiB near the window and 0.1 MiB for a typical
+turn; its call adds the request's text and bytes while it runs, 14.9, 3.2 and
+0.2 MiB. In the process (RSS) 64 calls with 16 captures at once added about
+21 MiB each, and glibc kept freed buffers, so after bursts the process stayed
+near its high-water mark. The ceiling of 96 turns in progress (Q338)
+keeps the live worst case, 96 turns with 16 captures each, 64 of them in a
+call, beside two worst-case 5-megapixel captures, at about 2.4 GiB of the
+3 GiB container; the measured peaks of such a load, retained buffers
+included, were 2.7 to 3.2 GiB at 96 turns and 3.2 to 3.6 GiB at 128. The
+process runs with the collaboration server's allocator settings
+(`MALLOC_ARENA_MAX=2`, `MALLOC_TRIM_THRESHOLD_` and `MALLOC_MMAP_THRESHOLD_`
+131072, Q343), with which the idle level after 64 capture-heavy calls was
+2.24 GiB instead of 2.97.
 
 ### How a turn's work is saved
 
@@ -4968,7 +5054,8 @@ rules); charts stop growing at 480px and diagrams at min(60vh, 32rem) tall.
 Raised `k` markers come from
 the message's citation list by `n` and follow the last paragraph of the text
 they back (Streamdown's root is `display: contents` so that paragraph can run
-inline); tables and charts put their sources under the block, and the
+inline); tables and charts put their own sources under the block, a table
+row's sources are raised at the end of its last cell (Q358), and the
 message's sources are neutral badges under the model name. A web result's
 entry takes a row of its own: the page title links to the page in a new tab
 (http(s) only, `chat/webCitation.ts`) beside its site, which truncates within
