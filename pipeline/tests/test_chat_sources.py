@@ -537,7 +537,8 @@ async def test_glm_gets_the_tool_form_send_back(monkeypatch):
     events = await _collect("Explain the airlift", _writer(monkeypatch), _model("zai"))
     sent = seen[1]["messages"]
     tool_result = next(m for m in sent if m.get("role") == "tool")
-    assert tool_result == {
+    # Measuring keeps each message's estimate on it under "_tokens".
+    assert {k: v for k, v in tool_result.items() if k != "_tokens"} == {
         "role": "tool",
         "tool_call_id": "ask_1",
         "content": chat_prompts.SEND_BACK_TOOL,
