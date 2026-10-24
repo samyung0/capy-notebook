@@ -21,7 +21,8 @@ from `pipeline/ppt-master-requirements.txt`: exact versions with hashes,
 regenerated with the command in its header after `PPT_MASTER_DEPS` changes
 (`test_deck.py` checks every name is pinned). Its attribution guard refuses a
 partial copy, so nothing is vendored piecemeal. The retrieval service calls two
-scripts as subprocesses (`retrieval/deck.py`, 180 s each):
+scripts as subprocesses (`retrieval/deck.py`, 180 s each), from its render pool
+rather than the default executor ([agentic-retrieval.md](agentic-retrieval.md#process-capacity)):
 `svg_quality_checker.py <project> --quick-generate --canonical-authoring --stage final --json`
 and `svg_to_pptx.py <project> --quick-generate --no-notes -o <pptx>`. The
 checker's width estimator is table-based, so the image needs no fonts. The

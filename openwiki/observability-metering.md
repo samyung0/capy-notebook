@@ -1612,6 +1612,15 @@ non-ingest leases in Postgres (cap 5). A replica that dies mid-stream leaves a r
 sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
+The retrieval process bounds itself behind those per-user caps (Epo
+2026-10-24): at most 64 chat and generate requests at once, past which a
+generate request answers the existing 503 `provider_busy` with `Retry-After`
+and a chat waits up to 60 s in arrival order (its stream sends the
+`waiting_capacity` phase, then the in-stream `provider_busy` error if the wait
+runs out); deck scripts, renders and captures on a pool of two threads of their
+own; one Office capture at a time
+([agentic-retrieval.md](agentic-retrieval.md#process-capacity)).
+
 **Per-model outbound concurrency** bounds what reaches a provider.
 `model_capacities` stores `concurrency_total` and `interactive_reserve` per
 provider/model, independently of versioned `model_configs`. Ops exposes
@@ -1824,7 +1833,8 @@ Worth knowing before trusting a dashboard:
 - **Page captures in context telemetry.** `provider_calls.context_*` and the
   turn's `estimatedInputTokens` count an attached `capture_page` JPEG by its
   28-px patch estimate (about 2,240 for a 1568×1120 render), not by its base64
-  text; the provider's reported input is the billed figure.
+  text, taken from the capture's record instead of decoding the image again;
+  the provider's reported input is the billed figure.
 - **Cached input tokens.** Ops shows cached-read and cache-write tokens when the
   provider proves them. Missing or anomalous cache detail is charged as normal
   input, so the safe failure direction is an overcharge relative to cache cost.
@@ -1834,9 +1844,14 @@ Worth knowing before trusting a dashboard:
   context remain, but a provider failure may not expose final token usage. Real
   provider spend can therefore exceed the ledger; health shows these attempts.
 - **Context composition accuracy.** Providers report total input, not the three
-  local categories. The estimator includes serialized request framing and is
-  useful for trends and window pressure, but the actual-minus-estimated delta
-  must remain visible and the categories must not be treated as invoice data.
+  local categories. The estimator counts each message's provider-shaped JSON
+  (CJK characters one token each, other characters three to a token) once, when
+  the message enters the loop's history, and keeps it on the message
+  (`accounting.keep_tokens`; counted again if the message changes): a request
+  sums those plus its tool schemas, so no model call walks the whole context
+  on the event loop (Epo 2026-10-24, Q238; counting version 3). It is useful
+  for trends and window pressure, but the actual-minus-estimated delta must
+  remain visible and the categories must not be treated as invoice data.
 - **The gateway's in-process event stream cap** (10,000 global / 7 per user)
   is still per-replica and unrelated to the Redis limiter. `GET /api/stream`
   is the one SSE stream a tab holds: streams do not hold a Redis connection

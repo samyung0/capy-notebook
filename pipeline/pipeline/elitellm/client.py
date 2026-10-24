@@ -506,45 +506,6 @@ def _flat_tools(schemas: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     return out
 
 
-def context_components(
-    spec: ModelConfig,
-    messages: list[dict[str, Any]],
-    *,
-    tools: list[dict[str, Any]] | None = None,
-    response_format: dict[str, Any] | None = None,
-    reasoning: bool | None = None,
-    input_items: list[dict[str, Any]] | None = None,
-) -> tuple[Any, Any, Any]:
-    """Return provider-shaped content split for context accounting."""
-    thinking = _thinking_for_call(spec, reasoning)
-    if _uses_responses(spec, thinking, bool(tools)):
-        items = list(input_items or [])
-        system = [item for item in items if item.get("role") == "system"]
-        conversation = [item for item in items if item.get("role") != "system"]
-        schemas: list[Any] = list(_flat_tools(tools))
-        if response_format:
-            schemas.append({"text": {"format": response_format}})
-        return system, conversation, schemas
-    if spec.provider_slug == "anthropic":
-        body = anthropic_request(
-            spec,
-            messages,
-            temperature=None,
-            tools=tools,
-            max_tokens=None,
-            thinking=thinking,
-        )
-        schemas = list(body.get("tools") or [])
-        return body.get("system") or "", body.get("messages") or [], schemas
-
-    system = [message for message in messages if message.get("role") == "system"]
-    conversation = [message for message in messages if message.get("role") != "system"]
-    schemas = list(tools or [])
-    if response_format:
-        schemas.append(response_format)
-    return system, conversation, schemas
-
-
 def _interactive() -> bool:
     from ..retrieval import accounting
 

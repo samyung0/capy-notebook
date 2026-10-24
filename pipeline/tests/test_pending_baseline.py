@@ -229,8 +229,11 @@ async def test_new_authored_edits_and_unselected_files_preserve_captured_turn(
         )
         == "captured answer"
     )
+    # Measuring keeps each message's estimate on it under "_tokens".
     assert [
-        message for message in sent if message.get("_kind") == "pending_sources"
+        {k: v for k, v in message.items() if k != "_tokens"}
+        for message in sent
+        if message.get("_kind") == "pending_sources"
     ] == [original]
     assert all("content_id" not in message.get("content", "") for message in sent)
 
