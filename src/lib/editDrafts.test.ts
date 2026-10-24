@@ -83,6 +83,7 @@ import {
   recoveryDocument,
   reportRecoveryGroup,
   sameSourceLineage,
+  sendBeforeJoin,
   sweepDrafts,
 } from './editDrafts';
 
@@ -1717,6 +1718,47 @@ describe('the draft sweep sending', () => {
     await sweepDrafts('u_switch', api, { current: () => signedIn });
     expect(requests).toHaveLength(0);
     expect(await readDrafts(key)).toHaveLength(2);
+  });
+
+  it("sends a closed offline tab's rows with its stored token before an editor joins, under the tab's id (Q288)", async () => {
+    const editor = {
+      access: 'write' as const,
+      room: ROOM,
+      token: 'editor-token',
+      url: 'wss://collab.test',
+    };
+    for (const [key, refusal] of [
+      ['u_open:material:mat_1', null],
+      ['u_open:material:mat_2', 'unassigned'],
+    ] as const) {
+      // The tab typed offline only, then closed.
+      const { client, recorder } = noteRecorder(key, 'base ', {
+        token: () => 'tab-token',
+      });
+      recorder.disconnected();
+      client.getText('content').insert(5, 'offline');
+      await recorder.dispose();
+      requests.length = 0;
+      if (refusal) answer(409, refusal);
+      else storeNext();
+      await sendBeforeJoin(key, editor);
+      expect(requests).toHaveLength(1);
+      const [sent] = requests;
+      expect(sent.headers.get('authorization')).toBe('Bearer editor-token');
+      expect(sent.headers.get('x-capy-grants')).toBe('tab-token');
+      // The edits go as the tab wrote them, under its own client id.
+      expect(
+        Y.decodeUpdate(sent.body).structs.some(
+          (struct) => struct.id.client === client.clientID
+        )
+      ).toBe(true);
+      const left = await readDrafts(key);
+      if (refusal) {
+        // Still refused under that id: held for the catch-up merge.
+        expect(left.length).toBeGreaterThan(0);
+        expect(left.every((row) => row.held)).toBe(true);
+      } else expect(left).toEqual([]);
+    }
   });
 
   it("presents the group's stored room tokens, newest first, each once (Q288)", async () => {

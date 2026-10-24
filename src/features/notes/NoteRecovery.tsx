@@ -1,7 +1,7 @@
 import { yTextToSlateElement } from '@slate-yjs/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
-import type { Material } from '@/api/types';
+import type { Material, MaterialCollaborationToken } from '@/api/types';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import type {
   MaterialDocument,
@@ -16,6 +16,7 @@ import {
   readDrafts,
   recoveryDocument,
   reportRecoveryGroup,
+  sendBeforeJoin,
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
@@ -33,7 +34,9 @@ export interface NoteDrafts {
 
 /**
  * Reads a note's stored edits for the room it opens (`for`: room and mount
- * generation, so a remount reads what the old mount wrote). A recovery group
+ * generation, so a remount reads what the old mount wrote), once the ones its
+ * room takes went through `/drafts` with their stored tokens (Q288,
+ * `sendBeforeJoin`). A recovery group
  * nothing can draw is dropped with a toast and the next one is read. Both
  * are reported (edit_incidents): a group of another lineage once
  * (reportRecoveryGroup), a dropped group once per page load.
@@ -41,15 +44,21 @@ export interface NoteDrafts {
 export function useNoteDrafts(
   materialId: string,
   key: string | null,
-  room: string | undefined,
+  token: MaterialCollaborationToken | undefined,
   generation: number
 ) {
   const [drafts, setDrafts] = useState<NoteDrafts | null>(null);
+  const room = token?.room;
+  // Read when the room is known; a refreshed token does not read again.
+  const tokenNow = useRef(token);
+  tokenNow.current = token;
   useEffect(() => {
-    if (!(key && room)) return;
+    if (!(key && room && tokenNow.current)) return;
     let active = true;
     const report = editIncidentReporter('material', materialId);
+    const sent = sendBeforeJoin(key, tokenNow.current);
     void (async () => {
+      await sent;
       let rows = await readDrafts(key).catch((error) => {
         console.warn('Draft storage failed:', error);
         return [] as EditDraft[];

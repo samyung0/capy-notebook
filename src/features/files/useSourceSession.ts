@@ -40,6 +40,7 @@ import {
   recordDrafts,
   reportRecoveryGroup,
   sameSourceLineage,
+  sendBeforeJoin,
   sourceLineage,
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
@@ -450,13 +451,14 @@ export function useSourceSession(
     setLoaded(null);
     void (async () => {
       // The route may have started the session, token and base already.
-      const [open, storedDrafts] = await Promise.all([
-        takeSourceOpen(fileId, 'edit', controller.signal),
-        bestEffort(() => readDrafts(draftKey)),
-      ]);
+      const open = await takeSourceOpen(fileId, 'edit', controller.signal);
       if (cancelled) return;
       const { base, session } = open;
       const credentials = open.credentials!;
+      // The rows its room takes go with their stored tokens first (Q288).
+      await sendBeforeJoin(draftKey, credentials);
+      const storedDrafts = await bestEffort(() => readDrafts(draftKey));
+      if (cancelled) return;
       if (
         session.epoch !== credentials.epoch ||
         session.room !== credentials.room

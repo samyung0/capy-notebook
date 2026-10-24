@@ -999,6 +999,17 @@ async function sweepDocument(
     } catch {
       return true;
     }
+  return sendGroups(key, token, current);
+}
+
+/** Sends a document's groups its room takes now, as `sweepDocument` says
+ * (sent rows go, a refused group or one only the editor can send is marked).
+ * Resolves whether the rows are settled for this page load. */
+async function sendGroups(
+  key: string,
+  token: RoomToken,
+  current: () => boolean
+): Promise<boolean> {
   let settled = true;
   const rows = await call<DraftInfo[]>({ key, op: 'rows' });
   for (const group of sendableGroups(rows, token.room)) {
@@ -1023,6 +1034,25 @@ async function sweepDocument(
     } else if (sent === 'retry') settled = false;
   }
   return settled;
+}
+
+/**
+ * Before an editor joins its room (Epo 2026-10-24, Q288): the document's rows
+ * the room takes now go through `/drafts` with their stored tokens, as a
+ * sweep sends them, since the editor's live channel presents none. So a
+ * closed tab's drafts under an id the room never recorded go in under it.
+ * Sent rows are deleted; a group refused, or one only the editor can send
+ * (still refused as `unassigned` among them: held for the catch-up merge),
+ * is marked as a sweep marks it; anything else leaves the rows as they were.
+ * Never throws: the editor opens either way.
+ */
+export async function sendBeforeJoin(key: string, token: RoomToken) {
+  if (USE_MSW || outdated || token.access !== 'write') return;
+  try {
+    await sendGroups(key, token, () => true);
+  } catch (error) {
+    console.warn('Drafts cannot be sent:', error);
+  }
 }
 
 // Documents whose rows a sweep settled, by key, as the row ids it saw: they

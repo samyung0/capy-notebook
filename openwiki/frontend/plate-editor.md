@@ -1608,8 +1608,11 @@ from any page.
   (`auth::granted_ids`), and recorded for no one else, absent from the
   history and held by no live channel (`ClientIds::grantable`). The write
   records them. So the drafts of a closed tab whose edits never reached the
-  room go in from any page. A group still refused `unassigned` (a token over
-  7 days old, an id recorded to another user) is held for the editor.
+  room go in from any page. An editor opening the document (a note, an item
+  room, a source session) first sends the rows its room takes the same way
+  and then joins (`sendBeforeJoin`, Epo 2026-10-24), since its live channel
+  presents no tokens. A group still refused `unassigned` (a token over 7 days
+  old, an id recorded to another user) is held for the catch-up merge.
 - **Refusal.** An update under another id goes the refused-on-entry way:
   material rooms send `document-rejected` with code `unassigned` (the editor
   keeps its unsaved edits as a refused draft), source rooms

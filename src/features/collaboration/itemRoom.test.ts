@@ -89,6 +89,7 @@ vi.mock('@/lib/editDrafts', () => ({
     };
   },
   recoveryDocument: () => new Y.Doc(),
+  sendBeforeJoin: vi.fn(async () => undefined),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
@@ -96,7 +97,9 @@ vi.mock('./unsentItems', () => ({ markUnsent: vi.fn() }));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
 const { NoteSeat } = await import('./noteSeat');
-const { applyDrafts } = await import('@/lib/editDrafts');
+const { applyDrafts, readDrafts, sendBeforeJoin } = await import(
+  '@/lib/editDrafts'
+);
 const { markUpdateAvailable } = await import('@/lib/appRelease');
 const { markUnsent } = await import('./unsentItems');
 
@@ -251,6 +254,31 @@ it('opens stored refused edits in recovery until Reload', async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(drafts.rows).toEqual([]);
   expect(onReplace).toHaveBeenCalledTimes(1);
+  room.destroy();
+});
+
+// Q288: rows of a closed tab whose id the room never recorded go through
+// `/drafts` with their stored tokens before the room joins (its channel
+// presents none); what the room took is no longer stored to apply.
+it('sends its stored rows with their tokens before it reads them and joins', async () => {
+  drafts.rows = [{ lineage: 'material:q:schema:1' }];
+  const order: string[] = [];
+  vi.mocked(sendBeforeJoin).mockImplementationOnce(async (key, token) => {
+    order.push(`sent ${key} ${token.token}`);
+    drafts.rows = [];
+  });
+  vi.mocked(readDrafts).mockImplementationOnce(async () => {
+    order.push(`read ${providers.length}`);
+    return drafts.rows as never;
+  });
+  const { room } = await started();
+  expect(order).toEqual(['sent u:material:q t', 'read 0']);
+  expect(providers[0].connects).toBe(1);
+  expect(applyDrafts).not.toHaveBeenCalledWith(
+    room.doc,
+    [{ lineage: 'material:q:schema:1' }],
+    expect.anything()
+  );
   room.destroy();
 });
 

@@ -291,7 +291,7 @@ function CollaborativeNoteEditor({
   const drafts = useNoteDrafts(
     material.id,
     storedKey,
-    collaborationTokenData?.room,
+    collaborationTokenData,
     editorGeneration
   );
   const tokenStatus = isApiError(collaborationTokenError)

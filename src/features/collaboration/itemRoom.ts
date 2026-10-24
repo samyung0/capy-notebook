@@ -34,6 +34,7 @@ import {
   readDrafts,
   recordDrafts,
   recoveryDocument,
+  sendBeforeJoin,
 } from '@/lib/editDrafts';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
@@ -285,6 +286,9 @@ export class ItemRoom {
     const access = first.access === 'write' ? 'write' : 'read';
     this.set({ access });
     const key = this.draftKey();
+    // The rows its room takes go with their stored tokens first (Q288).
+    if (key && access === 'write') await sendBeforeJoin(key, first);
+    if (this.destroyed) return;
     if (key && access === 'write' && !(await this.restore(key))) {
       // Recovery is this open's answer: no room joins.
       this.reconnector.dispose();
