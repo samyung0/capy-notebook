@@ -21,7 +21,7 @@ ROLES = ("owner", "editor", "viewer", "other")
 # Plain accounts for manual testing, outside the fixture. Clerk's user.created
 # webhook gives each its application user and default workspace.
 PLAN_ROLES = ("free", "pro")
-APP_URL = "https://app.uat.capynotebook.com"
+APP_URL = "https://uat.capynotebook.com"
 API_URL = "https://uat-api.capynotebook.com"
 
 
