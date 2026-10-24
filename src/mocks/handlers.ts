@@ -80,6 +80,7 @@ import {
   clearMockThumbnailStale,
   mockAtSizeLimit,
   scenarioSourceSession,
+  seedUploadedOffice,
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
 import { voiceInputHandlers } from './voiceInput';
@@ -2505,6 +2506,13 @@ export const handlers = [
         workspaceId: String(params.id),
       };
       db.fileLinks[f.id] = { url: URL.createObjectURL(bytes) };
+      const office = /\.(docx|pptx|xlsx)$/i.exec(name)?.[1].toLowerCase();
+      if (office)
+        seedUploadedOffice(
+          f.id,
+          office as 'docx' | 'pptx' | 'xlsx',
+          db.fileLinks[f.id].url
+        );
       db.files.push(f);
       const ws = db.workspaces.find((w) => w.id === params.id);
       if (ws) ws.fileCount += 1;

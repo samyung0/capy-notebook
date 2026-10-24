@@ -196,6 +196,13 @@ export function pdf(
   return Buffer.concat(out);
 }
 
+/** The bytes the gateway stored for a file: an Office upload's after the
+ * browser compressed its pictures. */
+export async function storedBytes(run: UatRun, fileId: string) {
+  const stored = await run.blob(string((await fileRow(run, fileId)).blob_path));
+  return Buffer.from(stored.bodyBase64, 'base64');
+}
+
 export async function fileRow(run: UatRun, fileId: string) {
   const rows = await run.query(
     `SELECT id,workspace_id,user_id,name,kind,status,indexed,index_limit,parse_mode,
@@ -361,13 +368,20 @@ export async function upload(
   await run.record('upload', uploadId, { workspaceId });
   const row = await fileRow(run, id);
   const key = string(row.blob_path);
+  const stored = await run.blob(key);
+  // The browser compresses an Office file's pictures and removes its EMF and
+  // WMF pictures before sending (Epo 2026-10-24): the stored object is the
+  // reference, never larger. Other files arrive as picked.
+  const office = /\.(docx|pptx|xlsx)$/i.test(name);
   await run.record('blob', key, {
     fileId: id,
-    sourceSha256: sha256(bytes),
+    sourceSha256: office ? stored.sha256 : sha256(bytes),
   });
-  const stored = await run.blob(key);
-  assert.equal(stored.sha256, sha256(bytes));
-  assert.equal(stored.size, bytes.length);
+  if (office) assert(stored.size <= bytes.length);
+  else {
+    assert.equal(stored.sha256, sha256(bytes));
+    assert.equal(stored.size, bytes.length);
+  }
   assert.equal(row.user_id, uploader.id);
   if (storeOnly) {
     assert.equal(row.parse_mode, 'none');
@@ -389,7 +403,7 @@ export async function upload(
     [uploader.id]
   );
   assert.equal(Number(storage[0]?.reserved_bytes), 0);
-  assert(Number(storage[0]?.used_bytes) >= bytes.length);
+  assert(Number(storage[0]?.used_bytes) >= stored.size);
   return id;
 }
 

@@ -381,14 +381,14 @@ func TestUploadPolicyServesAudioLimitAndUploadEnforcesIt(t *testing.T) {
 // The material response carries the reader's own editor caps, since what they
 // add is charged to them (M16; Epo 2026-10-22: the browser checks a note image
 // or audio against them before it uploads): a Free co-editor of a Pro owner's
-// note reads the Free caps, and the other way round.
+// note reads the Free caps, and the other way round. The image cap is the
+// same on every plan (Epo 2026-10-24), so the audio cap tells them apart.
 func TestMaterialCarriesTheReadersEditorCaps(t *testing.T) {
 	fx := openBilling(t)
 	ctx := context.Background()
 	free, pro := mustPlanLimits(t, fx.store, store.PlanFree), mustPlanLimits(t, fx.store, store.PlanPro)
-	if free.EditorAssetBytes("audio") == pro.EditorAssetBytes("audio") ||
-		free.EditorAssetBytes("image") == pro.EditorAssetBytes("image") {
-		t.Fatal("the Free and Pro editor caps must differ for this test")
+	if free.EditorAssetBytes("audio") == pro.EditorAssetBytes("audio") {
+		t.Fatal("the Free and Pro audio caps must differ for this test")
 	}
 	note, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
 		Kind: "note", Title: "Caps", Content: noteTestContent(t, "")})
@@ -653,8 +653,9 @@ func TestEditorDeletesItsImageInANoteItStillEdits(t *testing.T) {
 // The upload checks again what its ticket checked: a file within the cap when
 // its ticket was issued but over it when it uploads (the payer's plan fell),
 // and a reservation over the storage that filled while it waited, are refused
-// at the upload with nothing held, for sources and editor assets (security
-// regression: human backend-storage-quota 2026-10-22 gateway uploads).
+// at the upload with nothing held: both for sources, the storage for editor
+// assets (security regression: human backend-storage-quota 2026-10-22 gateway
+// uploads).
 func TestUploadsRecheckTheCapAndStorageAtTheUpload(t *testing.T) {
 	fx := openBilling(t)
 	ctx := context.Background()
@@ -720,17 +721,8 @@ func TestUploadsRecheckTheCapAndStorageAtTheUpload(t *testing.T) {
 	image := func(size int64) map[string]any {
 		return map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": size, "contentType": "image/png"}
 	}
-	plan(fx.ownerID, "pro")
-	bigImage := image(free.EditorAssetBytes("image") + 1)
-	route = ticketed(t, fx.handler, assets, fx.ownerID, bigImage)
-	plan(fx.ownerID, "free")
-	// A real PNG's first bytes, so only the cap can refuse it.
-	bigPNG := make([]byte, free.EditorAssetBytes("image")+1)
-	copy(bigPNG, testPNG(33))
-	if rec := upload(route, fx.ownerID, bigImage, "image/png", bigPNG); rec.Code != http.StatusBadRequest {
-		t.Fatalf("an editor asset over the cap at its upload: %d %s", rec.Code, rec.Body.String())
-	}
-
+	// The image cap is the same on every plan (Epo 2026-10-24): only the
+	// storage can change between an image's ticket and its upload.
 	png := testPNG(108)
 	smallImage := image(int64(len(png)))
 	route = ticketed(t, fx.handler, assets, fx.ownerID, smallImage)

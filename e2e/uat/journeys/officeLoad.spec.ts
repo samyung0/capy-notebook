@@ -740,9 +740,11 @@ test('Office open times: DOCX, XLSX and PPTX, small and large, cold and warm', a
     // Store-only: ready to open once uploaded, with no parse or model spend;
     // opening in Edit takes the same path as for a parsed file.
     const id = await upload(run, workspaceId, name, bytes, true);
+    const blobPath = string((await fileRow(run, id)).blob_path);
     files.push({
-      blobPath: string((await fileRow(run, id)).blob_path),
-      bytes: bytes.length,
+      blobPath,
+      // As stored: the browser compresses an Office file's pictures.
+      bytes: (await run.blob(blobPath)).size,
       format,
       id,
       name,

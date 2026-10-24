@@ -14,7 +14,7 @@ This page is the accounting contract.
 
 ## Product plan limits
 
-`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`) is the canonical backend
+`plan_limits` (`server/migrations/0001_init.sql`, image cap added in `0069`, 2 MiB on every plan since `0112`) is the canonical backend
 catalog for every numeric limit that may vary by subscription plan:
 
 | Limit                           |                       Free |                        Pro |
@@ -26,7 +26,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Owned workspaces                |                         10 |                         50 |
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
-| One uploaded image              |                      2 MiB |                      5 MiB |
+| One uploaded image              |                      2 MiB |                      2 MiB |
 
 Monthly credits are the allowance only: every account also starts with a
 one-off 800-credit grant in its never-expiring purchased balance, and top-ups
@@ -164,11 +164,14 @@ Per-file **source upload** caps are separate from that quota. Editor assets
 take the uploader's plan by purpose (`planlimits.Limits.EditorAssetBytes`): images
 the plan image cap, audio this per-file cap (Epo 2026-10-15), on upload and on
 a pasted copy (`AdoptEditorAssets`); a note holds no other asset. An image
-uploaded as a source takes the source cap, not the image cap. They follow the
+uploaded as a source takes the source cap, not the image cap, after the browser
+shrinks it to 5 megapixels ([Image compression and checks](#image-compression-and-checks)). They follow the
 **uploader's** plan, create-only (no retroactive invalidation): **10 MiB**
 free, **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
 elsewhere. `GET /api/source-upload-policy` returns the caller's own cap, which
-the dialog enforces before it asks for a ticket. The material response
+the dialog enforces before it asks for a ticket; an Office file or an image
+the browser compresses is checked after compression instead, in its transfer
+row. The material response
 carries the reader's own editor caps, since what it adds is charged to it
 (M16), as `imageMaxBytes` and `audioMaxBytes`, which
 `uploadEditorAsset` checks the same way (Epo 2026-10-22); the server keeps
@@ -559,28 +562,22 @@ editor image (note, quiz, flashcard set, and a pasted copy through the
 children pass) is capped by the uploader's plan image cap, checked before any
 bytes are reserved; the material response carries the reader's as
 `imageMaxBytes`. The browser
-uploads an image under the cap unchanged and shrinks a larger one first
-(`src/lib/fitImage.ts`, called from `uploadEditorAsset`: long side to 2000 px,
-WebP at falling quality, JPEG or PNG where the browser has no WebP encoder,
-animated GIFs refused). An image inserted into a DOCX or PPTX file takes the
+compresses every image first (`src/lib/fitImage.ts`, called from
+`uploadEditorAsset`; [Image compression and checks](#image-compression-and-checks)),
+and the gateway reads its header. An image inserted into a DOCX or PPTX file takes the
 same cap from the plan of the file's payer (its uploader): the
 Office edit session (`GET /api/files/{id}/source-session`, Office formats)
 carries it as `imageMaxBytes`, the edit `load` hands it to the Office runtime,
 and the editors' `prepareImage` hook fits the picked file before its bytes
 reach the document (`fitImage` with `office`, Epo 2026-10-13). Older Word,
 PowerPoint, LibreOffice and Google Docs imports open only PNG, JPEG and GIF
-inside DOCX/PPTX, so only those go in as they are when under the cap; every
-other type (WebP, AVIF, BMP, …) is re-encoded whatever its size, and a shrunk
-image is JPEG when opaque or PNG when transparent, never WebP. A transparent
-image still over the cap as PNG at 2000 px is drawn at 1400 px, then 1000 px,
-before it is refused. A refused image (an animated GIF over the cap, or a PNG
-that fits at no step) leaves the document as it was and Capy shows the "image
-too large" notice (the runtime's `image-too-large` notice); one the browser
-cannot decode to re-encode (TIFF, HEIC or SVG in Chrome) is refused the same way
-with "This image type can't be inserted." (`image-type`). DOCX picture
-watermarks take the same path. The check is the browser's only: the
-collaboration server does not read image sizes (a server check is queued for
-later).
+inside DOCX/PPTX, so every other type (WebP, AVIF, BMP, …) is re-encoded
+whatever its size. A refused image leaves the document as it was and Capy
+shows the "image too large" notice (the runtime's `image-too-large` notice);
+one the browser cannot decode to re-encode (TIFF, HEIC or SVG in Chrome) is
+refused the same way with "This image type can't be inserted." (`image-type`).
+DOCX picture watermarks take the same path. The collaboration server checks
+each picture an edit adds (Server checks below).
 A note's audio is capped by the uploader's per-file cap (10 MiB Free, 30 MiB
 Pro) at the reservation. The browser checks it first against the material's
 `audioMaxBytes` (Epo 2026-10-22): a file over it asks for no ticket and its
@@ -697,6 +694,95 @@ Public deletion takes the same source fence before account, workspace, or
 storage rows, while before-delete triggers also protect direct SQL and cascade
 cleanup. The trigger cleans the detached popularity counter only after earlier
 clones release the fence, so a clone cannot leave an orphan counter behind.
+
+## Image compression and checks
+
+Every image Capy stores passes one compressor first (Epo 2026-10-20, Q285,
+Q286): a note, quiz, flashcard or bank image, a picture inserted in the Word or
+PowerPoint editor, every picture inside an uploaded DOCX, PPTX or XLSX, and an
+image file uploaded as a source. The browser runs `src/lib/fitImage.ts`; the
+import worker applies the same rules to imported files
+(`pipeline/pipeline/ingest/images.py`, inside the decoder sandbox). Both are
+tested against the shared fixtures and expected results in
+`e2e/fixtures/files/images/manifest.json`.
+
+- The long side is resized within 2,400 px (`IMAGE_MAX_SIDE`, generated from
+  the gateway's `imagecheck.MaxSide`) and encoded at quality 0.85. An editor
+  image becomes WebP (JPEG, or PNG when transparent, where the browser has no
+  WebP encoder). A picture for an Office file becomes JPEG when it is a photo
+  and PNG when it is transparent or a flat graphic (opaque, at most 256
+  colours on a nearest-neighbour sample at the output size), never WebP.
+- The original is kept when it needs no resize, fits the image cap, is a type
+  its target takes (PNG, JPEG or GIF in an Office file; PNG, JPEG, WebP, GIF or
+  AVIF as an editor image) and the encode is not smaller.
+- A result over the cap is shrunk further: a lossy one at 2,000 px with the
+  quality falling from 0.85 to 0.4 (an opaque PNG turns into JPEG), a
+  transparent PNG at 2,000, 1,400 then 1,000 px. When nothing fits, the image
+  is refused ("image too large").
+- An animated GIF is kept within 2,400 px and the cap and refused past either,
+  since a canvas keeps one frame.
+- An image file uploaded as a source is limited by area instead (Epo
+  2026-10-24): kept as it is within 5 megapixels (`SOURCE_IMAGE_MAX_PIXELS`),
+  else resized to fit 5 megapixels (rounding down) with the Office format
+  rules, so a PNG photo is stored as `<stem>.jpg`. The per-file source cap
+  applies to the result.
+
+The image cap counts the compressed bytes.
+
+**Uploaded Office files.** Before a DOCX, PPTX or XLSX upload, a worker
+(`src/features/workspace/sourceCompress.worker.ts` running
+`src/lib/officeImages.ts`) unzips the package (at most 4,096 entries and
+256 MiB expanded), compresses every raster picture with the Office rules and
+the uploader's image cap, and zips it again; the transfer row reads
+"Compressing images…". A picture whose format changes is renamed
+(`image1.png` to `image1.jpeg`, with a numeric suffix on a clash), and its
+relationship targets and `[Content_Types].xml` entries follow. Only the
+compressed file is sent, stored, charged and downloaded (Q267). PDFs stay as
+uploaded.
+
+EMF and WMF pictures are removed with what shows them (Epo 2026-10-24): in
+DOCX the `w:drawing`, `w:pict` or `w:object` (with its OLE part), in PPTX the
+`p:pic`, the OLE `p:graphicFrame` or a slide background's `p:bg`, in XLSX the
+drawing anchor and the sheet's `oleObject`; a markup-compatibility wrapper
+around one goes whole. The count (a fallback copy is not counted twice)
+reaches a warning toast after the upload.
+
+**Imported files.** The import worker compresses an imported Office file the
+same way and removes its EMF and WMF pictures, in the decoder sandbox
+(`decode.py` mode `office`), before storing it; the completion carries the
+count (`source_import_jobs.removed_pictures`, read back as `removedPictures`),
+which shows the same toast. An imported image source over 5 megapixels is
+shrunk the same way and stored as `<stem>.jpg` or `<stem>.png`. The worker's
+Pillow has no HEIF decoder, and pillow-heif is not used since its wheels
+bundle x265 (GPL): an imported HEIC/HEIF within 5 megapixels is stored as it
+is, and one over it is refused with `image_unreadable`.
+
+**Image sources the browser cannot decode.** HEIC/HEIF, TIFF and JPEG 2000
+sources go through decoders loaded only when such a file is picked (Q294,
+`src/lib/decodeImage.ts`): libheif-js for HEIC/HEIF (LGPL-3.0, loaded at
+runtime as its own unmodified module, never bundled), utif2 for TIFF (CCITT
+and PackBits included) and pdf.js's OpenJPEG decoder for JPEG 2000. A file
+they cannot decode is refused before upload, suggesting JPEG or PNG (or
+Safari for HEIC).
+
+**Server checks.** The gateway reads only image headers and an Office file's
+zip directory (`server/internal/imagecheck`, wired in
+`server/internal/httpapi/image_checks.go` and `editor_assets.go`); the import
+worker runs the same check before storing (`pipeline/pipeline/ingest/image_check.py`).
+A refusal is final: a 400 whose first error is the code below, shown in the
+transfer row, with no retry.
+
+| Upload or import | Refused when                                                                 | Code                                          |
+| ---------------- | ---------------------------------------------------------------------------- | --------------------------------------------- |
+| Editor image     | over 2,400 px on the long side, or its header gives no size                  | `image_too_large`, `image_unreadable`         |
+| Office file      | an EMF or WMF part; a raster part over the image cap (inflated) or 2,400 px | `office_vector_image`, `office_image_too_large` |
+| Image source     | over 5 megapixels, or a raster header that gives no size                     | `source_image_too_large`, `image_unreadable`  |
+
+The editor image's byte cap stays the reservation's check. The collaboration
+server refuses a Word or PowerPoint edit that adds a picture over 2 MiB or
+2,400 px, or an EMF or WMF one, read from the header of the picture's data URL
+or bytes (`collaboration-rs/crates/sources/src/pictures.rs`, Q287); pictures
+the room already holds pass.
 
 ## Yjs storage growth
 

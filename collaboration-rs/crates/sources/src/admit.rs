@@ -193,8 +193,9 @@ fn fits_room(doc: &Doc, update: &[u8], estimate: &mut Estimate, cap: u64) -> Res
 /// Why a client update may not enter an Office room (`Err`), else whether the
 /// room cannot integrate it yet (`Ok(unheld)`). Each new struct must sit under
 /// one of the engine's document roots, in PPTX writes and deletions under
-/// pptx:meta must stay inside commentFlavor, as the engines require, and no
-/// slide's speaker notes may grow past [MAX_SLIDE_NOTES_CHARS].
+/// pptx:meta must stay inside commentFlavor, as the engines require, no
+/// slide's speaker notes may grow past [MAX_SLIDE_NOTES_CHARS], and a picture
+/// added in Word or PowerPoint keeps the image limits ([crate::pictures]).
 pub fn office_update_violation<T: ReadTxn>(
     txn: &T,
     update: &Update,
@@ -223,6 +224,9 @@ pub fn office_update_violation<T: ReadTxn>(
     // An unheld update is dropped, and its references may not resolve yet.
     if format == Format::Pptx && !unheld {
         notes_violation(txn, &incoming)?;
+    }
+    if matches!(format, Format::Docx | Format::Pptx) && !unheld {
+        crate::pictures::picture_violation(txn, &incoming)?;
     }
     let deletes = deletions(update);
     if format != Format::Pptx || deletes.is_empty() {
@@ -621,6 +625,81 @@ mod tests {
             verdict(&room, pptx, b"\xff\xff"),
             Admission::Refuse(Refusal::Malformed(_))
         ));
+    }
+
+    // Security regression (Epo 2026-10-24, Q287): whatever client sends it, a
+    // picture a Word or PowerPoint edit adds is refused past 2,400 px on its
+    // long side, read from its header, or as EMF or WMF.
+    #[test]
+    fn a_picture_past_the_image_limits_is_refused_in_word_and_powerpoint() {
+        use base64::Engine;
+        let png = |width: u32| {
+            let mut out = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+            out.extend(width.to_be_bytes());
+            out.extend(10u32.to_be_bytes());
+            out.extend([8, 2, 0, 0, 0, 0, 0, 0, 0]);
+            out
+        };
+        let room = Doc::with_client_id(1);
+        let refused = Admission::Refuse(Refusal::OfficeUpdate(
+            "Office update adds a picture over 2 MiB or 2400 px".into(),
+        ));
+        let docx = |client_id: u64, bytes: Vec<u8>| {
+            let client = Doc::with_client_id(client_id);
+            delta(&client, || {
+                let src = format!(
+                    "data:image/png;base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(bytes)
+                );
+                let image = yrs::Any::from(std::collections::HashMap::from([
+                    ("type".to_owned(), yrs::Any::from("image")),
+                    ("src".to_owned(), yrs::Any::from(src)),
+                ]));
+                client.get_or_insert_text("stories").insert_embed(
+                    &mut client.transact_mut(),
+                    0,
+                    image,
+                );
+            })
+        };
+        let pptx = |client_id: u64, bytes: Vec<u8>| {
+            let client = Doc::with_client_id(client_id);
+            delta(&client, || {
+                let slides = client.get_or_insert_map("pptx:slides");
+                let shape = slides.insert(&mut client.transact_mut(), "s1", MapPrelim::default());
+                shape.insert(
+                    &mut client.transact_mut(),
+                    "pendingMedia",
+                    yrs::Any::Buffer(bytes.into()),
+                );
+            })
+        };
+        assert_eq!(
+            verdict(&room, SourceFormat::Docx, &docx(2, png(2400))),
+            Admission::Accept
+        );
+        assert_eq!(
+            verdict(&room, SourceFormat::Docx, &docx(3, png(2401))),
+            refused
+        );
+        assert_eq!(
+            verdict(&room, SourceFormat::Pptx, &pptx(4, png(2400))),
+            Admission::Accept
+        );
+        assert_eq!(
+            verdict(&room, SourceFormat::Pptx, &pptx(5, png(2401))),
+            refused
+        );
+        assert_eq!(
+            verdict(
+                &room,
+                SourceFormat::Pptx,
+                &pptx(6, vec![0xd7, 0xcd, 0xc6, 0x9a, 0, 0])
+            ),
+            Admission::Refuse(Refusal::OfficeUpdate(
+                "Office update adds an EMF or WMF picture".into()
+            ))
+        );
     }
 
     // Security regression (Epo 2026-10-22): whatever client writes it, an
