@@ -357,15 +357,12 @@ refused never waits. The reservation itself still happens when the upload
 starts, and gates again; a ticket holds none. Running uploads share a
 budget of 1 GB of declared size, the temp disk their bodies spool to; at most
 256 run at once, a sanity bound on connections, and at most 4 of one user's
-(Epo 2026-10-22) holding at most 128 MiB of declared size between them (Epo
-2026-10-24, rate-limit audit M15); a file larger than 128 MiB is refused
-with 413 at the ticket. Held turns count as running. A ticket whose file fits
-the budget, whose user is under 4 and has its bytes left of the 128 MiB, and
-that no blocking ticket holds back answers `{ticketId, position: 0}` (its
+(Epo 2026-10-22; no per-user byte share, Epo 2026-10-24, Q245). Held turns
+count as running. A ticket whose file fits the budget, whose user is under 4
+and that no blocking ticket holds back answers `{ticketId, position: 0}` (its
 turn), else it waits with its place (1 is next). Freed bytes go to the line
-oldest first: a ticket whose user is at 4 or at their 128 MiB is passed by
-(and never blocks the line), so one user's fifth file waits while other
-users' files run,
+oldest first: a ticket whose user is at 4 is passed by, so one user's fifth
+file waits while other users' files run,
 and a file that does not fit is passed by smaller ones that do until it has
 waited 30 s; from then on it blocks every file behind it until it fits, so
 small files cannot starve a big one. There is no minimum send rate: the
