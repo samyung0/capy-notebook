@@ -10,7 +10,12 @@ import {
   type SourceAnalysisResult,
   sourceAnalysisExtension,
 } from './sourceAnalysis';
-import { getFileKind, isTextKind, type ParseMode } from './sourceUpload';
+import {
+  getFileKind,
+  isTextKind,
+  type ParseMode,
+  sourceCompression,
+} from './sourceUpload';
 
 export type SourceAnalysisStatus =
   | 'idle'
@@ -147,7 +152,8 @@ export function validateLocalSourceSelection(
   const rejected: RejectedLocalSource[] = [];
   for (const file of files) {
     const kind = getFileKind(file.name, policy);
-    if (file.size > policy.maxBytes) {
+    // One compressed before its upload is checked once compressed.
+    if (file.size > policy.maxBytes && !sourceCompression(file.name, kind)) {
       rejected.push({ file, reason: 'file_too_large' });
     } else {
       accepted.push({ file, kind });

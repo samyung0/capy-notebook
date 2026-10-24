@@ -38,6 +38,22 @@ export function isTextKind(
   return policy.kinds.some((entry) => entry.kind === kind && entry.text);
 }
 
+/** What a source gets before its upload (Epo 2026-10-24): an Office file's
+ * pictures compressed and its EMF and WMF pictures removed, or an image
+ * file shrunk to at most 5 megapixels. */
+export type SourceCompression = 'office' | 'image';
+
+/** The compression a picked file gets, if any. An SVG has no pixels to
+ * shrink. Such a file's per-file cap applies once it is compressed. */
+export function sourceCompression(
+  name: string,
+  kind: FileKind
+): SourceCompression | null {
+  const ext = fileExt(name);
+  if (ext === 'docx' || ext === 'pptx' || ext === 'xlsx') return 'office';
+  return kind === 'image' && ext !== 'svg' ? 'image' : null;
+}
+
 export function parseModeIssues(
   file: Pick<File, 'name' | 'size'>,
   kind: FileKind,
@@ -55,7 +71,7 @@ export function parseModeIssues(
     ) {
       return 'format not supported';
     }
-    if (file.size > rule.maxBytes) {
+    if (file.size > rule.maxBytes && !sourceCompression(file.name, kind)) {
       return `over ${Math.round(rule.maxBytes / 1024 / 1024)} MB`;
     }
     if (analysisError === 'too_many_pages') {

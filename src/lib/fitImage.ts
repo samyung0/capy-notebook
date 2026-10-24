@@ -1,3 +1,7 @@
+// The long side every image is resized within (Epo 2026-10-20, Q286), from
+// the gateway's header check (server/internal/imagecheck), which refuses a
+// larger one.
+import { IMAGE_MAX_SIDE } from '@/api/limits.generated';
 import { m } from '@/i18n';
 // Not errors.ts, which pulls in the API client: the Office runtime loads this.
 import { CopyError } from '@/lib/copyError';
@@ -8,8 +12,17 @@ export const BANK_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
 /** The image types the server stores as editor images (no SVG). */
 export const IMAGE_ACCEPT =
   'image/png,image/jpeg,image/webp,image/gif,image/avif';
-const MAX_SIDE = 2000;
-const QUALITIES = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
+/** JPEG and WebP quality of the first encode (Epo 2026-10-20). */
+const QUALITY = 0.85;
+/** Over the cap: the long side a lossy image is drawn at for its falling
+ * qualities, and the long sides a transparent PNG is drawn at (Epo
+ * 2026-10-13). */
+const SHRINK_SIDE = 2000;
+const QUALITIES = [0.85, 0.8, 0.7, 0.6, 0.5, 0.4];
+const PNG_SIDES = [2000, 1400, 1000];
+/** An opaque image of at most this many colours is a flat graphic, PNG in
+ * an Office file. */
+const FLAT_COLOURS = 256;
 const EXTENSION = /\.[^.]*$/;
 /** The image types the server stores as editor images, by the extension its
  * reservation wants (server/internal/httpapi/editor_assets.go). */
@@ -20,20 +33,10 @@ export const IMAGE_EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
 };
-const SHRINKABLE = new Set([
-  'image/avif',
-  'image/gif',
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-]);
 /** The image types older Word, PowerPoint, LibreOffice and Google Docs
  * imports open inside DOCX/PPTX; an Office file gets every other type
- * re-encoded, whatever its size (Epo 2026-10-13). */
+ * re-encoded (Epo 2026-10-13). */
 const OFFICE_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png']);
-/** Smaller long sides a transparent image for an Office file is drawn at,
- * as PNG, until one fits the cap. */
-const OFFICE_PNG_STEPS = [1400, 1000];
 
 /** A byte cap as the image messages name it. */
 export const imageLimit = (maxBytes: number) =>
@@ -75,28 +78,8 @@ export function isAnimatedGif(bytes: Uint8Array) {
   return false;
 }
 
-/** Whether a picked image uploads as is, gets shrunk (re-encoded) first, or
- * is refused; for an Office file only PNG, JPEG and GIF can go in as is. */
-export function shrinkPlan(
-  file: Pick<File, 'size' | 'type'>,
-  animated: boolean,
-  maxBytes: number,
-  office = false
-): 'upload' | 'shrink' | 'too_large' {
-  if (file.size <= maxBytes && (!office || OFFICE_TYPES.has(file.type)))
-    return 'upload';
-  if (animated) return 'too_large';
-  return office || SHRINKABLE.has(file.type) ? 'shrink' : 'too_large';
-}
-
-/** True when any pixel is not fully opaque (RGBA bytes). */
-export function hasAlpha(rgba: Uint8ClampedArray) {
-  for (let i = 3; i < rgba.length; i += 4) if (rgba[i] < 255) return true;
-  return false;
-}
-
 /** Fits the long side within maxSide without upscaling. */
-export function fitSize(width: number, height: number, maxSide = MAX_SIDE) {
+export function fitSize(width: number, height: number, maxSide: number) {
   const scale = Math.min(1, maxSide / Math.max(width, height));
   return {
     height: Math.max(1, Math.round(height * scale)),
@@ -104,73 +87,154 @@ export function fitSize(width: number, height: number, maxSide = MAX_SIDE) {
   };
 }
 
-/** Returns the image to upload under maxBytes: the file itself when it fits,
- * otherwise a resized WebP (transparency kept) at falling quality, or JPEG
- * (opaque) or PNG (transparent) where WebP cannot be encoded. For an `office`
- * file (DOCX/PPTX) it is never WebP, every type but PNG, JPEG and GIF is
- * re-encoded, and a transparent image too large as PNG is drawn smaller
- * (OFFICE_PNG_STEPS). Throws an ImageTooLargeError when nothing fits, an
- * ImageUnreadableError when the image cannot be decoded. */
+/** Fits the area within maxPixels without upscaling, rounding down so the
+ * result never passes it. */
+export function fitArea(width: number, height: number, maxPixels: number) {
+  const scale = Math.min(1, Math.sqrt(maxPixels / (width * height)));
+  return {
+    height: Math.max(1, Math.floor(height * scale)),
+    width: Math.max(1, Math.floor(width * scale)),
+  };
+}
+
+/** Whether any pixel is not fully opaque and, for an opaque image, whether it
+ * holds at most FLAT_COLOURS colours (RGBA bytes). */
+export function pixelTraits(rgba: Uint8ClampedArray) {
+  const colours = new Set<number>();
+  let flat = true;
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i + 3] < 255) return { alpha: true, flat: false };
+    if (flat) {
+      colours.add((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]);
+      flat = colours.size <= FLAT_COLOURS;
+    }
+  }
+  return { alpha: false, flat };
+}
+
+/** The picked image as a bitmap. A source the browser cannot read
+ * (HEIC/HEIF, TIFF, JPEG 2000) goes through a decoder loaded for it (Q294). */
+async function decode(file: File, source: boolean) {
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (bitmap) return bitmap;
+  const pixels = source ? await decodeSource(file) : null;
+  if (!pixels) throw new ImageUnreadableError();
+  return createImageBitmap(
+    new ImageData(pixels.data, pixels.width, pixels.height)
+  );
+}
+
+async function decodeSource(file: File) {
+  const { decodeUncommon } = await import('@/lib/decodeImage');
+  try {
+    return await decodeUncommon(file);
+  } catch {
+    return null;
+  }
+}
+
+/** Compresses every image (Epo 2026-10-20, Q285, Q286): the long side within
+ * IMAGE_MAX_SIDE, then WebP at QUALITY for a note (JPEG, or PNG when
+ * transparent, where the browser has no WebP encoder) and, for an `office`
+ * file (DOCX/PPTX/XLSX), JPEG for a photo and PNG for a transparent image or
+ * a flat graphic, never WebP. The original is kept when it needs no resize,
+ * fits `maxBytes`, is a type its target takes and the result is not smaller.
+ * A result over `maxBytes` is shrunk: a lossy one at SHRINK_SIDE with falling
+ * quality, a transparent PNG at PNG_SIDES. An animated GIF is kept within the
+ * side and the cap and refused past either, since a canvas keeps one frame.
+ * Throws an ImageTooLargeError when nothing fits, an ImageUnreadableError
+ * when the image cannot be decoded. With `maxPixels` (an image uploaded as a
+ * source, Epo 2026-10-24) the area is the limit instead of the side, an image
+ * within it is kept as it is, and a larger one takes the Office rules. The
+ * import worker applies the same rules (pipeline/pipeline/ingest/images.py). */
 export async function fitImage(
   file: File,
   maxBytes: number,
-  { office = false } = {}
+  {
+    maxPixels = 0,
+    office = maxPixels > 0,
+  }: { maxPixels?: number; office?: boolean } = {}
 ): Promise<File> {
-  const animated =
-    file.type === 'image/gif' &&
-    file.size > maxBytes &&
-    isAnimatedGif(new Uint8Array(await file.arrayBuffer()));
-  const plan = shrinkPlan(file, animated, maxBytes, office);
-  if (plan === 'upload') return file;
-  if (plan === 'shrink') {
-    const bitmap = await createImageBitmap(file).catch(() => {
-      throw new ImageUnreadableError();
-    });
-    try {
-      const draw = (side: number) => {
-        const { width, height } = fitSize(bitmap.width, bitmap.height, side);
-        const canvas = new OffscreenCanvas(width, height);
-        const context = canvas.getContext('2d');
-        if (!context) throw new Error('2d canvas is unavailable');
-        context.drawImage(bitmap, 0, 0, width, height);
-        return { canvas, context };
-      };
-      const { canvas, context } = draw(MAX_SIDE);
-      const encodeWithin = async (type: string) => {
-        for (const quality of QUALITIES) {
-          const blob = await canvas.convertToBlob({ quality, type });
-          // A browser without the encoder returns PNG and ignores quality.
-          if (blob.type !== type) return null;
-          if (blob.size <= maxBytes) return blob;
-        }
-        return null;
-      };
-      // Safari has no WebP encoder and Office files take none: JPEG for
-      // opaque images, PNG keeps alpha.
-      let blob = office ? null : await encodeWithin('image/webp');
-      if (!blob) {
-        const { width, height } = canvas;
-        if (hasAlpha(context.getImageData(0, 0, width, height).data)) {
-          let side = Math.max(width, height);
-          blob = await canvas.convertToBlob({ type: 'image/png' });
-          for (const step of office ? OFFICE_PNG_STEPS : [])
-            if (blob.size > maxBytes && step < side) {
-              side = step;
-              blob = await draw(step).canvas.convertToBlob({
-                type: 'image/png',
-              });
-            }
-        } else blob = await encodeWithin('image/jpeg');
-      }
-      if (blob && blob.size <= maxBytes)
-        return new File(
-          [blob],
-          `${file.name.replace(EXTENSION, '')}.${IMAGE_EXTENSIONS[blob.type] ?? 'png'}`,
-          { type: blob.type }
-        );
-    } finally {
-      bitmap.close();
+  const bitmap = await decode(file, maxPixels > 0);
+  try {
+    const target = maxPixels
+      ? fitArea(bitmap.width, bitmap.height, maxPixels)
+      : fitSize(bitmap.width, bitmap.height, IMAGE_MAX_SIDE);
+    const resized = target.width !== bitmap.width;
+    if (maxPixels && !resized) return file;
+    if (
+      file.type === 'image/gif' &&
+      isAnimatedGif(new Uint8Array(await file.arrayBuffer()))
+    ) {
+      if (!resized && file.size <= maxBytes) return file;
+      throw new ImageTooLargeError(maxBytes);
     }
+    const draw = ({ height, width } = target, smooth = true) => {
+      const canvas = new OffscreenCanvas(width, height);
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('2d canvas is unavailable');
+      context.imageSmoothingEnabled = smooth;
+      if (smooth) context.imageSmoothingQuality = 'high';
+      context.drawImage(bitmap, 0, 0, width, height);
+      return { canvas, context };
+    };
+    // Read from a nearest-neighbour sample, which holds only the image's own
+    // colours, so a resized flat graphic still reads as one.
+    const sample = draw(target, !resized);
+    const { alpha, flat } = pixelTraits(
+      sample.context.getImageData(0, 0, target.width, target.height).data
+    );
+    const canvas = resized ? draw().canvas : sample.canvas;
+    const encode = async (
+      from: OffscreenCanvas,
+      type: string,
+      quality?: number
+    ) => {
+      const blob = await from.convertToBlob({ quality, type });
+      // A browser without the encoder returns PNG and ignores quality.
+      return blob.type === type ? blob : null;
+    };
+    const lossless = alpha || (office && flat);
+    let type = lossless ? 'image/png' : 'image/jpeg';
+    let blob = office ? null : await encode(canvas, 'image/webp', QUALITY);
+    if (blob) type = 'image/webp';
+    else blob = await encode(canvas, type, QUALITY);
+    if (!blob) throw new ImageTooLargeError(maxBytes);
+    const keeps = office
+      ? OFFICE_TYPES.has(file.type)
+      : file.type in IMAGE_EXTENSIONS;
+    if (!resized && keeps && file.size <= maxBytes && blob.size >= file.size)
+      return file;
+    const named = (result: Blob) =>
+      new File(
+        [result],
+        `${file.name.replace(EXTENSION, '')}.${IMAGE_EXTENSIONS[result.type]}`,
+        { type: result.type }
+      );
+    if (blob.size <= maxBytes) return named(blob);
+    const longSide = Math.max(target.width, target.height);
+    if (alpha && type === 'image/png') {
+      for (const side of PNG_SIDES) {
+        if (side >= longSide) continue;
+        blob = await draw(
+          fitSize(bitmap.width, bitmap.height, side)
+        ).canvas.convertToBlob({ type });
+        if (blob.size <= maxBytes) return named(blob);
+      }
+    } else {
+      // An opaque PNG too large is a photo after all: JPEG.
+      if (type === 'image/png') type = 'image/jpeg';
+      const small =
+        longSide > SHRINK_SIDE
+          ? draw(fitSize(bitmap.width, bitmap.height, SHRINK_SIDE)).canvas
+          : canvas;
+      for (const quality of QUALITIES) {
+        blob = await encode(small, type, quality);
+        if (blob && blob.size <= maxBytes) return named(blob);
+      }
+    }
+    throw new ImageTooLargeError(maxBytes);
+  } finally {
+    bitmap.close();
   }
-  throw new ImageTooLargeError(maxBytes);
 }

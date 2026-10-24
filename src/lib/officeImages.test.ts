@@ -1,0 +1,347 @@
+import { readFileSync } from 'node:fs';
+import { preloadEditWasm } from '@betteroffice/docx/wasm/edit';
+import { preloadOpcWasm } from '@betteroffice/docx/wasm/opc';
+import { preloadParseWasm } from '@betteroffice/docx/wasm/parse';
+import { initWasm as initPptx } from '@betteroffice/pptx/editor';
+import { initWasm as initXlsx } from '@betteroffice/xlsx/editor';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import { fakeImage, stubImageCodec } from './imageCodec.testing';
+import {
+  compressOfficeImages,
+  removePictures,
+  resolveTarget,
+} from './officeImages';
+
+// The fork's headless engines: a file they seed opens in Capy's editors.
+const { seedOffice } = (await import(
+  /* @vite-ignore */ new URL(
+    '../../vendor/betteroffice/shared/office-checkpoint.mjs',
+    import.meta.url
+  ).href
+)) as {
+  seedOffice(format: string, base: Uint8Array): Promise<{ state: Uint8Array }>;
+};
+const fork = (path: string) =>
+  new Uint8Array(
+    readFileSync(new URL(`../../vendor/betteroffice/${path}`, import.meta.url))
+  );
+beforeAll(() =>
+  Promise.all([
+    initXlsx(fork('packages/xlsx/src/wasm/generated/xlsx_wasm_bg.wasm')),
+    preloadEditWasm(fork('shared/office-runtime/docx.wasm')),
+    preloadParseWasm(fork('shared/office-runtime/parse.wasm')),
+    preloadOpcWasm(fork('shared/office-runtime/opc.wasm')),
+    initPptx(fork('shared/office-runtime/pptx.wasm')),
+  ])
+);
+
+const MB = 1024 * 1024;
+const EMBED = /r:embed="\w+"/;
+const fixture = (name: string) =>
+  unzipSync(
+    new Uint8Array(
+      readFileSync(
+        new URL(
+          `../../e2e/fixtures/files/rich-content/${name}`,
+          import.meta.url
+        )
+      )
+    )
+  );
+/** A minimal EMF: the record type 1 header with " EMF" at byte 40. */
+const EMF = (() => {
+  const bytes = new Uint8Array(108);
+  bytes.set([1, 0, 0, 0]);
+  bytes.set([0x20, 0x45, 0x4d, 0x46], 40);
+  return bytes;
+})();
+/** A placeable WMF header. */
+const WMF = new Uint8Array([0xd7, 0xcd, 0xc6, 0x9a, ...new Array(40).fill(0)]);
+const photoPng = () => fakeImage('image/png', 3000, 2000, 'photo', 3 * MB);
+const photoJpeg = () => fakeImage('image/jpeg', 4000, 3000, 'photo', MB);
+const alphaPng = () => fakeImage('image/png', 3000, 3000, 'alpha', 2 * MB);
+const smallPng = () => fakeImage('image/png', 300, 200, 'flat', 2000);
+
+const addRels = (xml: string, rels: string) =>
+  xml.replace('</Relationships>', `${rels}</Relationships>`);
+const rel = (id: string, type: string, target: string) =>
+  `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"/>`;
+
+/** exchange-plan.docx with its pictures swapped for a large PNG photo, a
+ * large transparent PNG and a small flat PNG, a large JPEG added, and a WMF
+ * equation preview with its OLE object. */
+function docx() {
+  const parts = fixture('exchange-plan.docx');
+  parts['word/media/image1.png'] = photoPng();
+  parts['word/media/image2.png'] = alphaPng();
+  parts['word/media/image3.png'] = smallPng();
+  parts['word/media/photo.jpg'] = photoJpeg();
+  parts['word/media/image9.wmf'] = WMF;
+  parts['word/embeddings/oleObject1.bin'] = new Uint8Array([1, 2, 3]);
+  const document = strFromU8(parts['word/document.xml']);
+  const drawing = document.slice(
+    document.indexOf('<w:drawing>'),
+    document.indexOf('</w:drawing>') + '</w:drawing>'.length
+  );
+  const added =
+    `<w:p><w:r>${drawing.replace(EMBED, 'r:embed="rId100"')}</w:r></w:p>` +
+    '<w:p><w:r><w:object><v:shape id="_x0000_i1025" style="width:50pt;height:20pt"><v:imagedata r:id="rId101" o:title=""/></v:shape>' +
+    '<o:OLEObject Type="Embed" ProgID="Equation.3" ShapeID="_x0000_i1025" DrawAspect="Content" ObjectID="_1" r:id="rId102"/></w:object></w:r></w:p>';
+  parts['word/document.xml'] = strToU8(
+    document.replace('<w:sectPr', `${added}<w:sectPr`)
+  );
+  parts['word/_rels/document.xml.rels'] = strToU8(
+    addRels(
+      strFromU8(parts['word/_rels/document.xml.rels']),
+      rel('rId100', 'image', 'media/photo.jpg') +
+        rel('rId101', 'image', 'media/image9.wmf') +
+        rel('rId102', 'oleObject', 'embeddings/oleObject1.bin')
+    )
+  );
+  parts['[Content_Types].xml'] = strToU8(
+    strFromU8(parts['[Content_Types].xml']).replace(
+      '</Types>',
+      '<Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="wmf" ContentType="image/x-wmf"/><Override PartName="/word/embeddings/oleObject1.bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/></Types>'
+    )
+  );
+  return parts;
+}
+
+/** lecture.pptx with image1.png (slides 2 and 4) a large PNG photo,
+ * image4.jpg a large JPEG, image2.png transparent, image3.png small, and an
+ * EMF picture added to slide 1. */
+function pptx() {
+  const parts = fixture('lecture.pptx');
+  parts['ppt/media/image1.png'] = photoPng();
+  parts['ppt/media/image4.jpg'] = photoJpeg();
+  parts['ppt/media/image2.png'] = alphaPng();
+  parts['ppt/media/image3.png'] = smallPng();
+  parts['ppt/media/image99.emf'] = EMF;
+  const pic =
+    '<p:pic><p:nvPicPr><p:cNvPr id="900" name="Visio drawing"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>' +
+    '<p:blipFill><a:blip r:embed="rId100"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>' +
+    '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>';
+  parts['ppt/slides/slide1.xml'] = strToU8(
+    strFromU8(parts['ppt/slides/slide1.xml']).replace(
+      '</p:spTree>',
+      `${pic}</p:spTree>`
+    )
+  );
+  parts['ppt/slides/_rels/slide1.xml.rels'] = strToU8(
+    addRels(
+      strFromU8(parts['ppt/slides/_rels/slide1.xml.rels']),
+      rel('rId100', 'image', '../media/image99.emf')
+    )
+  );
+  parts['[Content_Types].xml'] = strToU8(
+    strFromU8(parts['[Content_Types].xml']).replace(
+      '</Types>',
+      '<Default Extension="emf" ContentType="image/x-emf"/></Types>'
+    )
+  );
+  return parts;
+}
+
+/** course-guide.xlsx with a large PNG photo and an EMF placed on sheet 1. */
+function xlsx() {
+  const parts = fixture('course-guide.xlsx');
+  parts['xl/media/image1.png'] = photoPng();
+  parts['xl/media/image2.emf'] = EMF;
+  const anchor = (id: string, row: number) =>
+    `<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="914400" cy="914400"/>` +
+    `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${row + 2}" name="Picture ${row}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="${id}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>` +
+    '<xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>';
+  parts['xl/drawings/drawing1.xml'] = strToU8(
+    strFromU8(parts['xl/drawings/drawing1.xml']).replace(
+      '/>',
+      `>${anchor('rId1', 0)}${anchor('rId2', 10)}</xdr:wsDr>`
+    )
+  );
+  parts['xl/drawings/_rels/drawing1.xml.rels'] = strToU8(
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rel('rId1', 'image', '../media/image1.png')}${rel('rId2', 'image', '../media/image2.emf')}</Relationships>`
+  );
+  parts['[Content_Types].xml'] = strToU8(
+    strFromU8(parts['[Content_Types].xml']).replace(
+      '</Types>',
+      '<Default Extension="png" ContentType="image/png"/><Default Extension="emf" ContentType="image/x-emf"/></Types>'
+    )
+  );
+  return parts;
+}
+
+const pack = (parts: Record<string, Uint8Array>, name: string) =>
+  new File([zipSync(parts)], name);
+/** The parts a seed of the file references by name. */
+async function seeded(format: string, bytes: Uint8Array) {
+  const state = (await seedOffice(format, bytes)).state;
+  return new TextDecoder().decode(state);
+}
+
+let codec: ReturnType<typeof stubImageCodec>;
+beforeEach(() => {
+  codec = stubImageCodec();
+  // Each re-encode of a large image lands well under the cap; a small one
+  // grows.
+  codec.encoded = (_type, width) => (width > 300 ? 400_000 : 5000);
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe('compressOfficeImages', () => {
+  it('compresses a DOCX, renames a photo saved as PNG, and removes a WMF equation preview with its OLE object', async () => {
+    const source = docx();
+    const progress: number[] = [];
+    const { file, removed } = await compressOfficeImages(
+      pack(source, 'plan.docx'),
+      2 * MB,
+      (done) => progress.push(done)
+    );
+    expect(removed).toBe(1);
+    expect(progress).toEqual([1, 2, 3, 4]);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const out = unzipSync(bytes);
+    // The photo saved as PNG is now JPEG under a .jpeg name, and every
+    // reference follows it.
+    expect('word/media/image1.png' in out).toBe(false);
+    expect(out['word/media/image1.jpeg'].subarray(0, 3)).toEqual(
+      new Uint8Array([0xff, 0xd8, 0xff])
+    );
+    const rels = strFromU8(out['word/_rels/document.xml.rels']);
+    expect(rels).toContain('Target="media/image1.jpeg"');
+    expect(rels).not.toContain('image9.wmf');
+    expect(rels).not.toContain('oleObject1.bin');
+    const types = strFromU8(out['[Content_Types].xml']);
+    expect(types).toContain(
+      '<Default Extension="jpeg" ContentType="image/jpeg"/>'
+    );
+    expect(types).not.toContain('oleObject1.bin');
+    // The large JPEG and the transparent PNG keep their names, smaller; the
+    // small PNG, whose re-encode is larger, is byte-identical.
+    expect(out['word/media/photo.jpg'].length).toBe(400_000);
+    expect(out['word/media/image2.png'].length).toBe(400_000);
+    expect(out['word/media/image3.png']).toEqual(
+      source['word/media/image3.png']
+    );
+    expect('word/media/image9.wmf' in out).toBe(false);
+    expect('word/embeddings/oleObject1.bin' in out).toBe(false);
+    expect(strFromU8(out['word/document.xml'])).not.toContain('w:object');
+    expect(codec.encodes).toContain('image/jpeg 2400x1600 0.85');
+    expect(codec.encodes).toContain('image/png 2400x2400 0.85');
+    // It still opens, with every picture.
+    const seed = await seeded('docx', bytes);
+    for (const part of ['image1.jpeg', 'image2.png', 'image3.png', 'photo.jpg'])
+      expect(seed).toContain(`word/media/${part}`);
+  }, 60_000);
+
+  it('compresses a PPTX and removes an EMF picture', async () => {
+    const { file, removed } = await compressOfficeImages(
+      pack(pptx(), 'deck.pptx'),
+      2 * MB
+    );
+    expect(removed).toBe(1);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const out = unzipSync(bytes);
+    expect('ppt/media/image99.emf' in out).toBe(false);
+    expect(strFromU8(out['ppt/slides/slide1.xml'])).not.toContain(
+      'Visio drawing'
+    );
+    expect(strFromU8(out['ppt/slides/_rels/slide1.xml.rels'])).not.toContain(
+      'emf'
+    );
+    // Both slides showing the photo point at its new name.
+    for (const slide of ['slide2', 'slide4'])
+      expect(strFromU8(out[`ppt/slides/_rels/${slide}.xml.rels`])).toContain(
+        '../media/image1.jpeg'
+      );
+    expect(out['ppt/media/image4.jpg'].length).toBe(400_000);
+    const seed = await seeded('pptx', bytes);
+    for (const part of [
+      'image1.jpeg',
+      'image2.png',
+      'image3.png',
+      'image4.jpg',
+    ])
+      expect(seed).toContain(`ppt/media/${part}`);
+  }, 60_000);
+
+  it('compresses an XLSX and removes an EMF drawing anchor', async () => {
+    const { file, removed } = await compressOfficeImages(
+      pack(xlsx(), 'grades.xlsx'),
+      2 * MB
+    );
+    expect(removed).toBe(1);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const out = unzipSync(bytes);
+    const drawing = strFromU8(out['xl/drawings/drawing1.xml']);
+    expect(drawing.match(/<xdr:oneCellAnchor>/g)).toHaveLength(1);
+    expect(drawing).toContain('r:embed="rId1"');
+    expect(strFromU8(out['xl/drawings/_rels/drawing1.xml.rels'])).toBe(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rel('rId1', 'image', '../media/image1.jpeg')}</Relationships>`
+    );
+    expect('xl/media/image2.emf' in out).toBe(false);
+    await expect(seedOffice('xlsx', bytes)).resolves.toBeTruthy();
+  }, 60_000);
+
+  it('returns the picked file itself when nothing changes', async () => {
+    const parts = fixture('exchange-plan.docx');
+    for (const name of ['image1', 'image2', 'image3'])
+      parts[`word/media/${name}.png`] = smallPng();
+    const picked = pack(parts, 'plan.docx');
+    expect(await compressOfficeImages(picked, 2 * MB)).toEqual({
+      file: picked,
+      removed: 0,
+    });
+  });
+});
+
+describe('removePictures', () => {
+  it('removes a PPTX OLE frame whole, with the alternate content around it, and counts it once', () => {
+    const xml =
+      '<p:spTree><mc:AlternateContent><mc:Choice Requires="v"><p:graphicFrame><a:graphic><a:graphicData><p:oleObj r:id="rId2"><p:embed/></p:oleObj></a:graphicData></a:graphic></p:graphicFrame></mc:Choice>' +
+      '<mc:Fallback><p:graphicFrame><a:graphic><a:graphicData><p:oleObj r:id="rId2"><p:embed/><p:pic><p:blipFill><a:blip r:embed="rId3"/></p:blipFill></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame></mc:Fallback></mc:AlternateContent>' +
+      '<p:sp><p:spPr><a:blipFill><a:blip r:embed="rId3"/></a:blipFill></p:spPr><p:txBody>kept</p:txBody></p:sp></p:spTree>';
+    const result = removePictures(
+      'ppt/slides/slide1.xml',
+      xml,
+      new Set(['rId3'])
+    );
+    expect(result.xml).toBe(
+      '<p:spTree><p:sp><p:spPr></p:spPr><p:txBody>kept</p:txBody></p:sp></p:spTree>'
+    );
+    expect(result.count).toBe(2);
+    expect(result.refs.sort()).toEqual(['rId2', 'rId2', 'rId3', 'rId3']);
+  });
+
+  it('removes a DOCX picture shown in both alternate branches as one, leaving a text box around it', () => {
+    const xml =
+      '<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><a:blip r:embed="rId5"/></w:drawing></mc:Choice>' +
+      '<mc:Fallback><w:pict><v:shape><v:imagedata r:id="rId5"/></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r>' +
+      '<w:r><w:drawing><wps:txbx><w:txbxContent><w:p><w:r><w:drawing><a:blip r:embed="rId5"/></w:drawing></w:r></w:p></w:txbxContent></wps:txbx></w:drawing></w:r>';
+    const result = removePictures('word/document.xml', xml, new Set(['rId5']));
+    expect(result.xml).toBe(
+      '<w:r><mc:AlternateContent><mc:Choice Requires="wps"></mc:Choice><mc:Fallback></mc:Fallback></mc:AlternateContent></w:r>' +
+        '<w:r><w:drawing><wps:txbx><w:txbxContent><w:p><w:r></w:r></w:p></w:txbxContent></wps:txbx></w:drawing></w:r>'
+    );
+    expect(result.count).toBe(2);
+  });
+});
+
+describe('resolveTarget', () => {
+  it('resolves relative, parent and absolute targets', () => {
+    expect(resolveTarget('word/', 'media/image1.png')).toBe(
+      'word/media/image1.png'
+    );
+    expect(resolveTarget('ppt/slides/', '../media/a%20b.png')).toBe(
+      'ppt/media/a b.png'
+    );
+    expect(resolveTarget('xl/', '/xl/media/x.emf')).toBe('xl/media/x.emf');
+  });
+});

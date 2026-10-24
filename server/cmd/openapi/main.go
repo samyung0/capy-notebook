@@ -21,6 +21,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
@@ -120,6 +121,8 @@ func renderPythonLimits() []byte {
 	fmt.Fprintf(&out, "MATERIAL_TITLE_MAX = %d\n", fieldlimits.MaterialTitle)
 	fmt.Fprintf(&out, "CHAT_CHARACTER_LIMIT = %d\n", fieldlimits.ChatMessage)
 	fmt.Fprintf(&out, "AUDIO_MAX_DURATION_SECONDS = %d\n", sourceupload.AudioMaxDurationSeconds)
+	fmt.Fprintf(&out, "IMAGE_MAX_SIDE = %d\n", imagecheck.MaxSide)
+	fmt.Fprintf(&out, "SOURCE_IMAGE_MAX_PIXELS = %d\n", imagecheck.SourceMaxPixels)
 	for _, name := range fieldlimits.QuestionBoundNames() {
 		fmt.Fprintf(&out, "%s = %d\n", name, fieldlimits.QuestionBounds[name])
 	}
@@ -140,6 +143,8 @@ func renderTypeScriptLimits() []byte {
 	fmt.Fprintf(&out, "export const CHAT_CHARACTER_LIMIT = %d;\n", fieldlimits.ChatMessage)
 	fmt.Fprintf(&out, "export const COMMENT_CHARACTER_LIMIT = %d;\n", fieldlimits.Comment)
 	fmt.Fprintf(&out, "export const VOICE_INPUT_MAX_SECONDS = %d;\n", fieldlimits.VoiceInputSeconds)
+	fmt.Fprintf(&out, "export const IMAGE_MAX_SIDE = %d;\n", imagecheck.MaxSide)
+	fmt.Fprintf(&out, "export const SOURCE_IMAGE_MAX_PIXELS = %d;\n", imagecheck.SourceMaxPixels)
 	return out.Bytes()
 }
 

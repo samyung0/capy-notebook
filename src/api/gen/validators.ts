@@ -5628,6 +5628,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "audioMaxDurationSeconds": zod.int(),
   "audioSecondCreditMicros": zod.int(),
   "digitalParsePageCreditMicros": zod.int(),
+  "imageMaxBytes": zod.int().describe('The caller\'s plan image cap, which each picture inside an Office upload must fit'),
   "kinds": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -7373,6 +7374,7 @@ export const GetSourceImportResponse = zod.object({
   "fileId": zod.string().optional(),
   "jobId": zod.string(),
   "name": zod.string(),
+  "removedPictures": zod.int(),
   "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled'])
 })
 

@@ -50,6 +50,20 @@ type SourceImportJob struct {
 	ObjectPath        string
 	FinalPath         string
 	SessionExpiresAt  time.Time
+	// RemovedPictures counts the EMF and WMF pictures the import worker
+	// removed from an Office file (Epo 2026-10-24).
+	RemovedPictures int
+}
+
+// ImportLanded is what an import attempt stored: its size, the name and type
+// it was stored under when the import worker changed its format (an image
+// source shrunk to JPEG or PNG), else empty, and the EMF and WMF pictures it
+// removed from an Office file.
+type ImportLanded struct {
+	Size            int64
+	Name            string
+	ContentType     string
+	RemovedPictures int
 }
 
 type NewSourceImport struct {
@@ -395,7 +409,7 @@ const sourceImportSelect = `SELECT j.id, j.upload_session_id, u.workspace_id,
 	u.expires_at <= now(), COALESCE(j.attempt_object_path,''),
 	COALESCE(j.last_error_code,''), COALESCE(j.last_error,''), u.file_id,
 	u.name, u.kind, u.content_type, u.declared_size, u.object_path, u.final_path,
-	u.expires_at
+	u.expires_at, j.removed_pictures
 	FROM source_import_jobs j
 	JOIN upload_sessions u ON u.id=j.upload_session_id`
 
@@ -411,7 +425,7 @@ func scanSourceImport(row interface{ Scan(...any) error }) (SourceImportJob, err
 		&job.AttemptObjectPath,
 		&job.LastErrorCode, &job.LastError, &job.FileID, &job.Name, &job.Kind,
 		&job.ContentType, &job.DeclaredSize, &job.ObjectPath, &job.FinalPath,
-		&job.SessionExpiresAt,
+		&job.SessionExpiresAt, &job.RemovedPictures,
 	)
 	return job, err
 }
@@ -502,16 +516,17 @@ func (s *Store) AcquireSourceImport(ctx context.Context, jobID string) (SourceIm
 func (s *Store) PrepareSourceImportUpload(
 	ctx context.Context,
 	jobID, leaseToken string,
-	actualSize int64,
+	landed ImportLanded,
 ) (SourceImportJob, error) {
-	return s.prepareSourceImportUpload(ctx, jobID, leaseToken, actualSize)
+	return s.prepareSourceImportUpload(ctx, jobID, leaseToken, landed)
 }
 
 func (s *Store) prepareSourceImportUpload(
 	ctx context.Context,
 	jobID, leaseToken string,
-	actualSize int64,
+	landed ImportLanded,
 ) (SourceImportJob, error) {
+	actualSize := landed.Size
 	if actualSize < 0 {
 		return SourceImportJob{}, ErrImportTooLarge
 	}
@@ -572,12 +587,20 @@ func (s *Store) prepareSourceImportUpload(
 			return job, err
 		}
 	}
+	if landed.Name != "" {
+		job.Name, job.ContentType = landed.Name, landed.ContentType
+	}
 	if _, err := tx.Exec(ctx, `UPDATE upload_sessions
-		SET declared_size=$2, reserved_size=$2
+		SET declared_size=$2, reserved_size=$2, name=$3, content_type=$4
 		WHERE id=$1 AND status='pending'`,
-		job.UploadSessionID, actualSize); err != nil {
+		job.UploadSessionID, actualSize, job.Name, job.ContentType); err != nil {
 		return job, err
 	}
+	if _, err := tx.Exec(ctx, `UPDATE source_import_jobs SET removed_pictures=$2 WHERE id=$1`,
+		jobID, landed.RemovedPictures); err != nil {
+		return job, err
+	}
+	job.RemovedPictures = landed.RemovedPictures
 	if err := tx.Commit(ctx); err != nil {
 		return job, err
 	}

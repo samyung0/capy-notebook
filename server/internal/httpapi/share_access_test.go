@@ -518,7 +518,7 @@ func TestEditorPaysForTheImageItUploadsIntoAnotherPayersNote(t *testing.T) {
 	}
 	ownerBefore, editorBefore := usage("u_owner"), usage("u_editor")
 
-	image := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{7}, 100)...)
+	image := testPNG(108)
 	rec := postUpload(t, h, "/api/materials/"+note.ID+"/editor-assets/uploads", "u_editor", map[string]any{
 		"name": "figure.png", "purpose": "image", "sizeBytes": len(image), "contentType": "image/png",
 	}, "image/png", image)

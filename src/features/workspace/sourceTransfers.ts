@@ -8,12 +8,15 @@ import type {
   FileKind,
   SourceFile,
   SourceImportAcceptedResponse,
+  SourceUploadPolicy,
 } from '@/api/types';
 import { uploadRemoved } from '@/api/uploadTurn';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/analytics';
+import { CopyError } from '@/lib/copyError';
 import { deferStorageRefusal, describeError } from '@/lib/errors';
+import { compressSource } from './sourceCompress';
 import {
   parseSourceImportAcceptedResponse,
   SourceImportFailedError,
@@ -28,6 +31,7 @@ import {
   needsIngestJob,
   type ParseMode,
   SOURCE_UPLOAD_CONCURRENCY,
+  sourceCompression,
   splitSourceWave,
   withUploadRetry,
 } from './sourceUpload';
@@ -38,6 +42,7 @@ export type SourceProvider = 'google' | 'microsoft';
  * file's own status (parsing, ready, failed) comes from the files cache. */
 export type TransferStage =
   | 'waiting'
+  | 'compressing'
   | 'uploading'
   | 'importing'
   | 'added'
@@ -85,8 +90,14 @@ type StartTransfer = {
   uploadSource: ReturnType<typeof useUploadSource>['mutateAsync'];
   workspaceId: string;
 } & (
-  | { local: LocalTransferRequest[]; remote?: never }
-  | { local?: never; remote: RemoteTransferRequest[] }
+  | {
+      /** The uploader's caps the browser compresses to and checks before
+       * sending (Epo 2026-10-24). */
+      limits: Pick<SourceUploadPolicy, 'imageMaxBytes' | 'maxBytes'>;
+      local: LocalTransferRequest[];
+      remote?: never;
+    }
+  | { limits?: never; local?: never; remote: RemoteTransferRequest[] }
 );
 
 interface TransferState {
@@ -162,6 +173,15 @@ export function sourceImportFailureReason(code: string) {
       return m.source_import_invalid_name();
     case 'source_import_cancelled':
       return m.source_import_cancelled();
+    // The import worker's image checks (Epo 2026-10-24).
+    case 'office_image_too_large':
+      return m.error_office_image_too_large_title();
+    case 'office_vector_image':
+      return m.error_office_vector_image_title();
+    case 'source_image_too_large':
+      return m.error_source_image_too_large_title();
+    case 'image_unreadable':
+      return m.source_image_unreadable();
     case 'import_result_missing':
     case 'invalid_import_response':
     case 'unknown_import_status':
@@ -174,9 +194,11 @@ export function sourceImportFailureReason(code: string) {
 /** Short reason for a panel row and the merged toast: import codes by their
  * own copy, everything else by the app-wide error title. */
 function transferFailureReason(error: unknown) {
-  return error instanceof SourceImportFailedError
-    ? sourceImportFailureReason(error.code)
-    : describeError(error).title;
+  if (error instanceof SourceImportFailedError)
+    return sourceImportFailureReason(error.code);
+  // A refusal the browser makes before sending: its own copy.
+  if (error instanceof CopyError) return error.message;
+  return describeError(error).title;
 }
 
 /** One error toast per submission: each failure adds its file name under its
@@ -314,7 +336,21 @@ export function startSourceTransfer(start: StartTransfer) {
     if (!deferStorageRefusal(error)) toastFailure(name, reason);
   }
 
-  async function sendLocal(local: LocalTransferRequest[]) {
+  /** Tells the user how many EMF and WMF pictures left a file (Epo
+   * 2026-10-24). */
+  function picturesRemovedToast(name: string, count: number) {
+    if (count > 0)
+      userToast({
+        description: m.source_pictures_removed_body({ count }),
+        title: m.source_pictures_removed({ name }),
+        variant: 'warning',
+      });
+  }
+
+  async function sendLocal(
+    local: LocalTransferRequest[],
+    limits: Pick<SourceUploadPolicy, 'imageMaxBytes' | 'maxBytes'>
+  ) {
     let remaining = local;
     while (remaining.length > 0 && !signal.aborted) {
       const { wave, rest } = splitSourceWave(
@@ -338,7 +374,29 @@ export function startSourceTransfer(start: StartTransfer) {
               countRemoved(cancel);
               return;
             }
-            patchTransfer(request.key, { stage: 'uploading' });
+            // Compressed first; the per-file cap applies to what is sent.
+            let picked = request.file;
+            let removed = 0;
+            const compression = sourceCompression(request.name, request.kind);
+            if (compression) {
+              patchTransfer(request.key, { stage: 'compressing' });
+              ({ file: picked, removed } = await compressSource(
+                { compression, file: picked, ...limits },
+                (uploadPct) => patchTransfer(request.key, { uploadPct }),
+                cancel
+              ));
+            }
+            if (picked.size > limits.maxBytes)
+              throw new CopyError(
+                m.source_files_too_large({
+                  mb: Math.round(limits.maxBytes / 1024 / 1024),
+                })
+              );
+            patchTransfer(request.key, {
+              name: picked.name,
+              stage: 'uploading',
+              uploadPct: 0,
+            });
             const file = await withUploadRetry((willRetry) => {
               ticketed = false;
               return start.uploadSource({
@@ -348,7 +406,7 @@ export function startSourceTransfer(start: StartTransfer) {
                 chapterName: request.chapterName,
                 durationSeconds: request.durationSeconds,
                 estimatedCreditMicros: request.estimatedCreditMicros,
-                file: request.file,
+                file: picked,
                 kind: request.kind,
                 onQueued: (queuePosition) => {
                   ticketed = true;
@@ -367,6 +425,7 @@ export function startSourceTransfer(start: StartTransfer) {
               stage: 'added',
               uploadPct: 100,
             });
+            picturesRemovedToast(picked.name, removed);
             if (needsIngestJob(request.name, request.kind, request.parseMode)) {
               waits.push(waitForFileTerminal(workspaceId, file.id, signal));
             }
@@ -396,8 +455,9 @@ export function startSourceTransfer(start: StartTransfer) {
         ? { maxWaitMilliseconds: 12_000, signal: rowSignal(key) }
         : { signal: rowSignal(key) }
     ).then(
-      (fileId) => {
-        patchTransfer(key, { fileId, stage: 'added' });
+      ({ fileId, name: stored, removedPictures }) => {
+        patchTransfer(key, { fileId, name: stored, stage: 'added' });
+        picturesRemovedToast(stored, removedPictures);
         void queryClient.invalidateQueries({ queryKey: qk.files(workspaceId) });
       },
       (error: unknown) => {
@@ -523,7 +583,11 @@ export function startSourceTransfer(start: StartTransfer) {
     }
   }
 
-  void (start.local ? sendLocal(start.local) : sendRemote(start.remote))
+  void (
+    start.local
+      ? sendLocal(start.local, start.limits)
+      : sendRemote(start.remote)
+  )
     .catch((error: unknown) => {
       // An unexpected runner error would otherwise leave rows spinning.
       const keys = requests.map((request) => request.key);

@@ -182,6 +182,7 @@ type SourceUploadPolicy struct {
 	ParseModes                   []SourceUploadParseModePolicy `json:"parseModes" nullable:"false"`
 	Accept                       string                        `json:"accept"`
 	MaxBytes                     int64                         `json:"maxBytes"`
+	ImageMaxBytes                int64                         `json:"imageMaxBytes" doc:"The caller's plan image cap, which each picture inside an Office upload must fit"`
 	AllowNoExtension             bool                          `json:"allowNoExtension"`
 	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
 	VLMIngestPageCreditMicros    int64                         `json:"vlmIngestPageCreditMicros"`

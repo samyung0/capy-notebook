@@ -13,5 +13,6 @@ export interface SourceImportStatus {
   fileId?: string;
   jobId: string;
   name: string;
+  removedPictures: number;
   status: SourceImportStatusStatus;
 }

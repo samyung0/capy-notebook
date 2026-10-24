@@ -726,12 +726,12 @@ func TestUploadsRecheckTheCapAndStorageAtTheUpload(t *testing.T) {
 	plan(fx.ownerID, "free")
 	// A real PNG's first bytes, so only the cap can refuse it.
 	bigPNG := make([]byte, free.EditorAssetBytes("image")+1)
-	copy(bigPNG, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+	copy(bigPNG, testPNG(33))
 	if rec := upload(route, fx.ownerID, bigImage, "image/png", bigPNG); rec.Code != http.StatusBadRequest {
 		t.Fatalf("an editor asset over the cap at its upload: %d %s", rec.Code, rec.Body.String())
 	}
 
-	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, make([]byte, 100)...)
+	png := testPNG(108)
 	smallImage := image(int64(len(png)))
 	route = ticketed(t, fx.handler, assets, fx.ownerID, smallImage)
 	fill(fx.ownerID)

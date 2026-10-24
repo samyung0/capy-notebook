@@ -256,6 +256,32 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_upload_queue_full_body(),
         title: m.error_upload_queue_full_title(),
       };
+    // The gateway's image header checks (Epo 2026-10-24): final refusals.
+    case 'image_too_large':
+      return {
+        description: m.error_image_too_large_body(),
+        title: m.error_image_too_large_title(),
+      };
+    case 'image_unreadable':
+      return {
+        description: m.error_image_unreadable_body(),
+        title: m.error_image_unreadable_title(),
+      };
+    case 'office_image_too_large':
+      return {
+        description: m.error_office_image_too_large_body(),
+        title: m.error_office_image_too_large_title(),
+      };
+    case 'office_vector_image':
+      return {
+        description: m.error_office_vector_image_body(),
+        title: m.error_office_vector_image_title(),
+      };
+    case 'source_image_too_large':
+      return {
+        description: m.error_source_image_too_large_body(),
+        title: m.error_source_image_too_large_title(),
+      };
     default:
       return null;
   }

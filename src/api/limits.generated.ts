@@ -42,3 +42,5 @@ export const QUIZ_QUESTION_PARTS_MAX = 7;
 export const CHAT_CHARACTER_LIMIT = 5000;
 export const COMMENT_CHARACTER_LIMIT = 3000;
 export const VOICE_INPUT_MAX_SECONDS = 120;
+export const IMAGE_MAX_SIDE = 2400;
+export const SOURCE_IMAGE_MAX_PIXELS = 5000000;
