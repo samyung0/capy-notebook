@@ -2,6 +2,7 @@
   {
     "corsRuleName": "capy-spa-uat",
     "allowedOrigins": [
+      "https://uat-app.capynotebook.com",
       "https://app.uat.capynotebook.com",
       "https://uat.capynotebook.com",
       "https://*.uat.capynotebook.com",

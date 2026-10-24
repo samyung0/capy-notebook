@@ -343,7 +343,7 @@ transition both match the old and new UAT hosts as well as the production
 app host:
 
 ```text
-http.host in {"app.capynotebook.com" "app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
+http.host in {"app.capynotebook.com" "uat-app.capynotebook.com" "app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
 ```
 
 - **Cache Rule** `capy_app_api_bypass_cache`: bypass cache (`cache: false`).

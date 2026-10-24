@@ -219,7 +219,7 @@ class RulesFileTest(unittest.TestCase):
         noindex = rule(
             CONFIG["phases"], "http_response_headers_transform", "capy_uat_app_noindex"
         )
-        for host in ("app.uat", "uat"):
+        for host in ("uat-app", "app.uat", "uat"):
             self.assertIn(f'"{host}.capynotebook.com"', noindex["expression"])
         self.assertEqual(
             noindex["action_parameters"]["headers"]["X-Robots-Tag"]["value"],
