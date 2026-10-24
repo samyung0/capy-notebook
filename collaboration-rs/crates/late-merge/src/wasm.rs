@@ -3,20 +3,31 @@
 
 use wasm_bindgen::prelude::*;
 
-/// [crate::Merged] for JavaScript.
+/// [crate::Merged] for JavaScript: `hidden` is JSON, an array of `{ block:
+/// { client, clock }, blockId, text }`.
 #[wasm_bindgen(getter_with_clone)]
 pub struct Merged {
     pub update: Vec<u8>,
-    pub dropped: u32,
+    pub hidden: String,
 }
 
 fn answer(merged: Result<crate::Merged, crate::Refused>) -> Result<Merged, JsError> {
-    merged
-        .map(|merged| Merged {
-            update: merged.update,
-            dropped: merged.dropped,
+    let merged = merged.map_err(|error| JsError::new(&error.to_string()))?;
+    let hidden: Vec<serde_json::Value> = merged
+        .hidden
+        .iter()
+        .map(|part| {
+            serde_json::json!({
+                "block": { "client": part.block.client.get(), "clock": part.block.clock },
+                "blockId": part.block_id,
+                "text": part.text,
+            })
         })
-        .map_err(|error| JsError::new(&error.to_string()))
+        .collect();
+    Ok(Merged {
+        update: merged.update,
+        hidden: serde_json::Value::Array(hidden).to_string(),
+    })
 }
 
 /// [crate::merge]; a refusal throws its reason.

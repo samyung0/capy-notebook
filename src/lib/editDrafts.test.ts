@@ -780,6 +780,26 @@ describe('recording a note session', () => {
     expect(await readDrafts(key)).toEqual([]);
   });
 
+  it('replaces the adopted rows at once after a late merge, keeping hidden text as one refused row', async () => {
+    const key = 'u_1:material:supersede';
+    const earlier = draft('earlier:1', { key, late: true, session: 'earlier' });
+    await putDrafts([earlier]);
+    const { client, recorder } = noteRecorder(key, 'a', { adopted: [earlier] });
+    client.getText('content').insert(1, 'merged');
+    const hidden = new Y.Doc();
+    hidden.getText('content').insert(0, 'hidden');
+    await recorder.supersede(Y.encodeStateAsUpdate(hidden));
+    const rows = await readDrafts(key);
+    expect(rows.some((row) => row.id === earlier.id)).toBe(false);
+    expect(rows.filter((row) => !row.refused).map((row) => row.kind)).toEqual([
+      'update',
+    ]);
+    const refused = rows.filter((row) => row.refused);
+    expect(recoveryDocument(refused)?.getText('content').toString()).toBe(
+      'hidden'
+    );
+  });
+
   it('writes the whole document at unmount only when unsaved work outgrew it', async () => {
     const key = 'u_1:material:unmount';
     const { client, recorder } = noteRecorder(key, 'a');

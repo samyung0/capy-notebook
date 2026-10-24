@@ -750,6 +750,28 @@ export function recordDrafts({
     /** Write the whole document now if unsaved work outgrew the last one:
      * edits about to open in recovery. */
     snapshot,
+    /** A late merge's update is applied (recorded as this session's edit):
+     * the adopted rows it stands for go now rather than at a receipt, so a
+     * reload never merges them again, and `hidden` (a document of the text
+     * the merge would hide) stays as one refused row, shown for copying. */
+    supersede(hidden?: Uint8Array): Promise<void> {
+      const previous = pendingAdopted;
+      pendingAdopted = [];
+      const kept = hidden
+        ? [
+            {
+              ...row('state', sequence, hidden, 'refused'),
+              id: `${session}:hidden`,
+            },
+          ]
+        : [];
+      return write(
+        Promise.all([
+          deleteDrafts(previous),
+          kept.length ? putWithBase(kept) : null,
+        ])
+      );
+    },
     get unsaved() {
       return sequence > covered;
     },

@@ -102,6 +102,15 @@ function mergeHeld(page: Page) {
   });
 }
 
+async function peerRemovesFirstBlock(page: Page) {
+  await page.evaluate(() => {
+    const { latePeer } = window as unknown as {
+      latePeer: { remove: (index: number) => void };
+    };
+    latePeer.remove(0);
+  });
+}
+
 async function peerLeaves(page: Page) {
   await page.evaluate(() => {
     const { latePeer } = window as unknown as {
@@ -285,4 +294,47 @@ test('a merge past its deadline keeps the edits read-only for copying', async ({
     page.locator('[data-testid="save-banner"][data-kind="refused"]')
   ).toBeVisible();
   await lateSessions(page, null);
+});
+
+test('text typed into a block another tab deleted opens read-only for copying after the merge', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(note);
+  const live = page.locator('[data-note-mount="live"]');
+  await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
+  // This tab types into the note's only block while cut off; another tab
+  // adds a block, deletes that one and leaves (the room stores it).
+  await joinPeer(page);
+  await setReachable(page, false);
+  await live.locator('[contenteditable="true"]').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(OFFLINE);
+  await peerAppends(page, PEER);
+  await peerRemovesFirstBlock(page);
+  await peerLeaves(page);
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, true);
+  // The merge applies, and the typed words, which the deleted block would
+  // hide, open read-only for copying.
+  const recovery = page.getByTestId('note-recovery');
+  await expect(recovery).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  await expect(recovery).not.toContainText(seed);
+  const banner = page.locator(
+    '[data-testid="save-banner"][data-kind="refused"]'
+  );
+  await expect(banner).toBeVisible();
+  await lateSessions(page, null);
+  await banner.getByRole('button', { name: 'Reload' }).click();
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(PEER, { timeout: 30_000 });
+  await expect(editor).not.toContainText(OFFLINE.trim());
 });

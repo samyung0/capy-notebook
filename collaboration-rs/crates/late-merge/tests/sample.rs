@@ -2,8 +2,9 @@
 //! (src/features/collaboration/lateMerge/lateMerge.test.ts): a Plate note
 //! whose tab went offline and edited while the room edited and collected
 //! units the tab still holds. The native merge gives exactly the stored
-//! bytes, and so must the WASM one. `LATE_MERGE_WRITE_SAMPLE=1` writes the
-//! sample again (after a deliberate change to the merge's output).
+//! bytes and hidden text (`sample-hidden.json`, as the WASM build gives it),
+//! and so must the WASM one. `LATE_MERGE_WRITE_SAMPLE=1` writes the sample
+//! again (after a deliberate change to the merge's output).
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
 
 mod support;
@@ -14,6 +15,22 @@ use support::collect::collect;
 use support::note::{Note, edit, sync};
 use support::rng::Rng;
 use yrs::{ID, IdSet, ReadTxn, Transact};
+
+/// The hidden text as the WASM build hands it to JavaScript.
+fn hidden_json(merged: &late_merge::Merged) -> String {
+    let parts: Vec<serde_json::Value> = merged
+        .hidden
+        .iter()
+        .map(|part| {
+            serde_json::json!({
+                "block": { "client": part.block.client.get(), "clock": part.block.clock },
+                "blockId": part.block_id,
+                "text": part.text,
+            })
+        })
+        .collect();
+    serde_json::to_string_pretty(&parts).unwrap() + "\n"
+}
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -71,11 +88,12 @@ fn collected_units(old: &[u8], current: &[u8]) -> usize {
 fn the_native_merge_gives_the_samples_bytes() {
     if std::env::var_os("LATE_MERGE_WRITE_SAMPLE").is_some() {
         let (old, current) = sample();
-        let merged = late_merge::merge(&old, &current).unwrap().update;
+        let merged = late_merge::merge(&old, &current).unwrap();
         std::fs::create_dir_all(fixture("")).unwrap();
         std::fs::write(fixture("sample-old.bin"), &old).unwrap();
         std::fs::write(fixture("sample-current.bin"), &current).unwrap();
-        std::fs::write(fixture("sample-merged.bin"), &merged).unwrap();
+        std::fs::write(fixture("sample-merged.bin"), &merged.update).unwrap();
+        std::fs::write(fixture("sample-hidden.json"), hidden_json(&merged)).unwrap();
     }
     let old = std::fs::read(fixture("sample-old.bin")).unwrap();
     let current = std::fs::read(fixture("sample-current.bin")).unwrap();
@@ -83,10 +101,17 @@ fn the_native_merge_gives_the_samples_bytes() {
         collected_units(&old, &current) > 0,
         "the sample exercises collected units"
     );
-    let merged = late_merge::merge(&old, &current).unwrap().update;
-    assert_eq!(merged, std::fs::read(fixture("sample-merged.bin")).unwrap());
-    // The merged document holds the tab's text.
+    let merged = late_merge::merge(&old, &current).unwrap();
+    assert_eq!(
+        merged.update,
+        std::fs::read(fixture("sample-merged.bin")).unwrap()
+    );
+    assert_eq!(
+        hidden_json(&merged),
+        std::fs::read_to_string(fixture("sample-hidden.json")).unwrap()
+    );
+    // The merged document takes the update whole.
     let mut room = Note::load(9, "y", &current);
-    room.receive(&merged);
+    room.receive(&merged.update);
     assert!(!room.pending());
 }

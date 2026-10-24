@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
+import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import { beforeAll, expect, it } from 'vitest';
 import * as Y from 'yjs';
+import type { MaterialValue } from '@/features/materials/document';
 import { initSync } from './generated/late_merge.js';
-import { holdsUnsent } from './lateMerge';
+import { hiddenDocument, holdsUnsent } from './lateMerge';
 import { mergeRequest } from './lateMerge.worker';
 
 /** The sample the native merge is held to (collaboration-rs late-merge
@@ -37,7 +39,20 @@ it('merges in the worker to exactly the bytes the native merge gives', async () 
   if (!('merged' in reply)) throw new Error(reply.error);
   const merged = new Uint8Array(reply.merged);
   expect(merged).toEqual(sample('merged'));
-  expect(reply.dropped).toBe(0);
+  // And the same hidden text: the tab's typing in blocks the other session
+  // deleted.
+  expect(reply.hidden).toEqual(
+    JSON.parse(
+      readFileSync(
+        new URL(
+          '../../../../collaboration-rs/crates/late-merge/tests/fixtures/sample-hidden.json',
+          import.meta.url
+        ),
+        'utf8'
+      )
+    )
+  );
+  expect(reply.hidden.length).toBeGreaterThan(0);
   // Yjs takes the update whole: nothing waits for a unit it lacks.
   const doc = new Y.Doc();
   Y.applyUpdate(doc, current);
@@ -104,4 +119,34 @@ it('needs no merge when the old document holds nothing the current one lacks', (
       doc
     )
   ).toBe(true);
+});
+
+it('returns text typed into a block someone deleted, which the recovery document holds', async () => {
+  const room = new Y.Doc();
+  const value: MaterialValue = [
+    { children: [{ text: 'abc' }], id: 'b1', type: 'p' },
+    { children: [{ text: 'kept' }], id: 'b2', type: 'p' },
+  ];
+  room.get('content', Y.XmlText).applyDelta(slateNodesToInsertDelta(value));
+  const tab = new Y.Doc();
+  Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
+  const block = (
+    tab.get('content', Y.XmlText).toDelta() as { insert: Y.XmlText }[]
+  )[0].insert;
+  block.insert(3, 'XY');
+  // Another session deletes the block.
+  room.get('content', Y.XmlText).delete(0, 1);
+  const reply = await mergeRequest({
+    current: Y.encodeStateAsUpdate(room).buffer as ArrayBuffer,
+    old: Y.encodeStateAsUpdate(tab).buffer as ArrayBuffer,
+  });
+  if (!('merged' in reply)) throw new Error(reply.error);
+  expect(reply.hidden).toEqual([
+    { block: expect.any(Object), blockId: 'b1', text: 'XY' },
+  ]);
+  const kept = new Y.Doc();
+  Y.applyUpdate(kept, hiddenDocument(reply.hidden));
+  expect(yTextToSlateElement(kept.get('content', Y.XmlText)).children).toEqual([
+    { children: [{ text: 'XY' }], id: 'b1', type: 'p' },
+  ]);
 });

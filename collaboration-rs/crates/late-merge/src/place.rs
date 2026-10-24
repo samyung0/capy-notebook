@@ -19,7 +19,7 @@ use yrs::updates::decoder::Decode;
 use yrs::{Doc, ID, IdSet, ReadTxn, Transact, Update, UpdateBlock};
 
 use crate::write::{self, ContentRef, Out};
-use crate::{Merged, Own, ParentRef, Refused, View, parent_ref};
+use crate::{Hidden, Merged, Own, ParentRef, Refused, View, parent_ref};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Anchor {
@@ -69,6 +69,10 @@ impl Piece<'_> {
         }
     }
 }
+
+/// The block a unit of the tab's document sits in: its item id and its `id`
+/// attribute, when it has one.
+pub type BlockOf<'a> = dyn Fn(&ID) -> Option<(ID, Option<String>)> + 'a;
 
 /// A delete set's ranges per client, sorted and joined.
 struct Ranges(HashMap<ClientID, Vec<Range<u32>>>);
@@ -120,6 +124,7 @@ pub fn stable_left(
     view: &View,
     own: &Own,
     author: Option<ClientID>,
+    block_of: &BlockOf<'_>,
 ) -> Result<Merged, Refused> {
     let txn = current.transact();
     let store = txn.store();
@@ -553,29 +558,67 @@ pub fn stable_left(
         }
     }
     deletes.diff_with(&view.removed);
-    // What the tab shows that no update holds: pieces dropped for a block the
-    // current document lacks.
-    let mut dropped: u32 = 0;
-    for (i, piece) in news.iter().enumerate() {
-        if !dead[i] && matches!(res[i], Res::Drop) {
-            dropped = dropped.saturating_add(shown(piece));
+    // Whether units placed in `list` would not show: a block around them is
+    // deleted in the current document (or collected), or is a new piece
+    // placed so. A map value's own place is not followed: it counts as shown.
+    let in_deleted = |list: &ParentRef| -> bool {
+        let mut list = list.clone();
+        loop {
+            let ParentRef::Item(p) = list else {
+                return false;
+            };
+            if let Some(d) = struct_of(&p) {
+                list = match &res[d] {
+                    Res::List { list, .. } => list.clone(),
+                    Res::Map {
+                        parent: Some(parent),
+                        ..
+                    } => parent.clone(),
+                    Res::Map { .. } => return false,
+                    Res::Drop => return true,
+                };
+                continue;
+            }
+            let mut cur = store.get_item(&p);
+            while let Some(item) = cur {
+                if item.is_deleted() {
+                    return true;
+                }
+                cur = item.parent_branch().and_then(|branch| branch.item());
+            }
+            return false;
         }
-    }
+    };
+    // What the tab shows that the merged document would hide: pieces dropped
+    // for a block the current document lacks, or placed inside a deleted one.
+    let mut hidden: Vec<usize> = (0..news.len())
+        .filter(|&i| {
+            !dead[i]
+                && match &res[i] {
+                    Res::Drop => true,
+                    Res::List { list, .. } => in_deleted(list),
+                    Res::Map { .. } => false,
+                }
+        })
+        .collect();
 
     if let Some(author) = author {
-        return reauthored(Placed {
+        let (update, unwritten) = reauthored(Placed {
             author,
             from: held.get(&author),
             news: &news,
             res: &res,
             live: &live,
-            shown: &shown,
             rank: &rank,
             origin_of: &origin_of,
             right_of: &right_of,
             struct_of: &struct_of,
             deletes,
-            dropped,
+        })?;
+        hidden.extend(unwritten);
+        return Ok(Merged {
+            update,
+            hidden: described(hidden, &news, own, block_of),
         });
     }
 
@@ -658,8 +701,42 @@ pub fn stable_left(
     }
     Ok(Merged {
         update: write::update(sections, &deletes)?,
-        dropped,
+        hidden: described(hidden, &news, own, block_of),
     })
+}
+
+/// The hidden pieces' text, joined per block in the tab's document order.
+/// Only text counts: embeds and nested types carry none of their own.
+fn described(pieces: Vec<usize>, news: &[Piece], own: &Own, block_of: &BlockOf<'_>) -> Vec<Hidden> {
+    let mut parts: Vec<((usize, u32), Hidden)> = Vec::new();
+    for i in pieces {
+        let piece = news[i];
+        let ItemContent::String(s) = piece.item.content() else {
+            continue;
+        };
+        let Some((block, block_id)) = block_of(&piece.id()) else {
+            continue;
+        };
+        let order = own.order(&piece.id()).unwrap_or((usize::MAX, 0));
+        let text = write::utf16_slice(s.as_str(), piece.start, piece.end);
+        parts.push((
+            order,
+            Hidden {
+                block,
+                block_id,
+                text,
+            },
+        ));
+    }
+    parts.sort_by_key(|(order, _)| *order);
+    let mut out: Vec<Hidden> = Vec::new();
+    for (_, part) in parts {
+        match out.last_mut() {
+            Some(last) if last.block == part.block => last.text.push_str(&part.text),
+            _ => out.push(part),
+        }
+    }
+    out
 }
 
 /// What `stable_left` worked out, for writing it under a new client id.
@@ -670,7 +747,6 @@ struct Placed<'a, 'p> {
     news: &'a [Piece<'p>],
     res: &'a [Res],
     live: &'a dyn Fn(usize) -> bool,
-    shown: &'a dyn Fn(&Piece) -> u32,
     rank: &'a HashMap<usize, usize>,
     origin_of: &'a HashMap<usize, ID>,
     right_of: &'a HashMap<usize, ID>,
@@ -679,15 +755,13 @@ struct Placed<'a, 'p> {
     /// old document split its items at every deletion, so a new unit it
     /// deleted is in a dead piece, which is not written).
     deletes: IdSet,
-    /// What the placement dropped already.
-    dropped: u32,
 }
 
 /// The placed live pieces as new units of `author`, each after every new
 /// piece it names (its origins, its parent, a map value's origin). A piece
 /// naming one that is not written (deleted in the tab, or dropped) is not
-/// written either, and what of it the tab shows counts as dropped.
-fn reauthored(p: Placed) -> Result<Merged, Refused> {
+/// written either; the update comes with those pieces, which the tab shows.
+fn reauthored(p: Placed) -> Result<(Vec<u8>, Vec<usize>), Refused> {
     let named = |i: usize| -> Vec<ID> {
         let mut ids: Vec<ID> = Vec::new();
         ids.extend(p.origin_of.get(&i));
@@ -739,12 +813,12 @@ fn reauthored(p: Placed) -> Result<Merged, Refused> {
     let mut order: Vec<usize> = Vec::new();
     let mut next = p.from;
     let mut seen = 0usize;
-    let mut dropped = p.dropped;
+    let mut left_out: Vec<usize> = Vec::new();
     while let Some(Reverse((_, i))) = ready.pop() {
         seen += 1;
         if unwritten.contains(&i) || deps[&i].iter().any(|d| unwritten.contains(d)) {
             unwritten.insert(i);
-            dropped = dropped.saturating_add((p.shown)(&p.news[i]));
+            left_out.push(i);
         } else {
             at.insert(i, next);
             next += p.news[i].len();
@@ -809,8 +883,5 @@ fn reauthored(p: Placed) -> Result<Merged, Refused> {
     }
     let mut sections = BTreeMap::new();
     sections.insert(p.author, (p.from, structs));
-    Ok(Merged {
-        update: write::update(sections, &p.deletes)?,
-        dropped,
-    })
+    Ok((write::update(sections, &p.deletes)?, left_out))
 }

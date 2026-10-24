@@ -19,8 +19,9 @@
 //! every run, so this mode is not repeat-safe: the caller runs it once per
 //! group of stored edits and replaces those rows with the result at once.
 //!
-//! Each merge also counts what it could not place: units the tab shows
-//! inside a block the current document no longer holds.
+//! Each merge also returns the text it would hide: what the tab shows
+//! inside a block someone deleted (still a tombstone in the current
+//! document, or collected there), per block. The tab keeps it for copying.
 //!
 //! Every walk goes by ranges, so a struct claiming millions of deleted units
 //! costs what its bytes cost. The browser runs this in a worker, compiled to
@@ -55,14 +56,25 @@ pub enum Refused {
     Shape(&'static str),
 }
 
-/// A merge's update and what it left out.
+/// A merge's update and the text it would hide.
 #[derive(Debug)]
 pub struct Merged {
     /// One v1 update: apply it to the current document and send it.
     pub update: Vec<u8>,
-    /// Units the tab shows that the update lacks: they sat in a block the
-    /// current document no longer holds.
-    pub dropped: u32,
+    /// Text the tab shows that the merged document does not: it sits in a
+    /// block someone deleted (placed into the tombstone, or left out where
+    /// the block was collected). In the tab's document order, per block.
+    pub hidden: Vec<Hidden>,
+}
+
+/// Hidden text of one block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hidden {
+    /// The block the text sat in, in the tab's document (its item id).
+    pub block: ID,
+    /// That block's `id` attribute (a Plate block id), when it has one.
+    pub block_id: Option<String>,
+    pub text: String,
 }
 
 /// The tab's unsent edits as one v1 update against `current`, under their
@@ -86,7 +98,25 @@ fn unsent(old: &[u8], current: &[u8], author: Option<ClientID>) -> Result<Merged
     let update = old.transact().encode_state_as_update_v1(&held);
     let own = Own::of(&old, &held);
     let view = view(&old, &current);
-    place::stable_left(&update, &current, &view, &own, author)
+    let txn = old.transact();
+    let block_of = |id: &ID| -> Option<(ID, Option<String>)> {
+        let branch = txn.store().get_item(id)?.parent_branch()?;
+        let BranchID::Nested(block) = branch.id() else {
+            return None;
+        };
+        let block_id = branch
+            .map_items()
+            .find(|(key, _)| key.as_ref() == "id")
+            .and_then(|(_, value)| match value.content() {
+                ItemContent::Any(values) => match values.last() {
+                    Some(yrs::Any::String(id)) => Some(id.to_string()),
+                    _ => None,
+                },
+                _ => None,
+            });
+        Some((block, block_id))
+    };
+    place::stable_left(&update, &current, &view, &own, author, &block_of)
 }
 
 /// A working document holding `state` (no local writes go into it).

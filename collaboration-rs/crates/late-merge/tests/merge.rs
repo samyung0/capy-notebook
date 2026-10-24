@@ -1,15 +1,19 @@
 //! The late merge on small hand-made documents: where a run lands next to
 //! collected units, the snap to the end of a deleted run, the tab's own ids,
 //! held units skipped, a map value on a collected origin, repeats, refusals,
-//! the re-authored mode (the same places under a newly assigned id), what a
-//! merge drops, and the cost of structs claiming near-maximal lengths.
+//! the re-authored mode (the same places under a newly assigned id), the
+//! text a merge would hide, and the cost of structs claiming near-maximal
+//! lengths.
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
 
 mod support;
 
 use std::time::Duration;
 
+use late_merge::Hidden;
+use notes::slate::Operation;
 use support::collect::collect;
+use support::note::{Note, paragraph};
 use yrs::block::ClientID;
 use yrs::encoding::write::Write;
 use yrs::updates::decoder::Decode;
@@ -351,13 +355,13 @@ fn structs_claiming_near_maximal_lengths_cost_what_their_bytes_cost() {
         items(&reauthored.update),
         vec![(id(11, 0), Some(l), Some(r))]
     );
-    assert_eq!((merged.dropped, reauthored.dropped), (0, 0));
+    assert!(merged.hidden.is_empty() && reauthored.hidden.is_empty());
     apply(&room, &merged.update);
     assert_eq!(text(&room), "LXR");
 }
 
 #[test]
-fn text_typed_into_a_collected_block_is_dropped_and_counted() {
+fn text_typed_into_a_collected_block_comes_back_hidden_with_its_block() {
     let room = doc(1);
     let a = room.get_or_insert_array("a");
     a.insert(&mut room.transact_mut(), 0, "p1");
@@ -376,10 +380,50 @@ fn text_typed_into_a_collected_block_is_dropped_and_counted() {
     // The room deletes all three; the collection discards the block.
     a.remove_range(&mut room.transact_mut(), 0, 3);
     let current = collected(&room);
+    let hidden = vec![Hidden {
+        block: id(1, 2),
+        block_id: None,
+        text: "XY".into(),
+    }];
     let merged = late_merge::merge(&state(&tab), &state(&current)).unwrap();
-    assert_eq!(merged.dropped, 2);
+    assert_eq!(merged.hidden, hidden);
     assert!(items(&merged.update).is_empty());
     let reauthored = late_merge::reauthor(&state(&tab), &state(&current), 9).unwrap();
-    assert_eq!(reauthored.dropped, 2);
+    assert_eq!(reauthored.hidden, hidden);
     assert!(items(&reauthored.update).is_empty());
+}
+
+#[test]
+fn text_typed_into_a_block_a_peer_deleted_comes_back_hidden_with_its_block_id() {
+    let mut room = Note::new(1, "s");
+    room.apply(&[Operation::InsertNode {
+        path: vec![1],
+        node: paragraph("s2", "abc"),
+    }]);
+    let mut tab = Note::load(2, "t", &room.state());
+    let typing = tab.insert_ops(1, 3, "XY");
+    tab.apply(&typing);
+    // A peer deletes the block (a tombstone, not collected).
+    let node = room.root.children[1].clone();
+    room.apply(&[Operation::RemoveNode {
+        path: vec![1],
+        node,
+    }]);
+    for merged in [
+        late_merge::merge(&tab.state(), &room.state()).unwrap(),
+        late_merge::reauthor(&tab.state(), &room.state(), 9).unwrap(),
+    ] {
+        let [part] = merged.hidden.as_slice() else {
+            panic!("one hidden block: {:?}", merged.hidden);
+        };
+        assert_eq!(
+            (part.block_id.as_deref(), part.text.as_str()),
+            (Some("s2"), "XY")
+        );
+        // The update still carries the text, into the deleted block, where
+        // it does not show.
+        let mut after = Note::load(3, "x", &room.state());
+        after.receive(&merged.update);
+        assert!(!after.value().contains("XY"));
+    }
 }

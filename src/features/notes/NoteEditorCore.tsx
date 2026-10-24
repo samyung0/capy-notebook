@@ -42,6 +42,7 @@ import {
   EditorHoldScope,
 } from '@/features/collaboration/CollaborationHold';
 import {
+  hiddenDocument,
   holdsUnsent,
   mergeLate,
 } from '@/features/collaboration/lateMerge/lateMerge';
@@ -787,8 +788,10 @@ export function NoteEditorCore({
   };
   // Once synced, the old document's unsent edits are merged in a worker and
   // applied as one edit of this session (sent, stored, its receipt covering
-  // the restored rows); then the note paints, and the swap shows it. With
-  // nothing unsent the worker never loads; the receipt still clears the rows.
+  // the restored rows, which it replaces at once); then the note paints, and
+  // the swap shows it. Text the merge would hide (in a block someone deleted)
+  // stays as one refused row, which opens read-only for copying after the
+  // remount. With nothing unsent the worker never loads.
   const mergeStarted = useRef(false);
   const mergeNow = useRef(() => {});
   mergeNow.current = () => {
@@ -797,15 +800,22 @@ export function NoteEditorCore({
     const merged = holdsUnsent(lateDocument, ydoc)
       ? mergeLate(lateDocument, Y.encodeStateAsUpdate(ydoc))
       : Promise.resolve(null);
-    // `dropped` (units in a block the room no longer holds) waits on a
-    // decision for merges under the tab's own ids.
     merged
       .then((result) => {
         if (rejected.current || stale.current) return;
         if (result) Y.applyUpdate(ydoc, result.merged, LATE_ORIGIN);
+        const hidden = result?.hidden.length
+          ? hiddenDocument(result.hidden)
+          : undefined;
+        void recorder.current?.supersede(hidden);
         setLateMerging(false);
         unsavedChanges.current = true;
         saveNow.current();
+        if (hidden)
+          reportRejection.current?.(
+            'late',
+            storageOk.current ? 'kept' : 'lost'
+          );
       })
       .catch((error: unknown) => failLate.current(lateDocument, error));
   };

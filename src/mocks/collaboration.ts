@@ -543,6 +543,8 @@ export function mockNotePeer(materialId: string) {
     /** The peer's own document, for edits inside a block (a figure's map). */
     document,
     leave,
+    /** Deletes the top-level block at `index`. */
+    remove: (index: number) => root.delete(index, 1),
     /** Puts `block` where the top-level block `id` is. */
     replace: (id: string, block: MaterialValue[number]) => {
       const index = indexOf(id);

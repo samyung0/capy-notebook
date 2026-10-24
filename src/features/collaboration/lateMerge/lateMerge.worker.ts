@@ -1,4 +1,5 @@
 import init, { merge, reauthor } from './generated/late_merge.js';
+import type { HiddenText } from './lateMerge';
 
 /* The late merge of the in-place GC in a worker: the Rust merge compiled to
    WASM (collaboration-rs/crates/late-merge, built by
@@ -15,10 +16,10 @@ export interface MergeRequest {
   old: ArrayBuffer;
 }
 
-/** `dropped`: units the tab shows that the update lacks (they sat in a
- * block the current document no longer holds). */
+/** `hidden`: text the tab shows that the merged document would not (it
+ * sits in a block someone deleted), per block. */
 export type MergeReply =
-  | { dropped: number; merged: ArrayBuffer }
+  | { hidden: HiddenText[]; merged: ArrayBuffer }
   | { error: string };
 
 /** One merge; the WASM loads on the first (a no-op once loaded). */
@@ -33,7 +34,7 @@ export async function mergeRequest({
     const result =
       author === undefined ? merge(from, to) : reauthor(from, to, author);
     const reply = {
-      dropped: result.dropped,
+      hidden: JSON.parse(result.hidden) as HiddenText[],
       merged: result.update.slice().buffer,
     };
     result.free();

@@ -2141,8 +2141,13 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   in the main bundle; they load only here, and not at all when the old
   document holds nothing the current one lacks (no unit past its clocks, no
   deletion it has not made). The update is applied as this session's edit
-  (sent, stored, its receipt covering the restored rows); then the note paints
-  and swaps in. Until then the editor is not shown, its toolbar is inert and
+  (sent and stored; the restored rows it stands for are replaced at once, so a
+  reload never merges them again); then the note paints and swaps in. Text the
+  merge would hide, because someone deleted the block around it (Developer
+  Epo, 2026-10-24, Q237, [error handling](../../human/frontend/error-handling.md)),
+  is kept as one refused row of a paragraph per block, and the editor remounts
+  into the copy-only recovery with it after the merge applies (the merge view
+  takes this over once it exists). Until then the editor is not shown, its toolbar is inert and
   it asks for no receipt, so a reload during the merge still finds the stored
   rows, and they never reach the room raw.
 - **Failure is explicit**: a failed merge, one that has not answered 10 s
@@ -2164,9 +2169,10 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   collection keeps every client's clock. Text the tab never saw is a tie.
   Every walk goes by ranges, so a deleted item or GC struct claiming any
   length (the room admits one) costs what its bytes cost. Each merge also
-  counts the units the tab shows that it dropped: those in a block the
-  current document no longer holds. A merge under the tab's own ids applies
-  without them; whether it also keeps them for copying is open.
+  returns the text it would hide, per block (its item id and Plate `id`):
+  text the tab shows inside a block the current document holds deleted
+  (written into the tombstone, where it does not show) or no longer holds
+  (left out).
 - **Re-authored** (`reauthor`; `mergeLate(old, current, author)`): unsent
   edits under a client id the room never assigned (made before the tab had
   one) or no longer holds are refused as they are (Developer Epo,
@@ -2176,8 +2182,8 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   every run make this mode not repeat-safe: the caller runs it once per
   group of stored edits and replaces those rows with the applied update at
   once (a reload before the receipt then resends fixed ids instead of
-  re-authoring again). A re-authored merge that dropped units also keeps the
-  old document as one refused row, for copying. The editor takes this path
+  re-authoring again). Its hidden text goes to the same copy-only recovery.
+  The editor takes this path
   once the client-id binding's refusal names such edits; until then only the
   merge and its worker carry it.
 - **Expiry**: unsent edits older than 7 days get the copy-only notice instead
