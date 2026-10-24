@@ -38,8 +38,10 @@ const (
 	// connections.
 	uploadRunMax = 256
 	// uploadUserSlots counts a user's running uploads and held turns.
-	uploadUserSlots    = 4
-	uploadQueueMax     = 128
+	uploadUserSlots = 4
+	// uploadQueueMax bounds waiting tickets that spent their class token
+	// (Epo 2026-10-24, Q318: 2,000; a ticket is a small in-memory record).
+	uploadQueueMax     = 2000
 	uploadQueuePerUser = 20
 	// uploadBodyRate is the slowest an upload's body may arrive on average:
 	// 100 KB a second.

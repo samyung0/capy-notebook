@@ -52,9 +52,9 @@ func budgetUsed(q *uploadQueue) (int64, int) {
 	return q.used, q.running
 }
 
-// The line holds at most 128 waiting tickets and 20 of one user's (Epo
-// 2026-10-22); a ticket past either is refused as busy.
-func TestUploadQueueHoldsAtMost128And20PerUser(t *testing.T) {
+// The line holds at most 2,000 waiting tickets (Q318) and 20 of one user's
+// (Epo 2026-10-22); a ticket past either is refused as busy.
+func TestUploadQueueHoldsAtMost2000And20PerUser(t *testing.T) {
 	q := newUploadQueue(nil)
 	fillBudget(t, q)
 	for i := 1; i <= 20; i++ {
@@ -63,11 +63,11 @@ func TestUploadQueueHoldsAtMost128And20PerUser(t *testing.T) {
 	if _, err := q.take("u0", "sources:ws", uploadClaim{size: 1}); errorStatus(err) != 503 {
 		t.Fatalf("u0's 21st waiting ticket: %v", err)
 	}
-	for i := 21; i <= 128; i++ {
+	for i := 21; i <= uploadQueueMax; i++ {
 		takeOrFail(t, q, fmt.Sprintf("u%d", (i-1)/20), i)
 	}
 	if _, err := q.take("newcomer", "sources:ws", uploadClaim{size: 1}); errorStatus(err) != 503 {
-		t.Fatalf("the 129th waiting ticket: %v", err)
+		t.Fatalf("the 2,001st waiting ticket: %v", err)
 	}
 }
 
@@ -445,16 +445,16 @@ func classByUser(q *uploadQueue, over map[string]bool) (asked *int, due *[]func(
 }
 
 // Tickets waiting only on their class count toward their users' 20, never
-// the line's 128, so a few accounts over their class cannot fill the line
-// against everyone else (Epo 2026-10-24, Q307; security regression:
-// rate-limit audit r2 S-1).
+// the line's 2,000, so accounts over their class cannot fill the line against
+// everyone else (Epo 2026-10-24, Q307; security regression: rate-limit audit
+// r2 S-1).
 func TestUploadQueueTicketsPastTheirClassLeaveTheLineOpen(t *testing.T) {
 	q := newUploadQueue(nil)
 	over := map[string]bool{}
 	classByUser(q, over)
 	fillBudget(t, q)
 	place := 0
-	for u := range 7 {
+	for u := range uploadQueueMax/uploadQueuePerUser + 1 {
 		user := fmt.Sprintf("over%d", u)
 		over[user] = true
 		for range uploadQueuePerUser {
@@ -462,8 +462,8 @@ func TestUploadQueueTicketsPastTheirClassLeaveTheLineOpen(t *testing.T) {
 			takeOrFail(t, q, user, place)
 		}
 	}
-	// 140 tickets wait on their class; another user's ticket still gets a
-	// place behind them.
+	// More tickets than the line holds wait on their class; another user's
+	// ticket still gets a place behind them.
 	takeOrFail(t, q, "b", place+1)
 }
 

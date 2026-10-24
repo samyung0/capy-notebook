@@ -129,7 +129,7 @@ func TestUploadQueueHoldsAUsersFifthUploadWhileOthersRun(t *testing.T) {
 }
 
 // A full line refuses the ticket as busy: a user holds at most 20 waiting
-// tickets (the line's 128 are in TestUploadQueueHoldsAtMost128And20PerUser).
+// tickets (the line's 2,000 are in TestUploadQueueHoldsAtMost2000And20PerUser).
 func TestUploadQueueRefusesAFullLine(t *testing.T) {
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)

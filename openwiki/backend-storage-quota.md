@@ -414,9 +414,12 @@ line's order when admitted; until then it neither gets a turn nor blocks the
 line, and the browser shows it queued. A ticket whose class Redis cannot
 count is refused (503 `rate_limit_unavailable`). Source and editor-asset
 tickets share the line and the class; imports do not take tickets and keep
-their 429. The line holds 128 waiting tickets
-and 20 of one user's, waiting on the class or not; past either the ticket is
-refused with a typed 503, `upload_queue_full` (busy, try again). The browser long-polls
+their 429. The line holds 2,000 waiting tickets that spent their class token
+(Epo 2026-10-24, Q318) and 20 of one user's, waiting on the class or not; a
+ticket waiting only on its class counts toward its user's 20 alone, and its
+wait clock (the 30 s before it blocks) restarts when the class admits it
+(Q307). Past either limit the ticket is refused with a typed 503,
+`upload_queue_full` (busy, try again), before it spends a class token. The browser long-polls
 `GET /api/uploads/tickets/{id}?position=N`, which answers at once when the
 turn comes, when the ticket's place differs from N but no sooner than 2 s
 after the ask (so a fast line costs a browser one poll per 2 s, inside the
