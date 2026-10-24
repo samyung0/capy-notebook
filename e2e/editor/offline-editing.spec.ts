@@ -65,6 +65,13 @@ async function storedDrafts(page: Page) {
   return (await draftKinds(page)).length;
 }
 
+/** Types and waits for the receipt that deletes the rows: the room accepted
+ * this session (Q326), so the edits it stores later reopen on this device. */
+async function typeSaved(page: Page, text: string) {
+  await type(page, text);
+  await expect.poll(() => storedDrafts(page), { timeout: 15_000 }).toBe(0);
+}
+
 /** What the browser reported to POST /api/edit-incidents (the MSW store). */
 async function reportedIncidents(page: Page) {
   return page.evaluate(async () => {
@@ -79,6 +86,7 @@ test('offline edits outlive a reload and save once the room is back', async ({
 }) => {
   test.setTimeout(120_000);
   await openNote(page);
+  await typeSaved(page, ' Saved first.');
   await setOnline(page, false);
   const banner = page.getByTestId('save-banner');
   const offline = page.locator(
@@ -208,6 +216,7 @@ test('an editor refused as outdated stays read-only with its edits kept, which t
 }) => {
   test.setTimeout(120_000);
   await openNote(page);
+  await typeSaved(page, ' Saved first.');
   // The deploy: the service goes away while this tab types (nothing is
   // saved), then refuses this build when the tab joins again.
   await setReachable(page, false);

@@ -1837,7 +1837,11 @@ describe('the draft sweep sending', () => {
     expect(sender.done).toBe(false);
     expect(await readDrafts(key)).toHaveLength(2);
     storeNext();
-    page.dispatchEvent(new Event('online'));
+    // Online once the lost try is over: a try in flight is never doubled.
+    await vi.waitFor(() => {
+      page.dispatchEvent(new Event('online'));
+      expect(requests).toHaveLength(1);
+    });
     await sender.settled;
     Reflect.deleteProperty(globalThis, 'addEventListener');
     Reflect.deleteProperty(globalThis, 'removeEventListener');

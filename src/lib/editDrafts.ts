@@ -1144,17 +1144,16 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
       let again = true;
       try {
         const room = await token();
-        // The MSW mock service has no `/drafts`; a read token sends nothing
-        // (the editor turns read-only).
+        // A read token sends nothing (the editor turns read-only).
         const answers =
-          USE_MSW || room.access !== 'write'
-            ? []
-            : await sendGroups(
+          room.access === 'write'
+            ? await sendGroups(
                 key,
                 room,
                 () => !stopped,
                 (row) => !row.accepted
-              );
+              )
+            : [];
         again =
           !stopped &&
           !outdated &&
