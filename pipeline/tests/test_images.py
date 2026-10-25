@@ -646,6 +646,40 @@ def test_removed_pictures_free_their_parts_in_one_pass():
         assert "rId1" not in archive.read("word/_rels/document.xml.rels").decode()
 
 
+def test_pictures_sharing_a_name_are_renamed_at_once():
+    """Security regression (review r5 follow-up): each new name keeps the
+    next number to try, so 4,000 pictures sharing one name are renamed at
+    once (about 2 s trying every candidate from the first per picture), with
+    the names as before: in order, past a name a part already has."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("word/document.xml", "<w:document/>")
+        archive.writestr("word/media/x-2.jpeg", b"\xff\xd8\xff")
+        for i in range(4000):
+            archive.writestr(f"word/media/x.p{i}", b"\x89PNG\r\n\x1a\n")
+    result = []
+    seconds = _timed(
+        lambda: result.append(
+            _compress(out.getvalue(), lambda _data: (b"\xff\xd8\xff", "jpeg"))
+        )
+    )
+    assert seconds < 1, seconds
+    with zipfile.ZipFile(io.BytesIO(result[0][0])) as archive:
+        names = archive.namelist()
+    # Named in path order (x.p0, x.p1, x.p10, ...), kept in the archive's.
+    assert names[2:4] == ["word/media/x.jpeg", "word/media/x-1.jpeg"]
+    assert names[12] == "word/media/x-3.jpeg"
+    assert sorted(names) == sorted(
+        [
+            "word/document.xml",
+            "word/media/x-2.jpeg",
+            "word/media/x.jpeg",
+            "word/media/x-1.jpeg",
+            *(f"word/media/x-{n}.jpeg" for n in range(3, 4001)),
+        ]
+    )
+
+
 def test_removals_and_repacking_stop_at_the_deadline(monkeypatch):
     """Q363 (review r5 follow-up): removals run in the thread the job timeout
     cannot stop too, so the deadline is checked before each part's removals

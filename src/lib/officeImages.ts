@@ -441,6 +441,11 @@ export async function compressOfficeImages(
   // and its content type.
   const rasters = paths.filter((path) => pictures.has(path) && !gone.has(path));
   const renames = new Map<string, { path: string; type: string }>();
+  // The names renames took, and per new name the next number to try: the
+  // parts' names do not change here and a taken name stays taken, so pictures
+  // sharing a name try each candidate once (review r5 follow-up).
+  const taken = new Set<string>();
+  const tried = new Map<string, number>();
   for (const [index, path] of rasters.entries()) {
     const type = kinds.get(path)!;
     let result: File;
@@ -467,13 +472,15 @@ export async function compressOfficeImages(
       continue;
     }
     const stem = path.slice(0, path.lastIndexOf('.'));
-    let renamed = `${stem}.${wanted[0]}`;
-    for (
-      let n = 1;
-      renamed in parts || [...renames.values()].some((r) => r.path === renamed);
-      n++
-    )
-      renamed = `${stem}-${n}.${wanted[0]}`;
+    const first = `${stem}.${wanted[0]}`;
+    let number = tried.get(first) ?? 0;
+    let renamed = number ? `${stem}-${number}.${wanted[0]}` : first;
+    while (renamed in parts || taken.has(renamed)) {
+      number += 1;
+      renamed = `${stem}-${number}.${wanted[0]}`;
+    }
+    tried.set(first, number + 1);
+    taken.add(renamed);
     renames.set(path, { path: renamed, type: result.type });
     parts[path] = bytes;
   }

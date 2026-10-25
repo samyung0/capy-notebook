@@ -883,8 +883,10 @@ declaration at the end of the text, so unclosed markup is scanned once, and
 (review r5 X1). The open elements a reference's container is picked from are
 kept as a part is read (each kind's indices, searched by bisection), each
 relationships part is rewritten once for its removals and renames, and the
-parts nothing targets any more are worked out once, not per removed part
-(review r5 follow-up).
+parts nothing targets any more are worked out once, not per removed part; a
+renamed picture's new name (`<stem>.jpeg`, then `<stem>-1.jpeg`, ...) is
+tried from where the last picture sharing that name stopped (review r5
+follow-up).
 
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |

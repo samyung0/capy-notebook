@@ -671,6 +671,45 @@ describe('one pass per part', () => {
     expect(out.split('.jpeg')).toHaveLength(4001);
     expect(out.split('<Relationship ')).toHaveLength(22_001);
   });
+
+  it('compressOfficeImages renames 2,000 pictures sharing one name at once, past a name a part has', async () => {
+    // About 14 s, warm, trying every candidate from the first against every
+    // rename (review r5 follow-up).
+    codec.encoded = () => 5000;
+    const shared = (count: number) => {
+      const parts: Record<string, Uint8Array> = {
+        'word/document.xml': strToU8('<w:document/>'),
+        'word/media/x-2.jpeg': fakeImage('image/jpeg', 100, 100),
+      };
+      for (let i = 0; i < count; i++)
+        parts[`word/media/x.p${i}`] = fakeImage('image/png', 3000, 2000);
+      return pack(parts, 'plan.docx');
+    };
+    await compressOfficeImages(shared(20), 2 * MB);
+    const file = shared(2000);
+    const started = performance.now();
+    const { file: out } = await compressOfficeImages(file, 2 * MB);
+    expect(performance.now() - started).toBeLessThan(2000);
+    const names = Object.keys(
+      unzipSync(new Uint8Array(await out.arrayBuffer()))
+    );
+    expect(names.slice(0, 5)).toEqual([
+      'word/document.xml',
+      'word/media/x-2.jpeg',
+      'word/media/x.jpeg',
+      'word/media/x-1.jpeg',
+      'word/media/x-3.jpeg',
+    ]);
+    expect([...names].sort()).toEqual(
+      [
+        'word/document.xml',
+        'word/media/x-2.jpeg',
+        'word/media/x.jpeg',
+        'word/media/x-1.jpeg',
+        ...Array.from({ length: 1998 }, (_, i) => `word/media/x-${i + 3}.jpeg`),
+      ].sort()
+    );
+  }, 60_000);
 });
 
 describe('resolveTarget', () => {

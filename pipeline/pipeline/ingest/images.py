@@ -581,6 +581,11 @@ def compress_office(
         or (not path.endswith((".xml", ".rels")) and is_vector(parts[path], path))
     }
     renames: dict[str, tuple[str, str]] = {}
+    # The names renames took, and per new name the next number to try: the
+    # parts' names do not change here and a taken name stays taken, so
+    # pictures sharing a name try each candidate once (review r5 follow-up).
+    taken: set[str] = set()
+    tried: dict[str, int] = {}
     for path in sorted(pictures):
         if kinds[path] != "raster":
             continue
@@ -603,12 +608,14 @@ def compress_office(
         if ext in wanted:
             continue
         stem = path.rsplit(".", 1)[0]
-        renamed = f"{stem}.{wanted[0]}"
-        number = 1
-        taken = {new for new, _ in renames.values()}
+        first = f"{stem}.{wanted[0]}"
+        number = tried.get(first, 0)
+        renamed = f"{stem}-{number}.{wanted[0]}" if number else first
         while renamed in parts or renamed in taken:
-            renamed = f"{stem}-{number}.{wanted[0]}"
             number += 1
+            renamed = f"{stem}-{number}.{wanted[0]}"
+        tried[first] = number + 1
+        taken.add(renamed)
         renames[path] = (renamed, "image/png" if kind == "png" else "image/jpeg")
 
     # Each relationships part is rewritten once, below (review r5 follow-up).
