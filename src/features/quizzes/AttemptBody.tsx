@@ -87,6 +87,7 @@ export type Graded = { questions: Question[]; awarded: number; max: number };
 
 export function AttemptBody({
   actions,
+  belowSubmit,
   byline,
   embedded,
   emptyAction,
@@ -102,6 +103,9 @@ export function AttemptBody({
   trail,
 }: {
   actions?: ReactNode;
+  /** Under Submit while taking the quiz: the shared pages' Turnstile
+   * challenge (Q372). */
+  belowSubmit?: ReactNode;
   /** The owner, on shared links. */
   byline?: ReactNode;
   /** Inside a note: no header, frame or page padding; the note around it
@@ -323,6 +327,7 @@ export function AttemptBody({
             {grading ? m.quiz_grading() : m.quiz_submit()}
           </Button>
         </div>
+        {belowSubmit}
         {checkError && <InputError className="mt-2">{checkError}</InputError>}
         {footer}
         <SourcesLine
