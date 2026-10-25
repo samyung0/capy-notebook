@@ -2920,6 +2920,19 @@ JavaScript writes a number (`isColumnWidth`, Go's `columnWidth`, the notes
 crate's `valid_column_width`). The browser's document check (so a Markdown or
 JSON import), Go, the store and room admission refuse any other width, and
 both column renderers draw none, since the width reaches a style.
+The same holds for every other value a renderer puts into a style or class.
+A table's `colSizes` (each entry a size or empty, null) and `marginLeft` are
+px as Plate's table resizing writes them, finite numbers of 0 or more
+(`isTableSize`, Go's `tableSize`, the notes crate's `table_size`). A block's
+`indent` is a number (Plate's indent and list plugins, a pasted list's
+`aria-level`) up to `LIST_INDENT_MAX` (`isIndent`); the indent plugin injects
+its class and margin only for one (`INDENT_NODE_PROPS`). The text marks Plate
+draws as styles (`color`, `backgroundColor`, `fontSize`, `fontFamily`) live
+on text: the embed catalog forbids them on every element and both kits
+inject them on leaves only (`inject.isLeaf`). Media blocks draw only a width
+`mediaWidth` takes. `src/features/notes/refusedValues.test.tsx` holds that the
+editor itself draws none of these refused values, so a crafted paste styles
+nothing even before the room refuses it.
 The table menu's cell/merge subscriptions remain inside the unmounted-when-closed
 menu body, keeping those reads off the typing path.
 

@@ -1000,6 +1000,91 @@ func TestColumnsTakeOnlyTheEditorWidth(t *testing.T) {
 	}
 }
 
+// A table stores the column sizes and left margin Plate's table resizing
+// writes: px as numbers of 0 or more, a column size possibly empty (null).
+func TestTablesTakeOnlyThePlateSizes(t *testing.T) {
+	validate := func(sizes map[string]any) error {
+		table := map[string]any{"type": "table", "id": "t", "children": []any{
+			map[string]any{"type": "tr", "children": []any{
+				map[string]any{"type": "td", "children": []any{
+					map[string]any{"type": "p", "children": []any{textLeaf("a")}},
+				}},
+			}},
+		}}
+		for key, value := range sizes {
+			table[key] = value
+		}
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{table}})
+	}
+	for _, sizes := range []map[string]any{
+		{},
+		{"colSizes": []any{float64(120), float64(0), 48.5, nil}},
+		{"colSizes": []any{}},
+		{"marginLeft": float64(0)},
+		{"marginLeft": float64(24)},
+	} {
+		if err := validate(sizes); err != nil {
+			t.Fatalf("table %v: %v", sizes, err)
+		}
+	}
+	for _, sizes := range []map[string]any{
+		{"colSizes": []any{"120"}},
+		{"colSizes": []any{"120px;color:red"}},
+		{"colSizes": []any{float64(-1)}},
+		{"colSizes": "120"},
+		{"colSizes": nil},
+		{"marginLeft": "24px"},
+		{"marginLeft": float64(-1)},
+		{"marginLeft": nil},
+	} {
+		if err := validate(sizes); err == nil || !strings.Contains(err.Error(), "table ") {
+			t.Fatalf("table %v: %v", sizes, err)
+		}
+	}
+}
+
+// An indent is a number (Plate draws it as a class and a margin).
+func TestIndentIsANumber(t *testing.T) {
+	validate := func(indent any) error {
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+			{"type": "p", "indent": indent, "children": []any{textLeaf("a")}},
+		}})
+	}
+	for _, indent := range []any{nil, float64(1), 1.5, float64(embeds.ListIndentMax)} {
+		if err := validate(indent); err != nil {
+			t.Fatalf("indent %#v: %v", indent, err)
+		}
+	}
+	for _, indent := range []any{"1", "1 fixed", true} {
+		if err := validate(indent); err == nil || !strings.Contains(err.Error(), "indent must be a number") {
+			t.Fatalf("indent %#v: %v", indent, err)
+		}
+	}
+}
+
+// The marks Plate draws as styles live on text: an element carrying one is
+// refused (the catalog forbids them on every element), a leaf keeps it.
+func TestTextMarksStayOnText(t *testing.T) {
+	marks := map[string]any{"color": "#c0392b", "backgroundColor": "#fdebd0", "fontSize": "20px", "fontFamily": "Georgia"}
+	leaf := textLeaf("a")
+	for key, value := range marks {
+		leaf[key] = value
+	}
+	if err := Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+		{"type": "p", "children": []any{leaf}},
+	}}); err != nil {
+		t.Fatalf("marked text: %v", err)
+	}
+	for key, value := range marks {
+		err := Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+			{"type": "p", key: value, "children": []any{textLeaf("a")}},
+		}})
+		if err == nil || !strings.Contains(err.Error(), "p cannot carry "+key) {
+			t.Fatalf("element %s: %v", key, err)
+		}
+	}
+}
+
 // The every-block note (testdata/every-block-note.json) holds each Plate type
 // a note stores. The collaboration validator and the UAT note journey read the
 // same file, so a renamed or newly strict field fails here before a saved note

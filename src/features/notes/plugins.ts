@@ -130,7 +130,7 @@ import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
 import { navigationFeedbackPlugin } from './navigationFeedback';
-import { FONT_SIZE_NODE_PROPS } from './nodeStyles';
+import { FONT_SIZE_NODE_PROPS, INDENT_NODE_PROPS } from './nodeStyles';
 import { pastedImagesPlugin } from './pastedImages';
 import {
   NoteParagraphPlugin,
@@ -207,7 +207,7 @@ function TodoListItem({
 
 const IndentListKit = [
   IndentPlugin.configure({
-    inject: { targetPlugins: listTargets },
+    inject: { nodeProps: INDENT_NODE_PROPS, targetPlugins: listTargets },
     options: { indentMax: LIST_INDENT_MAX, offset: 24 },
   }),
   ListPlugin.configure({
@@ -610,10 +610,13 @@ export const MaterialKit: AnyPlugin[] = [
     options: { triggerPreviousCharPattern: /^$|^[\s"']$/ },
   }),
   MentionInputPlugin.withComponent(MentionInputElement),
-  FontColorPlugin,
-  FontBackgroundColorPlugin,
-  FontSizePlugin.configure({ inject: { nodeProps: FONT_SIZE_NODE_PROPS } }),
-  FontFamilyPlugin.configure({ inject: { targetPlugins: [KEYS.p] } }),
+  // Text marks: an element carrying one is refused, and none is drawn.
+  FontColorPlugin.configure({ inject: { isLeaf: true } }),
+  FontBackgroundColorPlugin.configure({ inject: { isLeaf: true } }),
+  FontSizePlugin.configure({
+    inject: { isLeaf: true, nodeProps: FONT_SIZE_NODE_PROPS },
+  }),
+  FontFamilyPlugin.configure({ inject: { isLeaf: true } }),
   TextAlignPlugin.configure({
     inject: {
       nodeProps: {
