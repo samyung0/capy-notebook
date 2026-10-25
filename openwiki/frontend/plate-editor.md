@@ -1735,24 +1735,43 @@ other item rooms and source rooms keep no sessions and their full history.
 
 - **A session is one Y.Doc**, named by its client id (see [client
   ids](#client-ids)): one editor in one tab, whose Undo stack lives as long.
-  A viewer, who never edits, has none.
+  A viewer, who never edits, has none; one whose token turns writable (a
+  role change evicts the channel first, so only if that eviction is late)
+  gets one at its first write, at the version it last named.
 - **Versions.** Every JOIN names the stored version its document holds after
   the client id (0: a new document that holds nothing; one that took stored
   drafts before its first JOIN names theirs, `unsentFrom`). A note room tells
   a synced editor the stored version it holds right after answering its step
   1 and after each store commits, once every update the store holds went out
-  (`{"type": "stored", "version": v}`, `STORED_TYPE` in `room.rs`); the tab
-  answers `{"type": "ack", "version": v}`. The room counts the session at its
-  JOIN's version, then at each `ack` (never above the room's own version).
+  (`{"type": "stored", "version": v}`, `STORED_TYPE` in `room.rs`): the latest
+  version the room holds every version up to. A store whose version passed a
+  service edit the room has not applied yet goes unannounced, and only stores
+  announce (review r1 M1). The tab answers `{"type": "ack", "version": v}`
+  whenever the version it may report changes. The room counts the session at
+  its JOIN's version, then at each `ack` (never above the room's own
+  version). A new session (version 0) that never synced is left out of the
+  fold's reached version and forgotten with its last channel (review r1 H2).
+  A socket whose outbox dropped a frame sends nothing more and closes, so no
+  notice follows a broadcast its reader missed.
 - **The oldest unsent edit.** A tab never reports a version above the one its
   oldest unsent edit was made at (`RoomProvider.reportedVersion`): an edit
-  stays unsent from the moment it is made until the room acknowledged the
-  message carrying it, in flight, held for a resend after a dropped channel,
-  or not sent yet (offline, in a timeout, parked). Its JOIN, its `ack`s and
-  its stored drafts carry at most that. Each stored draft row keeps the
-  version the tab reported when it was made (`EditDraft.version`, a merged row
-  its oldest), and a draft send names its group's oldest in `X-Capy-Version`
-  (a row from before versions counts as 1, older than any collection).
+  stays unsent from the moment it is made until the second store's `stored`
+  after the room's ACK of the message carrying it (review r1 H1, Editor
+  2026-10-26, a plan change: admission is not durable, and the first notice
+  may be a store that began before the edit arrived; the first notice on a
+  channel answers its step 1 and counts for nothing). Before that it is in
+  flight, admitted and not yet surely stored, held for a resend after a
+  dropped channel, or not sent yet (offline, in a timeout, parked). An empty
+  step 2 (a new document's) carries no edit. Drafts applied later
+  (`unsentFrom`) mark the next update sent, which clears by the same rule
+  (M2). Its JOIN, its `ack`s and its stored drafts carry at most that, and a
+  document holding unsent edits reports at least 1. Each stored draft row
+  keeps the version the tab reported when it was made (`EditDraft.version`, a
+  merged row its oldest), and a draft send names its group's oldest in
+  `X-Capy-Version` (a row from before versions, or made before the tab's
+  first stored version, counts as 1, older than any collection). A Leave
+  while drafts are marked says unsent, so a draft send's hold keeps its
+  session (N3).
 - **Held deletions.** A session holds the deletions its own channel's updates
   made: what the room held undeleted, so a reconnect's step 2, which resends
   the whole delete set, adds only the session's own (`ydoc::apply_deleting`).
@@ -1764,18 +1783,35 @@ other item rooms and source rooms keep no sessions and their full history.
   last seen. It ends at that cap, or on a clean Leave naming it, only the
   session bound to the leaving channel (a user ends only their own); its held
   deletions go then. A Leave with unsent edits or a dropped socket keeps it.
+  A live session stays its user's: a JOIN of its id by another user changes
+  nothing (the binding refuses that first).
+- **Agent holds** (review r1 M3, Editor 2026-10-26, a plan change: in-place
+  collection step 1 owns them). What an agent step the open room keeps for
+  its live Undo or Redo deleted is held 24 h after it arrived, whatever the
+  sessions do (`Sessions::agent_deleted`); a durable Undo payload records its
+  deletions through the same call once that wiring lands. Stored beside the
+  document (`material_yjs_documents.agent_held`, the same encoding).
 - **Stored** (migration 0117) as columns of the session's client-id row
   (`material_yjs_client_ids`: `acked_version`, `seen_at`, NULL when there is
   no session or it ended, and `held`, the batches as arrival times and Yjs
   delete sets). A store writes the sessions changed since the last one in its
-  own transaction, so a held deletion is durable with the state that holds
-  it; the unload writes what changed after the last store. Only sessions whose
-  id is recorded have a row: a deletion is an accepted write, so a session
-  that only deleted is recorded too. A session that never wrote is counted in
-  memory for its room's life. A room load reads the sessions seen within 24 h.
+  own transaction, in one statement, so a held deletion is durable with the
+  state that holds it; the unload writes what changed after the last store.
+  A session whose id's row is still queued (its first write's) waits for the
+  next store: the store holds the document's row, which that insert's key
+  check waits on.
+  A repeated `ack` changes nothing to write. Never for an account whose
+  deletion began: the statement locks the live user rows, so a purge waits
+  for it and then deletes what it wrote. Only sessions whose id is recorded
+  have a row: a deletion is an accepted write, so a session that only deleted
+  is recorded too. A session that never wrote is counted in memory for its
+  room's life. A room load reads the sessions seen within 24 h; a row whose
+  held deletions cannot be read is dropped alone, its session columns
+  cleared as an ended one's, and reported to Sentry, and the note loads
+  (Q382, Epo 2026-10-26: that tab takes the late path if it returns).
 - **The fold's input** (`Sessions::holds`): the oldest version every counted
-  session reached (none when no session counts) and their held deletions. The
-  folds log it until the collection uses it.
+  session reached (none when no session counts) and their held deletions with
+  the agent holds. The folds log it until the collection uses it.
 - **Late.** A JOIN or a draft group naming a version below the latest
   collection's window has missed what that collection discarded (`late` in
   `sessions.rs`, version 0 never is). Nothing is collected yet, so nothing is
@@ -1940,10 +1976,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   The editing sessions (the in-place collection's bookkeeping, Epo
   2026-10-23: every JOIN names the stored version its Y.Doc holds after the
   client id, note rooms send `stored` and take `ack`, a Leave names its
-  session) raised `CLIENT_PROTOCOL` to 20 and `MIN_MATERIAL` to 20;
+  session) raised `CLIENT_PROTOCOL` to the next protocol after main's (20
+  as written; the number is fixed at landing) and `MIN_MATERIAL` to it;
   `MIN_SOURCE` stays as it was, since a source JOIN or Leave from an older
   build carries no version or session and still reads. Its deploy request
-  names "client protocol 19 -> 20, material 18 -> 20".
+  names the client protocol it raises from and to, and "material" to the
+  same number.
 
 #### When to bump
 

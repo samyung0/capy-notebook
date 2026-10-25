@@ -317,26 +317,33 @@ export function markDraftsReported(key: string, ids: string[]): Promise<void> {
   return markDrafts(key, ids, 'reported');
 }
 
-/** Unsent edits expire 7 days after their group's last edit (Epo
- * 2026-10-24, human/frontend/error-handling.md): the next open on the device
- * shows them once copy-only with a line that they are too old to sync, then
- * deletes them, and no sweep sends them. For notes until the merge view
- * exists (Q251); other kinds keep it. */
+/** Unsent edits expire 7 days after their last edit (Epo 2026-10-24,
+ * human/frontend/error-handling.md): the next open on the device shows them
+ * once copy-only with a line that they are too old to sync, then deletes
+ * them, and no sweep sends them. For notes until the merge view exists
+ * (Q251); other kinds keep it. */
 export const DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Whether a group of rows is past the expiry: its last edit (its newest
- * row) is over 7 days old. */
-export function draftsExpired(
-  rows: readonly { savedAt: number }[],
-  now = Date.now()
+/** The sessions among `rows` past the expiry: each session's edits expire
+ * together, 7 days after its newest row (review r1 L4). */
+function expiredSessions(
+  rows: readonly { savedAt: number; session: string }[],
+  now: number
 ) {
-  return now - Math.max(...rows.map((row) => row.savedAt)) > DRAFT_EXPIRY_MS;
+  const newest = new Map<string, number>();
+  for (const { savedAt, session } of rows)
+    newest.set(session, Math.max(newest.get(session) ?? savedAt, savedAt));
+  return new Set(
+    [...newest]
+      .filter(([, savedAt]) => now - savedAt > DRAFT_EXPIRY_MS)
+      .map(([session]) => session)
+  );
 }
 
 /**
  * Split a document's rows against the room it opens: `current` merges into
  * the live document; `recovery` is one group (refused rows, one other
- * lineage, or a lineage's rows past the 7-day expiry) to show read-only
+ * lineage, or one session's rows past the 7-day expiry) to show read-only
  * first, `refused` and `expired` saying which. Further groups wait for the
  * next open. `same` compares lineages (text sources ignore the base).
  *
@@ -356,14 +363,8 @@ export async function draftGroups(
     left === right,
   now = Date.now()
 ) {
-  // A lineage's rows expire together, 7 days after the newest.
-  const group = (row: EditDraft) =>
-    same(row.lineage, lineage) ? lineage : row.lineage;
-  const groups = new Map<string, EditDraft[]>();
-  for (const row of rows)
-    groups.set(group(row), [...(groups.get(group(row)) ?? []), row]);
-  const old = (row: EditDraft) =>
-    draftsExpired(groups.get(group(row)) ?? [row], now);
+  const expired = expiredSessions(rows, now);
+  const old = (row: EditDraft) => expired.has(row.session);
   const unsendable = (row: EditDraft) =>
     !old(row) &&
     same(row.lineage, lineage) &&
@@ -385,11 +386,14 @@ export async function draftGroups(
   const first = rows.find(
     (row) => old(row) || refused(row) || !same(row.lineage, lineage)
   );
-  const expired = !!first && old(first);
+  const stale = !!first && old(first);
   let recovery: EditDraft[] = [];
   if (first)
-    recovery = expired
-      ? (groups.get(group(first)) ?? [])
+    recovery = stale
+      ? rows.filter(
+          (row) =>
+            row.session === first.session && same(row.lineage, first.lineage)
+        )
       : rows.filter(
           (row) =>
             same(row.lineage, first.lineage) && refused(row) === refused(first)
@@ -398,14 +402,14 @@ export async function draftGroups(
     current: rows.filter(
       (row) => !(old(row) || refused(row)) && same(row.lineage, lineage)
     ),
-    expired,
+    expired: stale,
     recovery,
-    refused: !expired && !!first && refused(first),
+    refused: !stale && !!first && refused(first),
   };
 }
 
-/** An expired group shown copy-only goes at once, so it shows once
- * (`draftsExpired`); its loss is reported. */
+/** An expired group shown copy-only goes at once, so it shows once; its
+ * loss is reported. */
 export function dropExpiredGroup(
   group: EditDraft[],
   report: EditIncidentReporter
@@ -992,20 +996,20 @@ function groupGrants(group: DraftInfo[]) {
  * file's rows of another base go apart), with the newest of their stored
  * tokens. */
 function sendableGroups(rows: DraftInfo[], room: string) {
+  // An expired session's rows wait for the next open, which shows them once.
+  const expired = expiredSessions(rows, Date.now());
   const groups = new Map<string, DraftInfo[]>();
   for (const row of rows) {
     if (row.refused || row.held || row.lineage.split('@')[0] !== room) continue;
+    if (expired.has(row.session)) continue;
     groups.set(row.lineage, [...(groups.get(row.lineage) ?? []), row]);
   }
-  // An expired group waits for the next open, which shows it once.
-  return [...groups.values()]
-    .filter((group) => !draftsExpired(group))
-    .map((group) => ({
-      base: group[0].base,
-      grants: groupGrants(group),
-      refs: group.map(({ id, key, seq }) => ({ id, key, seq })),
-      version: draftsVersion(group),
-    }));
+  return [...groups.values()].map((group) => ({
+    base: group[0].base,
+    grants: groupGrants(group),
+    refs: group.map(({ id, key, seq }) => ({ id, key, seq })),
+    version: draftsVersion(group),
+  }));
 }
 
 /** POST one group to the collaboration service's `/drafts` (its WebSocket

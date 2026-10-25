@@ -477,36 +477,82 @@ async function synced(
 const ack = (channel: number, count: number) =>
   message(channel, MessageKind.Ack, new Writer().varUint(count).done());
 
-// In-place collection (Epo 2026-10-23): a tab acknowledges each store's
-// version, but never above the version its oldest unsent edit was made at,
-// so no collection passes what that edit names.
+// In-place collection (Epo 2026-10-23; review r1 H1 and H2, Editor
+// 2026-10-26): a tab acknowledges the version it may report whenever that
+// changes, never above the version its oldest unsent edit was made at. An
+// edit stays unsent until the second store's notice after its ACK (the
+// channel's first notice answers its step 1): the first may be a store that
+// began before the edit arrived. Fails with an edit taken as stored at its
+// ACK or at the first notice.
 it('acknowledges stored versions, never above its oldest unsent edit', async () => {
+  const { document, join, socket } = await synced();
+  const channel = join.channel;
+  // The answer's notice, and the ACK of its step 2.
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  expect(acks(socket)).toEqual([5]);
+  // An edit made at 5, admitted while store 6 ran: 6 may lack it.
+  document.getText('content').insert(0, 'a');
+  socket.deliver(ack(channel, 1), stored(channel, 6));
+  expect(acks(socket)).toEqual([]);
+  expect(socket.take(MessageKind.Stateless)).toEqual([]);
+  socket.deliver(stored(channel, 7));
+  expect(acks(socket)).toEqual([7]);
+});
+
+// Review r1 H1: admission is not durable. A tab whose admitted edit no
+// second store's notice covered when its channel ended (the server
+// crashed, the socket dropped) names that edit's version again, and its
+// step 2 resends the edit. Fails if the ACK or one notice cleared it.
+it('keeps an admitted edit unsent through a drop until a second store covers it', async () => {
   const { document, join, provider, socket } = await synced();
   const channel = join.channel;
-  // Its step 2 is in flight, made at version 0.
-  socket.deliver(stored(channel, 5));
-  expect(acks(socket)).toEqual([0]);
-  socket.deliver(ack(channel, 1), stored(channel, 6));
-  expect(acks(socket)).toEqual([6]);
-  // An edit made at 6, unacknowledged when 7 is stored.
+  socket.deliver(stored(channel, 5), ack(channel, 1));
   document.getText('content').insert(0, 'a');
-  socket.deliver(stored(channel, 7));
-  expect(acks(socket)).toEqual([6]);
-  socket.deliver(ack(channel, 1), stored(channel, 8));
-  expect(acks(socket)).toEqual([8]);
-  // Held for a resend: the channel ends with an edit in flight, and the
-  // next JOIN names the version it was made at.
-  document.getText('content').insert(0, 'b');
-  socket.deliver(stored(channel, 9));
-  expect(acks(socket)).toEqual([8]);
-  provider.disconnect();
-  document.getText('content').insert(0, 'c');
-  expect(provider.reportedVersion).toBe(8);
-  provider.connect();
+  socket.deliver(ack(channel, 1), stored(channel, 6));
+  expect(provider.reportedVersion).toBe(5);
+  socket.close();
   await flush();
-  const [rejoin] = socket.take(MessageKind.Join);
-  expect(joinVersion(rejoin)).toBe(8);
+  // The next JOIN names this, and the next step 2 carries the edit.
+  expect(provider.reportedVersion).toBe(5);
   provider.destroy();
+});
+
+// Review r1 H2: a new document's empty step 2 carries no edit, so a brief
+// open with no edit acknowledges its answer's version, never 0. Fails if
+// the empty step 2 holds the tab back.
+it("acknowledges its answer's version after an empty step 2", async () => {
+  const { join, provider, socket } = await synced();
+  socket.deliver(stored(join.channel, 5));
+  expect(acks(socket)).toEqual([5]);
+  expect(provider.reportedVersion).toBe(5);
+});
+
+// Review r1 M2: drafts marked while the channel is open (a late merge)
+// hold the tab back only until the update carrying them is stored, by the
+// rule above; and a Leave while they are marked says unsent (review r1
+// N3). Fails if the mark stays until a step 2, or the Leave says clean.
+it('carries a mark made while connected on its next update, and leaves unsent while marked', async () => {
+  const { document, join, provider, socket } = await synced();
+  const channel = join.channel;
+  socket.deliver(stored(channel, 9), ack(channel, 1));
+  expect(acks(socket)).toEqual([9]);
+  provider.unsentFrom(4);
+  expect(acks(socket)).toEqual([4]);
+  document.getText('content').insert(0, 'merged');
+  socket.deliver(ack(channel, 1), stored(channel, 10), stored(channel, 11));
+  expect(acks(socket)).toEqual([11]);
+  provider.unsentFrom(4);
+  socket.take(MessageKind.Stateless);
+  provider.disconnect();
+  const [leave] = socket.take(MessageKind.Leave);
+  expect(new Reader(leave.payload).byte()).toBe(1);
+});
+
+// Review r1 L8: a document holding edits made before its first `stored`
+// (version 0) reports 1, as a row from before versions does, never 0.
+it('reports 1 for edits made before any stored version', async () => {
+  const { join } = await joined({ unsentFrom: 0 });
+  expect(joinVersion(join)).toBe(1);
 });
 
 it('acknowledges nothing before it synced', async () => {
@@ -520,8 +566,14 @@ it('acknowledges nothing before it synced', async () => {
 
 it('joins with its stored drafts version and reports it until the room took them', async () => {
   // L10 (late-merge review): rows applied before the JOIN are not new.
-  const { join, provider, socket } = await joined({ unsentFrom: 3 });
+  const { document, join, provider, socket } = await joined({
+    unsentFrom: 3,
+  });
   expect(joinVersion(join)).toBe(3);
+  // The restored rows, applied before the room joined.
+  document.getText('content').insert(0, 'restored');
+  // Its step 2 is admitted before the room's answer (an open that waited):
+  // the answer's notice (9) is no store's.
   socket.deliver(
     message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
     message(
@@ -529,16 +581,18 @@ it('joins with its stored drafts version and reports it until the room took them
       MessageKind.Sync,
       syncMessage(SyncKind.Step1, Y.encodeStateVector(new Y.Doc()))
     ),
+    ack(join.channel, 1),
     message(
       join.channel,
       MessageKind.Sync,
       syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(new Y.Doc()))
     ),
-    stored(join.channel, 9)
+    stored(join.channel, 9),
+    stored(join.channel, 10)
   );
-  expect(acks(socket)).toEqual([3]);
-  socket.deliver(ack(join.channel, 1), stored(join.channel, 10));
-  expect(acks(socket)).toEqual([10]);
+  expect(acks(socket)).toEqual([]);
+  socket.deliver(stored(join.channel, 11));
+  expect(acks(socket)).toEqual([11]);
   // A held draft send's steps go in later: made at 4.
   provider.unsentFrom(4);
   expect(provider.reportedVersion).toBe(4);

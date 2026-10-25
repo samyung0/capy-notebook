@@ -92,9 +92,10 @@ export function versionOf(
 
 /** The stored version rows were made at: their oldest's. A row from before
  * rows carried one counts as 1, older than every collection, so its edits
- * never pass for newer than they are. */
+ * never pass for newer than they are; so does one made before the tab's
+ * first stored version (0: new, review r1 L8). */
 export function draftsVersion(rows: { version?: number }[]) {
-  return Math.min(...rows.map((row) => row.version ?? 1));
+  return Math.min(...rows.map((row) => row.version || 1));
 }
 
 /** The `grants` field of rows holding the edits of `rows` (or of one

@@ -105,6 +105,15 @@ export const UPDATE_TOO_LARGE_REASON = 'collaboration-update-too-large';
  * with `ACK_TYPE` and the version this tab reports. */
 const STORED_TYPE = 'stored';
 const ACK_TYPE = 'ack';
+/** A step 2 with no structs and no deletions: it carries no edit. */
+const EMPTY_UPDATE = Y.encodeStateAsUpdate(new Y.Doc());
+
+function isEmptyUpdate(update: Uint8Array) {
+  return (
+    update.byteLength === EMPTY_UPDATE.byteLength &&
+    update.every((byte, at) => byte === EMPTY_UPDATE[at])
+  );
+}
 
 /**
  * One room over the tab's shared collaboration socket (capy-sync 1): join
@@ -191,6 +200,15 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   /** Updates and step 2 replies sent and not acknowledged: each send's last
    * piece (its `sent` count) and the version its oldest edit was made at. */
   private inFlight: { at: number; upTo: number }[] = [];
+  /** Sends the room acknowledged (admitted) and no store holds for sure
+   * yet: each stays unsent until the second store's `stored` after its ACK
+   * (review r1 H1, Editor 2026-10-26), counted by the versions it heard. */
+  private admitted: { at: number; heard: number; stores: number }[] = [];
+  /** The version this channel last reported (its JOIN's, then each
+   * `ack`): an `ack` goes when the version it may report changes. */
+  private lastReported: number | null = null;
+  /** This channel heard its answer's `stored`, which is no store's. */
+  private answered = false;
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
@@ -218,13 +236,34 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     let version = this.storedVersion;
     if (this.unsentAt !== null) version = Math.min(version, this.unsentAt);
     for (const { at } of this.inFlight) version = Math.min(version, at);
-    return version;
+    for (const { at } of this.admitted) version = Math.min(version, at);
+    // A document holding unsent edits holds something: never new (0), even
+    // before its first `stored` (review r1 L8).
+    const holding =
+      this.unsentAt !== null ||
+      this.inFlight.length > 0 ||
+      this.admitted.length > 0;
+    return holding ? Math.max(version, 1) : version;
   }
 
   /** Stored drafts made at `version` go into the document now (a draft
-   * send's held steps): an unsent edit made then. */
+   * send's held steps, a late merge): an unsent edit made then. Call it
+   * before applying them: the next update sent carries the mark, which then
+   * clears as that update's own (review r1 M2). */
   unsentFrom(version: number) {
     this.unsentAt = Math.min(this.unsentAt ?? version, version);
+    this.report();
+  }
+
+  /** Acknowledges the version this synced channel may report whenever it
+   * changed (review r1 H2): a store's notice, an edit taken as stored. */
+  private report() {
+    if (!this.isSynced) return;
+    const version = this.reportedVersion;
+    if (version === this.lastReported) return;
+    this.lastReported = version;
+    const ack = { type: ACK_TYPE, version };
+    this.send(MessageKind.Stateless, text(JSON.stringify(ack)));
   }
 
   /** An edit, or applied drafts, no message carries yet. */
@@ -283,8 +322,12 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     const joined = this.channel !== null;
     // 0: the tab holds no unsent edits for the document, so the room may
     // expire the session's ids (Q236) and end its session, which the Leave
-    // names.
-    const unsent = this.unsyncedChanges > 0 || this.config.unsent?.() === true;
+    // names. Drafts marked to apply (`unsentFrom`) are unsent edits (review
+    // r1 N3: a draft send's hold keeps its session).
+    const unsent =
+      this.unsyncedChanges > 0 ||
+      this.unsentAt !== null ||
+      this.config.unsent?.() === true;
     if (joined)
       this.send(
         MessageKind.Leave,
@@ -411,6 +454,10 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       case MessageKind.Ack: {
         const count = new Reader(payload).varUint();
         this.acknowledged += count;
+        // Admitted: unsent until a store certainly holds it (H1).
+        for (const { at, upTo } of this.inFlight)
+          if (upTo <= this.acknowledged)
+            this.admitted.push({ at, heard: this.storedVersion, stores: 0 });
         this.inFlight = this.inFlight.filter(
           ({ upTo }) => upTo > this.acknowledged
         );
@@ -440,11 +487,8 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
             version?: unknown;
           };
           if (notice.type === STORED_TYPE) {
-            if (this.isSynced && typeof notice.version === 'number') {
-              this.storedVersion = Math.max(this.storedVersion, notice.version);
-              const ack = { type: ACK_TYPE, version: this.reportedVersion };
-              this.send(MessageKind.Stateless, text(JSON.stringify(ack)));
-            }
+            if (this.isSynced && typeof notice.version === 'number')
+              this.stored(notice.version);
             return;
           }
         }
@@ -532,12 +576,35 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     setHeld(this, piece !== null);
   }
 
+  /** A `stored` notice: the version this document now holds. The first on
+   * a channel answers its step 1; each later one is a store's, and an
+   * admitted send is stored once a second store's was heard after its ACK:
+   * stores run one at a time, so that one began after the send was
+   * admitted (review r1 H1). */
+  private stored(version: number) {
+    this.storedVersion = Math.max(this.storedVersion, version);
+    if (this.answered) {
+      for (const send of this.admitted) {
+        if (version > send.heard) {
+          send.heard = version;
+          send.stores += 1;
+        }
+      }
+    } else {
+      this.answered = true;
+    }
+    this.admitted = this.admitted.filter(({ stores }) => stores < 2);
+    this.report();
+  }
+
   private resetCounts() {
-    // Unacknowledged sends may not have reached the room: the next step 2
+    // Sends no store certainly holds may not reach one: the next step 2
     // carries them.
-    for (const { at } of this.inFlight)
+    for (const { at } of [...this.inFlight, ...this.admitted])
       this.unsentAt = Math.min(this.unsentAt ?? at, at);
     this.inFlight = [];
+    this.admitted = [];
+    this.answered = false;
     this.setUnsynced(0);
     this.sent = 0;
     this.acknowledged = 0;
@@ -555,17 +622,22 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       this.stop();
       return;
     }
-    // An update is an edit made now; a step 2 carries everything the room
-    // lacks, every unsent edit included.
-    const at =
+    // An update is an edit made now, and takes any mark `unsentFrom` left
+    // (M2); a step 2 carries everything the room lacks, every unsent edit
+    // included. An empty step 2 (a new document's) carries none (H2).
+    const empty = kind === SyncKind.Step2 && isEmptyUpdate(update);
+    let at =
       kind === SyncKind.Step2 ? this.reportedVersion : this.storedVersion;
-    if (kind === SyncKind.Step2) this.unsentAt = null;
+    if (!empty) {
+      at = Math.min(at, this.unsentAt ?? at);
+      this.unsentAt = null;
+    }
     for (const piece of pieces) {
       this.sent += 1;
       this.setUnsynced(this.unsyncedChanges + 1);
       this.send(MessageKind.Sync, syncMessage(kind, piece));
     }
-    this.inFlight.push({ at, upTo: this.sent });
+    if (!empty) this.inFlight.push({ at, upTo: this.sent });
     if (pieces.length > 1 || this.lastPiece !== null)
       this.setLastPiece(this.sent);
   }
@@ -636,11 +708,17 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
           this.config.name,
           token,
           this.awareness.clientID,
-          this.reportedVersion,
+          this.joinVersion(),
           note
         )
       )
     );
+  }
+
+  /** The version a JOIN names, which its session counts at until an ack. */
+  private joinVersion() {
+    this.lastReported = this.reportedVersion;
+    return this.lastReported;
   }
 
   /** Takes the client id a token offers, before the document is bound

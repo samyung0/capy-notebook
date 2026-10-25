@@ -6,11 +6,12 @@
 //! Undo of it may restore, each released 25 h after it arrived, since editors'
 //! Undo reaches back at most 24 h. A session counts while connected and for
 //! 24 h after it was last seen; it ends earlier on a clean Leave naming it.
-//! A later fold reads what must stay from here ([Sessions::holds]): the
-//! oldest version every counted session reached and their held deletions.
-//! Notes only (Q274): item rooms keep their whole history.
+//! Agent steps' deletions are held 24 h too (review r1 M3). A later fold
+//! reads what must stay from here ([Sessions::holds]): the oldest version
+//! every counted session reached and the held deletions. Notes only (Q274):
+//! item rooms keep their whole history.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use yrs::IdSet;
@@ -24,6 +25,9 @@ pub const COUNTED_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 /// How long a held deletion stays after it arrived (Q2): an hour past the
 /// editors' 24 h Undo, which runs on the tab's clock.
 pub const HELD_FOR: Duration = Duration::from_secs(25 * 60 * 60);
+/// How long an agent step's deletions stay held (plan section 4): its Undo
+/// is offered for 24 h at most.
+pub const AGENT_HELD_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 /// Deletions arriving within this of a batch's first join it, stamped with
 /// the latest arrival, so a session keeps at most one batch a minute.
 const BATCH: Duration = Duration::from_secs(60);
@@ -34,16 +38,32 @@ pub struct Holds {
     /// The oldest stored version every counted session reached; none when
     /// no session counts.
     pub reached: Option<i64>,
-    /// Every counted session's held deletions.
+    /// Every counted session's held deletions and the agent steps' (H).
     pub held: IdSet,
 }
 
-/// Deletions that arrived together, released once `at` is HELD_FOR old.
+/// Deletions that arrived together, released once `at` is old enough.
 #[derive(Clone, Debug, PartialEq)]
 struct Batch {
     started: SystemTime,
     at: SystemTime,
     ids: IdSet,
+}
+
+/// Adds `ids` arriving `now` to `held`: to its last batch while that is
+/// younger than [BATCH], else as a new one.
+fn hold(held: &mut Vec<Batch>, ids: IdSet, now: SystemTime) {
+    match held.last_mut() {
+        Some(batch) if since(batch.started, now) < BATCH => {
+            batch.ids.merge_with(ids);
+            batch.at = batch.at.max(now);
+        }
+        _ => held.push(Batch {
+            started: now,
+            at: now,
+            ids,
+        }),
+    }
 }
 
 #[derive(Debug)]
@@ -54,11 +74,28 @@ struct Session {
     seen: SystemTime,
     held: Vec<Batch>,
     ended: bool,
+    /// The room answered one of its step 1s (or a row stored it): it holds
+    /// the room's state. A new session (version 0) that never synced holds
+    /// nothing and is left out of `reached` (review r1 H2).
+    synced: bool,
     /// The change count at its last change (see [Sessions::unsaved]).
     changed: u64,
 }
 
 impl Session {
+    fn new(user: &str, version: i64, seen: SystemTime) -> Self {
+        Session {
+            user: user.to_owned(),
+            version,
+            channels: 0,
+            seen,
+            held: Vec::new(),
+            ended: false,
+            synced: false,
+            changed: 0,
+        }
+    }
+
     fn counts(&self, now: SystemTime) -> bool {
         !self.ended && (self.channels > 0 || since(self.seen, now) < COUNTED_FOR)
     }
@@ -75,9 +112,33 @@ pub struct Row {
     pub held: Option<Vec<u8>>,
 }
 
+/// What a store writes of the sessions: the changed rows, the agent holds
+/// when they changed (none inside: none are left), and the change count
+/// they reach ([Sessions::saved]).
+#[derive(Debug, Default)]
+pub struct Unsaved {
+    pub rows: Vec<Row>,
+    pub agent: Option<Option<Vec<u8>>>,
+    pub through: u64,
+}
+
+/// Stored records that could not be read (Q382, Epo 2026-10-26): each such
+/// session is dropped alone, as if it had ended, and reported; so are agent
+/// holds that cannot be read.
+#[derive(Debug, Default, PartialEq)]
+pub struct Damaged {
+    pub sessions: Vec<u64>,
+    pub agent: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct Sessions {
     sessions: HashMap<u64, Session>,
+    /// Agent steps' deletions (review r1 M3): the live agent edits' now, a
+    /// durable Undo payload's once that wiring lands; each batch released
+    /// [AGENT_HELD_FOR] after it arrived.
+    agent: Vec<Batch>,
+    agent_changed: u64,
     changes: u64,
     saved: u64,
 }
@@ -93,36 +154,65 @@ pub fn late(window: i64, version: u64) -> bool {
     version > 0 && i64::try_from(version).is_ok_and(|version| version < window)
 }
 
+/// A stored version a note room now holds (its store's, or a service edit's
+/// it applied), after `stored`, the latest it took: the versions it skipped
+/// are service edits whose rows committed before the room applied them,
+/// kept in `gaps` until they arrive (review r1 M1). The new latest.
+pub fn took(stored: i64, gaps: &mut BTreeSet<i64>, version: i64) -> i64 {
+    if version > stored + 1 {
+        gaps.extend(stored + 1..version);
+    }
+    gaps.remove(&version);
+    stored.max(version)
+}
+
+/// The latest version a note room holds with every version before it: what
+/// its members hold once they heard its broadcasts.
+pub fn whole(stored: i64, gaps: &BTreeSet<i64>) -> i64 {
+    gaps.first().map_or(stored, |gap| gap - 1)
+}
+
 impl Sessions {
-    /// Sessions as their rows stored them (those seen within the cap).
+    /// Sessions as their rows stored them (those seen within the cap), and
+    /// the agent holds; a record that cannot be read is left out (Q382).
     pub fn load(
         rows: impl IntoIterator<Item = (u64, String, i64, SystemTime, Option<Vec<u8>>)>,
-    ) -> Result<Self, String> {
+        agent: Option<Vec<u8>>,
+    ) -> (Self, Damaged) {
+        let mut damaged = Damaged::default();
         let mut sessions = HashMap::new();
         for (client, user, version, seen, held) in rows {
-            let held = match held {
-                Some(bytes) => decode_held(&bytes)
-                    .ok_or_else(|| format!("session {client}: unreadable held deletions"))?,
+            let held = match held.map(|bytes| decode_held(&bytes)) {
+                Some(Some(held)) => held,
+                Some(None) => {
+                    damaged.sessions.push(client);
+                    continue;
+                }
                 None => Vec::new(),
             };
-            sessions.insert(
-                client,
-                Session {
-                    user,
-                    version,
-                    channels: 0,
-                    seen,
-                    held,
-                    ended: false,
-                    changed: 0,
-                },
-            );
+            let mut session = Session::new(&user, version, seen);
+            session.held = held;
+            session.synced = true;
+            sessions.insert(client, session);
         }
-        Ok(Sessions {
+        let agent = match agent.map(|bytes| decode_held(&bytes)) {
+            Some(Some(agent)) => agent,
+            Some(None) => {
+                damaged.agent = true;
+                Vec::new()
+            }
+            None => Vec::new(),
+        };
+        // Unreadable agent holds are written again, cleared.
+        let changes = u64::from(damaged.agent);
+        let sessions = Sessions {
             sessions,
-            changes: 0,
+            agent,
+            agent_changed: changes,
+            changes,
             saved: 0,
-        })
+        };
+        (sessions, damaged)
     }
 
     fn change(&mut self, client: u64) -> Option<&mut Session> {
@@ -133,38 +223,62 @@ impl Sessions {
         Some(session)
     }
 
-    /// A channel joined under `client` naming `version` (its JOIN's).
-    pub fn joined(&mut self, client: u64, user: &str, version: i64, now: SystemTime) {
-        let fresh = Session {
-            user: user.to_owned(),
-            version,
-            channels: 0,
-            seen: now,
-            held: Vec::new(),
-            ended: false,
-            changed: 0,
-        };
-        let session = self.sessions.entry(client).or_insert(fresh);
-        if session.ended || session.user != user {
-            session.user = user.to_owned();
-            session.held.clear();
-            session.ended = false;
-            session.channels = 0;
+    /// A channel joined under `client` naming `version` (its JOIN's). False,
+    /// changing nothing, when a live session under that id is another
+    /// user's: the client-id binding refuses that first (review r1 N4).
+    pub fn joined(&mut self, client: u64, user: &str, version: i64, now: SystemTime) -> bool {
+        match self.sessions.get_mut(&client) {
+            Some(session) if !session.ended && session.user != user => return false,
+            // An ended session's id starts a new session.
+            Some(session) if session.ended => *session = Session::new(user, version, now),
+            Some(_) => {}
+            None => {
+                self.sessions
+                    .insert(client, Session::new(user, version, now));
+            }
         }
         if let Some(session) = self.change(client) {
             session.version = version;
             session.channels += 1;
             session.seen = now;
         }
+        true
     }
 
-    /// One of its channels went (a drop, a Leave with unsent edits).
+    /// Whether a session under `client` is kept (live or ended).
+    pub fn has(&self, client: u64) -> bool {
+        self.sessions.contains_key(&client)
+    }
+
+    /// The session is written again by the next store (its id's row just
+    /// landed after a store passed it over).
+    pub fn touch(&mut self, client: u64) {
+        self.change(client);
+    }
+
+    /// The room answered the session's step 1: it holds the room's state.
+    pub fn synced(&mut self, client: u64) {
+        if let Some(session) = self.sessions.get_mut(&client) {
+            session.synced = true;
+        }
+    }
+
+    /// One of its channels went (a drop, a Leave with unsent edits). A new
+    /// session that never synced and holds nothing is forgotten with its
+    /// last channel, so JOINs alone do not grow the map (review r1 H2).
     pub fn left(&mut self, client: u64, now: SystemTime) {
         if self.sessions.get(&client).is_some_and(|s| !s.ended)
             && let Some(session) = self.change(client)
         {
             session.channels = session.channels.saturating_sub(1);
             session.seen = now;
+            if session.channels == 0
+                && !session.synced
+                && session.version == 0
+                && session.held.is_empty()
+            {
+                self.sessions.remove(&client);
+            }
         }
     }
 
@@ -177,9 +291,13 @@ impl Sessions {
         }
     }
 
-    /// The session acknowledged a store at `version`.
+    /// The session acknowledged a store at `version`; the same version again
+    /// changes nothing to write (review r1 L2).
     pub fn acked(&mut self, client: u64, version: i64) {
-        if self.sessions.get(&client).is_some_and(|s| !s.ended)
+        if self
+            .sessions
+            .get(&client)
+            .is_some_and(|s| !s.ended && s.version != version)
             && let Some(session) = self.change(client)
         {
             session.version = version;
@@ -195,21 +313,23 @@ impl Sessions {
         let Some(session) = self.change(client) else {
             return false;
         };
-        match session.held.last_mut() {
-            Some(batch) if since(batch.started, now) < BATCH => {
-                batch.ids.merge_with(ids);
-                batch.at = batch.at.max(now);
-            }
-            _ => session.held.push(Batch {
-                started: now,
-                at: now,
-                ids,
-            }),
-        }
+        hold(&mut session.held, ids, now);
         true
     }
 
-    /// Sessions past the cap end and deletions past HELD_FOR go.
+    /// An agent step deleted `ids`, which its Undo or Redo may bring back:
+    /// held [AGENT_HELD_FOR]. A durable Undo payload records its deletions
+    /// here too, once that wiring lands.
+    pub fn agent_deleted(&mut self, ids: IdSet, now: SystemTime) {
+        if ids.is_empty() {
+            return;
+        }
+        hold(&mut self.agent, ids, now);
+        self.changes += 1;
+        self.agent_changed = self.changes;
+    }
+
+    /// Sessions past the cap end and deletions past their hold go.
     fn expire(&mut self, now: SystemTime) {
         let mut changed = Vec::new();
         for (&client, session) in &mut self.sessions {
@@ -227,32 +347,42 @@ impl Sessions {
         for client in changed {
             self.change(client);
         }
+        let before = self.agent.len();
+        self.agent
+            .retain(|batch| since(batch.at, now) < AGENT_HELD_FOR);
+        if self.agent.len() != before {
+            self.changes += 1;
+            self.agent_changed = self.changes;
+        }
     }
 
     /// What a fold must keep now: the oldest version every counted session
-    /// reached, and their held deletions.
+    /// reached (a new one that never synced holds nothing yet), and the held
+    /// deletions.
     pub fn holds(&mut self, now: SystemTime) -> Holds {
         self.expire(now);
         let mut reached = None;
         let mut held = IdSet::new();
         for session in self.sessions.values().filter(|s| s.counts(now)) {
-            reached = Some(reached.map_or(session.version, |r: i64| r.min(session.version)));
+            if session.synced || session.version > 0 {
+                reached = Some(reached.map_or(session.version, |r: i64| r.min(session.version)));
+            }
             for batch in &session.held {
                 held.merge_with(batch.ids.clone());
             }
+        }
+        for batch in &self.agent {
+            held.merge_with(batch.ids.clone());
         }
         Holds { reached, held }
     }
 
     /// The rows of sessions changed since the last save that `recorded`
     /// says have a row (an accepted write recorded their id to their user),
-    /// and the change count they reach: a store writes them in its
-    /// transaction, so a held deletion is durable with the state holding it.
-    pub fn unsaved(
-        &mut self,
-        now: SystemTime,
-        recorded: impl Fn(u64, &str) -> bool,
-    ) -> (Vec<Row>, u64) {
+    /// the agent holds when they changed, and the change count they reach: a
+    /// store writes them in its transaction, so a held deletion is durable
+    /// with the state holding it.
+    pub fn unsaved(&mut self, now: SystemTime, recorded: impl Fn(u64, &str) -> bool) -> Unsaved {
         self.expire(now);
         let rows = self
             .sessions
@@ -266,7 +396,13 @@ impl Sessions {
                 held: (!s.ended && !s.held.is_empty()).then(|| encode_held(&s.held)),
             })
             .collect();
-        (rows, self.changes)
+        let agent = (self.agent_changed > self.saved)
+            .then(|| (!self.agent.is_empty()).then(|| encode_held(&self.agent)));
+        Unsaved {
+            rows,
+            agent,
+            through: self.changes,
+        }
     }
 
     /// The rows up to change `through` were written: ended sessions go.
@@ -278,10 +414,11 @@ impl Sessions {
     }
 }
 
+/// Unix seconds, rounded up, so a batch read back is never released early
+/// (review r1 N1).
 fn unix(time: SystemTime) -> u64 {
-    time.duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    let since = time.duration_since(UNIX_EPOCH).unwrap_or_default();
+    since.as_secs() + u64::from(since.subsec_nanos() > 0)
 }
 
 /// Held batches as stored: a count, then each batch's arrival (Unix
@@ -391,7 +528,7 @@ mod tests {
         sessions.joined(8, "u_a", 1, now);
         sessions.deleted(7, ids(9, 0, 1), now);
         let recorded = |client: u64, _: &str| client == 7;
-        let (rows, through) = sessions.unsaved(now, recorded);
+        let Unsaved { rows, through, .. } = sessions.unsaved(now, recorded);
         assert_eq!(rows.len(), 1);
         assert_eq!((rows[0].client, rows[0].seen), (7, Some(now)));
         let held = decode_held(rows[0].held.as_ref().unwrap()).unwrap();
@@ -399,12 +536,15 @@ mod tests {
         // A change while the store ran is written by the next one.
         sessions.acked(7, 2);
         sessions.saved(through);
-        let (rows, through) = sessions.unsaved(now, recorded);
+        let Unsaved { rows, through, .. } = sessions.unsaved(now, recorded);
         assert_eq!(rows.iter().map(|r| r.version).collect::<Vec<_>>(), [2]);
         sessions.saved(through);
-        assert!(sessions.unsaved(now, recorded).0.is_empty());
+        assert!(sessions.unsaved(now, recorded).rows.is_empty());
+        // The same acknowledgement again writes nothing (review r1 L2).
+        sessions.acked(7, 2);
+        assert!(sessions.unsaved(now, recorded).rows.is_empty());
         sessions.end(7);
-        let (rows, through) = sessions.unsaved(now, recorded);
+        let Unsaved { rows, through, .. } = sessions.unsaved(now, recorded);
         assert_eq!((rows[0].seen, rows[0].held.is_none()), (None, true));
         sessions.saved(through);
         assert!(!sessions.sessions.contains_key(&7));
@@ -422,12 +562,14 @@ mod tests {
         sessions.joined(8, "u_b", 1, now);
         sessions.left(8, now);
         assert_eq!(sessions.holds(now).reached, Some(1));
-        let (rows, _) = sessions.unsaved(now, |client, _| client == 7);
-        let mut next = Sessions::load(rows.into_iter().map(|row| {
-            let seen = row.seen.expect("a live session");
-            (row.client as u64, row.user, row.version, seen, row.held)
-        }))
-        .unwrap();
+        let rows = sessions.unsaved(now, |client, _| client == 7).rows;
+        let (mut next, _) = Sessions::load(
+            rows.into_iter().map(|row| {
+                let seen = row.seen.expect("a live session");
+                (row.client as u64, row.user, row.version, seen, row.held)
+            }),
+            None,
+        );
         let holds = next.holds(now);
         assert_eq!((holds.reached, holds.held), (Some(2), ids(9, 0, 1)));
         assert!(late(2, 1));
@@ -454,7 +596,35 @@ mod tests {
         let mut longer = bytes.clone();
         longer.push(0);
         assert_eq!(decode_held(&longer), None);
-        assert!(Sessions::load([(7, "u".into(), 1, now, Some(vec![9]))]).is_err());
+    }
+
+    /// Q382 (Epo 2026-10-26): a session row whose held deletions cannot be
+    /// read is dropped alone, as if it had ended, and the rest load; agent
+    /// holds that cannot be read are dropped and written again cleared.
+    /// Fails if one damaged record fails the load or drops the others.
+    #[test]
+    fn a_damaged_record_drops_only_its_own_session() {
+        let now = start();
+        let good = encode_held(&[Batch {
+            started: now,
+            at: now,
+            ids: ids(9, 0, 3),
+        }]);
+        let rows = [
+            (7, "u_a".to_owned(), 4, now, Some(vec![9])),
+            (8, "u_b".to_owned(), 5, now, Some(good)),
+        ];
+        let (mut sessions, damaged) = Sessions::load(rows, Some(vec![1]));
+        assert_eq!(
+            damaged,
+            Damaged {
+                sessions: vec![7],
+                agent: true
+            }
+        );
+        let holds = sessions.holds(now);
+        assert_eq!((holds.reached, holds.held), (Some(5), ids(9, 0, 3)));
+        assert_eq!(sessions.unsaved(now, |_, _| true).agent, Some(None));
     }
 
     /// Late detection: a version below the latest collection's window is
@@ -467,5 +637,93 @@ mod tests {
         assert!(late(5, 4));
         assert!(!late(5, 5));
         assert!(!late(5, u64::MAX));
+    }
+
+    /// Review r1 H2: a new session (version 0) that never synced holds
+    /// nothing, so it does not hold `reached` at 0, and its last channel's
+    /// end forgets it; once synced it counts at its version, 0 included.
+    /// Fails if a brief open that never synced holds `reached` at 0.
+    #[test]
+    fn a_new_session_counts_once_it_synced() {
+        let now = start();
+        let mut sessions = Sessions::default();
+        sessions.joined(7, "u_a", 4, now);
+        sessions.joined(8, "u_b", 0, now);
+        assert_eq!(sessions.holds(now).reached, Some(4));
+        sessions.left(8, now);
+        assert!(!sessions.sessions.contains_key(&8));
+        sessions.joined(9, "u_b", 0, now);
+        sessions.synced(9);
+        assert_eq!(sessions.holds(now).reached, Some(0));
+        sessions.acked(9, 6);
+        assert_eq!(sessions.holds(now).reached, Some(4));
+    }
+
+    /// Review r1 N4: a live session stays its user's; a JOIN of its id by
+    /// another user changes nothing (the binding refuses that first). An
+    /// ended session's id starts a new one.
+    #[test]
+    fn a_live_session_is_never_taken_by_another_user() {
+        let now = start();
+        let mut sessions = Sessions::default();
+        sessions.joined(7, "u_a", 3, now);
+        sessions.deleted(7, ids(9, 0, 1), now);
+        assert!(!sessions.joined(7, "u_b", 1, now));
+        let holds = sessions.holds(now);
+        assert_eq!((holds.reached, holds.held), (Some(3), ids(9, 0, 1)));
+        sessions.end(7);
+        assert!(sessions.joined(7, "u_b", 1, now));
+        assert_eq!(sessions.holds(now).held, IdSet::new());
+    }
+
+    /// Review r1 M3 (Editor 2026-10-26, plan change): an agent step's
+    /// deletions are held 24 h after they arrived, whatever the sessions do,
+    /// and are written with the stores and read back. Fails if they are not
+    /// held, or held past 24 h.
+    #[test]
+    fn agent_deletions_are_held_24_hours() {
+        let now = start();
+        let mut sessions = Sessions::default();
+        sessions.agent_deleted(ids(3, 0, 2), now);
+        assert_eq!(sessions.holds(now).reached, None);
+        assert_eq!(sessions.holds(now + 23 * HOUR).held, ids(3, 0, 2));
+        let agent = sessions.unsaved(now, |_, _| true).agent;
+        let (mut loaded, _) = Sessions::load([], agent.flatten());
+        assert_eq!(loaded.holds(now + 23 * HOUR).held, ids(3, 0, 2));
+        assert_eq!(loaded.holds(now + 24 * HOUR).held, IdSet::new());
+        assert_eq!(loaded.unsaved(now, |_, _| true).agent, Some(None));
+    }
+
+    /// Review r1 N1: a batch's arrival is stored rounded up to the second,
+    /// so one read back is released no earlier than 25 h after it arrived.
+    #[test]
+    fn a_stored_arrival_rounds_up() {
+        let at = start() + Duration::from_millis(500);
+        let bytes = encode_held(&[Batch {
+            started: at,
+            at,
+            ids: ids(9, 0, 1),
+        }]);
+        let held = decode_held(&bytes).expect("held");
+        assert_eq!(held[0].at, start() + Duration::from_secs(1));
+    }
+
+    /// Review r1 M1: a store's version past a service edit the room has not
+    /// applied leaves a gap, and the room holds every version only up to it
+    /// until that edit arrives, so no `stored` notice names a version its
+    /// members may lack. Fails if a skipped version counts as held.
+    #[test]
+    fn a_skipped_version_stays_a_gap_until_applied() {
+        let mut gaps = BTreeSet::new();
+        let stored = took(4, &mut gaps, 5);
+        assert_eq!((stored, whole(stored, &gaps)), (5, 5));
+        // The service edit took 6, the next store 7; 7 arrives first.
+        let stored = took(stored, &mut gaps, 7);
+        assert_eq!((stored, whole(stored, &gaps)), (7, 5));
+        let stored = took(stored, &mut gaps, 6);
+        assert_eq!((stored, whole(stored, &gaps)), (7, 7));
+        // A service edit the room loaded with already leaves no gap.
+        assert_eq!(took(stored, &mut gaps, 3), 7);
+        assert!(gaps.is_empty());
     }
 }

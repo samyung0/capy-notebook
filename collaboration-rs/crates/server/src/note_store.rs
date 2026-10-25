@@ -258,7 +258,7 @@ pub async fn append(
     doc: Doc,
     row: &[u8],
     actors: &[String],
-    sessions: &[sessions::Row],
+    sessions: &sessions::Unsaved,
 ) -> Result<i64, StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
@@ -288,11 +288,15 @@ pub async fn append(
     Ok(version)
 }
 
-/// A note's sessions as stored (`sessions.rs`): those seen within the cap.
+/// A note's sessions as stored (`sessions.rs`): those seen within the cap,
+/// and the agent holds. A session record that cannot be read is dropped
+/// alone (Q382, Epo 2026-10-26): its row's session columns are cleared, as
+/// an ended session's are, and the caller reports it; so are agent holds
+/// that cannot be read.
 pub async fn load_sessions(
     pool: &Pool,
     material_id: &str,
-) -> Result<sessions::Sessions, StoreError> {
+) -> Result<(sessions::Sessions, sessions::Damaged), StoreError> {
     let client = pool.get().await?;
     let rows = client
         .query(
@@ -305,57 +309,86 @@ pub async fn load_sessions(
             ],
         )
         .await?;
-    sessions::Sessions::load(rows.iter().map(|row| {
-        (
-            row.get::<_, i64>(0) as u64,
-            row.get(1),
-            row.get(2),
-            row.get(3),
-            row.get(4),
+    let agent: Option<Vec<u8>> = client
+        .query_opt(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material_id],
         )
-    }))
-    .map_err(StoreError::Other)
+        .await?
+        .and_then(|row| row.get(0));
+    let (sessions, damaged) = sessions::Sessions::load(
+        rows.iter().map(|row| {
+            (
+                row.get::<_, i64>(0) as u64,
+                row.get(1),
+                row.get(2),
+                row.get(3),
+                row.get(4),
+            )
+        }),
+        agent,
+    );
+    if !damaged.sessions.is_empty() {
+        let clients: Vec<i64> = damaged.sessions.iter().map(|&id| id as i64).collect();
+        client
+            .execute(
+                "UPDATE material_yjs_client_ids SET seen_at=NULL, held=NULL
+                 WHERE material_id=$1 AND document='content' AND client_id = ANY($2)",
+                &[&material_id, &clients],
+            )
+            .await?;
+    }
+    Ok((sessions, damaged))
 }
 
-/// Writes note sessions' rows beside their client id's record: a live
-/// session's version, last seen and held deletions (the record's row is
-/// made if its first write's has not landed yet), an ended one's cleared.
+/// Writes what changed of a note's sessions beside their client ids'
+/// records, in one statement (review r1 L2): a live session's version, last
+/// seen and held deletions, an ended one's cleared (the record's row is made
+/// if its first write's was lost), and the agent holds when they
+/// changed. Never for an account whose purge began or ended (review r1 L5):
+/// its user row is locked, so a purge running meanwhile waits for this
+/// store and then deletes what it wrote.
 pub(crate) async fn save_sessions(
     tx: &Transaction<'_>,
     material_id: &str,
-    rows: &[sessions::Row],
+    unsaved: &sessions::Unsaved,
 ) -> Result<(), StoreError> {
-    for row in rows {
-        match row.seen {
-            Some(seen) => {
-                tx.execute(
-                    "INSERT INTO material_yjs_client_ids
-                       (material_id, document, client_id, user_id, acked_version, seen_at, held)
-                     VALUES ($1, 'content', $2, $3, $4, $5, $6)
-                     ON CONFLICT (material_id, document, client_id) DO UPDATE
-                     SET acked_version=EXCLUDED.acked_version, seen_at=EXCLUDED.seen_at,
-                         held=EXCLUDED.held
-                     WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
-                    &[
-                        &material_id,
-                        &row.client,
-                        &row.user,
-                        &row.version,
-                        &seen,
-                        &row.held,
-                    ],
-                )
-                .await?;
-            }
-            None => {
-                tx.execute(
-                    "UPDATE material_yjs_client_ids SET seen_at=NULL, held=NULL
-                     WHERE material_id=$1 AND document='content' AND client_id=$2 AND user_id=$3",
-                    &[&material_id, &row.client, &row.user],
-                )
-                .await?;
-            }
+    if !unsaved.rows.is_empty() {
+        let (mut clients, mut users, mut versions, mut seen, mut held) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for row in &unsaved.rows {
+            clients.push(row.client);
+            users.push(row.user.as_str());
+            versions.push(row.version);
+            seen.push(row.seen);
+            held.push(row.held.as_deref());
         }
+        tx.execute(
+            "WITH live AS (
+               SELECT id FROM users
+               WHERE id = ANY($3) AND deleted_at IS NULL AND deletion_requested_at IS NULL
+               FOR SHARE
+             )
+             INSERT INTO material_yjs_client_ids
+               (material_id, document, client_id, user_id, acked_version, seen_at, held)
+             SELECT $1, 'content', r.client, r.user_id, r.version, r.seen, r.held
+             FROM unnest($2::bigint[], $3::text[], $4::bigint[], $5::timestamptz[], $6::bytea[])
+               AS r(client, user_id, version, seen, held)
+             JOIN live ON live.id = r.user_id
+             ON CONFLICT (material_id, document, client_id) DO UPDATE
+             SET acked_version=EXCLUDED.acked_version, seen_at=EXCLUDED.seen_at,
+                 held=EXCLUDED.held
+             WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
+            &[&material_id, &clients, &users, &versions, &seen, &held],
+        )
+        .await?;
+    }
+    if let Some(agent) = &unsaved.agent {
+        tx.execute(
+            "UPDATE material_yjs_documents SET agent_held=$2 WHERE material_id=$1",
+            &[&material_id, agent],
+        )
+        .await?;
     }
     Ok(())
 }
@@ -366,11 +399,11 @@ pub(crate) async fn save_sessions(
 pub async fn save_sessions_now(
     pool: &Pool,
     material_id: &str,
-    rows: &[sessions::Row],
+    unsaved: &sessions::Unsaved,
 ) -> Result<(), StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
-    save_sessions(&tx, material_id, rows).await?;
+    save_sessions(&tx, material_id, unsaved).await?;
     tx.commit().await?;
     Ok(())
 }

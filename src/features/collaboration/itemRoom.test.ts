@@ -75,13 +75,18 @@ vi.mock('@/lib/editDrafts', () => ({
     drafts.rows = [];
   }),
   draftGroups: async (
-    rows: { lineage: string; refused?: boolean }[],
+    rows: { expired?: boolean; lineage: string; refused?: boolean }[],
     room: string
   ) => {
     await drafts.gate;
-    const recovery = rows.filter((row) => row.refused || row.lineage !== room);
+    const recovery = rows.filter(
+      (row) => row.expired || row.refused || row.lineage !== room
+    );
     return {
-      current: rows.filter((row) => !row.refused && row.lineage === room),
+      current: rows.filter(
+        (row) => !(row.expired || row.refused) && row.lineage === room
+      ),
+      expired: !!recovery[0]?.expired,
       recovery,
       refused: !!recovery[0]?.refused,
     };
@@ -109,6 +114,7 @@ vi.mock('@/lib/editDrafts', () => ({
       stop() {},
     };
   }),
+  dropExpiredGroup: vi.fn(),
   readDrafts: vi.fn(async () => drafts.rows),
   recordDrafts: (options: {
     onLost?: () => void;
@@ -162,7 +168,7 @@ const { applyDrafts } = await import('@/lib/editDrafts');
 const { itemEditingStopped } = await import('./itemRoom');
 const { markUpdateAvailable } = await import('@/lib/appRelease');
 const { markUnsent } = await import('./unsentItems');
-const { draftSender } = await import('@/lib/editDrafts');
+const { draftSender, dropExpiredGroup } = await import('@/lib/editDrafts');
 const { userToast } = await import('@/components/ui/userToast');
 
 beforeEach(() => {
@@ -323,6 +329,21 @@ it('opens stored refused edits in recovery until Reload', async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(drafts.rows).toEqual([]);
   expect(onReplace).toHaveBeenCalledTimes(1);
+  room.destroy();
+});
+
+// Late merge M5 (review r1 L6): stored edits past the 7-day expiry open
+// once, copy-only and marked expired, and are dropped as they open.
+it('opens expired stored edits once in recovery and drops them', async () => {
+  const row = { expired: true, lineage: 'material:q:schema:1' };
+  drafts.rows = [row];
+  const { room } = await started();
+  expect(providers).toHaveLength(0);
+  expect(room.getSnapshot().recovery).toMatchObject({
+    expired: true,
+    refused: false,
+  });
+  expect(dropExpiredGroup).toHaveBeenCalledWith([row], expect.any(Function));
   room.destroy();
 });
 

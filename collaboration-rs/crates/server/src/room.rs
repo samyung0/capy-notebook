@@ -59,6 +59,10 @@ pub const OPEN_SLOWED_TYPE: &str = "open-slowed";
 /// src/features/collaboration/roomProvider.ts). The editor answers
 /// `{"type": "ack", "version": v}`, never above the version its oldest
 /// unsent edit was made at, and its session counts at that (`sessions.rs`).
+/// An edit stays unsent until the second store's notice after its ACK (the
+/// first notice on a channel answers its step 1 and is no store's; review r1
+/// H1): stores run one at a time, so that store began after the edit was
+/// admitted and holds it.
 pub const STORED_TYPE: &str = "stored";
 const ACK_TYPE: &str = "ack";
 /// The room's presence (Epo 2026-10-20): the editors in it, for the avatar
@@ -301,6 +305,9 @@ struct Member {
     /// The room answered its step 1: it holds the room's state, so it hears
     /// each store's version (`sessions.rs`).
     synced: bool,
+    /// The stored version it last named (its JOIN's, then each `ack`): a
+    /// session made at its first write starts there (review r1 L1).
+    version: i64,
 }
 
 /// A member's latest step 1 and awareness query while they wait on its
@@ -372,6 +379,10 @@ struct Note {
     /// draft group older than it is late (`sessions::late`). Nothing is
     /// collected yet, so 0.
     window: i64,
+    /// Versions below `stored_version` the room has not applied: service
+    /// edits whose rows committed before a later store's (`sessions::took`).
+    /// Note content rooms only.
+    gaps: std::collections::BTreeSet<i64>,
 }
 
 impl Note {
@@ -753,14 +764,27 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 base_bytes,
                 folding: false,
                 window: 0,
+                gaps: std::collections::BTreeSet::new(),
             };
             // A note's content room keeps its sessions (Q274: notes only).
             let sessions = if note.sessioned() {
-                Some(
-                    note_store::load_sessions(&app.db, material_id)
-                        .await
-                        .map_err(|error| error.to_string())?,
-                )
+                let (sessions, damaged) = note_store::load_sessions(&app.db, material_id)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                // Dropped alone, the note loads (Q382, Epo 2026-10-26).
+                let room = name.to_string();
+                for client in &damaged.sessions {
+                    let message = format!("session {client}: unreadable held deletions");
+                    observe::capture(&message, None, &[("room", &room), ("stage", "sessions")]);
+                }
+                if damaged.agent {
+                    observe::capture(
+                        "unreadable agent holds",
+                        None,
+                        &[("room", &room), ("stage", "sessions")],
+                    );
+                }
+                Some(sessions)
             } else {
                 None
             };
@@ -1768,8 +1792,9 @@ impl Room {
             && changed
             && self.update_fits(cost)
         {
-            self.agent_changes
-                .insert(id.clone(), (items.change(&self.doc), cost));
+            let change = items.change(&self.doc);
+            self.hold_agent_step(&change);
+            self.agent_changes.insert(id.clone(), (change, cost));
             self.app.agent_steps.hold(&id, &self.name);
             taken = true;
         }
@@ -1785,7 +1810,13 @@ impl Room {
             Kindly::Note(note) => {
                 // Content the validator did not admit: its growth bound is stale.
                 note.validator.invalidate();
-                note.stored_version = note.stored_version.max(edit.version as i64);
+                // A store that committed after the edit may have been
+                // announced to no one yet (`announce_stored`).
+                note.stored_version = if note.sessioned() {
+                    crate::sessions::took(note.stored_version, &mut note.gaps, edit.version as i64)
+                } else {
+                    note.stored_version.max(edit.version as i64)
+                };
                 note.log_rows += 1;
                 note.log_bytes += edit.row_bytes as i64;
             }
@@ -1907,6 +1938,7 @@ impl Room {
                         self.broadcast_update(None, restored.update);
                         match restored.next {
                             Some(again) => {
+                                self.hold_agent_step(&again);
                                 self.agent_changes.insert(step, (again, cost));
                             }
                             None => self.app.agent_steps.release(&step, &self.name),
@@ -1975,6 +2007,7 @@ impl Room {
         if let Some(back) = back
             && self.update_fits(cost)
         {
+            self.hold_agent_step(&back);
             self.agent_changes.insert(next.clone(), (back, cost));
             self.app.agent_steps.hold(&next, &self.name);
         }
@@ -2265,9 +2298,12 @@ impl Room {
             return 0;
         };
         member.synced = true;
+        let client = member.client;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff));
-        if let (Some(_), Kindly::Note(note)) = (&self.sessions, &self.kind) {
-            let notice = json!({ "type": STORED_TYPE, "version": note.stored_version });
+        if let (Some(sessions), Kindly::Note(note)) = (&mut self.sessions, &self.kind) {
+            sessions.synced(client);
+            let version = crate::sessions::whole(note.stored_version, &note.gaps);
+            let notice = json!({ "type": STORED_TYPE, "version": version });
             self.send(key, Kind::Stateless, &protocol::text(&notice.to_string()));
         }
         diff.len()
@@ -2448,6 +2484,7 @@ impl Room {
                 acks: 0,
                 opening: None,
                 synced: false,
+                version: 0,
             },
         );
         if self
@@ -2990,10 +3027,19 @@ impl Room {
         if let (Some(sessions), Some(member)) = (
             &mut self.sessions,
             writer.and_then(|key| self.members.get(&key)),
-        ) && sessions.deleted(member.client, deleted, std::time::SystemTime::now())
-            && !written.contains(&member.client)
-        {
-            written.push(member.client);
+        ) {
+            let now = std::time::SystemTime::now();
+            // A channel with no session (a viewer whose token turned
+            // writable) gets one at its first write (review r1 L1).
+            if !sessions.has(member.client)
+                && sessions.joined(member.client, &context.user_id, member.version, now)
+                && member.synced
+            {
+                sessions.synced(member.client);
+            }
+            if sessions.deleted(member.client, deleted, now) && !written.contains(&member.client) {
+                written.push(member.client);
+            }
         }
         // The first accepted write under an id in this room's life records
         // it as the user's (Q236), or refreshes its row once a day (M3).
@@ -3476,7 +3522,11 @@ impl Room {
             if let (Some(sessions), Kindly::Note(note), Some(version)) =
                 (&mut self.sessions, &self.kind, event["version"].as_i64())
             {
-                sessions.acked(client, version.clamp(0, note.stored_version));
+                let version = version.clamp(0, note.stored_version);
+                sessions.acked(client, version);
+                if let Some(member) = self.members.get_mut(&key) {
+                    member.version = version;
+                }
             }
             return;
         }
@@ -3609,16 +3659,21 @@ impl Room {
         let hidden = markers::live_items(&self.doc);
         let (row, durable) = ydoc::delta_update(&self.doc.transact(), &self.durable, &hidden);
         // The sessions as of this snapshot go in its transaction, their held
-        // deletions with the state that holds them.
+        // deletions with the state that holds them. One whose id's row is
+        // still queued waits for a later store: the store holds the
+        // document's row, which that insert's key check waits on, so writing
+        // the same new id here would deadlock with it.
         let (session_rows, sessions) = match &mut self.sessions {
             Some(sessions) => {
-                let ids = &self.client_ids;
+                let (ids, queued) = (&self.client_ids, &self.rows);
                 let now = std::time::SystemTime::now();
-                let (rows, through) =
-                    sessions.unsaved(now, |client, user| ids.owned_by(client, user));
-                (rows, Some(through))
+                let unsaved = sessions.unsaved(now, |client, user| {
+                    ids.owned_by(client, user) && !queued.iter().any(|rows| rows.records(client))
+                });
+                let through = unsaved.through;
+                (unsaved, Some(through))
             }
-            None => (Vec::new(), None),
+            None => (crate::sessions::Unsaved::default(), None),
         };
         let (metrics, limit_code) = match validated {
             Ok(validated) => validated,
@@ -3756,18 +3811,26 @@ impl Room {
             );
         }
         let (Some(sessions), Kindly::Note(note), Some(member)) =
-            (&mut self.sessions, &self.kind, self.members.get(&key))
+            (&mut self.sessions, &self.kind, self.members.get_mut(&key))
         else {
             return;
         };
-        if member.context.viewer {
-            return;
-        }
         let version = version
             .map_or(0, |version| i64::try_from(version).unwrap_or(i64::MAX))
             .min(note.stored_version);
+        member.version = version;
+        if member.context.viewer {
+            return;
+        }
         let now = std::time::SystemTime::now();
-        sessions.joined(member.client, &member.context.user_id, version, now);
+        if !sessions.joined(member.client, &member.context.user_id, version, now) {
+            // The binding gives an id to one user only; this is a defence.
+            log(
+                Level::Error,
+                "session of another user joined",
+                json!({ "client": member.client, "room": self.name }),
+            );
+        }
     }
 
     /// A clean Leave naming its session ends it, its held deletions
@@ -3794,13 +3857,26 @@ impl Room {
         }
     }
 
-    /// After a store: every update it holds goes out first, then each synced
-    /// editor of a note hears the stored version, which it then holds.
-    fn announce_stored(&mut self) {
+    /// After the store of `store`: every update it holds goes out first, then
+    /// each synced editor of a note hears the stored version, which it then
+    /// holds. A store past a service edit the room has not applied yet goes
+    /// unannounced (review r1 M1): its editors lack that edit, and the next
+    /// store's notice covers both. Only stores announce: a tab counts its
+    /// edit stored at the second notice after the edit's ACK (review r1 H1).
+    fn announce_stored(&mut self, store: i64) {
         let (Some(_), Kindly::Note(note)) = (&self.sessions, &self.kind) else {
             return;
         };
-        let notice = json!({ "type": STORED_TYPE, "version": note.stored_version }).to_string();
+        let version = crate::sessions::whole(note.stored_version, &note.gaps);
+        if version < store {
+            log(
+                Level::Info,
+                "store not announced",
+                json!({ "room": self.name, "store": store, "whole": version }),
+            );
+            return;
+        }
+        let notice = json!({ "type": STORED_TYPE, "version": version }).to_string();
         self.flush();
         let text = protocol::text(&notice);
         for (key, member) in &self.members {
@@ -3827,6 +3903,14 @@ impl Room {
                 "room": self.name,
             }),
         );
+    }
+
+    /// An agent step the room keeps for its Undo or Redo: what it deleted is
+    /// held 24 h (review r1 M3, `sessions.rs`).
+    fn hold_agent_step(&mut self, change: &ydoc::undo::Change) {
+        if let Some(sessions) = &mut self.sessions {
+            sessions.agent_deleted(change.deletions().clone(), std::time::SystemTime::now());
+        }
     }
 
     /// A clean Leave (Q236): the channel's recorded ids its token offered
@@ -3890,7 +3974,13 @@ impl Room {
     /// The queue's head was written, or failed every try (logged as lost).
     fn rows_written(&mut self, result: Result<(), String>) {
         self.rows_running = false;
-        self.rows.pop_front();
+        // Sessions a store passed over while their ids' rows were queued are
+        // written by the next store, or the unload.
+        if let (Some(rows), Some(sessions)) = (self.rows.pop_front(), &mut self.sessions) {
+            for client in rows.recorded() {
+                sessions.touch(client);
+            }
+        }
         if let Err(error) = result {
             log(
                 Level::Error,
@@ -4087,8 +4177,13 @@ impl Room {
         }
         match &mut self.kind {
             Kindly::Note(note) => {
-                // A service edit that landed meanwhile may be ahead.
-                note.stored_version = note.stored_version.max(version);
+                // A service edit that landed meanwhile may be ahead, or behind
+                // and not applied yet (`announce_stored`).
+                note.stored_version = if note.sessioned() {
+                    crate::sessions::took(note.stored_version, &mut note.gaps, version)
+                } else {
+                    note.stored_version.max(version)
+                };
                 note.durable_metrics = metrics;
                 note.log_bytes += row_bytes as i64;
                 note.log_rows += 1;
@@ -4128,7 +4223,7 @@ impl Room {
         if let (Some(through), Some(written)) = (sessions, &mut self.sessions) {
             written.saved(through);
         }
-        self.announce_stored();
+        self.announce_stored(version);
         self.project_on_cadence();
         self.answer_stored_undos();
         if self.store.dirty || markers::pending(&self.doc) {
@@ -4601,11 +4696,9 @@ impl Room {
             Some(sessions) if self.discard_pending.is_none() => {
                 let ids = &self.client_ids;
                 let now = std::time::SystemTime::now();
-                sessions
-                    .unsaved(now, |client, user| ids.owned_by(client, user))
-                    .0
+                sessions.unsaved(now, |client, user| ids.owned_by(client, user))
             }
-            _ => Vec::new(),
+            _ => crate::sessions::Unsaved::default(),
         };
         self.fold_holds("unload");
         let Kindly::Note(note) = &self.kind else {
@@ -4648,7 +4741,7 @@ impl Room {
             };
             // The log folds while the room is empty (DESIGN.md 3.5).
             let folding = async {
-                if !session_rows.is_empty()
+                if !(session_rows.rows.is_empty() && session_rows.agent.is_none())
                     && let Err(error) =
                         note_store::save_sessions_now(&app.db, &material_id, &session_rows).await
                 {

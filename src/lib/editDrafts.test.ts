@@ -617,40 +617,31 @@ describe('lineage', () => {
     ).toEqual(['old-hash']);
   });
 
-  // Late merge M5 (Epo 2026-10-24): a lineage expires 7 days after its last
-  // edit and opens once copy-only, never as current rows.
-  it('opens a lineage whose last edit is over 7 days old as an expired group', async () => {
+  // Late merge M5 (Epo 2026-10-24), by session (review r1 L4): a session's
+  // rows expire 7 days after its last edit and open once copy-only, never as
+  // current rows, while another session's newer rows in the lineage stay
+  // current. Fails if the expiry groups a lineage or ignores old rows.
+  it('opens a session whose last edit is over 7 days old as an expired group', async () => {
     const now = Date.now();
     const old = now - DRAFT_EXPIRY_MS - 1;
     const rows = [
-      draft('stale-1', { accepted: true, savedAt: old - 5 }),
-      draft('stale-2', { accepted: true, savedAt: old }),
-      draft('other', { lineage: 'material:mat_1:schema:0', savedAt: now }),
+      draft('dead:1', { accepted: true, savedAt: old - 5, session: 'dead' }),
+      draft('live:1', { accepted: true, savedAt: now - 1000, session: 'live' }),
+      draft('dead:2', { accepted: true, savedAt: old, session: 'dead' }),
     ];
     const opened = await draftGroups(rows, ROOM, undefined, now);
-    expect(opened).toMatchObject({
-      current: [],
-      expired: true,
-      refused: false,
+    expect(opened).toMatchObject({ expired: true, refused: false });
+    expect(opened.current.map((row) => row.id)).toEqual(['live:1']);
+    expect(opened.recovery.map((row) => row.id)).toEqual(['dead:1', 'dead:2']);
+    // One recent edit keeps its session's rows current.
+    const recent = draft('dead:3', {
+      accepted: true,
+      savedAt: now - 1000,
+      session: 'dead',
     });
-    expect(opened.recovery.map((row) => row.id)).toEqual([
-      'stale-1',
-      'stale-2',
-    ]);
-    // One recent edit keeps its whole lineage current.
-    const fresh = draft('fresh', { accepted: true, savedAt: now - 1000 });
-    const kept = await draftGroups(
-      [rows[0], rows[1], fresh],
-      ROOM,
-      undefined,
-      now
-    );
+    const kept = await draftGroups([rows[0], recent], ROOM, undefined, now);
     expect(kept.expired).toBe(false);
-    expect(kept.current.map((row) => row.id)).toEqual([
-      'stale-1',
-      'stale-2',
-      'fresh',
-    ]);
+    expect(kept.current.map((row) => row.id)).toEqual(['dead:1', 'dead:3']);
   });
 
   it('drops an expired group it opened, reporting its bytes', async () => {
@@ -1557,22 +1548,31 @@ describe('the draft sweep sending', () => {
     ]);
   });
 
-  it('sends no group whose last edit is over 7 days old, and keeps it for the next open', async () => {
+  // Review r1 L4: an expired session's rows wait for the next open while a
+  // newer session's rows of the same lineage go. Fails if they go with them
+  // or keep them back.
+  it('sends no session whose last edit is over 7 days old, and keeps its rows for the next open', async () => {
     const key = 'u_old:material:mat_1';
-    const { client } = syncedClient('base');
+    const old = new Y.Doc();
+    old.getText('content').insert(0, 'old');
     await putDrafts([
       draft('old:state', {
-        data: Y.encodeStateAsUpdate(client),
+        data: Y.encodeStateAsUpdate(old),
         key,
         kind: 'state',
         savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
         session: 'old',
       }),
     ]);
+    await leftRows(key);
     requests.length = 0;
+    storeNext();
     await sweepDrafts('u_old', tokens(ROOM));
-    expect(requests).toHaveLength(0);
-    expect(await readDrafts(key)).toHaveLength(1);
+    expect(requests).toHaveLength(1);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, requests[0].body);
+    expect(doc.getText('content').toString()).toBe('base typed');
+    expect((await readDrafts(key)).map((row) => row.id)).toEqual(['old:state']);
   });
 
   it('skips a document an editor has open, and sends it once the editor closed', async () => {
@@ -2114,10 +2114,11 @@ describe('the draft sweep sending', () => {
     );
   });
 
-  it("names the stored version the group's oldest row was made at, a row from before versions as 1 (in-place collection)", async () => {
+  it("names the stored version the group's oldest row was made at, a row from before versions or before the first stored version as 1 (in-place collection, review r1 L8)", async () => {
     for (const [key, versions, sent] of [
       ['u_ver:material:mat_1', [9, 6], '6'],
       ['u_ver:material:mat_2', [9, undefined], '1'],
+      ['u_ver:material:mat_3', [9, 0], '1'],
     ] as const) {
       const [state, update] = await leftRows(key);
       await putDrafts([

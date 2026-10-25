@@ -1315,9 +1315,11 @@ export function NoteEditorCore({
       const room = roomProvider(editor)?.provider;
       heldSteps.current = true;
       heldEpisode.current = true;
+      // Marked first, so the Leave says unsent and the session (this Y.Doc)
+      // stays (review r1 N3).
+      capyRoom(editor)?.unsentFrom(draftsVersion(pending));
       room?.disconnect();
       recorder.current?.disconnected(true);
-      capyRoom(editor)?.unsentFrom(draftsVersion(pending));
       applyDrafts(ydoc, pending, RESTORE_ORIGIN);
       recorder.current?.adopt(pending);
       sendingNow.current = false;

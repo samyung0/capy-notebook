@@ -89,6 +89,20 @@ enum Change {
 }
 
 impl Rows {
+    /// Whether this batch records `id` (a first write's row, not yet in).
+    pub fn records(&self, id: u64) -> bool {
+        matches!(self.change, Change::Written) && self.ids.contains(&(id as i64))
+    }
+
+    /// The ids whose rows this batch records.
+    pub fn recorded(&self) -> impl Iterator<Item = u64> + '_ {
+        let written = matches!(self.change, Change::Written);
+        self.ids
+            .iter()
+            .filter(move |_| written)
+            .map(|&id| id as u64)
+    }
+
     pub async fn run(&self, db: &Pool) -> Result<(), String> {
         let connection = db.get().await.map_err(|error| error.to_string())?;
         let changed = match (&self.document, &self.change) {
