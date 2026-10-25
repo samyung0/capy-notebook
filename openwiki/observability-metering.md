@@ -722,12 +722,19 @@ and the page asks the visitor to sign in. There is no per-shared-item cap:
 each signed-out answer check carries a Cloudflare Turnstile token instead (Epo
 2026-10-24, Q243, Q271), since an address-rotating client defeats any per-item
 or per-address count. A shared page runs at most one widget (managed mode, a
-challenge only when Cloudflare asks, shown fixed on screen), rendered at the
-first signed-out check and solved again only when a check asks, never in the
-background (it renders with `refresh-expired: never`, Q350, and
-`refresh-timeout: manual`, so a timed-out interactive challenge waits for the
-visitor); a check stops waiting for its token after 15 s and the API's
-refusal shows the failed-check copy (Epo 2026-10-24, Q309;
+challenge only when Cloudflare asks), rendered at the first signed-out check
+and solved again only when a check asks, never in the background (it renders
+with `refresh-expired: never`, Q350, and `refresh-timeout: manual`, so a
+timed-out interactive challenge waits for the visitor). It sits under the
+Submit of the check that asks, rendering again under another quiz's Submit
+when that one asks. Its slot shows while a solve runs (the invisible widget
+takes no room, and its solve needs a rendered container) and is hidden once
+the token settles or the interaction ends, which clears the widget's success
+box. While Cloudflare shows a challenge the hint "Complete the check below to
+submit." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
+15 s, a clock that stops while an interactive challenge shows, so the check
+waits until the challenge is solved or errors; the API's refusal of an empty
+token shows the failed-check copy (Epo 2026-10-24, Q309;
 `src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
 quiz). The API verifies it with siteverify (5 s timeout) after the share
 token's check and before grading (`checkCaptcha`, `server/internal/httpapi/
@@ -1653,7 +1660,10 @@ one); a disconnect and every Clerk `user.*` webhook drop the user's entries.
 Stripe Checkout pages for the same top-up amount or card setup are handed out
 again while they have 5 minutes left and Stripe still reports them open (one
 status read; a completed or expired page is dropped and a new one made), and
-invoice lists are cached for 60 s. Every top-up or card click takes the
+invoice lists are cached for 60 s per customer, and any signed Stripe event
+about the customer (an invoice created, finalized, paid, failed or voided, a
+Checkout completed) drops its list, so a payment shows at once. The cache
+lives in the one API process each environment runs. Every top-up or card click takes the
 Stripe session bucket, the reused ones included.
 
 **Share reads per visitor and page** (Epo 2026-10-24, Q244). A GET or HEAD

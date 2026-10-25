@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -121,5 +123,47 @@ func TestInvoiceListsAreCachedAMinute(t *testing.T) {
 	}
 	if reads != 1 {
 		t.Fatalf("Stripe invoice reads = %d, want 1", reads)
+	}
+}
+
+// TestStripeEventsDropTheCustomersInvoiceList (security regression:
+// rate-limit audit M11). A signed Stripe event about a customer, through the
+// webhook handler, drops the customer's cached invoice list, so a user who
+// just paid sees the new invoice on the next read rather than a minute later.
+func TestStripeEventsDropTheCustomersInvoiceList(t *testing.T) {
+	a, _, ctx := checkoutTestAPI(t)
+	a.wh = a.s
+	a.cfg.StripeWebhookSecret = testStripeSecret
+	reads := 0
+	a.stripeInvoices = func(string) ([]*stripe.Invoice, error) {
+		reads++
+		return []*stripe.Invoice{{ID: "in_1", Created: 1}}, nil
+	}
+	list := func() {
+		t.Helper()
+		if _, err := a.listInvoices(ctx, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list()
+	list()
+	if reads != 1 {
+		t.Fatalf("Stripe invoice reads before the event = %d, want 1", reads)
+	}
+	customerID, err := a.s.GetStripeCustomerID(ctx, userID(ctx))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := stripeBody(t, randID("evt_invoice"), "invoice.created", map[string]any{"id": "in_2", "customer": customerID})
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", bytes.NewReader(body))
+	req.Header = signStripe(t, testStripeSecret, body)
+	rec := httptest.NewRecorder()
+	a.stripeWebhook(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("webhook = %d %s", rec.Code, rec.Body.String())
+	}
+	list()
+	if reads != 2 {
+		t.Fatalf("Stripe invoice reads after the event = %d, want 2", reads)
 	}
 }

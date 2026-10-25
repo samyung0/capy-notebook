@@ -30,7 +30,6 @@ vi.mock('./ShareAuth', async () => {
     },
   };
 });
-vi.mock('./turnstile', () => ({ takeTurnstileToken: async () => 'token' }));
 vi.mock('@/lib/localDb', () => ({ anonymousId: async () => 'local-1' }));
 
 vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_share');
@@ -51,7 +50,7 @@ it('loads the session on a note embedding a quiz, so a signed-in check skips the
     []
   );
   for (const node of rendered) await prerender(node);
-  await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' });
+  await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' }, async () => 'token');
   expect(anonymous.checkSharedNoteQuiz).toHaveBeenCalledWith(
     'note.tok',
     'qz_1',
