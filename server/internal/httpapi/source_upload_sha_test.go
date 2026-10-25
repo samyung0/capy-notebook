@@ -123,9 +123,9 @@ func TestSourceUploadRecordsTheSHA256OfEveryKind(t *testing.T) {
 		name, ext, contentType string
 		body                   []byte
 	}{
-		{"plan.docx", ".docx", "application/octet-stream", []byte("PK\x03\x04 a small docx stand-in")},
+		{"plan.docx", ".docx", "application/octet-stream", docxHolding(t, "word/media/image1.png", pngSized(10, 10))},
 		{"Notes.PDF", ".pdf", "application/pdf", []byte("%PDF-1.7 stand-in")},
-		{"photo.png", ".png", "image/png", []byte("\x89PNG stand-in")},
+		{"photo.png", ".png", "image/png", testPNG(64)},
 		{"odd.p df", "", "application/octet-stream", []byte("no plain extension")},
 	} {
 		rec := postUpload(t, th.h, sourceUploads(ws), "u_owner",
@@ -235,7 +235,7 @@ func TestSourceUploadStalledPutLeavesNothing(t *testing.T) {
 	bucket := &stallingPuts{Memory: blob.NewMemory(), stall: true}
 	th := openThumbnailHarnessWith(t, bucket)
 	ws := uploadWorkspace(t, th)
-	body := []byte("PK\x03\x04 a stalled docx")
+	body := docxHolding(t, "word/media/image1.png", pngSized(10, 10))
 	start := time.Now()
 	rec := postUpload(t, th.h, sourceUploads(ws), "u_owner",
 		sourceMeta("plan.docx", "application/octet-stream", len(body)), "application/octet-stream", body)
@@ -274,7 +274,7 @@ func TestEditorAssetUploadFollowsTheUploadRules(t *testing.T) {
 	meta := func(size int) map[string]any {
 		return map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": size, "contentType": "image/png"}
 	}
-	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{7}, 100)...)
+	png := testPNG(108)
 	notPNG := bytes.Repeat([]byte{7}, len(png))
 	for _, tc := range []struct {
 		what     string
@@ -325,7 +325,7 @@ func TestUploadBodiesStopAtTheCap(t *testing.T) {
 		part.body = append(part.body, bytes.Repeat([]byte{' '}, limit+4<<20)...)
 		return ticketed(t, th.h, route, "u_owner", meta), part
 	}
-	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	png := testPNG(33)
 	sourceRoute, sourceMetadata := padded(sourceUploads(ws), sourceMeta("notes.pdf", "application/pdf", 4))
 	assetRoute, assetMetadata := padded("/api/materials/"+note+"/editor-assets/uploads",
 		map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"})
@@ -408,7 +408,7 @@ func TestUploadsRefuseViewersAndStrangersUnread(t *testing.T) {
 	// u_viewer views ws_e2e_private; u_other has no access.
 	note := uploadNote(t, th, "ws_e2e_private")
 	body := []byte("%PDF-1.7")
-	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	png := testPNG(33)
 	pdfMeta := sourceMeta("notes.pdf", "application/pdf", len(body))
 	pngMeta := map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"}
 	for _, user := range []string{"u_viewer", "u_other"} {

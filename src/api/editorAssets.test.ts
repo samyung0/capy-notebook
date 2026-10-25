@@ -8,7 +8,9 @@ const { ensureQueryData, uploadWithTicket } = vi.hoisted(() => ({
 }));
 vi.mock('./queryClient', () => ({ queryClient: { ensureQueryData } }));
 vi.mock('./uploadTurn', () => ({ uploadWithTicket }));
-vi.mock('@/lib/fitImage', () => ({ fitImage: async (file: File) => file }));
+vi.mock('@/lib/fitImageOffThread', () => ({
+  fitImageOffThread: async (file: File) => file,
+}));
 
 import { uploadEditorAsset } from './editorAssets';
 

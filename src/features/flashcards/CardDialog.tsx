@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
-import { editorImageMaxBytes, uploadEditorAsset } from '@/api/editorAssets';
+import { uploadEditorAsset } from '@/api/editorAssets';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog, useIsPhone } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
@@ -14,7 +14,7 @@ import type { UndoTarget } from '@/features/collaboration/undo';
 import { useBoundText } from '@/features/collaboration/yText';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
-import { fitImage, IMAGE_ACCEPT } from '@/lib/fitImage';
+import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
 import { CardImage, CardSides } from './CardView';
 import {
@@ -69,8 +69,8 @@ export function CardDialog({
     const controller = new AbortController();
     pickAbort.current = controller;
     try {
-      const fitted = await fitImage(file, await editorImageMaxBytes(setId));
-      const { assetId } = await uploadEditorAsset(setId, fitted, 'image', {
+      // Compressed by the upload itself.
+      const { assetId } = await uploadEditorAsset(setId, file, 'image', {
         signal: controller.signal,
       });
       // Someone may have removed the card while the image uploaded.

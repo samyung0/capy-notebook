@@ -189,7 +189,7 @@ func TestUploadsRefuseABadTicketUnread(t *testing.T) {
 	note := uploadNote(t, th, ws)
 	sourcesMeta := pdfMeta()
 	_, sources := takeTicket(t, th.h, sourceUploads(ws), "u_owner", sourcesMeta)
-	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	png := testPNG(33)
 	assetParts := []formPart{
 		metadataPart(t, map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"}),
 		{name: "file", contentType: "image/png", body: png},
@@ -334,7 +334,7 @@ func TestUploadBudgetIsReleasedWhenAnUploadEnds(t *testing.T) {
 	expectBudgetFree(t, th, ws, "a refused upload")
 
 	assets := "/api/materials/" + uploadNote(t, th, ws) + "/editor-assets/uploads"
-	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{7}, 100)...)
+	png := testPNG(108)
 	asset := map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"}
 	expectStatus(t, postUpload(t, th.h, assets, "u_owner", asset, "image/png", png),
 		http.StatusCreated, "the finished editor asset")
@@ -504,7 +504,7 @@ func TestUploadMustMatchItsTicket(t *testing.T) {
 			t.Fatalf("the ticket of an upload with %s left its batch open", what)
 		}
 	}
-	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{7}, 100)...)
+	png := testPNG(108)
 	asset := map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png) - 50, "contentType": "image/png"}
 	path := "/api/materials/" + note + "/editor-assets/uploads"
 	route := ticketed(t, th.h, path, "u_owner", asset)

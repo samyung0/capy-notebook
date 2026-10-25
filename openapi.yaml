@@ -5660,6 +5660,9 @@ components:
           type: string
         name:
           type: string
+        removedPictures:
+          format: int64
+          type: integer
         status:
           enum:
             - pending
@@ -5672,6 +5675,7 @@ components:
         - jobId
         - status
         - name
+        - removedPictures
       type: object
     SourceProcessResult:
       additionalProperties: false
@@ -6037,6 +6041,10 @@ components:
         digitalParsePageCreditMicros:
           format: int64
           type: integer
+        imageMaxBytes:
+          description: The caller's plan image cap, which each picture inside an Office upload must fit
+          format: int64
+          type: integer
         kinds:
           items:
             $ref: "#/components/schemas/SourceUploadKindPolicy"
@@ -6056,6 +6064,7 @@ components:
         - parseModes
         - accept
         - maxBytes
+        - imageMaxBytes
         - allowNoExtension
         - digitalParsePageCreditMicros
         - vlmIngestPageCreditMicros

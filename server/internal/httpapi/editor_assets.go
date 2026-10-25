@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -246,6 +248,12 @@ func (a *api) storeEditorAssetBytes(
 	n, _ := spool.ReadAt(head, 0)
 	if !editorAssetSignatureAllowed(purpose, ext, head[:n]) {
 		return store.EditorAsset{}, huma.Error400BadRequest("uploaded content does not match its file type")
+	}
+	// The long side, from the header (Q286); the cap was checked above.
+	if purpose == "image" {
+		if err := imageRefusal(imagecheck.CheckEditorImage(io.NewSectionReader(spool, 0, size))); err != nil {
+			return store.EditorAsset{}, err
+		}
 	}
 	etag, err := putUpload(ctx, a.blob, uploadID, key, spool, contentType)
 	if err != nil {

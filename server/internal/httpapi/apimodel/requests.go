@@ -346,6 +346,9 @@ type SourceImportStatus struct {
 	Name      string  `json:"name"`
 	FileID    *string `json:"fileId,omitempty"`
 	ErrorCode string  `json:"errorCode,omitempty"`
+	// RemovedPictures counts the EMF and WMF pictures removed from an
+	// imported Office file (Epo 2026-10-24).
+	RemovedPictures int `json:"removedPictures"`
 }
 
 // UpdateFlashcardSetReq changes relational metadata only.
