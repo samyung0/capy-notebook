@@ -732,7 +732,8 @@ header (Server checks below).
 - The long side is resized within 2,400 px (`IMAGE_MAX_SIDE`, generated from
   the gateway's `imagecheck.MaxSide`) and encoded at quality 0.85. An editor
   image becomes WebP (JPEG, or PNG when transparent, where the browser has no
-  WebP encoder). A picture for an Office file becomes JPEG when it is a photo
+  WebP encoder); the stored file takes the new extension while the image keeps
+  the name the user picked as its alt text (Q371, `uploadEditorAsset`). A picture for an Office file becomes JPEG when it is a photo
   and PNG when it is transparent or a flat graphic (opaque, at most 256
   colours on a nearest-neighbour sample at the output size), never WebP.
 - The original is kept when it needs no resize (both sides compared), fits
