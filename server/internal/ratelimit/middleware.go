@@ -53,6 +53,8 @@ var uploadSuffixes = []string{
 	"/sources/import-inspect",
 	"/sources/import-content",
 	"/editor-assets/uploads/tickets",
+	// A blank Office file the Create tab stores, bytes and all.
+	"/files/blank",
 	// A file removed before it was sent, counted into its batch.
 	"/removed",
 }

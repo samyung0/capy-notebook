@@ -11,6 +11,7 @@ import type {
   Chapter,
   CloneFileReq,
   CloneMaterialReq,
+  CreateBlankFileReq,
   CreateWorkspaceReq,
   CreditSettings,
   EditableQuiz,
@@ -77,8 +78,10 @@ import { uid } from './db';
 import { editorAssetHandlers } from './editorAssets';
 import { questionBankHandlers } from './questionBank';
 import {
+  blankOffice,
   clearMockThumbnailStale,
   mockAtSizeLimit,
+  prepareBlankOffice,
   scenarioSourceSession,
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
@@ -1779,6 +1782,34 @@ export const handlers = [
       workspaceId: body.workspaceId,
     };
     db.files.push(file);
+    return HttpResponse.json(file, { status: 201 });
+  }),
+  http.post('/api/workspaces/:id/files/blank', async ({ params, request }) => {
+    const body = (await request.json()) as CreateBlankFileReq;
+    const ws = db.workspaces.find((w) => w.id === params.id);
+    if (!ws) return new HttpResponse(null, { status: 404 });
+    const chapterId = body.chapterId ?? null;
+    const url = blankOffice[body.format].sourceURL;
+    const file: (typeof db.files)[number] = {
+      addedAt: new Date().toISOString(),
+      chapterId,
+      hasBytes: true,
+      id: uid('f'),
+      indexed: false,
+      kind: body.format === 'docx' ? 'doc' : 'sheet',
+      name: `${body.name.trim()}.${body.format}`,
+      position: db.nextContentPosition(ws.id, chapterId),
+      revision: 1,
+      sizeBytes: (await (await fetch(url)).arrayBuffer()).byteLength,
+      status: 'ready',
+      workspaceId: ws.id,
+    };
+    db.fileLinks[file.id] = { url };
+    await prepareBlankOffice(file.id, body.format);
+    db.files.push(file);
+    ws.fileCount += 1;
+    if (chapterId)
+      db.chapters.find((c) => c.id === chapterId)?.fileIds.push(file.id);
     return HttpResponse.json(file, { status: 201 });
   }),
   /* ---------------- chapters & files ---------------- */

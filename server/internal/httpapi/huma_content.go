@@ -82,6 +82,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List the files the caller pays for, or can open (scope=member)", http.StatusOK, a.listOwnedFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/recent", "listWorkspaceRecent", tag, "List a workspace's newest files and materials", http.StatusOK, a.listWorkspaceRecent)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/files/blank", "createBlankFile", tag, "Create a blank Word or Excel file", http.StatusCreated, a.createBlankFile)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)
 	reg(api, http.MethodGet, "/api/files/{id}/links", "getFileLinks", tag, "Get presigned file reads", http.StatusOK, a.getFileLinks)
 	reg(api, http.MethodPatch, "/api/files/{id}", "updateFile", tag, "Update a file", http.StatusOK, a.updateFile)

@@ -98,6 +98,7 @@ export type {
   CloneWorkspaceResp as CloneWorkspaceResult,
   CollaborationTokenResponse as MaterialCollaborationToken,
   ContentOrderItem,
+  CreateBlankFileReq,
   CreateCanvasReq,
   CreateConversationReq,
   CreateEventReq,

@@ -1477,7 +1477,8 @@ export function AddSourceDialog({
               value: 'import',
             },
             { label: m.action_create(), value: 'create' },
-            { label: m.generate_ai(), value: 'generate' },
+            // TODO: refine with agentic harness. AI generate is hidden until
+            // then; its panel below still opens for initialMode 'generate'.
           ]}
           value={mode}
         />

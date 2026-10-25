@@ -50,6 +50,7 @@ import type {
   ContentOrderItem,
   Conversation,
   CreateAttemptReq,
+  CreateBlankFileReq,
   CreateCommentReq,
   CreateDiscussionReq,
   CreateEmbeddedMaterialReq,
@@ -1998,6 +1999,22 @@ export function useCloneFile(options?: MutationUiOptions) {
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       if (body.chapterName)
         qc.invalidateQueries({ queryKey: qk.chapters(file.workspaceId) });
+    },
+  });
+}
+
+/** The Create tab's Blank DOCX and Blank XLSX: a stored, unprocessed file
+ * the caller pays for. */
+export function useCreateBlankFile(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateBlankFileReq) =>
+      api.post<SourceFile>(`/workspaces/${wsId}/files/blank`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.files(wsId) });
+      qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+      qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
+      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
     },
   });
 }

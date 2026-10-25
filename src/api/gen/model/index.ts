@@ -85,6 +85,8 @@ export * from './coverKind.ts';
 export * from './coverStyle.ts';
 export * from './createAttemptReq.ts';
 export * from './createAttemptReqAnswers.ts';
+export * from './createBlankFileReq.ts';
+export * from './createBlankFileReqFormat.ts';
 export * from './createCanvasReq.ts';
 export * from './createCommentReq.ts';
 export * from './createCommentReqContentRichItem.ts';

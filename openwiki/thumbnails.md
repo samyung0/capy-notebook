@@ -191,6 +191,16 @@ is only an image fills its page with it; under a long flashcard front the frame
 shrinks and the front keeps at most three lines). Epo kept the marker over
 small copies on 2026-10-11.
 
+The Add file dialog's Create tab draws its template cards with the same
+`ThumbnailPanel`, through the shared `PreviewCard` that the empty viewer's
+Recent Files grid also uses. Nothing is stored or rendered for them: study
+materials pass a fixed example preview in the shapes above (translated text),
+and the blank DOCX and XLSX pass bundled SVG pages as `thumbnailUrl`
+with their page kind, so dark mode dims them like real page images
+([templatePreviews.ts](../src/features/workspace/templatePreviews.ts)). A
+template with real content would get a page-1 image made once by the ingest
+render and bundled the same way.
+
 Sources: [extractor](../server/internal/materialdoc/preview.go),
 [table test](../server/internal/materialdoc/preview_test.go),
 [writers test](../server/internal/store/material_preview_test.go).

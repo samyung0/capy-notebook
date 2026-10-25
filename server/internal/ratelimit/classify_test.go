@@ -26,6 +26,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces/ws_1/sources/batches/sb_1/removed": classUpload,
 		"/api/workspaces/ws_1/sources/import-inspect":       classUpload,
 		"/api/workspaces/ws_1/sources/import-content":       classUpload,
+		"/api/workspaces/ws_1/files/blank":                  classUpload,
 		"/api/workspaces":                                   classDefault,
 		"/api/edit-incidents":                               classIncident,
 		"/api/files/f_1/thumbnail":                          classThumbnail,

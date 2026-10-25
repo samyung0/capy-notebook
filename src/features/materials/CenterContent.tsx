@@ -32,11 +32,10 @@ import type {
   UserColor,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
-import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
+import { PreviewCard } from '@/components/app/PreviewCard';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
 import { Button } from '@/components/ui/Button';
-import { FileIcon } from '@/components/ui/FileIcon';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
@@ -1141,8 +1140,7 @@ function AddFileCard({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** A borderless card: the preview, then the kind icon and title. No hint
- * line or pill, so the grid stays quiet beside the empty viewer. */
+/** A Recent Files card: the shared preview card as a link to the item. */
 function QuickOpenCard({
   item,
   workspaceId,
@@ -1150,28 +1148,22 @@ function QuickOpenCard({
   item: RecentItem;
   workspaceId: string;
 }) {
-  const icon = recentIcon(item);
   return (
-    <Link
-      className="flex min-w-0 flex-col gap-1.5 rounded-[15px] p-1 outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action"
-      params={{ workspaceId }}
-      preload="intent"
-      search={
-        item.kind === 'material' ? { material: item.id } : { file: item.id }
-      }
-      to="/workspaces/$workspaceId"
+    <PreviewCard
+      asChild
+      icon={recentIcon(item)}
+      thumbnail={recentThumbnail(item)}
+      title={item.title}
     >
-      <ThumbnailPanel
-        dense
-        icon={icon}
-        {...recentThumbnail(item)}
-        pill={undefined}
+      <Link
+        params={{ workspaceId }}
+        preload="intent"
+        search={
+          item.kind === 'material' ? { material: item.id } : { file: item.id }
+        }
+        to="/workspaces/$workspaceId"
       />
-      <span className="flex min-w-0 items-center gap-1.5 px-1 pb-0.5">
-        <FileIcon className="size-3.5 shrink-0" name={icon} />
-        <span className="truncate text-[13px] leading-tight">{item.title}</span>
-      </span>
-    </Link>
+    </PreviewCard>
   );
 }
 

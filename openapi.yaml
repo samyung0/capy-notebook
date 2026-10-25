@@ -1447,6 +1447,32 @@ components:
       required:
         - answers
       type: object
+    CreateBlankFileReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateBlankFileReq.json
+          format: uri
+          readOnly: true
+          type: string
+        chapterId:
+          description: A chapter of the workspace
+          type: string
+        format:
+          enum:
+            - docx
+            - xlsx
+          type: string
+        name:
+          description: The file's name without its extension
+          maxLength: 120
+          minLength: 1
+          type: string
+      required:
+        - format
+        - name
+      type: object
     CreateCanvasReq:
       additionalProperties: false
       properties:
@@ -12242,6 +12268,37 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List workspace files
+      tags:
+        - Content
+  /api/workspaces/{id}/files/blank:
+    post:
+      operationId: createBlankFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBlankFileReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a blank Word or Excel file
       tags:
         - Content
   /api/workspaces/{id}/generate:

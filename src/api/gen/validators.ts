@@ -6710,6 +6710,95 @@ export const ListWorkspaceFilesResponse = zod.array(ListWorkspaceFilesResponseIt
 
 
 /**
+ * @summary Create a blank Word or Excel file
+ */
+export const CreateBlankFileParams = zod.object({
+  "id": zod.string()
+})
+
+export const createBlankFileBodyNameMax = 120;
+
+
+
+export const CreateBlankFileBody = zod.object({
+  "chapterId": zod.string().optional().describe('A chapter of the workspace'),
+  "format": zod.enum(['docx', 'xlsx']),
+  "name": zod.string().min(1).max(createBlankFileBodyNameMax).describe('The file\'s name without its extension')
+})
+
+export const CreateBlankFileResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
+  "hasBytes": zod.boolean(),
+  "id": zod.string(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
+  "indexed": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
+  "name": zod.string(),
+  "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
+  "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "revision": zod.int(),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string().optional()
+})
+
+
+/**
  * @summary Generate a quiz, flashcards, mindmap, or diagram
  */
 export const GenerateParams = zod.object({

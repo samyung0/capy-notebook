@@ -28,6 +28,15 @@ type CloneFileReq struct {
 	Name        FileName    `json:"name" minLength:"1" doc:"The copy's name"`
 }
 
+// CreateBlankFileReq is the body for POST /api/workspaces/{id}/files/blank:
+// a blank Word or Excel file from the Office engine's starter, named without
+// its extension.
+type CreateBlankFileReq struct {
+	Format    string   `json:"format" enum:"docx,xlsx"`
+	Name      FileName `json:"name" minLength:"1" doc:"The file's name without its extension"`
+	ChapterID string   `json:"chapterId,omitempty" doc:"A chapter of the workspace"`
+}
+
 // CloneMaterialReq is the body for POST /api/materials/{id}/clone: like
 // CloneFileReq, but without a workspace the copy is a private standalone item.
 type CloneMaterialReq struct {

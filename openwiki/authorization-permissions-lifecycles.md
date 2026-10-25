@@ -448,6 +448,13 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
 - Upload reservations and finalized bytes are charged to the editor who
   uploaded them (uploader pays), and only that editor completes its
   reservation.
+- The Create tab's Blank DOCX and Blank XLSX
+  (`POST /api/workspaces/{id}/files/blank`) take an upload's gates without a
+  reservation: an editor whose account may add bytes, the editor's storage
+  (it pays) and the workspace's file cap, checked once before the Office
+  engine builds the starter and again at the insert. The file is stored ready
+  and not processed (parse mode `none`, no credits); the Indexing tab
+  processes it like any store-only upload. It is in the upload rate class.
 - Direct cloud-source inspection treats DNS and connection failures as
   retryable provider outages. Request cancellation remains cancellation.
 - Short-lived read links (a file's `/links`, an editor asset's resolve, the
