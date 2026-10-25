@@ -433,6 +433,50 @@ describe('Universal Plate material documents', () => {
       expect(valid({ [key]: value }), key).toBe(false);
   });
 
+  // As Go and the collaboration server (Epo Q380): a text mark or a list's
+  // style holds any value a browser writes but no `;` or control character.
+  it('refuses a `;` or control character in a text mark or list style (security)', () => {
+    const leaf = (key: string, value: unknown) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [{ children: [{ [key]: value, text: 'a' }], type: 'p' }],
+      });
+    const list = (value: unknown) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          {
+            children: [{ text: 'a' }],
+            indent: 1,
+            listStyleType: value,
+            type: 'p',
+          },
+        ],
+      });
+    const browserValues = {
+      backgroundColor: 'color-mix(in srgb, red 50%, blue)',
+      color: 'var(--accent)',
+      fontFamily: '"Times New Roman", serif',
+      fontSize: '1.2em',
+    };
+    for (const [key, value] of Object.entries(browserValues)) {
+      expect(leaf(key, value), key).toBe(true);
+      expect(leaf(key, null), key).toBe(true);
+      for (const bad of [
+        `${value};x:y`,
+        `${value}\u0000`,
+        `${value}\n`,
+        `${value}\u007f`,
+        ['red'],
+      ])
+        expect(leaf(key, bad), `${key} ${JSON.stringify(bad)}`).toBe(false);
+    }
+    for (const value of ['decimal', 'lower-alpha', '"▪ "', null])
+      expect(list(value), String(value)).toBe(true);
+    for (const value of ['decimal;x:y', 'decimal\u001f', 'decimal\u007f', 3])
+      expect(list(value), JSON.stringify(value)).toBe(false);
+  });
+
   // As Go and the collaboration server (Epo 2026-10-22): a Mermaid source
   // stops at MERMAID_SOURCE_MAX UTF-16 units, an astral character two.
   it('caps a Mermaid source at the catalog max', () => {

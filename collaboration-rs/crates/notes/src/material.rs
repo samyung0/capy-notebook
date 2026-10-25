@@ -314,6 +314,26 @@ fn validate_column_width(node: &Node) -> Check {
     }
 }
 
+/// The text marks Plate draws straight into a style.
+pub const STYLE_MARKS: [&str; 4] = ["color", "backgroundColor", "fontSize", "fontFamily"];
+
+/// A text mark's or a list's style value (Epo Q380): no `;` and no control
+/// character, as it goes into a style as written; any other value a browser
+/// writes stays accepted (Go's `validateStyleValue`).
+pub fn style_value(value: &str) -> bool {
+    !value
+        .chars()
+        .any(|c| c == ';' || c < '\u{20}' || c == '\u{7f}')
+}
+
+fn validate_style_value(node: &Node, key: &str) -> Check {
+    match node.get(key) {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::String(value)) if style_value(value) => Ok(()),
+        Some(_) => fail(format!("{key} may hold no semicolon or control character")),
+    }
+}
+
 /// A table's column size or left margin as Plate's table resizing writes it:
 /// px as a finite number of 0 or more (Go's `tableSize`).
 pub fn table_size(size: f64) -> bool {
@@ -524,6 +544,9 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
         if node.contains_key("children") {
             return fail("text leaf cannot contain children");
         }
+        for key in STYLE_MARKS {
+            validate_style_value(node, key)?;
+        }
         return Ok(());
     }
     let kind = match node.get("type").and_then(Value::as_str) {
@@ -555,6 +578,7 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
         }
         Some(_) => return fail("indent must be a number"),
     }
+    validate_style_value(node, "listStyleType")?;
     // A type the catalog does not list is refused by the placement walk
     // (`placement`), as Go's `validateKind` refuses it.
     let Some(element) = catalog::element(kind) else {

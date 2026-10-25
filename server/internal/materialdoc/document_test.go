@@ -1085,6 +1085,50 @@ func TestTextMarksStayOnText(t *testing.T) {
 	}
 }
 
+// A text mark's or a list's style value holds any value a browser writes but
+// no ";" and no control character (Epo Q380).
+func TestStyleValuesHoldNoSemicolon(t *testing.T) {
+	validate := func(node map[string]any) error {
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{node}})
+	}
+	leaf := func(key string, value any) map[string]any {
+		text := textLeaf("a")
+		text[key] = value
+		return map[string]any{"type": "p", "children": []any{text}}
+	}
+	list := func(value any) map[string]any {
+		return map[string]any{"type": "p", "indent": float64(1), "listStyleType": value, "children": []any{textLeaf("a")}}
+	}
+	browser := map[string]string{
+		"backgroundColor": "color-mix(in srgb, red 50%, blue)",
+		"color":           "var(--accent)",
+		"fontFamily":      `"Times New Roman", serif`,
+		"fontSize":        "1.2em",
+	}
+	for key, value := range browser {
+		for _, ok := range []any{value, nil} {
+			if err := validate(leaf(key, ok)); err != nil {
+				t.Fatalf("%s %#v: %v", key, ok, err)
+			}
+		}
+		for _, bad := range []any{value + ";x:y", value + "\x00", value + "\n", value + "\x7f", []any{"red"}} {
+			if err := validate(leaf(key, bad)); err == nil || !strings.Contains(err.Error(), key+" may hold no semicolon or control character") {
+				t.Fatalf("%s %#v: %v", key, bad, err)
+			}
+		}
+	}
+	for _, ok := range []any{"decimal", "lower-alpha", `"▪ "`, nil} {
+		if err := validate(list(ok)); err != nil {
+			t.Fatalf("listStyleType %#v: %v", ok, err)
+		}
+	}
+	for _, bad := range []any{"decimal;x:y", "decimal\x1f", "decimal\x7f", float64(3)} {
+		if err := validate(list(bad)); err == nil || !strings.Contains(err.Error(), "listStyleType may hold no semicolon or control character") {
+			t.Fatalf("listStyleType %#v: %v", bad, err)
+		}
+	}
+}
+
 // The every-block note (testdata/every-block-note.json) holds each Plate type
 // a note stores. The collaboration validator and the UAT note journey read the
 // same file, so a renamed or newly strict field fails here before a saved note

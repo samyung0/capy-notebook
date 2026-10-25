@@ -17,7 +17,7 @@ use yrs::block::ItemContent;
 use yrs::branch::BranchPtr;
 use yrs::types::TypeRef;
 use yrs::updates::decoder::Decode;
-use yrs::{Doc, ReadTxn, StateVector, Transact, Update, Xml, XmlTextRef};
+use yrs::{Doc, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextRef};
 
 fn read_json(path: &str) -> Value {
     let path = format!("{}/../../../{path}", env!("CARGO_MANIFEST_DIR"));
@@ -587,6 +587,8 @@ fn admission_checks_placement_values_and_the_embed_count() {
         ("table", "marginLeft", text("24px")),
         ("table", "marginLeft", yrs::Any::Number(-1.0)),
         ("p", "indent", text("1 fixed")),
+        ("p", "listStyleType", text("decimal;x:y")),
+        ("p", "listStyleType", text("decimal\u{1f}")),
         (
             "html_embed",
             "html",
@@ -616,6 +618,28 @@ fn admission_checks_placement_values_and_the_embed_count() {
             "a p's {key}"
         );
     }
+    // A text mark Plate draws into a style holds no `;` or control character
+    // (Epo Q380); any other value a browser writes goes in.
+    let mark = |key: &'static str, value: &'static str| {
+        let path = samples["p"].path.clone();
+        edit(&room, 12, move |peer| {
+            let block = XmlTextRef::from(element_at(&peer.transact(), &path));
+            let attrs = yrs::types::Attrs::from([(key.into(), text(value))]);
+            block.format(&mut peer.transact_mut(), 0, 1, attrs);
+        })
+    };
+    for key in ["color", "backgroundColor", "fontSize", "fontFamily"] {
+        for value in ["red;x:y", "red\u{0}", "red\u{7f}"] {
+            assert!(
+                refused_as(admit(&room, &mark(key, value)), limits::MARK_VALUE),
+                "a {key} mark {value:?}"
+            );
+        }
+        assert!(
+            admit(&room, &mark(key, "var(--accent)")).is_ok(),
+            "a {key} mark"
+        );
+    }
     // A figure's block is its live map only, never one plain value
     // (Epo 2026-10-18).
     assert!(refused_as(
@@ -642,6 +666,8 @@ fn admission_checks_placement_values_and_the_embed_count() {
             yrs::Any::Array(vec![yrs::Any::Number(120.0), yrs::Any::Null].into()),
         ),
         ("table", "marginLeft", yrs::Any::Number(24.0)),
+        ("p", "listStyleType", text("lower-alpha")),
+        ("p", "listStyleType", text("\"▪ \"")),
         ("html_embed", "caption", text("New caption")),
         (
             "html_embed",

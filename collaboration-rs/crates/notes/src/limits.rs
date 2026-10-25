@@ -380,7 +380,7 @@ fn shared_keys(keys: fn(&catalog::Element) -> &'static [&'static str]) -> Vec<&'
 }
 
 /// The keys whose value the store checks beyond its presence ([value_ok]).
-const VALUE_KEYS: [&str; 11] = [
+const VALUE_KEYS: [&str; 12] = [
     "refKind",
     "provider",
     "videoId",
@@ -392,6 +392,7 @@ const VALUE_KEYS: [&str; 11] = [
     "indent",
     "colSizes",
     "marginLeft",
+    "listStyleType",
 ];
 
 /// Whether the store takes `value` under `key` on an element of type `kind`
@@ -400,8 +401,9 @@ const VALUE_KEYS: [&str; 11] = [
 /// column's one the editor writes, an interactive block's html and caption
 /// fit, a figure's block is its live map (checked whole on the copy,
 /// [on_candidate]), a Mermaid source is a string (or its shared text), any
-/// block's indent is a number that stops at `LIST_INDENT_MAX`, and a table's
-/// column sizes and left margin are sizes.
+/// block's indent is a number that stops at `LIST_INDENT_MAX`, a table's
+/// column sizes and left margin are sizes, and a list's style holds no `;` or
+/// control character.
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
         (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
@@ -439,6 +441,7 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         ("table", "marginLeft", value) => {
             matches!(value, Any::Number(size) if crate::material::table_size(*size))
         }
+        (_, "listStyleType", value) => style_value_ok(value),
         (crate::material::MATERIAL_REF_TYPE, "refKind", _)
         | ("video", "provider" | "videoId", _)
         | (crate::material::HTML_EMBED_TYPE, "html", _) => false,
@@ -1522,6 +1525,19 @@ fn candidate_of<T: ReadTxn>(txn: &T, update: &Update) -> Result<yrs::Doc, Refusa
 
 /// [Refusal::Content] for a mark no leaf carries ([leaf_never_carries]).
 pub const LEAF_MARK: &str = "a text mark no leaf carries";
+/// [Refusal::Content] for a text mark Plate draws into a style holding a
+/// value the store refuses (`material::style_value`, Epo Q380).
+pub const MARK_VALUE: &str = "a text mark with a value the store refuses";
+
+/// A style value the store takes: absent (null) or a string with no `;` and
+/// no control character.
+fn style_value_ok(value: &Any) -> bool {
+    match value {
+        Any::Null | Any::Undefined => true,
+        Any::String(value) => crate::material::style_value(value),
+        _ => false,
+    }
+}
 /// [Refusal::Content] for text written straight into the content root.
 pub const ROOT_TEXT: &str = "text outside a block";
 /// [Refusal::Content] for children an element's type cannot hold: content
@@ -1590,6 +1606,11 @@ impl Structure {
             (_, ItemContent::Deleted(_)) => {}
             (Place::Sequence(_), ItemContent::Format(key, _)) if leaf_never_carries(key) => {
                 return Err(Refusal::Content(LEAF_MARK));
+            }
+            (Place::Sequence(_), ItemContent::Format(key, value))
+                if crate::material::STYLE_MARKS.contains(&&**key) && !style_value_ok(value) =>
+            {
+                return Err(Refusal::Content(MARK_VALUE));
             }
             (Place::Sequence(Some(BranchID::Root(root))), ItemContent::String(_))
                 if &**root == plate::CONTENT_ROOT =>
