@@ -4753,29 +4753,51 @@ retried create gives the same bytes. The engine has every XLSX command above
 (`crates/office-service/src/docx/agent.rs`), and every PPTX one
 (`crates/office-service/src/pptx/agent.rs`).
 
-Pictures and charts (Epo 2026-10-24, Q240, Q275 to Q280, Q283, Q284; phase
-A, the engine, gateway and lane: the tool's argument, its renderers and the
-pictures' images come with phase B, so the tool shows none of this yet). The
-engine's reads list them: a DOCX page puts a paragraph's in `objects` (a
-picture, a chart, `{kind: "equation", text}`, `{kind: "drawing", text}` for a
-drawn shape or text box), a PPTX slide read adds them to a picture's or a
-chart's shape entry (the deck read only a picture's alt text, `viewable` and
-`reason`, a chart's `chartType` and `title`), and the XLSX sheet list gives
-each sheet's `objects` with their anchor `cell`; at most 50 a paragraph or
-sheet (`moreObjects`). A picture shows `id`, `alt` (1,000 characters),
-`pixels` from its header (`[width, height]`; nothing is decoded, Q279),
-`crop` as fractions of the image each side leaves out, and `viewable`, or
-`viewable: false` with a `reason`: an EMF or WMF drawing, an SVG without the
-PNG Office stores beside it (an SVG with it is read as that PNG), linked to
-a file outside this one, damaged or unknown data, too large to send. A chart
-shows `chartType` (`column`, `bar`, `line`, `pie` …, a combination joined),
-`title` and `series`, each with `name`, `refs` (`name`, `categories`,
-`values` cell references), `count` (its values cache's) and its first 12
-`points` as `[idx, category, value]` paired by `c:pt/@idx` (a gap stays a
-gap; a text value such as `#N/A` is kept) with `more`, at most 8 series
+Pictures and charts (Epo 2026-10-24, Q240, Q275 to Q280, Q283, Q284;
+2026-10-26, Q381; phase A, the engine, gateway and lane: the tool's
+argument, its renderers and the pictures' images come with phase B, so the
+tool shows none of this yet). The engine's reads list them: a DOCX page puts
+a paragraph's in `objects` (a picture, a chart, `{kind: "equation", text}`,
+`{kind: "drawing", text}` for a drawn shape or text box), a PPTX slide read
+adds them to a picture's or a chart's shape entry (the deck read only a
+picture's alt text, `viewable` and `reason`, a chart's `chartType` and
+`title`), and the XLSX sheet list gives each sheet's `objects` with their
+anchor `cell`; at most 50 a paragraph or sheet (`moreObjects`). A drawing
+part the sheet list cannot read is skipped and named in that sheet's
+`notice`, the rest of the list read, as the workbook skips its charts
+(review r1 M1). A read reads each chart part and each picture header once
+however many objects name it (`objects::Parts`; review r1 M3); a DOCX
+picture's header is decoded from the first 256 KiB of its data URL and its
+bytes only when a by-id read sends them. A picture shows `id`, `alt` (1,000
+characters), `pixels` from its header (`[width, height]`; nothing is
+decoded, Q279), `crop` as fractions of the image each side leaves out (a
+side that is no finite number reads as 0), and `viewable`, or `viewable:
+false` with a `reason`: an EMF or WMF drawing, an SVG without the PNG Office
+stores beside it (an SVG with it is read as that PNG), linked to a file
+outside this one, damaged or unknown data, over 2,400 pixels on its long
+side (the upload check's limit, Q286, so a picture stored before that check
+never reaches the AI process's decode; Q381), too large to send. A PPTX
+picture takes its file picture's alt text and crop only while it shows that
+picture's media (a picture added in the editor has none; review r1 L5). A
+chart shows `chartType` (`column`, `bar`, `line`, `pie` …, a combination
+joined), `title` and `series`, each with `name`, `refs` (`name`,
+`categories`, `values` cell references), `count` and its first 12 `points`
+as `[idx, category, value]` paired by `c:pt/@idx` (a gap stays a gap; a
+text value such as `#N/A` is kept) with `more`, at most 8 series
 (`moreSeries`); it is read again from the chart part (`objects::read_chart`),
-since the shared chart reader ignores idx and drops text points. Ids: a PPTX
-picture's or chart's shape id; DOCX `<story>:picture:<client>.<clock>` and
+since the shared chart reader ignores idx and drops text points. A DOCX or
+PPTX chart's points are its part's caches (its data lives in an embedded
+workbook). An XLSX chart's `refs` and `cell` are the workbook's current ones
+(its `SheetChart`, which renames and row and column edits remap; the part's
+own when the workbook does not hold the chart), and its points and series
+name are read from the cells those references name now
+(`xlsx_parse::chart_reference_area`, `with_chart_refs`), `count` being the
+cells its values reference names; a reference that does not read (a union,
+a defined name, another book, a two-dimensional range) shows no points and
+a `reason` instead of the file's cached ones (Q381). An XLSX picture's or
+drawn shape's `cell` is its anchor moved along the rows and columns edited
+since, as a save moves it (`Workbook::source_axes`). Ids: a PPTX picture's
+or chart's shape id; DOCX `<story>:picture:<client>.<clock>` and
 `<story>:chart:<client>.<clock>`, the embed's Yjs item; XLSX
 `<drawing>#<anchor>:<n>`, the workbook's own image ids (`n` counting the
 anchor's embedded pictures), and `<drawing>#<anchor>:chart`.
@@ -4787,33 +4809,36 @@ answer, `postCollaboration`, less 4 KiB for the inspection around it). The
 answer is `items` in the order asked, a picture's with its `mimeType` and
 `data` (its stored bytes, base64) besides its read fields, a not-viewable
 picture's with its alt text and `reason`, a chart's with every point, and a
-`notice` naming the ids past the per-call count, the pictures past the
-answer's bytes ("read them in another call"), and the points (`cut` on a
-series) and series (`seriesCut`) that did not fit. Ids are trimmed of
-spaces, quotes and the brackets a read shows (a clear repair, Q277), and a
-DOCX paragraph id holding one picture or chart stands for it; an id of the
-right form that names nothing is `unavailable_target` (no longer in the
-file), anything else `invalid_input` showing the file's first picture or
-chart id (XLSX: the id form). An XLSX by-id read takes the drawing,
-relationship, media and chart parts from the package alone
-(`xlsx_drawing::by_ids`, `ooxml_opc::read_part`) without opening the
-workbook (2 to 9 s on large books). No workbook edit adds, removes or moves
-a picture or chart (the state holds no drawing), so the package's parts are
-what the sheet list shows; of the state (the checkpoint the session lookup
-merges from the durable layers and the live room) it reads only the sheet
-order (`xlsx:sheet-order`), so a picture or chart of a sheet deleted since
-the read is `unavailable_target` naming the id ("its sheet was deleted"),
-as the sheet list no longer lists it. DOCX and PPTX by-id reads open the
-session over the base and that state as their reads do, so a picture added
-or removed in the editor answers as the read lists it. Go passes `office.ids` alone to the inspect route
-(`internal_documents.go`). There a by-id read is busy (an `unavailable_target`
-refusal, 409, the agent reads to ask again; not a 503) when its room's
-background engine process already holds 4 queued calls (`IDS_READ_QUEUE`,
-`EnginePool::admit`, counted per process, checked after the session lookup
-and before the base download and seed), and runs as a bounded call
-(`call_bounded`): skipped when its caller is gone by the time it would
-start, busy once it waited past 10 s (`IDS_READ_WAIT`; a rebuild rebase ahead
-of it). Every other call on the lane keeps its unbounded queue.
+`notice` naming the ids not found and why, the ids past the per-call count,
+the pictures past the answer's bytes ("a read carries at most 6 MB of
+pictures; read them in another call"), and the points (`cut` on a series)
+and series (`seriesCut`) that did not fit, measured as JSON writes them
+(review r1 L4). Ids are trimmed of spaces, quotes and the brackets a read
+shows (a clear repair, Q277), and a DOCX paragraph id holding one picture or
+chart stands for it. The ids found are answered and a gone or malformed id
+is named in the notice (`Not found: <id> is no longer in the deck`, `… is a
+malformed picture or chart id; picture and chart ids read like …`; Q381);
+only a call naming no id at all is refused (`invalid_input`). An XLSX by-id
+read takes pictures from the package's drawing, relationship and media parts
+alone (`xlsx_drawing::by_ids`, `ooxml_opc::read_part`) without opening the
+workbook (2 to 9 s on large books), its items carrying no `cell` (the sheet
+list has it); a call naming a chart opens the workbook over the state, since
+a chart's points are its cells. Of the state the package path reads only the
+sheet order (`xlsx:sheet-order`), so a picture or chart of a sheet deleted
+since the read is named as gone ("its sheet was deleted"), as the sheet list
+no longer lists it. DOCX and PPTX by-id reads open the session over the base
+and that state as their reads do, so a picture added or removed in the
+editor answers as the read lists it. Go passes `office.ids` alone to the
+inspect route (`internal_documents.go`), after refusing more ids than the
+engine's per-call limit or an id over 256 bytes (`officeIDsRefusal`, 422
+`invalid_input`, before the authority is called; Q381). There a by-id read is
+busy (an `unavailable_target` refusal, 409, the agent reads to ask again;
+not a 503) when its room's background engine process already holds 4 queued
+calls (`IDS_READ_QUEUE`, `EnginePool::admit`, counted per process, checked
+after the session lookup and before the base download and seed), and runs as
+a bounded call (`call_bounded`): skipped when its caller is gone by the time
+it would start, busy once it waited past 10 s (`IDS_READ_WAIT`; a rebuild
+rebase ahead of it). Every other call on the lane keeps its unbounded queue.
 
 Slides (Epo 2026-10-20, phase 3): `set_shape_text {shape_id,
 expected_text, paragraphs}` replaces a shape's whole text, `expected_text`

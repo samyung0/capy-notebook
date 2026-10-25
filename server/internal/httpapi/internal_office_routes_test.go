@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -15,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -119,6 +123,20 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 		if sent := authority.sent("/internal/documents/inspect"); len(sent) != 4+n || string(sent[3+n]["office"]) != `{"ids":["a","b"]}` {
 			t.Fatalf("a by-id read's query: %v", sent)
 		}
+	}
+
+	// Security regression (Epo 2026-10-26, Q381; review r1 L4): more ids
+	// than a call takes, or an id past its bytes, is refused before the
+	// authority is called.
+	long := strings.Repeat("x", httpapi.OfficeIDBytes+1)
+	for _, ids := range [][]string{{"a", "b", "c", "d", "e"}, {"a", long}} {
+		rec = inspect(xlsx, map[string]any{"ids": ids})
+		if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "invalid_input" {
+			t.Fatalf("ids %d = %d %s", len(ids), rec.Code, rec.Body.String())
+		}
+	}
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 5 {
+		t.Fatalf("refused ids reached the authority: %v", sent)
 	}
 
 	rec = inspect(xlsx, nil)
@@ -362,5 +380,21 @@ func TestOfficeRetryWaitsForTheRunningAttempt(t *testing.T) {
 			count.(*atomic.Int32).Load() != 1 {
 			t.Fatalf("%s: first %s, retry %s, %d calls", tc.route, one.Body.String(), two.Body.String(), count.(*atomic.Int32).Load())
 		}
+	}
+}
+
+// The ids a by-id read takes in Go are the engine's per-call limit.
+func TestOfficeIDsPerCallIsTheEngines(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", agenttools.OfficeLimitsPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var limits struct {
+		InspectIDs struct {
+			PerCall int `json:"perCall"`
+		} `json:"inspectIds"`
+	}
+	if err := json.Unmarshal(data, &limits); err != nil || limits.InspectIDs.PerCall != httpapi.OfficeIDsPerCall {
+		t.Fatalf("limits.json inspectIds.perCall = %d (%v), Go takes %d", limits.InspectIDs.PerCall, err, httpapi.OfficeIDsPerCall)
 	}
 }

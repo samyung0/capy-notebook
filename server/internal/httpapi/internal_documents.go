@@ -181,6 +181,28 @@ type officeInspectQuery struct {
 	IDs   []string `json:"ids"`
 }
 
+// The pictures and charts one by-id read names (the engine's limits.json
+// inspectIds.perCall, which a test keeps equal), and the bytes of one id: a
+// story or drawing part path and a short suffix, with room for long part
+// names (Epo 2026-10-26, Q381).
+const (
+	officeIDsPerCall = 4
+	officeIDBytes    = 256
+)
+
+// officeIDsRefusal says why a by-id read's ids are refused, "" when they pass.
+func officeIDsRefusal(ids []string) string {
+	if len(ids) > officeIDsPerCall {
+		return fmt.Sprintf("ids names at most %d pictures and charts a call; read the rest in another call.", officeIDsPerCall)
+	}
+	for _, id := range ids {
+		if len(id) > officeIDBytes {
+			return fmt.Sprintf("An id is at most %d characters; copy each id whole from an earlier inspect_office_document read.", officeIDBytes)
+		}
+	}
+	return ""
+}
+
 // officeToolsMessage answers an Office file sent to the general document
 // tools (Epo 2026-10-20).
 const officeToolsMessage = `Office files are read and edited with inspect_office_document and edit_office_document, offered after read_skill("office_building").`
@@ -268,6 +290,10 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 				message = "inspect_office_document reads Word, Excel and PowerPoint files; read this file with inspect_document."
 			}
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_operation", "message": message})
+			return
+		}
+		if message := officeIDsRefusal(req.Office.IDs); message != "" {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "invalid_input", "message": message})
 			return
 		}
 		var query *store.OfficeQuery

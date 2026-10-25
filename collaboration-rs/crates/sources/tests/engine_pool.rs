@@ -265,6 +265,25 @@ fn queue(
         .collect()
 }
 
+/// Waits until `ready` holds, polling every 5 ms for at most 10 s (review r1
+/// L6: the pool's state, not fixed sleeps).
+async fn settle(mut ready: impl FnMut() -> bool) {
+    for _ in 0..2_000 {
+        if ready() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("the pool never reached the state");
+}
+
+/// Whether `room`'s background process holds exactly `queued` calls not
+/// started (`admit` reads that depth).
+fn queued(pool: &EnginePool, room: &str, queued: usize) -> bool {
+    pool.admit(Lane::Background, room, queued).is_err()
+        && pool.admit(Lane::Background, room, queued + 1).is_ok()
+}
+
 /// Security regression (the background lane's bound for the agent's by-id
 /// read, the Editor's calls 2026-10-24): a bounded read is busy once its
 /// room's background process holds 4 queued calls, counted per process;
@@ -274,13 +293,15 @@ async fn a_bounded_read_is_busy_at_four_queued_calls_and_others_still_run() {
     let pool = std::sync::Arc::new(EnginePool::new(config(1, 1)));
     let room = "source:f_q:epoch:1";
     pid(&pool, Lane::Background, Some(room)).await;
-    let mut calls = queue(&pool, room, "test.sleep", json!({ "ms": 1200 }), 1);
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    calls.extend(queue(&pool, room, "test.echo", json!({}), 3));
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Two long calls, one running and one queued (tasks enqueue in any
+    // order), then two more queued behind them.
+    let mut calls = queue(&pool, room, "test.sleep", json!({ "ms": 5_000 }), 2);
+    settle(|| queued(&pool, room, 1)).await;
+    calls.extend(queue(&pool, room, "test.echo", json!({}), 2));
+    settle(|| queued(&pool, room, 3)).await;
     pool.admit(Lane::Background, room, 4).unwrap();
     calls.extend(queue(&pool, room, "test.echo", json!({}), 1));
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    settle(|| queued(&pool, room, 4)).await;
     assert_eq!(
         pool.admit(Lane::Background, room, 4).unwrap_err(),
         sources::engine::busy()
@@ -305,8 +326,9 @@ async fn a_bounded_call_is_busy_after_its_wait_and_skipped_when_its_caller_is_go
     let room = "source:f_w:epoch:1";
     pid(&pool, Lane::Background, Some(room)).await;
     let _ = pool.take_stats();
-    let long = queue(&pool, room, "test.sleep", json!({ "ms": 900 }), 1);
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Two long calls: once one is queued, every later call waits behind it.
+    let long = queue(&pool, room, "test.sleep", json!({ "ms": 1_500 }), 2);
+    settle(|| pool.admit(Lane::Background, room, 1).is_err()).await;
     let bounded = {
         let pool = pool.clone();
         tokio::spawn(async move {
@@ -336,10 +358,10 @@ async fn a_bounded_call_is_busy_after_its_wait_and_skipped_when_its_caller_is_go
     for call in long.into_iter().chain(unbounded) {
         call.await.unwrap().unwrap();
     }
-    // The long sleep and the unbounded echo ran; the busy and the skipped
+    // The long sleeps and the unbounded echo ran; the busy and the skipped
     // calls did not.
     let (_, background) = pool.take_stats();
-    assert_eq!(background.calls, 2, "{background:?}");
+    assert_eq!(background.calls, 3, "{background:?}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

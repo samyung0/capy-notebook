@@ -8,8 +8,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use office_service::{Checkpoint, Command, Format};
+use serde_json::json;
 use sources::engine::office::calls::On;
-use sources::engine::{EnginePool, PoolConfig};
+use sources::engine::{EnginePool, Frame, Lane, PoolConfig};
 
 fn pool() -> EnginePool {
     EnginePool::new(PoolConfig {
@@ -378,6 +379,189 @@ async fn a_by_id_read_returns_pictures_through_the_pool() {
         answer,
         office_service::inspect_scoped(&base, checkpoint, &query).unwrap()
     );
+}
+
+/// Waits until `ready` holds, polling every 5 ms for at most 10 s.
+async fn settle(mut ready: impl FnMut() -> bool) {
+    for _ in 0..2_000 {
+        if ready() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("the pool never reached the state");
+}
+
+/// `count` sleeps of `ms` queued on `room`'s background process.
+fn sleeps(
+    pool: &std::sync::Arc<EnginePool>,
+    room: &str,
+    ms: u64,
+    count: usize,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    (0..count)
+        .map(|_| {
+            let (pool, room) = (pool.clone(), room.to_owned());
+            tokio::spawn(async move {
+                let request = Frame::new(
+                    "test.sleep",
+                    serde_json::to_vec(&json!({ "ms": ms })).unwrap(),
+                    Vec::new(),
+                );
+                pool.call(Lane::Background, Some(&room), request)
+                    .await
+                    .unwrap();
+            })
+        })
+        .collect()
+}
+
+/// Security regression (Q240 review r1 M4): the agent's by-id read goes
+/// through the pool as a bounded call, so one whose caller gave up before it
+/// would start is skipped (an unbounded read would still run).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_by_id_read_whose_caller_is_gone_is_skipped() {
+    use office_service::InspectQuery;
+
+    let pool = std::sync::Arc::new(pool());
+    let room = "source:f_gone:epoch:1";
+    let base = fixture("vendor/betteroffice/poc/fixtures/images-10.docx");
+    let sha = office_service::sha256_hex(&base);
+    let on = On {
+        format: Format::Docx,
+        base: &base,
+        base_sha256: &sha,
+        room: Some(room),
+    };
+    let seed = pool.seed(on).await.unwrap();
+    let _ = pool.take_stats();
+    let long = sleeps(&pool, room, 1_500, 2);
+    settle(|| pool.admit(Lane::Background, room, 1).is_err()).await;
+    let query = InspectQuery {
+        ids: Some(vec!["body:picture:1.1".into()]),
+        ..InspectQuery::default()
+    };
+    let gone = tokio::time::timeout(
+        Duration::from_millis(100),
+        pool.inspect_scoped(on, &seed, &query),
+    )
+    .await;
+    assert!(gone.is_err());
+    for call in long {
+        call.await.unwrap();
+    }
+    // A call behind the read: the read, had it run, finished before it.
+    let echo = Frame::new("test.echo", b"{}".to_vec(), Vec::new());
+    pool.call(Lane::Background, Some(room), echo).await.unwrap();
+    let (_, background) = pool.take_stats();
+    assert_eq!(background.calls, 3, "{background:?}");
+}
+
+/// The Go API's bootstrap of one DOCX file, for a store that never reaches
+/// its download or its database.
+async fn bootstrap(
+    axum::extract::Path((id, _)): axum::extract::Path<(String, String)>,
+) -> axum::Json<serde_json::Value> {
+    axum::Json(json!({
+        "access": "write",
+        "baseRevision": 1,
+        "baseSourceSHA256": "0".repeat(64),
+        "checkpoint": 0,
+        "epoch": 1,
+        "fileId": id,
+        "format": "docx",
+        "indexedCheckpoint": 0,
+        "netTokens": 0,
+        "pendingEffects": [],
+        "rebuildPending": false,
+        "room": format!("source:{id}:epoch:1"),
+        "sourceURL": "http://127.0.0.1:9/missing",
+        "state": null,
+        "stateSeedSHA256": null,
+        "workspaceId": "ws_busy",
+    }))
+}
+
+/// Security regression (Q240 review r1 M4): the store's inspect path
+/// answers a by-id read busy, after the session lookup and before any
+/// download, once the file's room holds 4 queued calls on its background
+/// engine process.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_store_answers_a_by_id_read_busy_before_its_download() {
+    let app = axum::Router::new().route(
+        "/internal/collaboration/files/{id}/{endpoint}",
+        axum::routing::get(bootstrap),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let mut db = deadpool_postgres::Config::new();
+    // Never connected: the read is refused before the store reads anything.
+    db.url = Some("postgres://capy:capy@127.0.0.1:9/capy".into());
+    let db = db
+        .create_pool(
+            Some(deadpool_postgres::Runtime::Tokio1),
+            tokio_postgres::NoTls,
+        )
+        .unwrap();
+    let disk = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("busy-disk");
+    let sources = std::sync::Arc::new(
+        sources::Sources::new(
+            sources::SourcesConfig {
+                api_url,
+                secret: "secret".into(),
+                engine: PoolConfig {
+                    program: PathBuf::from(env!("CARGO_BIN_EXE_sources-test-engine")),
+                    args: Vec::new(),
+                    save_processes: 1,
+                    background_processes: 1,
+                    call_timeout: Duration::from_secs(120),
+                    replica_budget_bytes: 0,
+                    memory_limit_bytes: None,
+                },
+                disk_dir: disk,
+                disk_bytes: 1 << 20,
+            },
+            db,
+            reqwest::Client::new(),
+        )
+        .unwrap(),
+    );
+    let room = "source:f_busy:epoch:1";
+    let mut long = Vec::new();
+    for _ in 0..5 {
+        let (sources, room) = (sources.clone(), room.to_owned());
+        long.push(tokio::spawn(async move {
+            let request = Frame::new(
+                "test.sleep",
+                serde_json::to_vec(&json!({ "ms": 1_500 })).unwrap(),
+                Vec::new(),
+            );
+            sources
+                .engines()
+                .call(Lane::Background, Some(&room), request)
+                .await
+                .unwrap();
+        }));
+    }
+    settle(|| sources.engines().admit(Lane::Background, room, 4).is_err()).await;
+    let refused = sources
+        .inspect(
+            "f_busy",
+            "u_busy",
+            Some(json!({ "ids": ["body:picture:1.1"] })),
+            |_| Box::pin(async { None }),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&refused, sources::SourceError::Edit { code, message, .. }
+            if code == "unavailable_target" && message.contains("busy")),
+        "{refused:?}"
+    );
+    for call in long {
+        call.await.unwrap();
+    }
 }
 
 /// The agent's scoped XLSX and DOCX reads and `create` answer through the
