@@ -116,8 +116,13 @@ async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
     assert not result.refused and not result.passages
     # A capture is a read: it passes the page's file changes on (r3 M17).
     assert "leaf relabelled" in result.pending
-    # The model is pointed at the number that already covers the page.
-    assert "already in the evidence as [2]" in result.text()
+    # The model is pointed at the number that already covers the page; the
+    # playground builds the same text through tools._capture_note.
+    assert result.text() == (
+        "Captured bio.pdf page 2 region [0, 0, 500, 500] as capture 1. The rendered "
+        "image is attached to the next message; read it directly. This page is "
+        "already in the evidence as [2]; cite those numbers for what the capture shows."
+    )
     assert len(ctx.citations) == 2
     label, url = ctx.pending_images["c7"]
     assert label == "capture_page result 1: bio.pdf page 2 region [0, 0, 500, 500]"
