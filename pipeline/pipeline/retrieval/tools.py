@@ -800,15 +800,19 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         capture.data_url(jpeg),
     )
     ctx.budget_images.add(call_id)
-    numbers = "".join(f"[{i}]" for i in existing)
-    result = _imaged(
-        ctx,
-        f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
-        "read it directly. This page is already in the evidence as "
-        f"{numbers}; cite those numbers for what the capture shows.",
-    )
+    result = _imaged(ctx, _capture_note(label, n, existing))
     result.pending = changes
     return result
+
+
+def _capture_note(label: str, n: int, existing: list[int]) -> str:
+    """capture_page's result text; the lab playground builds its captures' with it."""
+    numbers = "".join(f"[{i}]" for i in existing)
+    return (
+        f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
+        "read it directly. This page is already in the evidence as "
+        f"{numbers}; cite those numbers for what the capture shows."
+    )
 
 
 # ------------------------------------------------ knowledge library tools
