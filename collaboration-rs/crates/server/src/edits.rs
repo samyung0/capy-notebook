@@ -52,9 +52,9 @@ pub enum DocumentError {
     Quota(String),
     /// A source refusal: its status, its code by status.
     Source { status: u16, message: String },
-    /// 503 `unavailable_target`: the room is being reset or compacted. The
-    /// edit was refused before anything applied, so the outcome is known and
-    /// the caller may retry; logged, not reported.
+    /// 503 `unavailable_target`: the room is being reset. The edit was
+    /// refused before anything applied, so the outcome is known and the
+    /// caller may retry; logged, not reported.
     Unavailable(&'static str),
     /// 503 `outcome_unknown` (reported).
     Unknown(String),
@@ -62,8 +62,6 @@ pub enum DocumentError {
 
 /// An edit's refusal while its room is reset or discarded ([DocumentError::Unavailable]).
 pub const ROOM_RESET: &str = "collaboration room is being reset";
-/// An edit's refusal while its room is under the eviction lease.
-pub const ROOM_COMPACTING: &str = "collaboration room is being compacted";
 /// A write whose update is over `ydoc::MAX_UPDATE_BYTES` (Epo 2026-10-18),
 /// refused before anything commits: the agent's `quota_rejected` reason, the
 /// replace-block command's 413.
@@ -845,12 +843,6 @@ pub async fn edit_material(
     if app.evictions.blocks(&room, false) {
         return Err(DocumentError::Unavailable(ROOM_RESET));
     }
-    if crate::socket::room_evicting(app, &room)
-        .await
-        .map_err(DocumentError::Unknown)?
-    {
-        return Err(DocumentError::Unavailable(ROOM_COMPACTING));
-    }
     let commands =
         parse::<Vec<DocumentCommand>>(Value::Array(request.commands.clone()), "commands")?;
     let live = live_state(app, &room).await;
@@ -1094,13 +1086,6 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     }
     if app.evictions.blocks(&command.room, false) {
         return Err(ROOM_RESET.into());
-    }
-    if crate::socket::room_evicting(app, &command.room).await? {
-        return Err(if command.expected_revision.is_some() {
-            "material changed concurrently".into()
-        } else {
-            ROOM_COMPACTING.into()
-        });
     }
     let live = live_state(app, &command.room).await;
     let mut client = app.db.get().await.map_err(|error| error.to_string())?;

@@ -18,6 +18,7 @@ from ..prompts.chat import (
     memory_message,
     turn_note_message,
     turn_note_messages,
+    with_mode_note,
 )
 from ..registry import ModelConfig
 from . import accounting, models, pending_hints
@@ -324,6 +325,8 @@ async def compact_messages(
             on_compact=on_compact,
             purpose=accounting.PURPOSE_LIVE_COMPACTION,
         )
+        # The folded history may have held the last mode note.
+        protected = [with_mode_note(protected[0]), *protected[1:]]
         compacted = [*messages[:head_count], memory_message(summary), *protected]
         if not needs_compact(compacted, spec, schemas=schemas, extra=extra):
             return compacted

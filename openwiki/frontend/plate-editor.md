@@ -108,9 +108,9 @@ that unload succeeds. The room's task runs the eviction in order with its stores
 acknowledgement. A negative acknowledgement leaves the outbox item retryable.
 Durable material events carry the material identity as
 well as their original room. Each instance resolves and evicts the current room
-epoch after waiting for an in-progress compaction, then rechecks the epoch
-before acknowledging delivery. An ACL event can therefore neither reopen a
-failed discard nor disappear against a room schema that compaction replaced.
+epoch, then rechecks the epoch before acknowledging delivery. An ACL event can
+therefore neither reopen a failed discard nor disappear against a room schema
+that a discard replaced.
 
 The editor never requires the member roster. Comment authorship arrives on the
 discussion payloads, and mention autocomplete reads a redacted collaborator
@@ -1170,7 +1170,7 @@ file-missing or no-access panel, `collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
 `collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
 and anything else (an expired token,
-a room being reset or compacted, a client-id clash) is retried. A loss still unresolved after 30 s while
+a room being reset, a client-id clash) is retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
 sync it turns the status red). A join, first or after a reload, has the same
 30 s from its start, which is its collaboration-token request (or the new
@@ -1194,11 +1194,10 @@ the same 30 s from their token request (`ItemRoom.start`); one not synced by
 then goes offline, the room's connection error (Epo 2026-10-23).
 A slowed open and offline wait. A reload pauses only once its new token has
 answered, so a reload whose token hangs keeps the old editor on screen,
-unpaused and editable. With the real server the compaction evicted its room,
-so its own reconnect (whose token request hangs too) goes Offline at about
-30 s like any lost room, its edits kept on the device, and the swap runs
-once a token answers. The mock retires the old room without evicting it, so
-no e2e shows the Offline part. A failed first token request shows the panel for its status (not found,
+unpaused and editable. A discard evicts the old room, so its own reconnect
+(whose token request hangs too) goes Offline at about 30 s like any lost
+room, its edits kept on the device, and the swap runs once a token answers;
+no e2e waits for the Offline part. A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry). A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
@@ -1376,8 +1375,8 @@ room after 10 s, with none authenticating, is closed (1008, "no room
 joined"); a client joins as soon as it opens one, and a warmed socket's
 hold is 8 s. A JOIN's token is checked when it arrives (CPU only): a bad one
 is refused before any lookup, so it never holds the deadline open, and the
-user's timeout is checked next, before the eviction lease's Redis lookup and
-the database. A client address holds at most
+user's timeout is checked next, before a source room's eviction lease (Redis)
+and the database. A client address holds at most
 `COLLABORATION_SOCKETS_PER_ADDRESS` open sockets (500): one more is refused
 429 before the upgrade. The address is read as the gateway's limiter reads
 it (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
@@ -2061,8 +2060,8 @@ read-only token, checks the note's current schema, refuses the send while
 the user is in a timeout (checked right after the token, before any
 lookup), reads the body within 8 MiB (a larger one answers `too_large`,
 which the page leaves to the editor, and times the user out) and a note's
-4 MiB sync cap, checks the eviction lease and a local reset again (the body
-may have arrived after them), and hands the update to the room, loading it
+4 MiB sync cap, checks a source room's eviction lease and a local reset
+again (the body may have arrived after them), and hands the update to the room, loading it
 if need be. There a group the room holds in full is a no-op (see duplicate
 draft sends); any other takes from the user's update allowance (the one
 their sockets take from) and goes through the same writer admission and
@@ -2332,8 +2331,8 @@ too (Epo, 2026-10-04).
 ### Room swap
 
 Developer Epo decided on 2026-10-22 that a room reload swaps renderers
-instead of remounting in place: a compaction or discard that moves the room
-to a new `room_schema` (the token names another room), a `document-rejected`
+instead of remounting in place: a discard that moves the room to a new
+`room_schema` (the token names another room), a `document-rejected`
 (a new generation), and Reload from recovery. `NoteEditor` keys each renderer
 by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
 `NoteEditorCore` a phase:
@@ -2368,8 +2367,8 @@ by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
   root non-editable and blurs it) and the reader has not focused something
   else since, then the first top-level block under the scroll box's top
   edge at the same offset (else the old scroll offset), last, so the
-  reading place wins over the caret. Yjs ids are never used: a compaction
-  gives the room new ones.
+  reading place wins over the caret. Yjs ids are never used: the next room's
+  document need not hold them.
 
 A hidden tab swaps at once (no paused phase; a tab that hides meanwhile
 swaps then). A phone (below sm) holds one renderer: the paused view is
@@ -2381,8 +2380,9 @@ plots drawn to a canvas and math fields show blank in it until the swap. The
 path (beside, a phone's copy, or at once) is decided once per swap, when the
 next mount is ready, so a breakpoint crossing during the build keeps it. The banners of the paused editor's room (offline, delayed) go with it.
 All renderers share one react-dnd `DndProvider` in `NoteEditor`: two
-providers, each with an HTML5 backend, throw. `room-swap.spec.ts` covers the
-compaction, a hidden tab, a phone and a refused update.
+providers, each with an HTML5 backend, throw. `room-swap.spec.ts` covers a
+discard (`discardMockMaterialRoom`: the room moves on and its editors' channels
+close), a hidden tab, a phone and a refused update.
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from
@@ -2647,12 +2647,7 @@ that then pass the strict validator (D4), so grading (`POST /api/quizzes/{id}/
 attempts` projects a lagging room first, D9) and fresh reads see what a Save
 would have stored. The projection also names every editor asset either
 document references (`assetIds`), so an image in an incomplete question stays
-in use. Lineage compaction never rebuilds a quiz from that projection: it
-replays both stored documents and seeds fresh ones from every question as
-typed with its keys (`items::quiz::editor_value`, complete or not, blank
-blocks included; Epo 2026-10-14), and skips a quiz holding a block this
-version cannot read (`rebuilt_quiz` in
-`collaboration-rs/crates/server/src/note_store.rs`). The two documents count together against the material's limits: each
+in use. The two documents count together against the material's limits: each
 room holds the other's metrics (`PeerMetrics`), and Go refuses a quiz
 projection over a limit unless it shrank. Admission checks structure, value
 caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
@@ -2719,10 +2714,10 @@ update the server refuses (or a store refusal for the room) ends the room
 here: its edits become a refused draft, a toast says so, and a fresh room
 opens with the draft read-only for copying until Reload (`QuizRecovery`,
 `LiveFlashcards`); it never rejoins with what was refused. A fresh token
-naming another room (compaction, a discard) does the same with the edits as a
-draft of the old lineage. An eviction notice's `mode` decides its close: a
-drain (access widened; the room stored first) rejoins with the document as
-it is, a discard (or compaction) replaces the room as a moved one. Leaving
+naming another room (a discard) does the same with the edits as a draft of
+the old lineage. An eviction notice's `mode` decides its close: a drain
+(access widened; the room stored first) rejoins with the document as it is,
+a discard replaces the room as a moved one. Leaving
 the tab or navigating in the app while an
 item room holds edits the server has not acknowledged asks first
 (`unsentItems.ts`).
@@ -3096,8 +3091,8 @@ validation and are not rendered.
   Redis/PostgreSQL latency.
 - Do not impose an arbitrary room occupancy cap. Add a distributed measured cap
   only when load tests or production usage justify one.
-- Keep Yjs garbage collection enabled. Compaction/rebasing requires a separately
-  tested maintenance procedure.
+- Keep Yjs garbage collection enabled. Yjs history is not compacted for now
+  ([Yjs storage growth](../backend-storage-quota.md#yjs-storage-growth)).
 - Nothing outside the document may re-render the document. A near-limit note is
   ~7.4k Slate nodes, so one extra render is seconds of blocking. Concretely:
   context values read from inside the tree (`EditorRuntime`, collaboration

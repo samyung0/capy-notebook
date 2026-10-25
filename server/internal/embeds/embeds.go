@@ -407,10 +407,12 @@ func Embeds() []Embed {
 		},
 		{
 			Kind: "mermaid", Class: ClassLiveSource, Element: "mermaid",
-			Fence: Fence{Lang: "mermaid", Body: "text"}, Chat: "Mermaid",
+			// No chat block: the agent makes no Mermaid (Epo 2026-10-25).
+			Fence:     Fence{Lang: "mermaid", Body: "text"},
 			Materials: []string{Mindmap, Diagram},
-			Surfaces:  []string{SurfaceChat, SurfaceNote, SurfaceMaterial, SurfaceShare, SurfaceExport},
-			Edit:      Edit{User: []string{SurfaceNote, SurfaceMaterial}, Agent: writeNote},
+			Surfaces:  []string{SurfaceNote, SurfaceMaterial, SurfaceShare, SurfaceExport},
+			// The agent only rewrites a block a learner added.
+			Edit: Edit{User: []string{SurfaceNote, SurfaceMaterial}, Agent: []string{"edit_document"}},
 		},
 		{
 			Kind: "quiz", Class: ClassItem, Element: "material_ref",

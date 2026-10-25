@@ -645,10 +645,9 @@ export function mockMaterialRoom(materialId: string) {
 
 /**
  * The service moved a note's room to its next schema while a client was
- * away: a discard of unsaved room state keeps the saved state (`keepState`),
- * a compaction reseeds it from the projection with fresh identities.
+ * away: a discard of unsaved room state keeps the saved state.
  */
-export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
+export function moveMockMaterialRoom(materialId: string) {
   const old = mockMaterialRoom(materialId);
   const schema = Number(old.split(':').at(-1)) + 1;
   const next = `material:${materialId}:schema:${schema}`;
@@ -663,7 +662,7 @@ export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
     live.retired = true;
   }
   const saved = checkpoints.get(old);
-  if (keepState && saved) {
+  if (saved) {
     checkpoints.set(next, {
       updates: [...saved.updates],
       version: saved.version,
@@ -830,6 +829,14 @@ class MockCollaborationProvider implements UnifiedProvider {
   announceOutdated() {
     this.disconnect();
     this.options.onAuthenticationFailed?.(outdated);
+  }
+
+  /** The service closed this note's channel (an eviction): the editor
+   * rejoins at once, as its reconnector does on the shared socket. */
+  evicted(materialId: string) {
+    if (this.options.materialId !== materialId || !this.isConnected) return;
+    this.drop();
+    this.connect();
   }
 
   /** A room event the service sends this note's editors. */
@@ -1049,14 +1056,14 @@ export function refuseThisBuild() {
   ])
     provider.announceOutdated();
 }
-/** The service compacted an open note's room (Epo 2026-10-22's room swap):
- * the room moves to its next schema with its saved state, and the open
- * editors hear it. */
-export function compactMockMaterialRoom(materialId: string) {
+/** The service discarded unsaved state in an open note's room (a writer's
+ * update it threw away): the room moves to its next schema with its saved
+ * state and closes its editors' channels, whose rejoin names the next room
+ * and swaps the editor onto it (Epo 2026-10-22's room swap). */
+export function discardMockMaterialRoom(materialId: string) {
   const providers = [...materialProviders];
-  moveMockMaterialRoom(materialId, true);
-  for (const provider of providers)
-    provider.announce(materialId, { type: 'compaction-complete' });
+  moveMockMaterialRoom(materialId);
+  for (const provider of providers) provider.evicted(materialId);
 }
 /** The room refuses an open note's update for good (over a limit): its
  * editors keep their unsaved edits as a refused draft. */

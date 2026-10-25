@@ -68,11 +68,6 @@ export const refLineProps = z.object({
   value: z.number(),
   label: z.string().optional(),
 });
-export const mermaidProps = z.object({
-  title: z.string(),
-  code: z.string(),
-  passages,
-});
 export const htmlEmbedProps = z.object({
   title: z.string(),
   html: z.string(),
@@ -94,7 +89,6 @@ export type SeriesProps = z.infer<typeof seriesProps>;
 export type PointProps = z.infer<typeof pointProps>;
 export type CurveProps = z.infer<typeof curveProps>;
 export type RefLineProps = z.infer<typeof refLineProps>;
-export type MermaidProps = z.infer<typeof mermaidProps>;
 export type HtmlEmbedProps = z.infer<typeof htmlEmbedProps>;
 export type AskUserProps = z.infer<typeof askUserProps>;
 
@@ -162,7 +156,6 @@ export type Renderers = Record<
   | 'Plot'
   | 'Curve'
   | 'RefLine'
-  | 'Mermaid'
   | 'HtmlEmbed'
   | 'AskUser',
   AnyRenderer
@@ -181,7 +174,7 @@ export function buildLibrary(render: Renderers) {
   const Md = defineComponent({
     component: render.Md,
     description:
-      'A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Diagrams go in Mermaid, never in Md. passages: the shown passage numbers that ground it.',
+      'A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Never write diagram code (Mermaid or other) in Md: chat shows it as raw text. passages: the shown passage numbers that ground it.',
     name: 'Md',
     props: mdProps,
   });
@@ -317,13 +310,6 @@ export function buildLibrary(render: Renderers) {
       marks: z.array(Point.ref).optional(),
     }),
   });
-  const Mermaid = defineComponent({
-    component: render.Mermaid,
-    description:
-      'A Mermaid diagram of a process, cycle, pathway, hierarchy or decision. code is Mermaid source with lines separated by \\n: flowchart TD, sequenceDiagram, stateDiagram-v2, mindmap or timeline. Chat is narrow: top-down, at most about 12 nodes with short labels, no styling, classDef or HTML.',
-    name: 'Mermaid',
-    props: mermaidProps,
-  });
   const HtmlEmbed = defineComponent({
     component: render.HtmlEmbed,
     description: `An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. ${htmlEmbedRules}`,
@@ -348,7 +334,6 @@ export function buildLibrary(render: Renderers) {
     Table.ref,
     Chart.ref,
     Plot.ref,
-    Mermaid.ref,
     HtmlEmbed.ref,
   ] as const;
   const AccordionItem = defineComponent({
@@ -433,13 +418,12 @@ export function buildLibrary(render: Renderers) {
           'Plot',
           'Curve',
           'RefLine',
-          'Mermaid',
           'HtmlEmbed',
         ],
         name: 'Data',
         notes: [
           '- Tables and charts are leaves: no components inside them. Cite their passages on the block, not in cells.',
-          '- Chart compares labelled categories; Plot shows numbers against numbers (a line, or a scatter of points); Mermaid shows structure or flow; HtmlEmbed only where moving something teaches more than a still picture. The text next to a figure says what to notice.',
+          '- Chart compares labelled categories; Plot shows numbers against numbers (a line, or a scatter of points); HtmlEmbed only where moving something teaches more than a still picture. The text next to a figure says what to notice.',
           '- Chart and Plot values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.',
         ],
       },
@@ -448,7 +432,6 @@ export function buildLibrary(render: Renderers) {
         name: 'Questions',
         notes: [
           '- Use AskUser when you must require a user input: which document, which depth, what the material is for. Ask at most three questions, then stop; the answers arrive as the next user message.',
-          '- Do NOT use AskUser for simple follow up questions',
         ],
       },
     ],
@@ -475,7 +458,6 @@ export function buildLibrary(render: Renderers) {
       Plot,
       Curve,
       RefLine,
-      Mermaid,
       HtmlEmbed,
       AskUser,
     ],

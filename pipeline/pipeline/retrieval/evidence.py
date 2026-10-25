@@ -65,6 +65,18 @@ UNFINISHED = {
 }
 
 
+def mode_shown(history: list[dict[str, Any]] | None) -> bool | None:
+    """The Workspace only switch of the last mode note history_turns replays."""
+    modes = [
+        bool(turn["workspaceOnly"])
+        for turn in history or []
+        if turn.get("role") == "user"
+        and turn.get("content")
+        and "workspaceOnly" in turn
+    ]
+    return modes[-1] if modes else None
+
+
 async def history_turns(
     history: list[dict[str, Any]] | None, ctx: tools.ToolContext
 ) -> list[dict[str, Any]]:
@@ -93,6 +105,7 @@ async def history_turns(
     out = []
     replayed: set[str] = set()
     turns = history or []
+    shown: bool | None = None
     for i, turn in enumerate(turns):
         role, content = turn.get("role"), turn.get("content") or ""
         if role not in ("user", "assistant"):
@@ -101,9 +114,13 @@ async def history_turns(
         unfinished = UNFINISHED.get(turn.get("status") or "")
         if role == "assistant" and unfinished:
             content = f"{content}\n\n{unfinished}" if content else unfinished
-        if role == "user" and "workspaceOnly" in turn:
-            # As it was sent, so the request prefix stays cached.
-            content = chat_prompts.with_mode_line(content, bool(turn["workspaceOnly"]))
+        if role == "user" and content and "workspaceOnly" in turn:
+            # A mode note where the switch is first known or changes, as it was
+            # sent, so the request prefix stays cached.
+            mode = bool(turn["workspaceOnly"])
+            if mode is not shown:
+                content = chat_prompts.with_mode_line(content, mode)
+            shown = mode
         if content:
             out.append({"id": turn.get("id") or "", "role": role, "content": content})
             # A user message's hints are saved with the answer that follows it

@@ -365,9 +365,9 @@ async fn document(
     }
 }
 
-/// An edit refused because its room is being reset or compacted: refused
-/// before anything applied, so the caller may retry. An expected outcome,
-/// logged and not reported.
+/// An edit refused because its room is being reset: refused before anything
+/// applied, so the caller may retry. An expected outcome, logged and not
+/// reported.
 fn unavailable(route: &str, reason: &str, body: Value) -> Response {
     crate::observe::log(
         crate::observe::Level::Info,
@@ -399,15 +399,11 @@ async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> 
             StatusCode::PAYLOAD_TOO_LARGE,
             json!({ "code": "update_too_large", "message": message }),
         ),
-        Err(message)
-            if message == crate::edits::ROOM_RESET || message == crate::edits::ROOM_COMPACTING =>
-        {
-            unavailable(
-                "/internal/commands",
-                &message,
-                json!({ "code": "unavailable_target", "message": message }),
-            )
-        }
+        Err(message) if message == crate::edits::ROOM_RESET => unavailable(
+            "/internal/commands",
+            &message,
+            json!({ "code": "unavailable_target", "message": message }),
+        ),
         Err(message) => {
             let conflict = message.contains("concurrently") || message.contains("no longer exists");
             if !conflict {

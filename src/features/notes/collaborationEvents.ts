@@ -69,12 +69,6 @@ export type CollaborationEvent =
   | { room: string; type: 'authorization-revoked' }
   | { materialId: string; type: 'comments-invalidated' }
   | { materialId: string; type: 'projection-updated' }
-  | {
-      materialId?: string;
-      newRoom?: string;
-      room?: string;
-      type: 'compaction-complete' | 'compaction-evict';
-    }
   /** The room turned read-only for this writer (a frozen account; `code`:
    * a block this version cannot edit). */
   | { code?: ReadOnlyCode; room: string; type: 'room-read-only' }
@@ -185,15 +179,6 @@ export function parseCollaborationEvent(
     }
     case 'children-refused':
       return { type: 'children-refused' };
-    case 'compaction-complete':
-    case 'compaction-evict':
-      return {
-        materialId:
-          typeof raw.materialId === 'string' ? raw.materialId : undefined,
-        newRoom: typeof raw.newRoom === 'string' ? raw.newRoom : undefined,
-        room: typeof raw.room === 'string' ? raw.room : undefined,
-        type: raw.type,
-      };
     default:
       return null;
   }

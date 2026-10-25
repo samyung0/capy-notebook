@@ -102,6 +102,7 @@ const ROWS: Row[] = [
       { label: m.study_pref_writing_brief, value: 'brief' },
       { label: m.study_pref_writing_normal, value: 'normal' },
       { label: m.study_pref_writing_verbose, value: 'verbose' },
+      { label: m.study_pref_writing_story, value: 'story' },
     ],
     field: 'writingStyle',
     hint: m.study_pref_writing_hint,

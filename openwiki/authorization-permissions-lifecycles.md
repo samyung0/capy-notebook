@@ -610,9 +610,9 @@ and [material editor checks](../server/internal/store/share.go#L209).
   the effective nonmember grant; a share role is dormant while the workspace is
   private, so changing that role or widening privacy from private drains rather
   than discarding accepted edits. Restoration user events do not close
-  connections. Compaction uses the unload-and-reconnect durability drain. Material outbox
+  connections. Material outbox
   delivery resolves the current Yjs room epoch and rechecks it after eviction,
-  so an event enqueued beside compaction cannot acknowledge only an obsolete
+  so an event enqueued beside a discard cannot acknowledge only an obsolete
   room. A failed discard keeps the room blocked until a later retry verifies
   that unload succeeded. Within one eviction the room closes every channel
   and refuses joins and messages until it has unloaded (its task runs the
@@ -1157,11 +1157,14 @@ with a "Use a backup code" switch when backup codes exist; a phone or email
 code only when Clerk reports no authenticator for the user, sent as the step
 opens. "Back to Log In" clears the local attempt (`signIn.reset()`) and shows the
 form, so the user can start over with another factor or account; it does not end
-the attempt at Clerk, so a reload may open the code step again. Everyone else signs in exactly as before. Users turn
-two-step verification on and off on Clerk's hosted account page, with an
-authenticator app (QR code) and no SMS (Epo 2026-10-21): Settings → Account has
-a "Two-step verification" row whose Manage link opens the URL Clerk's SDK builds
-(`buildUserProfileUrl()`) in a new tab. Capy has no in-app enrolment.
+the attempt at Clerk, so a reload may open the code step again. Everyone else signs in exactly as before. Two-step
+verification stays off until production launch is planned, since Clerk offers
+its factors only on a paid plan (Q373). Clerk's hosted account page stays on but
+unlinked from Capy (Q377): Settings → Account has no password or two-step
+verification row, a forgotten password is reset from the sign-in page, and
+Clerk's page offers no account deletion, so an account is deleted only through
+Settings with its 30-day grace (Q375). Capy has no in-app password or
+two-step enrolment yet.
 
 The dashboard opens a first-run dialog when the Clerk user has no
 `unsafeMetadata.onboardedAt`. The profile chooser uses the fixed catalog in

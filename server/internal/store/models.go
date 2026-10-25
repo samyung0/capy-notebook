@@ -73,7 +73,7 @@ type StudyPreferences struct {
 	// MainFormat is the output file that explains each chapter (Capy Note or
 	// Powerpoint); the agent still makes other files when needed.
 	MainFormat   string `json:"mainFormat,omitempty" enum:"note,deck"`
-	WritingStyle string `json:"writingStyle,omitempty" enum:"brief,normal,verbose"`
+	WritingStyle string `json:"writingStyle,omitempty" enum:"brief,normal,verbose,story"`
 	// How much of each practice item a chapter gets (more 10, less 5).
 	Quiz       string `json:"quiz,omitempty" enum:"more,less,off"`
 	Flashcards string `json:"flashcards,omitempty" enum:"more,less,off"`

@@ -1203,13 +1203,11 @@
         "lang": "mermaid",
         "body": "text"
       },
-      "chat": "Mermaid",
       "materials": [
         "mindmap",
         "diagram"
       ],
       "surfaces": [
-        "chat",
         "note",
         "material",
         "share",
@@ -1221,7 +1219,6 @@
           "material"
         ],
         "agent": [
-          "create_material",
           "edit_document"
         ]
       }

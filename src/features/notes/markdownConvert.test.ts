@@ -210,4 +210,18 @@ describe('markdownToDocument', () => {
       type: 'p',
     });
   });
+
+  it('gives a small figure half the width and a normal one the full width', () => {
+    const { document } = convertAgentMarkdown(
+      [
+        '![Leaf](figure:fig_1 "small")',
+        '![Root](figure:fig_2 "normal")',
+        '![Stem](figure:fig_3)',
+      ].join('\n\n')
+    );
+    const [small, normal, plain] = document.value;
+    expect(small).toMatchObject({ assetId: 'figure:fig_1', width: '50%' });
+    expect(normal).not.toHaveProperty('width');
+    expect(plain).not.toHaveProperty('width');
+  });
 });

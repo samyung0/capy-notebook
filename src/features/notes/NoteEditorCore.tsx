@@ -918,17 +918,6 @@ export function NoteEditorCore({
           queryKey: qk.material(material.id),
           refetchType: 'none',
         });
-        return;
-      }
-      if (
-        (event.type === 'compaction-evict' ||
-          event.type === 'compaction-complete') &&
-        (event.room === collaborationToken.room ||
-          event.materialId === material.id)
-      ) {
-        void qc.invalidateQueries({
-          queryKey: ['material', material.id, 'collaboration-token'],
-        });
       }
     },
     [
@@ -1085,8 +1074,8 @@ export function NoteEditorCore({
                         tokenError.current = error;
                         throw error;
                       }
-                      // The room was compacted while this tab was away: the
-                      // new room in the cache remounts the editor onto it.
+                      // The room moved (a discard) while this tab was away:
+                      // the new room in the cache remounts the editor onto it.
                       if (token.room !== collaborationToken.room) {
                         qc.setQueryData(
                           ['material', material.id, 'collaboration-token'],
@@ -1341,7 +1330,7 @@ export function NoteEditorCore({
     lastPhase.current = phase;
   }, [phase, report]);
 
-  // Being replaced (a compaction, a discard, a refused update): read-only
+  // Being replaced (a discard, a refused update): read-only
   // from this render, out of the room, its unsaved edits written as a whole
   // document before the next room's drafts are read (a child's effects run
   // before NoteEditor's), and no reconnect. There is no way back: a paused

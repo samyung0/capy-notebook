@@ -13,7 +13,6 @@ import type {
   ChartProps,
   CurveProps,
   HtmlEmbedProps,
-  MermaidProps,
   PlotProps,
 } from './schema';
 
@@ -206,13 +205,6 @@ export function inspectAnswer(result: ParseResult | null) {
         !plotBlock(value.props as unknown as PlotProps))
     ) {
       invalidData = true;
-      return;
-    }
-    if (value.typeName === 'Mermaid') {
-      const { title, code } = value.props as unknown as MermaidProps;
-      if (typeof title === 'string' && title.trim()) lines.push(title);
-      if (typeof code === 'string' && code.trim())
-        lines.push(['```mermaid', code.trim(), '```'].join('\n'));
       return;
     }
     if (value.typeName === 'Curve') {

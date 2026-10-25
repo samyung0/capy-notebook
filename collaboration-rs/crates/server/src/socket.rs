@@ -246,7 +246,8 @@ async fn join_room(
     Err(Refusal::plain("collaboration room unavailable"))
 }
 
-/// Whether a room is under the eviction lease (compaction or a publication).
+/// Whether a source room is under the eviction lease (a publication's
+/// handoff); nothing takes it for a material room.
 pub async fn room_evicting(app: &Shared, room: &str) -> Result<bool, String> {
     let mut redis = app.redis.clone();
     let key = format!("capy:collaboration:evicting:{room}");
@@ -299,13 +300,12 @@ pub async fn authenticate(
     if let Some(remaining) = app.allowances.remaining(&claims.sub, Instant::now()) {
         return Err(Refusal::timed_out(&claims.sub, remaining));
     }
-    if room_evicting(&app, &room).await.map_err(Refusal::plain)? {
-        return Err(match name {
-            RoomName::Source { .. } => Refusal {
-                reason: "source-publishing".into(),
-                ..Refusal::plain("Source room is locked for a publication")
-            },
-            RoomName::Material { .. } => Refusal::plain("collaboration room is being compacted"),
+    if matches!(name, RoomName::Source { .. })
+        && room_evicting(&app, &room).await.map_err(Refusal::plain)?
+    {
+        return Err(Refusal {
+            reason: "source-publishing".into(),
+            ..Refusal::plain("Source room is locked for a publication")
         });
     }
     let mut viewer = false;

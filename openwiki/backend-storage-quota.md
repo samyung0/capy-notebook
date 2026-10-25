@@ -932,42 +932,35 @@ deck, `internal_files.go`) takes the same rule and is refused with 400
 remain in `material_yjs_documents.state` and its update log
 (`material_yjs_updates`, one row per store, folded into the state when the room
 unloads or the log passes `max(256 KiB, state bytes)` or 1,000 rows; the
-document row keeps `log_bytes` and `log_rows`). Idle rooms whose state plus log
-is at least `max(256 KiB, material.size_bytes * 4)` are compaction candidates.
-Source documents keep the same log in `source_document_updates`, charged in
-`storage_bytes` with the state (migration 0075). A source save appends its row
-through the checkpoint compare-and-swap; a moved checkpoint re-reads the rows
-saved meanwhile and appends again, 3 attempts in all
-(`collaboration-rs/crates/sources/src/store.rs`).
+document row keeps `log_bytes` and `log_rows`). Source documents keep the same
+log in `source_document_updates`, charged in `storage_bytes` with the state
+(migration 0075). A source save appends its row through the checkpoint
+compare-and-swap; a moved checkpoint re-reads the rows saved meanwhile and
+appends again, 3 attempts in all (`collaboration-rs/crates/sources/src/store.rs`).
 
-Source text states are not compacted. Their history grows with the number of
+Yjs history is not compacted for now (Epo 2026-10-22). A compaction never
+moves the room epoch (`room_schema`), so the epoch-moving one (a rebuild from
+the projection under the next `room_schema`) is removed, and history stays
+until an in-place collection lands. Note, quiz and flashcard history is not
+charged: a material pays for its content JSON alone (`materials.size_bytes`).
+No cap bounds a note room's state: a store appends only the update since the
+durable state, each client update is at most `ydoc::MAX_UPDATE_BYTES`, and the
+shape bounds measure the content, not its history. A heavily edited note
+costs load time and memory instead, and a full answer of at least 256 KiB
+waits behind its user's spent open budget (`rate.rs`).
+
+Source text states grow the same way. Their history grows with the number of
 separate edits (and the contributor markers each save writes and clears), not
 with the file's size: garbage collection drops deleted content and merges
 adjacent deletions, leaving a few bytes per edit, so a paste deleted again
 costs a few bytes. Three publications of 1 KB typed into a 2 KB `.md` left
-195 bytes charged (bench/parsers/reports/2026-10-05-office-storage-charging.md).
-Compacting at publication would move the lineage (epoch) every time a text
-file auto-publishes, so it is deferred; if history ever matters, compact past
-a size threshold while the room is empty, as the Office rebuild does.
+195 bytes charged (bench/parsers/reports/2026-10-05-office-storage-charging.md),
+within the room's state cap.
 
-A quiz holding a block this version cannot read (its rooms load read-only)
-is never rebuilt, since the rebuild would drop the block. Compaction checks
-that before taking the lease, so the quiz's readers stay connected, and each
-instance then leaves the quiz out of its candidate query until it restarts,
-so such quizzes cannot hold the head of the oldest-first queue (Epo
-2026-10-15).
-
-Compaction takes a Redis eviction lease so every collaboration instance
-flushes, closes clients, and unloads the room; rebuilds a fresh Y.Doc from
-the projected Plate `materials.content` (a quiz instead from its own content
-and keys documents, every question as typed with its keys, since its
-projection holds only complete questions; Epo 2026-10-14; a flashcard set's
-projection leaves blank cards out, so they go); clears in-memory pending
-checkpoints; keeps `stored_version` / `projected_version` equal; and
-increments `room_schema`. Tokens, Redis events, service commands, and client
-Y.Docs bind to that epoch so a stale client cannot merge pre-compaction state
-back in. A discard that throws unsaved room state away increments
-`room_schema` too, keeping the state (see
+Tokens, Redis events, service commands, and client Y.Docs bind to
+`room_schema`, so a stale client cannot merge an earlier lineage's state back
+in. A discard that throws unsaved room state away increments `room_schema`,
+keeping the state (see
 [plate-editor.md](frontend/plate-editor.md#document-limits-and-rejection)).
 
 Ordinary persistence embeds server-owned actor provenance in the same Yjs
@@ -1000,7 +993,7 @@ Sources: [storage gate and reconciliation](../server/internal/store/storage.go),
 [material bounds](../server/internal/materialdoc/document.go),
 [collab limits](../collaboration-rs/crates/notes/src/limits.rs),
 [collab document validation](../collaboration-rs/crates/notes/src/material.rs),
-[compaction config](../collaboration-rs/crates/server/src/config.rs).
+[note store and folds](../collaboration-rs/crates/server/src/note_store.rs).
 
 ## Text field limits
 

@@ -299,7 +299,7 @@ it('rejoins after a close the server gives everyone', async () => {
   room.destroy();
 });
 
-// REVIEW1 M5: a fresh token naming another room (compacted, discarded) ends
+// REVIEW1 M5: a fresh token naming another room (discarded) ends
 // this room; a fresh one joins the new lineage.
 it('follows a room that moved to a new lineage', async () => {
   const { onReplace, room } = await started();

@@ -2,7 +2,6 @@
 export {
   AuthenticateWithRedirectCallback,
   useAuth,
-  useClerk,
   useSignIn,
   useSignUp,
   useUser,

@@ -1204,13 +1204,11 @@ export const EMBED_CATALOG = {
         "lang": "mermaid",
         "body": "text"
       },
-      "chat": "Mermaid",
       "materials": [
         "mindmap",
         "diagram"
       ],
       "surfaces": [
-        "chat",
         "note",
         "material",
         "share",
@@ -1222,7 +1220,6 @@ export const EMBED_CATALOG = {
           "material"
         ],
         "agent": [
-          "create_material",
           "edit_document"
         ]
       }

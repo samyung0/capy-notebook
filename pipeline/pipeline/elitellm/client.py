@@ -46,9 +46,10 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "order": ["DigitalOcean", "Z.AI"],
         "allow_fallbacks": False,
     },
-    # A chat choice (decision 2026-10-24, Q224): Together only.
+    # A chat choice (decision 2026-10-24, Q224): Together, then Wafer, the
+    # probe's second pick at the same price and caching (Epo 2026-10-25).
     "minimax/minimax-m3.1-flash": {
-        "order": ["together"],
+        "order": ["together", "wafer"],
         "allow_fallbacks": False,
     },
 }

@@ -1143,17 +1143,18 @@ webhook remains `https://api.capynotebook.com/webhooks/clerk`; ops does not acce
 webhooks. Stripe remains `https://api.capynotebook.com/webhooks/stripe`. B2 CORS
 `allowedOrigins` is the SPA origin, not `api.` or `ops.`.
 
-Two-step verification is turned on and off on Clerk's hosted account page,
-not in Capy (Epo 2026-10-21). On the production instance, and the same on UAT
-(§12.3):
+Clerk's hosted Account Portal stays on (Clerk can switch off only the whole
+portal) and Capy links to none of its pages (Q377). On the production instance,
+and the same on UAT (§12.3):
 
-1. Under multi-factor authentication, turn on the authenticator application
-   (TOTP, set up by QR code) factor and leave SMS verification codes off.
-2. Leave Clerk's new-device check off, so sign-in has no device-trust step.
-3. Keep the Account Portal on with its user profile page. Settings → Account
-   links its Two-step verification row to the URL Clerk's SDK builds for that
-   page (`buildUserProfileUrl()`). With the user profile turned off Clerk
-   builds no URL, and the row disappears from Settings without any error.
+1. In the user profile settings, turn off "delete account", so an account is
+   deleted only through Capy's Settings with its 30-day grace; a Clerk-side
+   deletion purges at once (Q375). It is off in the UAT app; set it on the
+   production app at its setup.
+2. Leave multi-factor authentication off: two-step verification waits until
+   production launch is planned, since Clerk offers its factors only on a paid
+   plan, and then needs Clerk's page linked or an in-app setup (Q373).
+3. Leave Clerk's new-device check off, so sign-in has no device-trust step.
 
 ---
 
@@ -3222,9 +3223,9 @@ In the Clerk dashboard:
    `CLERK_SECRET_KEY`. The GitHub authenticated tests receive the same values
    as `CLERK_PUBLISHABLE_KEY` and the protected `CLERK_SECRET_KEY` environment
    secret. Never put the secret key in a repository variable or browser build.
-6. Set up two-step verification as on production (§1.3): the authenticator
-   application factor on, SMS codes off, the new-device check off, and the
-   Account Portal user profile on.
+6. Set up the account settings as on production (§1.3): "delete account" off
+   in the user profile (Q375), multi-factor authentication off until
+   production launch is planned (Q373), and the new-device check off.
 
 The gateway refuses startup when normal Clerk authentication has either a
 blank `CLERK_SECRET_KEY` or a blank `CLERK_WEBHOOK_SECRET`. Development with
@@ -4107,8 +4108,7 @@ In one transaction it:
   `store.MaterialRoom`) is past every old name: browser drafts of the old
   lineage open copy-only recovery, and the collaboration server refuses to
   bootstrap a room below `1 + trash_restores`, so an old token cannot revive
-  the old name. Comment anchors fall back to their block and quote, as after
-  a lineage compaction;
+  the old name. Comment anchors fall back to their block and quote;
 - turns each pending quiz reference left in a note's `materials.content` into
   an empty paragraph with its id and bumps the note's revision (no document
   holds one since: every validator refuses `pending`, `openwiki/embeds.md`);

@@ -9,16 +9,17 @@
 //! out, runs a channel's JOIN checks (refused while the user is in a timeout,
 //! before any lookup), reads the body within `ydoc::MAX_UPDATE_BYTES` (a
 //! larger one is too large, which the page leaves to the editor, and times
-//! the user out) and a note's sync cap, checks the eviction lease again, and
-//! goes to the room. There a group the room holds in full is a no-op (Q321);
-//! any other is taken from the user's update allowance (the one their
-//! sockets take from) and goes through the room's writer admission (the room
-//! loads if need be and unloads when idle, as usual), so open editors receive
-//! the update live. Either answer waits for the store that holds it and is
-//! the receipt for every row the request carried. The page sends a large
-//! group as pieces of at most 2 MiB, one request each, in order. A refusal
-//! answers its class alone (a timeout also the time it has left,
-//! `remainingMs`); its detail is logged and counted by class.
+//! the user out) and a note's sync cap, checks a source room's eviction
+//! lease again, and goes to the room. There a group the room holds in full
+//! is a no-op (Q321); any other is taken from the user's update allowance
+//! (the one their sockets take from) and goes through the room's writer
+//! admission (the room loads if need be and unloads when idle, as usual),
+//! so open editors receive the update live. Either answer waits for the
+//! store that holds it and is the receipt for every row the request
+//! carried. The page sends a large group as pieces of at most 2 MiB, one
+//! request each, in order. A refusal answers its class alone (a timeout
+//! also the time it has left, `remainingMs`); its detail is logged and
+//! counted by class.
 
 use axum::body::{Body, Bytes};
 use axum::extract::State;
@@ -343,15 +344,17 @@ async fn checked_and_stored(
     if matches!(name, RoomName::Material { .. }) && update.len() > NOTE_MAX_SYNC_BYTES {
         return Err(Refused::new(Class::TooLarge, "past the writer's sync cap"));
     }
-    // The lease and a local reset may have begun while the body arrived: a
-    // JOIN joins at once after its checks, a send only now (REVIEW1 S2).
-    let evicting = crate::socket::room_evicting(app, room)
-        .await
-        .map_err(|error| Refused::new(Class::Unavailable, error))?;
+    // A source room's publication lease and a local reset may have begun
+    // while the body arrived: a JOIN joins at once after its checks, a send
+    // only now (REVIEW1 S2).
+    let evicting = matches!(name, RoomName::Source { .. })
+        && crate::socket::room_evicting(app, room)
+            .await
+            .map_err(|error| Refused::new(Class::Unavailable, error))?;
     if evicting || app.evictions.blocks(room, false) {
         return Err(Refused::new(
             Class::Unavailable,
-            "the room is being reset, compacted or published",
+            "the room is being reset or published",
         ));
     }
     let base = header_text(headers, BASE_HEADER).map(str::to_owned);

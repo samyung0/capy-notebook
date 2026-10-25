@@ -4351,8 +4351,8 @@ impl Room {
                         crate::eviction::move_lineage(&app, &room.name(), cause).await;
                         return;
                     }
-                    // Compaction while the room is empty (DESIGN.md 3.5); a
-                    // deferred publication's rebuild may follow now.
+                    // The log folds while the room is empty (DESIGN.md 3.5);
+                    // a deferred publication's rebuild may follow now.
                     if let Err(error) = app.sources.fold(&room).await {
                         observe::capture(
                             &error.to_string(),
@@ -4401,7 +4401,7 @@ impl Room {
                     );
                 }
             };
-            // Compaction while the room is empty (DESIGN.md 3.5).
+            // The log folds while the room is empty (DESIGN.md 3.5).
             let folding = async {
                 if let Err(error) =
                     note_store::fold(&app.db, &material_id, schema, doc_kind, None).await
