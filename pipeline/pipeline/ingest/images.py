@@ -407,8 +407,8 @@ def compress_office(
     "too_large") and the pictures nothing can show removed with what shows
     them (Q337): EMF, WMF, SVG (its PNG fallback stays), formats the
     compressor does not try and pictures it cannot decode. Vector parts
-    nothing refers to and EMF/WMF document thumbnails go too, uncounted, and
-    an SVG part outside the pictures, counted when nothing showed it.
+    nothing refers to, EMF/WMF document thumbnails and SVG parts outside the
+    pictures go too, uncounted.
     Returns None when nothing changed, and how many pictures were removed
     where they show."""
     try:
@@ -449,12 +449,11 @@ def compress_office(
     deleted: set[str] = set()
 
     # Rasters first: one the compressor cannot decode joins the removals.
-    # An SVG outside the picture parts goes too (review r2 N12), counted
-    # below when no relationship showed it.
+    # An SVG outside the picture parts goes too (review r2 N12), uncounted
+    # like an unreferenced EMF (review r3 N3); what shows one is counted.
     stray_svgs = {
         path for path in parts if path not in pictures and is_svg(parts[path], path)
     }
-    shown = {rel["part"] for listed in rels.values() for rel in listed}
     gone = stray_svgs | {
         path
         for path in parts
@@ -525,8 +524,6 @@ def compress_office(
         for part in {*dropped, *gone}:
             if part in parts and not targeted(part):
                 deleted.add(part)
-                if part in stray_svgs and part not in shown:
-                    removed += 1
                 folder, base = posixpath.split(part)
                 own = posixpath.join(folder, "_rels", base + ".rels")
                 if own in parts:

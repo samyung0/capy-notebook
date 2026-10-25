@@ -265,9 +265,8 @@ export function removePictures(path: string, xml: string, ids: Set<string>) {
 /** Compresses the raster pictures of an Office package with the Office insert
  * rules and removes the pictures nothing can show with what shows them; see
  * OfficeImagesResult. EMF and WMF parts nothing refers to and document
- * thumbnails in those formats go too, uncounted, and an SVG part outside the
- * pictures, counted when nothing showed it. `onProgress` hears each picture
- * compressed. */
+ * thumbnails in those formats and SVG parts outside the pictures go too,
+ * uncounted. `onProgress` hears each picture compressed. */
 export async function compressOfficeImages(
   file: File,
   imageMaxBytes: number,
@@ -324,13 +323,10 @@ export async function compressOfficeImages(
   let changed = false;
   let removed = 0;
   const deleted = new Set<string>();
-  // An SVG outside the picture parts goes too (review r2 N12), counted below
-  // when no relationship showed it.
+  // An SVG outside the picture parts goes too (review r2 N12), uncounted like
+  // an unreferenced EMF (review r3 N3); what shows one is counted.
   const straySvgs = new Set(
     paths.filter((path) => !pictures.has(path) && isSvg(parts[path], path))
-  );
-  const shown = new Set(
-    [...rels.values()].flatMap((list) => list.map((rel) => rel.part))
   );
   const gone = new Set([
     ...straySvgs,
@@ -423,7 +419,6 @@ export async function compressOfficeImages(
   for (const part of new Set([...dropped, ...gone]))
     if (part in parts && !targeted(part)) {
       deleted.add(part);
-      if (straySvgs.has(part) && !shown.has(part)) removed += 1;
       const ownRels = `${dirOf(part)}_rels/${baseOf(part)}.rels`;
       if (ownRels in parts) deleted.add(ownRels);
       changed = true;

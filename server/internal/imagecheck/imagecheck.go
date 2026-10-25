@@ -312,7 +312,7 @@ func CheckSourceImage(r io.Reader) error {
 func CheckOffice(r io.ReaderAt, size, maxBytes int64) error {
 	end, err := readDirectoryEnd(r, size)
 	if err != nil {
-		return unreadablePackage("the file is not a zip package")
+		return err
 	}
 	// From the end record, before the directory is loaded.
 	if end.entries > MaxEntries {
@@ -352,52 +352,76 @@ type directoryEnd struct {
 	entries, dirStart, dirSize, recordStart uint64
 }
 
-// readDirectoryEnd reads the end record whose comment runs to the end of the
-// file.
+// endWindow is how far from the end of a file zip 9, the collaboration
+// server's reader, looks for end records (64 KiB and 26 bytes); Go and
+// CPython look within it too.
+const endWindow = 1<<16 + 26
+
+// readDirectoryEnd reads the end record on a layout where every zip reader
+// (Go, CPython, zip 9) picks that same record and the same central directory
+// (review r3 B1). Each takes the last end record signature, zip 9 falling
+// back to earlier ones, so it must be the only one in endWindow (no nested
+// or trailing archive offers another) and its comment must end the file.
+// zip 9 follows a ZIP64 record only when a classic field is maxed out, Go
+// also when the directory is 0xffff bytes long, CPython whenever a locator
+// precedes the end record: a locator must be there exactly when a field is
+// maxed out.
 func readDirectoryEnd(r io.ReaderAt, size int64) (directoryEnd, error) {
 	const recordLen = 22
-	tail := min(size, recordLen+0xffff)
+	notZip := unreadablePackage("the file is not a zip package")
+	tail := min(size, endWindow)
 	buf := make([]byte, tail)
 	if _, err := r.ReadAt(buf, size-tail); err != nil && err != io.EOF {
-		return directoryEnd{}, err
+		return directoryEnd{}, notZip
 	}
-	for i := len(buf) - recordLen; i >= 0; i-- {
-		record := buf[i:]
-		if string(record[:4]) != "PK\x05\x06" || i+recordLen+int(binary.LittleEndian.Uint16(record[20:])) != len(buf) {
-			continue
-		}
-		end := directoryEnd{
-			entries:     uint64(binary.LittleEndian.Uint16(record[10:])),
-			dirSize:     uint64(binary.LittleEndian.Uint32(record[12:])),
-			dirStart:    uint64(binary.LittleEndian.Uint32(record[16:])),
-			recordStart: uint64(size-tail) + uint64(i),
-		}
-		if end.entries == 0xffff || end.dirSize == 0xffffffff || end.dirStart == 0xffffffff {
-			return readZip64End(r, end.recordStart)
-		}
-		return end, nil
+	signature := []byte("PK\x05\x06")
+	i := bytes.LastIndex(buf, signature)
+	if i < 0 || i+recordLen > len(buf) {
+		return directoryEnd{}, notZip
 	}
-	return directoryEnd{}, errors.New("no end of central directory record")
+	if bytes.Count(buf, signature) != 1 {
+		return directoryEnd{}, notOneArchive
+	}
+	record := buf[i:]
+	if recordLen+int(binary.LittleEndian.Uint16(record[20:])) != len(record) {
+		return directoryEnd{}, notOneArchive
+	}
+	end := directoryEnd{
+		entries:     uint64(binary.LittleEndian.Uint16(record[10:])),
+		dirSize:     uint64(binary.LittleEndian.Uint32(record[12:])),
+		dirStart:    uint64(binary.LittleEndian.Uint32(record[16:])),
+		recordStart: uint64(size-tail) + uint64(i),
+	}
+	locator := make([]byte, 20)
+	located := end.recordStart >= 20
+	if located {
+		_, err := r.ReadAt(locator, int64(end.recordStart-20))
+		located = err == nil && string(locator[:4]) == "PK\x06\x07"
+	}
+	maxed := end.entries == 0xffff || end.dirSize == 0xffffffff || end.dirStart == 0xffffffff
+	switch {
+	case maxed && located:
+		return readZip64End(r, end.recordStart, locator)
+	case maxed || located:
+		return directoryEnd{}, unreadablePackage("a ZIP64 record without a maxed-out end record field, or the reverse")
+	}
+	return end, nil
 }
 
 // readZip64End reads the ZIP64 end record its locator, just before the end
-// record at eocd, names; the record must end where the locator starts.
-func readZip64End(r io.ReaderAt, eocd uint64) (directoryEnd, error) {
-	notZip64 := errors.New("no ZIP64 end record")
-	if eocd < 20+56 {
-		return directoryEnd{}, notZip64
-	}
-	locator := make([]byte, 20)
-	if _, err := r.ReadAt(locator, int64(eocd-20)); err != nil || string(locator[:4]) != "PK\x06\x07" {
-		return directoryEnd{}, notZip64
-	}
+// record at eocd, names. Go reads it where the locator points and CPython
+// 56 bytes before the locator, so it must sit there, hold no extensible
+// data, and the locator must name one disk.
+func readZip64End(r io.ReaderAt, eocd uint64, locator []byte) (directoryEnd, error) {
+	notZip64 := unreadablePackage("the ZIP64 end record is not where every reader looks")
 	at := binary.LittleEndian.Uint64(locator[8:])
-	record := make([]byte, 56)
-	if at > eocd-20-56 {
+	if eocd < 20+56 || at != eocd-20-56 ||
+		binary.LittleEndian.Uint32(locator[4:]) != 0 || binary.LittleEndian.Uint32(locator[16:]) != 1 {
 		return directoryEnd{}, notZip64
 	}
+	record := make([]byte, 56)
 	if _, err := r.ReadAt(record, int64(at)); err != nil || string(record[:4]) != "PK\x06\x06" ||
-		at+12+binary.LittleEndian.Uint64(record[4:]) != eocd-20 {
+		binary.LittleEndian.Uint64(record[4:]) != 56-12 {
 		return directoryEnd{}, notZip64
 	}
 	return directoryEnd{

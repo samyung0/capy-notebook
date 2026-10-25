@@ -60,6 +60,11 @@ def image_format(head: bytes) -> str:
     return ""
 
 
+# The segments Go's decoder reads before a frame (DHT, DQT, DRI, APPn, COM);
+# it refuses any other marker there, and so does this check (review r3 N1).
+_JPEG_BEFORE_FRAME = {0xC4, 0xDB, 0xDD, 0xFE, *range(0xE0, 0xF0)}
+
+
 def _jpeg(data: bytes) -> tuple[int, int]:
     at = 2
     while at + 1 < len(data):
@@ -69,7 +74,8 @@ def _jpeg(data: bytes) -> tuple[int, int]:
         while at + 1 < len(data) and data[at + 1] == 0xFF:
             at += 1
         marker = data[at + 1]
-        if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+        # Restart markers and a stuffed 0x00 carry no length; Go passes them.
+        if marker == 0x00 or 0xD0 <= marker <= 0xD7:
             at += 2
             continue
         length = struct.unpack(">H", data[at + 2 : at + 4])[0]
@@ -77,8 +83,8 @@ def _jpeg(data: bytes) -> tuple[int, int]:
         if marker in (0xC0, 0xC1, 0xC2):
             height, width = struct.unpack(">HH", data[at + 5 : at + 9])
             return width, height
-        if 0xC3 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
-            raise Unreadable("jpeg frame type not read")
+        if marker not in _JPEG_BEFORE_FRAME:
+            raise Unreadable(f"jpeg marker {marker:#x} not read before a frame")
         at += 2 + length
     raise Unreadable("jpeg frame header not found")
 
@@ -191,41 +197,55 @@ def other_image(head: bytes) -> bool:
     )
 
 
+# How far from the end of a file zip 9, the collaboration server's reader,
+# looks for end records (64 KiB and 26 bytes); Go and CPython look within it.
+_END_WINDOW = (1 << 16) + 26
+
+
 def _end_record(data: bytes) -> tuple[int, int, int, int]:
     """The package's entries, where its central directory starts and how
-    long it is, and where its end record (ZIP64 where present) starts: the
-    end record whose comment runs to the end of the file."""
-    floor = max(0, len(data) - 22 - 0xFFFF)
-    at = len(data) - 22
-    while at >= floor:
-        at = data.rfind(b"PK\x05\x06", floor, at + 4)
-        if at < 0:
-            break
-        if at + 22 + struct.unpack("<H", data[at + 20 : at + 22])[0] == len(data):
-            entries, dir_size, dir_start = struct.unpack(
-                "<xxxxxxxxxxHII", data[at : at + 20]
-            )
-            if entries == 0xFFFF or 0xFFFFFFFF in (dir_size, dir_start):
-                return _zip64_end(data, at)
-            return entries, dir_start, dir_size, at
-        at -= 1
-    raise _unreadable("the file is not a zip package")
+    long it is, and where its end record (ZIP64 where present) starts, on a
+    layout where every zip reader (Go, CPython, zip 9) picks that record and
+    directory (review r3 B1). Each takes the last end record signature, zip 9
+    falling back to earlier ones, so it must be the only one in _END_WINDOW
+    and its comment must end the file. zip 9 follows a ZIP64 record only when
+    a classic field is maxed out, Go also when the directory is 0xffff bytes
+    long, CPython whenever a locator precedes the end record: a locator must
+    be there exactly when a field is maxed out."""
+    floor = max(0, len(data) - _END_WINDOW)
+    at = data.rfind(b"PK\x05\x06", floor)
+    if at < 0 or at + 22 > len(data):
+        raise _unreadable("the file is not a zip package")
+    comment = struct.unpack("<H", data[at + 20 : at + 22])[0]
+    if data.count(b"PK\x05\x06", floor) != 1 or at + 22 + comment != len(data):
+        raise _unreadable("the package is not one contiguous zip archive")
+    entries, dir_size, dir_start = struct.unpack("<xxxxxxxxxxHII", data[at : at + 20])
+    located = at >= 20 and data[at - 20 : at - 16] == b"PK\x06\x07"
+    maxed = entries == 0xFFFF or 0xFFFFFFFF in (dir_size, dir_start)
+    if maxed and located:
+        return _zip64_end(data, at)
+    if maxed or located:
+        raise _unreadable(
+            "a ZIP64 record without a maxed-out end record field, or the reverse"
+        )
+    return entries, dir_start, dir_size, at
 
 
 def _zip64_end(data: bytes, eocd: int) -> tuple[int, int, int, int]:
-    """The ZIP64 end record the locator just before ``eocd`` names, which
-    must end where the locator starts."""
-    locator = data[eocd - 20 : eocd]
-    if eocd < 20 + 56 or locator[:4] != b"PK\x06\x07":
-        raise _unreadable("the file is not a zip package")
-    record_at = struct.unpack("<Q", locator[8:16])[0]
+    """The ZIP64 end record the locator just before ``eocd`` names. Go reads
+    it where the locator points and CPython 56 bytes before the locator, so
+    it must sit there, hold no extensible data, and the locator must name
+    one disk."""
+    _, disk, record_at, disks = struct.unpack("<IIQI", data[eocd - 20 : eocd])
     record = data[record_at : record_at + 56]
     if (
-        record_at > eocd - 20 - 56
+        eocd < 20 + 56
+        or record_at != eocd - 20 - 56
+        or (disk, disks) != (0, 1)
         or record[:4] != b"PK\x06\x06"
-        or record_at + 12 + struct.unpack("<Q", record[4:12])[0] != eocd - 20
+        or struct.unpack("<Q", record[4:12])[0] != 56 - 12
     ):
-        raise _unreadable("the file is not a zip package")
+        raise _unreadable("the ZIP64 end record is not where every reader looks")
     entries, dir_size, dir_start = struct.unpack("<QQQ", record[32:56])
     return entries, dir_start, dir_size, record_at
 

@@ -766,7 +766,7 @@ with only its `a:ext`, the PNG or JPEG staying and the removal uncounted. EMF
 and WMF parts nothing refers to, and document thumbnails in those formats
 (`docProps/thumbnail.emf` with its package relationship, Q348), go too,
 uncounted. An SVG part outside the picture parts (found by name or root
-element) goes as well, counted when nothing showed it. Then every
+element) goes as well, uncounted (what shows one is counted). Then every
 relationship nothing refers to any more goes, and the parts nothing targets. The count (a fallback copy is not counted twice)
 reaches a warning toast after the upload: "N pictures Capy can't show were
 removed".
@@ -808,13 +808,26 @@ same check before storing (`pipeline/pipeline/ingest/image_check.py`). A
 refusal is final: a 400 whose first error is the code below, shown in the
 transfer row, with no retry.
 
-Both readers of an Office file hold it to one zip archive, so that every zip
-reader (the gateway's, the worker's, the collaboration server's) sees the
-same parts: local entries from byte 0, each followed directly by the next
-(after its data descriptor, if any), the central directory right after the
-last, and the end record (or its ZIP64 record) right after that, with the
-entry count it names. The entry cap is read from the end record before the
-directory loads. An entry counts as a folder only when its name ends in `/`,
+Both checks hold an Office file to one layout on which every zip reader
+(Go's for the gateway, CPython's for the worker, the zip crate's for the
+collaboration server) picks the same end record and central directory, so
+none reads parts the checks did not:
+
+- local entries from byte 0, each followed directly by the next (after its
+  data descriptor, if any), the central directory right after the last, and
+  the end record (or its ZIP64 record) right after that, with the entry
+  count it names;
+- the end record is the only end record signature in the file's last 64 KiB
+  and 26 bytes (where the zip crate looks, falling back to earlier ones; Go
+  and CPython take the last), and its comment ends the file, so no nested or
+  trailing archive offers another;
+- a ZIP64 locator precedes the end record exactly when one of its fields is
+  maxed out (0xffff entries, or a 0xffffffff size or offset), since the zip
+  crate follows ZIP64 only then, Go also for a 65,535-byte directory and
+  CPython whenever a locator is there; the ZIP64 record sits right before its
+  locator with no extensible data, where Go and CPython both read it.
+
+The entry cap is read from the end record before the directory loads. An entry counts as a folder only when its name ends in `/`,
 never by its attributes, and every part, `.rels` included, is classified by
 its bytes.
 
@@ -829,7 +842,9 @@ its bytes.
 
 A GIF's size is its logical screen widened to its first frame. A JPEG's size
 comes from a baseline, extended or progressive frame (SOF0 to SOF2, what Go
-reads); any other frame gives no size, in both checks. The editor
+reads); any other frame gives no size, in both checks, and before the frame
+both read only DHT, DQT, DRI, APPn and COM segments, restart markers and a
+stuffed 0x00, refusing any other marker. The editor
 image's byte cap stays the reservation's check; a bank figure keeps its flat
 4 MiB cap. The collaboration server refuses a Word or PowerPoint edit that
 adds a picture that is not a PNG, JPEG or GIF, is over the plan image cap

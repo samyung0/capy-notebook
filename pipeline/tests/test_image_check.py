@@ -125,6 +125,26 @@ def test_jpeg_frames_go_does_not_read_are_unreadable():
             image_check.size(data)
 
 
+def test_jpeg_markers_go_refuses_before_the_frame_are_unreadable():
+    """Review r3 N1: before its frame, a JPEG holds only the segments Go
+    reads (DHT, DQT, DRI, APPn, COM, restart markers, a stuffed 0x00); any
+    other marker is refused as the gateway refuses it."""
+    frame = b"\xff\xc0\x00\x11\x08\x00\x10\x00\x20" + b"\0" * 20
+    for marker in (0xC8, 0xCC, 0xDC, 0xDE, 0xDF, 0xF0, 0xFD, 0xD8, 0x01, 0x02):
+        data = b"\xff\xd8\xff" + bytes([marker]) + b"\x00\x04\x00\x00" + frame
+        with pytest.raises(image_check.Unreadable):
+            image_check.size(data)
+    for segment in (
+        b"\xff\xc4\x00\x04\x00\x00",
+        b"\xff\xdb\x00\x04\x00\x00",
+        b"\xff\xdd\x00\x04\x00\x00",
+        b"\xff\xe1\x00\x04\x00\x00",
+        b"\xff\xfe\x00\x04\x00\x00",
+        b"\xff\xd0\xff\x00",
+    ):
+        assert image_check.size(b"\xff\xd8" + segment + frame) == ("jpeg", 32, 16)
+
+
 def _refused(call) -> str:
     with pytest.raises(image_check.Refused) as refused:
         call()
@@ -338,6 +358,106 @@ def test_office_check_refuses_anything_but_one_archive():
             == "office_unreadable"
         )
     image_check.check_office(clean, 2 * MB)
+
+
+def _with_zip64(classic: bytes, twice: bool, edit) -> bytes:
+    """A classic package with a ZIP64 end record and its locator before the
+    end record, which ``edit`` then changes. With ``twice``, the record's
+    extensible data holds a copy of the directory and a second fixed record
+    naming it, which CPython reads (56 bytes before the locator) where Go
+    reads the first (where the locator points)."""
+    end = classic.rindex(b"PK\x05\x06")
+    eocd = bytearray(classic[end:])
+    on_disk, count, size, start = struct.unpack("<HHII", eocd[8:20])
+
+    def fixed(length: int, at: int) -> bytes:
+        return struct.pack(
+            "<4sQHHIIQQQQ",
+            b"PK\x06\x06",
+            length,
+            45,
+            45,
+            0,
+            0,
+            on_disk,
+            count,
+            size,
+            at,
+        )
+
+    record = fixed(44, start)
+    if twice:
+        directory = classic[start:end]
+        record = (
+            fixed(44 + len(directory) + 56, start) + directory + fixed(44, end + 56)
+        )
+    locator = struct.pack("<4sIQI", b"PK\x06\x07", 0, end, 1)
+    edit(eocd)
+    return classic[:end] + record + locator + bytes(eocd)
+
+
+def test_office_check_reads_the_end_record_every_reader_picks():
+    """Security regression (Q348, review r3 B1): every zip reader (Go,
+    CPython, zip 9) must pick the end record and directory the check reads.
+    Refused: a second archive stored as the last part (zip 9 falls back to its
+    end record), an end record after the one that ends the file (the readers
+    take the last), bytes after the end record, a ZIP64 locator while no end
+    record field is maxed out (CPython follows it anyway), the same with a
+    65,535-byte directory (Go follows it too), and a ZIP64 record with
+    extensible data (Go and CPython read it at different places). A ZIP64
+    package laid out the one way passes."""
+    document = b"<w:document/>"
+    clean = office({"word/document.xml": document})
+    end = clean.rindex(b"PK\x05\x06")
+
+    nested = io.BytesIO()
+    with zipfile.ZipFile(nested, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", document)
+        archive.writestr(
+            "word/embeddings/package.bin",
+            office({"word/media/image1.emf": EMF}),
+            zipfile.ZIP_STORED,
+        )
+
+    trailing = bytearray(clean)
+    struct.pack_into("<H", trailing, end + 20, 22 + 1)
+    trailing += clean[end:] + b"x"
+
+    def grow(by: int):
+        def edit(eocd: bytearray) -> None:
+            size = struct.unpack_from("<I", eocd, 12)[0]
+            struct.pack_into("<I", eocd, 12, size + by)
+
+        return edit
+
+    # A directory that, with the ZIP64 record and locator it covers, is
+    # 65,535 bytes: one entry's comment fills it.
+    directory = end - struct.unpack_from("<I", clean, end + 16)[0]
+    info = zipfile.ZipInfo("word/document.xml")
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.comment = b"c" * (0xFFFF - 76 - directory)
+    long = io.BytesIO()
+    with zipfile.ZipFile(long, "w") as archive:
+        archive.writestr(info, document)
+    sized = _with_zip64(long.getvalue(), False, grow(76))
+    assert struct.unpack_from("<I", sized, len(sized) - 22 + 12)[0] == 0xFFFF
+
+    def maxed(eocd: bytearray) -> None:
+        struct.pack_into("<I", eocd, 16, 0xFFFFFFFF)
+
+    for data in (
+        nested.getvalue(),
+        bytes(trailing),
+        clean + b"junk",
+        _with_zip64(clean, False, grow(76)),
+        sized,
+        _with_zip64(clean, True, maxed),
+    ):
+        assert (
+            _refused(lambda data=data: image_check.check_office(data, 2 * MB))
+            == "office_unreadable"
+        )
+    image_check.check_office(_with_zip64(clean, False, maxed), 2 * MB)
 
 
 def test_relationships_are_read_within_the_budget_left(monkeypatch):

@@ -280,6 +280,17 @@ func TestCheckOfficeRefusesPackagesItCannotReadWhole(t *testing.T) {
 	if code := refusal(t, CheckOffice(file, file.Size(), testCap)); code != "office_unreadable" {
 		t.Fatalf("4,097 entries: code = %s", code)
 	}
+	// The cap reads the end record's count before the directory loads (review
+	// r2 N11): over a one-entry directory, the cap refuses, not the reader.
+	claims := bytesOf(officeFile(t, part{"word/document.xml", []byte("<w:document/>")}))
+	end := bytes.LastIndex(claims, []byte("PK\x05\x06"))
+	binary.LittleEndian.PutUint16(claims[end+8:], MaxEntries+1)
+	binary.LittleEndian.PutUint16(claims[end+10:], MaxEntries+1)
+	var capped *Refusal
+	if err := CheckOffice(bytes.NewReader(claims), int64(len(claims)), testCap); !errors.As(err, &capped) ||
+		capped.Detail != fmt.Sprintf("the package has more than %d entries", MaxEntries) {
+		t.Fatalf("a count past the cap over one entry: %v", err)
+	}
 
 	// Each picture is under the cap; together they inflate past 256 MiB.
 	under := append(pngHeader(800, 600), make([]byte, testCap-100)...)
@@ -338,13 +349,8 @@ func TestCheckOfficeRefusesAnythingButOneArchive(t *testing.T) {
 	emf := make([]byte, 64)
 	copy(emf, []byte{1, 0, 0, 0})
 	copy(emf[40:], " EMF")
-	raw := func(file *bytes.Reader) []byte {
-		out := make([]byte, file.Size())
-		file.ReadAt(out, 0)
-		return out
-	}
-	clean := raw(officeFile(t, part{"word/document.xml", []byte("<w:document/>")}))
-	hidden := raw(officeFile(t, part{"word/media/image1.emf", emf}))
+	clean := bytesOf(officeFile(t, part{"word/document.xml", []byte("<w:document/>")}))
+	hidden := bytesOf(officeFile(t, part{"word/media/image1.emf", emf}))
 	for name, data := range map[string][]byte{
 		"a clean package after another":  append(append([]byte(nil), hidden...), clean...),
 		"a clean package before another": append(append([]byte(nil), clean...), hidden...),
@@ -367,6 +373,116 @@ func TestCheckOfficeRefusesAnythingButOneArchive(t *testing.T) {
 	file = bytes.NewReader(clean)
 	if err := CheckOffice(file, file.Size(), testCap); err != nil {
 		t.Fatalf("the clean package alone refused: %v", err)
+	}
+}
+
+func bytesOf(file *bytes.Reader) []byte {
+	out := make([]byte, file.Size())
+	file.ReadAt(out, 0)
+	return out
+}
+
+// withZip64 gives a classic package a ZIP64 end record and its locator
+// before the end record, which edit then changes. With twice, the record's
+// extensible data holds a copy of the directory and a second fixed record
+// naming it, which CPython reads (56 bytes before the locator) where Go
+// reads the first (where the locator points).
+func withZip64(classic []byte, twice bool, edit func(eocd []byte)) []byte {
+	end := bytes.LastIndex(classic, []byte("PK\x05\x06"))
+	eocd := append([]byte(nil), classic[end:]...)
+	size := uint64(binary.LittleEndian.Uint32(eocd[12:]))
+	start := uint64(binary.LittleEndian.Uint32(eocd[16:]))
+	fixed := func(length, start uint64) []byte {
+		record := make([]byte, 56)
+		copy(record, "PK\x06\x06")
+		binary.LittleEndian.PutUint64(record[4:], length)
+		binary.LittleEndian.PutUint16(record[12:], 45)
+		binary.LittleEndian.PutUint16(record[14:], 45)
+		binary.LittleEndian.PutUint64(record[24:], uint64(binary.LittleEndian.Uint16(eocd[8:])))
+		binary.LittleEndian.PutUint64(record[32:], uint64(binary.LittleEndian.Uint16(eocd[10:])))
+		binary.LittleEndian.PutUint64(record[40:], size)
+		binary.LittleEndian.PutUint64(record[48:], start)
+		return record
+	}
+	record := fixed(44, start)
+	if twice {
+		directory := classic[start:end]
+		record = append(append(fixed(44+uint64(len(directory))+56, start), directory...),
+			fixed(44, uint64(end)+56)...)
+	}
+	locator := make([]byte, 20)
+	copy(locator, "PK\x06\x07")
+	binary.LittleEndian.PutUint64(locator[8:], uint64(end))
+	binary.LittleEndian.PutUint32(locator[16:], 1)
+	edit(eocd)
+	return append(append(append(append([]byte(nil), classic[:end]...), record...), locator...), eocd...)
+}
+
+// Security regression (Q348, review r3 B1): every zip reader (Go, CPython,
+// zip 9) must pick the end record and directory the check reads. Refused:
+// a second archive stored as the last part (zip 9 falls back to its end
+// record), an end record after the one that ends the file (the readers take
+// the last), bytes after the end record, a ZIP64 locator while no end record
+// field is maxed out (CPython follows it anyway), the same with a
+// 65,535-byte directory (Go follows it too), and a ZIP64 record with
+// extensible data (Go and CPython read it at different places). A ZIP64
+// package laid out the one way passes.
+func TestCheckOfficeReadsTheEndRecordEveryReaderPicks(t *testing.T) {
+	emf := make([]byte, 64)
+	copy(emf, []byte{1, 0, 0, 0})
+	copy(emf[40:], " EMF")
+	document := part{"word/document.xml", []byte("<w:document/>")}
+	clean := bytesOf(officeFile(t, document))
+	end := bytes.LastIndex(clean, []byte("PK\x05\x06"))
+
+	var nested bytes.Buffer
+	archive := zip.NewWriter(&nested)
+	archive.Create("word/document.xml")
+	stored, _ := archive.CreateHeader(&zip.FileHeader{Name: "word/embeddings/package.bin", Method: zip.Store})
+	stored.Write(bytesOf(officeFile(t, part{"word/media/image1.emf", emf})))
+	archive.Close()
+
+	trailing := append([]byte(nil), clean...)
+	binary.LittleEndian.PutUint16(trailing[end+20:], 22+1)
+	trailing = append(append(trailing, clean[end:]...), 'x')
+
+	grow := func(by uint32) func([]byte) {
+		return func(eocd []byte) {
+			binary.LittleEndian.PutUint32(eocd[12:], binary.LittleEndian.Uint32(eocd[12:])+by)
+		}
+	}
+	// A directory that, with the ZIP64 record and locator it covers, is
+	// 65,535 bytes: one entry's comment fills it.
+	directory := uint32(len(clean) - 22 - int(binary.LittleEndian.Uint32(clean[end+16:])))
+	var long bytes.Buffer
+	archive = zip.NewWriter(&long)
+	writer, _ := archive.CreateHeader(&zip.FileHeader{
+		Name: document.name, Method: zip.Deflate, Comment: strings.Repeat("c", 0xffff-76-int(directory)),
+	})
+	writer.Write(document.data)
+	archive.Close()
+	sized := withZip64(long.Bytes(), false, grow(76))
+	if size := binary.LittleEndian.Uint32(sized[len(sized)-22+12:]); size != 0xffff {
+		t.Fatalf("the long directory is %d bytes", size)
+	}
+	maxed := func(eocd []byte) { binary.LittleEndian.PutUint32(eocd[16:], 0xffffffff) }
+
+	for name, data := range map[string][]byte{
+		"a second archive as the last part":   nested.Bytes(),
+		"an end record after the end record":  trailing,
+		"bytes after the end record":          append(append([]byte(nil), clean...), "junk"...),
+		"a ZIP64 locator with no field maxed": withZip64(clean, false, grow(76)),
+		"the same with a 0xffff directory":    sized,
+		"a ZIP64 record with extensible data": withZip64(clean, true, maxed),
+	} {
+		file := bytes.NewReader(data)
+		if got := refusal(t, CheckOffice(file, file.Size(), testCap)); got != "office_unreadable" {
+			t.Errorf("%s: code = %s", name, got)
+		}
+	}
+	zip64 := bytes.NewReader(withZip64(clean, false, maxed))
+	if err := CheckOffice(zip64, zip64.Size(), testCap); err != nil {
+		t.Fatalf("a ZIP64 package refused: %v", err)
 	}
 }
 

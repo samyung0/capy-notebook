@@ -463,13 +463,13 @@ describe('compressOfficeImages after a removal', () => {
   }
 
   it('opens a PPTX whose undecodable picture and stray SVG went, and an XLSX whose undecodable picture went', async () => {
-    // Review r2 N9, N12.
+    // Review r2 N9, N12; the unreferenced SVG goes uncounted (review r3 N3).
     const deck = broken(pptx(), 'ppt/media/image99.emf');
     deck['ppt/embeddings/icon.svg'] = strToU8(
       '<svg xmlns="http://www.w3.org/2000/svg"/>'
     );
     const slides = await compressOfficeImages(pack(deck, 'deck.pptx'), 2 * MB);
-    expect(slides.removed).toBe(2);
+    expect(slides.removed).toBe(1);
     const slidesBytes = new Uint8Array(await slides.file.arrayBuffer());
     const slidesOut = unzipSync(slidesBytes);
     expect('ppt/media/broken.png' in slidesOut).toBe(false);
