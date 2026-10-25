@@ -49,17 +49,14 @@ import {
   BaseTableRowPlugin,
 } from '@platejs/table';
 import { BaseTocPlugin } from '@platejs/toc';
-import { common, createLowlight } from 'lowlight';
 import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
 import { FONT_SIZE_NODE_PROPS } from '@/features/notes/nodeStyles';
-import { UnsupportedBlockNotice } from './UnsupportedBlock';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyPlugin = any;
 
-const lowlight = createLowlight(common);
 // Keep preview behavior aligned with the editor: code blocks are not list items.
 const listTargets = [...KEYS.heading, KEYS.p, KEYS.blockquote, KEYS.img];
 
@@ -133,12 +130,6 @@ const StaticTransientPlugins = [
     },
   }),
 ];
-/** A notice under any element the embed catalog does not list. */
-const UnsupportedBlockPlugin = createSlatePlugin({
-  key: 'unsupportedBlock',
-  render: { belowRootNodes: UnsupportedBlockNotice },
-});
-
 /* List rendering parity with the editable surface (see notes/plugins.ts):
    bullet items get list-item display via injected props, task items get a
    read-only checkbox, and ordered items get an <ol><li> wrapper below the node.
@@ -239,7 +230,11 @@ const StaticListKit: AnyPlugin[] = [
   }),
 ];
 
-/** Read-only material document plugins: schema + rendering. */
+/** Read-only material document plugins: schema + rendering. The markdown
+ * converter runs on it too, in a worker (files/MarkdownPreview.worker.ts), so
+ * it imports no .tsx module (React refresh code breaks a worker in
+ * development) and nothing render-only: MaterialPreview adds code
+ * highlighting and UnsupportedBlockPlugin. */
 export const StaticMaterialKit: AnyPlugin[] = [
   BaseParagraphPlugin,
   BaseH1Plugin,
@@ -261,7 +256,7 @@ export const StaticMaterialKit: AnyPlugin[] = [
   BaseKbdPlugin,
   ...StaticListKit,
   BaseLinkPlugin,
-  BaseCodeBlockPlugin.configure({ options: { lowlight } }),
+  BaseCodeBlockPlugin,
   BaseCodeLinePlugin,
   BaseCodeSyntaxPlugin,
   BaseTablePlugin,
@@ -272,7 +267,6 @@ export const StaticMaterialKit: AnyPlugin[] = [
   BaseImagePlugin,
   StaticYouTubePlugin,
   ...StaticTransientPlugins,
-  UnsupportedBlockPlugin,
   BaseAudioPlugin,
   BaseCalloutPlugin,
   BaseColumnPlugin,

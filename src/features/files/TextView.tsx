@@ -18,9 +18,10 @@ export default function TextView({
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
+  // A newer URL (the live text after an edit) keeps the last text on screen
+  // until it loads.
   useEffect(() => {
     let cancelled = false;
-    setText(null);
     setError(false);
     fetch(url)
       .then((response) => {

@@ -1,3 +1,4 @@
+import { createSlatePlugin } from 'platejs';
 import { m } from '@/i18n';
 import { isKnownElementType } from './document';
 
@@ -20,3 +21,9 @@ export function UnsupportedBlockNotice({
     </span>
   );
 }
+
+/** A notice under any element the embed catalog does not list. */
+export const UnsupportedBlockPlugin = createSlatePlugin({
+  key: 'unsupportedBlock',
+  render: { belowRootNodes: UnsupportedBlockNotice },
+});

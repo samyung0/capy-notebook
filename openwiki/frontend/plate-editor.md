@@ -2798,9 +2798,14 @@ leases, and credit rates.
 
 `MaterialPreview` uses `PlateStatic` and the checkpointed Plate envelope. Static
 components must not use editor hooks. `StaticMaterialKit` has no markdown
-parser: uploaded `.md` files convert first (`files/MarkdownPreview.tsx` through
-`markdownToDocument`), and the markdown converters add `noteMarkdownPlugin` on
-top of the kit themselves. Interactive and static component
+parser: uploaded `.md` files convert first, in a worker
+(`files/MarkdownPreview.worker.ts` through `markdownToDocument`), and the
+markdown converters add `noteMarkdownPlugin` on top of the kit themselves. The
+kit imports no `.tsx` module and nothing render-only, so that worker can load
+it; `MaterialPreview` adds code highlighting (lowlight) and
+`UnsupportedBlockPlugin` itself. Vite aliases
+`decode-named-character-reference` to its DOM-free entry, since a worker has
+no `document`. Interactive and static component
 registries share node vocabulary but have different behavior.
 
 Obsolete `suggestion` and `suggestion_*` properties are rejected by server
