@@ -1012,9 +1012,12 @@ function render(ev, runId) {
   if (ev.type === 'tool_text') {
     const d = tools[ev.callId];
     if (!d) return;
+    // Production renders a full-retention result twice (its kept evidence,
+    // then the message); the last render is what the model reads.
+    d.querySelector('details.sent')?.remove();
     d.insertAdjacentHTML(
       'beforeend',
-      `<details><summary>text sent to the model (${ev.text.length} chars)</summary><pre>${esc(ev.text)}</pre></details>`
+      `<details class="sent"><summary>text sent to the model (${ev.text.length} chars)</summary><pre>${esc(ev.text)}</pre></details>`
     );
     return;
   }
