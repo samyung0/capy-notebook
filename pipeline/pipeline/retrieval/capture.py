@@ -459,7 +459,6 @@ def inject_images(
     images: dict[str, tuple[str, str]],
     provider_slug: str = "",
     tokens: dict[str, int] | None = None,
-    dropped: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Attach captured images after the tool-result block that produced them.
 
@@ -468,22 +467,18 @@ def inject_images(
     Each image is a page of a source, so it sits in a <source> block
     (prompts/sources.py) after its label. Live compaction only folds exchanges
     into the turn note, so the captures of folded exchanges ride right after
-    the note: live compaction drops none (Epo 2026-10-21). A capture the image
-    budget dropped (``dropped``, call id -> note; Q349) leaves its one-line
-    note in its place.
+    the note: live compaction drops none (Epo 2026-10-21). An image the turn's
+    image budget dropped is no longer in ``images``: nothing takes its place,
+    and its tool result keeps its ordinary text (Q349, Q370).
 
     ``tokens`` (call id -> the capture's pixel estimate) keeps each built
     message's estimate on it, so a request built for every model call does not
     decode its images again to measure them (Q238).
     """
-    dropped = dropped or {}
-    if not images and not dropped:
+    if not images:
         return messages
-    # Capture order: the budget drops the oldest, so every dropped capture
-    # came before every kept one.
-    attached = [*dropped, *images]
     live = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
-    folded = [call_id for call_id in attached if call_id not in live]
+    folded = [call_id for call_id in images if call_id not in live]
     out: list[dict[str, Any]] = []
     pending: list[str] = []
     for i, message in enumerate(messages):
@@ -494,23 +489,17 @@ def inject_images(
                     "the tool calls this note folded",
                     folded,
                     images,
-                    dropped,
                     tokens,
                     provider_slug,
                 )
             )
-        if message.get("role") == "tool" and message.get("tool_call_id") in attached:
+        if message.get("role") == "tool" and message.get("tool_call_id") in images:
             pending.append(message["tool_call_id"])
         following = messages[i + 1] if i + 1 < len(messages) else None
         if pending and (following is None or following.get("role") != "tool"):
             out.append(
                 _images_message(
-                    "the tool calls above",
-                    pending,
-                    images,
-                    dropped,
-                    tokens,
-                    provider_slug,
+                    "the tool calls above", pending, images, tokens, provider_slug
                 )
             )
             pending = []
@@ -521,30 +510,23 @@ def _images_message(
     source: str,
     call_ids: list[str],
     images: dict[str, tuple[str, str]],
-    dropped: dict[str, str],
     tokens: dict[str, int] | None,
     provider_slug: str,
 ) -> dict[str, Any]:
     text: list[dict[str, Any]] = [{"type": "text", "text": f"Images from {source}:"}]
     content = list(text)
-    shown = [call_id for call_id in call_ids if call_id in images]
     for call_id in call_ids:
-        if call_id not in images:
-            note = {"type": "text", "text": dropped[call_id]}
-            content.append(note)
-            text.append(note)
-            continue
         label, url = images[call_id]
         labelled = {"type": "text", "text": f"{label}\n<source>"}
         closing = {"type": "text", "text": "</source>"}
         content += [labelled, image_part(url, provider_slug), closing]
         text += [labelled, closing]
     message = {"role": "user", "content": content}
-    if tokens is not None and all(call_id in tokens for call_id in shown):
+    if tokens is not None and all(call_id in tokens for call_id in call_ids):
         accounting.keep_tokens(
             message,
             accounting.estimate_context_value({**message, "content": text})
-            + sum(tokens[call_id] for call_id in shown),
+            + sum(tokens[call_id] for call_id in call_ids),
         )
     return message
 

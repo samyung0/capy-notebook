@@ -3993,18 +3993,17 @@ change images 2026-10-25, Q368, Q369). At the 1568 px edge a full page is about
 model call `tools.keep_images_within_budget` checks the total; only when new
 images take it past the budget does it drop the oldest images an earlier
 request carried, of either kind, at once, until at most 17,500 remains
-(`IMAGE_BUDGET_AFTER_DROP`). An image no request has carried yet
+(`IMAGE_BUDGET_AFTER_DROP`). The images it counts are the ones the three tools
+register (`ToolContext.budget_images`). An image no request has carried yet
 (`ToolContext.images_sent`) is never dropped, so the model sees each at least
 once. Drops come in batches, so between them every request starts the same and
 the provider's cached prefix holds. A dropped image leaves
-`ToolContext.pending_images`, which frees its encoded part (Q299), and its
-one-line note takes the image's place in every later request
-(`ToolContext.capture_notes`): "capture_page result 3: bio.pdf page 4: image
-dropped to keep this turn's images within budget; capture the page again to see
-it.", or for a source change "resolve_source_change result: change c1 of file
-f_1: image dropped ...; call resolve_source_change again with file_id f_1,
-change_id c1 and checkpoint 3 to see it." The note counts as text, not as an
-image. A dropped image still counts toward the 16 below, and a deck slide asking
+`ToolContext.pending_images`, and its encoded part (Q299) is freed once the next
+request is built, since the request before it holds the image until then.
+Nothing takes its place: no note or hint, and its tool result keeps the ordinary
+text it always had, so the cached prefix stays the same (Epo 2026-10-25, Q370).
+The agent captures the page again, or reads it another way, when it needs it.
+A dropped image still counts toward the 16 below, and a deck slide asking
 for a dropped capture finds it no longer available.
 A user message attaches 16 images, `capture_page`,
 `capture_knowledge_page` and `resolve_source_change`'s image changes together
@@ -4015,7 +4014,8 @@ do not call capture_page anymore." and later captures are refused with that
 sentence (`limit_reached`); a source change's image says nothing when it is the
 16th and fails past the cap with `tools.SOURCE_IMAGE_LIMIT` (`limit_reached`,
 Epo 2026-10-22). A `resolve_source_change` image stays attached through folds the
-same way. No capture image is carried to the next message. The chat prompt requires capture before
+same way, within the image budget above. No capture image is carried to the
+next message. The chat prompt requires capture before
 using source-specific numerical results, formulas, table cells/relationships or
 figures, regardless of extraction confidence. Low-confidence text also requires
 capture when the uncertain passage matters. The model reads the image directly
@@ -4041,8 +4041,9 @@ book's `library_books.withheld_pages` (reprinted texts the library withholds,
 written at publish from the run manifest like `figure_exclusions`) is never
 captured, also on a boundary page shared with open text or through a guessed
 excerpt id, and a request for one is refused as withheld. It shares the
-message's 16 images with `capture_page` and stays attached until the answer
-like it. It adds no citation, and its JPEG
+message's 16 images with `capture_page` and stays attached like it: through
+folds until the answer, unless the image budget drops it (Q349). It adds no
+citation, and its JPEG
 rides in the same user message after the step's tool results. An unset bucket
 leaves the tool unoffered; the five settings are validated all-or-none.
 

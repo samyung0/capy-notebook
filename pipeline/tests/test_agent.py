@@ -3716,24 +3716,34 @@ def _image_labels(request: dict) -> list[str]:
     ]
 
 
-def _dropped_notes(request: dict) -> list[str]:
+def _extra_texts(request: dict) -> list[str]:
+    """Text in the images messages besides their headers, image labels and
+    closing tags: a dropped image's note would show here (Q370: none)."""
     return [
         part["text"]
         for part in _request_parts(request)
-        if part["type"] == "text" and "image dropped" in part["text"]
+        if part["type"] == "text"
+        and not part["text"].startswith("Images from ")
+        and not part["text"].endswith("\n<source>")
+        and part["text"] != "</source>"
     ]
+
+
+def _tool_text(request: dict, call_id: str) -> str:
+    (message,) = [m for m in request["messages"] if m.get("tool_call_id") == call_id]
+    return message["content"]
 
 
 async def test_captures_past_the_image_budget_drop_the_oldest_in_one_batch(
     monkeypatch,
 ):
-    """(Q349, Q368) A turn's images stay within 35k patch tokens: under it
-    every capture rides in the request; the capture batch that takes the turn
-    past it drops the oldest captures earlier requests carried, at once, until
-    at most 17.5k remains; each dropped capture leaves exactly one note naming
-    its page, the dropped images leave the request, the turn and the
-    compaction budget, and the next request starts the same, with no further
-    drop."""
+    """(Q349, Q368, Q370) A turn's images stay within 35k patch tokens: under
+    it every capture rides in the request; the capture batch that takes the
+    turn past it drops the oldest captures earlier requests carried, at once,
+    until at most 17.5k remains; a dropped capture's image leaves the request,
+    the turn and the compaction budget with no note in its place, its tool
+    result keeping its ordinary text, and the next request starts the same,
+    with no further drop."""
     seen, ctx, extras = _image_turn(
         monkeypatch,
         [
@@ -3745,26 +3755,29 @@ async def test_captures_past_the_image_budget_drop_the_oldest_in_one_batch(
     )
     events = await _collect("q", ctx)
     assert events[-1]["type"] == "done"
-    label = {c: ctx.capture_notes[c].split(": image")[0] for c in ctx.capture_notes}
+    # Side-by-side captures are numbered as they finish: the oldest seven by
+    # capture order go, the five newest (15,680 tokens) stay.
+    order = [record["callId"] for record in ctx.captures]
+    label = {
+        c: f"capture_page result {n}: bio.pdf page {c[1:]}"
+        for n, c in enumerate(order, 1)
+    }
     assert [_image_labels(request) for request in seen[:3]] == [
         [],
         [label[f"k{n}"] for n in range(1, 5)],
         [label[f"k{n}"] for n in range(1, 9)],
     ]
-    # Side-by-side captures are numbered as they finish: the oldest seven by
-    # capture order go, the five newest (15,680 tokens) stay.
-    order = [record["callId"] for record in ctx.captures]
     dropped, kept = order[:7], order[7:12]
     assert set(dropped) > {"k1", "k2", "k3", "k4"} and set(kept) > {"k9", "k12"}
     assert sorted(_image_labels(seen[3])) == sorted(label[c] for c in kept)
     assert _image_labels(seen[4]) == _image_labels(seen[3]) + [label["k13"]]
-    notes = sorted(ctx.capture_notes[c] for c in dropped)
-    assert sorted(_dropped_notes(seen[3])) == sorted(_dropped_notes(seen[4])) == notes
-    assert all(
-        f"bio.pdf page {c[1:]}: image dropped" in ctx.capture_notes[c] for c in dropped
-    )
-    assert [_dropped_notes(request) for request in seen[:3]] == [[]] * 3
     assert set(ctx.pending_images) == {*kept, "k13"}
+    # No note: a dropped capture's result is the text it always had.
+    assert [_extra_texts(request) for request in seen] == [[]] * 5
+    for call_id in dropped:
+        text = _tool_text(seen[2], call_id)
+        assert text.startswith(f"Captured bio.pdf page {call_id[1:]} as capture")
+        assert _tool_text(seen[3], call_id) == _tool_text(seen[4], call_id) == text
     # The request after the drop starts as the drop's own request did.
     before = seen[3]["messages"][:-1]  # its turn context comes last
     assert seen[4]["messages"][: len(before)] == before
@@ -3773,10 +3786,10 @@ async def test_captures_past_the_image_budget_drop_the_oldest_in_one_batch(
 
 
 async def test_source_change_images_share_the_image_budget(monkeypatch):
-    """(Q369) resolve_source_change images count toward the budget with page
-    captures and drop with them, oldest of either kind first: a dropped source
-    change image leaves the request and leaves one note naming the change and
-    how to request it again, while one no request carried yet stays."""
+    """(Q369, Q370) resolve_source_change images count toward the budget with
+    page captures and drop with them, oldest of either kind first: a dropped
+    source change image leaves the request with no note, its tool result
+    keeping its ordinary text, while one no request carried yet stays."""
     seen, ctx, _extras = _image_turn(
         monkeypatch,
         [
@@ -3794,16 +3807,56 @@ async def test_source_change_images_share_the_image_budget(monkeypatch):
     assert sorted(labels) == sorted(ctx.pending_images[c][0] for c in kept)
     assert "resolve_source_change result: change c1 of file f_1" not in labels
     assert "resolve_source_change result: change c9 of file f_1" in labels
-    note = ctx.capture_notes["s1"]
-    assert _dropped_notes(after).count(note) == 1
-    assert note == (
-        "resolve_source_change result: change c1 of file f_1: image dropped to "
-        "keep this turn's images within budget; call resolve_source_change again "
-        "with file_id f_1, change_id c1 and checkpoint 3 to see it."
+    assert _extra_texts(after) == []
+    ordinary = (
+        "The pending source image is attached to the next message; read it directly."
     )
-    assert sorted(_dropped_notes(after)) == sorted(
-        ctx.capture_notes[c] for c in dropped
+    assert _tool_text(seen[1], "s1") == _tool_text(after, "s1") == ordinary
+
+
+async def test_a_dropped_image_whose_exchange_was_folded_leaves_nothing(monkeypatch):
+    """(Q349, Q370) Live compaction folded the first step's exchange into the
+    turn note as the budget dropped its four captures: nothing of theirs
+    follows the note, image or note; of the second step's captures, the one
+    kept still rides after that step's tool results, and the third step's
+    four after theirs."""
+    seen, ctx, _extras = _image_turn(
+        monkeypatch,
+        [
+            ["k1", "k2", "k3", "k4"],
+            ["k5", "k6", "k7", "k8"],
+            ["k9", "k10", "k11", "k12"],  # past the budget, and folded
+        ],
     )
+
+    def _full(messages, *_args, **_kwargs):
+        """Too large once the third step's results are in, until folded."""
+        kinds = [m.get("_kind") for m in messages]
+        return (
+            "turn_note" not in kinds
+            and sum(m["role"] == "tool" for m in messages) == 12
+        )
+
+    async def _note(**_kwargs):
+        return "Captured pages 1 to 4 of bio.pdf."
+
+    monkeypatch.setattr(agent.compact, "needs_compact", _full)
+    monkeypatch.setattr(agent.compact, "summarize_checkpoint", _note)
+    await _collect("q", ctx)
+
+    request = seen[3]["messages"]
+    note = next(i for i, m in enumerate(request) if m.get("_kind") == "turn_note")
+    assert not any(m.get("tool_call_id") in {"k1", "k2", "k3", "k4"} for m in request)
+    assert request[note + 1]["role"] == "assistant"  # no images message after it
+    order = [record["callId"] for record in ctx.captures]
+    images = [
+        [p for p in m["content"] if p["type"] == "image_url"]
+        for m in request
+        if m["role"] == "user" and isinstance(m.get("content"), list)
+    ]
+    assert [len(found) for found in images if found] == [1, 4]
+    assert {"k1", "k2", "k3", "k4"} <= set(order[:7])
+    assert _extra_texts(seen[3]) == []
 
 
 async def test_a_compacted_turn_still_sends_every_capture(monkeypatch):
