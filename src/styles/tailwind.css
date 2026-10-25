@@ -816,6 +816,8 @@ html[data-page-frame] .page-frame [data-frosted] {
   --frost-fill: rgb(255 255 255 / 0.5);
   --surface-page-hover: rgb(0 0 0 / 0.06);
   --surface-card-hover-bg: rgb(0 0 0 / 0.06);
+  /* Grid cards, a step lighter than a row's hover as on opaque panels. */
+  --surface-item-hover: rgb(0 0 0 / 0.04);
   --surface-field-bg: var(--frost-fill);
   --surface-field-disabled-bg: rgb(0 0 0 / 0.04);
   --border-default: rgb(0 0 0 / 0.12);
@@ -826,6 +828,7 @@ html.dark[data-page-frame] .page-frame [data-frosted] {
   --frost-fill: rgb(255 255 255 / 0.05);
   --surface-page-hover: rgb(255 255 255 / 0.08);
   --surface-card-hover-bg: rgb(255 255 255 / 0.08);
+  --surface-item-hover: rgb(255 255 255 / 0.06);
   --surface-field-disabled-bg: rgb(255 255 255 / 0.03);
   --border-default: rgb(255 255 255 / 0.12);
   --divider: rgb(255 255 255 / 0.08);
