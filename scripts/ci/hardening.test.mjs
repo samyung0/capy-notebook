@@ -238,6 +238,9 @@ test('the deploy images carry their compose hash and production runs the digests
 // job holding the deploy secrets reads nothing but code and packages
 // (security regression, review L2/L3).
 const ON_MAIN = /git merge-base --is-ancestor "\$revision" origin\/main/;
+const OPS_CLERK_ARG = /^ARG VITE_CLERK_PUBLISHABLE_KEY$/m;
+const OPS_CLERK_ENV =
+  /^ENV VITE_CLERK_PUBLISHABLE_KEY=\$VITE_CLERK_PUBLISHABLE_KEY$/m;
 
 test('Deploy Ops checks the revision before building and its deploy job reads only code and packages', () => {
   const { jobs } = parse(read('.github/workflows/deploy-ops.yml'));
@@ -250,6 +253,13 @@ test('Deploy Ops checks the revision before building and its deploy job reads on
     contents: 'read',
     packages: 'read',
   });
+});
+
+test('the Ops server image keeps the Clerk key its content security policy names Clerk from', () => {
+  const dockerfile = read('ops/Dockerfile');
+  const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+  assert.match(runtime, OPS_CLERK_ARG);
+  assert.match(runtime, OPS_CLERK_ENV);
 });
 
 test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies, on every push and daily', () => {
