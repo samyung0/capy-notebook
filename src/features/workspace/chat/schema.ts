@@ -432,7 +432,6 @@ export function buildLibrary(render: Renderers) {
         name: 'Questions',
         notes: [
           '- Use AskUser when you must require a user input: which document, which depth, what the material is for. Ask at most three questions, then stop; the answers arrive as the next user message.',
-          '- Do NOT use AskUser for simple follow up questions',
         ],
       },
     ],

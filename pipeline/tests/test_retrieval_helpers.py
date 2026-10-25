@@ -536,7 +536,7 @@ def test_turn_context_renders_open_file_preferences_and_reads():
         "a quiz of 2 questions; make no standalone flashcards unless asked." in empty
     ), "default preferences: quiz less, flashcards off said off"
     assert "a note explains each chapter" in empty
-    assert "knowledge check of at most 2 questions" in empty
+    assert "knowledge check of at most 1 question" in empty
 
 
 # --------------------------------------------------------------- citations
@@ -1347,12 +1347,12 @@ def test_one_prompt_holds_the_all_sources_rules_in_both_modes():
     assert chat_prompts.FIRST_TURN_OFFER not in chat_prompts.system_prompt(
         "en", writes=False
     )
-    assert "lacks the learning scope or the learner's level" in skills.editing()
+    assert "the learning scope and learner's level" in skills.editing()
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
         assert "propose the plan" not in prompt
         # Only a turn that writes needs the scope question (Epo 2026-10-21).
-        assert "lacks the learning scope or the learner's level" not in prompt
+        assert "the learning scope and learner's level" not in prompt
         assert (
             f"Until its first successful write a turn has "
             f"{limits.PLANNING_RESPONSES} responses" in prompt

@@ -3597,9 +3597,12 @@ materials are sources.
   `list_sources`; the turn still loads them (`store.workspace_chapters`, at
   most 20, `MaxChaptersPerWorkspace` in Go) for the open item's chapter and the
   `chapter_id` checks. It lists the study preferences (`prompts/preferences.py`: output files (a note
-  or a deck per chapter), writing style, quiz more (5 questions), less (2)
+  or a deck per chapter), writing style (brief, normal, verbose or story, a narrated explainer from
+  three science-documentary transcripts, Epo 2026-10-25), quiz more (5 questions), less (2)
   or off and flashcards more (10), less (5) or off (Epo 2026-10-25), visual
-  aids (charts, plots and interactive blocks; no Mermaid since 2026-10-25), and knowledge checks, at most 2 questions or,
+  aids (more: images wherever possible; fewer: charts, plots and interactive
+  blocks only where text cannot carry the idea and fewer images; no Mermaid
+  since 2026-10-25), and knowledge checks, at most 1 question (Epo 2026-10-25) or,
   when flashcards is set higher than quiz, 3 cards, saved values over
   `DEFAULTS`), and one line per library excerpt
   read for this message. With PowerPoint as the output files it leaves out the
@@ -5112,12 +5115,13 @@ entry takes a row of its own: the page title links to the page in a new tab
 the row, and its date, with the snippet as a muted line under them, clamped
 to two lines; the result's raised number moves to that entry
 (`sourceEntryId`).
-The prompt reserves `AskUser` for required user input and excludes simple follow-up questions,
-with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
+The prompt reserves `AskUser` for required user input (its line against simple
+follow-up questions removed 2026-10-25, Epo), with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
 write): on the first message of a chat, an explanation or summary request is
 answered and ends with an `AskUser` offering to turn it into a note or a slide
-deck, since users may not know the agent can; not when the user already asked
-for a material, not for small talk, not later. The rule is in the system
+deck, since users may not know the agent can; the offer never replaces the
+answer (its not-for-materials, small-talk and later-message exceptions removed
+2026-10-25, Epo). The rule is in the system
 prompt every turn, so the prompt stays a cached prefix.
 GLM sometimes calls `AskUser` as a tool instead of writing it in the answer
 (6 of 156 playground runs on 2026-10-14, against 3 written correctly). The

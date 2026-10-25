@@ -54,7 +54,6 @@ HtmlEmbed(title: string, html: string, passages?: number[]) — An HTML widget t
 ### Questions
 AskUser(question: string, choices: string[]) — A question the user answers before you continue (shown in a question panel, answered in their next message). choices: two to five short options, or [] for a free-text answer.
 - Use AskUser when you must require a user input: which document, which depth, what the material is for. Ask at most three questions, then stop; the answers arrive as the next user message.
-- Do NOT use AskUser for simple follow up questions
 
 ## Hoisting & Streaming (CRITICAL)
 

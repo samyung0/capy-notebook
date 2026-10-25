@@ -6249,6 +6249,7 @@ components:
             - brief
             - normal
             - verbose
+            - story
           type: string
       type: object
     StudySummary:
