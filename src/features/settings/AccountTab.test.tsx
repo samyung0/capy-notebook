@@ -12,17 +12,21 @@ vi.mock('@/api/hooks', () => ({
   useUpdateMe: () => ({ mutateAsync: vi.fn() }),
 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
+const buildUserProfileUrl = vi.hoisted(() =>
+  vi.fn(() => 'https://accounts.example.test/user')
+);
 vi.mock('@/features/auth/clerkHooks', () => ({
-  useClerk: () => ({
-    buildUserProfileUrl: () => 'https://accounts.example.test/user',
-  }),
+  useClerk: () => ({ buildUserProfileUrl }),
   useUser: () => ({ user: undefined }),
 }));
 
-// Two-step verification is turned on and off on Clerk's hosted account page
-// (Epo 2026-10-21): Settings links to the URL Clerk's SDK builds.
-it('links two-step verification to the account page Clerk builds', () => {
+// Q373, Q377: Clerk's hosted account page stays unlinked, so Settings ->
+// Account has no two-step verification or password row and builds no link to
+// that page, even where Clerk would build one.
+it('shows no link to the Clerk account page and no two-step row', () => {
   const html = renderToStaticMarkup(<AccountTab />);
-  expect(html).toContain(m.settings_two_step());
-  expect(html).toContain('href="https://accounts.example.test/user"');
+  expect(html).toContain(m.settings_account());
+  expect(buildUserProfileUrl).not.toHaveBeenCalled();
+  expect(html).not.toContain('accounts.example.test');
+  expect(html.toLowerCase()).not.toContain('two-step');
 });
