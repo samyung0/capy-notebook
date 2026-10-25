@@ -1653,7 +1653,10 @@ one); a disconnect and every Clerk `user.*` webhook drop the user's entries.
 Stripe Checkout pages for the same top-up amount or card setup are handed out
 again while they have 5 minutes left and Stripe still reports them open (one
 status read; a completed or expired page is dropped and a new one made), and
-invoice lists are cached for 60 s. Every top-up or card click takes the
+invoice lists are cached for 60 s per customer, and any signed Stripe event
+about the customer (an invoice created, finalized, paid, failed or voided, a
+Checkout completed) drops its list, so a payment shows at once. The cache
+lives in the one API process each environment runs. Every top-up or card click takes the
 Stripe session bucket, the reused ones included.
 
 **Share reads per visitor and page** (Epo 2026-10-24, Q244). A GET or HEAD
