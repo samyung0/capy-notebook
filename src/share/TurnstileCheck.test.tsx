@@ -5,8 +5,8 @@ import { m } from '@/i18n';
 import { PublicQuizEmbed } from './PublicQuizEmbed';
 import { SharedQuiz } from './SharedQuiz';
 
-/* A shared quiz's and an embedded quiz's Turnstile challenge sit under their
-   Submit, collapsed until Cloudflare shows a challenge (Q372). */
+/* A shared quiz's and an embedded quiz's Turnstile slot sit under their
+   Submit, with the hint hidden until Cloudflare shows a challenge (Q372). */
 
 const questions = [
   {
@@ -25,9 +25,10 @@ const questions = [
   },
 ] as AnonymousQuiz['questions'];
 
-const CHECK = /<div data-turnstile-check="true" hidden="">/;
+const CHECK =
+  /<div data-turnstile-check="true"><p class="[^"]*" hidden="">[^<]*<\/p><div><\/div><\/div>/;
 
-it('puts the challenge under Submit, collapsed, on both quiz pages', () => {
+it('puts the slot under Submit, its hint hidden, on both quiz pages', () => {
   const pages = [
     renderToStaticMarkup(
       <SharedQuiz

@@ -727,9 +727,11 @@ and solved again only when a check asks, never in the background (it renders
 with `refresh-expired: never`, Q350, and `refresh-timeout: manual`, so a
 timed-out interactive challenge waits for the visitor). It sits under the
 Submit of the check that asks, rendering again under another quiz's Submit
-when that one asks, and takes room only while Cloudflare shows a challenge,
-with the hint "Complete the check below to submit." (Epo 2026-10-25, Q372;
-`src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
+when that one asks. Its slot shows while a solve runs (the invisible widget
+takes no room, and its solve needs a rendered container) and is hidden once
+the token settles or the interaction ends, which clears the widget's success
+box. While Cloudflare shows a challenge the hint "Complete the check below to
+submit." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
 15 s, a clock that stops while an interactive challenge shows, so the check
 waits until the challenge is solved or errors; the API's refusal of an empty
 token shows the failed-check copy (Epo 2026-10-24, Q309;

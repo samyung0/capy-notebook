@@ -53,6 +53,9 @@ beforeEach(() => {
   vi.resetModules();
   vi.useFakeTimers();
   vi.stubEnv('VITE_TURNSTILE_SITE_KEY', '1x00000000000000000000AA');
+  // As an earlier solve left them.
+  slot.hidden = true;
+  otherSlot.hidden = true;
   options = [];
   targets = [];
   removed = [];
@@ -103,7 +106,7 @@ it('renders one widget at the first check and none before', async () => {
   expect(options).toHaveLength(1);
 });
 
-it('renders under the asking check, with no overlay, and shows only while a challenge does', async () => {
+it('renders under the asking check, with no overlay, and marks the challenge only while it shows', async () => {
   const { challengeSlot, takeTurnstileToken } = await import('./turnstile');
   const first = takeTurnstileToken(slot);
   await vi.waitFor(() => expect(options).toHaveLength(1));
@@ -121,6 +124,23 @@ it('renders under the asking check, with no overlay, and shows only while a chal
   expect(targets).toEqual([slot, otherSlot]);
   expect(removed).toEqual(['widget-1']);
   options[1].callback('token-2');
+  await expect(next).resolves.toBe('token-2');
+});
+
+it('shows the slot while a solve runs and hides it once the token arrives', async () => {
+  const { takeTurnstileToken } = await import('./turnstile');
+  const first = takeTurnstileToken(slot);
+  await vi.waitFor(() => expect(options).toHaveLength(1));
+  expect(slot.hidden).toBe(false);
+  options[0].callback('token-1');
+  expect(slot.hidden).toBe(true);
+  await expect(first).resolves.toBe('token-1');
+  // The next check shows it again for its solve.
+  const next = takeTurnstileToken(slot);
+  await vi.waitFor(() => expect(resets).toBe(1));
+  expect(slot.hidden).toBe(false);
+  options[0].callback('token-2');
+  expect(slot.hidden).toBe(true);
   await expect(next).resolves.toBe('token-2');
 });
 

@@ -52,7 +52,10 @@ function loadTurnstile(): Promise<Turnstile> {
 // One widget serves the whole shared page, however many quizzes it holds
 // (Q309). It renders under the Submit of the check that asks for a token
 // (`slot`, Q372), rendering again under another check's Submit when that one
-// asks. It solves only when a check asks; an expired token is dropped, and
+// asks. The slot shows while a solve can run (an invisible widget takes no
+// room, and its solve needs a rendered container) and is hidden once the
+// token settles or the interaction ends, which clears the widget's success
+// box. It solves only when a check asks; an expired token is dropped, and
 // the widget is told never to re-solve it in the background (Q350). An
 // interactive challenge that times out waits for the visitor rather than
 // running again by itself.
@@ -118,6 +121,10 @@ async function solve() {
     return;
   }
   const slot = waiters[0].slot;
+  const hide = () => {
+    slot.hidden = true;
+  };
+  slot.hidden = false;
   solving = true;
   try {
     loading ??= loadTurnstile();
@@ -128,12 +135,22 @@ async function solve() {
     }
     if (widget) turnstile.remove(widget.id);
     const id = turnstile.render(slot, {
-      'after-interactive-callback': () => show(null),
+      'after-interactive-callback': () => {
+        hide();
+        show(null);
+      },
       appearance: 'interaction-only',
       'before-interactive-callback': () => show(slot),
-      callback: settle,
-      'error-callback': () => settle(''),
+      callback: (value) => {
+        hide();
+        settle(value);
+      },
+      'error-callback': () => {
+        hide();
+        settle('');
+      },
       'expired-callback': () => {
+        hide();
         token = undefined;
       },
       'refresh-expired': 'never',

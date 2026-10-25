@@ -2,9 +2,10 @@ import { useRef, useSyncExternalStore } from 'react';
 import { m } from '@/i18n';
 import { challengeSlot, onChallenge, takeTurnstileToken } from './turnstile';
 
-/** A signed-out check's Turnstile challenge, under its Submit (Q372):
- * `view` takes room only while Cloudflare shows the visitor a challenge,
- * with a hint to complete it, and `take` gets the check's token there. */
+/** A signed-out check's Turnstile challenge, under its Submit (Q372): `view`
+ * holds the widget's slot, which turnstile.ts shows while a solve runs and
+ * hides once it settles, and a hint while Cloudflare shows the visitor a
+ * challenge; `take` gets the check's token there. */
 export function useTurnstileCheck() {
   const slot = useRef<HTMLDivElement>(null);
   const showing = useSyncExternalStore(
@@ -18,11 +19,11 @@ export function useTurnstileCheck() {
       return takeTurnstileToken(slot.current);
     },
     view: (
-      <div data-turnstile-check hidden={!showing}>
-        <p className="t-meta mt-3 text-fg-muted">
+      <div data-turnstile-check>
+        <p className="t-meta mt-3 mb-2 text-fg-muted" hidden={!showing}>
           {m.quiz_captcha_challenge()}
         </p>
-        <div className="mt-2" ref={slot} />
+        <div ref={slot} />
       </div>
     ),
   };
