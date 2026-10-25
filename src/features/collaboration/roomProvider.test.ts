@@ -102,6 +102,30 @@ afterEach(() => {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** The client id a test token offers: one per token name. */
+const clientIdOf = (name: string) =>
+  ([...name].reduce((sum, char) => sum * 31 + char.charCodeAt(0), 7) %
+    0xff_ff_ff_f0) +
+  1;
+
+const PADDING = /[=]+$/;
+
+/** A token as the API mints one, as far as the client reads it: its claims
+ * offer a client id (Q213) and, for a DOCX session, its layout worker's
+ * (Q219). */
+function token(
+  name: string,
+  clientId = clientIdOf(name),
+  workerClientId?: number
+) {
+  const part = (value: object) =>
+    btoa(JSON.stringify(value))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(PADDING, '');
+  return `${part({ alg: 'HS256', typ: 'JWT' })}.${part({ clientId, sub: name, workerClientId })}.sig`;
+}
+
 async function joined(
   options: Partial<ConstructorParameters<typeof RoomProvider>[0]> = {}
 ) {
@@ -121,7 +145,7 @@ async function joined(
     onStateless: events.stateless,
     onSynced: events.synced,
     onUnsyncedChanges: events.unsynced,
-    token: async () => 'token-1',
+    token: async () => token('token-1'),
     url: `wss://collab.test/${url++}`,
     ...options,
   });
@@ -133,14 +157,53 @@ async function joined(
   return { document, events, join, provider, socket };
 }
 
+// Q327: while an editor holds stored steps the room never accepted, its JOIN
+// waits for the draft send to take them; with nothing held it joins at once.
+it('opens no socket while the before-join promise holds, joins once it settles, and at once without one (Q327, Q360)', async () => {
+  let release = () => {};
+  let held: Promise<void> | undefined = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const asked = vi.fn(async () => token('token-1'));
+  const document = new Y.Doc();
+  const provider = new RoomProvider({
+    beforeJoin: () => held,
+    document,
+    name: 'material:m1:schema:1',
+    token: asked,
+    url: `wss://collab.test/${url++}`,
+  });
+  const sockets = FakeSocket.instances.length;
+  provider.connect();
+  await flush();
+  expect(FakeSocket.instances).toHaveLength(sockets);
+  expect(asked).not.toHaveBeenCalled();
+  release();
+  await flush();
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
+  // Nothing held: a rejoin waits for nothing.
+  held = undefined;
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
+  provider.destroy();
+});
+
 it('joins with its token, syncs both ways and counts unacknowledged updates', async () => {
   const { document, events, join, provider, socket } = await joined();
   const reader = new Reader(join.payload);
   expect(reader.varString()).toBe('material:m1:schema:1');
-  expect(reader.varString()).toBe('token-1');
-  // The version gate: the build's client protocol follows the token.
+  expect(reader.varString()).toBe(token('token-1'));
+  // The version gate: the build's client protocol follows the token, then
+  // the client id the document took from it (Q213).
   expect(reader.varUint()).toBe(CLIENT_PROTOCOL);
+  expect(reader.varUint()).toBe(clientIdOf('token-1'));
   expect(reader.done).toBe(true);
+  expect(document.clientID).toBe(clientIdOf('token-1'));
   const channel = join.channel;
 
   // The server admits the channel and asks for what it lacks.
@@ -212,12 +275,229 @@ it('reports a refusal with its reason and rejoins on the same socket', async () 
   expect(FakeSocket.instances).toHaveLength(1);
 });
 
+/** Q213: the document writes under the id the server assigned. Until a
+ * writable JOINED it takes each JOIN's token id (a refused join, a read
+ * channel); from then on it keeps that id for life, naming it in every JOIN
+ * whatever the token offers, so the server binds the same id and the Undo
+ * stack survives. */
+it('takes the token client ids until the document writes under them, then keeps them', async () => {
+  const tokens = [
+    token('first', clientIdOf('first'), 11),
+    token('second', clientIdOf('second'), 22),
+    token('third', clientIdOf('third'), 33),
+    token('again', clientIdOf('second'), 44),
+    token('fourth', clientIdOf('fourth'), 55),
+  ];
+  const { document, join, provider, socket } = await joined({
+    token: async () => tokens.shift()!,
+  });
+  const declared = (payload: Uint8Array) => {
+    const reader = new Reader(payload);
+    reader.varString();
+    reader.varString();
+    reader.varUint();
+    return reader.varUint();
+  };
+  expect(declared(join.payload)).toBe(clientIdOf('first'));
+  expect(provider.awareness.clientID).toBe(clientIdOf('first'));
+  // A refused join binds nothing: the next token's id is taken.
+  socket.deliver(
+    message(join.channel, MessageKind.Refused, text('collaboration-client-id'))
+  );
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  const [second] = socket.take(MessageKind.Join);
+  expect(declared(second.payload)).toBe(clientIdOf('second'));
+  expect(document.clientID).toBe(clientIdOf('second'));
+  expect(provider.workerClientId).toBe(22);
+  socket.deliver(message(second.channel, MessageKind.Joined, Uint8Array.of(1)));
+  document.getText('content').insert(0, 'typed');
+  // Bound: a reconnect names the kept id with a fresh token, and a refusal
+  // of a token offering that id again leaves it kept too.
+  for (let round = 0; round < 3; round++) {
+    socket.deliver(
+      message(
+        provider.seatChannel!,
+        MessageKind.Refused,
+        text('collaboration-client-id')
+      )
+    );
+    provider.disconnect();
+    provider.connect();
+    await flush();
+    const [again] = socket.take(MessageKind.Join);
+    expect(declared(again.payload)).toBe(clientIdOf('second'));
+    socket.deliver(
+      message(again.channel, MessageKind.Joined, Uint8Array.of(1))
+    );
+  }
+  expect(document.clientID).toBe(clientIdOf('second'));
+  expect(provider.awareness.clientID).toBe(clientIdOf('second'));
+  // The DOCX layout worker's id (Q219) is kept with the document's.
+  expect(provider.workerClientId).toBe(22);
+});
+
+it('presents its previous token and keeps the ids it offers again, written or not', async () => {
+  // Q236: Go offers a reconnect its previous ids again, so an Office editor
+  // holding them (its replica and DOCX layout worker) needs no reload.
+  const id = clientIdOf('first');
+  const asked: (string | undefined)[] = [];
+  const { document, join, provider, socket } = await joined({
+    token: async (previous) => {
+      asked.push(previous);
+      return asked.length === 1
+        ? token('first', id, 11)
+        : token('again', id, 11);
+    },
+  });
+  socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  const [again] = socket.take(MessageKind.Join);
+  expect(asked).toEqual([undefined, token('first', id, 11)]);
+  const reader = new Reader(again.payload);
+  reader.varString();
+  reader.varString();
+  reader.varUint();
+  expect(reader.varUint()).toBe(id);
+  expect(document.clientID).toBe(id);
+  expect(provider.workerClientId).toBe(11);
+});
+
+it('presents its previous token for 70 s of client id refusals, then asks for fresh ids', async () => {
+  // r2 S2: a live channel holds the ids, as a dropped socket's does until
+  // the server closes it (60 s); past that, two sessions presented one token.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const asked: (string | undefined)[] = [];
+    const { join, provider, socket } = await joined({
+      token: async (previous) => {
+        asked.push(previous);
+        return token('t1');
+      },
+    });
+    const refuse = async (channel: number, after: number) => {
+      vi.setSystemTime(Date.now() + after);
+      socket.deliver(
+        message(channel, MessageKind.Refused, text('collaboration-client-id'))
+      );
+      provider.disconnect();
+      provider.connect();
+      await flush();
+      return socket.take(MessageKind.Join)[0];
+    };
+    const second = await refuse(join.channel, 0);
+    const third = await refuse(second.channel, 69_000);
+    expect(asked).toEqual([undefined, token('t1'), token('t1')]);
+    await refuse(third.channel, 1000);
+    expect(asked.at(-1)).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('says on Leave whether the tab still holds unsent edits', async () => {
+  // Q236: only a clean Leave lets the room expire the session's ids.
+  let drafts = false;
+  for (const [edit, stored, unsent] of [
+    [false, false, 0],
+    [false, true, 1],
+    [true, false, 1],
+  ] as const) {
+    drafts = stored;
+    const { document, join, provider, socket } = await joined({
+      unsent: () => drafts,
+    });
+    socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+    // Unacknowledged.
+    if (edit) document.getText('content').insert(0, 'typed');
+    provider.disconnect();
+    const [leave] = socket.take(MessageKind.Leave);
+    expect([...leave.payload]).toEqual([unsent]);
+  }
+});
+
+it('keeps taking token ids while its joins are read-only', async () => {
+  const tokens = [token('read-1'), token('read-2')];
+  const { document, join, provider, socket } = await joined({
+    token: async () => tokens.shift()!,
+  });
+  socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(0)));
+  expect(document.clientID).toBe(clientIdOf('read-1'));
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  socket.take(MessageKind.Join);
+  expect(document.clientID).toBe(clientIdOf('read-2'));
+});
+
+it('takes the token id though it wrote before its first join', async () => {
+  // Epo 2026-10-24: the earlier edit stays under the id Yjs drew, which the
+  // room refuses as it is (`client_id`) and never binds.
+  const document = new Y.Doc();
+  const drawn = document.clientID;
+  document.getText('content').insert(0, 'early');
+  const provider = new RoomProvider({
+    document,
+    name: 'material:m1:schema:1',
+    token: async () => token('token-1'),
+    url: `wss://collab.test/${url++}`,
+  });
+  provider.connect();
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
+  await flush();
+  const [join] = socket.take(MessageKind.Join);
+  const reader = new Reader(join.payload);
+  reader.varString();
+  reader.varString();
+  reader.varUint();
+  expect(reader.varUint()).toBe(clientIdOf('token-1'));
+  expect(document.clientID).toBe(clientIdOf('token-1'));
+  expect(Y.getState(document.store, drawn)).toBe(5);
+});
+
+it('keeps the id a read channel wrote under once its token turned writable', async () => {
+  // Q226 M1: a refresh made the read channel writable and it wrote; the
+  // room stored its id, so a reconnect names that id.
+  const tokens = [token('read-1'), token('write-2')];
+  const { document, join, provider, socket } = await joined({
+    token: async () => tokens.shift()!,
+  });
+  socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(0)));
+  document.getText('content').insert(0, 'typed');
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  const [again] = socket.take(MessageKind.Join);
+  const reader = new Reader(again.payload);
+  reader.varString();
+  reader.varString();
+  reader.varUint();
+  expect(reader.varUint()).toBe(clientIdOf('read-1'));
+  expect(document.clientID).toBe(clientIdOf('read-1'));
+});
+
+it('stops explicitly when its document left the bound id', async () => {
+  // Q226 L3: every change under another id would be refused.
+  const { document, join, socket } = await joined();
+  socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+  socket.take(MessageKind.Sync);
+  document.clientID += 1;
+  expect(() => document.getText('content').insert(0, 'typed')).toThrow(
+    'left its assigned client id'
+  );
+  expect(socket.take(MessageKind.Sync)).toHaveLength(0);
+});
+
 it('reports a closed room while the socket stays open for others', async () => {
   const { events, join, provider, socket } = await joined();
   const other = new RoomProvider({
     document: new Y.Doc(),
     name: 'material:m2:schema:1',
-    token: async () => 'token-2',
+    token: async () => token('token-2'),
     url: socket.url,
   });
   other.connect();
@@ -273,7 +553,7 @@ it('joins an embed inside its note, ending and joining again with it', async () 
     name: 'material:set:schema:1',
     onClose: closed,
     parent: seat,
-    token: async () => 'embed-token',
+    token: async () => token('embed-token'),
     url: socket.url,
   });
   embed.connect();
@@ -288,9 +568,10 @@ it('joins an embed inside its note, ending and joining again with it', async () 
   const reader = new Reader(first.payload);
   expect([reader.varString(), reader.varString(), reader.varUint()]).toEqual([
     'material:set:schema:1',
-    'embed-token',
+    token('embed-token'),
     CLIENT_PROTOCOL,
   ]);
+  expect(reader.varUint()).toBe(clientIdOf('embed-token'));
   expect(reader.varUint()).toBe(noteJoin.channel);
   socket.deliver(message(first.channel, MessageKind.Joined, Uint8Array.of(1)));
   expect(embed.isAuthenticated).toBe(true);
@@ -326,14 +607,14 @@ it('joins an embed inside its note, ending and joining again with it', async () 
 });
 
 it('answers a token request in band', async () => {
-  let token = 'token-1';
-  const { join, socket } = await joined({ token: async () => token });
+  let current = token('token-1');
+  const { join, socket } = await joined({ token: async () => current });
   socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
-  token = 'token-2';
+  current = token('token-2');
   socket.deliver(message(join.channel, MessageKind.TokenRequest));
   await flush();
   const [answer] = socket.take(MessageKind.Token);
-  expect(new Reader(answer.payload).varString()).toBe('token-2');
+  expect(new Reader(answer.payload).varString()).toBe(token('token-2'));
 });
 
 it('applies remote awareness and sends back only its own re-asserted state', async () => {
@@ -371,7 +652,7 @@ it.each([1005, 1001])(
       document,
       name: 'material:m1:schema:1',
       onClose,
-      token: async () => 't',
+      token: async () => token('t'),
       url: `wss://collab.test/${url++}`,
     });
     provider.connect();
@@ -401,7 +682,7 @@ it('in a timeout holds its edits, then joins again on the same socket and resync
     document,
     name: 'material:m1:schema:1',
     onStateless,
-    token: async () => 't',
+    token: async () => token('t'),
     url: `wss://collab.test/${url++}`,
   });
   recordDrafts({
@@ -676,7 +957,7 @@ it('applies a peer update with the source provider as its origin', async () => {
   const provider = createSourceProvider({
     document,
     name: 'source:f1:epoch:1',
-    token: async () => 't',
+    token: async () => token('t'),
     url: `wss://collab.test/${url++}`,
   });
   const socket = FakeSocket.instances.at(-1) as FakeSocket;
@@ -711,7 +992,7 @@ it('holds joins past the eight the server authenticates at once', async () => {
       new RoomProvider({
         document: new Y.Doc(),
         name: `material:m${i}:schema:1`,
-        token: async () => `token-${i}`,
+        token: async () => token(`token-${i}`),
         url: address,
       })
   );
@@ -749,7 +1030,7 @@ it('joins again from its own place after a JOIN answered with a timeout', async 
       new RoomProvider({
         document: new Y.Doc(),
         name: `material:t${i}:schema:1`,
-        token: async () => `token-${i}`,
+        token: async () => token(`token-${i}`),
         url: address,
       })
   );

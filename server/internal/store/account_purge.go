@@ -249,7 +249,11 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	for _, table := range []string{"review_sessions", "study_plans", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants", "bank_comment_notices",
 		// Open Checkout pages and the daily grading and invite counters
 		// (Q315).
-		"credit_checkouts", "grading_usage", "invite_usage"} {
+		"credit_checkouts", "grading_usage", "invite_usage",
+		// The Yjs client ids assigned to it in documents it does not own
+		// (Q226): the ids it wrote stay in those documents' state, so no one
+		// takes them.
+		"material_yjs_client_ids", "source_document_client_ids"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}

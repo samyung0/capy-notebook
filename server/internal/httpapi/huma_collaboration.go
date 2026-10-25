@@ -57,6 +57,9 @@ type collaborationTokenInput struct {
 type MaterialCollaborationTokenBody struct {
 	Document string `json:"document,omitempty" enum:"content,keys"`
 	Access   string `json:"access,omitempty" enum:"read"`
+	// PreviousToken is the session's last token for this room, even expired:
+	// the new token offers its client id again (Q236, regrantedClientIDs).
+	PreviousToken string `json:"previousToken,omitempty" maxLength:"8192"`
 }
 
 type materialCollaborationTokenInput struct {
@@ -316,6 +319,11 @@ func (a *api) createMaterialCollaborationToken(
 	}
 	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"), schema)
 	claims.Parent = parent
+	if in.Body != nil && in.Body.PreviousToken != "" {
+		if client, _, ok := regrantedClientIDs(a.cfg.CollaborationSecret, in.Body.PreviousToken, uid, room, time.Now()); ok {
+			claims.ClientID = client
+		}
+	}
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
 		return nil, &handlerError{error: huma.Error503ServiceUnavailable("collaboration service unavailable"), cause: err}

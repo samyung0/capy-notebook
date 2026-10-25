@@ -279,10 +279,8 @@ hears none (its page's header shows the note's). A member's own connection is
 never in its list, so its user appears only for their other tabs and devices.
 The ids come from the room's own map of which channel holds which client id,
 so a client cannot label a cursor as someone else: labels and the group read
-only this message. An id its user released (a removal, a leave) stays theirs
-until the next presence, which no longer lists it, has gone out: until then
-co-editors still label it with their name, so another user's channel cannot
-take it.
+only this message. A channel's awareness lives only under its own bound client
+id ([client ids](#client-ids)), so no other user's channel can take it.
 
 The browser (`presence.ts`) hands it to the open editor (`onPresence` on
 `RoomProvider`; it goes empty when the channel ends): notes keep it for cursor
@@ -1170,8 +1168,9 @@ account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) replace the editor with the
 file-missing or no-access panel, `collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
-and anything else (an expired token, a room being reset or compacted) is
-retried. A loss still unresolved after 30 s while
+`collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
+and anything else (an expired token,
+a room being reset or compacted, a client-id clash) is retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
 sync it turns the status red). A join, first or after a reload, has the same
 30 s from its start, which is its collaboration-token request (or the new
@@ -1443,12 +1442,12 @@ document, storage, history, keys room and id; its own token refreshes and
 expiry apply as for any channel, and a JOIN costs one message of the
 allowance. With no note channel (an embedded set opened on its own study
 page, or under MSW) an item room joins as any document does. A room keeps at most 256 awareness
-client ids and a channel at most 4 (`MAX_CLIENTS_PER_ROOM`,
-`MAX_CLIENTS_PER_MEMBER`); a new id past either is not kept. The room's cap
-counts removed ids until their removal went out (the next flush forgets
+client ids (`MAX_CLIENTS_PER_ROOM`); a new id past it is not kept. The room's
+cap counts removed ids until their removal went out (the next flush forgets
 them), so adding and removing ids in a loop stays capped and needs no scan.
-A client id is its user's: another user's channel neither overwrites nor
-removes it, and a channel's leave removes only the ids it still holds.
+A channel writes awareness only under the client id its JOIN bound (see
+[client ids](#client-ids)); entries under any other id are ignored, and its
+leave removes its entry unless a later channel of its user took it over.
 
 A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
 pending receipts (the failed-store retry answers them), shows Not saved and,
@@ -1498,13 +1497,232 @@ writers. Relational metadata and standalone sharing use separate endpoints so a
 privacy or metadata failure cannot be reported as though it rolled back an
 already-durable Yjs command.
 
+### Client ids
+
+Epo decided on 2026-10-23 (Q213) that the collaboration server assigns each
+editing session its Yjs client id and admits a writer's changes only under
+ids assigned to that writer's user, in every room (notes, items, keys,
+Office and text files); on 2026-10-24 (Q226 M3, Q236) that an id is
+recorded at the first accepted write under it, and that a reconnect keeps
+its id by presenting its previous token; on 2026-10-24 (Q288) that stored
+drafts keep their tab's last token, which re-grants their id to a draft send
+from any page.
+
+- **Assignment** (`newClientID` and `regrantedClientIDs` in
+  `server/internal/httpapi/collaboration_tokens.go`). Every collaboration
+  token (material, keys and source rooms; read and write) offers a client id
+  (its `clientId` claim, 1 to 2^32-1 other than the fork's seed ids 0 and
+  1): a fresh random one, or, when the request carries the session's
+  previous token (`previousToken`), that token's id again. Go re-grants only
+  a token with our signature, for the same user and the same room (document,
+  schema or epoch), issued at most 7 days ago; its expiry is otherwise
+  ignored, and the endpoint's own access check runs first, so a previous
+  token never grants access. Anything else gets a fresh id.
+- **The browser** (`RoomProvider`). The provider presents its last token on
+  every token request (each JOIN and each in-band refresh). Its document
+  takes the id each JOIN's token offers until the document (or its DOCX
+  layout worker) wrote under it, then keeps that id for the document's life
+  and names it in every JOIN, so the Undo stack survives. A reconnect's token
+  offers the same id again, so a session that never wrote keeps it too: an
+  Office editor, whose replica and layout worker took their ids at the edit
+  `load`, needs no reload. A new id comes with a new Y.Doc (a new editor or
+  item room, a room swap's renderer), or when a document that never wrote
+  gets a fresh token (its previous one too old, or dropped after 70 s of
+  `collaboration-client-id` refusals). Edits a document made before its first
+  JOIN stay under the id Yjs drew, and the room refuses them as they are (Epo
+  2026-10-24, see Refusal); a document whose `clientID` no longer matches the
+  id it took stops its channel with an error instead of sending (Q226 L3).
+- **Binding** (`ClientIds::bind` in
+  `collaboration-rs/crates/server/src/client_ids.rs`). A JOIN binds its
+  channel to the id its Y.Doc names, in memory. An id recorded to the
+  joiner's user binds as it is, whichever id the token offers (a reconnect).
+  An unrecorded id binds only when it is the one the token offers, has no
+  structs in the document's history (its state vector) and no live channel
+  holds it (nor the room's own client). One recorded to another user, one the
+  token does not offer, or one in the history (its row cleared or expired) is
+  refused as `collaboration-unassigned-id`: no retry binds it, so the editor
+  does not retry (`roomRefusal` reads it as `unassigned`; until the catch-up merge
+  re-applies its edits, a note or item keeps its unsent edits as refused and
+  remounts, a source session goes to recovery). One a live channel holds is
+  refused as `collaboration-client-id`: a dropped socket's channel the
+  server has not closed yet (at most 60 s, `SILENT_CLOSE`), or two sessions
+  presenting one previous token. The provider keeps presenting its previous
+  token for 70 s from the first such refusal (`CLIENT_ID_HELD_MS`), so a
+  reconnect after a network drop gets its ids back once the old channel
+  closed, then drops it and retries with a fresh id. A channel whose token
+  turns writable writes under the id it bound (Q226 M1); a token refresh
+  naming another user than the channel's is refused (the channel closes at
+  its token's expiry), so a bound id stays its user's.
+- **A DOCX session's worker id** (Q219, Epo 2026-10-23). The DOCX editor
+  lays out and applies typing in a resident worker, a yrs document of its
+  own, so a DOCX write token also offers `workerClientId` (Go mints it only
+  for DOCX write tokens, other than the session's id, and re-grants it from
+  the previous token as it does the session's). The JOIN binds it with the
+  session's id under the same rule. The provider keeps the worker id with its
+  document's (`RoomProvider.workerClientId`), the source session hands it to
+  the edit `load`, and the fork's resident worker writes under it
+  (`workerClientId` in the DOCX editor's collaboration options) instead of a
+  random id. A DOCX edit load without a worker id fails explicitly (Q226
+  L4); other formats carry none.
+- **The record.** `material_yjs_client_ids` (material, document `content` or
+  `keys`, id) and `source_document_client_ids` (file, id), each row naming
+  the user (indexed) and deleted with its document and by the account purge
+  (migration 0115). A room loads its rows once and keeps them in memory, so
+  reconnects and update checks read no database. An update accepted and
+  applied (after admission, the validator and the limits) records the ids it
+  wrote under as the writer's user's the first time in a room's life, and
+  refreshes their `last_write_at` once a day after; a JOIN or a refused
+  update records nothing. Rows are recorded in memory at once and in the
+  database off the room's task (a slow database stalls no channel, Q226 M4),
+  in order through one queue per room that the room's unload waits on; a
+  batch still failing after its retries (about 15 s), or a queue a closing
+  room drops, is logged as an error. A Leave says whether the tab still holds unsent edits for the
+  document (one byte: 0 when it holds none, beyond the provider's
+  unacknowledged updates and the drafts not yet covered by a receipt); a
+  clean Leave expires the recorded ids its token offered, so they never bind
+  again (an id it bound otherwise, its user's other tab's, stays), and a
+  socket drop or a Leave with unsent edits keeps them. Each room load
+  first deletes the document's expired rows and rows unwritten for 7 days:
+  no scheduled job (Q226 M3). The server's own writers (the room client, the
+  edit scratch documents) take ids outside the recorded set, the ids bound
+  to live channels and the room's history (Q226 L2). Ids never enter the Yjs document, whose readers must
+  not map ids to users.
+- **Admission** (`client_ids::foreign`, after the marker check). Every block
+  an update adds beyond the room's held clock for its client must be under an
+  id the writer's user holds: one recorded to the user (any of them, so
+  drafts of their earlier sessions still apply), one bound to a live channel
+  of the user (a draft send from another page of a tab that is still
+  joined), or one a draft send's stored token re-grants (see draft grants). Blocks at clocks the room holds pass as duplicates, and delete sets
+  are not bound. Server-side writers (the room client, Office engine
+  children, seeds) do not go through admission.
+- **Reserved copy ids** (Epo 2026-10-24, M5). Ids from 2^32 up to the PPTX
+  bootstrap id (2^53-1) are reserved for derived override-seed copies; no
+  session is assigned one. Until override-seed copies exist, every room
+  refuses structs under them like any unassigned id, a source file's editors
+  included.
+- **Draft grants** (Epo 2026-10-24, Q288). Stored draft rows keep their
+  session's last signed room token (`grants` in `src/lib/editDrafts.ts`; a
+  merged row keeps each of its rows'). A draft send presents its group's
+  tokens in `X-Capy-Grants`, newest first and one per client id they offer
+  (a session's refreshed tokens take one slot), at most 16. The server
+  re-grants the ids each offers under the reconnect rule: our signature,
+  the same user and room, issued at most 7 days ago, expiry ignored
+  (`auth::granted_ids`, `auth::granted_by` reads the first 16), and
+  recorded for no one else, absent from the history and held by no live
+  channel (`ClientIds::grantable`). The write records them. So the drafts
+  of a closed tab whose edits never reached the room go in from any page. A
+  group still refused `unassigned` (a token over 7 days old, an id recorded
+  to another user) is held and opens copy-only (see opening with stored
+  drafts). Stored drafts and their
+  short-lived tokens stay in the browser through sign-out and an account
+  switch, as the drafts always did; an expired token grants nothing, and a
+  grant needs the sender's own user.
+- **Opening with stored drafts** (Epo 2026-10-24, Q319, Q326, Q327, Q328).
+  The recorder marks a session's rows `accepted` once a receipt covers one
+  of its own edits (`covered > start`: adopted rows do not count), since the
+  room then recorded the session's id. On open (`draftGroups`,
+  `splitOpenDrafts`) a note, item room or source session applies accepted
+  rows and syncs them over its live channel; rows of a never-accepted
+  session with a stored token go through the draft send (`draftSender`)
+  while the editor joins. Never-accepted rows no send delivers (held after
+  one, or with no stored token) open copy-only with the refused rows when
+  they draw on their own (the drafts worker's `draws` decides, so the main
+  thread merges and applies them once), as Q237 and Q251 say until the merge
+  view exists (Epo 2026-10-25, Q360), reported once as the edit incident
+  `other_epoch_draft`/`held` (never sent, so no service log has them); ones
+  that need the room's document are applied, and the room's live refusal of
+  them opens the whole document copy-only. Restored rows the room's document
+  cannot place either (their base is gone) go at the first receipt with the
+  drafts-lost notice, reported `draft_unrestorable`/`base_missing` as
+  recovery reports a group nothing can draw (an item room too, under its
+  material). Until the send settles (every group stored or held) the editor
+  shows the syncing status and is view-only: notes lock the content and
+  toolbar, items set `sending` (`itemEditingStopped`), sources return
+  `draftsSending`. Each request has 30 s plus its upload at 100 KB/s, at
+  most 3 minutes (`draftSendTimeout`, Epo 2026-10-25, Q365), so a 2 MiB
+  piece on a slow uplink still lands; one that fails or times out goes again
+  30 s later, doubling to 5 minutes, and at once on the browser's `online`
+  event or when the room connects (`now`, from the `beforeJoin` hooks),
+  never twice at once: one asked during a try goes as it ends. While steps
+  are held no socket is open, so a server that comes back is noticed only by
+  the next try: the hold's own connect, the browser's `online` event and the
+  backoff are its triggers. A send that settles before the hold with a group
+  the room did not take opens it copy-only at once (a note remounts, an item
+  room is replaced, a source session opens again). Not settled 30 s after
+  the open (`DRAFT_SEND_WAIT_MS`) with the room synced, or at a first sync
+  after that, the editor closes its channel, applies those rows, adds them
+  to its recorder's adopted rows and edits on: every edit is stored as a
+  draft and nothing goes live, since the room would refuse the old steps on
+  the channel. Its provider's `beforeJoin` then holds every JOIN until the
+  send settles, and no socket opens for the room meanwhile. The hold shows
+  syncing and is no editing incident (the recorder's `disconnected(true)`
+  reports no `offline_episode`); a browser that goes offline in it shows
+  offline, and syncing (a source saving) again once back online. Once a send
+  is accepted the editor joins and continues; one the room refused leaves
+  the steps in the document, so the live sync is refused `unassigned` and
+  the edits open in the copy-only recovery. Before a first sync the join's
+  own 30 s connection error stands. A live refusal has no automatic
+  fallback: an accepted session is refused only once its record and its
+  tokens are past 7 days.
+- **Duplicate draft sends** (Epo 2026-10-24, Q321). A draft send whose
+  update the room already holds in full (`ydoc::contains_changes` is false
+  over the room's state vector and delete set) is accepted as a no-op on the
+  room's task, before the allowance is charged: no charge, and no new store
+  or gateway checkpoint. Its answer still waits for the store that holds
+  the group when one is due or running (Epo 2026-10-25, Q360), since the
+  browser deletes its rows on it. So the page sweep, an opening editor and
+  other tabs may send one group without a lock, a resend after a lost answer
+  costs nothing, and simultaneous duplicates count once since a room handles
+  writes in order. Draft sends count against their own limit of 60 a minute
+  per user instead (see the draft sweep).
+- **Refusal.** An update under another id goes the refused-on-entry way:
+  material rooms send `document-rejected` with code `unassigned` (the editor
+  keeps its unsaved edits as a refused draft), source rooms
+  `source-checkpoint-failed` with `recoverable: false` and code `unassigned`
+  (recovery), and a draft send answers 409 `unassigned` (the group is held,
+  never sent again: its next open shows it copy-only, or applies it when it
+  needs the room's document, which the live refusal then opens copy-only).
+  Each is logged at warn and recorded as
+  the edit incident `save_refused`/`client_id`. So after the server lost
+  state a tab restores only its own user's unsaved edits; another user's are
+  lost (accepted, Q213). Edits under an id the server never assigned (made
+  before the tab had one) or no longer holds are refused as they are, never
+  bound. Until the catch-up merge re-applies them under the tab's id (Epo
+  2026-10-24, `human/frontend/error-handling.md`), they open for copying:
+  this covers a session that typed without a write accepted and reconnects
+  with a fresh token (its previous one over 7 days old). An open tab within
+  7 days gets its id re-granted by its previous token, after a network drop
+  too, and its edits land; a closed tab's drafts carry its last token (see
+  draft grants). Drafts stored before the binding, under ids nobody was
+  assigned, are refused once and kept for copying.
+- **The unassigned signal** (for the catch-up merge's re-author mode). Edits
+  under an id the room does not hold for the user are answered apart from an
+  invalid document on every path: a room write gets `document-rejected` code
+  `unassigned` (material rooms) or `source-checkpoint-failed` code
+  `unassigned` (source rooms), a draft send class `unassigned` (409), and the
+  JOIN of a document that wrote under such an id `collaboration-unassigned-id`
+  (`collaboration-client-id` means only that a live channel holds the id; the
+  browser retries with its previous token for 70 s, then with fresh ids, and
+  a document that wrote then hears `collaboration-unassigned-id`).
+- **Awareness.** A channel's awareness entries are kept only under its bound
+  id; entries under any other id are ignored.
+- **Browser writers.** Notes, items and text sources write under their
+  provider's document id; the text editor's IME merge writes its scratch copy
+  under the same id. The Office editor's replica takes the id from the edit
+  `load` message (Office protocol 13, `collaboration.clientId`), and the host
+  applies its updates as the document's own (`applyOwnUpdate` in
+  `src/features/files/sourceState.ts`): Yjs moves a document to a new id when
+  its own id arrives in an applied update.
+
 ### Client protocol and the release nudge
 
 Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
 design, option d), and the nudge's release file on 2026-10-17.
 
 - **The gate.** Every JOIN carries the build's client protocol after the
-  token (`room, token, varuint protocol`), and every draft send carries it as
+  token (`room, token, varuint protocol, varuint clientId`, then an embed's
+  note channel; the client id is the Y.Doc's, see [client ids](#client-ids)),
+  and every draft send carries it as
   `X-Capy-Protocol`. The number is `CLIENT_PROTOCOL` in
   `src/features/collaboration/protocol.ts` and
   `collaboration-rs/crates/server/src/protocol.rs`; a vitest keeps them equal.
@@ -1645,6 +1863,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   2026-10-24, Q351) raised `CLIENT_PROTOCOL` to 17 and `MIN_SOURCE` to 17;
   `MIN_MATERIAL` stays 16. Its deploy request names "client protocol 16 -> 17,
   source 16 -> 17".
+  The client-id binding (Q213: every JOIN names its Y.Doc's client id after
+  the protocol, Office protocol 13; pin 58518dfdb: the DOCX layout worker
+  writes under its assigned id, Q219) raised `CLIENT_PROTOCOL` to 18 and both
+  minimums to 18. Its deploy request names "client protocol 17 -> 18,
+  material 16 -> 18, source 17 -> 18".
 
 #### When to bump
 
@@ -1829,20 +2052,25 @@ the group's rows become one row of the pieces not sent (the worker's
 `unsent`), which the answer below applies to and recovery shows (Epo
 2026-10-18).
 
-The service runs a channel's JOIN checks (origin, token, access, the room's
-eviction and pause state), refuses a read-only token, checks the note's
-current schema, refuses the send while the user is in a timeout (checked
-right after the token, before any lookup), reads the body within 8 MiB (a
-larger one answers `too_large`, which the page leaves to the editor, and
-times the user out) and a note's 4 MiB sync cap, takes it from the user's update allowance (the one their sockets take
-from), checks the eviction lease and a local
-reset again (the body may have arrived after them), and hands the update to
-the room, loading it if need be: the same writer admission and apply as a
-channel's update (`admit_update` in `room.rs`, a read token's draft as a
-read channel's), so open editors receive it live, then a store at once. A
-source send counts as joining its room meanwhile. It answers only after that
-store, and that answer is the receipt for every row the request carried:
-only then are the rows deleted. A source room takes no send during a
+The service counts the send against the user's draft sends once its token
+checks out, at most 60 in any minute apart from the update allowance (Epo
+2026-10-25, Q360; `take_draft` in `rate.rs`; over it answers `too_fast`
+before any lookup, with no timeout). It runs a channel's JOIN checks
+(origin, token, access, the room's eviction and pause state), refuses a
+read-only token, checks the note's current schema, refuses the send while
+the user is in a timeout (checked right after the token, before any
+lookup), reads the body within 8 MiB (a larger one answers `too_large`,
+which the page leaves to the editor, and times the user out) and a note's
+4 MiB sync cap, checks the eviction lease and a local reset again (the body
+may have arrived after them), and hands the update to the room, loading it
+if need be. There a group the room holds in full is a no-op (see duplicate
+draft sends); any other takes from the user's update allowance (the one
+their sockets take from) and goes through the same writer admission and
+apply as a channel's update (`admit_update` in `room.rs`, a read token's
+draft as a read channel's), so open editors receive it live, then a store
+at once. A source send counts as joining its room meanwhile. It answers
+only after the store that holds the update, and that answer is the receipt
+for every row the request carried: only then are the rows deleted. A source room takes no send during a
 publication handoff, and an Office file's only over the room's base. A room
 whose load failed answers the failure (one load per send). A successful send
 is silent: the edits just appear for everyone.
@@ -1860,15 +2088,19 @@ class
   refuses it again and the editor keeps the whole document as its refused
   row; neither is sent again, so the room records the over-limit incident
   once per open, not per page load;
-- `unheld` (409, the room lacks the update's base), `too_large` (413) and
-  `lineage` (409, a token for another room, a schema or epoch that moved on,
-  another Office base): marked `held`, left for the editor;
+- `unheld` (409, the room lacks the update's base), `unassigned` (409,
+  structs under a client id not assigned to the user, Epo 2026-10-24),
+  `too_large` (413) and `lineage` (409, a token for another room, a schema
+  or epoch that moved on, another Office base): marked `held`, left for the
+  editor's next open, which applies a held group of an accepted session and
+  shows any other copy-only (see opening with stored drafts, Q360);
 - `outdated` (426, the page's client protocol is refused): kept unmarked,
   and no sweep runs again until the page reloads (see
   [Client protocol](#client-protocol-and-the-release-nudge));
 - `permission` (403), `unavailable` (503) and any other answer: kept, and
   not sent again until the next page load;
-- `too_fast` (429, the user is in a timeout), no answer (offline) or rows
+- `too_fast` (429, the user is in a timeout or sent 60 drafts in the last
+  minute), no answer (offline, or none within the request's 30 s) or rows
   that changed meanwhile: kept for the next trigger.
 
 `held` is the sweep's own mark: a held group that enters recovery at the

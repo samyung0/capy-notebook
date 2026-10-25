@@ -179,17 +179,56 @@ export function readSync(payload: Uint8Array) {
  * in protocol.rs is the same number (a test keeps them equal). When to bump:
  * openwiki/frontend/plate-editor.md "Client protocol".
  */
-export const CLIENT_PROTOCOL = 17;
+export const CLIENT_PROTOCOL = 18;
 
-/** A JOIN's payload; an embed's names its note's channel last (Epo
+/** A JOIN's payload: the room, the token, the client protocol, the Y.Doc's
+ * client id (Q213); an embed's names its note's channel last (Epo
  * 2026-10-20). */
-export function joinPayload(room: string, token: string, note?: number) {
+export function joinPayload(
+  room: string,
+  token: string,
+  clientId: number,
+  note?: number
+) {
   const writer = new Writer()
     .varString(room)
     .varString(token)
-    .varUint(CLIENT_PROTOCOL);
+    .varUint(CLIENT_PROTOCOL)
+    .varUint(clientId);
   if (note !== undefined) writer.varUint(note);
   return writer.done();
+}
+
+const isClientId = (value: unknown): value is number =>
+  typeof value === 'number' &&
+  Number.isInteger(value) &&
+  value >= 1 &&
+  value <= 0xff_ff_ff_ff;
+
+/** The Yjs client ids a collaboration token offers, which Go mints fresh
+ * per token: the session's (`clientId`, Q213) and, on a DOCX write token,
+ * its editor's resident layout worker's (`workerClientId`, Q219). A token
+ * without a valid id is refused here: the server would refuse its JOIN
+ * anyway. */
+export function tokenClientIds(token: string): {
+  clientId: number;
+  workerClientId?: number;
+} {
+  const payload = token.split('.')[1] ?? '';
+  let claims: { clientId?: unknown; workerClientId?: unknown } = {};
+  try {
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    claims = JSON.parse(atob(base64)) as typeof claims;
+  } catch {
+    // Not a token the API minted; refused below.
+  }
+  const { clientId, workerClientId } = claims;
+  if (
+    !isClientId(clientId) ||
+    !(workerClientId === undefined || isClientId(workerClientId))
+  )
+    throw new Error('The collaboration token offers no client id');
+  return { clientId, workerClientId };
 }
 
 export const closedPayload = (code: number, reason: string) =>
