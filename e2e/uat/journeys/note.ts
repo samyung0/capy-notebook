@@ -281,7 +281,9 @@ const MEDIA = {
 /**
  * A note image or audio clip through the slash command's file picker (the
  * actor, under the line `after`): one ready row named by the note and charged
- * to the actor who added it (M16), and the stored bytes are the picked ones.
+ * to the actor who added it (M16). The stored bytes are the file part the
+ * browser uploaded, returned as `uploaded`: an audio clip as picked, an image
+ * compressed to WebP (2026-10-20) and still shown under its picked name (Q371).
  * Images also render.
  */
 export async function insertNoteMedia(
@@ -305,6 +307,27 @@ export async function insertNoteMedia(
         `/api/materials/${noteId}/editor-assets/uploads` &&
       response.request().method() === 'POST'
   );
+  // Chromium does not report a multipart body that holds a Blob, so keep the
+  // file part the page appends instead: it is exactly what the upload sends.
+  await page.evaluate(() => {
+    const scope = window as unknown as { uatUploadPart?: Blob };
+    scope.uatUploadPart = undefined;
+    const proto = FormData.prototype as FormData & { uatKeepsParts?: true };
+    if (proto.uatKeepsParts) return;
+    proto.uatKeepsParts = true;
+    const append = proto.append;
+    proto.append = function (
+      this: FormData,
+      name: string,
+      value: string | Blob,
+      filename?: string
+    ) {
+      if (name === 'file' && value instanceof Blob) scope.uatUploadPart = value;
+      return filename === undefined || typeof value === 'string'
+        ? append.call(this, name, value as string)
+        : append.call(this, name, value, filename);
+    };
+  });
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
     editor.getByRole('button', { name: MEDIA[kind].pick() }).click(),
@@ -313,6 +336,21 @@ export async function insertNoteMedia(
   const completed = await uploaded;
   assert.equal(completed.status(), 201);
   const assetId = string(object(await completed.json()).assetId);
+  const part = await page.evaluate(async () => {
+    const blob = (window as unknown as { uatUploadPart?: Blob }).uatUploadPart;
+    if (!blob) return null;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    // In slices, so a spread never passes too many arguments.
+    const slice = 32_768;
+    let binary = '';
+    for (let at = 0; at < bytes.length; at += slice)
+      binary += String.fromCharCode(...bytes.subarray(at, at + slice));
+    return { base64: btoa(binary), type: blob.type };
+  });
+  assert(part, 'the upload sent no file part');
+  const uploadedBytes = Buffer.from(part.base64, 'base64');
+  if (kind === 'img') assert.equal(part.type, 'image/webp');
+  else assert(uploadedBytes.equals(file.buffer), 'audio is uploaded as picked');
   if (kind === 'img') {
     const image = editor.locator(`img[alt="${file.name}"]`);
     await expect(image).toBeVisible({ timeout: 60_000 });
@@ -334,10 +372,14 @@ export async function insertNoteMedia(
   assert.equal(asset.material_id, noteId);
   assert.equal(asset.created_by, actor.id);
   assert.equal(asset.user_id, actor.id);
-  assert.equal(Number(asset.size_bytes), file.buffer.length);
+  if (kind === 'img') assert.equal(asset.content_type, 'image/webp');
+  assert.equal(Number(asset.size_bytes), uploadedBytes.length);
   await run.record('blob', asset.object_path, { assetId, noteId });
-  assert.equal((await run.blob(asset.object_path)).sha256, sha256(file.buffer));
-  return asset;
+  assert.equal(
+    (await run.blob(asset.object_path)).sha256,
+    sha256(uploadedBytes)
+  );
+  return { ...asset, uploaded: uploadedBytes };
 }
 
 /** A 0.1 s silent mono 8 kHz WAV, the smallest audio the asset check accepts. */
