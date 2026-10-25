@@ -330,16 +330,16 @@ test.describe('study progress', () => {
       startedSet.id,
     ]);
 
-    // A quiz answered in part and left: nothing reaches the server.
+    // A quiz answered in part and left unchecked: nothing reaches the server.
     await ownerPage.goto(`/quizzes/${startedQuiz.id}/attempt`);
     await ownerPage
       .getByRole('button', { exact: true, name: m.question_ui_true() })
       .first()
       .click();
     await expect(
-      ownerPage.getByText(m.quiz_answered_count({ answered: 1, total: 2 }))
+      ownerPage.getByText(m.quiz_checked_count({ checked: 0, total: 2 }))
     ).toBeVisible();
-    // Another submitted: one right, one wrong.
+    // Another checked question by question: one right, one wrong.
     await ownerPage.goto(`/quizzes/${finishedQuiz.id}/attempt`);
     const trueButtons = ownerPage.getByRole('button', {
       exact: true,
@@ -347,17 +347,21 @@ test.describe('study progress', () => {
     });
     await trueButtons.nth(0).click();
     await trueButtons.nth(1).click();
-    await expect(
-      ownerPage.getByText(m.quiz_answered_count({ answered: 2, total: 2 }))
-    ).toBeVisible();
-    const submitted = waitForApi(
-      ownerPage,
-      apiEndsWith(`/api/quizzes/${finishedQuiz.id}/attempts`, 'POST')
-    );
-    await ownerPage
-      .getByRole('button', { exact: true, name: m.quiz_submit() })
-      .click();
-    expect((await submitted).status()).toBe(201);
+    for (let i = 0; i < 2; i++) {
+      const checked = waitForApi(
+        ownerPage,
+        apiEndsWith(`/api/quizzes/${finishedQuiz.id}/check`, 'POST')
+      );
+      // A checked question loses its button, so the first is the next one.
+      await ownerPage
+        .getByRole('button', {
+          exact: true,
+          name: m.question_ui_check(),
+        })
+        .first()
+        .click();
+      expect((await checked).status()).toBe(200);
+    }
     await expect(
       ownerPage.getByRole('button', { name: m.quiz_redo() })
     ).toBeVisible();
@@ -440,25 +444,28 @@ test.describe('study progress', () => {
       new RegExp(`[?&]material=${startedQuiz.id}(&|$)`)
     );
 
-    // Learning → Review: All workspaces lists five items to review, and its
-    // Review opens a whole-workspace session.
+    // Learning → Review: Default plans lists the five practised items, and
+    // the row opens a whole-workspace session, which mixes in the new ones
+    // (the untouched quiz, the started set's other cards).
+    const manual = await ownerApi.get(
+      `/api/workspaces/${ws.id}/review?group=workspace`
+    );
+    const sessionTotal = (await manual.json()).items.length;
+    expect(sessionTotal).toBeGreaterThan(5);
     await ownerPage.goto('/learning?tab=review');
-    const row = ownerPage
+    const name = ownerPage
       .locator('section', {
         has: ownerPage.getByRole('heading', {
-          name: m.review_all_workspaces(),
+          name: m.learning_default_plans(),
         }),
       })
-      .getByText(ws.name, { exact: true })
-      .locator(
-        `xpath=ancestor::div[.//button[normalize-space()="${m.study_review_button()}"]][1]`
-      );
+      .getByRole('button', { exact: true, name: ws.name });
     await expect(
-      row.getByText(m.review_items({ count: 5 }), { exact: true })
+      name
+        .locator('xpath=ancestor::div[contains(@class, "border-t")][1]')
+        .getByText(m.review_practised({ count: 5 }), { exact: true })
     ).toBeVisible();
-    await row
-      .getByRole('button', { exact: true, name: m.study_review_button() })
-      .click();
+    await name.click();
     await expect(ownerPage).toHaveURL(
       new RegExp(
         `/learning/review/${ws.id}\\?(?=.*group=workspace)(?=.*from=review)`
@@ -467,7 +474,7 @@ test.describe('study progress', () => {
     await expect(
       ownerPage.getByRole('progressbar', {
         exact: true,
-        name: m.flashcards_card_position({ position: 1, total: 5 }),
+        name: m.flashcards_card_position({ position: 1, total: sessionTotal }),
       })
     ).toBeVisible();
   });
@@ -556,7 +563,7 @@ test.describe('study progress', () => {
 
     await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
     await ownerPage
-      .getByRole('button', { exact: true, name: m.study_review_button() })
+      .getByRole('link', { name: m.study_start_workspace_review() })
       .click();
     // Both items were rated a moment ago, so nothing is suggested and
     // Review opens the whole workspace.

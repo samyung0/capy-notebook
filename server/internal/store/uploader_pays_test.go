@@ -677,12 +677,12 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 		var gotIDs []string
 		for _, item := range got {
 			gotIDs = append(gotIDs, item.ID)
-			wantMaterial := note.ID
+			wantMaterial, wantWorkspace := note.ID, ws.ID
 			if lostAccess {
-				wantMaterial = ""
+				wantMaterial, wantWorkspace = "", ""
 			}
-			if item.LostAccess != lostAccess || item.MaterialID != wantMaterial || item.MaterialTitle != note.Title ||
-				item.WorkspaceName != ws.Name || item.SizeBytes != 100 {
+			if item.LostAccess != lostAccess || item.MaterialID != wantMaterial || item.MaterialTitle != note.Title || item.MaterialType != MaterialRefNote ||
+				item.WorkspaceName != ws.Name || item.WorkspaceID != wantWorkspace || item.SizeBytes != 100 {
 				t.Fatalf("item %+v, want lostAccess %v under %q opening %q", item, lostAccess, note.Title, wantMaterial)
 			}
 		}

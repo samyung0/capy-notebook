@@ -27,7 +27,7 @@ test('bank checks an answer and marks its square', async ({ page }) => {
     .getByRole('textbox', { name: m.question_ui_your_answer() })
     .fill('6');
   await question
-    .getByRole('button', { name: m.question_ui_check_answer() })
+    .getByRole('button', { exact: true, name: m.question_ui_check() })
     .click();
   await expect(question).toContainText('1 / 1');
   await expect(

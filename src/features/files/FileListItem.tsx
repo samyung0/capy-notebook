@@ -63,6 +63,7 @@ export function FileListItem({
   const waitingForBytes = ingesting && !file.hasBytes;
   const failed = file.status === 'failed';
   const [retrying, setRetrying] = useState(false);
+  const hoverMenu = menu && (!readOnly || canClone);
 
   return (
     <div className="relative flex flex-col">
@@ -74,7 +75,7 @@ export function FileListItem({
       >
         <Link
           className={cn(
-            'flex w-full items-center gap-1.5 rounded-button py-1.5 text-left',
+            'flex w-full items-center gap-2 rounded-button py-1.5 text-left',
             active && 'font-bold',
             waitingForBytes && 'cursor-default'
           )}
@@ -96,14 +97,15 @@ export function FileListItem({
           >
             {file.name}
           </span>
-          <StudyMark className={cn(menu && 'mr-6')} state={study?.state} />
+          <StudyMark hoverMenu={hoverMenu} state={study?.state} />
         </Link>
-        {menu && (!readOnly || canClone) && (
+        {hoverMenu && (
           <ContentActions
             beforeDelete={beforeDelete}
             canClone={canClone && fileCanClone(file)}
             chapters={chapters}
             color={color}
+            confirmInMenu
             content={toFileActionTarget(file)}
             display="hover"
             hoverClassName={cn(

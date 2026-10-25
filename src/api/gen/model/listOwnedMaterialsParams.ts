@@ -18,6 +18,10 @@ kind?: string;
  */
 workspaceId?: string;
 /**
+ * Comma-separated material ids: only these rows (the phone quick open, ordered by the client's opens)
+ */
+ids?: string;
+/**
  * Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed
  */
 location?: string;

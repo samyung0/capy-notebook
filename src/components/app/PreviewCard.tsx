@@ -32,7 +32,7 @@ export function PreviewCard({
     <Component
       aria-pressed={selected}
       className={cn(
-        'flex min-w-0 flex-col gap-1.5 rounded-[15px] p-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-action',
+        'flex min-w-0 flex-col gap-1.5 rounded-[calc(var(--radius-tile)+1px)] p-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-action',
         selected
           ? 'bg-tint-accent-1/60 text-tint-accent-1-fg'
           : 'hover:bg-surface-hover-bg',
@@ -47,7 +47,7 @@ export function PreviewCard({
             {content}
             <div
               className={cn(
-                'rounded-[13px]',
+                'rounded-[calc(var(--radius-tile)-1px)]',
                 selected && 'ring-2 ring-solid-accent-1'
               )}
             >

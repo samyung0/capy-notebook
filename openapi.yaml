@@ -1085,6 +1085,35 @@ components:
       required:
         - answers
       type: object
+    CheckQuizQuestionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CheckQuizQuestionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          description: The learner's answers to the question's parts, by part id
+          type: object
+        attemptId:
+          description: The attempt the browser continues; empty or unknown starts a new one, whose id the response carries
+          maxLength: 64
+          type: string
+        questionId:
+          maxLength: 128
+          minLength: 1
+          type: string
+        startedAt:
+          description: When the learner began the attempt, for the minutes taken
+          format: date-time
+          type: string
+      required:
+        - questionId
+        - answers
+      type: object
     CheckReviewItemReq:
       additionalProperties: false
       properties:
@@ -1426,26 +1455,6 @@ components:
       required:
         - style
         - color
-      type: object
-    CreateAttemptReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateAttemptReq.json
-          format: uri
-          readOnly: true
-          type: string
-        answers:
-          additionalProperties: {}
-          description: The learner's answers by part id
-          type: object
-        startedAt:
-          description: When the learner opened the quiz, for the minutes taken
-          format: date-time
-          type: string
-      required:
-        - answers
       type: object
     CreateBlankFileReq:
       additionalProperties: false
@@ -1814,7 +1823,8 @@ components:
           $ref: "#/components/schemas/PageFrame"
         style:
           enum:
-            - classroom
+            - capy
+            - fisheye
             - notion
           type: string
         theme:
@@ -1995,6 +2005,8 @@ components:
           type: string
         materialTitle:
           type: string
+        materialType:
+          $ref: "#/components/schemas/MaterialRefType"
         name:
           type: string
         purpose:
@@ -2005,6 +2017,8 @@ components:
         sizeBytes:
           format: int64
           type: integer
+        workspaceId:
+          type: string
         workspaceName:
           type: string
       required:
@@ -2013,6 +2027,7 @@ components:
         - purpose
         - sizeBytes
         - createdAt
+        - materialType
         - materialTitle
         - workspaceName
         - lostAccess
@@ -2525,12 +2540,17 @@ components:
           type: string
         answers:
           additionalProperties: {}
-          description: The learner's answers by part id
+          description: The learner's answers to the question's parts, by part id
           type: object
         localId:
           maxLength: 64
           type: string
+        questionId:
+          maxLength: 128
+          minLength: 1
+          type: string
       required:
+        - questionId
         - answers
       type: object
     GradedQuestion:
@@ -2555,31 +2575,6 @@ components:
         - correct
         - total
         - question
-      type: object
-    GradedQuiz:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/GradedQuiz.json
-          format: uri
-          readOnly: true
-          type: string
-        correct:
-          format: double
-          type: number
-        questions:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-        total:
-          format: double
-          type: number
-      required:
-        - correct
-        - total
-        - questions
       type: object
     ImportSourcesAccepted:
       additionalProperties: false
@@ -2958,11 +2953,15 @@ components:
           items:
             $ref: "#/components/schemas/ProgressWorkspace"
           type: array
+        hiddenCount:
+          format: int64
+          type: integer
         lead:
           $ref: "#/components/schemas/ProgressMap"
       required:
         - active
         - finished
+        - hiddenCount
       type: object
     LocaleInputBody:
       additionalProperties: false
@@ -3771,6 +3770,7 @@ components:
       properties:
         colours:
           enum:
+            - dawn
             - dusk
             - sea
             - meadow
@@ -3787,6 +3787,17 @@ components:
           minItems: 1
           nullable: true
           type: array
+        frosted:
+          items:
+            enum:
+              - left
+              - center
+              - right
+            type: string
+          maxItems: 3
+          nullable: true
+          type: array
+          uniqueItems: true
         pattern:
           enum:
             - none
@@ -3804,6 +3815,7 @@ components:
         - colours
         - dots
         - strength
+        - frosted
       type: object
     PageFrameColor:
       additionalProperties: false
@@ -3843,6 +3855,7 @@ components:
             - chapter
             - others
             - workspace
+            - plan
           type: string
         iconId:
           type: string
@@ -3941,16 +3954,13 @@ components:
       properties:
         kind:
           enum:
-            - workspace
-            - unfiled
-            - chapter
             - file
             - material
           type: string
         locked:
           type: boolean
         targetId:
-          description: The chapter, file or material
+          description: The file or material
           type: string
         title:
           type: string
@@ -3959,6 +3969,7 @@ components:
       required:
         - kind
         - workspaceId
+        - targetId
         - title
         - locked
       type: object
@@ -3967,20 +3978,19 @@ components:
       properties:
         kind:
           enum:
-            - workspace
-            - unfiled
-            - chapter
             - file
             - material
           type: string
         targetId:
-          description: The chapter, file or material; omitted for workspace and unfiled steps
+          description: The file or material
+          minLength: 1
           type: string
         workspaceId:
           type: string
       required:
         - kind
         - workspaceId
+        - targetId
       type: object
     PlanTier:
       enum:
@@ -4063,7 +4073,12 @@ components:
         createdAt:
           format: date-time
           type: string
+        doneAt:
+          format: date-time
+          type: string
         id:
+          type: string
+        kind:
           type: string
         position:
           format: int64
@@ -4083,6 +4098,7 @@ components:
       required:
         - id
         - type
+        - kind
         - title
         - chapterId
         - position
@@ -4957,6 +4973,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        plans:
+          items:
+            $ref: "#/components/schemas/ReviewPlan"
+          type: array
         suggestions:
           items:
             $ref: "#/components/schemas/ReviewSuggestion"
@@ -4972,7 +4992,38 @@ components:
       required:
         - suggestions
         - unfinished
+        - plans
         - workspaces
+      type: object
+    ReviewPlan:
+      additionalProperties: false
+      properties:
+        canReview:
+          type: boolean
+        iconId:
+          type: string
+        lastReviewedAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+        planId:
+          type: string
+        reviewable:
+          format: int64
+          type: integer
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - planId
+        - name
+        - workspaceId
+        - workspaceName
+        - iconId
+        - reviewable
+        - canReview
       type: object
     ReviewResult:
       additionalProperties: false
@@ -5022,6 +5073,7 @@ components:
             - chapter
             - others
             - workspace
+            - plan
           type: string
         items:
           items:
@@ -5033,6 +5085,9 @@ components:
             - tricky
             - fading
             - learned
+          type: string
+        planId:
+          description: The plan of a plan group
           type: string
         removedAssetIds:
           items:
@@ -5061,6 +5116,7 @@ components:
             - chapter
             - others
             - workspace
+            - plan
           type: string
         id:
           description: Minted by the browser when the session starts
@@ -5078,6 +5134,9 @@ components:
             - tricky
             - fading
             - learned
+          type: string
+        planId:
+          description: The plan of a plan group
           type: string
         workspaceId:
           minLength: 1
@@ -5130,6 +5189,8 @@ components:
     ReviewWorkspace:
       additionalProperties: false
       properties:
+        canReview:
+          type: boolean
         iconId:
           type: string
         lastReviewedAt:
@@ -5147,6 +5208,7 @@ components:
         - name
         - iconId
         - reviewable
+        - canReview
       type: object
     Row:
       additionalProperties: false
@@ -6725,6 +6787,7 @@ components:
             - chapter
             - others
             - workspace
+            - plan
           type: string
         iconId:
           type: string
@@ -6978,7 +7041,7 @@ components:
         steps:
           items:
             $ref: "#/components/schemas/PlanStepInput"
-          maxItems: 50
+          maxItems: 200
           type: array
       type: object
     UpdateTaskReq:
@@ -8896,6 +8959,13 @@ paths:
           schema:
             description: Comma-separated workspace ids
             type: string
+        - description: "Comma-separated file ids: only these rows (the phone quick open, ordered by the client's opens)"
+          explode: false
+          in: query
+          name: ids
+          schema:
+            description: "Comma-separated file ids: only these rows (the phone quick open, ordered by the client's opens)"
+            type: string
         - description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
           explode: false
           in: query
@@ -9734,6 +9804,13 @@ paths:
           name: workspaceId
           schema:
             description: Comma-separated workspace ids
+            type: string
+        - description: "Comma-separated material ids: only these rows (the phone quick open, ordered by the client's opens)"
+          explode: false
+          in: query
+          name: ids
+          schema:
+            description: "Comma-separated material ids: only these rows (the phone quick open, ordered by the client's opens)"
             type: string
         - description: "Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"
           explode: false
@@ -10669,7 +10746,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GradedQuiz"
+                $ref: "#/components/schemas/GradedQuestion"
           description: OK
         default:
           content:
@@ -10677,7 +10754,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Grade an attempt at a quiz embedded in a shared note
+      summary: Grade one question of a quiz embedded in a shared note
       tags:
         - Sharing
   /api/public/quizzes/{token}:
@@ -10763,7 +10840,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GradedQuiz"
+                $ref: "#/components/schemas/GradedQuestion"
           description: OK
         default:
           content:
@@ -10771,7 +10848,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Grade a signed-out attempt at a shared quiz
+      summary: Grade one question of a signed-out attempt at a shared quiz
       tags:
         - Sharing
   /api/public/workspaces/{token}/summary:
@@ -10936,9 +11013,9 @@ paths:
       summary: Get a quiz to view or take, without answers
       tags:
         - Quizzes
-  /api/quizzes/{id}/attempts:
+  /api/quizzes/{id}/check:
     post:
-      operationId: createAttempt
+      operationId: checkQuizQuestion
       parameters:
         - in: path
           name: id
@@ -10949,22 +11026,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateAttemptReq"
+              $ref: "#/components/schemas/CheckQuizQuestionReq"
         required: true
       responses:
-        "201":
+        "200":
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AttemptDetail"
-          description: Created
+          description: OK
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Grade and record a quiz attempt
+      summary: Grade one question of a quiz attempt and record it
       tags:
         - Quizzes
   /api/quizzes/{id}/edit:
@@ -11134,6 +11211,7 @@ paths:
               - cards
               - time
               - workspace
+              - plan
               - chapter
               - status
             type: string
@@ -12596,6 +12674,7 @@ paths:
               - chapter
               - others
               - workspace
+              - plan
             type: string
         - description: The chapter of a chapter group
           explode: false
@@ -12603,6 +12682,13 @@ paths:
           name: chapterId
           schema:
             description: The chapter of a chapter group
+            type: string
+        - description: The plan of a plan group, one of the user's plans kept in this workspace
+          explode: false
+          in: query
+          name: planId
+          schema:
+            description: The plan of a plan group, one of the user's plans kept in this workspace
             type: string
         - description: A suggestion's mode; omitted for a review from the workspace list
           explode: false
@@ -12787,6 +12873,13 @@ paths:
           name: id
           required: true
           schema:
+            type: string
+        - description: Draw Reviewable, QuickReview and Unfinished from this plan of the user's, kept in this workspace
+          explode: false
+          in: query
+          name: planId
+          schema:
+            description: Draw Reviewable, QuickReview and Unfinished from this plan of the user's, kept in this workspace
             type: string
       responses:
         "200":

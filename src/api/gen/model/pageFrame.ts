@@ -6,6 +6,7 @@
  */
 import type { PageFrameColor } from './pageFrameColor.ts';
 import type { PageFrameColours } from './pageFrameColours.ts';
+import type { PageFrameFrostedItem } from './pageFrameFrostedItem.ts';
 import type { PageFramePattern } from './pageFramePattern.ts';
 
 export interface PageFrame {
@@ -16,6 +17,11 @@ export interface PageFrame {
      * @nullable
      */
   dots: PageFrameColor[] | null;
+  /**
+     * @maxItems 3
+     * @nullable
+     */
+  frosted: PageFrameFrostedItem[] | null;
   pattern: PageFramePattern;
   /**
      * @minimum 0

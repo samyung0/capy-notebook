@@ -1,7 +1,7 @@
 import { ListStyleType, toggleList } from '@platejs/list';
-import type { MathfieldElement } from 'mathlive';
 import { KEYS } from 'platejs';
 import type { IconName } from '@/components/ui/Icon';
+import type { Question } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
@@ -10,11 +10,13 @@ import type { NoteVisualBlock } from './blocks/VisualBlockDialog';
 import { toggleEditorBlock } from './editorTransforms';
 import { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
 import { insertMediaPlaceholder } from './insertMediaPlaceholder';
+import { insertInlineEquation } from './mathInsert';
 import type { EditorCommandGroup, EditorWidgetId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
 import { insertYouTubeEmbed } from './youtube';
 
 export { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
+export { insertInlineEquation, insertMathTemplate } from './mathInsert';
 
 export type { EditorCommandGroup } from './noteEditorPrefs';
 
@@ -70,7 +72,10 @@ function newVisualBlock(type: NoteVisualBlock['type']): NoteVisualBlock {
       return {
         board: { axis: true, bbox: [-7.5, 5, 7.5, -5], grid: false },
         description: '',
-        elements: [],
+        // A new graph starts drawing y = x (Epo 2026-10-26).
+        elements: [
+          { id: crypto.randomUUID(), term: 'x', type: 'functiongraph' },
+        ],
         height: 400,
         image: { svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' },
         type,
@@ -94,35 +99,6 @@ export function columnGroupFromWidths(widths: readonly string[]) {
     })),
     type: KEYS.columnGroup,
   };
-}
-
-export function insertInlineEquation(
-  editor: NoteEditorInstance,
-  expression?: string
-) {
-  const selection = editor.selection;
-  const texExpression =
-    expression ??
-    (selection && !editor.api.isCollapsed(selection)
-      ? editor.api.string(selection)
-      : '');
-  editor.tf.focus();
-  editor.tf.insertNodes(
-    { children: [{ text: '' }], texExpression, type: KEYS.inlineEquation },
-    selection ? { at: selection, select: true } : { select: true }
-  );
-}
-
-export function insertMathTemplate(
-  editor: NoteEditorInstance,
-  expression: string
-) {
-  const active = document.activeElement;
-  if (active?.tagName.toLowerCase() === 'math-field') {
-    (active as MathfieldElement).insert(expression);
-    return;
-  }
-  insertInlineEquation(editor, expression);
 }
 
 function blockCommand(
@@ -200,6 +176,26 @@ function columnCommand(
       insertEditorNode(editor, columnGroupFromWidths(widths)),
     widget: 'columns',
   } satisfies EditorCommand;
+}
+
+/** A new quiz block starts with one question to edit rather than only Add
+ * question (Epo 2026-10-25). */
+function starterQuestion(): Question {
+  return {
+    id: crypto.randomUUID(),
+    labels: 'letters',
+    layout: 'paper',
+    parts: [
+      {
+        answer: { correct: [1], options: ['3', '4', '5', '6'], type: 'mcq' },
+        blocks: [{ text: m.editor_starter_question(), type: 'text' }],
+        id: crypto.randomUUID(),
+        marks: 1,
+        solution: [],
+      },
+    ],
+    stem: [],
+  };
 }
 
 export const EDITOR_COMMANDS: EditorCommand[] = [
@@ -488,7 +484,10 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     run: (editor, dialogs) => {
       if (insideContainer(editor)) return;
       if (dialogs)
-        void dialogs.insertEmbedded(editor, { kind: 'quiz', questions: [] });
+        void dialogs.insertEmbedded(editor, {
+          kind: 'quiz',
+          questions: [starterQuestion()],
+        });
     },
     widget: 'quiz',
   },

@@ -9,6 +9,8 @@ import { useKeyboardHeight } from '@/lib/useKeyboardHeight';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { InShellMain } from './AppErrorBoundary';
 import { Sidebar } from './Sidebar';
+import { ThemeDrawer } from './ThemeDrawer';
+import { useThemeDrawer } from './themeDrawerSearch';
 
 const WORKSPACE_PATH_PATTERN = /^\/workspaces\/([^/]+)$/;
 
@@ -36,6 +38,7 @@ export function AppShell() {
   }, [actorId]);
   useFinishToasts();
   useKeyboardHeight();
+  const themeDrawer = useThemeDrawer();
 
   return (
     <div className="page-frame t-body relative flex h-dvh overflow-hidden bg-page text-fg">
@@ -58,6 +61,7 @@ export function AppShell() {
           </div>
         </InShellMain.Provider>
       </main>
+      <ThemeDrawer onOpenChange={themeDrawer.setOpen} open={themeDrawer.open} />
     </div>
   );
 }

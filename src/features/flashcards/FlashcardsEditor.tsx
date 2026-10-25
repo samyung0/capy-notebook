@@ -14,7 +14,13 @@ import { FileActionsTarget } from '@/features/files/fileModeContext';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CardDialog } from './CardDialog';
-import { CardGrid, CardTile } from './CardView';
+import {
+  CardGrid,
+  CardTile,
+  CompactAddTile,
+  CompactCardGrid,
+  CompactCardTile,
+} from './CardView';
 import { addCard, isBlank, readCards, removeCard, useCards } from './liveSet';
 
 /** Edits a live flashcard set as a grid of turned cards (Epo 2026-10-10): adding, editing
@@ -30,6 +36,7 @@ export function FlashcardsEditor({
   onEmpty,
   showTitle = true,
   showUndo = true,
+  compact = false,
 }: {
   room: ItemRoom;
   status: ItemRoomStatus;
@@ -44,6 +51,8 @@ export function FlashcardsEditor({
   showTitle?: boolean;
   /** Off inside a note (the card dialog carries them). */
   showUndo?: boolean;
+  /** Small front-only cards, as a note's block shows them. */
+  compact?: boolean;
 }) {
   const { doc, history: undo } = room;
   const cards = useCards(doc);
@@ -72,6 +81,52 @@ export function FlashcardsEditor({
     setEditing(null);
   }
 
+  const add = () => setEditing({ added: true, id: addCard(doc) });
+  // A card's Edit and Remove, shown on hover.
+  const toolbar = (id: string) => (
+    <BlockToolbar className="rounded-md p-0.5 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/tile:opacity-100 has-focus-visible:opacity-100">
+      <ToolbarButton
+        label={m.action_edit()}
+        onClick={() => setEditing({ added: false, id })}
+        tooltipSide="top"
+      >
+        <Icon name="pencil" />
+      </ToolbarButton>
+      <ToolbarButton
+        disabled={cards.length <= 1 && !onEmpty}
+        label={m.editor_remove_card()}
+        onClick={() => setRemoving(id)}
+        tooltipSide="top"
+        variant="danger-light"
+      >
+        <Icon name="trash" />
+      </ToolbarButton>
+    </BlockToolbar>
+  );
+  const addTile = (
+    <li className="flex">
+      <Card
+        border="dashed"
+        className="min-h-24 flex-1 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-52"
+        interactive
+        onClick={add}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') add();
+        }}
+        radius="card-lg"
+        role="button"
+        tabIndex={0}
+      >
+        <span className="flex flex-col items-center gap-2 text-fg-muted">
+          <Icon name="plus" size={24} />
+          <span className="t-meta text-fg-muted">
+            {m.flashcards_add_card()}
+          </span>
+        </span>
+      </Card>
+    </li>
+  );
+
   return (
     <div className="flex flex-col gap-6">
       {showUndo &&
@@ -79,12 +134,7 @@ export function FlashcardsEditor({
         createPortal(<UndoButtons header manager={undo} />, headerActions)}
       {(showTitle || (showUndo && !headerActions)) && (
         // Lined up with the set's View grid, so Study holds still across modes.
-        <div
-          className={cn(
-            'flex',
-            action ? 'items-baseline gap-4' : 'items-center gap-2'
-          )}
-        >
+        <div className={cn('flex items-center', action ? 'gap-4' : 'gap-2')}>
           {showTitle && (
             <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
           )}
@@ -96,59 +146,33 @@ export function FlashcardsEditor({
           )}
         </div>
       )}
-      <CardGrid>
-        {cards.map((card, index) => (
-          <CardTile
-            aside={
-              <BlockToolbar className="rounded-md p-0.5 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/tile:opacity-100 has-focus-visible:opacity-100">
-                <ToolbarButton
-                  label={m.action_edit()}
-                  onClick={() => setEditing({ added: false, id: card.id })}
-                  tooltipSide="top"
-                >
-                  <Icon name="pencil" />
-                </ToolbarButton>
-                <ToolbarButton
-                  disabled={cards.length <= 1 && !onEmpty}
-                  label={m.editor_remove_card()}
-                  onClick={() => setRemoving(card.id)}
-                  tooltipSide="top"
-                  variant="danger-light"
-                >
-                  <Icon name="trash" />
-                </ToolbarButton>
-              </BlockToolbar>
-            }
-            card={card}
-            key={card.id}
-            label={m.flashcards_edit_card()}
-            n={index + 1}
-            onOpen={() => setEditing({ added: false, id: card.id })}
-          />
-        ))}
-        <li className="flex">
-          <Card
-            border="dashed"
-            className="min-h-24 flex-1 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-52"
-            interactive
-            onClick={() => setEditing({ added: true, id: addCard(doc) })}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ')
-                setEditing({ added: true, id: addCard(doc) });
-            }}
-            radius="card-lg"
-            role="button"
-            tabIndex={0}
-          >
-            <span className="flex flex-col items-center gap-2 text-fg-muted">
-              <Icon name="plus" size={24} />
-              <span className="t-meta text-fg-muted">
-                {m.flashcards_add_card()}
-              </span>
-            </span>
-          </Card>
-        </li>
-      </CardGrid>
+      {compact ? (
+        <CompactCardGrid>
+          {cards.map((card) => (
+            <CompactCardTile
+              card={card}
+              key={card.id}
+              label={m.flashcards_edit_card()}
+              onOpen={() => setEditing({ added: false, id: card.id })}
+            />
+          ))}
+          <CompactAddTile label={m.flashcards_add_card()} onAdd={add} />
+        </CompactCardGrid>
+      ) : (
+        <CardGrid>
+          {cards.map((card, index) => (
+            <CardTile
+              aside={toolbar(card.id)}
+              card={card}
+              key={card.id}
+              label={m.flashcards_edit_card()}
+              n={index + 1}
+              onOpen={() => setEditing({ added: false, id: card.id })}
+            />
+          ))}
+          {addTile}
+        </CardGrid>
+      )}
 
       {editing && (
         <CardDialog

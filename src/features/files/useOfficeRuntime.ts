@@ -11,7 +11,7 @@ import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
 import { officeMark } from '@/lib/officeMarks';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { useTheme } from '@/theme/theme';
+import { useFrosted, useTheme } from '@/theme/theme';
 import { useFileMode } from './FileModeControl';
 import { fileExt } from './fileUtils';
 import {
@@ -131,7 +131,8 @@ export function useOfficeRuntime({
   citationRef.current = citation;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const config = useRef(getOfficeRuntimeConfig()).current;
-  const { style, theme } = useTheme();
+  const { pageFrame, style, theme } = useTheme();
+  const centreFrosted = useFrosted('center');
   const reportInset = useContext(OfficeInsetContext);
   const narrow = !useMediaQuery('(min-width: 1024px)');
   const compact = !useMediaQuery('(min-width: 768px)');
@@ -265,12 +266,17 @@ export function useOfficeRuntime({
     return () => window.removeEventListener('focus', returned);
   }, [post]);
 
+  // Office views open in the centre panel: while it frosts over a shown page
+  // frame, the runtime's chrome lets the frost through. A show covers the
+  // page, so it stays opaque.
+  const frosted = centreFrosted && pageFrame.pattern !== 'none' && !presenting;
   // Before the load below, and again whenever the runtime document boots: the
   // runtime paints in Capy's theme from the start.
   useEffect(() => {
     if (frameLoaded)
       post({
         compact,
+        frosted,
         locale: getLocale() === 'zh' ? 'zh' : 'en',
         narrow,
         style,
@@ -278,7 +284,7 @@ export function useOfficeRuntime({
         type: 'set-appearance',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [compact, frameBoot, frameLoaded, narrow, post, style, theme]);
+  }, [compact, frameBoot, frameLoaded, frosted, narrow, post, style, theme]);
   useEffect(() => {
     if (frameLoaded)
       post({

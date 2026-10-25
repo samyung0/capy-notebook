@@ -31,7 +31,8 @@ const STATUS: Record<
 };
 
 /** The live status in an item dialog's footer: the note header's icons.
- * `compact` (after a page title, as on notes) shows the icon alone. */
+ * `compact` (the phone header, beside Undo and Redo) shows the icon alone,
+ * at their size and ink. */
 export function LiveStatus({
   status,
   compact,
@@ -45,15 +46,19 @@ export function LiveStatus({
     <span
       className={cn(
         'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[0.8125rem] text-fg-muted',
+        compact && 'text-fg',
         status === 'offline' && 'text-tint-warning-fg'
       )}
       data-save-state={status}
       role="status"
       title={compact ? shown.label() : undefined}
     >
-      {/* Lifted 1px to Fustat's cap band, level with the label. */}
+      {/* Unlifted: the cloud icons' ink already sits level with the label. */}
       <Icon
-        className={cn(compact ? 'size-4.5' : 'size-4 -translate-y-px')}
+        className={cn(
+          // Compact, lifted 1px to the phone title's cap band.
+          compact ? 'size-(--toolbar-icon) -translate-y-px' : 'size-4'
+        )}
         name={shown.icon}
       />
       <span className={cn(compact && 'sr-only')}>{shown.label()}</span>
@@ -63,7 +68,7 @@ export function LiveStatus({
 
 /** Undo and Redo of this user's own edits to one live item. `header` lifts
  * the icons 1px from lg, level with the View toggle's icon beside them;
- * `footer` lifts them 1px always, level with the live status text. */
+ * `footer` lifts them half a pixel always, level with the live status. */
 export function UndoButtons({
   manager,
   header,
@@ -96,7 +101,7 @@ export function UndoButtons({
         <Icon
           className={cn(
             header && 'lg:-translate-y-px',
-            footer && '-translate-y-px'
+            footer && '-translate-y-[0.5px]'
           )}
           name="undo"
         />
@@ -109,7 +114,7 @@ export function UndoButtons({
         <Icon
           className={cn(
             header && 'lg:-translate-y-px',
-            footer && '-translate-y-px'
+            footer && '-translate-y-[0.5px]'
           )}
           name="redo"
         />

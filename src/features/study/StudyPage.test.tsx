@@ -51,6 +51,8 @@ const attempt = (id: string, kind: 'quiz' | 'flashcards', takenAt: string) => ({
 });
 
 vi.mock('@/api/hooks', () => ({
+  stepKey: (st: { kind: string; targetId: string; workspaceId: string }) =>
+    `${st.kind}:${st.workspaceId}:${st.targetId}`,
   useChapters: () => ({ data: [] }),
   useCreateStudyPlan: () => ({ mutateAsync: vi.fn() }),
   useDeleteStudyPlan: () => ({ mutate: vi.fn() }),
@@ -86,11 +88,22 @@ vi.mock('@/api/hooks', () => ({
       },
     ],
   }),
+  usePlanStudy: (_ws: string, planId?: string) => ({
+    data: planId
+      ? {
+          enabled: true,
+          items: [],
+          quickReview: [],
+          recentAttempts: [],
+          reviewable: 2,
+        }
+      : undefined,
+  }),
   useRateReviewItem: () => ({ mutateAsync: vi.fn() }),
   useResetWorkspaceStudy: () => ({ mutate: vi.fn() }),
   useSetStudyItem: () => ({ mutate: vi.fn() }),
   useSetWorkspaceStudyEnabled: () => ({ mutate: vi.fn() }),
-  useUpdateStudyPlan: () => ({ mutateAsync: vi.fn() }),
+  useUpdateStudyPlan: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
   useWorkspace: () => ({ data: undefined }),
   useWorkspaceAttempts: () => ({
     data: {
@@ -184,10 +197,10 @@ vi.mock('@/api/hooks', () => ({
   }),
 }));
 
-const render = () =>
+const render = (planId?: string) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <StudyPage onOpenItem={() => {}} workspaceId="ws" />
+      <StudyPage onOpenItem={() => {}} planId={planId} workspaceId="ws" />
     </QueryClientProvider>
   );
 
@@ -207,8 +220,8 @@ it('lists every item with its read state, attempts and latest result', () => {
 it('leads with Continue and the whole workspace review, continuing an unfinished session', () => {
   let html = render();
   expect(html).toContain(m.study_continue());
-  expect(html).toContain(m.study_whole_workspace());
-  expect(html).toContain(m.study_review_button());
+  expect(html).toContain(m.study_start_workspace_review());
+  expect(html).toContain('href="/learning/review/ws"');
   study.unfinished = {
     answered: 1,
     id: 's1',
@@ -217,7 +230,7 @@ it('leads with Continue and the whole workspace review, continuing an unfinished
   };
   try {
     html = render();
-    expect(html).toContain(m.learning_continue_review());
+    expect(html).toContain(m.study_continue_workspace_review());
     expect(html).toContain('1 of 3');
   } finally {
     study.unfinished = undefined;
@@ -243,25 +256,22 @@ it('shows Quick review cards without credits', () => {
   }
 });
 
-it('lists the plans kept here with their steps done and next item', () => {
-  const html = render();
+it('shows the picked plan: its steps as the list and its own review', () => {
+  expect(render()).toContain(m.plan_default());
+  const html = render('p1');
   expect(html).toContain('Winter exams');
-  expect(html).toContain(m.plan_steps_done({ done: 1, total: 2 }));
-  expect(html).toContain(m.plan_next({ title: 'Quiz' }));
+  expect(html).toContain('Cells.pdf');
+  expect(html).toContain(m.study_start_plan_review());
+  expect(html).toContain(m.plan_add_steps());
+  expect(html).toContain(m.plan_rename());
 });
 
-it('keeps only plain rows while study progress is hidden', () => {
+it('keeps only the settings rows while study progress is hidden', () => {
   study.enabled = false;
   try {
     const html = render();
-    expect(html).toContain(m.study_hidden_title());
-    expect(html).toContain('Cells.pdf');
-    expect(html).toContain('Winter exams');
-    for (const gone of [
-      m.study_whole_workspace(),
-      m.progress_attempts({ count: 2 }),
-      m.plan_next({ title: 'Quiz' }),
-    ])
+    expect(html).toContain(m.study_hide_progress());
+    for (const gone of [m.study_start_workspace_review(), 'Cells.pdf'])
       expect(html).not.toContain(gone);
   } finally {
     study.enabled = true;

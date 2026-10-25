@@ -9,8 +9,13 @@ import type { GradeAnonymousQuizReqAnswers } from './gradeAnonymousQuizReqAnswer
 export interface GradeAnonymousQuizReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** The learner's answers by part id */
+  /** The learner's answers to the question's parts, by part id */
   answers: GradeAnonymousQuizReqAnswers;
   /** @maxLength 64 */
   localId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  questionId: string;
 }

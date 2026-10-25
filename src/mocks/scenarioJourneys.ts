@@ -943,11 +943,11 @@ export async function runJourney(
     case 'ai-context':
       // TODO: refine with agentic harness, then walk the AI generate tab again.
       return 'The AI generate tab is hidden, so nothing in the app sends this request.';
-    case 'quiz-submit':
-      // Submitting grades on the server, so one request covers grading too.
+    case 'quiz-check':
+      // Checking grades on the server, so one request covers grading too.
       await go(`/quizzes/${scenarioQuiz}/attempt`);
       fail();
-      await ui.click(m.quiz_submit());
+      await ui.click(m.question_ui_check());
       return;
     case 'flashcard-progress':
       await go(`/flashcards/${scenarioCards}`);

@@ -1,0 +1,175 @@
+<title>Capy vs Fisheye Radius</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@500;600;700;800&display=swap">
+<style>
+/* Layout: one reading column of token table, then full-width screenshot frames that flip between styles in place. */
+:root {
+  --bg: #f7f7f7;
+  --surface: #ffffff;
+  --fg: #222222;
+  --muted: #6b6b6b;
+  --line: #e3e3e6;
+  --accent: #7c5fd1;
+  --accent-soft: #ece6f6;
+  --font: "Fustat", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1219; --surface: #161d27; --fg: #e8eaee; --muted: #9aa3b0;
+    --line: #2a3340; --accent: #b29cf0; --accent-soft: #2b2540; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1219; --surface: #161d27; --fg: #e8eaee; --muted: #9aa3b0;
+  --line: #2a3340; --accent: #b29cf0; --accent-soft: #2b2540; color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font);
+  font-size: 15px; line-height: 1.5; font-weight: 500;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+main { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+.intro { max-width: 720px; display: flex; flex-direction: column; gap: 12px; }
+h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02rem; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.125rem; font-weight: 700; margin: 0; }
+p { margin: 0; color: var(--muted); }
+.tokens { overflow-x: auto; max-width: 720px; }
+table { border-collapse: collapse; width: 100%; min-width: 520px; }
+th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); }
+th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06rem; color: var(--muted); font-weight: 700; }
+td code { font-size: 0.85rem; }
+td.new { color: var(--accent); font-weight: 700; }
+.bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  padding-block: 10px; background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button {
+  font: inherit; font-weight: 700; padding: 6px 16px; border: 0; background: transparent; color: var(--fg); cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.hint { font-size: 0.85rem; color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 12px; }
+.grid { display: grid; gap: 20px; grid-template-columns: 1fr; }
+@media (min-width: 1100px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+.phones { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+figcaption { display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; color: var(--muted); }
+figcaption b { color: var(--fg); font-weight: 700; }
+.tag { font-weight: 700; color: var(--accent); }
+.shot {
+  display: block; width: 100%; padding: 0; border: 1px solid var(--line); background: var(--surface);
+  cursor: pointer; line-height: 0;
+}
+.shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shot img { width: 100%; height: auto; display: block; }
+</style>
+
+<main>
+  <div class="intro">
+    <h1>Capy and Fisheye styles</h1>
+    <p>Fisheye keeps today's classroom look. Capy is classroom renamed, with smaller radii on panels, dialogs, cards, buttons, inputs and selects, and controls 4px shorter. Flashcards keep their 24px corner in both. Screenshots come from the built styles in the app, Latte theme.</p>
+  </div>
+
+  <div class="tokens">
+    <table>
+      <thead><tr><th>Token</th><th>Used by</th><th>Fisheye</th><th>Capy</th></tr></thead>
+      <tbody>
+        <tr><td><code>radius-card-xl</code></td><td>Shell panels, sidebar, chat panel</td><td>28px</td><td class="new">14px</td></tr>
+        <tr><td><code>radius-card-lg</code></td><td>Dialogs, large cards</td><td>24px</td><td class="new">12px</td></tr>
+        <tr><td><code>radius-flashcard</code></td><td>Study and grid flashcards</td><td>24px</td><td>24px</td></tr>
+        <tr><td><code>radius-card</code></td><td>Cards, text areas, quick review</td><td>18px</td><td class="new">10px</td></tr>
+        <tr><td><code>radius-input</code></td><td>Inputs, selects</td><td>18px</td><td class="new">8px</td></tr>
+        <tr><td><code>radius-button</code></td><td>Buttons, menus, rows</td><td>12px</td><td class="new">8px</td></tr>
+        <tr><td><code>radius-button-lg</code></td><td>Large buttons (were pills)</td><td>18px / full</td><td class="new">10px</td></tr>
+        <tr><td><code>control-h</code></td><td>Button, input and select md, phone / desktop</td><td>40 / 44px</td><td class="new">36 / 40px</td></tr>
+        <tr><td><code>button-h-lg</code></td><td>Large buttons, phone / desktop</td><td>48 / 52px</td><td class="new">40 / 44px</td></tr>
+        <tr><td><code>button-h-sm</code></td><td>Small buttons</td><td>30px</td><td class="new">28px</td></tr>
+        <tr><td><code>radius-tile</code></td><td>Card thumbnails, quick review tiles</td><td>13–15px</td><td class="new">9–11px</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Style shown">
+      <button type="button" id="btn-fisheye" data-style="fisheye" aria-pressed="true">Fisheye</button>
+      <button type="button" id="btn-capy" data-style="capy" aria-pressed="false">Capy</button>
+    </div>
+    <span class="hint">Click a screenshot to flip it alone, or press F to flip all.</span>
+  </div>
+
+  <div id="sections"></div>
+</main>
+
+<script>
+const desktop = [
+  ['Pages', [
+    ['dashboard', 'Dashboard'], ['workspaces', 'Workspaces'],
+    ['workspace', 'Workspace with a file open'], ['study-pane', 'Workspace study pane'],
+    ['settings', 'Settings · Account'], ['settings-custom', 'Settings · Customizations'],
+    ['billing', 'Billing & usage'], ['summary', 'Question bank summary'],
+  ]],
+  ['Study', [['quiz', 'Quiz'], ['flashcards', 'Flashcards']]],
+  ['Dialogs and menus', [
+    ['dlg-new-workspace', 'Create workspace'], ['dlg-ws-settings', 'Workspace settings'],
+    ['select-open', 'Open select'], ['drawer', 'Theme drawer'],
+  ]],
+];
+const phone = [
+  ['dashboard', 'Dashboard'], ['settings', 'Settings'], ['dlg-new-workspace', 'Create workspace'],
+  ['study-pane', 'Study pane'], ['quiz', 'Quiz'], ['flashcards', 'Flashcards'], ['summary', 'Summary'],
+  ['drawer', 'Theme drawer'],
+];
+let style = 'fisheye';
+const root = document.getElementById('sections');
+const label = (s) => (s === 'capy' ? 'Capy' : 'Fisheye');
+
+function figure(name, title, tag) {
+  const fig = document.createElement('figure');
+  fig.dataset.name = name; fig.dataset.tag = tag; fig.dataset.style = style;
+  fig.innerHTML = `<figcaption><b>${title}</b><span class="tag"></span></figcaption>
+    <button class="shot" type="button" aria-label="Flip ${title}"><img alt="${title}" loading="lazy"></button>`;
+  paint(fig);
+  fig.querySelector('.shot').addEventListener('click', () => {
+    fig.dataset.style = fig.dataset.style === 'capy' ? 'fisheye' : 'capy'; paint(fig);
+  });
+  return fig;
+}
+function paint(fig) {
+  const s = fig.dataset.style;
+  fig.querySelector('img').src = `shots/${fig.dataset.name}-${fig.dataset.tag}-${s}.png`;
+  fig.querySelector('.tag').textContent = label(s);
+}
+for (const [heading, items] of desktop) {
+  const sec = document.createElement('section');
+  sec.innerHTML = `<h2>${heading}</h2>`;
+  const grid = document.createElement('div'); grid.className = 'grid two';
+  for (const [n, t] of items) grid.append(figure(n, t, 'd'));
+  sec.append(grid); root.append(sec);
+}
+const sec = document.createElement('section');
+sec.innerHTML = '<h2>Phone, 390px</h2>';
+const grid = document.createElement('div'); grid.className = 'phones';
+for (const [n, t] of phone) grid.append(figure(n, t, 'm'));
+sec.append(grid); root.append(sec);
+
+// Preload the other style so flipping is instant.
+for (const img of document.querySelectorAll('figure img')) {
+  const other = new Image(); other.src = img.src.replace(/fisheye\.png$/, 'capy.png');
+}
+function setAll(s) {
+  style = s;
+  for (const b of document.querySelectorAll('.seg button')) b.setAttribute('aria-pressed', String(b.dataset.style === s));
+  for (const fig of document.querySelectorAll('figure')) { fig.dataset.style = s; paint(fig); }
+}
+for (const b of document.querySelectorAll('.seg button')) b.addEventListener('click', () => setAll(b.dataset.style));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') setAll(style === 'capy' ? 'fisheye' : 'capy');
+});
+</script>

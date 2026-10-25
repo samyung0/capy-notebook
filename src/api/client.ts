@@ -390,6 +390,9 @@ export const qk = {
   ownedMaterialsRoot: ['materials', 'owned'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
+  /** A plan's review parts on its workspace's Study page. */
+  planStudy: (wsId: string, planId: string) =>
+    ['workspace', wsId, 'study', 'plan', planId] as const,
   quiz: (id: string) => ['quiz', id] as const,
   reviewOverview: ['review', 'overview'] as const,
   reviewResult: (id: string) => ['review', 'result', id] as const,

@@ -3,8 +3,6 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
-import type { AddSourceMode } from './AddSourceDialog';
-import { addSourceMenuItems } from './addSourceMenuItems';
 
 export interface TabAction {
   disabled?: boolean;
@@ -15,26 +13,19 @@ export interface TabAction {
 
 /**
  * The row above a workspace panel: its title (a PanelTitleMenu where the
- * panel switches views) and, on the right, the view's own actions, the plus
- * menu and the settings gear. Below sm the actions and the gear fold into a
+ * panel switches views) and, on the right, the view's own actions and the
+ * settings gear. Below sm the actions and the gear fold into a
  * dots menu so only two icons stay in view.
  */
 export function PanelTabRow({
   title,
   actions,
-  onAddSource,
-  onAddChapter,
   onOpenSettings,
 }: {
   title: ReactNode;
   actions: TabAction[];
-  onAddSource?: (mode: AddSourceMode) => void;
-  onAddChapter?: () => void;
   onOpenSettings?: () => void;
 }) {
-  const addItems: MenuItem[] = onAddSource
-    ? addSourceMenuItems(onAddSource, onAddChapter)
-    : [];
   const folded: MenuItem[] = [
     ...actions,
     ...(onOpenSettings
@@ -69,18 +60,6 @@ export function PanelTabRow({
             </ToolbarButton>
           ))}
         </div>
-        {addItems.length > 0 && (
-          <div className="flex" data-workspace-add-menu>
-            <Menu
-              items={addItems}
-              trigger={
-                <ToolbarButton label={m.action_add_file()}>
-                  <Icon name="plusCircle" />
-                </ToolbarButton>
-              }
-            />
-          </div>
-        )}
         {onOpenSettings && (
           <ToolbarButton
             className="hidden sm:inline-flex"

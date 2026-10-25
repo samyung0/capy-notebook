@@ -1,5 +1,5 @@
 <!doctype html>
-<html data-style="classroom" data-theme="latte" lang="en">
+<html data-style="capy" data-theme="latte" lang="en">
   <head>
     <meta charset="UTF-8">
     <meta content="%VITE_RELEASE_SHA%" name="capy-release">
@@ -16,7 +16,7 @@
     'use strict';
     (() => {
       try {
-        const STYLES = ['classroom', 'notion'];
+        const STYLES = ['capy', 'fisheye', 'notion'];
         const THEMES = ['latte', 'frappe', 'mocha'];
         const DARKTHEMES = ['frappe', 'mocha'];
         const root = document.documentElement;
@@ -27,7 +27,7 @@
           localStorage.setItem('capy.theme', theme);
         }
 
-        root.dataset.style = STYLES.includes(style) ? style : 'classroom';
+        root.dataset.style = STYLES.includes(style) ? style : 'capy';
         root.dataset.theme = THEMES.includes(theme)
           ? theme
           : matchMedia('(prefers-color-scheme: dark)').matches
@@ -271,7 +271,7 @@
       animation-delay: calc(2.5s / -3);
     }
     /* The reload message the script above writes over the spinner, in
-                               ErrorState's page variant (src/components/app/ErrorState.tsx). */
+                                                                               ErrorState's page variant (src/components/app/ErrorState.tsx). */
     .boot-loader > div {
       display: flex;
       flex-direction: column;

@@ -11,6 +11,11 @@ import { useState } from 'react';
  */
 export const PREF_KEYS = {
   filesView: 'capy.files.view',
+  /** The flashcard run this browser continues: its attempt and each card's
+   * ratings (flashcardRun.ts), per signed-in user on the app page (another
+   * account on the same browser starts its own) and apart on share pages. */
+  flashcardRun: (owner: string, setId: string) =>
+    `capy.flashcardRun.${owner}.${setId}`,
   /** The opened workspace's left panel (chats and files) is open. */
   leftPanel: 'capy.workspace.leftPanel',
   /** The view the left panel shows: Chats, Files or Study. */
@@ -19,6 +24,15 @@ export const PREF_KEYS = {
   mapFinishPlayed: 'capy.map.finishPlayed',
   openChapters: (workspaceId: string) =>
     `capy.workspace.openChapters.${workspaceId}`,
+  /** A Quick review batch: its items, when it began, which are done; per
+   * workspace, or `plan-<id>` per plan. */
+  quickReview: (scope: string) => `capy.quickReview.${scope}`,
+  /** The quiz attempt this browser continues, by its id: the account's
+   * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
+  quizAttempt: (owner: 'account' | 'local', quizId: string) =>
+    `capy.quizAttempt.${owner}.${quizId}`,
+  /** The files and materials this browser opened, newest first (recentOpens.ts). */
+  recentOpens: 'capy.recent.opens',
   recentsView: 'capy.recents.view',
   /** The opened workspace's right panel (Files, Chat, Study) is open. */
   rightPanel: 'capy.workspace.rightPanel',
@@ -82,3 +96,6 @@ export function writePref(key: string, value: unknown): void {
 
 export const isBoolean = (value: unknown): value is boolean =>
   typeof value === 'boolean';
+
+export const isString = (value: unknown): value is string =>
+  typeof value === 'string';

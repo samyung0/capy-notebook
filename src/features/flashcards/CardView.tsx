@@ -1,5 +1,6 @@
 import { type ReactNode, useContext } from 'react';
 import { Card } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import {
   AssetUrlContext,
@@ -17,13 +18,13 @@ export function CardFront({
 }: {
   card: Pick<FlashcardContent, 'front' | 'image'>;
   className?: string;
-  size?: 'tile' | 'panel' | 'compact' | 'large';
+  size?: 'tile' | 'compact' | 'large';
 }) {
   return (
     <div
       className={cn(
         'flex flex-col items-center justify-center text-center',
-        size === 'tile' || size === 'panel' ? 'gap-2' : 'gap-3',
+        size === 'tile' ? 'gap-2' : 'gap-3',
         className
       )}
     >
@@ -31,7 +32,6 @@ export function CardFront({
         className={cn(
           'whitespace-pre-line break-words',
           size === 'large' && 't-large-card-title',
-          size === 'panel' && 't-subtitle',
           (size === 'tile' || size === 'compact') && 't-card-title'
         )}
       >
@@ -42,7 +42,6 @@ export function CardFront({
           assetId={card.image.assetId}
           className={cn(
             size === 'tile' && 'max-h-[58%]',
-            size === 'panel' && 'h-14',
             size === 'compact' && 'h-20',
             size === 'large' && 'h-30'
           )}
@@ -125,7 +124,7 @@ export function CardBackFace({
   card: Pick<FlashcardContent, 'back' | 'front'>;
   className?: string;
   image?: FlashcardContent['image'];
-  size: 'large' | 'compact' | 'panel' | 'tile';
+  size: 'large' | 'compact' | 'tile';
 }) {
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
@@ -134,7 +133,6 @@ export function CardBackFace({
           'shrink-0 border-divider border-b text-center font-bold text-fg-secondary',
           size === 'large' && 'px-7 pt-5.5 pb-4 text-base',
           size === 'compact' && 'px-5 pt-3.5 pb-2.5 text-sm',
-          size === 'panel' && 'px-4 pt-2.5 pb-2 text-xs',
           size === 'tile' &&
             'scroll-fade-y overflow-y-auto px-4.5 pt-4 pb-3 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
           size === 'tile' && (image ? 'max-h-36' : 'max-h-22')
@@ -147,12 +145,12 @@ export function CardBackFace({
       </div>
       <div
         className={cn(
-          'flex min-h-0 flex-1 items-center justify-center overflow-auto',
+          // Safe centring: a long answer starts at its first line and scrolls.
+          'items-center-safe flex min-h-0 flex-1 justify-center overflow-auto',
           size === 'large' && 'p-7 text-lg',
           size === 'compact' && 'p-5',
-          size === 'panel' && 'px-4 py-2.5',
           size === 'tile' &&
-            'scroll-fade-y items-center-safe max-h-52 px-3 py-4 text-[15px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+            'scroll-fade-y max-h-52 px-3 py-4 text-[15px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
         )}
       >
         <CardBack card={card} />
@@ -206,13 +204,13 @@ export function CardTile({
       border="solid"
       className="group/tile relative gap-0 overflow-hidden p-0 sm:min-h-52"
       interactive={!!onOpen}
-      radius="card-lg"
+      radius="flashcard"
     >
       <li>
         {onOpen ? (
           <button
             aria-label={label}
-            className="flex flex-1 flex-col rounded-card-lg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+            className="flex flex-1 flex-col rounded-flashcard focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
             onClick={onOpen}
             type="button"
           >
@@ -242,7 +240,7 @@ export function CardSides({
   return (
     <div
       className={cn(
-        'grid min-h-115 grid-rows-2 overflow-hidden rounded-card-lg border border-line bg-surface',
+        'grid min-h-115 grid-rows-2 overflow-hidden rounded-flashcard border border-line bg-surface',
         className
       )}
     >
@@ -259,6 +257,73 @@ export function CardSides({
 export function CardGrid({ children }: { children: ReactNode }) {
   return (
     <ol className="grid grid-cols-1 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(350px,1fr))] sm:gap-3.5">
+      {children}
+    </ol>
+  );
+}
+
+/** A small card showing only its front, drawn as Quick review's cards are;
+ * a note's flashcards block lists its cards this way and a click opens the
+ * card's dialog (Epo 2026-10-25). A long front is cut at the padding; an
+ * image-only front shows an image mark. */
+export function CompactCardTile({
+  card,
+  label,
+  onOpen,
+}: {
+  card: Pick<FlashcardContent, 'front' | 'image'>;
+  label?: string;
+  onOpen: () => void;
+}) {
+  return (
+    <li>
+      <button
+        aria-label={label}
+        className="flex h-29.5 w-full flex-col rounded-tile border border-line bg-surface frosted:bg-(--frost-fill) p-3 text-left transition-[border-color] duration-(--motion-duration-quick) hover:border-line-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+        onClick={onOpen}
+        type="button"
+      >
+        {card.front.trim() ? (
+          <span className="min-h-0 flex-1 overflow-hidden whitespace-pre-line break-words font-semibold text-sm">
+            {card.front}
+          </span>
+        ) : (
+          card.image && <Icon className="text-fg-muted" name="image" />
+        )}
+      </button>
+    </li>
+  );
+}
+
+/** The compact grid's last tile: a dashed card of the same size and hover. */
+export function CompactAddTile({
+  label,
+  onAdd,
+}: {
+  label: string;
+  onAdd: () => void;
+}) {
+  return (
+    <li>
+      <button
+        className="flex h-29.5 w-full flex-col items-center justify-center gap-2 rounded-tile border border-line border-dashed text-fg-muted transition-[border-color] duration-(--motion-duration-quick) hover:border-line-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+        onClick={onAdd}
+        type="button"
+      >
+        <Icon name="plus" size={24} />
+        <span className="t-meta">{label}</span>
+      </button>
+    </li>
+  );
+}
+
+/** As many compact tiles of 144px (160px past phones) as fit, sharing the
+ * width. A note is at least two columns wide, so a tile stays under about
+ * one and a half times its minimum. A fixed maximum would set the column
+ * count instead: auto-fill counts columns by the larger size. */
+export function CompactCardGrid({ children }: { children: ReactNode }) {
+  return (
+    <ol className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] sm:gap-3">
       {children}
     </ol>
   );

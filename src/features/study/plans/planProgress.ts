@@ -6,12 +6,11 @@ import type {
   StudyPlan,
 } from '@/api/types';
 import { inReadingOrder } from '@/features/workspace/workspaceContent';
-import { m } from '@/i18n';
 
 /* A plan's progress, counted in the browser from its workspaces' tracked items
- * (human/study-progress.md 2026-10-22): a step is done when its tracked items
- * are, the current step is the first that is not, and its next item is the
- * first not done in reading order. Locked steps count for nothing. */
+ * (human/study-progress.md 2026-10-22, 2026-10-25): each step is one file or
+ * material, done when its item is; the current step is the first that is not.
+ * Locked steps count for nothing. */
 
 export type StepProgress = {
   step: PlanStep;
@@ -31,18 +30,8 @@ export type PlanProgress = {
   next?: { item: ProgressItem; workspaceId: string };
 };
 
-const matches = (step: PlanStep, item: ProgressItem) => {
-  switch (step.kind) {
-    case 'workspace':
-      return true;
-    case 'unfiled':
-      return !item.chapterId;
-    case 'chapter':
-      return item.chapterId === step.targetId;
-    default:
-      return item.type === step.kind && item.id === step.targetId;
-  }
-};
+const matches = (step: PlanStep, item: ProgressItem) =>
+  item.type === step.kind && item.id === step.targetId;
 
 export function planProgress(
   plan: StudyPlan,
@@ -86,17 +75,28 @@ export function planProgress(
   };
 }
 
+/** When a plan finished: its items' latest done time, once every tracked item
+ * is done; unset before then and for a plan with nothing tracked. */
+export function planFinishedAt(progress: PlanProgress) {
+  return progress.current < 0 ? planStudiedAt(progress) : undefined;
+}
+
+/** When a plan was last studied: its items' latest done time; unset while
+ * nothing in it is done. */
+export function planStudiedAt(progress: PlanProgress) {
+  const times = progress.steps.flatMap((s) =>
+    s.items.map((it) => it.doneAt ?? '')
+  );
+  return times.sort().at(-1) || undefined;
+}
+
 export const workspaceMap = (list: readonly PlanWorkspace[]) =>
   new Map(list.map((ws) => [ws.workspaceId, ws]));
-
-/** What a step is called: its chapter, file or workspace, or "Others". */
-export const stepTitle = (step: PlanStep) =>
-  step.kind === 'unfiled' ? m.study_others() : step.title;
 
 /** The steps as the update endpoint takes them. */
 export const stepInputs = (steps: readonly PlanStep[]): PlanStepInput[] =>
   steps.map(({ kind, targetId, workspaceId }) => ({
     kind,
+    targetId,
     workspaceId,
-    ...(targetId ? { targetId } : {}),
   }));

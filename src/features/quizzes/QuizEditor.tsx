@@ -69,7 +69,7 @@ export function QuizEditor({
           <UndoButtons header manager={rooms.undo} />,
           headerActions
         )}
-      <div className="flex items-baseline gap-4">
+      <div className="flex items-center gap-4">
         <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
         {action}
       </div>

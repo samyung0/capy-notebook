@@ -35,7 +35,8 @@ export type WorkspaceOpenSearch = {
   mode?: MaterialMode;
   /** The workspace's Study page, shown while nothing is open. */
   study?: true;
-  /** A study plan kept in this workspace, shown while nothing is open. */
+  /** The Study page's picked plan, kept in this workspace (the Study page
+   * shows while nothing is open). */
   plan?: string;
   /** Workspace settings open at this tab, over whatever the page shows. */
   settings?: SettingsTab;

@@ -493,7 +493,7 @@ Pageviews fire once per parameterized TanStack route pattern
 | `chat_turn_sent` and `chat_turn_completed` | `useChatStream.send`. `hasScope` is `false`. Completed fires once for ok, error, or abort. |
 | `material_generated` / `material_generate_failed` | `useGenerate` success or error. |
 | `editor_ai_used` | Plate AI menu submit. `continue` vs typed or other actions (`command`). Prompt is not sent. |
-| `quiz_attempt_finished` | Grade succeeds, even if persist 401s. |
+| `quiz_attempt_finished` | The check of a quiz's last unchecked question succeeds (not a page that opens an already finished try). |
 | `share_link_created` | Visibility becomes `link` or `public`. |
 | `collaborator_invited` | Invite create succeeds. |
 | `quota_blocked` | User-visible quota or credits block on mutation, clone, or upload. |
@@ -704,10 +704,10 @@ pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`), which Go calls directly:
 it is not an EliteLLM provider and has no registry row (migration `0050`
 dropped the `quiz` slot). `POST /api/quizzes/{id}/grade` (signed in) and
 `POST /api/public/quizzes/{token}/grade` (anonymous, through the site Worker)
-take part ids and answers only; the server loads the marking scheme from the
-stored quiz, so neither grades arbitrary text. One Jev request per open part,
-at most 20 per attempt, five at a time; any failure fails the attempt and the
-learner retries. Jev costs $0.042 per million input tokens and nothing for
+take one question's part ids and answers only; the server loads the marking
+scheme from the stored quiz, so neither grades arbitrary text. One Jev request
+per answered open part, five at a time; any failure fails that check and the
+learner checks again. Jev costs $0.042 per million input tokens and nothing for
 output, so grading is **recorded, never charged**: signed-in requests write one
 `usage_events` row (surface `quiz`, provider `typesafe`, `credit_micros` 0,
 `units` = graded parts, `metadata.costMicroUsd`), and the author's
@@ -1586,7 +1586,9 @@ worked with one.
 orders of magnitude. Listing workspaces touches one index. A chat turn is
 capped at 12 planning responses and 12 accepted tool calls. Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
-(`/chat/stream`, `/generate`, `/ai/command`, signed-in quiz `/grade` and
+(`/chat/stream`, `/generate`, `/ai/command`, question checks (`/check`: a
+quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
+keeps them here, since a learner does not check 15 questions a minute) and
 `/computation-check`) are 200/hour with burst 15, plus
 a 15/minute short-window guard so a scripted loop trips immediately. Cheap
 editor routes (`/ai/copilot`) have their own 120/minute
@@ -1600,6 +1602,9 @@ file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Chat voice
 input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
 with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
 person talking, apart from the chat allowance the turns they send then use.
+Starting a review session (`GET /api/workspaces/{id}/review`, which reads and
+scores every quiz and set in scope) has its own class, 60/hour with burst 10;
+continuing one is not counted.
 Credits remain the money bound; these limits only stop abuse patterns.
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and

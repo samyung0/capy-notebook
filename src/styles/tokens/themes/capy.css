@@ -1,12 +1,12 @@
 /* ============================================================
-   STYLE: classroom  (light + dark)
+   STYLES: capy + fisheye  (light + dark)
    Maps the semantic role tokens (TIER 2) onto primitives.
    Each container role ships as a contrast PAIR/bundle
    (bg + fg + fg-muted + border) so legibility survives the
    style/theme switch. Components read ONLY these role tokens.
    ============================================================ */
 
-[data-style="classroom"] {
+:is([data-style="capy"], [data-style="fisheye"]) {
   /* "Fustat" is the Office frame's own static faces (office-runtime.css);
      "Fustat Fallback" is Arial sized to Fustat (fontFallbacks.css);
      --font-cjk is cjkFont.css. */
@@ -68,17 +68,38 @@
   --label-font-weight: 700;
   --label-line-height: 1;
   --label-letter-spacing: 0.06rem;
-
-  --radius-input: 18px;
-  --radius-button: 12px;
-  --radius-button-lg: 18px;
-  --radius-card: 18px;
-  --radius-card-lg: 24px;
-  --radius-card-xl: 28px;
 }
 
-/* ---------------- classroom · LIGHT ---------------- */
-[data-style="classroom"][data-theme="latte"] {
+/* Capy's own shape: small radii and short controls. Fisheye (fisheye.css)
+   shares everything else in this file. */
+[data-style="capy"] {
+  --radius-input: 8px;
+  --radius-button: 8px;
+  --radius-button-lg: 10px;
+  --radius-button-xl: 10px;
+  --radius-tile: 10px;
+  /* Flashcards keep fisheye's rounder corner. */
+  --radius-flashcard: 24px;
+  --radius-card: 10px;
+  --radius-card-lg: 12px;
+  --radius-card-xl: 14px;
+
+  /* Control heights, phones first. --control-h is Button, Input and
+     Select md, so a button beside a field lines up. */
+  --button-h-sm: 28px;
+  --button-h-lg: 40px;
+  --control-h: 36px;
+}
+
+@media (min-width: 640px) {
+  [data-style="capy"] {
+    --button-h-lg: 44px;
+    --control-h: 40px;
+  }
+}
+
+/* ---------------- capy + fisheye · LIGHT ---------------- */
+:is([data-style="capy"], [data-style="fisheye"])[data-theme="latte"] {
   /* Chart series, fixed order: the accent, then the dark themes' Catppuccin
      hues darkened to 3:1 on white. Neighbours (and 6 -> 1, which pies wrap
      onto) stay apart under protan/deutan simulation. */
@@ -90,7 +111,9 @@
   --chart-6: #cb6186;
   --surface-page: #f7f7f7; /* outer "device" */
   --surface-page-hover: #e6e9ea;
-  --surface-canvas: #f4f6f5;
+  /* Grid card hover: lighter than page-hover, still a step under the canvas. */
+  --surface-item-hover: #eff1f1;
+  --surface-canvas: #f9fafa;
   --surface-card-bg: #ffffff;
   --surface-card-hover-bg: #f7f8f8;
   --surface-card-dark-bg: #e6e9ea; /* dark card */
@@ -196,8 +219,8 @@
   color-scheme: light;
 }
 
-/* ---------------- classroom · MOCHA (Catppuccin mocha) ---------------- */
-[data-style="classroom"][data-theme="mocha"] {
+/* ---------------- capy + fisheye · MOCHA (Catppuccin mocha) ---------------- */
+:is([data-style="capy"], [data-style="fisheye"])[data-theme="mocha"] {
   /* Chart series, fixed order: the accent, then the light theme's hues in
      Catppuccin's lighter register, 3:1 on cards and dialogs. Every pair stays
      apart under protan/deutan simulation. */
@@ -211,6 +234,7 @@
   /* Slate surfaces, one step darker than Frappe. */
   --surface-page: #0d1219; /* outer "device" */
   --surface-page-hover: #1a222d;
+  --surface-item-hover: #1a222d;
   --surface-canvas: #080b10;
   --surface-card-bg: #161d27;
   --surface-card-hover-bg: #232c3a;
@@ -333,8 +357,8 @@
   color-scheme: dark;
 }
 
-/* ---------------- classroom · FRAPPÉ (lighter Mocha) ---------------- */
-[data-style="classroom"][data-theme="frappe"] {
+/* ---------------- capy + fisheye · FRAPPÉ (lighter Mocha) ---------------- */
+:is([data-style="capy"], [data-style="fisheye"])[data-theme="frappe"] {
   /* Violet accent on neutral slate surfaces; other accents from Mocha. */
   /* Chart series: same as Mocha. */
   --chart-1: var(--action-accent-bg);
@@ -347,6 +371,7 @@
   /* Slate surfaces: dark page, gray-800 cards, lighter heavy cards. */
   --surface-page: #141a23; /* outer "device" */
   --surface-page-hover: #232d3b;
+  --surface-item-hover: #232d3b;
   --surface-canvas: #0e131a;
   --surface-card-bg: #1f2937;
   --surface-card-hover-bg: #2e3b4f;

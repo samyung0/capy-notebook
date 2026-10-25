@@ -12,7 +12,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/webhooks/stripe":                                  classExempt,
 		"/api/workspaces/ws_1/chat/stream":                  classAI,
 		"/api/workspaces/ws_1/generate":                     classAI,
-		"/api/quizzes/mat_1/attempts":                       classAI,
+		"/api/quizzes/mat_1/check":                          classAI,
 		"/api/attempts":                                     classDefault,
 		"/api/review/check":                                 classAI,
 		"/api/bank/questions/q_1/check":                     classAI,
@@ -31,6 +31,8 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/edit-incidents":                               classIncident,
 		"/api/files/f_1/thumbnail":                          classThumbnail,
 		"/api/workspaces/ws_1/voice-transcriptions":         classVoice,
+		"/api/workspaces/ws_1/review":                       classReview,
+		"/api/review/sessions/rs_1":                         classDefault,
 	}
 	for path, want := range cases {
 		if got := classify(path); got != want {
@@ -58,5 +60,8 @@ func TestDefaultConfigRaisesAIAndAddsBurst(t *testing.T) {
 	}
 	if cfg.Voice.Limit != 60 || cfg.Voice.Window != time.Hour || cfg.Voice.burst() != 6 {
 		t.Fatalf("voice = %+v", cfg.Voice)
+	}
+	if cfg.Review.Limit != 60 || cfg.Review.Window != time.Hour || cfg.Review.burst() != 10 {
+		t.Fatalf("review = %+v", cfg.Review)
 	}
 }

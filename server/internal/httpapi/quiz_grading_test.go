@@ -95,16 +95,16 @@ func gradedParts(t *testing.T, questions []map[string]any) map[string]map[string
 	return out
 }
 
-// Submitting grades every part on the server, stores what it graded and
-// returns the keys: Jev's per-item marks on the open part, the boolean key
+// Checking a question grades every part on the server, stores what it graded
+// and returns the keys: Jev's per-item marks on the open part, the boolean key
 // and a matching share rounded down to a half mark.
-func TestCreateAttemptGradesOnTheServer(t *testing.T) {
+func TestQuizCheckGradesOnTheServer(t *testing.T) {
 	h, st, calls := openGradingAPI(t, "full")
 	id := gradingQuiz(t, h, "private")
 	answers := map[string]any{"open-a": "Because of reasons.", "closed-b": true, "match-c": map[string]any{"0": "Paris", "1": "Berlin"}}
-	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner", map[string]any{"answers": answers})
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("attempt → %d %s", rec.Code, rec.Body.String())
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{"questionId": "q1", "answers": answers})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("check → %d %s", rec.Code, rec.Body.String())
 	}
 	var detail struct {
 		ID, MaterialID string
@@ -125,6 +125,13 @@ func TestCreateAttemptGradesOnTheServer(t *testing.T) {
 	if stored.Code != http.StatusOK || !strings.Contains(stored.Body.String(), `"itemResults":[true,false,false]`) || !strings.Contains(stored.Body.String(), `"correct":4.5`) {
 		t.Fatalf("stored attempt → %d %s", stored.Code, stored.Body.String())
 	}
+	// Checking it again in the same attempt is refused before grading: no
+	// second Jev call (counted at the end).
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{
+		"questionId": "q1", "answers": answers, "attemptId": detail.ID,
+	}); rec.Code != http.StatusConflict {
+		t.Fatalf("repeated check → %d %s", rec.Code, rec.Body.String())
+	}
 	var credits, tokens int64
 	if err := st.Pool().QueryRow(context.Background(), `SELECT credit_micros, input_tokens FROM usage_events
 		WHERE actor_user_id='u_owner' AND surface='quiz' AND provider='typesafe'`).Scan(&credits, &tokens); err != nil {
@@ -134,8 +141,8 @@ func TestCreateAttemptGradesOnTheServer(t *testing.T) {
 		t.Fatalf("usage credits=%d tokens=%d, want recorded and uncharged", credits, tokens)
 	}
 	// A blank open answer earns 0 on every item without a Jev call.
-	rec = doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner", map[string]any{"answers": map[string]any{"open-a": "  "}})
-	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"awarded":0,"blocks":[{"text":"Explain."`) || !strings.Contains(rec.Body.String(), `"itemAwards":[0,0]`) {
+	rec = doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{"questionId": "q1", "answers": map[string]any{"open-a": "  "}})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"awarded":0,"blocks":[{"text":"Explain."`) || !strings.Contains(rec.Body.String(), `"itemAwards":[0,0]`) {
 		t.Fatalf("blank attempt → %d %s", rec.Code, rec.Body.String())
 	}
 	// An answer to a part the projection lacks comes back unmarked rather
@@ -144,18 +151,18 @@ func TestCreateAttemptGradesOnTheServer(t *testing.T) {
 		{"open-a": strings.Repeat("a", 5001)},
 		{"open-a": 5},
 	} {
-		if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner", map[string]any{"answers": body}); rec.Code != http.StatusUnprocessableEntity {
+		if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{"questionId": "q1", "answers": body}); rec.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("attempt %v → %d, want 422", body, rec.Code)
 		}
 	}
-	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_other", map[string]any{"answers": answers}); rec.Code != http.StatusNotFound {
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_other", map[string]any{"questionId": "q1", "answers": answers}); rec.Code != http.StatusNotFound {
 		t.Fatalf("private quiz attempted by a stranger → %d", rec.Code)
 	}
 	// The browser no longer grades or sends scores; the old routes are gone.
 	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/grade", "u_owner", map[string]any{"answers": map[string]string{"open-a": "x"}}); rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("removed grade route → %d", rec.Code)
 	}
-	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner", map[string]any{"answers": map[string]any{}, "correct": 6, "total": 6}); rec.Code != http.StatusUnprocessableEntity {
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{"questionId": "q1", "answers": map[string]any{}, "correct": 6, "total": 6}); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("client score → %d", rec.Code)
 	}
 	if calls.Load() != 1 {
@@ -197,29 +204,29 @@ func TestAttemptNeedsAnOrder(t *testing.T) {
 	}
 	var quiz struct{ ID string }
 	_ = json.Unmarshal(rec.Body.Bytes(), &quiz)
-	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/attempts", "u_owner", map[string]any{"answers": map[string]any{}}); rec.Code != http.StatusUnprocessableEntity {
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/check", "u_owner", map[string]any{"questionId": "q1", "answers": map[string]any{}}); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("attempt without an order → %d, want 422", rec.Code)
 	}
-	rec = doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/attempts", "u_owner", map[string]any{"answers": map[string]any{"order-a": []any{"One", "Two", "Three"}}})
-	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"correct":1`) {
+	rec = doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/check", "u_owner", map[string]any{"questionId": "q1", "answers": map[string]any{"order-a": []any{"One", "Two", "Three"}}})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
 		t.Fatalf("attempt with the shown order → %d %s", rec.Code, rec.Body.String())
 	}
 }
 
 // Jev's partial credit is half of each item's own marks.
-func TestCreateAttemptScalesPartialCreditByItemMarks(t *testing.T) {
+func TestQuizCheckScalesPartialCreditByItemMarks(t *testing.T) {
 	h, _, _ := openGradingAPI(t, "partial")
 	id := gradingQuiz(t, h, "private")
-	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner", map[string]any{
-		"answers": map[string]any{"open-a": "Because of reasons."},
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", map[string]any{
+		"questionId": "q1", "answers": map[string]any{"open-a": "Because of reasons."},
 	})
-	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"awarded":1.5`) || !strings.Contains(rec.Body.String(), `"itemAwards":[1,0.5]`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"awarded":1.5`) || !strings.Contains(rec.Body.String(), `"itemAwards":[1,0.5]`) {
 		t.Fatalf("attempt → %d %s", rec.Code, rec.Body.String())
 	}
 }
 
-// Signed-out grading grades every part and returns the keys; the daily caps
-// count only the open parts Jev grades.
+// Signed-out grading grades one question's parts and returns the keys; the
+// daily caps count only the open parts Jev grades.
 func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 	h, st, _ := openGradingAPI(t, "full")
 	id := gradingQuiz(t, h, "link")
@@ -232,15 +239,15 @@ func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		return rec
 	}
-	const open = `{"answers":{"open-a":"Because.","closed-b":false},"localId":"device-1"}`
+	const open = `{"questionId":"q1","answers":{"open-a":"Because.","closed-b":false},"localId":"device-1"}`
 	rec := grade("203.0.113.7", open)
 	var graded struct {
 		Correct, Total float64
-		Questions      []map[string]any
+		Question       map[string]any
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &graded)
-	if rec.Code != http.StatusOK || graded.Correct != 3 || graded.Total != 6 || len(graded.Questions) != 1 ||
-		gradedParts(t, graded.Questions)["closed-b"]["answer"].(map[string]any)["correct"] != true {
+	if rec.Code != http.StatusOK || graded.Correct != 3 || graded.Total != 6 ||
+		gradedParts(t, []map[string]any{graded.Question})["closed-b"]["answer"].(map[string]any)["correct"] != true {
 		t.Fatalf("anonymous grade → %d %s", rec.Code, rec.Body.String())
 	}
 	var parts int
@@ -259,13 +266,13 @@ func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 	if rec := grade("203.0.113.7", open); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "anonymous_grading_limit") {
 		t.Fatalf("capped IP → %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := grade("203.0.113.7", `{"answers":{"closed-b":true}}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
+	if rec := grade("203.0.113.7", `{"questionId":"q1","answers":{"closed-b":true}}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":1`) {
 		t.Fatalf("capped IP, closed parts only → %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := grade("198.51.100.4", open); rec.Code != http.StatusOK {
 		t.Fatalf("another IP → %d", rec.Code)
 	}
-	if rec := grade("198.51.100.4", `{"answers":{"nope":1}}`); rec.Code != http.StatusUnprocessableEntity {
+	if rec := grade("198.51.100.4", `{"questionId":"q1","answers":{"nope":1}}`); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown part → %d", rec.Code)
 	}
 	// Swap the signature's last character; a token already ending in "x" gets "y" instead.
@@ -273,7 +280,7 @@ func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 	if forged == token {
 		forged = token[:len(token)-1] + "y"
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+forged+"/grade", strings.NewReader(`{"answers":{}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+forged+"/grade", strings.NewReader(`{"questionId":"q1","answers":{}}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -313,7 +320,7 @@ func TestAnonymousNoteEmbedsAndGrading(t *testing.T) {
 	token := store.ShareToken(nil, note.ID)
 	grade := func(quizID string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/public/notes/"+token+"/quizzes/"+quizID+"/grade",
-			strings.NewReader(`{"answers":{"q1-a":true}}`))
+			strings.NewReader(`{"questionId":"q1","answers":{"q1-a":true}}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)

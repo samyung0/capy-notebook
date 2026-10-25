@@ -215,9 +215,12 @@ type UpdateQuizMetadataReq struct {
 // each answer type's shape. The server grades them against the stored key.
 type Answers = map[string]any
 
-type CreateAttemptReq struct {
-	Answers   Answers    `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
-	StartedAt *time.Time `json:"startedAt,omitempty" doc:"When the learner opened the quiz, for the minutes taken"`
+// CheckQuizQuestionReq checks one question of a quiz attempt.
+type CheckQuizQuestionReq struct {
+	QuestionID string     `json:"questionId" minLength:"1" maxLength:"128"`
+	Answers    Answers    `json:"answers" nullable:"false" doc:"The learner's answers to the question's parts, by part id"`
+	AttemptID  string     `json:"attemptId,omitempty" maxLength:"64" doc:"The attempt the browser continues; empty or unknown starts a new one, whose id the response carries"`
+	StartedAt  *time.Time `json:"startedAt,omitempty" doc:"When the learner began the attempt, for the minutes taken"`
 }
 
 // FlashcardAttemptRef is the flashcard attempt a card's rating belongs to.
@@ -226,9 +229,11 @@ type FlashcardAttemptRef struct {
 	StartedAt time.Time `json:"startedAt"`
 }
 
-// GradeAnonymousQuizReq is a signed-out attempt at a shared quiz.
+// GradeAnonymousQuizReq checks one question of a signed-out attempt at a
+// shared quiz.
 type GradeAnonymousQuizReq struct {
-	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+	QuestionID string  `json:"questionId" minLength:"1" maxLength:"128"`
+	Answers    Answers `json:"answers" nullable:"false" doc:"The learner's answers to the question's parts, by part id"`
 	// LocalID is the anonymous browser's reporting id for the grading caps.
 	LocalID string `json:"localId,omitempty" maxLength:"64"`
 }
@@ -535,7 +540,7 @@ type CreateStudyPlanReq struct {
 // UpdateStudyPlanReq renames the plan and/or replaces its steps in order.
 type UpdateStudyPlanReq struct {
 	Name  *StudyPlanName         `json:"name,omitempty" minLength:"1"`
-	Steps *[]store.PlanStepInput `json:"steps,omitempty" maxItems:"50"`
+	Steps *[]store.PlanStepInput `json:"steps,omitempty" maxItems:"200"`
 }
 
 // SetStudyItemReq marks one file or material; an omitted state marks it unread.

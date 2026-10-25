@@ -6,7 +6,7 @@ import {
   type OfficeMenu,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 12 as const;
+export const OFFICE_PROTOCOL_VERSION = 13 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
@@ -201,6 +201,9 @@ export type OfficeHostMessage =
       narrow: boolean;
       /** The viewport is below md: a DOCX opens fitted to its pane and a pinch zooms it. */
       compact: boolean;
+      /** The frame sits on a panel frosted over the page frame: its chrome
+       * and the area around the document let the frost show through. */
+      frosted: boolean;
       locale: OfficeLocale;
     }
   /** A click on a runtime menu item or header action (not a host command). */
@@ -471,6 +474,7 @@ export function isOfficeHostMessage(
       THEMES.some((theme) => theme.value === candidate.theme) &&
       typeof candidate.narrow === 'boolean' &&
       typeof candidate.compact === 'boolean' &&
+      typeof candidate.frosted === 'boolean' &&
       (candidate.locale === 'en' || candidate.locale === 'zh')
     );
   if (candidate.type === 'menu-command')

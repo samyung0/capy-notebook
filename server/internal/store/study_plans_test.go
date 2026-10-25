@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -26,20 +27,30 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Two notes in the other workspace's chapter, one outside it.
+	var inChapter []Material
+	for _, title := range []string{"Methane", "Ethane"} {
+		mt, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: other.ID, WorkspaceName: other.Name, Kind: "note", Title: title, ChapterID: &ch.ID, Content: materialTestContent(t, "# "+title)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inChapter = append(inChapter, mt)
+	}
+
 	plan, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Winter exams")
 	if err != nil {
 		t.Fatal(err)
 	}
 	steps := []PlanStepInput{
-		{Kind: "material", WorkspaceID: f.ws.ID, TargetID: &note.ID},
-		{Kind: "chapter", WorkspaceID: other.ID, TargetID: &ch.ID},
-		{Kind: "workspace", WorkspaceID: other.ID},
+		{Kind: "material", WorkspaceID: f.ws.ID, TargetID: note.ID},
+		{Kind: "material", WorkspaceID: other.ID, TargetID: inChapter[0].ID},
+		{Kind: "material", WorkspaceID: other.ID, TargetID: inChapter[1].ID},
 	}
 	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &steps); err != nil {
 		t.Fatal(err)
 	}
 
-	// Parented here, and listed as "also in" from the step's workspace.
+	// Parented here, and listed as "also in" from the steps' workspace.
 	for _, ws := range []string{f.ws.ID, other.ID} {
 		got, err := f.s.WorkspacePlans(ctx, f.user, ws)
 		if err != nil {
@@ -49,7 +60,7 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 			t.Fatalf("plans in %s = %+v", ws, got)
 		}
 		st := got.Plans[0].Steps
-		if st[0].Title != "Cells" || st[1].Title != "Alkanes" || st[2].Title != "Chemistry" {
+		if st[0].Title != "Cells" || st[1].Title != "Methane" || st[2].Title != "Ethane" {
 			t.Fatalf("step titles = %+v", st)
 		}
 	}
@@ -57,7 +68,7 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if items := got.Workspaces[0].Items; len(items) != 1 || items[0].State != "done" {
+	if items := got.Workspaces[0].Items; len(items) != 1 || items[0].State != "done" || items[0].Kind != "note" {
 		t.Fatalf("parent's tracked items = %+v", items)
 	}
 
@@ -67,17 +78,52 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range [][]PlanStepInput{
-		{steps[0], steps[0]},
-		{{Kind: "workspace", WorkspaceID: theirs.ID}},
-	} {
+	theirNote, err := f.s.CreateMaterial(ctx, Material{CreatedBy: stranger, WorkspaceID: theirs.ID, WorkspaceName: theirs.Name, Kind: "note", Title: "Secret", Content: materialTestContent(t, "# Secret")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirStep := PlanStepInput{Kind: "material", WorkspaceID: theirs.ID, TargetID: theirNote.ID}
+	for _, bad := range [][]PlanStepInput{{steps[0], steps[0]}, {theirStep}} {
 		if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &bad); !errors.Is(err, ErrStudyPlanStep) {
 			t.Fatalf("bad steps %+v: %v", bad, err)
 		}
 	}
 
+	// Notes alternating between a chapter and Others make one group each:
+	// 21 groups is refused.
+	cells, err := f.s.AddChapter(ctx, f.ws.ID, f.user, "Cells")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var alternating []PlanStepInput
+	for i := 0; i < studyPlanGroupCap+1; i++ {
+		mt := Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: fmt.Sprintf("Part %d", i), Content: materialTestContent(t, "# Part")}
+		if i%2 == 0 {
+			mt.ChapterID = &cells.ID
+		}
+		created, err := f.s.CreateMaterial(ctx, mt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		alternating = append(alternating, PlanStepInput{Kind: "material", WorkspaceID: f.ws.ID, TargetID: created.ID})
+	}
+	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &alternating); !errors.Is(err, ErrStudyPlanSize) {
+		t.Fatalf("21 groups: %v", err)
+	}
+	// An untracked note shows nowhere, so the notes around it make one group.
+	removed := "removed"
+	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &alternating[1].TargetID, &removed); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &alternating); err != nil {
+		t.Fatalf("19 groups shown: %v", err)
+	}
+	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &steps); err != nil {
+		t.Fatal(err)
+	}
+
 	// A step whose workspace became unreadable shows locked and survives a reorder.
-	if _, err := f.s.pool.Exec(ctx, `INSERT INTO study_plan_steps (plan_id, position, kind, workspace_id) VALUES ($1, 9, 'workspace', $2)`, plan.ID, theirs.ID); err != nil {
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO study_plan_steps (plan_id, position, kind, workspace_id, material_id) VALUES ($1, 9, 'material', $2, $3)`, plan.ID, theirs.ID, theirNote.ID); err != nil {
 		t.Fatal(err)
 	}
 	got, err = f.s.WorkspacePlans(ctx, f.user, f.ws.ID)
@@ -88,7 +134,7 @@ func TestStudyPlansAcrossWorkspaces(t *testing.T) {
 	if !locked.Locked || locked.Title != "" {
 		t.Fatalf("locked step = %+v", locked)
 	}
-	reordered := []PlanStepInput{{Kind: "workspace", WorkspaceID: theirs.ID}, steps[0]}
+	reordered := []PlanStepInput{theirStep, steps[0]}
 	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &reordered); err != nil {
 		t.Fatal(err)
 	}

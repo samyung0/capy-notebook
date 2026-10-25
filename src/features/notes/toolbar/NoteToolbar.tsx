@@ -8,7 +8,6 @@ import {
 import { KEYS } from 'platejs';
 import { useEditorRef, useEditorSelector } from 'platejs/react';
 import { useId, useMemo, useRef, useState } from 'react';
-import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
@@ -19,9 +18,7 @@ import {
   useIsPhone,
 } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
-import { ToolbarPopoverContent as PopoverContent } from '@/components/ui/ToolbarPopover';
 import { openAiMenu } from '@/features/notes/ai/aiMenuState';
 import { useCollaborationActions } from '@/features/notes/Collaboration';
 import {
@@ -31,10 +28,7 @@ import {
 } from '@/features/notes/documentAdapters';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { useEditorRuntime } from '@/features/notes/EditorRuntime';
-import {
-  EDITOR_COMMANDS,
-  insertMathTemplate,
-} from '@/features/notes/editorCommands';
+import { EDITOR_COMMANDS } from '@/features/notes/editorCommands';
 import { isEditorCommandAllowed } from '@/features/notes/editorMode';
 import { toggleEditorBlock } from '@/features/notes/editorTransforms';
 import { holdInsertPlace } from '@/features/notes/insertEditorNode';
@@ -65,6 +59,7 @@ import {
   type ImportKind,
   ImportMenu,
 } from '@/features/notes/toolbar/ToolbarImportMenu';
+import { ToolbarMathMenu } from '@/features/notes/toolbar/ToolbarMathMenu';
 import { MediaUploadMenu } from '@/features/notes/toolbar/ToolbarMediaUploadMenu';
 import { TableMenu } from '@/features/notes/toolbar/ToolbarTableMenu';
 import { m } from '@/i18n';
@@ -303,44 +298,10 @@ export function NoteToolbar({ className }: { className?: string }) {
           {enabled.inlineElements && (
             <ToolbarGroup>
               {inlineEquationCommand && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <ToolbarButton label={inlineEquationCommand.label}>
-                      <EditorIcon name="sigma" />
-                    </ToolbarButton>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="ignore-click-outside/toolbar w-auto p-0"
-                    onCloseAutoFocus={(event) => event.preventDefault()}
-                    onOpenAutoFocus={(event) => event.preventDefault()}
-                  >
-                    <BlockToolbar className="border-0 shadow-none">
-                      <ToolbarButton
-                        label={inlineEquationCommand.label}
-                        onClick={() => inlineEquationCommand.run(editor)}
-                      >
-                        <EditorIcon name="sigma" />
-                      </ToolbarButton>
-                      {[
-                        ['∑', '\\sum_{n=1}^{\\infty}', m.editor_math_sum()],
-                        ['∫', '\\int_0^1', m.editor_math_integral()],
-                        ['lim', '\\lim_{x\\to 0}', m.editor_math_limit()],
-                        ['ⁿ√', '\\sqrt[n]{}', m.editor_math_root()],
-                        ['logₐ', '\\log_a', m.editor_math_log()],
-                        ['→', '\\vec{}', m.editor_math_vector()],
-                      ].map(([label, tex, title]) => (
-                        <ToolbarButton
-                          className="w-auto min-w-8 px-1"
-                          key={title}
-                          label={title}
-                          onClick={() => insertMathTemplate(editor, tex)}
-                        >
-                          {label}
-                        </ToolbarButton>
-                      ))}
-                    </BlockToolbar>
-                  </PopoverContent>
-                </Popover>
+                <ToolbarMathMenu
+                  editor={editor}
+                  label={inlineEquationCommand.label}
+                />
               )}
               <MarkToolbarButton
                 label={m.editor_inline_code()}

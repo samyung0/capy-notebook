@@ -6,12 +6,15 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
+import { useFrosted } from '@/theme/theme';
 import { BASE_BUTTON_STYLE } from '../ui/Button';
+import { ButtonGroup } from '../ui/ButtonGroup';
 import { Card } from '../ui/Card';
 import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
 import { IconButton } from '../ui/IconButton';
 import { LogoMark } from '../ui/Logo';
 import { ProfileMenu, ProfileRow } from './ProfileMenu';
+import { RecentQuickOpen } from './RecentQuickOpen';
 import { SearchDialog } from './SearchDialog';
 
 interface NavItem {
@@ -29,7 +32,6 @@ function items(): {
     bottom: [
       { icon: 'settings', label: m.profile_menu_settings(), to: '/settings' },
       { icon: 'chart', label: m.profile_menu_billing(), to: '/billing' },
-      { icon: 'book', label: m.nav_help_legal(), to: '/help-and-legal' },
     ],
     sections: [
       { items: general(), label: m.nav_section_general() },
@@ -200,6 +202,7 @@ export function Sidebar({
   });
   const nav = items();
   const withAccount = rail || account;
+  const frosted = useFrosted('left');
 
   const body = (
     <nav aria-label={m.a11y_main_navigation()}>
@@ -313,14 +316,21 @@ export function Sidebar({
       // The hover area is the whole strip from the window edge to the page
       // panel; it reaches over the shell's 10px padding without taking layout
       // width (-mr). The 70px card sits 4px in from both, its rows centred in
-      // the strip, and widens over the page.
+      // the strip, and widens over the page. Frosted, it blurs the page it
+      // covers.
       <div className="group/rail relative z-40 -mr-2.5 w-19.5 shrink-0">
+        {/* Once the widening starts, the hover area is the full width at
+            once, so moving right while the card still grows keeps it open.
+            A pass across the rail under the 100ms delay never catches it. */}
+        <div className="invisible absolute inset-y-2.5 left-1 w-56 transition-[visibility] duration-0 group-hover/rail:visible group-hover/rail:delay-100" />
         <Card
           asChild
           className={cn(
             RAIL_LABELS,
-            'absolute inset-y-2.5 left-1 z-40 flex rail-open:w-56 w-[70px] items-stretch gap-0 overflow-y-auto overflow-x-hidden px-3.5 pt-4 pb-2.5 transition-[width,box-shadow] duration-(--motion-duration-fast) ease-(--motion-ease-smooth-out) group-hover/rail:shadow-pop group-hover/rail:delay-100'
+            'absolute inset-y-2.5 left-1 z-40 flex rail-open:w-56 w-[70px] items-stretch gap-0 overflow-y-auto overflow-x-hidden px-3.5 pt-4 pb-2.5 transition-[width,box-shadow] duration-(--motion-duration-fast) ease-(--motion-ease-smooth-out) group-hover/rail:shadow-pop group-hover/rail:delay-100',
+            frosted && 'backdrop-blur-[16px]'
           )}
+          data-frosted={frosted || undefined}
           radius="card-xl"
           theme="page"
         >
@@ -329,8 +339,9 @@ export function Sidebar({
       </div>
     );
 
-  // Frosted over the page frame's paint in the shell (`.page-frame`); the
-  // phone drawer's copy is portalled outside it and stays opaque.
+  // Frosted over the page frame's paint in the shell (`.page-frame`) when the
+  // Theme drawer picks the left panel; the phone drawer's copy is portalled
+  // outside it and stays opaque.
   return (
     <Card
       asChild
@@ -338,7 +349,7 @@ export function Sidebar({
         'm-2.5 mr-0 ml-1 flex w-56 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 pt-4 pb-2.5',
         className
       )}
-      data-frosted
+      data-frosted={frosted || undefined}
       radius="card-xl"
       theme="page"
     >
@@ -419,7 +430,7 @@ export function MobileNavDrawer({
             className={className}
             icon="menu"
             size="md"
-            variant="dark"
+            variant="outline"
           />
         }
       />
@@ -435,7 +446,8 @@ export function MobileNavDrawer({
 }
 
 /** The phone (below sm) top of a page, scrolling with it: the nav drawer's
- * menu button, and the profile menu behind an avatar a little larger than it
+ * menu button joined with the arrow that opens the recent files, and the
+ * profile menu behind an avatar a little larger than it
  * that carries the unread notifications dot; its Notifications item opens
  * the notifications page. */
 export function PhoneTopRow({ className }: { className?: string }) {
@@ -443,11 +455,28 @@ export function PhoneTopRow({ className }: { className?: string }) {
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
+  const [recentOpen, setRecentOpen] = useState(false);
   return (
     <div
       className={cn('flex items-center justify-between sm:hidden', className)}
     >
-      <MobileNavDrawer account />
+      {/* Neither half shrinks on press: one scaling alone opens a seam. On a
+          frosted panel both show the frost instead of painting over it. */}
+      <ButtonGroup aria-label={m.a11y_main_navigation()}>
+        <MobileNavDrawer
+          account
+          className="frosted:bg-(--frost-fill) px-3.5 frosted:hover:bg-surface-hover-bg active:scale-100"
+        />
+        <IconButton
+          className="frosted:bg-(--frost-fill) px-3 frosted:hover:bg-surface-hover-bg active:scale-100"
+          icon="navigationForward"
+          label={m.quick_open_title()}
+          onClick={() => setRecentOpen(true)}
+          size="md"
+          variant="outline"
+        />
+      </ButtonGroup>
+      {recentOpen && <RecentQuickOpen onClose={() => setRecentOpen(false)} />}
       <ProfileMenu
         dot={(unread?.count ?? 0) > 0}
         notifications

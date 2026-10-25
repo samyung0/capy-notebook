@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // Files, embeds, trash and review history, added the way the browser adds
@@ -249,8 +250,7 @@ func (u *user) seedHistory(ctx context.Context, f fixtures) error {
 			return err
 		}
 		for range 150 - attempts {
-			if err := u.call(ctx, http.MethodPost, "/api/quizzes/"+quizID+"/attempts", "/api/quizzes/{id}/attempts",
-				map[string]any{"answers": quiz.answers(u)}, nil, http.StatusCreated); err != nil {
+			if err := quiz.check(ctx, u, quizID, time.Now().UTC(), nil); err != nil {
 				return err
 			}
 		}

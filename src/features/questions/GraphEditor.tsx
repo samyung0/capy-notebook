@@ -1,6 +1,7 @@
 import type { MathfieldElement } from 'mathlive';
 import { Collapsible } from 'radix-ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as limits from '@/api/limits.generated';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
@@ -60,9 +61,12 @@ export function GraphEditor({
   value,
   onChange,
   onInvalidChange,
+  toolbarTarget,
 }: {
   /** The description's bound: the bank's longer one or everyone else's. */
   descriptionMax: number;
+  /** Where the zoom tools go instead of floating over the board. */
+  toolbarTarget?: HTMLElement | null;
   value: GraphBlock;
   onChange: (value: GraphBlock) => void;
   /** Rows that cannot be drawn keep the dialog from saving. */
@@ -221,7 +225,7 @@ export function GraphEditor({
     <div className="@container min-w-0">
       <IssueSummary className="mb-4" messages={issues} />
       <div className="grid min-w-0 @3xl:grid-cols-[20rem_minmax(0,1fr)] items-start gap-7">
-        <GraphStage hooks={hooks} value={value} />
+        <GraphStage hooks={hooks} toolbarTarget={toolbarTarget} value={value} />
         <div className="@3xl:order-first flex min-w-0 flex-col gap-3.5">
           <ol className="border-divider border-t">
             {order.map((key, index) => {
@@ -422,13 +426,17 @@ function boardIssues({ width, height, board }: GraphBlock) {
   ];
 }
 
-/** The live board at the export's pixel size, scaled to the column. */
+/** The live board at the export's pixel size, scaled to the column and
+ * no taller than the dialog leaves room for, so the dialog never scrolls for
+ * it. */
 function GraphStage({
   value,
   hooks,
+  toolbarTarget,
 }: {
   value: GraphBlock;
   hooks: Parameters<typeof createGraphBoard>[2];
+  toolbarTarget?: HTMLElement | null;
 }) {
   const wrapper = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -444,14 +452,27 @@ function GraphStage({
         ? error.message
         : m.question_ui_graph_could_not_load()
     );
-  useEffect(() => {
+  // The column's width or the wrapper's max-height, whichever binds first.
+  const fit = () => {
     const target = wrapper.current;
-    if (!target) return;
-    const observer = new ResizeObserver(() =>
-      setScale(target.clientWidth / latest.current.width)
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
+    const column = target?.parentElement;
+    if (!target || !column) return;
+    const maxHeight = Number.parseFloat(getComputedStyle(target).maxHeight);
+    const { width, height } = latest.current;
+    setScale(Math.min(column.clientWidth / width, maxHeight / height));
+  };
+  useEffect(() => {
+    const column = wrapper.current?.parentElement;
+    if (!column) return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(column);
+    // The max-height follows the viewport's height, which the column's
+    // width does not.
+    window.addEventListener('resize', fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+    };
   }, []);
   const { width, height } = value;
   const { axis, grid } = value.board;
@@ -464,9 +485,8 @@ function GraphStage({
     if (!(error instanceof GraphError)) throw error;
     drawable = false;
   }
-  useEffect(() => {
-    setScale((wrapper.current?.clientWidth ?? 0) / width);
-  }, [width]);
+  // A new size refits; fit reads it from `latest`.
+  useEffect(fit, [width, height]);
   // Size and axes are fixed when JSXGraph builds a board; anything else updates it.
   useEffect(() => {
     let cancelled = false;
@@ -502,14 +522,57 @@ function GraphStage({
       show(error);
     }
   }, [value, drawable]);
+  const tools = (
+    <BlockToolbar
+      className={cn(
+        'rounded-md p-0.5',
+        // In the heading row it is part of the page, not floating over it.
+        toolbarTarget ? 'shadow-none!' : 'absolute top-2 right-2 z-10'
+      )}
+    >
+      <ToolbarButton
+        label={m.material_zoom_in()}
+        onClick={() => board.current?.zoom(1.5)}
+        type="button"
+      >
+        <Icon name="zoomIn" />
+      </ToolbarButton>
+      <ToolbarButton
+        label={m.material_zoom_out()}
+        onClick={() => board.current?.zoom(1 / 1.5)}
+        type="button"
+      >
+        <Icon name="zoomOut" />
+      </ToolbarButton>
+      <ToolbarButton
+        label={m.question_ui_graph_fit()}
+        onClick={() => board.current?.fit()}
+        type="button"
+      >
+        <Icon name="fitToScreen" />
+      </ToolbarButton>
+      <ToolbarButton
+        label={m.material_fullscreen()}
+        onClick={() => {
+          if (board.current)
+            setPreview({ open: true, svg: board.current.exportSvg() });
+        }}
+        type="button"
+      >
+        <Icon name="maximize" />
+      </ToolbarButton>
+    </BlockToolbar>
+  );
   return (
     <div className="min-w-0">
       <div
-        className="relative w-full overflow-hidden bg-white"
+        // Room under the dialog's title, the block's heading and footer.
+        className="relative mx-auto max-h-[calc(88dvh-15rem)] overflow-hidden bg-white"
         ref={wrapper}
         style={{
           aspectRatio: scale ? undefined : `${width} / ${height}`,
           height: scale ? height * scale : undefined,
+          width: scale ? width * scale : '100%',
         }}
       >
         <div
@@ -517,41 +580,11 @@ function GraphStage({
           ref={stage}
           style={{ height, transform: `scale(${scale || 1})`, width }}
         />
-        {/* MediaFrame's toolbar, always shown. */}
-        <BlockToolbar className="absolute top-2 right-2 z-10 rounded-md p-0.5">
-          <ToolbarButton
-            label={m.material_zoom_in()}
-            onClick={() => board.current?.zoom(1.5)}
-            type="button"
-          >
-            <Icon name="zoomIn" />
-          </ToolbarButton>
-          <ToolbarButton
-            label={m.material_zoom_out()}
-            onClick={() => board.current?.zoom(1 / 1.5)}
-            type="button"
-          >
-            <Icon name="zoomOut" />
-          </ToolbarButton>
-          <ToolbarButton
-            label={m.question_ui_graph_fit()}
-            onClick={() => board.current?.fit()}
-            type="button"
-          >
-            <Icon name="fitToScreen" />
-          </ToolbarButton>
-          <ToolbarButton
-            label={m.material_fullscreen()}
-            onClick={() => {
-              if (board.current)
-                setPreview({ open: true, svg: board.current.exportSvg() });
-            }}
-            type="button"
-          >
-            <Icon name="maximize" />
-          </ToolbarButton>
-        </BlockToolbar>
+        {/* MediaFrame's toolbar, always shown, unless the dialog's heading
+            row holds it. */}
+        {!toolbarTarget && tools}
       </div>
+      {toolbarTarget && createPortal(tools, toolbarTarget)}
       {error && (
         <p className="mt-2 text-sm text-solid-error" role="alert">
           {error}

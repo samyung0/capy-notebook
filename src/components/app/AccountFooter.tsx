@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
   useMe,
@@ -16,8 +17,10 @@ import { SearchDialog } from './SearchDialog';
 /** The foot of the workspace's left panel, which replaces the top inset bar
  * there: the members, you first with the unread dot, your avatar opening the
  * menu of workspace and account items; Search and, for managers, Workspace
- * settings beside. */
+ * settings beside. A manager alone in the workspace sees Invite members in
+ * the row's empty space. */
 export function AccountFooter({
+  canInvite,
   className,
   items,
   member,
@@ -25,6 +28,8 @@ export function AccountFooter({
   workspaceId,
   workspaceName,
 }: {
+  /** You manage sharing (Workspace settings → Sharing). */
+  canInvite: boolean;
   className?: string;
   /** The workspace part of the menu, above the account items. */
   items: MenuItem[];
@@ -65,7 +70,19 @@ export function AccountFooter({
             workspace={{ items, name: workspaceName }}
           />
         }
-      />
+      >
+        {canInvite && roster && members.length === 0 && (
+          <Link
+            className="ml-1.5 min-w-0 truncate font-semibold text-tint-accent-1-fg underline underline-offset-4"
+            params={{ workspaceId }}
+            replace
+            search={(previous) => ({ ...previous, settings: 'sharing' })}
+            to="/workspaces/$workspaceId"
+          >
+            {m.workspace_invite_members()}
+          </Link>
+        )}
+      </MemberAvatars>
       <ToolbarButton label={m.nav_search()} onClick={() => setSearchOpen(true)}>
         <Icon name="search" />
       </ToolbarButton>

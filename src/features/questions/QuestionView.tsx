@@ -365,7 +365,7 @@ function Choices({
 function Label({ all, text }: { all: string[]; text: string }) {
   if (all.length === 0) return <span />;
   return (
-    <span className="grid pr-1.5 font-bold md:pr-2">
+    <span className="grid pr-2.5 font-bold md:pr-3">
       {all.map((item) => (
         <span
           aria-hidden

@@ -65,6 +65,9 @@ type Config struct {
 	// Voice applies to chat voice input, a few recordings a minute from a
 	// person talking; it leaves the chat allowance to the turns they send.
 	Voice Rule
+	// Review applies to starting a review session, which reads and scores
+	// every quiz and set in scope; continuing a session is not counted.
+	Review Rule
 }
 
 // DefaultConfig is tuned for a single-seat free tier: generous enough that
@@ -83,6 +86,8 @@ func DefaultConfig() Config {
 		// Epo 2026-10-11: 60 captures an hour per user.
 		Thumbnail: Rule{Limit: 60, Window: time.Hour},
 		Voice:     Rule{Limit: 60, Window: time.Hour, Burst: 6},
+		// A learner starts a few reviews an hour; Review more starts another.
+		Review: Rule{Limit: 60, Window: time.Hour, Burst: 10},
 	}
 }
 

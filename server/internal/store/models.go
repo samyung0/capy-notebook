@@ -45,19 +45,21 @@ type User struct {
 // required and bounded, and unknown fields are refused, so a stored value is
 // always one the app can apply.
 type Customization struct {
-	Style     string    `json:"style" enum:"classroom,notion"`
+	Style     string    `json:"style" enum:"capy,fisheye,notion"`
 	Theme     string    `json:"theme" enum:"latte,frappe,mocha"`
 	PageFrame PageFrame `json:"pageFrame"`
 }
 
 // PageFrame is the paint behind the page panel: a pattern drawn in a colour
 // preset or in up to three custom colours, each a point on the hue (x) and
-// saturation (y) field.
+// saturation (y) field. Frosted names the panels that turn translucent over
+// it.
 type PageFrame struct {
 	Pattern  string           `json:"pattern" enum:"none,arc,mesh,glow"`
-	Colours  string           `json:"colours" enum:"dusk,sea,meadow,rose,sunset,wheat,mist,custom"`
+	Colours  string           `json:"colours" enum:"dawn,dusk,sea,meadow,rose,sunset,wheat,mist,custom"`
 	Dots     []PageFrameColor `json:"dots" minItems:"1" maxItems:"3"`
 	Strength float64          `json:"strength" minimum:"0" maximum:"1"`
+	Frosted  []string         `json:"frosted" enum:"left,center,right" maxItems:"3" uniqueItems:"true"`
 }
 
 // PageFrameColor is one custom colour as a point on the colour field.

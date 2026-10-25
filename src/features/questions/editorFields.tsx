@@ -3,7 +3,9 @@ import {
   isValidElement,
   type ReactElement,
   type ReactNode,
+  useEffect,
   useId,
+  useState,
 } from 'react';
 import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
@@ -220,6 +222,61 @@ export function StringList({
     </div>
   );
 }
+/** A part's whole marks, 1 to `max`: stepped with − and +, as the note
+ * toolbar's font size, or typed, which holds to the bounds as it goes. */
+export function MarksField({
+  label,
+  value,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  const id = useId();
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const set = (next: number) => onChange(Math.min(max, Math.max(1, next)));
+  return (
+    <div className="flex flex-col gap-0.5">
+      <label className="t-label" htmlFor={id}>
+        {label}
+      </label>
+      <div className="flex w-fit items-center overflow-hidden rounded-button">
+        <ToolbarButton
+          className="rounded-r-none bg-surface-hover-bg p-0 hover:bg-surface-dark"
+          disabled={value <= 1}
+          label={m.question_ui_marks_decrease()}
+          onClick={() => set(value - 1)}
+        >
+          <Icon name="minus" />
+        </ToolbarButton>
+        <input
+          className="h-(--toolbar-button) w-10 bg-surface-hover-bg text-center font-semibold text-sm outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+          id={id}
+          inputMode="numeric"
+          onBlur={() => setText(String(value))}
+          onChange={(event) => {
+            const digits = event.target.value.replace(/\D/g, '');
+            setText(digits);
+            if (digits) set(Number(digits));
+          }}
+          value={text}
+        />
+        <ToolbarButton
+          className="rounded-l-none bg-surface-hover-bg p-0 hover:bg-surface-dark"
+          disabled={value >= max}
+          label={m.question_ui_marks_increase()}
+          onClick={() => set(value + 1)}
+        >
+          <Icon name="plus" />
+        </ToolbarButton>
+      </div>
+    </div>
+  );
+}
 export const markOptions = Array.from(
   { length: limits.QUESTION_MARKS_MAX },
   (_, i) => ({ label: String(i + 1), value: String(i + 1) })
@@ -337,6 +394,7 @@ export function AnswerEditor({
   return (
     <div className="space-y-4">
       <SelectField
+        className="w-44"
         label={m.question_ui_answer_type()}
         onChange={(value) => onChange(emptyAnswer(value as QuestionType))}
         options={QUESTION_TYPES.map((value) => ({
@@ -352,19 +410,6 @@ export function AnswerEditor({
           </p>
           {answer.options.map((option, i) => (
             <div className="flex items-center gap-2" key={i}>
-              <input
-                aria-label={m.question_ui_correct_option({ number: i + 1 })}
-                checked={answer.correct.includes(i)}
-                onChange={(event) =>
-                  onChange({
-                    ...answer,
-                    correct: event.target.checked
-                      ? [...answer.correct, i]
-                      : answer.correct.filter((value) => value !== i),
-                  })
-                }
-                type="checkbox"
-              />
               <FieldInput
                 aria-label={m.question_ui_option_number({ number: i + 1 })}
                 maxLength={limits.QUESTION_TEXT_MAX}
@@ -391,6 +436,21 @@ export function AnswerEditor({
                 }
               >
                 <Icon name="trash" />
+              </ToolbarButton>
+              {/* A toggle: pressed while the option is a correct answer. */}
+              <ToolbarButton
+                active={answer.correct.includes(i)}
+                label={m.question_ui_mark_correct({ number: i + 1 })}
+                onClick={() =>
+                  onChange({
+                    ...answer,
+                    correct: answer.correct.includes(i)
+                      ? answer.correct.filter((value) => value !== i)
+                      : [...answer.correct, i],
+                  })
+                }
+              >
+                <Icon name="circleCheck" />
               </ToolbarButton>
             </div>
           ))}

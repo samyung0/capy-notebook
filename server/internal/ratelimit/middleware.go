@@ -24,6 +24,7 @@ const (
 	classIncident
 	classThumbnail
 	classVoice
+	classReview
 )
 
 // aiSuffixes are the model-backed routes. Matching by suffix rather than exact
@@ -33,9 +34,9 @@ var aiSuffixes = []string{
 	"/chat/stream",
 	"/ai/command",
 	"/generate",
-	// Server grading, which sends open answers to Jev: a review or bank check
-	// (quiz attempts are matched in classify; the signed-out grade is under
-	// /api/public/), and the author's computation check.
+	// Server grading, which sends open answers to Jev: a quiz, review or bank
+	// check, one question each (the signed-out grade is under /api/public/),
+	// and the author's computation check.
 	"/check",
 	"/computation-check",
 }
@@ -96,14 +97,15 @@ func classify(path string) class {
 	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/voice-transcriptions") {
 		return classVoice
 	}
+	// A new review session reads the whole review pool, every quiz and set
+	// parsed; continuing one reads only its own items.
+	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/review") {
+		return classReview
+	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {
 			return classEditor
 		}
-	}
-	// POST /api/quizzes/{id}/attempts, but not the GET /api/attempts list.
-	if strings.HasPrefix(path, "/api/quizzes/") && strings.HasSuffix(path, "/attempts") {
-		return classAI
 	}
 	for _, suffix := range aiSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -184,6 +186,11 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 			case classVoice:
 				if ok, retry := l.Allow(ctx, "voice:"+subject, l.cfg.Voice); !ok {
 					reject(w, r, retry, "ai_rate_limited")
+					return
+				}
+			case classReview:
+				if ok, retry := l.Allow(ctx, "review:"+subject, l.cfg.Review); !ok {
+					reject(w, r, retry, "rate_limited")
 					return
 				}
 			}

@@ -9,6 +9,7 @@ export type PageFrameColours = typeof PageFrameColours[keyof typeof PageFrameCol
 
 
 export const PageFrameColours = {
+  dawn: 'dawn',
   dusk: 'dusk',
   sea: 'sea',
   meadow: 'meadow',

@@ -24,13 +24,13 @@ import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount } from '@/components/ui/Input';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/Popover';
 import { Textarea } from '@/components/ui/TextArea';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/Tooltip';
 import { audioStartMs, formatClock } from '@/features/files/citationRegions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -46,7 +46,7 @@ import { ChatTrace, type UndoHandlers } from './chat/ChatTrace';
 import { LangAnswer } from './chat/LangAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
-import { useVoiceInput, VoiceButton } from './chat/VoiceInput';
+import { useVoiceInput, VoiceButton, VoiceElapsed } from './chat/VoiceInput';
 import { insertTranscript } from './chat/voiceRecording';
 import { sourceEntryId, webHref } from './chat/webCitation';
 import type { TabAction } from './PanelTabRow';
@@ -515,7 +515,7 @@ export function ChatPanel({
         {messages.map((msg, index) =>
           msg.role === 'user' ? (
             <div
-              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-tr-sm bg-page px-3.5 py-2.5"
+              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-tile rounded-tr-sm bg-page px-3.5 py-2.5"
               key={msg.id}
             >
               {msg.content}
@@ -552,17 +552,25 @@ export function ChatPanel({
           />
         ) : (
           <>
-            <div
-              className={cn(
-                'flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none'
+            {/* One row: the field grows upward and the buttons stay on its
+                last line. A recording's waveform and time take the field's
+                place; it stays mounted so the transcript lands at its caret. */}
+            <div className="flex items-end gap-2 rounded-input border border-line bg-surface frosted:bg-(--frost-fill) py-1 pr-1 pl-3 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none">
+              {voice.phase === 'recording' && (
+                <VoiceElapsed
+                  analyser={voice.analyser}
+                  className="h-9 flex-1"
+                  elapsedMs={voice.elapsedMs}
+                />
               )}
-            >
               <Textarea
                 aria-invalid={overLimit || undefined}
                 aria-label={m.chat_placeholder()}
                 className={cn(
-                  // 16px on phones, which zoom the page into smaller fields.
-                  'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0 max-sm:text-base'
+                  // A line is as tall as the buttons; 16px on phones, which
+                  // zoom the page into smaller fields.
+                  'max-h-[calc(7lh+--spacing(4))] min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-0 py-2 text-fg leading-5 focus:border-0 max-sm:text-base',
+                  voice.phase === 'recording' && 'hidden'
                 )}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
@@ -575,51 +583,31 @@ export function ChatPanel({
                 }}
                 placeholder={m.chat_placeholder()}
                 ref={fieldRef}
-                rows={2}
+                rows={1}
                 value={text}
               />
-              <div className="flex items-center gap-2">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        aria-pressed={workspaceOnly}
-                        className={cn(
-                          'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
-                          workspaceOnly &&
-                            'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
-                        )}
-                        iconLeft="lock"
-                        onClick={() => setWorkspaceOnly((value) => !value)}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {m.chat_workspace_only()}
-                      </Button>
-                    }
-                  />
-                  <TooltipContent>
-                    {m.chat_workspace_only_hint()}
-                  </TooltipContent>
-                </Tooltip>
-                <span className="ml-auto" />
+              {/* Mic and Send touch: each icon's own box keeps them apart. */}
+              <span className="flex h-9 shrink-0 items-center">
                 <CharCount
+                  className="mr-1"
                   max={CHAT_CHARACTER_LIMIT}
                   value={textLength(text)}
                 />
                 {voice.supported && (
                   <VoiceButton
-                    elapsedMs={voice.elapsedMs}
+                    className="size-9 rounded-lg"
                     onToggle={voice.toggle}
                     phase={voice.phase}
                   />
                 )}
                 <IconButton
-                  disabled={!streaming && overLimit}
+                  className="size-9 rounded-lg"
+                  disabled={!(streaming || (text.trim() && !overLimit))}
                   icon="send"
-                  // A purple plane on no background; dimmed while disabled.
+                  // An outlined plane: grey until there is something to send.
                   iconClassName={cn(
-                    'fill-current text-action-accent transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                    'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                    text.trim() ? 'text-action-accent' : 'text-fg-muted',
                     streaming
                       ? 'scale-25 opacity-0 blur-[2px]'
                       : 'scale-100 opacity-100 blur-none'
@@ -638,15 +626,10 @@ export function ChatPanel({
                         : 'scale-25 opacity-0 blur-[2px]'
                     )}
                   >
-                    <span className="grid size-(--toolbar-icon) place-items-center rounded-full border-2 border-action-accent">
-                      <Icon
-                        className="size-2 fill-current text-action-accent"
-                        name="stop"
-                      />
-                    </span>
+                    <span className="size-3 rounded-[3px] bg-action-accent" />
                   </span>
                 </IconButton>
-              </div>
+              </span>
             </div>
             {voice.error && (
               <p
@@ -659,10 +642,63 @@ export function ChatPanel({
             )}
           </>
         )}
-        {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}
-        <p className="mt-2 text-center text-[11px] text-fg-muted">
-          {workspaceOnly ? m.chat_grounded() : m.chat_grounded_outside()}
-        </p>
+        {/* The scope in use, switched from a menu; the ghost padding is
+            pulled back so its text lines up with the field's. */}
+        <div className="mt-1 flex items-center pl-[5px]">
+          <Menu
+            align="start"
+            className="w-72"
+            itemClassName="whitespace-normal text-left"
+            items={[
+              {
+                checked: !workspaceOnly,
+                description: m.chat_grounded_outside(),
+                label: m.chat_all_sources(),
+                onClick: () => setWorkspaceOnly(false),
+              },
+              {
+                checked: workspaceOnly,
+                description: m.chat_workspace_only_hint(),
+                label: m.chat_workspace_only(),
+                onClick: () => setWorkspaceOnly(true),
+              },
+            ]}
+            side="top"
+            trigger={
+              <Button
+                className="h-7.5 gap-0.5 rounded-button px-2 font-semibold text-[13px] text-fg-secondary"
+                size="sm"
+                variant="ghost-hover"
+              >
+                {workspaceOnly ? m.chat_workspace_only() : m.chat_all_sources()}
+                <Icon
+                  className="size-3.5 -translate-y-px text-fg-muted"
+                  name="chevronDown"
+                />
+              </Button>
+            }
+          />
+          <Popover>
+            <PopoverTrigger asChild>
+              <IconButton
+                className="-ml-1 -translate-y-px rounded-full text-fg-muted [&>svg]:size-3.5"
+                icon="info"
+                label={m.chat_scope_info_label()}
+                size="xs"
+                variant="ghost-hover"
+              />
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="t-meta text-fg-secondary"
+              side="top"
+            >
+              {workspaceOnly
+                ? m.chat_workspace_only_hint()
+                : m.chat_grounded_outside()}
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
     </>
   );

@@ -1,5 +1,5 @@
 import { ApiError, parseErrorBody } from './client';
-import type { GradeAnonymousQuizReq, GradedQuiz, Question } from './types';
+import type { GradeAnonymousQuizReq, GradedQuestion } from './types';
 
 /**
  * Signed-out images and grading of shared standalone quizzes, flashcard sets
@@ -38,39 +38,30 @@ export const anonymousFlashcardAssetUrl = (token: string, assetId: string) =>
 export const anonymousNoteAssetUrl = (token: string, assetId: string) =>
   `/p/notes/${token}/assets/${assetId}`;
 
-/** Grades every part of a signed-out attempt; the result carries each
- * question's key, so the page shows it and keeps it in this browser. */
-export async function gradeAnonymousQuiz(
+/** Grades one question of a signed-out attempt; the result carries its key,
+ * so the page shows it and keeps it in this browser. */
+export const gradeAnonymousQuiz = (
   token: string,
   body: GradeAnonymousQuizReq
-): Promise<{ questions: Question[]; awarded: number; max: number }> {
-  const graded = await publicJson<GradedQuiz>(
-    `/api/public/quizzes/${token}/grade`,
-    {
-      body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-    }
-  );
-  return {
-    awarded: graded.correct,
-    max: graded.total,
-    questions: graded.questions,
-  };
-}
+) =>
+  publicJson<GradedQuestion>(`/api/public/quizzes/${token}/grade`, {
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
 
 /** The daily anonymous grading cap; the visitor can sign in to keep going. */
 export const isAnonymousGradingLimit = (err: unknown) =>
   err instanceof ApiError && err.code === 'anonymous_grading_limit';
 
-/** Grades an attempt at a quiz embedded in a shared note, through the note's
- * link (the quiz has none of its own); it stores nothing. */
-export async function gradeAnonymousNoteQuiz(
+/** Grades one question of a quiz embedded in a shared note, through the
+ * note's link (the quiz has none of its own); it stores nothing. */
+export const gradeAnonymousNoteQuiz = (
   token: string,
   quizId: string,
   body: GradeAnonymousQuizReq
-): Promise<{ questions: Question[]; awarded: number; max: number }> {
-  const graded = await publicJson<GradedQuiz>(
+) =>
+  publicJson<GradedQuestion>(
     `/api/public/notes/${token}/quizzes/${quizId}/grade`,
     {
       body: JSON.stringify(body),
@@ -78,9 +69,3 @@ export async function gradeAnonymousNoteQuiz(
       method: 'POST',
     }
   );
-  return {
-    awarded: graded.correct,
-    max: graded.total,
-    questions: graded.questions,
-  };
-}

@@ -184,12 +184,14 @@ var materialLocations = map[string]string{
 type MaterialListFilter struct {
 	Kinds        []string
 	WorkspaceIDs []string
-	Locations    []string
-	Member       bool
-	Sort         string
-	Ascending    bool
-	Limit        int
-	Cursor       string
+	// IDs keeps only these rows; the access filter still applies.
+	IDs       []string
+	Locations []string
+	Member    bool
+	Sort      string
+	Ascending bool
+	Limit     int
+	Cursor    string
 }
 
 // MaterialListItem is one Create page row: enough to render the card without
@@ -248,6 +250,10 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	if len(f.WorkspaceIDs) > 0 {
 		args = append(args, f.WorkspaceIDs)
 		where += fmt.Sprintf(` AND m.workspace_id = ANY($%d)`, len(args))
+	}
+	if len(f.IDs) > 0 {
+		args = append(args, f.IDs)
+		where += fmt.Sprintf(` AND m.id = ANY($%d)`, len(args))
 	}
 	if len(f.Locations) > 0 {
 		preds := make([]string, 0, len(f.Locations))
@@ -355,11 +361,13 @@ var fileWorkspaceNameSQL = workspaceNameSQL("w.id", "w.name")
 type FileListFilter struct {
 	Kinds        []string
 	WorkspaceIDs []string
-	Member       bool
-	Sort         string
-	Ascending    bool
-	Limit        int
-	Cursor       string
+	// IDs keeps only these rows; the access filter still applies.
+	IDs       []string
+	Member    bool
+	Sort      string
+	Ascending bool
+	Limit     int
+	Cursor    string
 }
 
 type FilePage struct {
@@ -392,6 +400,10 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	if len(f.WorkspaceIDs) > 0 {
 		args = append(args, f.WorkspaceIDs)
 		where += fmt.Sprintf(` AND f.workspace_id = ANY($%d)`, len(args))
+	}
+	if len(f.IDs) > 0 {
+		args = append(args, f.IDs)
+		where += fmt.Sprintf(` AND f.id = ANY($%d)`, len(args))
 	}
 	clause, cursorArgs, err := cursorClause(sort, "f.id", f.Ascending, f.Cursor, len(args)+1)
 	if err != nil {

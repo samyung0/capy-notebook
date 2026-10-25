@@ -3,11 +3,12 @@
 @import "tailwindcss/preflight.css" layer(base);
 /* Capy's role tokens, selected by the data-style and data-theme the host
    sends (set-appearance). */
-@import "../styles/tokens/themes/classroom.css";
+@import "../styles/tokens/themes/capy.css";
+@import "../styles/tokens/themes/fisheye.css";
 @import "../styles/tokens/themes/notion.css";
 @import "../styles/cjkFont.css";
 
-/* The classroom style's Fustat, for the chrome weights only (latin, from
+/* The capy and fisheye styles' Fustat, for the chrome weights only (latin, from
    @fontsource/fustat 5.3.0, OFL: fonts/LICENSE). Same-origin: the runtime's
    CSP allows no font host. */
 @font-face {
@@ -493,4 +494,23 @@ button {
 .pptx-controls button:disabled {
   cursor: default;
   opacity: 0.45;
+}
+
+/* On a panel frosted over Capy's page frame (set-appearance's frosted flag
+   sets data-frosted): the frame paints nothing of its own behind pages and
+   slides, and its toolbar and lines are see-through, so the panel's frost
+   shows through the frame as around it. Pages, cells, slides, menus and
+   dialogs keep their fills. */
+html[data-frosted] {
+  --doc-bg: transparent;
+  --doc-toolbar-bg: transparent;
+  --divider: rgb(0 0 0 / 0.08);
+  background: transparent;
+}
+html[data-frosted]:is([data-theme="frappe"], [data-theme="mocha"]) {
+  --divider: rgb(255 255 255 / 0.08);
+}
+html[data-frosted] .pptx-stage,
+html[data-frosted] .pptx-controls {
+  background: transparent;
 }

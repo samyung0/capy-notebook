@@ -8,7 +8,6 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import type { ColumnSort } from '@/components/app/SortHeader';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { SkeletonList } from '@/components/ui/feedback';
-import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
@@ -24,7 +23,7 @@ import { groupName } from './reviewText';
 
 /** Learning → Review's last section: finished review sessions in the Files
  * table style, with the list pages' filter beside the heading; every column
- * header sorts. */
+ * header sorts, and a row opens its result. */
 export function PastReviews() {
   const search = useSearch({ strict: false }) as PastReviewsSearch;
   const navigate = useNavigate();
@@ -54,22 +53,11 @@ export function PastReviews() {
   const rows = data?.pages.flatMap((page) => page.items) ?? [];
   const sorting: ColumnSort<PastReviewSort> = {
     ascending: params.dir === 'asc',
-    ascendingFirst: ['workspace', 'chapter', 'status'],
+    ascendingFirst: ['workspace', 'plan', 'chapter', 'status'],
     onSortChange: (next, asc) =>
       setSearch(sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)),
     sort,
   };
-  const again = (r: PastReview) =>
-    navigate({
-      params: { workspaceId: r.workspaceId },
-      search: {
-        chapterId: r.chapterId,
-        from: 'review',
-        group: r.group,
-        reviewMode: r.mode,
-      },
-      to: '/learning/review/$workspaceId',
-    });
 
   return (
     <section>
@@ -129,6 +117,12 @@ export function PastReviews() {
               },
               {
                 clamp: true,
+                id: 'plan',
+                label: m.past_col_plan(),
+                sort: 'plan',
+              },
+              {
+                clamp: true,
                 id: 'chapter',
                 label: m.past_col_chapter(),
                 sort: 'chapter',
@@ -147,12 +141,13 @@ export function PastReviews() {
                 label: m.past_col_status(),
                 sort: 'status',
               },
-              { align: 'right', id: 'menu', label: '' },
             ]}
             rows={rows.map((r) => ({
               cells: {
                 cards: <ScoreText score={r.cards} />,
-                chapter: groupName(r.group, r.chapterName),
+                // A plan session's name is its plan, not a chapter.
+                chapter:
+                  r.group === 'plan' ? '' : groupName(r.group, r.chapterName),
                 date: (
                   <Link
                     className="after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
@@ -162,17 +157,7 @@ export function PastReviews() {
                     {formatDate(r.startedAt)}
                   </Link>
                 ),
-                menu: (
-                  <RowMenu
-                    onAgain={() => again(r)}
-                    onResult={() =>
-                      navigate({
-                        params: { sessionId: r.id },
-                        to: '/learning/reviews/$sessionId',
-                      })
-                    }
-                  />
-                ),
+                plan: r.group === 'plan' ? r.chapterName : m.plan_default(),
                 quiz: <ScoreText score={r.quiz} />,
                 status: <Status review={r} />,
                 time: m.past_minutes({ count: minutes(r) }),
@@ -223,25 +208,6 @@ const formatDate = (iso: string) =>
   new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium' }).format(
     new Date(iso)
   );
-
-function RowMenu({
-  onAgain,
-  onResult,
-}: {
-  onAgain: () => void;
-  onResult: () => void;
-}) {
-  return (
-    <div className="relative z-10 -my-2 flex justify-end">
-      <Menu
-        items={[
-          { icon: 'list', label: m.quiz_check_result(), onClick: onResult },
-          { icon: 'refresh', label: m.review_again(), onClick: onAgain },
-        ]}
-      />
-    </div>
-  );
-}
 
 /** A quiz or flashcard result: marks, or cards rated Good or Easy. */
 function ScoreText({ score }: { score?: SessionScore }) {

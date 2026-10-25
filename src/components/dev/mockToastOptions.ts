@@ -43,15 +43,6 @@ export const mockToastOptions: {
   },
   {
     group: 'Success and notices',
-    label: 'Questions copied to a quiz',
-    toast: () => ({
-      button: action(m.question_ui_open_quiz()),
-      title: m.question_ui_copied(),
-      variant: 'success',
-    }),
-  },
-  {
-    group: 'Success and notices',
     label: 'Topic finished',
     toast: () => ({
       button: action(m.common_go_check()),

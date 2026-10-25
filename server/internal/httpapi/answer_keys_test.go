@@ -58,9 +58,9 @@ func TestReviewSessionChecksQuestionsOnTheServer(t *testing.T) {
 		}
 	})
 	const part = "q_priv_1:part:1"
-	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_private/attempts", "u_viewer", map[string]any{
-		"answers": map[string]any{part: false},
-	}); rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"correct":0,`) {
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_private/check", "u_viewer", map[string]any{
+		"questionId": "q_priv_1", "answers": map[string]any{part: false},
+	}); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"correct":0,`) {
 		t.Fatalf("viewer attempt → %d %s", rec.Code, rec.Body.String())
 	}
 	rec := doReq(t, h, http.MethodGet, "/api/workspaces/ws_e2e_private/review", "u_viewer", nil)
@@ -180,10 +180,10 @@ func TestAttemptLeavesAnswersToUnprojectedPartsUnmarked(t *testing.T) {
 			_, _ = st.Pool().Exec(context.Background(), q)
 		}
 	})
-	rec := doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_private/attempts", "u_viewer", map[string]any{
-		"answers": map[string]any{"q_priv_1:part:1": true, "typed-not-projected:part": "x"},
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_private/check", "u_viewer", map[string]any{
+		"questionId": "q_priv_1", "answers": map[string]any{"q_priv_1:part:1": true, "typed-not-projected:part": "x"},
 	})
-	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"total":1,`) ||
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"total":1,`) ||
 		strings.Contains(rec.Body.String(), "typed-not-projected") {
 		t.Fatalf("attempt with an unprojected part → %d %s", rec.Code, rec.Body.String())
 	}

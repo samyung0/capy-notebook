@@ -395,7 +395,10 @@ export default function WorkspaceOpen() {
   // Offline before the first load: the fetch resumes on reconnect.
   if (waitsForConnection(wsFetchStatus, ws))
     return (
-      <Panel sectionClassName="items-center justify-center h-full">
+      <Panel
+        frost="center"
+        sectionClassName="items-center justify-center h-full"
+      >
         <QueryPausedState />
       </Panel>
     );
@@ -417,8 +420,15 @@ export default function WorkspaceOpen() {
     setRightOpen(true);
     setChatRequest((previous) => ({ id, seq: (previous?.seq ?? 0) + 1 }));
   }
+  // Both panels' title menus open the Study page in the centre.
+  const studyItem: MenuItem = {
+    icon: 'knowledge',
+    label: m.workspace_tab_study(),
+    onClick: openProgress,
+  };
   const leftTitle = (
     <PanelTitleMenu
+      extra={[studyItem]}
       onChange={setLeftView}
       value={leftView}
       views={[
@@ -502,47 +512,33 @@ export default function WorkspaceOpen() {
         filesOpen,
         onOpenFiles: openFiles,
         settingsItems,
+        workspaceIconId: ws.iconId,
         workspaceName: ws.name,
       }
     : undefined;
 
-  const addProps = readOnly
-    ? {}
-    : {
-        onAddChapter: () => setChapterForm({ mode: 'add' }),
-        onAddSource: setAddSource,
-      };
-  // The plus lives with the tree: on the rail's Files view.
   const railRow = (actions: TabAction[]) => (
     <PanelTabRow
       actions={actions}
-      title={<PanelTitleMenu onChange={setTab} value={tab} views={railViews} />}
+      title={
+        <PanelTitleMenu
+          extra={[studyItem]}
+          onChange={setTab}
+          value={tab}
+          views={railViews}
+        />
+      }
       {...rowProps}
-      {...(tab === 'files' ? addProps : {})}
     />
   );
-  // The workspace switcher and the Study row lead the file tree and scroll
-  // with it.
-  const studyShown = !!(search.study || search.plan);
+  // The workspace switcher leads the file tree and scrolls with it.
   const picker = (
-    <div className="mt-2.5 flex flex-col">
+    <div className="mt-1 flex flex-col">
       <WorkspacePicker
         onClone={readOnly && canClone ? () => setCloneOpen(true) : undefined}
         onOpenSettings={rowProps.onOpenSettings}
         workspace={ws}
       />
-      <button
-        aria-current={studyShown ? 'page' : undefined}
-        className={cn(
-          'mx-2.5 mt-1 flex h-7.5 items-center gap-1.75 rounded-button px-2 text-left hover:bg-surface-hover-bg',
-          studyShown && 'bg-surface-hover-bg font-semibold'
-        )}
-        onClick={openProgress}
-        type="button"
-      >
-        <Icon name="knowledge" size={15} />
-        <span className="translate-y-px">{m.workspace_tab_study()}</span>
-      </button>
     </div>
   );
 
@@ -557,6 +553,10 @@ export default function WorkspaceOpen() {
       beforeReplace={confirmViewerReplacement}
       generating={generating}
       header={picker}
+      onAddChapter={
+        readOnly ? undefined : () => setChapterForm({ mode: 'add' })
+      }
+      onAddSource={readOnly ? undefined : setAddSource}
       onNavigate={() => setCitationTarget(null)}
       onOpenItem={setOpenItem}
       onRenameChapter={(ch) =>
@@ -662,7 +662,7 @@ export default function WorkspaceOpen() {
   );
 
   const viewer = (
-    <Panel className="w-full" sectionClassName="h-full gap-0">
+    <Panel className="w-full" frost="center" sectionClassName="h-full gap-0">
       <h1 className="sr-only">{ws.name}</h1>
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
@@ -741,6 +741,7 @@ export default function WorkspaceOpen() {
   const railColumn = (
     <Panel
       className="h-full w-full"
+      frost="right"
       sectionClassName="h-full gap-0 overflow-hidden"
     >
       {rail}
@@ -748,12 +749,12 @@ export default function WorkspaceOpen() {
   );
   // The left panel: chats or the file tree, members at its foot.
   const leftPanel = (
-    <Panel className="w-full" frosted sectionClassName="h-full gap-0">
+    <Panel className="w-full" frost="left" sectionClassName="h-full gap-0">
       <div className="flex h-full min-h-0 flex-col" data-workspace-left-panel>
         <div className="flex min-h-0 flex-1 flex-col">
           {leftView === 'files' ? (
             filesPanel((actions) => (
-              <PanelTabRow actions={actions} title={leftTitle} {...addProps} />
+              <PanelTabRow actions={actions} title={leftTitle} />
             ))
           ) : (
             <>
@@ -778,6 +779,7 @@ export default function WorkspaceOpen() {
           )}
         </div>
         <AccountFooter
+          canInvite={canManageWorkspaceSettings(ws)}
           items={footerItems}
           member={!!ws.role}
           onOpenSettings={rowProps.onOpenSettings}

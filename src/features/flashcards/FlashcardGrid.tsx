@@ -26,7 +26,7 @@ export function FlashcardGrid({
   });
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-baseline gap-4">
+      <div className="flex items-center gap-4">
         <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
         {action}
       </div>
@@ -76,7 +76,6 @@ export function CardPreviewDialog({
           <div className="flex w-full justify-between">
             <Button
               disabled={index === 0}
-              iconLeft="navigationBack"
               onClick={() => onIndexChange(index - 1)}
               size="lg"
               variant="ghost-hover"
@@ -85,7 +84,6 @@ export function CardPreviewDialog({
             </Button>
             <Button
               disabled={index === cards.length - 1}
-              iconRight="navigationForward"
               onClick={() => onIndexChange(index + 1)}
               size="lg"
               variant="ghost-hover"

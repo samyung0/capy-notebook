@@ -46,6 +46,7 @@ import {
   RouteNotFoundComponent,
 } from '@/components/app/AppErrorBoundary';
 import { AuthShellRoute, RootRoute } from '@/components/app/RouteComponents';
+import { parseThemeSearch } from '@/components/app/themeDrawerSearch';
 import { prefetchOfficeFile } from '@/features/files/prefetchOfficeFile';
 import {
   parseDocumentModeSearch,
@@ -110,6 +111,8 @@ const authShellRoute = createRoute({
   loader: ({ context: { queryClient: qc } }) => {
     qc.prefetchQuery(meQuery());
   },
+  // `?theme=open` opens the Theme drawer over any signed-in page.
+  validateSearch: parseThemeSearch,
 });
 
 /** A page loaded with its route. TanStack reloads the tab once when a page's

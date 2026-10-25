@@ -6,7 +6,6 @@ import { PlotChart } from '@/components/charts/PlotChart';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input, type InputProps } from '@/components/ui/Input';
-import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -339,7 +338,7 @@ function ChartEditor({
                   type="button"
                   variant="ghost-hover"
                 >
-                  {m.question_ui_add_series()}
+                  {m.question_ui_add_column()}
                 </Button>
               )}
               {(!single || block.series.length > 1) && (
@@ -352,7 +351,7 @@ function ChartEditor({
                   type="button"
                   variant="danger-light"
                 >
-                  {m.question_ui_remove_last_series()}
+                  {m.question_ui_remove_last_column()}
                 </Button>
               )}
             </div>
@@ -987,6 +986,7 @@ export function BlockEditor({
   onBusyChange,
   onInvalidChange,
   textPlaceholder,
+  toolbarTarget,
 }: {
   /** A bank question: figure descriptions take the bank's longer bound. */
   bank?: boolean;
@@ -1000,6 +1000,9 @@ export function BlockEditor({
   onInvalidChange?: (invalid: boolean) => void;
   /** What an empty text block shows, by where it sits. */
   textPlaceholder?: string;
+  /** The block's heading row: a graph's zoom tools and a table cell's
+   * formula tools go there. */
+  toolbarTarget?: HTMLElement | null;
 }) {
   const [cell, setCell] = useState<string | null>(null);
   const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
@@ -1038,7 +1041,7 @@ export function BlockEditor({
               {m.question_ui_advanced()}
             </Button>
           </Collapsible.Trigger>
-          <Collapsible.Content className="pt-3">
+          <Collapsible.Content className="max-w-sm pt-3">
             <Field
               count={{
                 max: limits.QUESTION_METADATA_MAX,
@@ -1082,14 +1085,18 @@ export function BlockEditor({
         descriptionMax={descriptionMax}
         onChange={onChange}
         onInvalidChange={onInvalidChange}
+        toolbarTarget={toolbarTarget}
         value={block}
       />
     );
   if (block.type === 'image')
     return (
       <div className="space-y-4">
-        <QuestionBlockView block={block} />
-        <Field label={m.question_ui_replace()}>
+        {/* A preview, not the shown size: capped, from the left edge. */}
+        <div className="[&_figure]:mx-0 [&_img]:max-h-80 [&_img]:w-auto">
+          <QuestionBlockView block={block} />
+        </div>
+        <Field label={m.question_ui_image_file()}>
           <input
             accept={IMAGE_ACCEPT}
             disabled={!uploadAsset || uploading}
@@ -1176,116 +1183,71 @@ export function BlockEditor({
           : cells
       ),
     });
+  // The chart's data table: a trash per row, Add row and column below, the
+  // header row under Advanced. A cell's formula tools go to the block's
+  // heading row, else a row of their own while a cell is open.
   return (
     <div className="space-y-3">
-      <Toolbar
-        aria-label={m.question_ui_table_tools()}
-        className="scroll-fade-x min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        role="toolbar"
-      >
-        <ToolbarGroup>
-          <ToolbarButton
-            active={block.header}
-            className="w-auto px-2"
-            label={m.question_ui_header_row()}
-            onClick={() => onChange({ ...block, header: !block.header })}
-          >
-            {m.question_ui_header_row()}
-          </ToolbarButton>
-        </ToolbarGroup>
-        <ToolbarGroup>
-          <ToolbarButton
-            disabled={block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX}
-            label={m.question_ui_add_row()}
-            onClick={() =>
-              onChange({
-                ...block,
-                rows: [
-                  ...block.rows,
-                  Array.from({ length: columns }, () => ''),
-                ],
-              })
-            }
-          >
-            R+
-          </ToolbarButton>
-          <ToolbarButton
-            disabled={block.rows.length <= 1}
-            label={m.question_ui_remove_row()}
-            onClick={() =>
-              onChange({ ...block, rows: block.rows.slice(0, -1) })
-            }
-          >
-            R−
-          </ToolbarButton>
-          <ToolbarButton
-            disabled={columns >= limits.QUESTION_TABLE_COLUMNS_MAX}
-            label={m.question_ui_add_column()}
-            onClick={() =>
-              onChange({
-                ...block,
-                rows: block.rows.map((row) => [...row, '']),
-              })
-            }
-          >
-            C+
-          </ToolbarButton>
-          <ToolbarButton
-            disabled={columns <= 1}
-            label={m.question_ui_remove_column()}
-            onClick={() =>
-              onChange({
-                ...block,
-                rows: block.rows.map((row) => row.slice(0, -1)),
-              })
-            }
-          >
-            C−
-          </ToolbarButton>
-        </ToolbarGroup>
-        <div className="flex shrink-0 items-center" ref={setCellTools} />
-      </Toolbar>
+      {!toolbarTarget && (
+        <div className="flex items-center empty:hidden" ref={setCellTools} />
+      )}
       <div className="overflow-x-auto">
-        <table
-          className="w-full table-fixed border-collapse"
-          style={{ minWidth: columns * 112 }}
-        >
+        <table className="border-collapse text-sm">
           <tbody>
             {block.rows.map((row, i) => (
               <tr key={i}>
+                <td className="w-0 whitespace-nowrap pr-1">
+                  <ToolbarButton
+                    disabled={block.rows.length <= 1}
+                    label={m.question_ui_remove_row_number({ number: i + 1 })}
+                    onClick={() => {
+                      setCell(null);
+                      onChange({
+                        ...block,
+                        rows: block.rows.filter((_, j) => i !== j),
+                      });
+                    }}
+                  >
+                    <Icon name="trash" />
+                  </ToolbarButton>
+                </td>
                 {row.map((text, j) => {
                   const id = `${i}:${j}`;
                   return (
                     <td
                       className={cn(
-                        'border border-line p-2 align-top',
+                        'border border-divider p-0 align-top',
                         block.header &&
                           i === 0 &&
                           'bg-surface-hover-bg font-semibold'
                       )}
                       key={j}
                     >
-                      {cell === id ? (
-                        <TextEditor
-                          compact
-                          maxLength={limits.QUESTION_TEXT_MAX}
-                          onChange={(value) => updateCell(i, j, value)}
-                          toolbarTarget={cellTools}
-                          value={text}
-                        />
-                      ) : (
-                        <button
-                          aria-label={m.question_ui_edit_cell({
-                            column: j + 1,
-                            row: i + 1,
-                          })}
-                          className="min-h-10 w-full text-left"
-                          onClick={() => setCell(id)}
-                          type="button"
-                        >
-                          <QuestionBlockView block={{ text, type: 'text' }} />
-                        </button>
-                      )}
+                      {/* Columns grow with their text between these widths,
+                          then wrap. */}
+                      <div className="min-w-28 max-w-80 px-2 py-1.5">
+                        {cell === id ? (
+                          <TextEditor
+                            compact
+                            maxLength={limits.QUESTION_TEXT_MAX}
+                            onChange={(value) => updateCell(i, j, value)}
+                            toolbarTarget={toolbarTarget ?? cellTools}
+                            value={text}
+                          />
+                        ) : (
+                          <button
+                            aria-label={m.question_ui_edit_cell({
+                              column: j + 1,
+                              row: i + 1,
+                            })}
+                            className="min-h-8 w-full text-left"
+                            onClick={() => setCell(id)}
+                            type="button"
+                          >
+                            <QuestionBlockView block={{ text, type: 'text' }} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   );
                 })}
@@ -1294,6 +1256,77 @@ export function BlockEditor({
           </tbody>
         </table>
       </div>
+      <div className="-ml-4 flex flex-wrap gap-2">
+        <Button
+          disabled={block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX}
+          iconLeft="plus"
+          onClick={() =>
+            onChange({
+              ...block,
+              rows: [...block.rows, Array.from({ length: columns }, () => '')],
+            })
+          }
+          size="sm"
+          type="button"
+          variant="ghost-hover"
+        >
+          {m.question_ui_add_row()}
+        </Button>
+        <Button
+          disabled={columns >= limits.QUESTION_TABLE_COLUMNS_MAX}
+          iconLeft="plus"
+          onClick={() =>
+            onChange({ ...block, rows: block.rows.map((row) => [...row, '']) })
+          }
+          size="sm"
+          type="button"
+          variant="ghost-hover"
+        >
+          {m.question_ui_add_column()}
+        </Button>
+        <Button
+          disabled={columns <= 1}
+          onClick={() => {
+            setCell(null);
+            onChange({
+              ...block,
+              rows: block.rows.map((row) => row.slice(0, -1)),
+            });
+          }}
+          size="sm"
+          type="button"
+          variant="danger-light"
+        >
+          {m.question_ui_remove_last_column()}
+        </Button>
+      </div>
+      <Collapsible.Root>
+        <Collapsible.Trigger asChild>
+          <Button
+            className="-ml-4"
+            iconLeft="chevronDown"
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {m.question_ui_advanced()}
+          </Button>
+        </Collapsible.Trigger>
+        <Collapsible.Content className="translate-x-0.5 pt-3">
+          <SelectField
+            className="w-44"
+            label={m.question_ui_header_row()}
+            onChange={(value) =>
+              onChange({ ...block, header: value === 'shown' })
+            }
+            options={[
+              { label: m.question_ui_graph_shown(), value: 'shown' },
+              { label: m.question_ui_graph_hidden(), value: 'hidden' },
+            ]}
+            value={block.header ? 'shown' : 'hidden'}
+          />
+        </Collapsible.Content>
+      </Collapsible.Root>
     </div>
   );
 }

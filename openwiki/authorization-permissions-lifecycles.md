@@ -184,9 +184,9 @@ kept out of the static assets by `.assetsignore`; `wrangler.jsonc` aliases it as
 components keep their browser imports; libraries that only run in effects or on click (Mermaid, MathLive's
 editor, jsxgraph, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
 into `<script id="share-state">`, and the page's script (`share.html`, `src/share/main.tsx`) never fetches it
-again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when an
-attempt is submitted or a card rated (`src/share/session.ts`): signed in, the attempt or rating goes to the
-account (`POST /api/quizzes/{id}/attempts`, `POST /api/review/ratings`); signed out, the share route grades and
+again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when a
+question is checked or a card rated (`src/share/session.ts`): signed in, the check or rating goes to the
+account (`POST /api/quizzes/{id}/check`, `POST /api/review/ratings`); signed out, the share route grades and
 the browser keeps it. Without a Clerk key (MSW, e2e) `?anonymous` selects the signed-out path; under MSW the dev
 server signs the mocks' placeholder links and answers the Worker's API reads from the MSW handlers
 (`src/summary/vite.ts`). The pages drop the label
@@ -1444,7 +1444,8 @@ history but blank the live workspace (and chapter) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
 The Embeds tab lists every image and audio clip the caller pays for
-(`GET /api/editor-assets`), under its note's current title, marked
+(`GET /api/editor-assets`), under its note's current title and kind
+(`materialType`, for the row's icon; the Block column), marked
 `lostAccess` when the caller can no longer reach the note's workspace
 (`lostAccessSQL`; title and workspace name blank once that workspace's owner
 is no longer live). One in a note the caller can open opens that note; one it

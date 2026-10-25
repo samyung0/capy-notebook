@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -36,9 +37,9 @@ type updateQuizSharingInput struct {
 	ID   string `path:"id"`
 	Body apimodel.UpdateStandaloneSharingReq
 }
-type createAttemptInput struct {
+type checkQuizQuestionInput struct {
 	ID   string `path:"id"`
-	Body apimodel.CreateAttemptReq
+	Body apimodel.CheckQuizQuestionReq
 }
 type attemptsInput struct {
 	Sort        string `query:"sort" enum:"date,score,quiz,workspace" default:"date"`
@@ -69,7 +70,7 @@ func (a *api) registerQuizzes(api huma.API) {
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/metadata", "updateQuizMetadata", tag, "Update quiz metadata", http.StatusOK, a.updateQuizMetadata)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/sharing", "updateQuizSharing", tag, "Update standalone quiz sharing", http.StatusOK, a.updateQuizSharing)
 	reg(api, http.MethodDelete, "/api/quizzes/{id}", "deleteQuiz", tag, "Delete a quiz", http.StatusNoContent, a.deleteQuiz)
-	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/attempts", "createAttempt", tag, "Grade and record a quiz attempt", http.StatusCreated, answersMaxBytes, a.createAttempt)
+	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/check", "checkQuizQuestion", tag, "Grade one question of a quiz attempt and record it", http.StatusOK, answersMaxBytes, a.checkQuizQuestion)
 	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
 	a.registerComputationCheck(api)
@@ -232,10 +233,10 @@ func (a *api) listAttempts(ctx context.Context, in *attemptsInput) (*attemptsOut
 	return out, nil
 }
 
-// createAttempt grades every part of a submitted attempt on the server, stores
-// the graded questions, rates review and marks progress, and returns the
-// result with the keys. Retakes are unlimited.
-func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attemptDetailOutput, error) {
+// checkQuizQuestion grades one question and adds it to the learner's attempt,
+// starting a new attempt when the browser has none or its id is unknown; the
+// response carries the attempt so far, whose id the browser keeps.
+func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput) (*attemptDetailOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
@@ -253,21 +254,61 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 	if err != nil {
 		return nil, hErr(err)
 	}
-	answers := projectedAnswers(qs, in.Body.Answers)
-	plan, err := planGrading(qs, answers)
+	q, order, marks := quizQuestion(qs, in.Body.QuestionID)
+	if q == nil {
+		return nil, huma.Error404NotFound("the question is not in this quiz")
+	}
+	// A repeated check (a lost response, a second tab) is refused before it
+	// costs a grading call.
+	if in.Body.AttemptID != "" {
+		checked, err := a.s.QuizQuestionChecked(ctx, userID(ctx), in.ID, in.Body.AttemptID, in.Body.QuestionID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		if checked {
+			return nil, huma.Error409Conflict(store.ErrQuestionChecked.Error())
+		}
+	}
+	answers := projectedAnswers([]map[string]any{q}, in.Body.Answers)
+	plan, err := planGrading([]map[string]any{q}, answers)
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
-	graded, correct, total, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID, map[string]any{"quizId": quiz.ID})
+	graded, _, _, err := a.gradeSignedIn(ctx, plan, quiz.WorkspaceID, map[string]any{"quizId": quiz.ID})
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.s.CreateAttempt(ctx, userID(ctx), in.ID, correct, total,
-		apimodel.EncodeRaw(answers), apimodel.EncodeQuestions(graded), in.Body.StartedAt)
+	res, err := a.s.CheckQuizQuestion(ctx, userID(ctx), in.ID, store.QuizCheck{
+		AttemptID: in.Body.AttemptID, StartedAt: in.Body.StartedAt,
+		Answers: answers, Question: graded[0], Order: order, Marks: marks,
+	}, time.Now())
+	if errors.Is(err, store.ErrQuestionChecked) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &attemptDetailOutput{Body: apimodel.AttemptDetail{Attempt: res, Answers: answers, Questions: graded, Cards: []store.AttemptCard{}}}, nil
+	return &attemptDetailOutput{Body: apimodel.FromAttemptDetail(res)}, nil
+}
+
+// quizQuestion finds a question of the quiz and returns it with the quiz's
+// question ids in order and each question's marks.
+func quizQuestion(qs []map[string]any, id string) (found map[string]any, order []string, marks map[string]float64) {
+	marks = make(map[string]float64, len(qs))
+	for _, q := range qs {
+		qid, _ := q["id"].(string)
+		order = append(order, qid)
+		if qid == id {
+			found = q
+		}
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			m, _ := p["marks"].(float64)
+			marks[qid] += m
+		}
+	}
+	return found, order, marks
 }
 
 // projectedAnswers keeps the answers to parts the projection holds. A live

@@ -8,7 +8,7 @@ export const BASE_BUTTON_STYLE =
 
 export const buttonVariants = cva(BASE_BUTTON_STYLE, {
   // Radius classes live here because compound classes come after every
-  // variant's, so they override the size's radius (lg is a pill).
+  // variant's, so they override the size's radius (rounded-button-xl on lg).
   compoundVariants: [
     { class: 'rounded-button-lg', rounded: 'large' },
     { class: 'rounded-button', rounded: 'normal' },
@@ -23,12 +23,13 @@ export const buttonVariants = cva(BASE_BUTTON_STYLE, {
       large: '',
       normal: '',
     },
-    // lg and md are 4px shorter on phones, matching Select. The height goes
-    // through a variable so one h-* override (h-fit, size-10) still replaces it.
+    // Heights come from the style's sheet, shorter on phones; md is
+    // --control-h like Input and Select md. One h-* override (h-fit, size-10)
+    // still replaces them.
     size: {
-      lg: 'h-(--button-h) min-w-24 gap-2.25 rounded-full px-6.5 text-[0.925rem] [--button-h:--spacing(12)] sm:[--button-h:--spacing(13)]',
-      md: 'h-(--button-h) gap-2 px-5 [--button-h:--spacing(10)] sm:[--button-h:--spacing(11)]',
-      sm: 'h-7.5 gap-1.75 px-4',
+      lg: 'h-(--button-h-lg) min-w-24 gap-2.25 rounded-button-xl px-6.5 text-[0.925rem]',
+      md: 'h-(--control-h) gap-2 px-5',
+      sm: 'h-(--button-h-sm) gap-1.75 px-4',
       xs: 'h-fit gap-1.5 px-0.5 py-0.5',
     },
     variant: {
@@ -40,17 +41,19 @@ export const buttonVariants = cva(BASE_BUTTON_STYLE, {
         'border border-transparent text-tint-error-fg hover:bg-tint-error/85',
       // Bordered, for a destructive action that stays on the page.
       'danger-outline':
-        'border border-line bg-surface text-tint-error-fg hover:bg-tint-error/85',
+        'border border-line bg-surface frosted:not-hover:bg-(--frost-fill) text-tint-error-fg hover:bg-tint-error/85',
       dark: 'border border-transparent bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
       ghost: 'border-none',
       'ghost-hover': 'border-none text-fg hover:bg-surface-hover-bg/80',
       'ghost-link': 'border-none text-link hover:text-link-hover',
       'ghost-muted': 'border-none text-fg-muted hover:text-fg',
       gray: 'border border-transparent bg-page text-fg hover:bg-page-hover',
+      // On a frosted panel the card-coloured fills turn to the frost's
+      // (tailwind.css); a hover still tints them.
       outline:
-        'border border-line bg-surface text-fg hover:bg-surface-hover-bg/80',
+        'border border-line bg-surface frosted:not-hover:bg-(--frost-fill) text-fg hover:bg-surface-hover-bg/80',
       surface:
-        'border border-transparent bg-surface text-fg hover:bg-surface-hover-bg',
+        'border border-transparent bg-surface frosted:not-hover:bg-(--frost-fill) text-fg hover:bg-surface-hover-bg',
     },
   },
 });

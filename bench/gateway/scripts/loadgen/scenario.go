@@ -250,9 +250,10 @@ func (u *user) takeQuiz(ctx context.Context, sp *space) {
 	_ = u.get(ctx, "/api/quizzes/"+id, "/api/quizzes/{id}", true, &quiz)
 	u.readToken(ctx, id)
 	started := time.Now().UTC()
-	u.think(ctx, 60*time.Second)
-	if u.call(ctx, http.MethodPost, "/api/quizzes/"+id+"/attempts", "/api/quizzes/{id}/attempts",
-		map[string]any{"answers": quiz.answers(u), "startedAt": started.Format(time.RFC3339)}, nil, http.StatusCreated) == nil {
+	// The minute spent answering is spread over the questions, each checked
+	// as it is answered.
+	per := 60 * time.Second / time.Duration(max(1, len(quiz.Questions)))
+	if quiz.check(ctx, u, id, started, func() { u.think(ctx, per) }) == nil {
 		all(
 			func() { _ = u.get(ctx, "/api/learning/progress", "/api/learning/progress", true, nil) },
 			func() { _ = u.get(ctx, "/api/workspaces/"+sp.id+"/study", "/api/workspaces/{id}/study", true, nil) },
@@ -607,16 +608,28 @@ type quizBody struct {
 	} `json:"questions"`
 }
 
-// answers gives every true/false part an answer; the setup's quizzes have no
-// other kind.
-func (q quizBody) answers(u *user) map[string]any {
-	out := map[string]any{}
+// check checks every question of the quiz into one attempt, as the quiz page
+// does, giving each true/false part an answer (the setup's quizzes have no
+// other kind); `before` runs ahead of each check, e.g. the user thinking.
+func (q quizBody) check(ctx context.Context, u *user, quizID string, started time.Time, before func()) error {
+	var attempt struct {
+		ID string `json:"id"`
+	}
 	for _, question := range q.Questions {
+		answers := map[string]any{}
 		for _, part := range question.Parts {
-			out[part.ID] = u.rng.IntN(2) == 0
+			answers[part.ID] = u.rng.IntN(2) == 0
+		}
+		if before != nil {
+			before()
+		}
+		if err := u.call(ctx, http.MethodPost, "/api/quizzes/"+quizID+"/check", "/api/quizzes/{id}/check",
+			map[string]any{"questionId": question.ID, "answers": answers, "attemptId": attempt.ID, "startedAt": started.Format(time.RFC3339)},
+			&attempt); err != nil {
+			return err
 		}
 	}
-	return out
+	return nil
 }
 
 // provision is a user's first sign-in, which creates the account and its
@@ -660,8 +673,7 @@ func (u *user) provision(ctx context.Context) error {
 			if err := u.call(ctx, http.MethodGet, "/api/quizzes/"+m.ID, "/api/quizzes/{id}", nil, &quiz); err != nil {
 				return err
 			}
-			if err := u.call(ctx, http.MethodPost, "/api/quizzes/"+m.ID+"/attempts", "/api/quizzes/{id}/attempts",
-				map[string]any{"answers": quiz.answers(u)}, nil, http.StatusCreated); err != nil {
+			if err := quiz.check(ctx, u, m.ID, time.Now().UTC(), nil); err != nil {
 				return err
 			}
 		}

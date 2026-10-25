@@ -16,7 +16,8 @@ import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { fitImage, IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
-import { CardImage, CardSides } from './CardView';
+import { CardPreview } from './CardStack';
+import { CardImage } from './CardView';
 import {
   cardFace,
   MAX_BACK,
@@ -94,7 +95,15 @@ export function CardDialog({
     <SimpleDialog
       // Live-saved: phones show the status by the title and Undo where Save
       // would be.
-      action={phone && <UndoButtons manager={undo} />}
+      action={
+        phone && (
+          // Back up the 2px the header drops its action, level with the title
+          // and the cloud.
+          <span className="-translate-y-0.5">
+            <UndoButtons manager={undo} />
+          </span>
+        )
+      }
       footer={
         <>
           {!phone && (
@@ -104,20 +113,25 @@ export function CardDialog({
             </div>
           )}
           {onRemove && (
-            <Button
-              onClick={onRemove}
-              size="lg"
-              type="button"
-              variant="danger-outline"
-            >
-              {m.editor_remove_card()}
-            </Button>
+            // Wrapped so phones keep it at the end (the footer starts a
+            // borderless first button at the content's edge); its label
+            // lines up with the content's right edge.
+            <div className="-mr-6.5 ml-auto">
+              <Button
+                onClick={onRemove}
+                size="lg"
+                type="button"
+                variant="danger-light"
+              >
+                {m.editor_remove_card()}
+              </Button>
+            </div>
           )}
         </>
       }
       onClose={onClose}
       open
-      status={<LiveStatus status={status} />}
+      status={<LiveStatus compact status={status} />}
       title={
         <span className="flex items-baseline gap-2.5">
           {m.flashcards_edit_card()}
@@ -160,7 +174,8 @@ export function CardDialog({
                     className="max-h-31"
                   />
                 </div>
-                <div className="flex justify-end gap-1">
+                {/* Borderless: the labels line up with the box's right edge. */}
+                <div className="-mr-4 flex justify-end gap-1">
                   <Button
                     disabled={picking}
                     iconLeft="upload"
@@ -168,7 +183,7 @@ export function CardDialog({
                     rounded="large"
                     size="sm"
                     type="button"
-                    variant="outline"
+                    variant="ghost-hover"
                   >
                     {m.question_ui_replace()}
                   </Button>
@@ -179,7 +194,7 @@ export function CardDialog({
                     rounded="large"
                     size="sm"
                     type="button"
-                    variant="danger-outline"
+                    variant="danger-light"
                   >
                     {m.action_remove()}
                   </Button>
@@ -220,8 +235,9 @@ export function CardDialog({
             >
               {m.editor_card_back()}
             </InputTitle>
+            {/* Ruled lines, as a quiz's written answer. */}
             <Textarea
-              className="max-h-88 min-h-42"
+              className="ruled-lines max-h-[calc(var(--ruled-line)*10)] min-h-[calc(var(--ruled-line)*4)] rounded-none border-0 bg-transparent px-0.5 py-0 focus:border-0"
               id="card-back"
               maxLength={MAX_BACK}
               onChange={back.onChange}
@@ -231,7 +247,7 @@ export function CardDialog({
           </label>
         </div>
         <div className="hidden md:block">
-          <CardSides card={card} />
+          <CardPreview card={card} />
         </div>
       </div>
     </SimpleDialog>

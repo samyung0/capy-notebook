@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
-import type { PageFrame } from '@/api/types';
+import type { FrostPanel, PageFrame } from '@/api/types';
 
-export type Style = 'classroom' | 'notion';
+export type Style = 'capy' | 'fisheye' | 'notion';
 export type Theme = 'latte' | 'mocha' | 'frappe';
 
 export const STYLES: {
@@ -10,9 +10,14 @@ export const STYLES: {
   supportedThemes: Theme[];
 }[] = [
   {
-    label: 'Classroom',
+    label: 'Capy',
     supportedThemes: ['latte', 'frappe', 'mocha'],
-    value: 'classroom',
+    value: 'capy',
+  },
+  {
+    label: 'Fisheye',
+    supportedThemes: ['latte', 'frappe', 'mocha'],
+    value: 'fisheye',
   },
   {
     label: 'Notion',
@@ -35,7 +40,8 @@ export const THEMES: {
  * (`--surface-card-dark-bg`) for Frappé and the page (`--surface-page`) for
  * Mocha, the colours each reads as, so the two stay apart at swatch size. */
 const SWATCH_COLORS: Record<Style, Record<Theme, string>> = {
-  classroom: { frappe: '#2f3e52', latte: '#f7f7f7', mocha: '#0d1219' },
+  capy: { frappe: '#2f3e52', latte: '#f7f7f7', mocha: '#0d1219' },
+  fisheye: { frappe: '#2f3e52', latte: '#f7f7f7', mocha: '#0d1219' },
   notion: { frappe: '#303034', latte: '#f7f7f5', mocha: '#171717' },
 };
 
@@ -60,4 +66,12 @@ export function useTheme(): ThemeState {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
   return ctx;
+}
+
+/** Whether `panel` frosts over the page frame (`data-frosted`); the
+ * stylesheet only draws it while a frame is shown. Shared pages and tests
+ * render panels without a ThemeProvider, and have no frame to frost over. */
+export function useFrosted(panel: FrostPanel | undefined): boolean {
+  const frosted = useContext(ThemeContext)?.pageFrame.frosted;
+  return !!panel && !!frosted?.includes(panel);
 }

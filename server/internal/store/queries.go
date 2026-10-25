@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/samyung0/capy-notebook/server/internal/cover"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -2072,63 +2073,194 @@ func startedBefore(started *time.Time, now time.Time) *time.Time {
 	return &t
 }
 
-// CreateAttempt stores the attempt and, for a workspace quiz, rates each
-// question and marks the quiz done in the user's study progress. A quiz
-// embedded in a note is a quick check: its graded attempt is returned without
-// an id and nothing is stored.
-func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage, startedAt *time.Time) (Attempt, error) {
+// QuizCheck is one question checked in a quiz attempt, graded by the caller.
+type QuizCheck struct {
+	// AttemptID is the attempt the browser continues; an empty or unknown id
+	// (another user's, another quiz's, or one since deleted) starts a new
+	// attempt, begun at StartedAt.
+	AttemptID string
+	StartedAt *time.Time
+	// Answers are the question's answers by part id; Question is its graded copy.
+	Answers  map[string]any
+	Question map[string]any
+	// Order is the quiz's question ids, which order the attempt's snapshot,
+	// and Marks each one's marks now: unchecked questions score 0 of them.
+	Order []string
+	Marks map[string]float64
+}
+
+// ErrQuestionChecked refuses a second check of a question in one attempt: it
+// would rate the question twice.
+var ErrQuestionChecked = errors.New("the question is already checked in this attempt")
+
+// CheckQuizQuestion adds one checked question to the user's attempt at the
+// quiz, creating the attempt with its first check, and for a workspace quiz
+// rates the question and marks the quiz done. An attempt is never closed: one
+// left partway counts with its unchecked questions at 0. A quiz embedded in a
+// note is a quick check: the question comes back in an attempt without an id
+// and nothing is stored.
+func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string, c QuizCheck, now time.Time) (AttemptDetail, error) {
 	q, err := s.GetQuiz(ctx, materialID)
 	if err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
 	mt, err := s.GetMaterial(ctx, materialID)
 	if err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
-	quizName, workspaceName, chapters := q.Name, q.WorkspaceName, q.Chapters
-	linkedMaterial := &materialID
-	pct := 0
-	if total > 0 {
-		pct = int(float64(correct) / float64(total) * 100.0)
+	now = now.UTC()
+	id, _ := c.Question["id"].(string)
+	answers := c.Answers
+	snapshot := []map[string]any{c.Question}
+	started := startedBefore(c.StartedAt, now)
+	if mt.ParentMaterialID != "" {
+		return quizAttemptDetail(Attempt{Kind: "quiz", Chapters: []string{}, StartedAt: started, TakenAt: now}, answers, snapshot, c)
 	}
-	now := time.Now().UTC()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return AttemptDetail{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return AttemptDetail{}, err
+	}
+	// One user's checks of one quiz serialize, so an attempt's checks made at
+	// once see each other.
+	if err := lockRating(ctx, tx, userID, mt.ID); err != nil {
+		return AttemptDetail{}, err
+	}
 	a := Attempt{
-		ID: uid("at"), MaterialID: linkedMaterial, WorkspaceID: &mt.WorkspaceID, Kind: "quiz", QuizName: quizName, WorkspaceName: workspaceName,
-		Chapters: chapters, Correct: correct, Total: total, Pct: pct, StartedAt: startedBefore(startedAt, now), TakenAt: now,
+		ID: uid("at"), MaterialID: &mt.ID, WorkspaceID: &mt.WorkspaceID, Kind: "quiz",
+		QuizName: q.Name, WorkspaceName: q.WorkspaceName, Chapters: q.Chapters, StartedAt: started, TakenAt: now,
 	}
 	if a.Chapters == nil {
 		a.Chapters = []string{}
 	}
-	if len(answers) == 0 {
-		answers = json.RawMessage("{}")
+	var rawAnswers, rawQuestions []byte
+	err = tx.QueryRow(ctx, `SELECT started_at, answers, questions FROM attempts
+		WHERE id=$1 AND user_id=$2 AND material_id=$3 AND kind='quiz' FOR UPDATE`,
+		c.AttemptID, userID, mt.ID).Scan(&a.StartedAt, &rawAnswers, &rawQuestions)
+	exists := err == nil
+	if err != nil && !isNoRows(err) {
+		return AttemptDetail{}, err
 	}
-	if len(questions) == 0 {
-		questions = json.RawMessage("[]")
+	if exists {
+		a.ID = c.AttemptID
+		var stored []map[string]any
+		if err := json.Unmarshal(rawQuestions, &stored); err != nil {
+			return AttemptDetail{}, err
+		}
+		for _, sq := range stored {
+			if sq["id"] == id {
+				return AttemptDetail{}, ErrQuestionChecked
+			}
+		}
+		merged := map[string]any{}
+		if err := json.Unmarshal(rawAnswers, &merged); err != nil {
+			return AttemptDetail{}, err
+		}
+		for part, answer := range answers {
+			merged[part] = answer
+		}
+		answers = merged
+		snapshot = orderQuestions(append(stored, c.Question), c.Order)
 	}
-	if mt.ParentMaterialID != "" {
-		a.ID = ""
-		return a, nil
-	}
-	tx, err := s.pool.Begin(ctx)
+	d, err := quizAttemptDetail(a, answers, snapshot, c)
 	if err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
-	defer tx.Rollback(ctx)
-	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
-		return Attempt{}, err
+	if exists {
+		_, err = tx.Exec(ctx, `UPDATE attempts SET correct=$2, total=$3, pct=$4, taken_at=$5, answers=$6, questions=$7 WHERE id=$1`,
+			d.ID, d.Correct, d.Total, d.Pct, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, d.ID, d.MaterialID, userID, d.QuizName, d.WorkspaceName, d.Chapters, d.Correct, d.Total, d.Pct, d.StartedAt, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, a.ID, a.MaterialID, userID, a.QuizName, a.WorkspaceName, a.Chapters, a.Correct, a.Total, a.Pct, a.StartedAt, a.TakenAt, []byte(answers), []byte(questions))
 	if err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
-	if err := rateAttemptTx(ctx, tx, userID, mt, answers, questions, a.TakenAt); err != nil {
-		return Attempt{}, err
+	if err := rateQuestionTx(ctx, tx, userID, mt, c.Question, c.Answers, now); err != nil {
+		return AttemptDetail{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
-	return a, nil
+	return d, nil
+}
+
+// quizAttemptDetail scores a quiz attempt out of the quiz's marks. A checked
+// question counts with the marks it was checked against, so an edit to its
+// marks since, or its removal, never takes the score past its total;
+// unchecked questions count with their marks now and score 0.
+func quizAttemptDetail(a Attempt, answers map[string]any, snapshot []map[string]any, c QuizCheck) (AttemptDetail, error) {
+	a.Correct, a.Total = 0, 0
+	checked := map[string]bool{}
+	for _, q := range snapshot {
+		id, _ := q["id"].(string)
+		checked[id] = true
+		awarded, marks := questionMarks(q)
+		a.Correct += awarded
+		a.Total += marks
+	}
+	for _, id := range c.Order {
+		if !checked[id] {
+			a.Total += c.Marks[id]
+		}
+	}
+	if a.Total > 0 {
+		a.Pct = int(a.Correct / a.Total * 100.0)
+	}
+	rawAnswers, err := json.Marshal(answers)
+	if err != nil {
+		return AttemptDetail{}, err
+	}
+	rawQuestions, err := json.Marshal(snapshot)
+	if err != nil {
+		return AttemptDetail{}, err
+	}
+	return AttemptDetail{Attempt: a, Answers: rawAnswers, Questions: rawQuestions}, nil
+}
+
+// questionMarks sums a graded question's awarded and available marks.
+func questionMarks(q map[string]any) (awarded, marks float64) {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		a, _ := p["awarded"].(float64)
+		m, _ := p["marks"].(float64)
+		awarded, marks = awarded+a, marks+m
+	}
+	return awarded, marks
+}
+
+// orderQuestions sorts an attempt's checked questions into the quiz's order,
+// questions no longer in the quiz last.
+func orderQuestions(qs []map[string]any, order []string) []map[string]any {
+	index := make(map[string]int, len(order))
+	for i, id := range order {
+		index[id] = i
+	}
+	pos := func(q map[string]any) int {
+		id, _ := q["id"].(string)
+		if i, ok := index[id]; ok {
+			return i
+		}
+		return len(order)
+	}
+	sort.SliceStable(qs, func(i, j int) bool { return pos(qs[i]) < pos(qs[j]) })
+	return qs
+}
+
+// QuizQuestionChecked reports whether the user's attempt at the quiz already
+// holds the question, so a repeated check is refused before it is graded.
+// CheckQuizQuestion refuses it again under its lock.
+func (s *Store) QuizQuestionChecked(ctx context.Context, userID, materialID, attemptID, questionID string) (bool, error) {
+	var checked bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM attempts
+		WHERE id=$1 AND user_id=$2 AND material_id=$3 AND kind='quiz'
+		AND questions @> jsonb_build_array(jsonb_build_object('id', $4::text)))`,
+		attemptID, userID, materialID, questionID).Scan(&checked)
+	return checked, err
 }
 
 // GetAttempt returns a single attempt with its per-question breakdown, scoped to

@@ -36,6 +36,7 @@ import type {
   Canvas,
   Chapter,
   CheckBankQuestionReq,
+  CheckQuizQuestionReq,
   CheckReviewItemReq,
   CheckSourceAccessParams,
   ClaimSourceRefreshParams,
@@ -47,7 +48,6 @@ import type {
   ComputationCheckReq,
   ComputationCheckResp,
   Conversation,
-  CreateAttemptReq,
   CreateBlankFileReq,
   CreateCanvasReq,
   CreateCommentReq,
@@ -82,9 +82,9 @@ import type {
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetWorkspaceReviewParams,
+  GetWorkspaceStudyParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
-  GradedQuiz,
   ImportSourcesAccepted,
   ImportSourcesReq,
   IngestSlots,
@@ -6683,7 +6683,7 @@ export const getAnonymousNoteAsset = async (token: string,
 
 
 export type gradeAnonymousNoteQuizResponse200 = {
-  data: GradedQuiz
+  data: GradedQuestion
   status: 200
 }
 
@@ -6711,7 +6711,7 @@ export const getGradeAnonymousNoteQuizUrl = (token: string,
 }
 
 /**
- * @summary Grade an attempt at a quiz embedded in a shared note
+ * @summary Grade one question of a quiz embedded in a shared note
  */
 export const gradeAnonymousNoteQuiz = async (token: string,
     quizId: string,
@@ -6852,7 +6852,7 @@ export const getAnonymousQuizAsset = async (token: string,
 
 
 export type gradeAnonymousQuizResponse200 = {
-  data: GradedQuiz
+  data: GradedQuestion
   status: 200
 }
 
@@ -6879,7 +6879,7 @@ export const getGradeAnonymousQuizUrl = (token: string,) => {
 }
 
 /**
- * @summary Grade a signed-out attempt at a shared quiz
+ * @summary Grade one question of a signed-out attempt at a shared quiz
  */
 export const gradeAnonymousQuiz = async (token: string,
     gradeAnonymousQuizReq: NonReadonly<GradeAnonymousQuizReq>, options?: RequestInit): Promise<gradeAnonymousQuizResponse> => {
@@ -7253,38 +7253,38 @@ export const getQuiz = async (id: string, options?: RequestInit): Promise<getQui
 
 
 
-export type createAttemptResponse201 = {
+export type checkQuizQuestionResponse200 = {
   data: AttemptDetail
-  status: 201
+  status: 200
 }
 
-export type createAttemptResponseDefault = {
+export type checkQuizQuestionResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
+  status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type createAttemptResponseSuccess = (createAttemptResponse201) & {
+export type checkQuizQuestionResponseSuccess = (checkQuizQuestionResponse200) & {
   headers: Headers;
 };
-export type createAttemptResponseError = (createAttemptResponseDefault) & {
+export type checkQuizQuestionResponseError = (checkQuizQuestionResponseDefault) & {
   headers: Headers;
 };
 
-export type createAttemptResponse = (createAttemptResponseSuccess | createAttemptResponseError)
+export type checkQuizQuestionResponse = (checkQuizQuestionResponseSuccess | checkQuizQuestionResponseError)
 
-export const getCreateAttemptUrl = (id: string,) => {
-
-
+export const getCheckQuizQuestionUrl = (id: string,) => {
 
 
-  return `/api/quizzes/${id}/attempts`
+
+
+  return `/api/quizzes/${id}/check`
 }
 
 /**
- * @summary Grade and record a quiz attempt
+ * @summary Grade one question of a quiz attempt and record it
  */
-export const createAttempt = async (id: string,
-    createAttemptReq: NonReadonly<CreateAttemptReq>, options?: RequestInit): Promise<createAttemptResponse> => {
+export const checkQuizQuestion = async (id: string,
+    checkQuizQuestionReq: NonReadonly<CheckQuizQuestionReq>, options?: RequestInit): Promise<checkQuizQuestionResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -7300,20 +7300,20 @@ export const createAttempt = async (id: string,
     }
     return headers;
   };
-const res = await fetch(getCreateAttemptUrl(id),
+const res = await fetch(getCheckQuizQuestionUrl(id),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(createAttemptReq)
+    body: JSON.stringify(checkQuizQuestionReq)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: createAttemptResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createAttemptResponse
+  const data: checkQuizQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkQuizQuestionResponse
 }
 
 
@@ -10895,20 +10895,29 @@ export type getWorkspaceStudyResponseError = (getWorkspaceStudyResponseDefault) 
 
 export type getWorkspaceStudyResponse = (getWorkspaceStudyResponseSuccess | getWorkspaceStudyResponseError)
 
-export const getGetWorkspaceStudyUrl = (id: string,) => {
+export const getGetWorkspaceStudyUrl = (id: string,
+    params?: GetWorkspaceStudyParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/workspaces/${id}/study`
+  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/study?${stringifiedParams}` : `/api/workspaces/${id}/study`
 }
 
 /**
  * @summary Study progress in a workspace
  */
-export const getWorkspaceStudy = async (id: string, options?: RequestInit): Promise<getWorkspaceStudyResponse> => {
+export const getWorkspaceStudy = async (id: string,
+    params?: GetWorkspaceStudyParams, options?: RequestInit): Promise<getWorkspaceStudyResponse> => {
 
-  const res = await fetch(getGetWorkspaceStudyUrl(id),
+  const res = await fetch(getGetWorkspaceStudyUrl(id,params),
   {
     ...options,
     method: 'GET'

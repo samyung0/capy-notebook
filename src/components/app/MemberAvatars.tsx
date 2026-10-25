@@ -89,9 +89,12 @@ export function OwnAvatarButton({
 /** The workspace panel foot's members: `own` (your avatar, the menu
  * trigger), then the other members overlapping, lifting under the pointer. */
 export function MemberAvatars({
+  children,
   members,
   own,
 }: {
+  /** Drawn after the avatars, e.g. Invite members while you are alone. */
+  children?: ReactNode;
   /** The other members, you excluded. */
   members: MemberAvatar[];
   own: ReactNode;
@@ -162,6 +165,7 @@ export function MemberAvatars({
           +{rest}
         </span>
       )}
+      {children}
     </div>
   );
 }

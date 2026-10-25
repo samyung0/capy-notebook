@@ -46,6 +46,7 @@ type workspaceRecentOutput struct {
 type filesListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated file kinds"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
+	IDs         string `query:"ids" doc:"Comma-separated file ids: only these rows (the phone quick open, ordered by the client's opens)"`
 	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"`
 	Sort        string `query:"sort" enum:"added,name,size,kind,workspace" default:"added"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
@@ -166,7 +167,7 @@ func (a *api) deleteChapter(ctx context.Context, in *chapterIDInput) (*Empty, er
 
 func (a *api) listOwnedFiles(ctx context.Context, in *filesListInput) (*filePageOutput, error) {
 	page, err := a.s.ListOwnedFiles(ctx, userID(ctx), store.FileListFilter{
-		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Member: in.Scope == "member",
+		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), IDs: csv(in.IDs), Member: in.Scope == "member",
 		Sort: in.Sort, Ascending: in.Dir == "asc", Limit: in.Limit, Cursor: in.Cursor,
 	})
 	if err != nil {

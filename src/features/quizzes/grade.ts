@@ -1,6 +1,6 @@
-import type { QuestionPart } from '@/api/types';
+import type { Question, QuestionPart } from '@/api/types';
 import { quantityValuePattern } from '@/features/questions/quantity';
-import type { LearnerPart } from '@/features/questions/types';
+import type { LearnerPart, LearnerQuestion } from '@/features/questions/types';
 
 /**
  * A learner's answer per part, as the server takes it: option indices for
@@ -224,4 +224,30 @@ export function emptyAnswer(part: QuestionPart | LearnerPart): Answer {
     case 'matching':
       return {};
   }
+}
+
+/** A graded question's awarded marks. */
+const awardedMarks = (question: Question) =>
+  question.parts.reduce((sum, part) => sum + (part.awarded ?? 0), 0);
+
+const marksOf = (question: Question | LearnerQuestion) =>
+  question.parts.reduce((total, part) => total + part.marks, 0);
+
+/**
+ * A run's score, as the server keeps it: a checked question counts with the
+ * marks it was checked against (so an edit to its marks or its removal never
+ * takes the score past the total), an unchecked one with its marks now.
+ */
+export function runScore(
+  questions: (Question | LearnerQuestion)[],
+  checked: Question[]
+) {
+  const byId = new Map(checked.map((q) => [q.id, q]));
+  const unchecked = questions.filter((q) => !byId.has(q.id));
+  return {
+    awarded: checked.reduce((sum, q) => sum + awardedMarks(q), 0),
+    max:
+      checked.reduce((sum, q) => sum + marksOf(q), 0) +
+      unchecked.reduce((sum, q) => sum + marksOf(q), 0),
+  };
 }

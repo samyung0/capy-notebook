@@ -38,14 +38,17 @@ import {
   answerLabels,
   emptyAnswer,
   MarkschemeList,
+  MarksField,
   MenuItem,
-  markOptions,
-  SelectField,
 } from './editorFields';
 import { renderGraphSvg } from './graph';
 import { IssueIcon, IssueSummary } from './IssueViews';
 import { issueMessages, questionIssues } from './issues';
-import { type BlockSection, QuestionBlockView } from './QuestionView';
+import {
+  AnswerView,
+  type BlockSection,
+  QuestionBlockView,
+} from './QuestionView';
 import { TextView } from './TextView';
 import {
   blankQuestion,
@@ -162,7 +165,10 @@ export function newQuestionBlock(type: AddableBlock): QuestionBlock {
       return {
         board: { axis: true, bbox: [-7.5, 5, 7.5, -5], grid: false },
         description: '',
-        elements: [],
+        // A new graph starts drawing y = x (Epo 2026-10-26).
+        elements: [
+          { id: crypto.randomUUID(), term: 'x', type: 'functiongraph' },
+        ],
         height: 400,
         image: { svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' },
         type,
@@ -262,6 +268,8 @@ function QuestionDialogSession({
   // The body column (from md) and the dialog body (phones) clip the toolbar.
   const [bodyColumn, setBodyColumn] = useState<HTMLDivElement | null>(null);
   const [dialogBody, setDialogBody] = useState<HTMLDivElement | null>(null);
+  // The open block's heading row, where a graph puts its zoom tools.
+  const [editorTools, setEditorTools] = useState<HTMLDivElement | null>(null);
   const bodyScrollers = [bodyColumn, dialogBody].filter(
     (element) => element !== null
   );
@@ -380,8 +388,11 @@ function QuestionDialogSession({
       const parts = [...draft.parts];
       parts.splice(index, 0, part);
       setDraft({ ...draft, parts });
-      setSelected({ kind: 'part', partId: part.id });
-      setEditing({ kind: 'part', part });
+      // The new part shows selected in the question; its answer opens from
+      // there.
+      const row: Row = { kind: 'part', partId: part.id };
+      setSelected(row);
+      setReveal((current) => ({ row, seq: (current?.seq ?? 0) + 1 }));
       return;
     }
     const blocks = [...sectionBlocks(draft, section)];
@@ -551,6 +562,22 @@ function QuestionDialogSession({
                 ] ?? editing.block,
             }
       : editing;
+  // Live, Undo (or a co-editor) can take away the open block or part, e.g.
+  // undoing the add of a chart still staged here: back to the question then.
+  // Blocks are known by place, so a different type there means it went.
+  const editingGone =
+    !!live &&
+    !!editing &&
+    (editing.kind === 'part'
+      ? !draft.parts.some((part) => part.id === editing.part.id)
+      : sectionBlocks(draft, editing.location)[editing.location.index]?.type !==
+        editing.block.type);
+  useEffect(() => {
+    if (!editingGone) return;
+    setEditing(null);
+    setSelected(null);
+    setError('');
+  }, [editingGone]);
   const editPart = (part: QuestionPart) => {
     setEditing({ kind: 'part', part });
     if (live) changePart(part);
@@ -740,7 +767,6 @@ function QuestionDialogSession({
                 <ToolbarPopoverGroup label={m.question_ui_answer_type()}>
                   {QUESTION_TYPES.map((type) => (
                     <MenuItem
-                      icon={<span />}
                       key={type}
                       label={answerLabels[type]()}
                       onClick={() =>
@@ -816,7 +842,13 @@ function QuestionDialogSession({
     const key = rowKey(row);
     const active = !!selected && rowKey(selected) === key;
     return (
-      <Popover modal={false} open={active}>
+      <Popover
+        modal={false}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+        open={active}
+      >
         <PopoverAnchor asChild>
           <div
             aria-label={label}
@@ -842,7 +874,17 @@ function QuestionDialogSession({
           // Flips above a block whose bottom is scrolled past, off the footer.
           avoidCollisions
           collisionBoundary={bodyScrollers}
-          onEscapeKeyDown={() => setSelected(null)}
+          // Clicking away clears the selection, except on controls: another
+          // block or row selects itself, and Add places after this block.
+          onInteractOutside={(event) => {
+            if (
+              event.target instanceof Element &&
+              event.target.closest(
+                'button, [role="button"], [role="menuitem"], [data-radix-popper-content-wrapper]'
+              )
+            )
+              event.preventDefault();
+          }}
           open={active}
           role="toolbar"
         >
@@ -937,6 +979,108 @@ function QuestionDialogSession({
       </>,
       answer
     );
+  // Editors see what learners only get after checking, between the waves:
+  // each part's answer key and worked solution, a part's label before its own
+  // when there are several.
+  const hidden = (parts: QuestionPart[]) => (
+    <section className="mt-8 space-y-4">
+      <div className="flex items-center gap-2 font-medium text-fg-muted text-xs">
+        <span className="wavy-rule flex-1 text-line-strong" />
+        <Icon className="size-4" name="viewOff" />
+        {m.question_ui_hidden_until_checked()}
+        <span className="wavy-rule flex-1 text-line-strong" />
+      </div>
+      {parts.map((part) => {
+        const index = draft.parts.indexOf(part);
+        return (
+          <div
+            className="space-y-2"
+            data-row-key={rowKey({ kind: 'solution', partId: part.id })}
+            key={part.id}
+          >
+            {parts.length > 1 && (
+              <strong className="block">
+                {draft.labels === 'letters'
+                  ? `(${String.fromCharCode(97 + index)})`
+                  : `${index + 1}.`}
+              </strong>
+            )}
+            {/* Learners see their own answer marked instead; the key is here
+                for the editor. An open part's sample answer is optional. */}
+            {(part.answer.type !== 'open' ||
+              part.answer.accepted.length > 0) && (
+              <div className="space-y-2 pb-3">
+                <h4 className="font-semibold text-sm text-tint-accent-1-fg">
+                  {m.question_ui_correct_answer()}
+                </h4>
+                <AnswerView part={part} />
+              </div>
+            )}
+            <h4 className="font-semibold text-sm text-tint-accent-2-fg">
+              {m.question_ui_worked_solution()}
+            </h4>
+            {part.solution.length === 0 && (
+              <button
+                className="block text-left text-fg-muted leading-relaxed hover:text-fg"
+                onClick={() => add('text', { partId: part.id, solution: true })}
+                type="button"
+              >
+                {m.question_ui_solution_add()}
+              </button>
+            )}
+            {part.solution.map((block, i) => (
+              <div key={i}>
+                {previewBlock(block, i, { partId: part.id, solution: true })}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+      <div className="wavy-rule text-line-strong" />
+    </section>
+  );
+  // Back to the question. Live, edits are already written, so Done only
+  // leaves; a chart or graph commits its staged value first. Not live (the
+  // bank), Cancel leaves and Save commits.
+  const back = () => {
+    setEditing(null);
+    setError('');
+  };
+  const doneButton = (className?: string) =>
+    editing && (
+      <Button
+        className={className}
+        disabled={
+          pending ||
+          (editing.kind === 'block' &&
+            stagedBlock(editing.block) &&
+            blockInvalid)
+        }
+        onClick={() =>
+          editing.kind === 'block' && stagedBlock(editing.block)
+            ? void saveInner()
+            : back()
+        }
+        rounded="large"
+        size="md"
+        type="button"
+        variant="accent"
+      >
+        {m.question_ui_done()}
+      </Button>
+    );
+  const cancelButton = (
+    <Button
+      disabled={pending}
+      onClick={editing ? back : onClose}
+      rounded="large"
+      size="md"
+      type="button"
+      variant="ghost-hover"
+    >
+      {m.question_ui_cancel()}
+    </Button>
+  );
   // Phones: Remove part/block ends the scrolling body, and the header holds
   // the save status, Undo and Save/Done.
   const removeButton = editing && (
@@ -957,19 +1101,16 @@ function QuestionDialogSession({
         : m.question_ui_remove_block()}
     </Button>
   );
+  // The phone header drops its action 2px for a lone button; live, Undo,
+  // Redo and Done go back up 2px to sit level with the title and the cloud.
   const phoneAction = live ? (
     <>
-      {live.undo && <UndoButtons manager={live.undo} />}
-      {editing?.kind === 'block' && stagedBlock(editing.block) && (
-        <Button
-          disabled={pending || blockInvalid}
-          onClick={() => void saveInner()}
-          type="button"
-          variant="accent"
-        >
-          {m.question_ui_done()}
-        </Button>
+      {live.undo && (
+        <span className="-translate-y-0.5">
+          <UndoButtons manager={live.undo} />
+        </span>
       )}
+      {doneButton('-translate-y-0.5')}
     </>
   ) : (
     <Button
@@ -994,60 +1135,13 @@ function QuestionDialogSession({
               {live.undo && <UndoButtons footer manager={live.undo} />}
               <LiveStatus status={live.status} />
             </div>
-            {editing && (
-              <Button
-                disabled={
-                  pending ||
-                  (editing.kind === 'part' && draft.parts.length <= 1)
-                }
-                onClick={() =>
-                  editing.kind === 'block'
-                    ? removeBlock(editing.location)
-                    : removePart(editing.part.id)
-                }
-                rounded="large"
-                size="lg"
-                type="button"
-                variant="danger-outline"
-              >
-                {editing.kind === 'part'
-                  ? m.question_ui_remove_part()
-                  : m.question_ui_remove_block()}
-              </Button>
-            )}
-            {editing?.kind === 'block' && stagedBlock(editing.block) && (
-              <Button
-                disabled={pending || blockInvalid}
-                onClick={() => void saveInner()}
-                rounded="large"
-                size="lg"
-                type="button"
-                variant="accent"
-              >
-                {m.question_ui_done()}
-              </Button>
-            )}
+            {removeButton}
+            {doneButton()}
           </>
         ) : editing ? (
           <>
-            <Button
-              disabled={
-                pending || (editing.kind === 'part' && draft.parts.length <= 1)
-              }
-              onClick={() =>
-                editing.kind === 'block'
-                  ? removeBlock(editing.location)
-                  : removePart(editing.part.id)
-              }
-              rounded="large"
-              size="md"
-              type="button"
-              variant="danger-light"
-            >
-              {editing.kind === 'part'
-                ? m.question_ui_remove_part()
-                : m.question_ui_remove_block()}
-            </Button>
+            {removeButton}
+            {cancelButton}
             <Button
               disabled={pending || (editing.kind === 'block' && blockInvalid)}
               onClick={() => void saveInner()}
@@ -1061,16 +1155,7 @@ function QuestionDialogSession({
           </>
         ) : (
           <>
-            <Button
-              disabled={pending}
-              onClick={onClose}
-              rounded="large"
-              size="md"
-              type="button"
-              variant="ghost-hover"
-            >
-              {m.question_ui_cancel()}
-            </Button>
+            {cancelButton}
             <Button
               disabled={pending}
               onClick={() => void saveQuestion()}
@@ -1084,11 +1169,14 @@ function QuestionDialogSession({
           </>
         )
       }
+      // While a block or answer is open, X and Esc go back to the question.
       onClose={() => {
-        if (!pending) close();
+        if (pending) return;
+        if (editing) back();
+        else close();
       }}
       open={open}
-      status={live && <LiveStatus status={live.status} />}
+      status={live && <LiveStatus compact status={live.status} />}
       title={
         <div>
           <span>
@@ -1143,24 +1231,16 @@ function QuestionDialogSession({
         )}
         {shown ? (
           <div className="space-y-4">
-            <Button
-              disabled={pending}
-              iconLeft="navigationBack"
-              onClick={() => {
-                setEditing(null);
-                setError('');
-              }}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              {m.question_ui_back_to_question()}
-            </Button>
-            <h3 className="t-large-card-title">
-              {shown.kind === 'part'
-                ? answerTitle(shown.part)
-                : blockLabels[shown.block.type]()}
-            </h3>
+            {/* A step below the dialog's title, set off from it; a graph's
+                zoom tools or a table cell's formula tools sit at its end. */}
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <h3 className="t-card-title">
+                {shown.kind === 'part'
+                  ? answerTitle(shown.part)
+                  : blockLabels[shown.block.type]()}
+              </h3>
+              <div className="flex items-center" ref={setEditorTools} />
+            </div>
             {shown.kind === 'block' ? (
               <BlockEditor
                 bank={policy === 'bank'}
@@ -1169,10 +1249,12 @@ function QuestionDialogSession({
                 onChange={(block) => editBlock(shown.location, block)}
                 onInvalidChange={setBlockInvalid}
                 textPlaceholder={textPlaceholder(shown.location)}
+                toolbarTarget={editorTools}
                 uploadAsset={uploadAsset}
               />
             ) : (
-              <div className="space-y-5">
+              // Generous, but option rows stop short of the dialog's far edge.
+              <div className="max-w-3xl space-y-5">
                 <AnswerEditor
                   answer={shown.part.answer}
                   bank={policy === 'bank'}
@@ -1200,13 +1282,11 @@ function QuestionDialogSession({
                     }
                   />
                 ) : (
-                  <SelectField
+                  <MarksField
                     label={m.question_ui_part_marks()}
-                    onChange={(value) =>
-                      editPart({ ...shown.part, marks: Number(value) })
-                    }
-                    options={markOptions}
-                    value={String(shown.part.marks)}
+                    max={limits.QUESTION_MARKS_MAX}
+                    onChange={(marks) => editPart({ ...shown.part, marks })}
+                    value={shown.part.marks}
                   />
                 )}
               </div>
@@ -1378,45 +1458,10 @@ function QuestionDialogSession({
                 frameAnswer={(partId, answer) => {
                   const part = draft.parts.find((item) => item.id === partId);
                   if (!part) return answer;
-                  // Editors see the worked solution, which learners only get
-                  // after checking, between the waves.
                   return (
                     <>
                       {previewAnswer(part, answer)}
-                      <section
-                        className="mt-10 space-y-3"
-                        data-row-key={rowKey({ kind: 'solution', partId })}
-                      >
-                        <div className="mb-6 flex items-center gap-2 font-medium text-fg-muted text-xs">
-                          <span className="wavy-rule flex-1 text-line-strong" />
-                          <Icon className="size-4" name="viewOff" />
-                          {m.question_ui_hidden_until_checked()}
-                          <span className="wavy-rule flex-1 text-line-strong" />
-                        </div>
-                        <h4 className="font-semibold text-sm text-tint-accent-2-fg">
-                          {m.question_ui_worked_solution()}
-                        </h4>
-                        {part.solution.length === 0 && (
-                          <button
-                            className="block text-left text-fg-muted leading-relaxed hover:text-fg"
-                            onClick={() =>
-                              add('text', { partId, solution: true })
-                            }
-                            type="button"
-                          >
-                            {m.question_ui_solution_add()}
-                          </button>
-                        )}
-                        {part.solution.map((block, index) => (
-                          <div key={index}>
-                            {previewBlock(block, index, {
-                              partId,
-                              solution: true,
-                            })}
-                          </div>
-                        ))}
-                        <div className="wavy-rule mt-6 text-line-strong" />
-                      </section>
+                      {draft.layout !== 'split' && hidden([part])}
                     </>
                   );
                 }}
@@ -1427,12 +1472,17 @@ function QuestionDialogSession({
                   <IssueIcon messages={titleIssues(partId)} />
                 )}
               />
+              {/* Split: under both columns, where the answer column has no
+                  room for it. */}
+              {draft.layout === 'split' && hidden(draft.parts)}
             </div>
           </div>
         )}
         {phone && removeButton && (
-          // The borderless button sheds its padding to line up with the content.
-          <div className="mt-6 -ml-5">{removeButton}</div>
+          <div className="mt-6 flex gap-2">
+            {removeButton}
+            {!live && cancelButton}
+          </div>
         )}
       </div>
     </SimpleDialog>

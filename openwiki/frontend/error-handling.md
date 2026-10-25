@@ -224,7 +224,8 @@ not offline use: without a service worker the app itself does not load offline.
 - Stored: `/me`, workspace lists (not searches), a workspace and its chapters,
   files, materials, conversations and study states, file metadata, the
   dashboard recents, Thinking, notifications and the unread count, learning
-  progress, the review overview, calendar events, labels, tasks, tags,
+  progress, the review overview, quiz attempts (the quiz page resumes its open
+  one from it), calendar events, labels, tasks, tags,
   notification preferences, integrations, models, LLM key last-4s, Explore,
   and the question bank's syllabus and progress. Infinite lists keep their first
   page.

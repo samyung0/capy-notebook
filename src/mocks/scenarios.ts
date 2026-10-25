@@ -207,7 +207,7 @@ const NEW_ACCOUNT_LISTS = {
   '/api/bank/progress': { topics: [] },
   '/api/events': [],
   '/api/files': { items: [] },
-  '/api/learning/progress': { active: [], finished: [] },
+  '/api/learning/progress': { active: [], finished: [], hiddenCount: 0 },
   '/api/materials': { items: [] },
   '/api/notifications': { items: [] },
   '/api/notifications/unread-count': { count: 0 },

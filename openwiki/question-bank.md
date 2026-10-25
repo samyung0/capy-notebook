@@ -413,8 +413,8 @@ asks Jev whether grading it needs a calculation checked and warns the author
 at a probability of 0.3 or more; the save is never blocked. Usage and the
 anonymous caps are in [observability-metering.md](observability-metering.md).
 
-User quizzes (not the bank) are bounded so one attempt fits one grading
-request: at most 100 parts per quiz, 7 per question, 5 marking items per part
+User quizzes (not the bank) are bounded so a whole quiz stays within one
+grading budget: at most 100 parts per quiz, 7 per question, 5 marking items per part
 and 20 open parts per quiz, and a sample answer of at most 5,000 characters;
 learners' open answers have the same 5,000-character cap. The Go, browser and
 collaboration validators share these bounds (`fieldlimits.Quiz*`), and the
@@ -423,9 +423,27 @@ generation prompt states them.
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
 question dialog preview) use `QuestionRunner`; a quiz shows all its questions on
-one page (`QuizQuestionList`) with one Submit; inside a note Submit is a small
-accent button beside the answered count, and a checked quiz there and on the
-completion page ends with a small outline Redo quiz on the right. Completion and saved attempt pages
+one page (`QuizQuestionList`), each with its own Check (the review
+session's dark 36px Check, Epo 2026-10-25) that grades it and shows its key in
+place, and "N of M checked" under the list. Checking the last question opens
+the completion page (inside a note, the questions in review); it ends with a
+small outline Redo quiz on the right (confetti only when the last check
+happened on the page, not on a reopened result). While taking it, once a
+question is checked, an outline md Reset at the far right of the title starts
+a new try (`ResetButton`). One question is checked at a time: every Check and
+Reset wait while a check is in flight, so each check builds on the run the
+page shows. The score (`runScore` in `grade.ts`, the server's rule) counts a
+checked question with the marks it was checked against. How a try is kept
+(`quizRun.ts`): signed in, `useQuizRun` keeps the attempt's id in localStorage
+(`capy.quizAttempt.account.<quizId>`) and reads its checked questions from the
+attempt's persisted query, so a reload or later visit continues it until Redo;
+a kept attempt that is gone (404) is forgotten, and a 409 (the attempt already
+holds the question: a lost response, another tab) reads the attempt again.
+Signed out on a shared quiz, `useLocalRun` keeps the id under
+`capy.quizAttempt.local.<quizId>` and the attempt in IndexedDB beside the past
+attempts, showing the run it holds so a failed save loses nothing on the page;
+a quiz in a note (in the app, graded through `/check` with nothing stored) or
+a shared note keeps the try only on the page (`useMemoryRun`). Completion and saved attempt pages
 share the part review renderer. The saved attempt page has Redo quiz as an
 accent link beside the title; both pages lead with the score (`ResultSummary`,
 shared with the /qb topic summary): "awarded / max" large with "marks" and the
@@ -491,8 +509,8 @@ outside Yjs (D3 as revised 2026-10-10).
 
 | Grading route | Request | Effect |
 | --- | --- | --- |
-| `POST /api/quizzes/{id}/attempts` | `{answers}` | Grades every part (closed in Go, open with Jev), stores the answers and graded questions, rates review and marks progress for workspace quizzes; 201 with the `AttemptDetail`. Needs read access; frozen accounts submit. |
-| `POST /api/public/quizzes/{token}/grade` | `{answers, localId?}` | Signed out: `{correct, total, questions}`, nothing stored. The per-IP and global caps count only the answered open parts; over a cap it is 429 with `errors[0].message` `anonymous_grading_limit`. |
+| `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}` | Grades one question's parts (closed in Go, open with Jev), adds it to the attempt ([study-progress.md](study-progress.md#endpoints)), rates review and marks progress for workspace quizzes; 200 with the `AttemptDetail` so far. Needs read access; frozen accounts check. |
+| `POST /api/public/quizzes/{token}/grade` | `{questionId, answers, localId?}` | Signed out, one question: `{correct, total, question}`, nothing stored. The per-IP and global caps count only the answered open parts; over a cap it is 429 with `errors[0].message` `anonymous_grading_limit`. |
 | `POST /api/review/check` | `{materialId, itemId, answers}` | One question of a review session: `{correct, total, question}`, rated from `correct / total`. A card is 422; cards keep `POST /api/review/ratings` with a required `rating`, which no longer takes a `score`. |
 | `POST /api/bank/questions/{id}/check` | `{answers}` | One bank question: `{correct, total, question}`, and records the learner's latest score. |
 
@@ -536,10 +554,10 @@ read `quizEditQuery` (`GET /api/quizzes/{id}/edit`). The bank's Edit mode reads
 each question through its `/edit` route, because the batch route is View
 mode's, and caches it apart (`bankQuestionQuery(id, mode)`); a save or review
 marker replaces the Edit entry and marks View's stale (`storeBankEdit`).
-Submit posts `{answers}` (`useSubmitAttempt`) and shows the returned attempt;
-signed out, the public grade route's result goes to IndexedDB
-(`LocalQuizAttempt`). Check in a review session posts `/api/review/check` and
-the bank's Check answer its `/check` route; both show the returned question.
+A quiz's Check posts one question (`useCheckQuizQuestion`) and shows the
+returned attempt; signed out, the public grade route grades one question and
+the attempt goes to IndexedDB (`LocalQuizAttempt`). Check in a review session posts `/api/review/check` and
+the bank's Check its `/check` route; both show the returned question.
 `QuestionRunner`'s review shows the server's grading as it is: each part's
 `awarded`, the key's correct options and accepted answers, matching and gap
 results from `itemResults`, and an ordering row is right when its text sits at
@@ -688,7 +706,7 @@ retracted questions.
 ### Learner answering
 
 View mode renders every question as `QuestionRunner` with the learner's answers
-and a Check answer button under it, right-aligned on a divider like the editors'
+and a Check button under it, right-aligned on a divider like the editors'
 review bar (`CheckableQuestion` in `src/routes/QuestionBank.tsx`). Reads stay
 answer-free (`questions.LearnerView`), editors' View mode included; Check
 answer posts the answers to the check route, which grades and records them and
@@ -731,9 +749,8 @@ parent; the page's own name is its title with an accent Go
 through again (the topic from question 1; new answers replace results, there
 is no reset). Below: the score, squares (each opens its question) and marks by
 type as on the quiz result page, then Worth another look: up to seven wrong or
-partial questions in topic order with their preview, type, marks, score and
-Retry, the rest as numbered squares, and Copy to quiz with those questions (up
-to 20); last, Next in <subject>: the first topic after this one in its subject,
+partial questions in topic order, each a row (number, preview, score) that
+opens the question, the rest as numbered squares; last, Next in <subject>: the first topic after this one in its subject,
 wrapping, that has questions and is not finished (Start, or Continue at its next
 question once started), hidden when none.
 
@@ -801,35 +818,14 @@ View mode adds Status (Correct, Wrong, Partially wrong, Not done). The server
 keeps rows with any chosen type and any chosen status, the search text applies
 on top, and the main panel shows those rows. Status is matched against the
 marks as they were when it was last toggled, so a question answered while
-filtered stays in view. Picking questions for Copy to quiz from the topic page
-is hidden for now (Epo 2026-10-22); the summary's Copy to quiz remains.
+filtered stays in view. No page offers Copy to quiz: the topic page's picks
+were hidden (Epo 2026-10-22) and the summary's button and dialog removed
+(2026-10-25). `POST /api/bank/copy` stays on the server, marked unused, for future use.
 
 `/qb` is one route whose
 `$topicId` and `$topicId/$questionId` children have no component
 (`src/router.ts`), so moving between questions keeps the page and its filters
-mounted. `CopyToQuizDialog`
-(`src/features/questions/CopyToQuizDialog.tsx`) has Workspace (workspaces with
-`capabilities.canEdit`, each with its icon) dropdown, then a Quiz combobox
-(`QuizTargetSelect.tsx`) styled after TagSelect but single-valued: the picked
-quiz's name sits in the input. Its list loads on first open (skeleton until
-then) with every top-level quiz in that workspace, newest edit first from the
-Create page's list (`GET /api/materials?kind=quiz&location=workspace&scope=member`,
-Load more past 100), each with its chapter name (nothing when unfiled) and
-question count. Typing over a new quiz's name renames it with the list
-closed; otherwise typing clears the pick and filters the loaded quizzes, and
-Enter on "New quiz: …" (first row) names a new quiz. ✕ clears the field.
-The form draws while workspaces load (Workspace select spinning) and focuses
-the dialog, not the picker, on open. The default is a new quiz named after the
-topic. A Chapter row keeps its space but stays hidden until a quiz is picked:
-an existing quiz shows its chapter, locked; a new one uses the Add source
-dialog's chapter picker (`src/features/workspace/ChapterSelect.tsx`, `field`
-look): No chapter by default, an existing chapter, or New chapter…, whose
-typed name is matched to an existing chapter in any case or sent as
-`chapterName`; a name still being typed counts on Copy. Copy posts the copy route in topic order;
-success shows a toast whose Open quiz opens the quiz in its workspace, and a
-failure keeps the dialog open behind the global mutation toast. The MSW mock
-seeds answers in Area practice and Mensuration and makes copies in the mock
-workspaces.
+mounted. The MSW mock seeds answers in Area practice and Mensuration.
 
 ## Delivery and checks
 

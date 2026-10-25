@@ -120,11 +120,11 @@ func TestAStoredNoteARuleRefusesStillListsAndOpens(t *testing.T) {
 	}
 	quiz, quizToken := item("quiz", quizContent)
 	set, setToken := item("flashcards", setContent)
-	noAnswers := map[string]any{"answers": map[string]any{}}
+	noAnswers := map[string]any{"questionId": "q1", "answers": map[string]any{}}
 	expectUnreadable(t, h, []unreadableRead{
 		{http.MethodGet, "/api/quizzes/" + quiz, "u_owner", nil},
 		{http.MethodGet, "/api/quizzes/" + quiz + "/edit", "u_owner", nil},
-		{http.MethodPost, "/api/quizzes/" + quiz + "/attempts", "u_owner", noAnswers},
+		{http.MethodPost, "/api/quizzes/" + quiz + "/check", "u_owner", noAnswers},
 		{http.MethodPatch, "/api/quizzes/" + quiz + "/sharing", "u_owner", map[string]any{"privacy": "link"}},
 		{http.MethodGet, "/api/flashcards/" + set + "/cards", "u_owner", nil},
 		{http.MethodGet, "/api/public/quizzes/" + quizToken, "", nil},
@@ -186,10 +186,14 @@ func TestStudyLeavesOutAQuizARuleRefuses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		answers := map[string]any{"q1:part:1": true, "q2:part:1": true}
-		if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+created.ID+"/attempts", "u_owner",
-			map[string]any{"answers": answers}); rec.Code != http.StatusCreated {
-			t.Fatalf("attempt = %d %s", rec.Code, rec.Body.String())
+		var attempt struct{ ID string }
+		for _, q := range []string{"q1", "q2"} {
+			rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+created.ID+"/check", "u_owner",
+				map[string]any{"questionId": q, "answers": map[string]any{q + ":part:1": true}, "attemptId": attempt.ID})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("check %s = %d %s", q, rec.Code, rec.Body.String())
+			}
+			_ = json.Unmarshal(rec.Body.Bytes(), &attempt)
 		}
 		return created.ID
 	}

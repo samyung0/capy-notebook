@@ -1,31 +1,38 @@
-import { Link } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { createStudyPlanBodyNameMax } from '@/api/gen/validators';
 import {
+  stepKey,
   useChapters,
+  useDeleteStudyPlan,
   useFiles,
   useMaterials,
+  usePlanStudy,
   useResetWorkspaceStudy,
   useSetWorkspaceStudyEnabled,
+  useUpdateStudyPlan,
   useWorkspace,
   useWorkspaceAttempts,
+  useWorkspacePlans,
   useWorkspaceStudy,
 } from '@/api/hooks';
-import type { Attempt, ItemAttempts, MaterialRef } from '@/api/types';
+import type {
+  MaterialRef,
+  PlanStepInput,
+  ProgressItem,
+  SourceFile,
+  StudyPlan,
+  StudyPlans,
+  StudySummary,
+} from '@/api/types';
+import { ErrorState } from '@/components/app/ErrorState';
 import { FilterPopover, toggleValue } from '@/components/app/ListToolbar';
-import { TabContent } from '@/components/app/tabPanel';
-import { Button } from '@/components/ui/Button';
+import { SettingRow, TabContent } from '@/components/app/tabPanel';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
-import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
-import { Menu } from '@/components/ui/Menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/Select';
+import { NameFormDialog } from '@/components/ui/NameFormDialog';
+import { Switch } from '@/components/ui/Switch';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
 import { materialKindLabel } from '@/features/materials/MaterialListCard';
@@ -34,14 +41,17 @@ import {
   readingOrder,
   type WorkspaceContentItem,
 } from '@/features/workspace/workspaceContent';
-import { getLocale, m } from '@/i18n';
-import { cn } from '@/lib/cn';
+import { m } from '@/i18n';
+import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { FILE_KINDS } from '@/lib/listSearch';
-import { attemptMinutes, resultLink, scoreText } from './attempts';
-import { PlansSection } from './plans/PlansSection';
+import { AddStepsPopover } from './plans/AddStepsPopover';
+import { PlanSelect } from './plans/PlanSelect';
+import { usePlanLinks } from './plans/planLinks';
+import { planProgress, stepInputs, workspaceMap } from './plans/planProgress';
 import { QuickReview, WorkspaceReview } from './quickActions';
-import { StudyMark, type StudyState, useStudyActions } from './studyItems';
+import { type StudyState, useStudyActions } from './studyItems';
+import { SectionList, type StudyRow, type StudySection } from './studyRows';
 import { WorkspaceRailMap } from './WorkspaceRailMap';
 
 const MATERIAL_TYPES: MaterialRef['type'][] = [
@@ -66,29 +76,105 @@ const shows = (show: Show, state: StudyState | undefined) =>
   (show === 'untracked' && state === 'removed') ||
   (show === 'unread' && state !== 'done' && state !== 'removed');
 
+/** The group key of steps in a workspace the user can no longer open. */
+const LOCKED = 'locked';
+
 const kindOf = (item: WorkspaceContentItem) =>
   item.type === 'file' ? item.data.kind : item.data.type;
 const titleOf = (item: WorkspaceContentItem) =>
   item.type === 'file' ? item.data.name : item.data.title;
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(getLocale(), {
-    day: 'numeric',
-    month: 'short',
-  });
 
 /** A workspace's Study page in the centre pane (human/study-progress.md
- * 2026-10-19, 2026-10-22): the workspace's railway map, Continue, the whole
- * workspace's review and Quick review, its plans, then every file and
- * material by chapter in reading order with its read state and each quiz's
- * and set's attempts. With study progress hidden only the plan and chapter
- * rows stay, without counts or marks. */
+ * 2026-10-19, 2026-10-22, 2026-10-25): one plan at a time, picked at the
+ * title's right, Default Plan being the workspace's chapter order. The plan
+ * leads the railway map, Continue, Quick review and Quick actions, then its
+ * chapters with each file's read state and each quiz's and set's attempts.
+ * With study progress hidden only the plan select and the settings rows stay. */
 export function StudyPage({
   workspaceId,
+  planId,
   onOpenItem,
 }: {
   workspaceId: string;
+  planId?: string;
   onOpenItem: (item: OpenItem) => void;
 }) {
+  const {
+    data: plans,
+    error: plansError,
+    refetch: refetchPlans,
+  } = useWorkspacePlans(workspaceId, { errorBoundary: false });
+  const plan = plans?.plans.find(
+    (p) => p.id === planId && p.workspaceId === workspaceId
+  );
+  const {
+    data: planStudy,
+    error: planError,
+    refetch: refetchPlan,
+  } = usePlanStudy(workspaceId, plan?.id, { errorBoundary: false });
+  // A failed plan read leaves the page to the error alone, centred in the
+  // pane (up by half the workspace header).
+  const error = (!plans && plansError) || (plan && !planStudy && planError);
+  if (error)
+    return (
+      <div className="flex h-full min-h-96 items-center justify-center">
+        <ErrorState
+          action={
+            <ErrorAction
+              onClick={() => void (plansError ? refetchPlans() : refetchPlan())}
+            >
+              {m.error_action_retry()}
+            </ErrorAction>
+          }
+          className="-translate-y-6 sm:-translate-y-7"
+          description={m.error_generic_body()}
+          errorId={unexpectedErrorId(error)}
+          title={m.error_generic_title()}
+          variant="panel"
+        />
+      </div>
+    );
+  return (
+    <TabContent centered pane>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="t-card-title">{m.workspace_tab_study()}</h2>
+        <PlanSelect planId={planId} plans={plans} workspaceId={workspaceId} />
+      </div>
+      {planId && plans && !plan ? (
+        <p className="mt-6 text-fg-muted">{m.plan_missing()}</p>
+      ) : (
+        // A new plan starts with its own open chapters and Quick review.
+        <StudyBody
+          key={planId ?? ''}
+          onOpenItem={onOpenItem}
+          plan={plan}
+          planId={planId}
+          planStudy={planStudy}
+          plans={plans}
+          workspaceId={workspaceId}
+        />
+      )}
+    </TabContent>
+  );
+}
+
+function StudyBody({
+  workspaceId,
+  planId,
+  plan,
+  plans,
+  planStudy,
+  onOpenItem,
+}: {
+  workspaceId: string;
+  planId?: string;
+  plan?: StudyPlan;
+  plans?: StudyPlans;
+  /** The plan's review parts; the workspace's summary has the marks. */
+  planStudy?: StudySummary;
+  onOpenItem: (item: OpenItem) => void;
+}) {
+  const navigate = useNavigate();
   const { data: workspace } = useWorkspace(workspaceId);
   const { data: study } = useWorkspaceStudy(workspaceId);
   const { data: chapters } = useChapters(workspaceId);
@@ -96,22 +182,35 @@ export function StudyPage({
   const { data: materials } = useMaterials(workspaceId);
   const { data: attempts } = useWorkspaceAttempts(workspaceId);
   const { menuItems } = useStudyActions(workspaceId);
+  const links = usePlanLinks(workspaceId, onOpenItem);
   const { isPending: savingShown, mutate: setShown } =
     useSetWorkspaceStudyEnabled(workspaceId);
   const { mutate: resetStudy } = useResetWorkspaceStudy(workspaceId);
+  // Step saves report failures in the global toast; the rename dialog waits.
+  const { mutate: saveSteps, mutateAsync: updatePlan } =
+    useUpdateStudyPlan(workspaceId);
+  const { mutate: deletePlan } = useDeleteStudyPlan();
   const [confirmReset, setConfirmReset] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [kinds, setKinds] = useState<string[]>([]);
   const [show, setShow] = useState<Show>('all');
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  // Open chapters: the next item's once loaded, every one a filter shows
+  // ('all'), none once no filter runs, then by hand.
+  const [openChapters, setOpenChapters] = useState<Set<string> | 'all'>();
 
-  if (!(study && chapters && files && materials && attempts))
+  if (
+    !(study && chapters && files && materials && attempts) ||
+    (planId && !(plan && plans && planStudy))
+  )
     return (
-      <TabContent centered>
+      <div className="mt-6">
         <SkeletonList count={8} rowHeight={52} />
-      </TabContent>
+      </div>
     );
 
   const hidden = !study.enabled;
+  const review = plan && planStudy ? planStudy : study;
   const states = new Map(
     study.items.map((it) => [it.fileId ?? it.materialId, it.state])
   );
@@ -120,11 +219,193 @@ export function StudyPage({
   );
   const byMaterial = new Map(attempts.items.map((it) => [it.materialId, it]));
   const ordered = readingOrder(chapters, files, materials);
-  const tracked = ordered.filter((it) => states.get(it.id) !== 'removed');
-  const next = tracked.find((it) => states.get(it.id) !== 'done');
-  const sortedChapters = [...chapters].sort((a, b) => a.order - b.order);
-  // Kinds the workspace holds, files first in the Files page's order.
-  const present = new Set(ordered.map(kindOf));
+  const contentById = new Map(ordered.map((it) => [it.id, it]));
+
+  // This workspace's items with their full data; a plan step elsewhere has
+  // that workspace's tracked items.
+  const contentRow = (it: WorkspaceContentItem): StudyRow => ({
+    attempts: byMaterial.get(it.id),
+    icon:
+      it.type === 'file'
+        ? fileIconName(it.data)
+        : materialIconName(it.data.type),
+    id: it.id,
+    kind: kindOf(it),
+    menuItems: menuItems({ id: it.id, kind: it.type }, states.get(it.id)),
+    readAt: changedAt.get(it.id),
+    state: states.get(it.id),
+    title: titleOf(it),
+    type: it.type,
+    workspaceId,
+  });
+  const progressRow = (it: ProgressItem, wsId: string): StudyRow => {
+    const own = wsId === workspaceId ? contentById.get(it.id) : undefined;
+    if (own) return contentRow(own);
+    return {
+      icon:
+        it.type === 'file'
+          ? fileIconName({
+              kind: it.kind as SourceFile['kind'],
+              name: it.title,
+            })
+          : materialIconName(it.kind as MaterialRef['type']),
+      id: it.id,
+      kind: it.kind,
+      state: it.state,
+      title: it.title,
+      type: it.type,
+      workspaceId: wsId,
+    };
+  };
+  const openRow = (row: StudyRow) => links.openItem(row, row.workspaceId);
+
+  // Default Plan: chapters in order, then Others. A plan: its steps.
+  const progress =
+    plan && plans ? planProgress(plan, workspaceMap(plans.workspaces)) : null;
+  const inputs = plan ? stepInputs(plan.steps) : [];
+  // Added files join their chapter's group (set with the groups below).
+  let addSteps: (added: PlanStepInput[]) => void = () => {};
+  let sections: (StudySection & { all: StudyRow[] })[];
+  let nextRow: StudyRow | undefined;
+  let nextKey: string | undefined;
+  if (progress && plans && plan) {
+    const spaces = workspaceMap(plans.workspaces);
+    // Steps are files; the list groups consecutive ones of one chapter (or
+    // Others) of one workspace under that chapter's row. A locked step groups
+    // by workspace; an untracked one shows nowhere and rides along with the
+    // group around it, leaving with it on Remove from plan.
+    type Group = {
+      ws: string;
+      chapter: string | null;
+      /** The step that opened the group, its identity. */
+      head: number;
+      steps: number[];
+    };
+    const groups: Group[] = [];
+    let waiting: number[] = [];
+    progress.steps.forEach((s, i) => {
+      const item = s.items[0];
+      if (!(s.step.locked || item)) {
+        if (groups.length) groups.at(-1)?.steps.push(i);
+        else waiting.push(i);
+        return;
+      }
+      const chapter = s.step.locked ? LOCKED : (item?.chapterId ?? null);
+      const last = groups.at(-1);
+      if (last && last.ws === s.step.workspaceId && last.chapter === chapter)
+        last.steps.push(i);
+      else {
+        groups.push({
+          chapter,
+          head: i,
+          steps: [...waiting, i],
+          ws: s.step.workspaceId,
+        });
+        waiting = [];
+      }
+    });
+    // A new file goes after the last one shown of its chapter, else at the end.
+    const chapterOf = (st: PlanStepInput) =>
+      spaces
+        .get(st.workspaceId)
+        ?.items.find((it) => it.type === st.kind && it.id === st.targetId)
+        ?.chapterId;
+    addSteps = (added) => {
+      const next = [...inputs];
+      for (const st of added) {
+        const chapter = chapterOf(st) ?? null;
+        let at = next.length;
+        next.forEach((o, i) => {
+          if (o.workspaceId === st.workspaceId && chapterOf(o) === chapter)
+            at = i + 1;
+        });
+        next.splice(at, 0, st);
+      }
+      saveSteps({ id: plan.id, steps: next });
+    };
+    const remove = (drop: number[]) =>
+      saveSteps({
+        id: plan.id,
+        steps: inputs.filter((_, i) => !drop.includes(i)),
+      });
+    const removeItem = (i: number) => ({
+      confirmLabel: m.menu_click_to_confirm(),
+      danger: true,
+      icon: 'listMinus' as const,
+      label: m.plan_remove_step(),
+      onClick: () => remove([i]),
+    });
+    sections = groups.map((g) => {
+      const space = spaces.get(g.ws);
+      const all = g.steps.flatMap((i) =>
+        progress.steps[i].items.map((it) => {
+          const row = progressRow(it, g.ws);
+          // Each file leaves the plan on its own, after its study actions.
+          return {
+            ...row,
+            menuItems: [
+              ...(row.menuItems ?? []),
+              { ...removeItem(i), separated: !!row.menuItems?.length },
+            ],
+          };
+        })
+      );
+      const chapterName =
+        g.chapter === LOCKED
+          ? m.plan_step_locked()
+          : g.chapter
+            ? (space?.chapters.find((ch) => ch.id === g.chapter)?.name ?? '')
+            : m.study_others();
+      return {
+        all,
+        aside: g.ws === workspaceId ? undefined : space?.name,
+        done: all.filter((row) => row.state === 'done').length,
+        key: stepKey(inputs[g.head]),
+        locked: g.chapter === LOCKED,
+        menu: [{ ...removeItem(-1), onClick: () => remove(g.steps) }],
+        name: chapterName,
+        rows: all,
+        total: all.length,
+      };
+    });
+    if (progress.next) {
+      nextRow = progressRow(progress.next.item, progress.next.workspaceId);
+      const current = progress.current;
+      nextKey =
+        sections[groups.findIndex((g) => g.steps.includes(current))]?.key;
+    }
+  } else {
+    sections = [
+      ...[...chapters]
+        .sort((a, b) => a.order - b.order)
+        .map((ch) => ({ id: ch.id, name: ch.name })),
+      { id: null, name: m.study_others() },
+    ].map((ch) => {
+      const items = ordered.filter(
+        (it) => (it.data.chapterId ?? null) === ch.id
+      );
+      const all = items.map(contentRow);
+      const mine = all.filter((row) => row.state !== 'removed');
+      return {
+        all,
+        done: mine.filter((row) => row.state === 'done').length,
+        key: ch.id ?? 'others',
+        name: ch.name,
+        rows: all,
+        total: mine.length,
+      };
+    });
+    const next = ordered.find(
+      (it) => states.get(it.id) !== 'done' && states.get(it.id) !== 'removed'
+    );
+    if (next) {
+      nextRow = contentRow(next);
+      nextKey = next.data.chapterId ?? 'others';
+    }
+  }
+
+  // Kinds the list holds, files first in the Files page's order.
+  const present = new Set(sections.flatMap((s) => s.all.map((r) => r.kind)));
   const kindOptions = [
     ...FILE_KINDS.filter((kind) => present.has(kind)).map((kind) => ({
       label: fileKindLabel(kind),
@@ -135,196 +416,245 @@ export function StudyPage({
       value: kind,
     })),
   ];
-  const visible = (it: WorkspaceContentItem) =>
-    (!kinds.length || kinds.includes(kindOf(it))) &&
-    (hidden || shows(show, states.get(it.id)));
-  const sections = [
-    ...sortedChapters.map((ch) => ({ id: ch.id, name: ch.name })),
-    { id: null, name: m.study_others() },
-  ]
-    .map((ch) => {
-      const all = ordered.filter((it) => (it.data.chapterId ?? null) === ch.id);
-      const mine = all.filter((it) => states.get(it.id) !== 'removed');
-      return {
-        ...ch,
-        done: mine.filter((it) => states.get(it.id) === 'done').length,
-        items: all.filter(visible),
-        total: mine.length,
-      };
-    })
-    .filter((ch) => ch.items.length > 0);
+  const filtering = kinds.length > 0 || show !== 'all';
+  const visible = (row: StudyRow) =>
+    (!kinds.length || kinds.includes(row.kind)) && shows(show, row.state);
+  const shown = sections
+    .map((s) => ({ ...s, rows: s.all.filter(visible) }))
+    // A plan keeps its locked groups on show until a filter runs.
+    .filter((s) => s.rows.length > 0 || (progress && !filtering && s.locked));
 
-  // A row opens its file, or a practised quiz's or set's latest result.
-  const toggle = (id: string) =>
-    setOpen((prev) => {
-      const nextOpen = new Set(prev);
-      if (!nextOpen.delete(id)) nextOpen.add(id);
-      return nextOpen;
+  if (!openChapters) {
+    const keys = shown.map((s) => s.key);
+    const first = nextKey && keys.includes(nextKey) ? nextKey : keys[0];
+    setOpenChapters(new Set(first ? [first] : []));
+  }
+  const isOpen = (key: string) =>
+    openChapters === 'all' || !!openChapters?.has(key);
+  const toggleChapter = (key: string) =>
+    setOpenChapters((prev) => {
+      const next = new Set(
+        prev === 'all' ? shown.map((s) => s.key) : (prev ?? [])
+      );
+      if (!next.delete(key)) next.add(key);
+      return next;
     });
 
+  // The map draws the plan's tracked items, each once, its groups as stations.
+  // Stations come from every group, so a filter never moves the map.
+  const mapChapters = sections
+    .filter((s) => !s.locked)
+    .map((s) => ({ id: s.key, name: s.name }));
+  const seen = new Set<string>();
+  const mapItems = sections.flatMap((s) =>
+    s.locked
+      ? []
+      : s.all
+          .filter((row) => row.state !== 'removed' && !seen.has(row.id))
+          .map((row) => {
+            seen.add(row.id);
+            return {
+              chapterId: progress
+                ? s.key
+                : (contentById.get(row.id)?.data.chapterId ?? null),
+              id: row.id,
+              row,
+              state: row.state,
+              title: row.title,
+            };
+          })
+  );
+
   return (
-    <TabContent centered>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="t-card-title">{m.workspace_tab_study()}</h2>
-        <Menu
-          items={[
-            {
-              closeOnSelect: false,
-              disabled: savingShown,
-              icon: hidden ? 'view' : 'viewOff',
-              label: hidden ? m.study_show_progress() : m.study_hide_progress(),
-              onClick: () => setShown(hidden),
-            },
-            {
-              danger: true,
-              icon: 'refresh',
-              label: m.study_reset(),
-              onClick: () => setConfirmReset(true),
-              separated: true,
-            },
-          ]}
-        />
-      </div>
-      {hidden ? (
-        <div className="mt-4 flex items-start gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold">{m.study_hidden_title()}</p>
-            <p className="t-meta text-fg-muted">{m.study_hidden_text()}</p>
-          </div>
-          <Button
-            disabled={savingShown}
-            onClick={() => setShown(true)}
-            rounded="large"
-            size="sm"
-            variant="outline"
-          >
-            {m.study_show()}
-          </Button>
-        </div>
-      ) : (
+    <>
+      {!hidden && (
         <>
-          {tracked.length > 0 && (
+          {mapItems.length > 0 && (
             <div className="mt-2">
               <WorkspaceRailMap
-                chapters={sortedChapters}
+                chapters={
+                  progress
+                    ? mapChapters
+                    : [...chapters].sort((a, b) => a.order - b.order)
+                }
                 cover={workspace?.cover}
-                items={tracked.map((it) => ({
-                  chapterId: it.data.chapterId,
-                  id: it.id,
-                  state: states.get(it.id),
-                  title: titleOf(it),
-                }))}
+                items={mapItems}
                 onOpen={(id) => {
-                  const item = tracked.find((it) => it.id === id);
-                  if (item) onOpenItem({ id, kind: item.type });
+                  const item = mapItems.find((it) => it.id === id);
+                  if (item) openRow(item.row);
                 }}
-                workspaceId={workspaceId}
+                workspaceId={plan ? `plan:${plan.id}` : workspaceId}
               />
             </div>
           )}
-          <div className="mt-4 flex flex-col gap-4">
-            {next && (
+          {/* Sections spaced like Chapters below. */}
+          <div className="mt-4 flex flex-col gap-8">
+            {nextRow && (
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="t-meta text-fg-muted">{m.study_next()}</p>
-                  <p className="line-clamp-1 font-semibold">{titleOf(next)}</p>
+                  {/* Opens the item as Continue does, without a hover look. */}
+                  <button
+                    className="line-clamp-1 text-left font-semibold"
+                    onClick={() => nextRow && openRow(nextRow)}
+                    type="button"
+                  >
+                    {nextRow.title}
+                  </button>
                 </div>
                 <UnderlineLink
                   accent
-                  onClick={() => onOpenItem({ id: next.id, kind: next.type })}
+                  onClick={() => nextRow && openRow(nextRow)}
                 >
                   {m.study_continue()}
                 </UnderlineLink>
               </div>
             )}
-            <WorkspaceReview
-              iconId={workspace?.iconId}
-              reviewable={study.reviewable}
-              unfinished={study.unfinished}
+            {/* Stays mounted through refreshes; hides itself. */}
+            <QuickReview
+              items={review.quickReview}
+              planId={plan?.id}
               workspaceId={workspaceId}
             />
-            {/* Stays mounted through refreshes; hides itself. */}
-            <QuickReview items={study.quickReview} workspaceId={workspaceId} />
+            <section className="flex flex-col">
+              <h3 className="pb-1.5 font-bold">{m.study_quick_actions()}</h3>
+              <WorkspaceReview
+                iconId={workspace?.iconId}
+                planId={plan?.id}
+                unfinished={review.unfinished}
+                workspaceId={workspaceId}
+              />
+            </section>
           </div>
         </>
       )}
-      <PlansSection
-        hidden={hidden}
-        onOpenItem={onOpenItem}
-        workspaceId={workspaceId}
-      />
-      <div className="mt-8 flex flex-wrap items-center gap-2">
-        <h3 className="mr-auto font-bold">{m.study_chapters()}</h3>
-        <FilterPopover
-          filters={[
-            {
-              key: 'kind',
-              label: m.files_filter_kind(),
-              onToggle: (value) => setKinds(toggleValue(kinds, value)),
-              options: kindOptions,
-              selected: kinds,
-            },
-          ]}
-          onResetFilters={() => setKinds([])}
-        />
-        {!hidden && (
-          <Select
-            onValueChange={(value) => setShow(value as Show)}
-            value={show}
-          >
-            <SelectTrigger
-              aria-label={m.progress_show()}
-              className="w-auto"
-              variant="ghost-hover"
+      {/* Hidden study progress takes the chapters too. */}
+      {!hidden && (
+        <>
+          <div className="mt-8 flex flex-wrap items-center gap-2">
+            <h3 className="mr-auto font-bold">{m.study_chapters()}</h3>
+            {plan && (
+              <AddStepsPopover
+                defaultWorkspaceId={workspaceId}
+                onAdd={addSteps}
+                steps={plan.steps}
+              />
+            )}
+            <FilterPopover
+              filters={[
+                {
+                  key: 'kind',
+                  label: m.files_filter_kind(),
+                  onToggle: (value) => {
+                    const next = toggleValue(kinds, value);
+                    setKinds(next);
+                    setOpenChapters(
+                      next.length || show !== 'all' ? 'all' : new Set()
+                    );
+                  },
+                  options: kindOptions,
+                  selected: kinds,
+                },
+                // One pick at most; none is All items.
+                {
+                  key: 'show',
+                  label: m.progress_show(),
+                  onToggle: (value: string) => {
+                    const next = show === value ? 'all' : (value as Show);
+                    setShow(next);
+                    setOpenChapters(
+                      kinds.length || next !== 'all' ? 'all' : new Set()
+                    );
+                  },
+                  // A plan lists tracked items only, so Not tracked is Default
+                  // Plan's.
+                  options: SHOWS.filter(
+                    (value) =>
+                      value !== 'all' && !(progress && value === 'untracked')
+                  ).map((value) => ({ label: showLabel[value](), value })),
+                  selected: show === 'all' ? [] : [show],
+                },
+              ]}
+              onResetFilters={() => {
+                setKinds([]);
+                setShow('all');
+                setOpenChapters(new Set());
+              }}
+            />
+          </div>
+          {plan && plan.steps.length === 0 ? (
+            <p className="mt-2 border-divider border-t py-4 text-fg-muted">
+              {m.plan_empty()}
+            </p>
+          ) : shown.length === 0 ? (
+            <p className="py-8 text-center text-fg-muted">
+              {m.progress_nothing_shown()}
+            </p>
+          ) : (
+            <SectionList
+              isOpen={isOpen}
+              onOpenRow={openRow}
+              onToggle={toggleChapter}
+              sections={shown}
+              workspaceId={workspaceId}
+            />
+          )}
+        </>
+      )}
+      {/* Settings-style rows, the destructive ones last. Every control takes
+          one 96px column, the switch centred in it, so the labels line up. */}
+      <div className="mt-8 mb-20 flex flex-col gap-6">
+        {plan && (
+          <SettingRow hint={plan.name} title={m.plan_rename()}>
+            <Button
+              className="w-[96px]"
+              onClick={() => setRenaming(true)}
+              rounded="large"
+              variant="outline"
             >
-              <SelectValue>{showLabel[show]()}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {SHOWS.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {showLabel[value]()}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              {m.action_rename()}
+            </Button>
+          </SettingRow>
+        )}
+        <SettingRow
+          hint={m.study_hide_progress_hint()}
+          title={m.study_hide_progress()}
+        >
+          <span className="flex w-[96px] justify-center">
+            <Switch
+              aria-label={m.study_hide_progress()}
+              checked={hidden}
+              disabled={savingShown}
+              onCheckedChange={(on) => setShown(!on)}
+            />
+          </span>
+        </SettingRow>
+        <SettingRow
+          hint={m.study_reset_confirm_body()}
+          title={m.study_reset_title()}
+        >
+          <Button
+            className="w-[96px]"
+            onClick={() => setConfirmReset(true)}
+            rounded="large"
+            variant="danger-light"
+          >
+            {m.study_reset()}
+          </Button>
+        </SettingRow>
+        {plan && (
+          <SettingRow hint={m.plan_delete_body()} title={m.plan_delete()}>
+            <Button
+              className="w-[96px]"
+              onClick={() => setDeleting(true)}
+              rounded="large"
+              variant="danger-light"
+            >
+              {m.action_delete()}
+            </Button>
+          </SettingRow>
         )}
       </div>
-      {sections.length === 0 ? (
-        <p className="py-8 text-center text-fg-muted">
-          {m.progress_nothing_shown()}
-        </p>
-      ) : (
-        sections.map((ch) => (
-          <section className="mt-4" key={ch.id ?? 'others'}>
-            <div className="flex items-baseline justify-between gap-3 pb-1.5">
-              <h4 className="font-semibold">{ch.name}</h4>
-              {!hidden && ch.total > 0 && (
-                <span className="t-meta text-fg-muted">
-                  {m.learning_done_of({ done: ch.done, total: ch.total })}
-                </span>
-              )}
-            </div>
-            {ch.items.map((it) => (
-              <ProgressRow
-                attempts={hidden ? undefined : byMaterial.get(it.id)}
-                bare={hidden}
-                expanded={open.has(it.id)}
-                item={it}
-                key={it.id}
-                menuItems={menuItems(
-                  { id: it.id, kind: it.type },
-                  states.get(it.id)
-                )}
-                onOpen={() => onOpenItem({ id: it.id, kind: it.type })}
-                onToggle={() => toggle(it.id)}
-                readAt={changedAt.get(it.id)}
-                state={hidden ? undefined : states.get(it.id)}
-                workspaceId={workspaceId}
-              />
-            ))}
-          </section>
-        ))
-      )}
       <ConfirmDialog
         body={m.study_reset_confirm_body()}
         confirmLabel={m.study_reset()}
@@ -333,198 +663,32 @@ export function StudyPage({
         open={confirmReset}
         title={m.study_reset_confirm_title()}
       />
-    </TabContent>
-  );
-}
-
-function ProgressRow({
-  item,
-  bare = false,
-  readAt,
-  state,
-  attempts,
-  expanded,
-  menuItems,
-  onOpen,
-  onToggle,
-  workspaceId,
-}: {
-  item: WorkspaceContentItem;
-  /** Study progress hidden: the name only, opening the item. */
-  bare?: boolean;
-  /** When the item's state last changed: when it was marked read. */
-  readAt?: string;
-  state: StudyState | undefined;
-  attempts?: ItemAttempts;
-  expanded: boolean;
-  menuItems: ReturnType<ReturnType<typeof useStudyActions>['menuItems']>;
-  onOpen: () => void;
-  onToggle: () => void;
-  workspaceId: string;
-}) {
-  const latest = attempts?.recent[0];
-  const name = titleOf(item);
-  return (
-    <div className="border-divider border-t">
-      <div className="group relative -mx-1.5 flex items-center gap-3 rounded-input px-1.5 py-2.5 hover:bg-surface-hover-bg">
-        <FileIcon
-          className="mt-1 size-4 shrink-0 self-start"
-          name={
-            item.type === 'file'
-              ? fileIconName(item.data)
-              : materialIconName(item.data.type)
-          }
-        />
-        <div className="min-w-0 flex-1">
-          {latest ? (
-            <Link
-              className={cn(
-                'wrap-break-word line-clamp-1 text-left after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset',
-                state === 'removed' && 'text-fg-muted'
-              )}
-              {...resultLink(latest)}
-            >
-              {name}
-            </Link>
-          ) : (
-            <button
-              className={cn(
-                'wrap-break-word line-clamp-1 text-left after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset',
-                state === 'removed' && 'text-fg-muted'
-              )}
-              onClick={onOpen}
-              type="button"
-            >
-              {name}
-            </button>
-          )}
-          {!bare && (
-            <p className="t-meta text-fg-muted">
-              {rowMeta(item, state, readAt, attempts)}
-            </p>
-          )}
-        </div>
-        {latest && (
-          <span className="whitespace-nowrap text-fg-secondary text-sm">
-            {scoreText(latest)}
-          </span>
-        )}
-        {attempts && attempts.count > 0 && (
-          <button
-            aria-expanded={expanded}
-            aria-label={m.progress_toggle_results({ name })}
-            className="relative z-10 grid size-7 shrink-0 place-items-center rounded-button text-fg-muted hover:bg-surface-dark"
-            onClick={onToggle}
-            type="button"
-          >
-            <Icon name={expanded ? 'chevronDown' : 'chevronRight'} size={16} />
-          </button>
-        )}
-        <StudyMark state={state} />
-        {!bare && (
-          <div className="relative z-10 -my-2 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-            <Menu items={menuItems} />
-          </div>
-        )}
-      </div>
-      {expanded && attempts && (
-        <Results
-          attempts={attempts}
-          kind={item.type === 'material' ? item.data.type : 'quiz'}
-          workspaceId={workspaceId}
+      {plan && renaming && (
+        <NameFormDialog
+          defaultName={plan.name}
+          maxLength={createStudyPlanBodyNameMax}
+          onClose={() => setRenaming(false)}
+          onSubmit={(name) => updatePlan({ id: plan.id, name })}
+          open
+          submitLabel={m.action_save()}
+          title={m.plan_rename()}
         />
       )}
-    </div>
-  );
-}
-
-/** "Read 9 Oct", or "3 attempts · 10 questions · last 16 Oct". */
-function rowMeta(
-  item: WorkspaceContentItem,
-  state: StudyState | undefined,
-  readAt: string | undefined,
-  attempts?: ItemAttempts
-) {
-  if (state === 'removed') return m.progress_not_tracked();
-  if (!attempts) {
-    return state === 'done' && readAt
-      ? m.progress_read_on({ date: shortDate(readAt) })
-      : m.progress_not_read();
-  }
-  const quiz = item.type === 'material' && item.data.type === 'quiz';
-  const size = quiz
-    ? attempts.size === 1
-      ? m.question_ui_one_question()
-      : m.question_ui_question_count({ count: attempts.size })
-    : attempts.size === 1
-      ? m.progress_one_card()
-      : m.material_ref_cards({ count: attempts.size });
-  const latest = attempts.recent[0];
-  if (!latest)
-    return [
-      quiz ? m.progress_not_attempted() : m.progress_not_studied(),
-      size,
-    ].join(' · ');
-  return [
-    attempts.count === 1
-      ? m.progress_one_attempt()
-      : m.progress_attempts({ count: attempts.count }),
-    size,
-    m.progress_last({ date: shortDate(latest.takenAt) }),
-  ].join(' · ');
-}
-
-/** The last three results, each opening its result page, then All results
- * filtered by the workspace and the item's kind. */
-function Results({
-  attempts,
-  kind,
-  workspaceId,
-}: {
-  attempts: ItemAttempts;
-  /** The quiz's or set's kind, for All results' filter. */
-  kind: string;
-  workspaceId: string;
-}) {
-  return (
-    <ol className="mb-2 ml-1.5 border-divider border-l-2 pl-3.5">
-      {attempts.recent.map((a: Attempt, i) => (
-        <li
-          className="relative -mx-1.5 flex items-center gap-3.5 rounded-input px-1.5 py-1.5 hover:bg-surface-hover-bg"
-          key={a.id}
-        >
-          <div className="min-w-0 flex-1">
-            <p className="text-sm">
-              {m.progress_attempt_n({ n: attempts.count - i })}
-            </p>
-            <p className="t-meta text-fg-muted">
-              {[shortDate(a.takenAt), a.startedAt && attemptMinutes(a)]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-          </div>
-          <span className="whitespace-nowrap text-fg-secondary text-sm">
-            {scoreText(a)}
-          </span>
-          <UnderlineLink asChild noArrow>
-            <Link className="after:absolute after:inset-0" {...resultLink(a)}>
-              {m.quiz_check_result()}
-            </Link>
-          </UnderlineLink>
-        </li>
-      ))}
-      {attempts.count > 0 && (
-        <li className="py-1.5">
-          <UnderlineLink asChild>
-            <Link
-              search={{ kind, tab: 'results', workspace: workspaceId }}
-              to="/learning"
-            >
-              {m.progress_see_all_results()}
-            </Link>
-          </UnderlineLink>
-        </li>
+      {plan && (
+        <ConfirmDialog
+          body={m.plan_delete_body()}
+          confirmLabel={m.action_delete()}
+          onClose={() => setDeleting(false)}
+          // To Default Plan first, so the refreshed lists never show the
+          // deleted plan as missing.
+          onConfirm={() => {
+            void navigate({ replace: true, search: { study: true }, to: '.' });
+            deletePlan(plan.id);
+          }}
+          open={deleting}
+          title={m.plan_delete_title({ name: plan.name })}
+        />
       )}
-    </ol>
+    </>
   );
 }

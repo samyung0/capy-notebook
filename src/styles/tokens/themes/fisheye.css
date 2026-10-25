@@ -1,0 +1,30 @@
+/* ============================================================
+   STYLE: fisheye
+   Capy's colours and type (capy.css) with large radii, pill
+   buttons and tall controls.
+   ============================================================ */
+
+[data-style="fisheye"] {
+  --radius-input: 18px;
+  --radius-button: 12px;
+  --radius-button-lg: 18px;
+  --radius-button-xl: 9999px;
+  --radius-tile: 14px;
+  --radius-flashcard: 24px;
+  --radius-card: 18px;
+  --radius-card-lg: 24px;
+  --radius-card-xl: 28px;
+
+  /* Control heights, phones first. --control-h is Button, Input and
+     Select md, so a button beside a field lines up. */
+  --button-h-sm: 30px;
+  --button-h-lg: 48px;
+  --control-h: 40px;
+}
+
+@media (min-width: 640px) {
+  [data-style="fisheye"] {
+    --button-h-lg: 52px;
+    --control-h: 44px;
+  }
+}
