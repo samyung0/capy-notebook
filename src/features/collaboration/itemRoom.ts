@@ -563,7 +563,7 @@ export class ItemRoom {
     });
     for (;;) {
       if (this.destroyed) return false;
-      const { current, recovery, refused } = draftGroups(rows, this.room);
+      const { current, recovery, refused } = await draftGroups(rows, this.room);
       if (recovery.length) {
         const doc = recoveryDocument(recovery);
         if (doc) {

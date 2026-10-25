@@ -501,7 +501,7 @@ export function useSourceSession(
         current: restoredDrafts,
         recovery: found,
         refused,
-      } = draftGroups(
+      } = await draftGroups(
         storedDrafts ?? [],
         lineage,
         sameSourceLineage(session.format)

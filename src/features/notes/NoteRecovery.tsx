@@ -62,7 +62,7 @@ export function useNoteDrafts(
         return [] as EditDraft[];
       });
       for (;;) {
-        const { current, recovery, refused } = draftGroups(rows, room);
+        const { current, recovery, refused } = await draftGroups(rows, room);
         if (!recovery.length) {
           if (!active) return;
           const { apply, send } = splitOpenDrafts(current);

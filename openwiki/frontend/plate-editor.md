@@ -1626,8 +1626,9 @@ from any page.
   session with a stored token go through the draft send (`draftSender`)
   while the editor joins. Never-accepted rows no send delivers (held after
   one, or with no stored token) open copy-only with the refused rows when
-  they draw on their own, as Q237 and Q251 say until the merge view exists
-  (Epo 2026-10-25, Q360), reported once as the edit incident
+  they draw on their own (the drafts worker's `draws` decides, so the main
+  thread merges and applies them once), as Q237 and Q251 say until the merge
+  view exists (Epo 2026-10-25, Q360), reported once as the edit incident
   `other_epoch_draft`/`held` (never sent, so no service log has them); ones
   that need the room's document are applied, and the room's live refusal of
   them opens the whole document copy-only. Restored rows the room's document
@@ -1636,22 +1637,23 @@ from any page.
   can draw. Until the send settles (every group stored or held) the editor
   shows the syncing status and is view-only: notes lock the content and
   toolbar, items set `sending` (`itemEditingStopped`), sources return
-  `draftsSending`. Each request has 30 s (`DRAFT_SEND_TIMEOUT_MS`); one that
-  fails or times out goes again 30 s later, doubling to 5 minutes, and at
-  once on the browser's `online` event or when the room connects (`now`,
-  from the `beforeJoin` hooks), never twice at once: one asked during a try
-  goes as it ends. While steps are held no socket is open, so a server that
-  comes back is noticed only by the next try: the hold's own connect, the
-  browser's `online` event and the backoff are its triggers. A send that
-  settles before the hold with a group the room did not take opens it
-  copy-only at once (a note remounts, an item room is replaced, a source
-  session opens again). Not settled 30 s after the open
-  (`DRAFT_SEND_WAIT_MS`) with the room synced, or at a first sync after
-  that, the editor closes its channel, applies those rows, adds them to its
-  recorder's adopted rows and edits on: every edit is stored as a draft and
-  nothing goes live, since the room would refuse the old steps on the
-  channel. Its provider's `beforeJoin` then holds every JOIN until the send
-  settles, and no socket opens for the room meanwhile. The hold shows
+  `draftsSending`. Each request has 30 s plus its upload at 100 KB/s, at
+  most 3 minutes (`draftSendTimeout`, Epo 2026-10-25, Q365), so a 2 MiB
+  piece on a slow uplink still lands; one that fails or times out goes again
+  30 s later, doubling to 5 minutes, and at once on the browser's `online`
+  event or when the room connects (`now`, from the `beforeJoin` hooks),
+  never twice at once: one asked during a try goes as it ends. While steps
+  are held no socket is open, so a server that comes back is noticed only by
+  the next try: the hold's own connect, the browser's `online` event and the
+  backoff are its triggers. A send that settles before the hold with a group
+  the room did not take opens it copy-only at once (a note remounts, an item
+  room is replaced, a source session opens again). Not settled 30 s after
+  the open (`DRAFT_SEND_WAIT_MS`) with the room synced, or at a first sync
+  after that, the editor closes its channel, applies those rows, adds them
+  to its recorder's adopted rows and edits on: every edit is stored as a
+  draft and nothing goes live, since the room would refuse the old steps on
+  the channel. Its provider's `beforeJoin` then holds every JOIN until the
+  send settles, and no socket opens for the room meanwhile. The hold shows
   syncing and is no editing incident (the recorder's `disconnected(true)`
   reports no `offline_episode`); a browser that goes offline in it shows
   offline, and syncing (a source saving) again once back online. Once a send

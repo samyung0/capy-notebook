@@ -22,7 +22,6 @@ import {
   type DraftRef,
   type DraftReply,
   type DraftRequest,
-  drawsAlone,
   grantsOf,
   MERGE_RUN,
   mergedRows,
@@ -322,9 +321,11 @@ export function markDraftsReported(key: string, ids: string[]): Promise<void> {
  * with the refused ones when they draw on their own (Epo 2026-10-25, Q360:
  * Q237 and Q251 until the merge view). Ones that need the room's document
  * stay current: the editor applies them, and the room's refusal of them
- * opens its whole document copy-only.
+ * opens its whole document copy-only. The drafts worker decides which (its
+ * `draws`), so the main thread merges and applies held rows only once, as
+ * recovery or as current rows (r5 N5); rows it cannot read stay current.
  */
-export function draftGroups(
+export async function draftGroups(
   rows: EditDraft[],
   lineage: string,
   same: (left: string, right: string) => boolean = (left, right) =>
@@ -336,7 +337,15 @@ export function draftGroups(
     !row.accepted &&
     (!!row.held || !row.grants?.length);
   const held = rows.filter(unsendable);
-  const shown = held.length > 0 && drawsOnItsOwn(held);
+  const shown =
+    held.length > 0 &&
+    !!(await call<boolean | null>({
+      op: 'draws',
+      rows: held.map(({ id, key, seq }) => ({ id, key, seq })),
+    }).catch((error) => {
+      console.warn('Draft storage failed:', error);
+      return null;
+    }));
   const refused = (row: EditDraft) =>
     !!row.refused || (shown && unsendable(row));
   const first = rows.find((row) => refused(row) || !same(row.lineage, lineage));
@@ -350,15 +359,6 @@ export function draftGroups(
       : [],
     refused: !!first && refused(first),
   };
-}
-
-/** Whether rows draw with no base (a malformed row does not). */
-function drawsOnItsOwn(rows: EditDraft[]) {
-  try {
-    return drawsAlone(mergedRows(rows));
-  } catch {
-    return false;
-  }
 }
 
 /** The bytes a group of rows holds (edit_incidents sizes). */
@@ -973,8 +973,12 @@ async function sendGroup(
   return { refs: group.refs, sent: 'sent' };
 }
 
-/** How long one `/drafts` request may take (Epo 2026-10-25, Q360). */
-export const DRAFT_SEND_TIMEOUT_MS = 30_000;
+/** How long one `/drafts` request of `bytes` may take: 30 s plus its upload
+ * at 100 KB/s (100 bytes a millisecond), at most 3 minutes, so a 2 MiB piece
+ * on a slow uplink still lands (Epo 2026-10-25, Q360, Q365). */
+export function draftSendTimeout(bytes: number) {
+  return Math.min(30_000 + Math.ceil(bytes / 100), 180_000);
+}
 
 /** What a draft send waiting for the allowance holds the tab back with. */
 const DRAFT_PACING = {};
@@ -1006,14 +1010,14 @@ async function sendPiece(
   let response: Response;
   try {
     // A send that stalls (a captive portal, a half-open connection) fails
-    // as a try after DRAFT_SEND_TIMEOUT_MS (Q360).
+    // as a try after its time limit (Q360, Q365).
     response = await fetch(
       new URL('/drafts', token.url.replace(WEBSOCKET_SCHEME, 'http')),
       {
         body,
         headers,
         method: 'POST',
-        signal: AbortSignal.timeout(DRAFT_SEND_TIMEOUT_MS),
+        signal: AbortSignal.timeout(draftSendTimeout(body.byteLength)),
       }
     );
   } catch {
