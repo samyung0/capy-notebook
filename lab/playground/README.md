@@ -143,11 +143,11 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 
 | Field | Meaning |
 | --- | --- |
-| `model` | A `model_configs` pin (`provider_slug`, `model_slug`, `version`, `thinking`). Add `adhoc: {…}` to pin a model the catalog lacks; the provider's platform key must exist |
+| `model` | A `model_configs` pin (`provider_slug`, `model_slug`, `version`, `thinking`). Add `adhoc: {…}` to pin a model the catalog lacks; the provider's platform key must exist. The Model picker lists every adhoc pin a saved config holds beside the catalog, and picking one copies the whole pin |
 | `model.transport` | Send this pin to another OpenAI-compatible endpoint: `{"url", "key_env", "wire_model", "body"}`. `body` picks the request builder (`zai`, `openai`, `deepseek`). `null` uses the production route |
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
-| `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the library rules. The addon is appended either way |
-| `library_rules` | `null` keeps production's library rules; a string replaces them and `""` drops them. Sent in both modes of the Workspace only switch, before the answer format (or last when a replaced `system_prompt` dropped it) |
+| `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the all sources rules. The addon is appended either way |
+| `all_sources_rules` | `null` keeps production's all sources rules; a string replaces them and `""` drops them. Sent in both modes of the Workspace only switch, before the answer format (or last when a replaced `system_prompt` dropped it) |
 | `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `search_knowledge` still receives the live subject list |
 | `skills` | Map of skill names (`editing`, `note_building`, `deck_building`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text, which is the same in both modes of the Workspace only switch |
 | `skill_addons` | Map of skill names to text appended to what `read_skill` returns (after any `skills` replacement), so a teaching variant rides on production's current text; seen in the config JSON and each call's full context |

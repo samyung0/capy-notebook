@@ -103,10 +103,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "transport": None,
     },
     # null keeps the production system prompt; a string replaces it wholesale,
-    # except the library rules, which library_rules owns.
+    # except the all sources rules, which all_sources_rules owns.
     "system_prompt": None,
-    # null keeps production's library rules; "" drops them.
-    "library_rules": None,
+    # null keeps production's all sources rules; "" drops them.
+    "all_sources_rules": None,
     "prompt_addon": "",
     "tool_descriptions": {},
     # A skill's text replaces what read_skill returns for it; the system prompt
@@ -175,8 +175,8 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         for name, text in descriptions.items()
     ):
         raise HTTPException(400, "tool_descriptions must map known tool names to text")
-    if out["library_rules"] is not None and not isinstance(out["library_rules"], str):
-        raise HTTPException(400, "library_rules must be null or text")
+    if out["all_sources_rules"] is not None and not isinstance(out["all_sources_rules"], str):
+        raise HTTPException(400, "all_sources_rules must be null or text")
     from pipeline.retrieval import skills
 
     texts = out["skills"]
@@ -242,14 +242,14 @@ def effective_prompt(
     c: dict[str, Any],
     base: str | None = None,
     *,
-    with_library: bool = True,
+    with_all_sources: bool = True,
 ) -> str:
     """The exact system prompt a turn sends, the same in both modes of the
-    Workspace only switch: production text without the library rules, or the
-    config's replacement; then the library rules (production's or
-    library_rules) where production puts them, before the answer format, or
+    Workspace only switch: production text without the all sources rules, or the
+    config's replacement; then the all sources rules (production's or
+    all_sources_rules) where production puts them, before the answer format, or
     last when a replacement dropped that; then the addons.
-    ``with_library=False`` is the editable part the page shows."""
+    ``with_all_sources=False`` is the editable part the page shows."""
     import capture
     import citations
 
@@ -257,14 +257,14 @@ def effective_prompt(
 
     if base is None:
         base = chat_prompts.system_prompt(c["locale"])
-    base = base.replace("\n\n" + chat_prompts.LIBRARY_RULES, "", 1)
+    base = base.replace("\n\n" + chat_prompts.ALL_SOURCES_RULES, "", 1)
     text = base if c["system_prompt"] is None else c["system_prompt"]
     rules = (
-        chat_prompts.LIBRARY_RULES
-        if c["library_rules"] is None
-        else c["library_rules"]
+        chat_prompts.ALL_SOURCES_RULES
+        if c["all_sources_rules"] is None
+        else c["all_sources_rules"]
     )
-    if rules and with_library:
+    if rules and with_all_sources:
         head, lang, tail = text.rpartition("\n\n" + chat_prompts.LANG_RULE)
         text = (
             f"{head}\n\n{rules}{lang}{tail}" if lang else f"{text}\n\n{rules}"
@@ -2114,6 +2114,13 @@ def build_app(target: str):
             )
             workspaces = [dict(r) for r in await cur.fetchall()]
         quality = sorted(p.name for p in (LOCAL / "quality").glob(f"{target}-*.json"))
+        # Adhoc pins saved in configs join the picker beside the catalog.
+        adhoc: dict[tuple, dict[str, Any]] = {}
+        for p in sorted(CONFIGS.glob("*.json")):
+            m = json.loads(p.read_text(encoding="utf-8")).get("model") or {}
+            if m.get("adhoc"):
+                key = (m["provider_slug"], m["model_slug"], m.get("version", 1))
+                adhoc.setdefault(key, m)
         return {
             "target": target,
             # Where runs keep their files, for paths a reader opens in Finder.
@@ -2121,6 +2128,7 @@ def build_app(target: str):
             "configs": sorted(p.stem for p in CONFIGS.glob("*.json")),
             "defaults": DEFAULT_CONFIG,
             "models": models,
+            "adhoc_models": list(adhoc.values()),
             "workspaces": workspaces,
             "library": await library_summary(),
             "quality_files": quality,
@@ -2217,9 +2225,9 @@ def build_app(target: str):
         await tools.load_library_catalog(ctx)
         return {
             "prompt": effective_prompt(
-                c, production_prompt(c["locale"]), with_library=False
+                c, production_prompt(c["locale"]), with_all_sources=False
             ),
-            "library_rules": chat_prompts.LIBRARY_RULES,
+            "all_sources_rules": chat_prompts.ALL_SOURCES_RULES,
             "full_prompt": effective_prompt(c, production_prompt(c["locale"])),
             "tools": turn_tools(c, production_schemas(ctx)),
             "skills": skill_texts(c),
@@ -2840,7 +2848,7 @@ def check() -> None:
             assert csp.startswith("default-src 'none'")
             for mode in (False, True):
                 c = merged({"workspace_only": mode})
-                expected = effective_prompt(c, with_library=False)
+                expected = effective_prompt(c, with_all_sources=False)
                 with (
                     patch.object(chat, "system_prompt", return_value="active turn"),
                     patch.object(tools, "load_library_catalog", new=AsyncMock()),
@@ -2912,30 +2920,30 @@ def check() -> None:
                 assert saved["library_reads"] == []
         bare = merged(
             {
-                "library_rules": "",
+                "all_sources_rules": "",
                 "system_prompt": "",
                 "capture": {"addon": False},
             }
         )
         assert effective_prompt(bare, "production") == ""
         decks = merged(
-            {"library_rules": "", "system_prompt": "", "capture": {"addon": False}}
+            {"all_sources_rules": "", "system_prompt": "", "capture": {"addon": False}}
         )
         # The main explainer format reaches the model with the study
         # preferences in the turn context, not the system prompt.
         assert effective_prompt(decks, "production") == ""
-        # The library rules sit before the answer format, as production puts
+        # The all sources rules sit before the answer format, as production puts
         # them, whether they or the rest of the prompt were edited.
         unedited = merged({"capture": {"addon": False}})
         assert effective_prompt(unedited, chat.system_prompt("en")) == chat.system_prompt(
             "en"
         )
-        lib = merged({"library_rules": "MY RULES", "tools": []})
+        lib = merged({"all_sources_rules": "MY RULES", "tools": []})
         assert effective_prompt(lib, "base\n\n" + chat.LANG_RULE) == (
             "base\n\nMY RULES\n\n" + chat.LANG_RULE
         )
         assert effective_prompt({**lib, "system_prompt": "mine"}, "x") == "mine\n\nMY RULES"
-        assert effective_prompt(lib, "base", with_library=False) == "base"
+        assert effective_prompt(lib, "base", with_all_sources=False) == "base"
 
     asyncio.run(check_preview())
     assert (

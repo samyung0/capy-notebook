@@ -219,7 +219,7 @@ img.capture {
       offers; a list narrows it. capture.mode: pixels | ocr | caption.
     </div>
     <details open>
-      <summary>System prompt (without the library rules)</summary>
+      <summary>System prompt (without the all sources rules)</summary>
       <textarea
         id="prompt"
         spellcheck="false"
@@ -239,20 +239,20 @@ img.capture {
       </div>
     </details>
     <details>
-      <summary>Library rules (sent with Library on)</summary>
+      <summary>All sources mode rules (sent in both modes, apply with Workspace only off)</summary>
       <textarea
-        id="libraryRules"
-        aria-label="Library rules"
+        id="allSourcesRules"
+        aria-label="All sources mode rules"
         spellcheck="false"
         style="min-height:160px"
       ></textarea>
       <div class="row">
-        <button id="applyLibraryRules" type="button">Apply library rules</button>
-        <button id="resetLibraryRules" type="button">Back to production rules</button>
-        <span class="muted" id="libraryRulesStatus" role="status"></span>
+        <button id="applyAllSourcesRules" type="button">Apply all sources rules</button>
+        <button id="resetAllSourcesRules" type="button">Back to production rules</button>
+        <span class="muted" id="allSourcesRulesStatus" role="status"></span>
       </div>
       <p class="muted">
-        Apply writes the text into <code>library_rules</code>; reset sets it to
+        Apply writes the text into <code>all_sources_rules</code>; reset sets it to
         null. The turn puts them before the answer format, or last if an
         applied system prompt dropped it.
       </p>
@@ -395,7 +395,7 @@ let state = null,
 const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
 let previewVersion = 0,
   promptDirty = false,
-  libraryDirty = false;
+  allSourcesDirty = false;
 // Per-name overrides of production text: tool descriptions and skills.
 const editors = {
   tool: {
@@ -444,6 +444,14 @@ async function loadState() {
         `<option value='${JSON.stringify([m.provider_slug, m.model_slug, m.version, m.default_thinking])}'>${m.provider_slug}/${m.model_slug} v${m.version}${(m.capabilities || []).includes('vision') ? ' 👁' : ''}</option>`
     )
     .join('');
+  // Adhoc pins from saved configs; picking one copies the whole pin.
+  for (const m of state.adhoc_models || []) {
+    const option = document.createElement('option');
+    option.value = JSON.stringify([m.provider_slug, m.model_slug, m.version || 1, m.thinking]);
+    option.dataset.model = JSON.stringify(m);
+    option.textContent = `${m.adhoc.model_name || m.model_slug} (adhoc, ${m.provider_slug})`;
+    $('models').appendChild(option);
+  }
   $('workspaces').innerHTML = state.workspaces
     .map(
       (w) =>
@@ -483,7 +491,7 @@ $('fill').onclick = () => setConfig(mergedConfig(currentConfig()));
 function setConfig(c, resetDrafts = false) {
   if (resetDrafts) {
     promptDirty = false;
-    libraryDirty = false;
+    allSourcesDirty = false;
     for (const ed of Object.values(editors)) ed.drafts = {};
     $('promptStatus').textContent = '';
   }
@@ -521,10 +529,10 @@ function setConfig(c, resetDrafts = false) {
     .then((p) => {
       if (version !== previewVersion) return;
       if (!promptDirty) $('prompt').value = p.prompt;
-      if (!libraryDirty) {
-        const applied = c.library_rules;
-        $('libraryRules').value = applied ?? p.library_rules ?? '';
-        $('libraryRulesStatus').textContent =
+      if (!allSourcesDirty) {
+        const applied = c.all_sources_rules;
+        $('allSourcesRules').value = applied ?? p.all_sources_rules ?? '';
+        $('allSourcesRulesStatus').textContent =
           applied == null ? 'Production rules' : 'Custom rules applied';
       }
       $('fullPrompt').textContent = p.full_prompt ?? '';
@@ -584,6 +592,13 @@ $('models').onchange = () => {
     $('models').value
   );
   const c = currentConfig();
+  const adhoc = [...$('models').options].find((o) => o.value === $('models').value)
+    ?.dataset.model;
+  if (adhoc) {
+    c.model = { ...JSON.parse(adhoc), thinking: (c.model && c.model.thinking) || thinking };
+    setConfig(c);
+    return;
+  }
   c.model = {
     model_slug,
     provider_slug,
@@ -666,20 +681,20 @@ $('applyPrompt').onclick = () => {
   $('promptStatus').textContent = 'Applied to config';
   setConfig(c);
 };
-$('libraryRules').oninput = () => {
-  libraryDirty = true;
-  $('libraryRulesStatus').textContent = 'Draft: apply before running';
+$('allSourcesRules').oninput = () => {
+  allSourcesDirty = true;
+  $('allSourcesRulesStatus').textContent = 'Draft: apply before running';
 };
-$('applyLibraryRules').onclick = () => {
+$('applyAllSourcesRules').onclick = () => {
   const c = currentConfig();
-  c.library_rules = $('libraryRules').value;
-  libraryDirty = false;
+  c.all_sources_rules = $('allSourcesRules').value;
+  allSourcesDirty = false;
   setConfig(c);
 };
-$('resetLibraryRules').onclick = () => {
+$('resetAllSourcesRules').onclick = () => {
   const c = currentConfig();
-  c.library_rules = null;
-  libraryDirty = false;
+  c.all_sources_rules = null;
+  allSourcesDirty = false;
   setConfig(c);
 };
 $('resetPrompt').onclick = () => {

@@ -1321,14 +1321,14 @@ def test_chat_request_requires_enabled_thinking():
     assert ChatStreamReq(**fields, thinking="high").thinking == "high"
 
 
-def test_one_prompt_holds_the_library_rules_in_both_modes():
+def test_one_prompt_holds_the_all_sources_rules_in_both_modes():
     from pipeline.prompts import chat as chat_prompts
     from pipeline.prompts import skills
     from pipeline.retrieval import limits
 
     off = on = chat_prompts.system_prompt("en")
 
-    assert "Library (when Workspace only is off)" in off
+    assert "All sources mode (when Workspace only is off)" in off
     # Without a write tool (a viewer) the model is told it cannot write.
     assert chat_prompts.READ_ONLY_RULE in chat_prompts.system_prompt("en", writes=False)
     assert chat_prompts.READ_ONLY_RULE not in off

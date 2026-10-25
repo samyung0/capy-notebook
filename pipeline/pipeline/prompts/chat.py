@@ -36,8 +36,7 @@ Sources:
 - Each learner message starts with a line saying whether Workspace only is on or off for that message.
 - In both modes, look in the workspace first (list_sources, search_workspace, read_document) and build on what it holds. Go outside it only to expand: to fill a gap it leaves, or to add an explanation, example or exercise it lacks.
 - Workspace only on: use only the workspace's files and materials, not the library or search_web. If the workspace does not cover something, say so and say what it does cover. Label anything from general knowledge as outside the workspace, and leave it out of materials.
-- Workspace only off: you may also use the library, and search_web when the workspace, the library and your own knowledge cannot answer. You may use your own knowledge to explain and connect ideas in answers and materials. Cite what comes from a source, and never present your own knowledge as coming from the learner's files.
-- Cite a web result by its number, like a passage. Never write a URL or a link in the answer; the citation carries it.
+- Workspace only off is all sources mode; its rules are below.
 
 Answer or build:
 - A question, or a request to explain or summarise, gets an answer with citations, not materials.
@@ -112,7 +111,11 @@ READ_ONLY_RULE = (
     "to build or edit a material, say that this workspace does not let you."
 )
 
-LIBRARY_RULES = """Library (when Workspace only is off):
+# Everything that applies only with Workspace only off, sent in both modes so
+# the prompt stays cached (Epo 2026-10-25).
+ALL_SOURCES_RULES = """All sources mode (when Workspace only is off):
+- You may also use the library, and search_web when the workspace, the library and your own knowledge cannot answer. You may use your own knowledge to explain and connect ideas in answers and materials. Cite what comes from a source, and never present your own knowledge as coming from the learner's files.
+- Cite a web result by its number, like a passage. Never write a URL or a link in the answer; the citation carries it.
 - The shared library holds verified open textbooks. One excerpt is one section of one book.
 - Search with the learner's subject id from search_knowledge's list to keep results in that subject, or omit subject for a direct search. A result names each excerpt's book. An empty result under a role filter reports what the subject holds by role, so relax the filter on purpose rather than rewording.
 - A search result is a selection aid, not a read: read an excerpt with read_knowledge before using it. Its scope says where it applies and when linked source context is needed.
@@ -132,7 +135,7 @@ CAPTURE_RULE = (
     "details while keeping the labels and context needed to interpret them. The "
     "captured image is the source of truth. If capture is unavailable or the "
     "detail is illegible, say it could not be verified instead of guessing. "
-    "Uploaded images are one page each; for a library page, see the library "
+    "Uploaded images are one page each; for a library page, see the all sources "
     "rules. `[formula]` in passage or material text marks a formula printed as a "
     "picture. When a question needs that formula, capture its page and read the "
     "formula there; never present the placeholder as content."
@@ -165,7 +168,7 @@ def system_prompt(locale: str | None, *, writes: bool = True) -> str:
             *((FIRST_TURN_OFFER,) if writes else (READ_ONLY_RULE,)),
         )
     )
-    return rules + "\n\n" + LIBRARY_RULES + "\n\n" + LANG_RULE
+    return rules + "\n\n" + ALL_SOURCES_RULES + "\n\n" + LANG_RULE
 
 
 def memory_message(summary: str) -> dict[str, Any]:

@@ -2463,7 +2463,7 @@ confidence and extraction quality remain separate.
 
 With Workspace only off, the model searches with the learner's subject or without one,
 and keeps the learner's constraints when a subject search misses and it
-searches again without the subject. The library rules (`LIBRARY_RULES` in `prompts/chat.py`)
+searches again without the subject. The library lines of the all sources rules (`ALL_SOURCES_RULES` in `prompts/chat.py`)
 require explicit applicability and distinguish source exercises from adapted
 practice. Once a write lands the turn context shows the responses left under the
 stall guard. Search continuation caching is absent.
@@ -3459,8 +3459,8 @@ materials are sources.
   search. Topic ids are never in a description or a search card.
 - **Prompt** (`prompts/chat.py`). `system_prompt(locale, writes=...)` is one
   prompt for every turn and stays lean: grounding rules; sources (the mode
-  line, the workspace first in both modes, what each mode allows, a web result
-  cited by its number and never written as a URL or link); answer or build (a
+  line, the workspace first in both modes, what Workspace only on allows, and
+  a pointer to the all sources rules for off); answer or build (a
   question, or a request to explain or summarise, gets an answer with
   citations, not materials; a request to learn, make, expand or practise gets
   materials without asking whether to create them, and so does the learner's
@@ -3470,11 +3470,16 @@ materials are sources.
   the build budget's tool calls in the whole turn and the stall guard, more
   after errored writes, in one sentence), with its numbers read from
   `retrieval/limits.py`. The account-language, follow-references and capture
-  rules follow (the capture rule covers workspace sources; the library rules
-  say when a library page is captured), and a turn offered no write tool (a
+  rules follow (the capture rule covers workspace sources; the all sources
+  rules say when a library page is captured), and a turn offered no write tool (a
   viewer) gets `READ_ONLY_RULE`: answer, and say the workspace does not let it
-  build or edit. `LIBRARY_RULES` follows in both modes, headed for
-  Workspace only off: search with the learner's subject or
+  build or edit. `ALL_SOURCES_RULES` follows in both modes, headed "All sources
+  mode (when Workspace only is off)", and holds every rule that applies only
+  with the switch off (Epo 2026-10-25): the library, search_web only when the
+  workspace, the library and the model's own knowledge cannot answer, the
+  model's own knowledge to explain and connect ideas without presenting it as
+  the learner's files, a web result cited by its number and never written as a
+  URL or link; then the library: search with the learner's subject or
   without one, a search hit is not a read, state applicability and gaps,
   relax a missed subject filter,
   `capture_knowledge_page` when numbers or formulas look corrupted, and
