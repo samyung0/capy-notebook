@@ -174,6 +174,15 @@ const MATERIAL_REF_KINDS = new Set<string>(
  * the collaboration server refuse any other, so an imported document carrying
  * one fails here instead of getting the note's room refused. */
 const MEDIA_WIDTH = /^(?:[2-9][0-9]|100)%$/;
+/** A column's width as the editor writes it: the layout presets, or Plate's
+ * column normalizer writing `${n}%` of a float (`49.9995%`,
+ * `33.333333333333336%`). A plain decimal percentage above 0 and at most 100,
+ * as JavaScript writes a number. Go and the collaboration server refuse any
+ * other, and renderers draw none, since the width reaches a style. */
+const COLUMN_WIDTH = /^(?:100|[1-9][0-9]?(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])%$/;
+export function isColumnWidth(width: unknown): width is string {
+  return typeof width === 'string' && COLUMN_WIDTH.test(width);
+}
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -340,6 +349,8 @@ function validateCustomElement(
     case 'flashcard_back':
     case 'mermaid_caption':
       return element.children.every(isTextNode);
+    case 'column':
+      return element.width === undefined || isColumnWidth(element.width);
     case 'flashcards':
       return (
         hasId(element) &&

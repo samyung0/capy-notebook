@@ -297,6 +297,61 @@ describe('Universal Plate material documents', () => {
     expect(valid(chart, 300)).toBe(false);
   });
 
+  // As Go and the collaboration server: a column takes the widths the editor
+  // writes (its presets, and Plate's normalizer's floats) and nothing else.
+  it('takes only the widths the editor writes on columns (security)', () => {
+    const valid = (width: unknown) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          {
+            children: [
+              {
+                children: [{ children: [{ text: 'a' }], type: 'p' }],
+                type: 'column',
+                width,
+              },
+              {
+                children: [{ children: [{ text: 'b' }], type: 'p' }],
+                type: 'column',
+              },
+            ],
+            type: 'column_group',
+          },
+        ],
+      });
+    for (const width of [
+      undefined,
+      '50%',
+      '33.333%',
+      '33.334%',
+      '66.667%',
+      '49.9995%',
+      '33.333333333333336%',
+      '100%',
+      '0.5%',
+    ])
+      expect(valid(width), String(width)).toBe(true);
+    for (const width of [
+      '0%',
+      '101%',
+      '100.5%',
+      '050%',
+      '50.0%',
+      '50.%',
+      '.5%',
+      '5e1%',
+      '-5%',
+      '50',
+      '50px',
+      ' 50%',
+      '50%;color:red',
+      50,
+      null,
+    ])
+      expect(valid(width), String(width)).toBe(false);
+  });
+
   // As Go and the collaboration server (Epo 2026-10-22): a Mermaid source
   // stops at MERMAID_SOURCE_MAX UTF-16 units, an astral character two.
   it('caps a Mermaid source at the catalog max', () => {
