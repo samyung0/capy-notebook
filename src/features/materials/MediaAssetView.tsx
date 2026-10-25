@@ -15,6 +15,7 @@ import { Icon } from '@/components/ui/Icon';
 import { onChildrenReady } from '@/features/notes/childrenReady';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { mediaWidth } from './document';
 import { MediaFrame } from './MediaFrame';
 
 // Loaded when used: the authenticated resolve (with the app's query client
@@ -251,13 +252,13 @@ export function MediaAssetView({
           }}
           onWidthChange={onWidthChange}
           toolbar={toolbar}
-          width={element.width}
+          width={mediaWidth(element.width)}
         >
           <img
             alt={element.name || asset.name}
             className={cn(
               'block h-auto rounded-card',
-              element.width || fill ? 'w-full' : 'max-w-full'
+              mediaWidth(element.width) || fill ? 'w-full' : 'max-w-full'
             )}
             decoding="async"
             onLoad={(event) => {

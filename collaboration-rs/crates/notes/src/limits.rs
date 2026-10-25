@@ -380,8 +380,18 @@ fn shared_keys(keys: fn(&catalog::Element) -> &'static [&'static str]) -> Vec<&'
 }
 
 /// The keys whose value the store checks beyond its presence ([value_ok]).
-const VALUE_KEYS: [&str; 9] = [
-    "refKind", "provider", "videoId", "width", "html", "caption", "block", "source", "indent",
+const VALUE_KEYS: [&str; 11] = [
+    "refKind",
+    "provider",
+    "videoId",
+    "width",
+    "html",
+    "caption",
+    "block",
+    "source",
+    "indent",
+    "colSizes",
+    "marginLeft",
 ];
 
 /// Whether the store takes `value` under `key` on an element of type `kind`
@@ -390,7 +400,8 @@ const VALUE_KEYS: [&str; 9] = [
 /// column's one the editor writes, an interactive block's html and caption
 /// fit, a figure's block is its live map (checked whole on the copy,
 /// [on_candidate]), a Mermaid source is a string (or its shared text), any
-/// block's indent stops at `LIST_INDENT_MAX`.
+/// block's indent is a number that stops at `LIST_INDENT_MAX`, and a table's
+/// column sizes and left margin are sizes.
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
         (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
@@ -417,6 +428,17 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
             matches!(value, Any::String(width) if crate::material::valid_column_width(width))
         }
         (_, "indent", Any::Number(indent)) => *indent <= catalog::LIST_INDENT_MAX as f64,
+        (_, "indent", value) => matches!(value, Any::Null),
+        ("table", "colSizes", value) => {
+            matches!(value, Any::Array(sizes) if sizes.iter().all(|size| match size {
+                Any::Null | Any::Undefined => true,
+                Any::Number(size) => crate::material::table_size(*size),
+                _ => false,
+            }))
+        }
+        ("table", "marginLeft", value) => {
+            matches!(value, Any::Number(size) if crate::material::table_size(*size))
+        }
         (crate::material::MATERIAL_REF_TYPE, "refKind", _)
         | ("video", "provider" | "videoId", _)
         | (crate::material::HTML_EMBED_TYPE, "html", _) => false,

@@ -13,6 +13,8 @@ import {
 import { EmbedViewContext } from './embeds/EmbedView';
 import { MaterialPreview } from './MaterialPreview';
 
+const STYLE_OR_CLASS = /(?:style|class)="([^"]*)"/g;
+
 function renderMaterial(
   value: MaterialValue,
   metadata?: { isStandalone: boolean; kind: MaterialKind; title: string }
@@ -254,6 +256,61 @@ describe('static study-block renderers', () => {
     // Only the right column is styled.
     expect(html.split('--column-width:')).toHaveLength(2);
     expect(html).toContain('--column-width:50%"');
+  });
+
+  // The same fallback: a table size, indent, element mark or media width the
+  // document check refuses reaches no style or class, while valid ones do.
+  it('styles no table size, indent, element mark or media width the document check refuses (security)', () => {
+    const cell = (text: string) => ({
+      children: [{ children: [{ text }], type: 'p' }],
+      type: 'td',
+    });
+    const html = renderToStaticMarkup(
+      <MaterialPreview
+        content={{
+          schemaVersion: 1,
+          value: [
+            {
+              children: [{ children: [cell('a'), cell('b')], type: 'tr' }],
+              colSizes: ['zq;color:red', 100],
+              id: 't',
+              marginLeft: 'zq',
+              type: 'table',
+            },
+            { children: [{ text: 'indented' }], indent: 'zq fixed', type: 'p' },
+            {
+              backgroundColor: 'zq',
+              children: [{ text: 'marked' }],
+              color: 'zq',
+              fontFamily: 'zq',
+              fontSize: 'zq',
+              type: 'p',
+            },
+            {
+              children: [{ text: '' }],
+              id: 'v',
+              provider: 'youtube',
+              type: 'video',
+              videoId: 'dQw4w9WgXcQ',
+              width: 'zq;color:red',
+            },
+            {
+              children: [{ color: '#c0392b', text: 'kept' }],
+              indent: 1,
+              type: 'p',
+            },
+          ],
+        }}
+      />
+    );
+    const attributes = [...html.matchAll(STYLE_OR_CLASS)].map(
+      (match) => match[1]
+    );
+    expect(attributes.filter((value) => value.includes('zq'))).toEqual([]);
+    expect(html).toContain('<col style="width:100px"/>');
+    expect(html).toContain('slate-indent-1');
+    expect(html).toContain('margin-left:24px');
+    expect(html).toContain('color:#c0392b');
   });
 
   it('renders every quiz question shape as a read-only answer review', () => {

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -657,10 +658,17 @@ func validateNode(node map[string]any, depth int, live bool) error {
 	if !hasTextDescendant(node) {
 		return errors.New("element must contain a text descendant")
 	}
-	// Any block's indent (lists, indented paragraphs) stops at the
-	// catalog's ListIndentMax (Epo 2026-10-18).
-	if indent, ok := number(node["indent"]); ok && indent > embeds.ListIndentMax {
-		return fmt.Errorf("indent is over %d levels", embeds.ListIndentMax)
+	// Any block's indent (lists, indented paragraphs) is a number that stops
+	// at the catalog's ListIndentMax (Epo 2026-10-18); Plate draws it as a
+	// class and a margin.
+	if raw := node["indent"]; raw != nil {
+		indent, ok := number(raw)
+		if !ok {
+			return errors.New("indent must be a number")
+		}
+		if indent > embeds.ListIndentMax {
+			return fmt.Errorf("indent is over %d levels", embeds.ListIndentMax)
+		}
 	}
 	element, known := elements[typ]
 	if !known {
@@ -773,6 +781,8 @@ func validateElement(node map[string]any, typ string, depth int, children []any,
 		return validateMedia(node, typ)
 	case "column":
 		return validateColumnWidth(node)
+	case "table":
+		return validateTableSizes(node)
 	case RefType:
 		return validateMaterialRef(node)
 	}
@@ -866,6 +876,32 @@ func validateColumnWidth(node map[string]any) error {
 		return nil
 	}
 	return errors.New("column width must be a percentage above 0 and at most 100")
+}
+
+// validateTableSizes: a table's column sizes and left margin are what Plate's
+// table resizing writes, px as finite numbers of 0 or more; a column size may
+// be empty (null). Mirrors isTableSize in the browser's document check.
+func validateTableSizes(node map[string]any) error {
+	if raw, ok := node["colSizes"]; ok {
+		sizes, ok := raw.([]any)
+		if !ok {
+			return errors.New("table colSizes must be a list of sizes")
+		}
+		for _, size := range sizes {
+			if size != nil && !tableSize(size) {
+				return errors.New("table colSizes must be a list of sizes")
+			}
+		}
+	}
+	if raw, ok := node["marginLeft"]; ok && !tableSize(raw) {
+		return errors.New("table marginLeft must be a size")
+	}
+	return nil
+}
+
+func tableSize(value any) bool {
+	size, ok := number(value)
+	return ok && !math.IsInf(size, 0) && !math.IsNaN(size) && size >= 0
 }
 
 func validateQuiz(node map[string]any) error {
