@@ -124,6 +124,7 @@ import {
   pauseEdits,
 } from './roomSwap';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
+import { toastDraftsLost } from './saveFailure';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
 const RESTORE_ORIGIN = Symbol('restore');
@@ -1185,6 +1186,7 @@ export function NoteEditorCore({
         setOfflineLimit(over);
         showOffline();
       },
+      onLost: toastDraftsLost,
       onStorage: (ok) => {
         storageOk.current = ok;
         showOffline();

@@ -473,6 +473,9 @@ export interface DraftRecorderOptions {
   limitsState?: boolean;
   lineage: string;
   onLimit?: (over: boolean) => void;
+  /** Restored rows the room's document cannot place went at a receipt: the
+   * host tells the user edits were lost (r6 N1). */
+  onLost?: () => void;
   /** Whether the last write reached storage (false: private mode, a full
    * disk). Editing goes on either way. */
   onStorage?: (ok: boolean) => void;
@@ -503,6 +506,7 @@ export function recordDrafts({
   limitsState = false,
   lineage,
   onLimit,
+  onLost,
   onStorage,
   report,
   token,
@@ -734,12 +738,14 @@ export function recordDrafts({
       if (
         pendingAdopted.length &&
         (doc.store.pendingStructs || doc.store.pendingDs)
-      )
+      ) {
         report?.(
           'draft_unrestorable',
           'base_missing',
           draftBytes(pendingAdopted)
         );
+        onLost?.();
+      }
       const done: DraftRef[] = [...pendingAdopted];
       pendingAdopted = [];
       updates = updates.filter((item) => {

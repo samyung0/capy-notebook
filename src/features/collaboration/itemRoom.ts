@@ -39,6 +39,7 @@ import {
   recoveryDocument,
   splitOpenDrafts,
 } from '@/lib/editDrafts';
+import { editIncidentReporter } from '@/lib/editIncidents';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
@@ -564,6 +565,8 @@ export class ItemRoom {
     for (;;) {
       if (this.destroyed) return false;
       const { current, recovery, refused } = await draftGroups(rows, this.room);
+      // Destroyed while the drafts worker answered: nothing starts (r6 S1).
+      if (this.destroyed) return false;
       if (recovery.length) {
         const doc = recoveryDocument(recovery);
         if (doc) {
@@ -596,10 +599,12 @@ export class ItemRoom {
           this.overLimit = over;
           this.showOffline();
         },
+        onLost: toastDraftsLost,
         onStorage: (ok) => {
           this.storageOk = ok;
           this.showOffline();
         },
+        report: editIncidentReporter('material', this.materialId),
         token: () => this.lastToken,
       });
       if (send.length) this.sendDrafts(key, send);

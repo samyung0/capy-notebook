@@ -859,6 +859,7 @@ describe('recording a note session', () => {
     const { client } = syncedClient('other');
     applyDrafts(client, [held], 'restore');
     const report = vi.fn();
+    const lost = vi.fn();
     const recorder = recordDrafts({
       adopted: [held],
       doc: client,
@@ -866,6 +867,7 @@ describe('recording a note session', () => {
       key,
       limitBytes: 1024 * 1024,
       lineage: ROOM,
+      onLost: lost,
       report,
     });
     await recorder.covered(recorder.sequence);
@@ -873,6 +875,8 @@ describe('recording a note session', () => {
     expect(report.mock.calls).toEqual([
       ['draft_unrestorable', 'base_missing', draftBytes([held])],
     ]);
+    // The user hears it too (r6 N1).
+    expect(lost).toHaveBeenCalledOnce();
   });
 
   it('writes the whole document at unmount only when unsaved work outgrew it', async () => {

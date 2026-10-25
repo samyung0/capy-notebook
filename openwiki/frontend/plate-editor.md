@@ -1632,9 +1632,10 @@ from any page.
   `other_epoch_draft`/`held` (never sent, so no service log has them); ones
   that need the room's document are applied, and the room's live refusal of
   them opens the whole document copy-only. Restored rows the room's document
-  cannot place either (their base is gone) go at the first receipt, reported
-  `draft_unrestorable`/`base_missing` as recovery reports a group nothing
-  can draw. Until the send settles (every group stored or held) the editor
+  cannot place either (their base is gone) go at the first receipt with the
+  drafts-lost notice, reported `draft_unrestorable`/`base_missing` as
+  recovery reports a group nothing can draw (an item room too, under its
+  material). Until the send settles (every group stored or held) the editor
   shows the syncing status and is view-only: notes lock the content and
   toolbar, items set `sending` (`itemEditingStopped`), sources return
   `draftsSending`. Each request has 30 s plus its upload at 100 KB/s, at

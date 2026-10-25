@@ -1129,6 +1129,7 @@ export function useSourceSession(
           if (!cancelled) setOfflineLimit(over);
           showOffline();
         },
+        onLost: toastDraftsLost,
         onStorage: (ok) => {
           storageOk = ok;
           showOffline();

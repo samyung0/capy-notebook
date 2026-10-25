@@ -57,9 +57,14 @@ const drafts = vi.hoisted(() => ({
   adopted: [] as unknown[],
   discarded: 0,
   disposed: 0,
+  // While set, grouping the rows waits for it (the drafts worker's answer).
+  gate: null as Promise<void> | null,
   held: [] as boolean[],
+  onLost: undefined as (() => void) | undefined,
   onStorage: undefined as ((ok: boolean) => void) | undefined,
+  recorded: 0,
   refused: 0,
+  report: undefined as unknown,
   rows: [] as unknown[],
   unsaved: true,
 }));
@@ -69,10 +74,11 @@ vi.mock('@/lib/editDrafts', () => ({
   deleteDrafts: vi.fn(async () => {
     drafts.rows = [];
   }),
-  draftGroups: (
+  draftGroups: async (
     rows: { lineage: string; refused?: boolean }[],
     room: string
   ) => {
+    await drafts.gate;
     const recovery = rows.filter((row) => row.refused || row.lineage !== room);
     return {
       current: rows.filter((row) => !row.refused && row.lineage === room),
@@ -104,8 +110,15 @@ vi.mock('@/lib/editDrafts', () => ({
     };
   }),
   readDrafts: vi.fn(async () => drafts.rows),
-  recordDrafts: (options: { onStorage: (ok: boolean) => void }) => {
+  recordDrafts: (options: {
+    onLost?: () => void;
+    onStorage: (ok: boolean) => void;
+    report?: unknown;
+  }) => {
+    drafts.recorded += 1;
+    drafts.onLost = options.onLost;
     drafts.onStorage = options.onStorage;
+    drafts.report = options.report;
     return {
       adopt(rows: unknown[]) {
         drafts.adopted.push(...rows);
@@ -149,6 +162,8 @@ const { applyDrafts } = await import('@/lib/editDrafts');
 const { itemEditingStopped } = await import('./itemRoom');
 const { markUpdateAvailable } = await import('@/lib/appRelease');
 const { markUnsent } = await import('./unsentItems');
+const { draftSender } = await import('@/lib/editDrafts');
+const { userToast } = await import('@/components/ui/userToast');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -163,6 +178,8 @@ beforeEach(() => {
   drafts.refused = 0;
   drafts.discarded = 0;
   drafts.disposed = 0;
+  drafts.gate = null;
+  drafts.recorded = 0;
   drafts.unsaved = true;
 });
 afterEach(() => {
@@ -333,6 +350,39 @@ it('joins while its stored steps are in the draft send, view-only until it settl
   await vi.advanceTimersByTimeAsync(0);
   expect(room.getSnapshot().sending).toBe(false);
   expect(itemEditingStopped(room.getSnapshot())).toBe(false);
+  room.destroy();
+});
+
+// r6 S1: destroyed while the drafts worker groups its rows, the room starts
+// no recorder (its document lock) and no draft send.
+it('starts nothing when destroyed while its stored rows are grouped', async () => {
+  drafts.rows = [{ grants: ['t'], lineage: 'material:q:schema:1' }];
+  let answer = () => {};
+  drafts.gate = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const sends = vi.mocked(draftSender).mock.calls.length;
+  const room = new ItemRoom('q', { drafts: { actorId: 'u' } });
+  const starting = room.start();
+  await vi.advanceTimersByTimeAsync(0);
+  room.destroy();
+  answer();
+  await starting;
+  expect(drafts.recorded).toBe(0);
+  expect(vi.mocked(draftSender).mock.calls.length).toBe(sends);
+  expect(providers).toHaveLength(0);
+});
+
+// r6 N1: restored rows the room cannot place go with an incident and the
+// drafts-lost notice, as in notes.
+it('reports restored rows the room cannot place and tells the user', async () => {
+  const { room } = await started();
+  expect(drafts.report).toBeTypeOf('function');
+  vi.mocked(userToast).mockClear();
+  drafts.onLost?.();
+  expect(userToast).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 'drafts-lost' })
+  );
   room.destroy();
 });
 
