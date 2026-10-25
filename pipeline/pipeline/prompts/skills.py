@@ -36,7 +36,7 @@ Plan:
 
 What to build:
 - Each chapter gets one main explainer, a note or a deck as the output-files preference says; note_building or deck_building says how to write it.
-- Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id in the turn context.
+- Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id from list_sources.
 - For a request to learn a chapter or topic, make other materials, a standalone mindmap or diagram included, as the study preferences and what teaching it needs say. A request that names one material (a short note, a quiz) gets only that, with the knowledge checks the preferences put inside notes.
 - Follow the study preferences in the turn context unless the request says otherwise.
 

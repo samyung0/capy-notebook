@@ -185,8 +185,8 @@ class ToolContext:
     # The learner's workspace role (owner, editor, viewer); the chat request
     # always sends it, in-process contexts (tests, playground) set their own.
     role: str = "owner"
-    # The workspace's chapters in order ({id, name}), loaded at turn start so
-    # "chapter 2" resolves without a tool call; at most 20 (the server's cap).
+    # The workspace's chapters in order ({id, name}), loaded at turn start for
+    # the open file's chapter and chapter_id checks; at most 20 (the server's cap).
     chapters: list[dict[str, Any]] = field(default_factory=list)
     # Skills whose read_skill result is still in the request; the writes they
     # cover are refused until it is (skills.retained recomputes it per call).
@@ -1343,7 +1343,7 @@ def unknown_chapter(ctx: ToolContext, args: dict[str, Any]) -> ToolResult | None
     chapter = str(args.get("chapter_id") or "")
     if chapter and chapter not in {c["id"] for c in ctx.chapters}:
         return _refused(
-            "chapter_id is not a chapter of this workspace; the turn context lists them."
+            "chapter_id is not a chapter of this workspace; list_sources lists them."
         )
     return None
 
@@ -3002,7 +3002,7 @@ async def write_questions(
     found = questions.check(clean)
     if clean.get("title") and unknown_chapter(ctx, clean) is not None:
         found.call.append(
-            "chapter_id: not a chapter of this workspace; the turn context lists them; "
+            "chapter_id: not a chapter of this workspace; list_sources lists them; "
             f"sent {json.dumps(clean.get('chapter_id'))}"
         )
     quiz_id = clean.get("quiz_id")

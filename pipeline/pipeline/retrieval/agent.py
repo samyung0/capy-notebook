@@ -340,9 +340,15 @@ async def _admit_checkpoint(
         "modelVersion": spec.version,
         "estimatedTokens": estimate_tokens(folded),
     }
-    # The query and what follows it (its hint message) stay as they are.
+    # The query and what follows it (its hint message) stay as they are, the
+    # query with its mode note, since the folded history held the last one.
     after = messages[compact._current_query_index(messages) + 1 :]
-    rebuilt = [messages[0], chat_prompts.memory_message(folded), query_msg, *after]
+    rebuilt = [
+        messages[0],
+        chat_prompts.memory_message(folded),
+        chat_prompts.with_mode_note(query_msg),
+        *after,
+    ]
     budget.checkpoint_rewrites += 1
     return rebuilt, replacement
 
@@ -482,6 +488,7 @@ async def _run_turn(
         history=prior,
         query=query,
         workspace_only=ctx.workspace_only,
+        mode_shown=evidence.mode_shown(history),
         writes=can_write,
     )
     query_msg = messages[-1]

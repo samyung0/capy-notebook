@@ -89,7 +89,7 @@ network and no pin.
 
 | Module | Slot | What it builds |
 | --- | --- | --- |
-| `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, the message led by its mode line; the Q221 send-back texts; the checkpoint compaction prompt |
+| `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, a message led by a mode note where the switch is first known or changes; the Q221 send-back texts; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `ingest.py` | `ingest` | File descriptor |
@@ -3409,14 +3409,21 @@ and the model's own knowledge may expand it; on, only the workspace's files and
 materials are sources.
 
 - **The cache rule.** The switch never changes the system prompt or the tool
-  list, so a flip keeps the provider's cached prefix. Each learner message
-  starts with its mode line (`chat_prompts.MODE_LINES`, added by
+  list, so a flip keeps the provider's cached prefix. The mode reaches the
+  model as a note before a learner message only where it is first known in the
+  request's conversation or changes (Epo 2026-10-25, as Codex and opencode send
+  a mode only at a change; `chat_prompts.MODE_LINES`, added by
   `with_mode_line`): `[Workspace only: on. Use only this workspace's files and
   materials.]` or `[Workspace only: off. Workspace first; the library,
-  search_web and your own knowledge may expand it.]`. Go stores the switch in
-  the user message's metadata (`workspaceOnly`, `store.AddUserMessage`) and
-  sends it with each history row, and `evidence.history_turns` puts the line
-  back on that message as it was sent; messages saved before the switch carry
+  search_web and your own knowledge may expand it.]`, and the system prompt
+  says the latest note holds until the next. Go stores the switch in the user
+  message's metadata (`workspaceOnly`, `store.AddUserMessage`) and sends it
+  with each history row; `evidence.history_turns` replays the notes where they
+  were sent, `evidence.mode_shown` gives the last one, and `chat_messages`
+  notes the query only when its switch differs. A checkpoint that drops the
+  noted messages leaves the first remaining one noted; folding all history
+  into memory (the turn-start checkpoint, live compaction) puts the note on
+  the query (`with_mode_note`). Messages saved before the switch carry
   none. The library tools and `search_web` (`tools.OUTSIDE_TOOLS`) stay listed
   in both modes; while the switch is on, `tools.run` answers a call to one with
   `NOT_AVAILABLE` ("… is not available this turn: Workspace only is on …",
@@ -3577,12 +3584,13 @@ materials are sources.
   terminal call drops the tools, to make room. A copy not yet followed by a step is
   replaced; a turn note drops the stale copies (`compact._fold_turn`), and none
   reaches the stored conversation. It names the open item
-  (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`) followed
-  by the learner's workspace role (Go's `role`: "The learner owns / can edit /
-  can only view this workspace."), lists
-  every workspace chapter in order with its id (`store.workspace_chapters`,
-  loaded once per turn; at most 20, `MaxChaptersPerWorkspace` in Go) so "chapter
-  2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: output files (a note
+  (`Open: <title> (<kind> <id>), in chapter <name> [<chapter id>].` or
+  `Open: nothing.`) followed by the learner's workspace role (Go's `role`: "The
+  learner owns / can edit / can only view this workspace."). It lists no
+  chapters (Epo 2026-10-25): the model reads them and their ids through
+  `list_sources`; the turn still loads them (`store.workspace_chapters`, at
+  most 20, `MaxChaptersPerWorkspace` in Go) for the open item's chapter and the
+  `chapter_id` checks. It lists the study preferences (`prompts/preferences.py`: output files (a note
   or a deck per chapter), writing style, quiz and flashcards each more (10),
   less (5) or off, visual aids, and knowledge checks, at most 2 questions or,
   when flashcards is set higher than quiz, 3 cards, saved values over

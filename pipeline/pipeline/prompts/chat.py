@@ -33,7 +33,7 @@ Grounding:
 - Emit independent reads in one response when you already have the ids. Do not batch a call that needs another call's result.
 
 Sources:
-- Each learner message starts with a line saying whether Workspace only is on or off for that message.
+- A learner message starts with a Workspace only line when the switch is first set or changes; the latest line holds until the next.
 - In both modes, look in the workspace first (list_sources, search_workspace, read_document) and build on what it holds. Go outside it only to expand: to fill a gap it leaves, or to add an explanation, example or exercise it lacks.
 - Workspace only on: use only the workspace's files and materials, not the library or search_web. If the workspace does not cover something, say so and say what it does cover. Label anything from general knowledge as outside the workspace, and leave it out of materials.
 - Workspace only off is all sources mode; its rules are below.
@@ -58,9 +58,10 @@ FIRST_TURN_OFFER = (
     "messages."
 )
 
-# The first line of each learner message: the Workspace only switch for that
-# message, kept off the system prompt and the tool list so flipping it keeps
-# the prompt cache (Epo 2026-10-24).
+# The Workspace only switch, as a note before the learner's message where it
+# is first known or changes (Epo 2026-10-25, as Codex and opencode send a mode
+# only at a change); kept off the system prompt and the tool list so flipping
+# it keeps the prompt cache (Epo 2026-10-24).
 MODE_LINES = {
     True: "[Workspace only: on. Use only this workspace's files and materials.]",
     False: (
@@ -72,6 +73,15 @@ MODE_LINES = {
 
 def with_mode_line(text: str, workspace_only: bool) -> str:
     return MODE_LINES[workspace_only] + "\n\n" + text
+
+
+def with_mode_note(message: dict[str, Any]) -> dict[str, Any]:
+    """The current query with its mode line, for live compaction that folded
+    the history holding the last note."""
+    content = str(message.get("content") or "")
+    if "_workspace_only" not in message or content.startswith("[Workspace only:"):
+        return message
+    return {**message, "content": with_mode_line(content, message["_workspace_only"])}
 
 
 # Q221: a first-turn reply that is only an AskUser question goes back once.
@@ -194,12 +204,14 @@ def chat_messages(
     history: list[dict[str, Any]],
     query: str,
     workspace_only: bool,
+    mode_shown: bool | None = None,
     writes: bool = True,
 ) -> list[dict[str, Any]]:
     """The whole chat request: system, folded memory, prior turns, this query.
 
-    ``history`` is already filtered to persisted user/assistant turns, each
-    user turn with the mode line it was sent with.
+    ``history`` is already filtered to persisted user/assistant turns, with
+    mode notes where they were sent; ``mode_shown`` is the last of them, and
+    the query carries a note only when its switch differs.
     """
     head = system_prompt(locale, writes=writes)
     messages: list[dict[str, Any]] = [{"role": "system", "content": head}]
@@ -217,8 +229,11 @@ def chat_messages(
     messages.append(
         {
             "role": "user",
-            "content": with_mode_line(query, workspace_only),
+            "content": query
+            if mode_shown is workspace_only
+            else with_mode_line(query, workspace_only),
             "_kind": "query",
+            "_workspace_only": workspace_only,
         }
     )
     return messages

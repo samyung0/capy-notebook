@@ -518,6 +518,13 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
     assert turn_context.FINAL_NOTICE in turn_context.message(ctx, final=True)["content"]
 
+    # Chapters come from list_sources; the open file names its own (Epo 2026-10-25).
+    ctx.chapters = [{"id": "ch_1", "name": "Cells"}, {"id": "ch_2", "name": "Genes"}]
+    ctx.open_resource["chapter_id"] = "ch_2"
+    filed = turn_context.message(ctx)["content"]
+    assert "Open: Cells.pdf (file f_1), in chapter Genes [ch_2]." in filed
+    assert "ch_1" not in filed
+
     viewer = _library_ctx()
     viewer.role = "viewer"
     empty = turn_context.message(viewer)["content"]
