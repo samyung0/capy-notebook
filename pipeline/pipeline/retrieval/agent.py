@@ -1122,8 +1122,9 @@ async def _run_turn(
                 answer, cited_order = renderer.text, renderer.reading_order()
             else:
                 # Plain Markdown is already usable. Malformed programs above
-                # keep their local parser recovery; neither path calls the model again.
-                answer, cited_order = assembled.text, renderer.reading_order()
+                # keep their local parser recovery; neither path calls the model
+                # again. A bare Answer([...]) gets its root (openui.with_root).
+                answer, cited_order = renderer.raw, renderer.reading_order()
                 yield events.block_start(block_id)
                 started = True
                 yield events.block_delta(block_id, answer)

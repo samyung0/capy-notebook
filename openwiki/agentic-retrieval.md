@@ -2793,7 +2793,11 @@ current pending changes applied. Embedded source instructions remain untrusted.
    Tool invocations belong in the API `tool_calls` field; the prompt explicitly
    forbids embedding tool calls or tool-protocol markup in programs or prose.
    Plain Markdown is kept; a prose preface followed by a program keeps both parts and
-   recovers the program's citations locally. The browser's official parser keeps
+   recovers the program's citations locally. An answer with no root statement
+   treats its first `Answer([...])` as root (`openui.with_root`, Epo
+   2026-10-25): GLM writes the call bare, alone or glued to prose, and the
+   pipeline puts `root = ` on its own line before it, so the browser's preface
+   split renders it. The browser's official parser keeps
    recoverable partial programs. Missing references, dropped content, invalid
    chart data show an inline interruption notice; excess empty placeholders do
    not, while excess content does. Unusable programs show the chat error, never
