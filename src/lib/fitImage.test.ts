@@ -222,6 +222,17 @@ describe('SVG_ROOT', () => {
     const illustrator =
       '<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "svg11.dtd" [\n\t<!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">\n]>\n<svg version="1.1">';
     expect(isSvgImage(new TextEncoder().encode(illustrator))).toBe(true);
+    // Review r6 N1: a bracket inside a quoted literal, in the doctype or its
+    // subset.
+    for (const doctype of [
+      '<!DOCTYPE svg SYSTEM "x[y.dtd">',
+      '<!DOCTYPE svg [<!ENTITY a "]">]>',
+    ])
+      expect(
+        isSvgImage(
+          new TextEncoder().encode(`<?xml version="1.0"?>${doctype}<svg/>`)
+        )
+      ).toBe(true);
     expect(
       isSvgImage(new TextEncoder().encode(`${' '.repeat(4096)}<svg>`))
     ).toBe(false);

@@ -813,8 +813,8 @@ inside the 768 MiB sandbox (Q347, `decode.py` mode `picture`); a picture past
 its limit, or one Pillow cannot decode, is removed and counted like any other.
 The pictures stop at the import job's time limit (`CAPY_IMPORT_JOB_TIMEOUT`,
 10 min, less 30 s for the picture in flight, `IMPORT_PICTURE_MARGIN_S`),
-checked before and after each picture, before each part's removals and
-before repacking, since the job timeout cannot stop the thread they run in,
+checked before and after each picture, before each part's removals, every
+65,536 tokens within them (review r6 N2) and before repacking, since the job timeout cannot stop the thread they run in,
 so the upload keeps the margin; an import
 past it fails without a retry (`import_too_slow`, "This file took too long
 to process.", Q363). The worker refuses to start with a timeout within the
@@ -874,7 +874,7 @@ The entry cap is read from the end record before the directory loads. An entry c
 never by its attributes, and every part, `.rels` included, is classified by
 its bytes. An SVG root is looked for in a part's first 4 KiB, past an XML
 declaration, comments and a doctype (with one internal subset, as Illustrator
-writes); a comment ends at its first `-->`, so the match takes linear time in
+writes; a bracket inside a quoted literal counts for nothing, review r6 N1); a comment ends at its first `-->`, so the match takes linear time in
 the worker and the browser (Go's RE2 is linear anyway; review r4 B2, S2).
 The compressors' XML tokenizers (`images.py`, `officeImages.ts`) end a tag,
 relationship or extension list at the next `<` and a comment, CDATA or
@@ -886,7 +886,8 @@ relationships part is rewritten once for its removals and renames, and the
 parts nothing targets any more are worked out once, not per removed part; a
 renamed picture's new name (`<stem>.jpeg`, then `<stem>-1.jpeg`, ...) is
 tried from where the last picture sharing that name stopped (review r5
-follow-up).
+follow-up). A `[Content_Types].xml` with a namespace prefix (ElementTree's
+`<ns0:Types>`) is rewritten with that prefix (review r6 N3).
 
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |

@@ -222,9 +222,10 @@ function pick(stack: { name: string }[], marks: Marks) {
 
 const MEDIA = /^(word|ppt|xl)\/media\//;
 const TARGET = /(\sTarget\s*=\s*)(["'])[^"']*\2/;
-const TYPES = /<Types\b[^<>]*>/;
-const OVERRIDE = /<Override\b[^<>]*>/gi;
-const DEFAULT = /<Default\b[^<>]*>/gi;
+// Each with its namespace prefix, if any (ElementTree writes <ns0:Types>).
+const TYPES = /<((?:[\w.-]+:)?)Types\b[^<>]*>/;
+const OVERRIDE = /<((?:[\w.-]+:)?)Override\b[^<>]*>/gi;
+const DEFAULT = /<(?:[\w.-]+:)?Default\b[^<>]*>/gi;
 const REFERENCE =
   /\s[\w.-]+:(?:embed|link|id|pict|relid)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const references = (xml: string) =>
@@ -247,12 +248,12 @@ export function contentTypes(
   const moved = new Map(
     [...renames].map(([path, rename]) => [`/${path}`.toLowerCase(), rename])
   );
-  let out = types.replace(OVERRIDE, (element) => {
+  let out = types.replace(OVERRIDE, (element, prefix: string) => {
     const name = attribute(element, 'PartName').toLowerCase();
     if (gone.has(name)) return '';
     const rename = moved.get(name);
     return rename
-      ? `<Override PartName="/${rename.path}" ContentType="${rename.type}"/>`
+      ? `<${prefix}Override PartName="/${rename.path}" ContentType="${rename.type}"/>`
       : element;
   });
   const have = new Set(
@@ -266,8 +267,8 @@ export function contentTypes(
     have.add(ext.toLowerCase());
     out = out.replace(
       TYPES,
-      (open) =>
-        `${open}<Default Extension="${ext}" ContentType="${rename.type}"/>`
+      (open, prefix: string) =>
+        `${open}<${prefix}Default Extension="${ext}" ContentType="${rename.type}"/>`
     );
   }
   return out;

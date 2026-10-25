@@ -41,9 +41,10 @@ const OFFICE_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png']);
  * as the server checks find it. A comment ends at its first "-->", so the
  * match is linear: a lazy comment inside the repeat let a run of comments
  * split 2^n ways and froze the tab (review r4 S2). A doctype may carry one
- * internal subset (Illustrator's entities). */
+ * internal subset (Illustrator's entities); both skip quoted literals, so a
+ * bracket inside one counts for nothing. */
 export const SVG_ROOT =
-  /^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->)[\s\S])*-->|<!DOCTYPE[^>[]*(?:\[[^\]]*\]\s*)?>)*<svg[\s>/]/;
+  /^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->)[\s\S])*-->|<!DOCTYPE(?:[^>["']|"[^"]*"|'[^']*')*(?:\[(?:[^\]"']|"[^"]*"|'[^']*')*\]\s*)?>)*<svg[\s>/]/;
 
 const decoder = new TextDecoder();
 

@@ -251,6 +251,14 @@ func TestCheckOfficeRefusesPicturesByContent(t *testing.T) {
 			[]part{{"word/embeddings/logo.bin", []byte("<?xml version=\"1.0\"?>\n<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"svg11.dtd\" [\n\t<!ENTITY ns_extend \"http://ns.adobe.com/Extensibility/1.0/\">\n]>\n<svg version=\"1.1\">")}},
 			"office_image_unsupported",
 		},
+		"an SVG whose doctype quotes a bracket": {
+			[]part{{"word/embeddings/logo.bin", []byte("<?xml version=\"1.0\"?><!DOCTYPE svg SYSTEM \"x[y.dtd\"><svg/>")}},
+			"office_image_unsupported",
+		},
+		"an SVG whose doctype subset quotes a bracket": {
+			[]part{{"word/embeddings/logo.bin", []byte("<!DOCTYPE svg [<!ENTITY a \"]\">]><svg/>")}},
+			"office_image_unsupported",
+		},
 		"an SVG named as relationships": {
 			[]part{rels("image media/a.rels"), {"word/media/a.rels", []byte("<svg/>")}}, "office_image_unsupported",
 		},

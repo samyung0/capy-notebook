@@ -242,8 +242,9 @@ func Vector(name string, head []byte) bool {
 }
 
 // svgRoot finds an <svg> root after an XML declaration, comments or a
-// doctype, which may carry one internal subset (Illustrator's entities).
-var svgRoot = regexp.MustCompile(`^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>\[]*(?:\[[^\]]*\]\s*)?>)*<svg[\s>/]`)
+// doctype, which may carry one internal subset (Illustrator's entities); both
+// skip quoted literals, so a bracket inside one counts for nothing.
+var svgRoot = regexp.MustCompile(`^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE(?:[^>\["']|"[^"]*"|'[^']*')*(?:\[(?:[^\]"']|"[^"]*"|'[^']*')*\]\s*)?>)*<svg[\s>/]`)
 
 // OtherImage reports an image format a browser may decode that an Office
 // picture may not be (Q344), by signature: WebP, AVIF, HEIF, BMP, TIFF, ICO

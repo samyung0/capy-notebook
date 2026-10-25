@@ -620,6 +620,33 @@ describe('the XML tokenizers', () => {
   });
 });
 
+describe('contentTypes', () => {
+  it('follows renames and removals in a [Content_Types].xml with a namespace prefix', () => {
+    // Review r6 N3: ElementTree writes <ns0:Types>.
+    const types =
+      '<ns0:Types xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<ns0:Default Extension="png" ContentType="image/png"/>' +
+      '<ns0:Override PartName="/ppt/media/a.emf" ContentType="image/x-emf"/>' +
+      '<ns0:Override PartName="/ppt/media/b.png" ContentType="image/png"/>' +
+      '</ns0:Types>';
+    expect(
+      contentTypes(
+        types,
+        new Set(['ppt/media/a.emf']),
+        new Map([
+          ['ppt/media/b.png', { path: 'ppt/media/b.jpeg', type: 'image/jpeg' }],
+        ])
+      )
+    ).toBe(
+      '<ns0:Types xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<ns0:Default Extension="jpeg" ContentType="image/jpeg"/>' +
+        '<ns0:Default Extension="png" ContentType="image/png"/>' +
+        '<ns0:Override PartName="/ppt/media/b.jpeg" ContentType="image/jpeg"/>' +
+        '</ns0:Types>'
+    );
+  });
+});
+
 describe('one pass per part', () => {
   const links = (count: number) =>
     Array.from(

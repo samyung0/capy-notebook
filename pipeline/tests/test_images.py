@@ -253,7 +253,9 @@ def test_remove_pictures_takes_a_pptx_ole_frame_whole_and_counts_it_once():
         '</mc:AlternateContent><p:sp><p:spPr><a:blipFill><a:blip r:embed="rId3"/></a:blipFill></p:spPr>'
         "<p:txBody>kept</p:txBody></p:sp></p:spTree>"
     )
-    out, refs, count = images.remove_pictures("ppt/slides/slide1.xml", xml, {"rId3"})
+    out, refs, count = images.remove_pictures(
+        "ppt/slides/slide1.xml", xml, {"rId3"}, math.inf
+    )
     assert (
         out
         == "<p:spTree><p:sp><p:spPr></p:spPr><p:txBody>kept</p:txBody></p:sp></p:spTree>"
@@ -452,6 +454,13 @@ def test_svg_detection_stays_fast_on_a_run_of_comments():
         b']>\n<svg version="1.1">'
     )
     assert images.is_svg(illustrator, "word/media/image1.bin")
+    # Review r6 N1: a bracket inside a quoted literal, in the doctype or its
+    # subset.
+    for doctype in (
+        b'<!DOCTYPE svg SYSTEM "x[y.dtd">',
+        b'<!DOCTYPE svg [<!ENTITY a "]">]>',
+    ):
+        assert images.is_svg(b'<?xml version="1.0"?>' + doctype + b"<svg/>", "x.bin")
 
 
 def _timed(call) -> float:
@@ -483,7 +492,9 @@ def test_xml_tokenizers_answer_at_once_on_unclosed_markup():
         result = []
         seconds = _timed(
             lambda tail=tail, result=result: result.append(
-                images.remove_pictures("word/document.xml", picture + tail, {"rId1"})
+                images.remove_pictures(
+                    "word/document.xml", picture + tail, {"rId1"}, math.inf
+                )
             )
         )
         assert seconds < 1, (name, seconds)
@@ -558,7 +569,7 @@ def test_remove_pictures_walks_deep_nesting_once():
     result = []
     seconds = _timed(
         lambda: result.append(
-            images.remove_pictures("word/document.xml", xml, {"rId1"})
+            images.remove_pictures("word/document.xml", xml, {"rId1"}, math.inf)
         )
     )
     assert seconds < 1, seconds
@@ -691,10 +702,10 @@ def test_removals_and_repacking_stop_at_the_deadline(monkeypatch):
     real = images.remove_pictures
     removing = []
 
-    def slow_removal(path, xml, ids):
+    def slow_removal(path, xml, ids, deadline):
         removing.append(path)
         clock.now += 100
-        return real(path, xml, ids)
+        return real(path, xml, ids, deadline)
 
     monkeypatch.setattr(images, "remove_pictures", slow_removal)
 
@@ -724,6 +735,46 @@ def test_removals_and_repacking_stop_at_the_deadline(monkeypatch):
     with pytest.raises(images.OutOfTime):
         images.compress_office(package(["document.xml", "header1.xml"]), _picture, 50)
     assert removing == ["word/document.xml"]
+
+
+def test_a_large_part_stops_its_removals_at_the_deadline(monkeypatch):
+    """Q363 (review r6 N2): one part's removals check the deadline every
+    65,536 tokens, so a large part cannot outlast the margin; a part under
+    that many tokens is read whole."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(images, "time", SimpleNamespace(monotonic=lambda: 100.0))
+    picture = '<w:drawing><a:blip r:embed="rId1"/></w:drawing>'
+    small = "<w:document>" + "<w:p/>" * 1000 + picture + "</w:document>"
+    assert images.remove_pictures("word/document.xml", small, {"rId1"}, 50)[2] == 1
+    large = "<w:document>" + "<w:p/>" * 70000 + picture + "</w:document>"
+    with pytest.raises(images.OutOfTime, match="removals in word/document.xml"):
+        images.remove_pictures("word/document.xml", large, {"rId1"}, 50)
+
+
+def test_content_types_with_a_namespace_prefix_follow_renames_and_removals():
+    """Review r6 N3: a [Content_Types].xml with a prefix (ElementTree's
+    <ns0:Types>) gets the renamed picture's extension and loses a removed
+    part's override, each with that prefix."""
+    types = (
+        '<ns0:Types xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<ns0:Default Extension="png" ContentType="image/png"/>'
+        '<ns0:Override PartName="/ppt/media/a.emf" ContentType="image/x-emf"/>'
+        '<ns0:Override PartName="/ppt/media/b.png" ContentType="image/png"/>'
+        "</ns0:Types>"
+    )
+    out = images.content_types(
+        types,
+        {"ppt/media/a.emf"},
+        {"ppt/media/b.png": ("ppt/media/b.jpeg", "image/jpeg")},
+    )
+    assert out == (
+        '<ns0:Types xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<ns0:Default Extension="jpeg" ContentType="image/jpeg"/>'
+        '<ns0:Default Extension="png" ContentType="image/png"/>'
+        '<ns0:Override PartName="/ppt/media/b.jpeg" ContentType="image/jpeg"/>'
+        "</ns0:Types>"
+    )
 
 
 def test_an_svg_outside_the_pictures_goes_uncounted():

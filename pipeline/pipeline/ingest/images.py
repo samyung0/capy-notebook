@@ -170,8 +170,10 @@ _RASTER_SIGNATURES = (
 # while it matches (review r4 B2).
 _SVG_ROOT = re.compile(
     rb"^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->).)*-->"
-    # A doctype may carry one internal subset (Illustrator's entities).
-    rb"|<!DOCTYPE[^>\[]*(?:\[[^\]]*\]\s*)?>)*<svg[\s>/]",
+    # A doctype may carry one internal subset (Illustrator's entities); both
+    # skip quoted literals, so a bracket inside one counts for nothing.
+    rb"|<!DOCTYPE(?:[^>\[\"']|\"[^\"]*\"|'[^']*')*"
+    rb"(?:\[(?:[^\]\"']|\"[^\"]*\"|'[^']*')*\]\s*)?>)*<svg[\s>/]",
     re.DOTALL,
 )
 
@@ -371,9 +373,10 @@ _MARKUP = re.compile(
     re.DOTALL,
 )
 _EMPTY_EXTENSIONS = re.compile(r"<([\w.-]+:)?extLst\b[^<>]*>\s*</\1extLst>")
-_OVERRIDE = re.compile(r"<Override\b[^<>]*>", re.IGNORECASE)
-_DEFAULT = re.compile(r"<Default\b[^<>]*>", re.IGNORECASE)
-_TYPES = re.compile(r"<Types\b[^<>]*>")
+# Each with its namespace prefix, if any (ElementTree writes <ns0:Types>).
+_OVERRIDE = re.compile(r"<((?:[\w.-]+:)?)Override\b[^<>]*>", re.IGNORECASE)
+_DEFAULT = re.compile(r"<(?:[\w.-]+:)?Default\b[^<>]*>", re.IGNORECASE)
+_TYPES = re.compile(r"<((?:[\w.-]+:)?)Types\b[^<>]*>")
 
 
 def content_types(
@@ -392,7 +395,7 @@ def content_types(
             return ""
         if name in moved:
             renamed, content_type = moved[name]
-            return f'<Override PartName="/{renamed}" ContentType="{content_type}"/>'
+            return f'<{match.group(1)}Override PartName="/{renamed}" ContentType="{content_type}"/>'
         return match.group(0)
 
     types = _OVERRIDE.sub(override, types)
@@ -407,7 +410,7 @@ def content_types(
         have.add(ext.lower())
         types = _TYPES.sub(
             lambda match, ext=ext, content_type=content_type: (
-                f'{match.group(0)}<Default Extension="{ext}" ContentType="{content_type}"/>'
+                f'{match.group(0)}<{match.group(1)}Default Extension="{ext}" ContentType="{content_type}"/>'
             ),
             types,
             count=1,
@@ -437,11 +440,20 @@ def _references(xml: str) -> list[str]:
     return [a if a is not None else b for a, b in _REFERENCE.findall(xml)]
 
 
-def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str], int]:
+# How many tokens remove_pictures reads between deadline checks.
+_TOKENS_PER_CHECK = 1 << 16
+
+
+def remove_pictures(
+    path: str, xml: str, ids: set[str], deadline: float
+) -> tuple[str, list[str], int]:
     """The part without each container that refers to one of ``ids``, the
     ids the removed elements referred to, and how many were removed where
     they show (none inside mc:Fallback, in a VML part, or an extension beside
-    a picture that stays)."""
+    a picture that stays). Raises OutOfTime once ``deadline`` (a
+    time.monotonic() value) has passed, checked every _TOKENS_PER_CHECK
+    tokens, since one pass over a large part can outlast the import's margin
+    (Q363, review r6 N2)."""
     names = _containers(path)
     if not names:
         return xml, [], 0
@@ -455,7 +467,9 @@ def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str],
             marks[kind].pop()
         return opened
 
-    for match in _MARKUP.finditer(xml):
+    for tokens, match in enumerate(_MARKUP.finditer(xml), 1):
+        if tokens % _TOKENS_PER_CHECK == 0 and time.monotonic() >= deadline:
+            raise OutOfTime(f"removals in {path} past the deadline")
         close, name, attrs, self_closing = match.groups()
         if not name:
             continue
@@ -634,7 +648,7 @@ def compress_office(
             refs: list[str] = list(ids)
             left: set[str] = set()
             if source in parts:
-                xml, found, count = remove_pictures(source, text(source), ids)
+                xml, found, count = remove_pictures(source, text(source), ids, deadline)
                 if xml != text(source):
                     parts[source] = xml.encode()
                     removed += count
