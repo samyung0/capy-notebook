@@ -389,6 +389,8 @@ const $ = (id) => document.getElementById(id);
 let state = null,
   history = [],
   checkpoint = null,
+  // The last saved run of this conversation: history_mode "full" replays it.
+  lastRun = null,
   nextId = 1,
   log = $('log'),
   active = null;
@@ -652,6 +654,7 @@ $('clear').onclick = () => {
   active = null;
   history = [];
   checkpoint = null;
+  lastRun = null;
   log.innerHTML = '';
   resetPanels();
   $('status').textContent = 'idle';
@@ -1134,6 +1137,7 @@ function render(ev, runId) {
     return;
   }
   if (ev.type === 'run_saved') {
+    lastRun = ev.id;
     card(
       'stat',
       `run <a href="/api/runs/${ev.id}" target="_blank">${ev.id}</a> · ${ev.elapsed_seconds}s · ${esc(JSON.stringify(ev.usage))}`
@@ -1170,6 +1174,7 @@ $('run').onclick = async () => {
         checkpoint,
         config: currentConfig(),
         history,
+        prior_run: history.length ? lastRun : null,
         question,
       }),
       headers: { 'content-type': 'application/json' },
@@ -1227,6 +1232,7 @@ $('runs').onclick = async (e) => {
   log.innerHTML = '';
   history = run.history || [];
   checkpoint = run.checkpoint_in || null;
+  lastRun = id;
   nextId =
     1 + Math.max(0, ...history.map((m) => Number(/^m(\d+)$/.exec(m.id)?.[1]) || 0));
   history.push({
