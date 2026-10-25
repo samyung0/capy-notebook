@@ -3981,11 +3981,31 @@ budget count each attached image by its 28-px patch estimate
 (`estimatedImageTokens`) rather than by decoding the image for every call
 (Q238); the captures ride outside the
 compacted history, so their estimate is passed to compaction as extra weight.
-A capture is attached after its own tool result, and every capture stays
-attached until the turn's answer (Epo 2026-10-21): once live compaction folds
-its exchange into the turn note, `capture.inject_images` attaches its image
-right after the note, and `capture.image_tokens` counts every capture of the
-turn. A user message attaches 16 images, `capture_page`,
+A capture is attached after its own tool result, and live compaction drops
+none (Epo 2026-10-21): once it folds an exchange into the turn note,
+`capture.inject_images` attaches the exchange's images right after the note,
+and `capture.image_tokens` counts every image still attached.
+A turn's page captures (`capture_page`, `capture_knowledge_page`) and
+`resolve_source_change` images stay within an image budget of 35,000 tokens by
+that patch estimate (`tools.IMAGE_BUDGET`; Epo 2026-10-24, Q349; 35k and source
+change images 2026-10-25, Q368, Q369). At the 1568 px edge a full page is about
+2,200 to 2,500 tokens, so the budget holds about 15 full pages. Before each
+model call `tools.keep_images_within_budget` checks the total; only when new
+images take it past the budget does it drop the oldest images an earlier
+request carried, of either kind, at once, until at most 17,500 remains
+(`IMAGE_BUDGET_AFTER_DROP`). The images it counts are the ones the three tools
+register (`ToolContext.budget_images`). An image no request has carried yet
+(`ToolContext.images_sent`) is never dropped, so the model sees each at least
+once. Drops come in batches, so between them every request starts the same and
+the provider's cached prefix holds. A dropped image leaves
+`ToolContext.pending_images`, and its encoded part (Q299) is freed once the next
+request is built, since the request before it holds the image until then.
+Nothing takes its place: no note or hint, and its tool result keeps the ordinary
+text it always had (Epo 2026-10-25, Q370). The agent reads the page another
+way, or captures it again while under the 16 below, when it needs it.
+A dropped image still counts toward the 16 below, and a deck slide asking
+for a dropped capture finds it no longer available.
+A user message attaches 16 images, `capture_page`,
 `capture_knowledge_page` and `resolve_source_change`'s image changes together
 (`tools.MAX_IMAGES`, Epo 2026-10-22; counted in `ToolContext.images_taken` and
 checked again after the render, since a response's image calls run side by
@@ -3994,7 +4014,8 @@ do not call capture_page anymore." and later captures are refused with that
 sentence (`limit_reached`); a source change's image says nothing when it is the
 16th and fails past the cap with `tools.SOURCE_IMAGE_LIMIT` (`limit_reached`,
 Epo 2026-10-22). A `resolve_source_change` image stays attached through folds the
-same way. No capture image is carried to the next message. The chat prompt requires capture before
+same way, within the image budget above. No capture image is carried to the
+next message. The chat prompt requires capture before
 using source-specific numerical results, formulas, table cells/relationships or
 figures, regardless of extraction confidence. Low-confidence text also requires
 capture when the uncertain passage matters. The model reads the image directly
@@ -4020,8 +4041,9 @@ book's `library_books.withheld_pages` (reprinted texts the library withholds,
 written at publish from the run manifest like `figure_exclusions`) is never
 captured, also on a boundary page shared with open text or through a guessed
 excerpt id, and a request for one is refused as withheld. It shares the
-message's 16 images with `capture_page` and stays attached until the answer
-like it. It adds no citation, and its JPEG
+message's 16 images with `capture_page` and stays attached like it: through
+folds until the answer, unless the image budget drops it (Q349). It adds no
+citation, and its JPEG
 rides in the same user message after the step's tool results. An unset bucket
 leaves the tool unoffered; the five settings are validated all-or-none.
 
