@@ -2908,6 +2908,13 @@ same layout in viewing. Column drag markers use the shared gap midpoint for
 both adjacent edges. Layout changes discard a lone empty paragraph in a removed
 column before Plate merges its contents, preventing repeated 2↔3 switches from
 accumulating blank lines. Authored block sequences and textless embeds survive.
+A column stores `width` as a preset writes it (`"33.333%"`) or as Plate's
+column normalizer rewrites a group whose widths stop summing to 100 (`${n}%` of
+a float, `"49.9995%"`): a plain decimal percentage above 0 and at most 100, as
+JavaScript writes a number (`isColumnWidth`, Go's `columnWidth`, the notes
+crate's `valid_column_width`). The browser's document check (so a Markdown or
+JSON import), Go, the store and room admission refuse any other width, and
+both column renderers draw none, since the width reaches a style.
 The table menu's cell/merge subscriptions remain inside the unmounted-when-closed
 menu body, keeping those reads off the typing path.
 

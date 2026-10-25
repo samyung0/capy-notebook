@@ -29,8 +29,9 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// reference never keeping an imported fence body (live-items REVIEW5), and
 /// the embed catalog (Epo 2026-10-13): a type or material kind it does not
 /// list, an element in a material kind it does not list it for, and Go's
-/// wording for figures; `multi`, merged into `mcq` (Epo 2026-10-15); and a
-/// void element holding anything but one empty text leaf (Epo 2026-10-18).
+/// wording for figures; `multi`, merged into `mcq` (Epo 2026-10-15); a
+/// void element holding anything but one empty text leaf (Epo 2026-10-18);
+/// and a column width the editor never writes (2026-10-25).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -65,6 +66,7 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.contains(" cannot hold a ")
         || message.starts_with("chart, plot and graph embeds")
         || message.ends_with("holds one empty text leaf")
+        || message.starts_with("column width must be")
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()
@@ -219,6 +221,62 @@ fn resizable_blocks_take_only_the_widths_the_handles_write() {
                 "{kind} {width}"
             );
         }
+    }
+}
+
+/// A column takes one optional `width`, the widths the editor writes: its
+/// layout presets and Plate's normalizer's floats, a plain decimal
+/// percentage above 0 and at most 100 (Go's `TestColumnsTakeOnlyTheEditorWidth`).
+#[test]
+fn columns_take_only_the_widths_the_editor_writes() {
+    let validate = |width: Option<Value>| {
+        let mut column = json!({ "type": "column", "children": [
+            { "type": "p", "children": [{ "text": "a" }] },
+        ] });
+        if let Some(width) = width {
+            column["width"] = width;
+        }
+        let group = json!({ "type": "column_group", "id": "g", "children": [
+            column,
+            { "type": "column", "children": [{ "type": "p", "children": [{ "text": "b" }] }] },
+        ] });
+        material::assert_canonical_with(&[group], "note", &Policy::default())
+    };
+    validate(None).unwrap();
+    for width in [
+        "50%",
+        "33.333%",
+        "33.334%",
+        "66.667%",
+        "49.9995%",
+        "33.333333333333336%",
+        "100%",
+        "0.5%",
+    ] {
+        validate(Some(Value::from(width))).unwrap_or_else(|e| panic!("{width}: {e}"));
+    }
+    for width in [
+        json!("0%"),
+        json!("101%"),
+        json!("100.5%"),
+        json!("050%"),
+        json!("50.0%"),
+        json!("50.%"),
+        json!(".5%"),
+        json!("5e1%"),
+        json!("-5%"),
+        json!("50"),
+        json!("50px"),
+        json!(" 50%"),
+        json!("50%;color:red"),
+        json!(50),
+        Value::Null,
+    ] {
+        let refused = validate(Some(width.clone())).unwrap_err();
+        assert_eq!(
+            refused.0, "column width must be a percentage above 0 and at most 100",
+            "{width}"
+        );
     }
 }
 

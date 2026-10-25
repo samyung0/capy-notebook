@@ -55,6 +55,40 @@ describe('markdownToDocument', () => {
     expect(Math.max(...(indents as number[]))).toBe(LIST_INDENT_MAX);
   });
 
+  // Pasted, imported and previewed MDX keeps a column's width as written: an
+  // import refuses one the document check refuses, as it refuses a media
+  // width, so it never builds a note the servers refuse.
+  it('refuses MDX columns whose width the editor never writes (security)', () => {
+    const columns = (width: string) =>
+      [
+        '<column_group>',
+        `<column width="${width}">`,
+        'a',
+        '</column>',
+        '<column width="50%">',
+        'b',
+        '</column>',
+        '</column_group>',
+      ].join('\n');
+    const [group] = markdownToDocument(columns('50%')).value;
+    expect(group.children).toMatchObject([
+      { type: 'column', width: '50%' },
+      { type: 'column', width: '50%' },
+    ]);
+    expect(() => markdownToDocument(columns('50%;color:red'))).toThrow(
+      'Invalid or unsupported material document'
+    );
+    const video = (width: string) =>
+      `<video provider="youtube" videoId="dQw4w9WgXcQ" width="${width}" />`;
+    expect(markdownToDocument(video('50%')).value[0]).toMatchObject({
+      type: 'video',
+      width: '50%',
+    });
+    expect(() => markdownToDocument(video('5%'))).toThrow(
+      'Invalid or unsupported material document'
+    );
+  });
+
   it('builds interactive blocks from html-embed fences and writes the same fence back', () => {
     const embed = fence(
       'html-embed',

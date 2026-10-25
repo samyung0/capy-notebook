@@ -277,6 +277,43 @@ pub fn valid_width(width: &str) -> bool {
     })
 }
 
+/// A column's width as the editor writes it: the layout presets, or Plate's
+/// column normalizer writing a float (`49.9995%`). A plain decimal percentage
+/// above 0 and at most 100, as JavaScript writes a number
+/// (`^(?:100|[1-9][0-9]?(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])%$`, Go's
+/// `columnWidth`).
+pub fn valid_column_width(width: &str) -> bool {
+    let Some(number) = width.strip_suffix('%') else {
+        return false;
+    };
+    if number == "100" {
+        return true;
+    }
+    let (whole, fraction) = match number.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (number, None),
+    };
+    let whole = match whole.as_bytes() {
+        [b'0'] => fraction.is_some(),
+        [b'1'..=b'9'] | [b'1'..=b'9', b'0'..=b'9'] => true,
+        _ => false,
+    };
+    whole
+        && fraction.is_none_or(|fraction| {
+            fraction.bytes().all(|b| b.is_ascii_digit())
+                && fraction.bytes().last().is_some_and(|b| b != b'0')
+        })
+}
+
+/// Go's `validateColumnWidth`: a column's one optional `width`.
+fn validate_column_width(node: &Node) -> Check {
+    match node.get("width") {
+        None => Ok(()),
+        Some(Value::String(width)) if valid_column_width(width) => Ok(()),
+        Some(_) => fail("column width must be a percentage above 0 and at most 100"),
+    }
+}
+
 /// `validateMediaWidth` (plate-2 3a87184d): the one optional `width` of a
 /// resizable block (image, YouTube video, Mermaid, chart, graph).
 fn validate_width(node: &Node) -> Check {
@@ -551,6 +588,7 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
             validate_width(node)
         }
         "audio" => validate_media(node, kind),
+        "column" => validate_column_width(node),
         MATERIAL_REF_TYPE => validate_material_ref(node),
         "video" => {
             if node.get("provider").and_then(Value::as_str) != Some("youtube") {
