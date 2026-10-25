@@ -10,7 +10,7 @@ import { createRoot } from 'react-dom/client';
 import '@/styles/tailwind.css';
 import type { MaterialKind, Provenance, Question } from '@/api/types';
 import { TooltipProvider } from '@/components/ui/Tooltip';
-import { parseFlashcardsFenceBody } from '@/features/materials/blocks';
+import { parseEmbeddedFence } from '@/features/materials/blocks';
 import {
   createMaterialDocument,
   flashcardsNode,
@@ -48,9 +48,10 @@ function inlineFences(node: MaterialNode, problems: string[]): MaterialNode {
   if ('text' in node) return node;
   if (isMaterialRefElement(node) && typeof node.pending === 'string') {
     try {
-      return node.refKind === 'quiz'
-        ? quizNodeFromFence(node.pending)
-        : flashcardsNode(parseFlashcardsFenceBody(node.pending).cards);
+      if (node.refKind === 'quiz') return quizNodeFromFence(node.pending);
+      // The app's one fence reading for agent writes, paste and import.
+      const draft = parseEmbeddedFence('flashcards', node.pending);
+      return flashcardsNode(draft.kind === 'flashcards' ? draft.cards : []);
     } catch (error) {
       problems.push(`${node.refKind} fence: ${(error as Error).message}`);
       return node;
