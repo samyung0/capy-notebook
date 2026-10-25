@@ -46,6 +46,11 @@ const (
 	MaxInflated = 256 << 20
 )
 
+// MaxRelationships bounds one relationships part (Q367), by the size its
+// directory record declares, before it is inflated; archive/zip refuses data
+// past that size, so the read stays within it too.
+const MaxRelationships = 4 << 20
+
 // headerBytes bounds what a header read may consume: a JPEG's frame header
 // follows its metadata segments, each at most 64 KiB.
 const headerBytes = 1 << 20
@@ -557,6 +562,9 @@ func (c *officeCheck) pictureParts(files []*zip.File) (map[string]bool, error) {
 	for _, file := range files {
 		if strings.HasSuffix(file.Name, "/") || !strings.HasSuffix(file.Name, ".rels") {
 			continue
+		}
+		if file.UncompressedSize64 > MaxRelationships {
+			return nil, unreadablePackage(fmt.Sprintf("%s is over %d bytes", file.Name, MaxRelationships))
 		}
 		part, err := c.open(file)
 		if err != nil {

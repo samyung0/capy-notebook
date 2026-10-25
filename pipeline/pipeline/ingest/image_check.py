@@ -23,6 +23,10 @@ from ..generated.limits import IMAGE_MAX_SIDE, SOURCE_IMAGE_MAX_PIXELS
 from .images import MAX_ENTRIES, MAX_EXPANDED, is_svg, is_vector, picture_parts
 
 MAX_INFLATED = MAX_EXPANDED
+# One relationships part's cap (Q367), by the size its directory record
+# declares, before it is inflated; CPython stops reading at that size, so the
+# read stays within it too.
+MAX_RELATIONSHIPS = 4 << 20
 # A JPEG's frame header follows its metadata segments, each at most 64 KiB.
 _HEADER_BYTES = 1 << 20
 # A part that is no picture is read this far.
@@ -329,6 +333,8 @@ def check_office(data: bytes, image_max_bytes: int) -> None:
     rels = {}
     for info in infos:
         if not info.is_dir() and info.filename.endswith(".rels"):
+            if info.file_size > MAX_RELATIONSHIPS:
+                raise _unreadable(f"{info.filename} is over {MAX_RELATIONSHIPS} bytes")
             # Never past the budget left: a byte past it refuses.
             body = read(info, MAX_INFLATED - inflated + 1)
             rels[info.filename] = body.decode("utf-8", "replace")

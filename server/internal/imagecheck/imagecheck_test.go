@@ -309,6 +309,28 @@ func TestCheckOfficeRefusesPackagesItCannotReadWhole(t *testing.T) {
 	}
 }
 
+// Security regression (Q367, review r3 S1): a relationships part over 4 MiB
+// (by its declared size, before it is inflated) refuses the package; one at
+// 4 MiB passes.
+func TestCheckOfficeRefusesARelationshipPartOver4MiB(t *testing.T) {
+	relsOf := func(size int) part {
+		head, tail := `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`, `</Relationships>`
+		return part{"word/_rels/document.xml.rels",
+			[]byte(head + strings.Repeat(" ", size-len(head)-len(tail)) + tail)}
+	}
+	document := part{"word/document.xml", []byte("<w:document/>")}
+	file := officeFile(t, document, relsOf(MaxRelationships))
+	if err := CheckOffice(file, file.Size(), testCap); err != nil {
+		t.Fatalf("a 4 MiB relationships part refused: %v", err)
+	}
+	file = officeFile(t, document, relsOf(MaxRelationships+1))
+	var over *Refusal
+	if err := CheckOffice(file, file.Size(), testCap); !errors.As(err, &over) ||
+		over.Code != "office_unreadable" || !strings.Contains(over.Detail, "is over") {
+		t.Fatalf("a relationships part over 4 MiB: %v", err)
+	}
+}
+
 // Security regression (Q348, review r2 B1): an entry whose attributes call it
 // a directory is still a part (the editors' zip readers go by its name), so
 // an EMF or a decompression-bomb PNG marked as one is refused.
