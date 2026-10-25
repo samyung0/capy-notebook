@@ -590,7 +590,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	).Scan(&preference.ProviderSlug, &preference.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
-	if preference != (models.Ref{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}) {
+	if preference != (models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}) {
 		t.Fatalf("least-privilege remap persisted %q", preference)
 	}
 	if _, err := adminPool.Exec(ctx,

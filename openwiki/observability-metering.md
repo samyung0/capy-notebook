@@ -630,7 +630,10 @@ codes are `capability_missing` and `agentic_loop_not_certified`. The
 Certification requires a current two-turn streaming replay for the exact
 `(provider_slug, model_slug)` identity. `zai/glm-5.3-flash` holds one, so the
 clean seed offers it for chat as well as captioning. Migration `0009` makes
-GLM the chat default. Migration `0010` replaces Flash Vision with
+GLM the chat default, and `0116` moves the chat default and new accounts'
+chat pin to `deepseek/deepseek-flash` at its default high reasoning (Epo
+2026-10-25), refusing to run without an enabled chat row at high; existing
+accounts keep their pin. Migration `0010` replaces Flash Vision with
 `deepseek/deepseek-flash` (V4.1 Flash, text and vision), preserving versioned
 credit rates and other model choices. Existing Flash Vision preferences move
 to Flash 4.1. Migration `0012` deletes the retained Flash Vision rows and the
