@@ -165,6 +165,24 @@ async def test_a_message_allows_sixteen_images(monkeypatch, rendered):
         assert refused.text() == tools.IMAGE_LIMIT
 
 
+def test_an_image_no_request_carried_is_never_dropped():
+    """(Q349) A drop takes only images an earlier request carried: past the
+    budget, the carried ones go oldest first, and the new ones stay even when
+    they alone are past half the budget (a capture edge raised by config)."""
+    ctx = ToolContext(workspace_id="ws_1")
+    for n, tokens in enumerate([10_000, 10_000, 10_000, 12_000, 12_000], 1):
+        call_id = f"k{n}"
+        ctx.captures.append({"callId": call_id, "estimatedImageTokens": tokens})
+        ctx.pending_images[call_id] = (f"capture_page result {n}", f"url{n}")
+        ctx.capture_notes[call_id] = f"note {n}"
+    ctx.images_sent.update({"k1", "k2", "k3"})
+
+    tools.keep_images_within_budget(ctx)
+
+    assert sorted(ctx.pending_images) == ["k4", "k5"]
+    assert tools.dropped_images(ctx) == {"k1": "note 1", "k2": "note 2", "k3": "note 3"}
+
+
 async def test_dropped_captures_still_count_toward_the_sixteen(monkeypatch):
     """(Q349) The image budget drops old captures from the requests, but each
     capture still counts toward the 16 per message: the 17th is refused with

@@ -239,8 +239,9 @@ class ToolContext:
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
     pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
-    # Page captures by call id, with the note that takes the image's place if
-    # the image budget drops it, and the images a request has carried (Q349).
+    # Page captures and source-change images by call id, with the note that
+    # takes the image's place if the image budget drops it, and the images a
+    # request has carried (Q349, Q369).
     capture_notes: dict[str, str] = field(default_factory=dict)
     images_sent: set[str] = field(default_factory=set)
     # Images this message attached: page captures and source-change images.
@@ -681,14 +682,15 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
 # source change past the cap fails with its own reason.
 MAX_IMAGES = 16
 IMAGE_LIMIT = "capture_page limit reached, do not call capture_page anymore."
-# A turn's page captures stay within this many image tokens, counted with the
-# patch estimate the context accounting uses (capture.patch_tokens). A new
-# capture that takes them past it drops the oldest ones a request has already
-# carried until at most IMAGE_BUDGET_AFTER_DROP remains, each leaving a note;
+# A turn's page captures and source-change images stay within this many image
+# tokens, counted with the patch estimate the context accounting uses
+# (capture.patch_tokens; about 15 full 1568 px pages). A new image that takes
+# them past it drops the oldest ones a request has already carried, of either
+# kind, until at most IMAGE_BUDGET_AFTER_DROP remains, each leaving a note;
 # drops come in batches, so the requests between them start the same and the
-# provider's cached prefix holds (Epo 2026-10-24, Q349). A dropped capture still
-# counts toward MAX_IMAGES.
-IMAGE_BUDGET = 25_000
+# provider's cached prefix holds (Epo 2026-10-24, Q349; 35k and both kinds
+# 2026-10-25, Q368, Q369). A dropped image still counts toward MAX_IMAGES.
+IMAGE_BUDGET = 35_000
 IMAGE_BUDGET_AFTER_DROP = IMAGE_BUDGET // 2
 SOURCE_IMAGE_LIMIT = (
     "resolve_source_change: this message's image limit is reached, so the "
@@ -712,9 +714,10 @@ def _source_image_limit(ctx: ToolContext) -> ToolResult | None:
 
 
 def keep_images_within_budget(ctx: ToolContext) -> None:
-    """Before a model call: past IMAGE_BUDGET, drop the oldest page captures a
-    request has carried until IMAGE_BUDGET_AFTER_DROP remains. A capture no
-    request has carried yet is never dropped, so the model sees each once."""
+    """Before a model call: past IMAGE_BUDGET, drop the oldest images (page
+    captures and source-change images) a request has carried until
+    IMAGE_BUDGET_AFTER_DROP remains. An image no request has carried yet is
+    never dropped, so the model sees each once."""
     kept = [
         record
         for record in ctx.captures
@@ -732,7 +735,7 @@ def keep_images_within_budget(ctx: ToolContext) -> None:
 
 
 def dropped_images(ctx: ToolContext) -> dict[str, str]:
-    """The notes of the page captures the image budget dropped, by call id."""
+    """The notes of the images the image budget dropped, by call id."""
     return {
         call_id: note
         for call_id, note in ctx.capture_notes.items()
@@ -740,10 +743,10 @@ def dropped_images(ctx: ToolContext) -> dict[str, str]:
     }
 
 
-def _dropped_note(label: str) -> str:
+def _dropped_note(label: str, again: str = "capture the page again") -> str:
     return (
         f"{label}: image dropped to keep this turn's images within budget; "
-        "capture the page again to see it."
+        f"{again} to see it."
     )
 
 
@@ -2047,9 +2050,12 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
             started=started,
         )
     )
-    ctx.pending_images[call_id] = (
-        f"resolve_source_change result: change {change_id} of file {file_id}",
-        capture.data_url(jpeg),
+    label = f"resolve_source_change result: change {change_id} of file {file_id}"
+    ctx.pending_images[call_id] = (label, capture.data_url(jpeg))
+    ctx.capture_notes[call_id] = _dropped_note(
+        label,
+        f"call resolve_source_change again with file_id {file_id}, change_id "
+        f"{change_id} and checkpoint {checkpoint}",
     )
     ctx.images_taken += 1  # counted, with no limit sentence (Epo 2026-10-22)
     return _result(
