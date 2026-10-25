@@ -1181,7 +1181,14 @@ $('run').onclick = async () => {
     card('tool failed', esc(await res.text()));
     return;
   }
-  history.push({ content: question, id: 'm' + nextId++, role: 'user' });
+  // With the switch it was sent with, so a follow-up replays its mode line
+  // as production does and the request prefix stays cached.
+  history.push({
+    content: question,
+    id: 'm' + nextId++,
+    role: 'user',
+    workspaceOnly: currentConfig().workspace_only === true,
+  });
   $('question').value = '';
   const reader = res.body.getReader();
   const dec = new TextDecoder();
@@ -1219,7 +1226,12 @@ $('runs').onclick = async (e) => {
   checkpoint = run.checkpoint_in || null;
   nextId =
     1 + Math.max(0, ...history.map((m) => Number(/^m(\d+)$/.exec(m.id)?.[1]) || 0));
-  history.push({ content: run.question, id: 'm' + nextId++, role: 'user' });
+  history.push({
+    content: run.question,
+    id: 'm' + nextId++,
+    role: 'user',
+    workspaceOnly: run.workspace_only === true,
+  });
   resetPanels();
   configCard('run ' + id, run.config, run.system_prompt);
   card('', `<b>You</b><br>${esc(run.question)}`);
