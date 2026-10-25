@@ -5,4 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CreateDiscussionReqContentRichItem = {[key: string]: unknown};
+export type ExploreWorkspacesParams = {
+/**
+ * Opaque cursor from the previous page
+ */
+cursor?: string;
+};

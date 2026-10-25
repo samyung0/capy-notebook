@@ -105,6 +105,8 @@ type deadlineRecorder struct{ *httptest.ResponseRecorder }
 
 func (deadlineRecorder) SetReadDeadline(time.Time) error { return nil }
 
+func (deadlineRecorder) SetWriteDeadline(time.Time) error { return nil }
+
 // ticketTurn is an upload ticket's answer.
 type ticketTurn struct {
 	TicketID string `json:"ticketId"`

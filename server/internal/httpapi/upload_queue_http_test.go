@@ -129,7 +129,7 @@ func TestUploadQueueHoldsAUsersFifthUploadWhileOthersRun(t *testing.T) {
 }
 
 // A full line refuses the ticket as busy: a user holds at most 20 waiting
-// tickets (the line's 128 are in TestUploadQueueHoldsAtMost128And20PerUser).
+// tickets (the line's 2,000 are in TestUploadQueueHoldsAtMost2000And20PerUser).
 func TestUploadQueueRefusesAFullLine(t *testing.T) {
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
@@ -352,9 +352,7 @@ func TestUploadBudgetIsReleasedWhenAnUploadEnds(t *testing.T) {
 
 // A cancelled ticket gives up its place in line, or its turn's share, to the
 // next ticket at once and counts as a failed file of its batch, or a removed
-// one (?reason=removed), unless it was given back for a retry
-// (?reason=retry), which counts the file; only its owner can
-// cancel or poll it (Epo 2026-10-22; security regression:
+// one (?reason=removed); only its owner can cancel or poll it (Epo 2026-10-22; security regression:
 // human backend-storage-quota 2026-10-22 upload queue).
 func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
@@ -371,12 +369,15 @@ func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 	if poll := doReq(t, th.h, http.MethodGet, "/api/uploads/tickets/"+first, "u_other", nil); poll.Code != http.StatusGone {
 		t.Fatalf("another user's poll = %d, want 410", poll.Code)
 	}
-	if status := cancel("u_owner", first+"?reason=later"); status != http.StatusBadRequest {
-		t.Fatalf("a cancel with an unknown reason = %d, want 400", status)
+	// The browser never retries an upload itself (Q282), so there is no
+	// retry reason.
+	for _, reason := range []string{"later", "retry"} {
+		if status := cancel("u_owner", first+"?reason="+reason); status != http.StatusBadRequest {
+			t.Fatalf("a cancel with reason %q = %d, want 400", reason, status)
+		}
 	}
-	// Given back for a retry (a 429), the file is left to the retry's ticket.
-	if status := cancel("u_owner", first+"?reason=retry"); status != http.StatusNoContent || batchNotified(t, th, batchOf(firstMeta)) {
-		t.Fatalf("cancel of a waiting ticket for a retry = %d (its batch must wait for the retry)", status)
+	if status := cancel("u_owner", first); status != http.StatusNoContent || !batchNotified(t, th, batchOf(firstMeta)) {
+		t.Fatalf("cancel of a waiting ticket = %d (its batch must settle)", status)
 	}
 	if turn := polledTurn(t, pollTicket(t, th, second, -1)); turn.Position != 1 {
 		t.Fatalf("after the cancel the next ticket waits at %d", turn.Position)

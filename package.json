@@ -201,7 +201,7 @@
     "prepare": "husky",
     "office:prepare": "node scripts/prepare-betteroffice.mjs",
     "office:seed-check": "cargo run --release --manifest-path collaboration-rs/Cargo.toml -p server -- seed-check",
-    "test:deployment": "python3 scripts/env/test_config.py && python3 scripts/uat/test_journey_workflows.py && python3 scripts/deploy/test_ingest_release.py && python3 scripts/deploy/test_assets_rollback.py && python3 scripts/deploy/test_cloudflare_rules.py && python3 scripts/deploy/test_app_host_deploy.py && python3 scripts/deploy/test_app_host_release.py && node --test scripts/dev/hosts.test.mjs scripts/ci/hardening.test.mjs",
+    "test:deployment": "python3 scripts/env/test_config.py && python3 scripts/uat/test_journey_workflows.py && python3 scripts/deploy/test_ingest_release.py && python3 scripts/deploy/test_assets_rollback.py && python3 scripts/deploy/test_cloudflare_rules.py && python3 scripts/deploy/test_webhook_ranges.py && python3 scripts/deploy/test_app_host_deploy.py && python3 scripts/deploy/test_app_host_release.py && node --test scripts/dev/hosts.test.mjs scripts/ci/hardening.test.mjs",
     "env:check": "python3 scripts/env/config.py check",
     "env:push": "python3 scripts/env/config.py push",
     "test:site": "vitest run --dir workers/site",

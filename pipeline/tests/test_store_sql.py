@@ -190,6 +190,128 @@ def test_provider_capacity_leases_enforce_weighted_limit(workspace):
         )
 
 
+def test_two_admissions_racing_for_the_last_unit_admit_one(workspace):
+    """(security regression: rate-limit audit M13, Q298) With the expired-lease
+    sweep outside the model-wide lock the count stays exact: of two admissions
+    racing for a gate's last unit one is admitted, and an expired lease frees
+    no extra unit."""
+    import psycopg
+
+    key = f"capacity-race:{secrets.token_hex(4)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            """
+            INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
+            VALUES (%s,%s,1,now()+interval '1 minute'),
+                   (%s,%s,1,now()-interval '1 second')
+            """,
+            (f"{key}:held", key, f"{key}:expired", key),
+        )
+
+    def admit(conn, lease_id: str) -> bool:
+        with conn.cursor() as cur:
+            return db.acquire_provider_capacity(
+                cur,
+                lease_id=lease_id,
+                provider=key,
+                units=1,
+                capacity=2,
+                lease_seconds=60,
+            )
+
+    with (
+        psycopg.connect(workspace.dsn) as first,
+        psycopg.connect(workspace.dsn) as second,
+        psycopg.connect(workspace.dsn, autocommit=True) as watch,
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+        assert admit(first, f"{key}:first")  # holds the lock until its commit
+        racing = executor.submit(admit, second, f"{key}:second")
+        pid = second.info.backend_pid
+        for _ in range(1000):  # until the second waits on the lock (or ends)
+            waiting = watch.execute(
+                "SELECT wait_event='advisory' FROM pg_stat_activity WHERE pid=%s",
+                (pid,),
+            ).fetchone()[0]
+            if waiting or racing.done():
+                break
+            time.sleep(0.01)
+        first.commit()
+        assert racing.result(timeout=10) is False
+        second.commit()
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        leases = conn.execute(
+            "SELECT id FROM provider_capacity_leases WHERE provider=%s ORDER BY id",
+            (key,),
+        ).fetchall()
+        conn.execute("DELETE FROM provider_capacity_leases WHERE provider=%s", (key,))
+    assert leases == [(f"{key}:first",), (f"{key}:held",)]
+
+
+def test_an_applied_ingest_receipt_frees_its_capacity_lease(workspace):
+    """(security regression: rate-limit audit M13, Q298) The local settlement
+    frees the call's lease in its own transaction; other leases stay."""
+    import psycopg
+
+    call_id = f"pc_{secrets.token_hex(6)}"
+    running = f"pc_{secrets.token_hex(6)}"
+    key = f"capacity-settle:{secrets.token_hex(4)}"
+    file_id = workspace.add_file("provider-lease.txt")
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        db.open_provider_call(
+            cur,
+            reservation_id,
+            call_id,
+            "llm",
+            "ingest_summary",
+            "high",
+            job_attempt_id=attempt_id,
+        )
+        for lease in (call_id, running):
+            assert db.acquire_provider_capacity(
+                cur,
+                lease_id=lease,
+                provider=key,
+                units=1,
+                capacity=2,
+                lease_seconds=60,
+            )
+        applied = db.settle_ingest_provider_call(
+            cur,
+            session_id=reservation_id,
+            call_id=call_id,
+            kind="llm",
+            purpose="ingest_summary",
+            thinking="high",
+            provider="openai",
+            model="gpt-test",
+            catalog_provider_slug="openai",
+            catalog_model_slug="gpt-test",
+            model_version=7,
+            usage=NormalizedUsage(input_tokens=1, output_tokens=1),
+            credit_micros=1,
+        )
+        leases = cur.execute(
+            "SELECT id FROM provider_capacity_leases WHERE provider=%s", (key,)
+        ).fetchall()
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM provider_capacity_leases WHERE provider=%s", (key,))
+        conn.execute("DELETE FROM usage_events WHERE provider_call_id = %s", (call_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+    assert applied == "applied"
+    assert leases == [(running,)]
+
+
 def test_an_audio_job_keeps_its_task_across_re_pends_and_a_crash(workspace):
     """A stored transcription task survives the re-pend (which hands the
     attempt back) and a worker's death (lease reclaim, which spends one), so

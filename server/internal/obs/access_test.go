@@ -1,6 +1,11 @@
 package obs
 
 import (
+	"bytes"
+	"context"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -74,5 +79,42 @@ func TestSentryTransactionsAndRefererAreScrubbed(t *testing.T) {
 			out.Request.Headers["User-Agent"] != "test" || out.Tags["service"] != "api" {
 			t.Fatalf("%s left %q (headers %v)", name, text, out.Request.Headers)
 		}
+	}
+}
+
+// TestClientAddressFoldsIPv6To56 (security regression: rate-limit audit M6,
+// Q246). Every address of one IPv6 /56 is one limiter, grading and share-read
+// key; IPv4 stays whole.
+func TestClientAddressFoldsIPv6To56(t *testing.T) {
+	for ip, want := range map[string]string{
+		"2001:db8:1:200:aaaa::1":   "2001:db8:1:200::/56",
+		"2001:db8:1:2ff:bbbb::fff": "2001:db8:1:200::/56",
+		"2001:db8:1:300::1":        "2001:db8:1:300::/56",
+		"::ffff:192.0.2.7":         "192.0.2.7",
+		"192.0.2.7":                "192.0.2.7",
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/api/public/quizzes/x", nil)
+		r.Header.Set("CF-Connecting-IP", ip)
+		if got := ClientAddress(r); got != want {
+			t.Errorf("ClientAddress(%q) = %q, want %q", ip, got, want)
+		}
+	}
+}
+
+// TestAccessLogClientAbortedFailureIsAWarning (rate-limit audit client
+// aborts): a 5xx written after the client left logs below ERROR.
+func TestAccessLogClientAbortedFailureIsAWarning(t *testing.T) {
+	var out bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&out, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	handler := AccessLog(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/me", nil).WithContext(ctx))
+	if !strings.Contains(out.String(), `"level":"WARN"`) || !strings.Contains(out.String(), `"client_aborted":true`) {
+		t.Fatalf("log = %s, want a WARN line marked client_aborted", out.String())
 	}
 }

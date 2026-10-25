@@ -1639,6 +1639,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   2026-10-24, Q247-Q250) raised `CLIENT_PROTOCOL` to 16 and both minimums to
   16, so note and item tabs without the rule reload. Its deploy request names
   "client protocol 15 -> 16, material 7 -> 16, source 15 -> 16".
+  The DOCX typing fixes (pin 88b28baa4: a page whose positions only shift
+  keeps its mirror and overlay nodes, charts, shapes and content controls are
+  named by their embed, and the position projection follows typed text; Epo
+  2026-10-24, Q351) raised `CLIENT_PROTOCOL` to 17 and `MIN_SOURCE` to 17;
+  `MIN_MATERIAL` stays 16. Its deploy request names "client protocol 16 -> 17,
+  source 16 -> 17".
 
 #### When to bump
 
@@ -2535,10 +2541,21 @@ Comments and threads remain relational. A discussion stores:
 - encoded start/end Yjs relative positions;
 - anchor schema version;
 - a short quoted-text fallback;
-- comments, resolution state, and authorship.
+- comments and authorship.
 
-The JSON API base64-encodes relative positions; PostgreSQL stores raw `bytea`.
-Go enforces paired anchors and strict size/version/quote bounds.
+Comments are plain fields (Epo 2026-10-24): each comment holds its
+discussion, author and plain text of at most 3,000 characters (`text`, the
+only size rule; no rich content and no JSON byte cap). Go refuses text that is
+empty or only whitespace, and any field the schema does not name. Every
+comment field (text, quote, block id) refuses control characters other than
+newline and tab and the bidi override and isolate characters (U+202A-U+202E,
+U+2066-U+2069); zero-width joiners, which emoji and some scripts need, stay
+(Epo 2026-10-24, Q313). The comment box and the AI's
+comments both send one plain text; the thread shows it as written. The
+discussion and comment routes take bodies of at most 64 KiB, which fits the
+largest valid discussion. The JSON API base64-encodes relative positions;
+PostgreSQL stores raw `bytea`. Go enforces paired anchors, a block id of 1-128
+characters and strict size/version/quote bounds.
 
 When creating a comment, the browser converts the selected Slate range with
 `slateRangeToRelativeRange`. Rendering reverses it with

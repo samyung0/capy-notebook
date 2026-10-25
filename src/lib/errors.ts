@@ -304,6 +304,49 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_file_extension_changed_body(),
         title: m.error_file_extension_changed_title(),
       };
+    // Count and size caps on rows kept outside storage, and daily caps.
+    case 'grading_limit':
+      return {
+        description: m.error_grading_limit_body(),
+        title: m.error_grading_limit_title(),
+      };
+    case 'invite_recently_sent':
+      return {
+        description: m.error_invite_recently_sent_body(),
+        title: m.error_invite_recently_sent_title(),
+      };
+    case 'invite_limit':
+      return {
+        description: m.error_invite_limit_body(),
+        title: m.error_invite_limit_title(),
+      };
+    case 'comment_limit':
+      return {
+        description: m.error_comment_limit_body(),
+        title: m.error_comment_limit_title(),
+      };
+    case 'annotation_limit':
+      return {
+        description: m.error_annotation_limit_body(),
+        title: m.error_annotation_limit_title(),
+      };
+    case 'event_limit':
+      return {
+        description: m.error_event_limit_body(),
+        title: m.error_event_limit_title(),
+      };
+    case 'checkout_limit':
+      return {
+        description: m.error_checkout_limit_body(),
+        title: m.error_checkout_limit_title(),
+      };
+    // The gateway's limiter could not count an AI or upload request.
+    case 'rate_limit_unavailable':
+      return {
+        action: 'retry',
+        description: m.error_rate_limit_unavailable_body(),
+        title: m.error_rate_limit_unavailable_title(),
+      };
     default:
       return null;
   }
@@ -454,7 +497,9 @@ const TYPED_SERVER_CODES = new Set([
   'ai_unavailable',
   'bank_unavailable',
   'generate_empty',
+  'captcha_unavailable',
   'provider_busy',
+  'rate_limit_unavailable',
   'transcription_failed',
   'upload_queue_full',
   'voice_unavailable',

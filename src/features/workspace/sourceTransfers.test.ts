@@ -245,6 +245,33 @@ describe('compressing before the upload', () => {
   });
 });
 
+// An upload past the upload rate class waits in the gateway's line; one the
+// gateway still refuses 429 fails its row without a browser retry (security
+// regression: rate-limit audit Q282).
+describe('a limited upload', () => {
+  it('fails an upload answered 429 without retrying it', async () => {
+    const uploadSource = vi.fn(() =>
+      Promise.reject(
+        new ApiError(429, 'Too Many Requests', '', { retryAfterSeconds: 1 })
+      )
+    );
+    startSourceTransfer({
+      importSources: vi.fn(),
+      limits,
+      local: [request('a.pdf')],
+      uploadSource: uploadSource as never,
+      workspaceId: 'ws_1',
+    });
+    // Long enough for a retry after the 1 s to show.
+    await vi.waitFor(
+      () => expect(useSourceTransfers.getState().unsent).toBe(0),
+      { timeout: 5000 }
+    );
+    expect(uploadSource).toHaveBeenCalledTimes(1);
+    expect(useSourceTransfers.getState().transfers[0].stage).toBe('failed');
+  });
+});
+
 describe('removing a row', () => {
   // Each row's remove cancels its upload and gives up its place in the
   // gateway's line, and its batch counts it as removed at once (Epo

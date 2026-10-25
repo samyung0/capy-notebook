@@ -33,10 +33,10 @@ import type {
   BillingInfo,
   BootstrapSourceDocumentParams,
   BrowserSourceSession,
-  Canvas,
   Chapter,
   CheckBankQuestionReq,
   CheckReviewItemReq,
+  CheckSharedNoteQuizReq,
   CheckSourceAccessParams,
   ClaimSourceRefreshParams,
   CloneFileReq,
@@ -48,7 +48,6 @@ import type {
   ComputationCheckResp,
   Conversation,
   CreateAttemptReq,
-  CreateCanvasReq,
   CreateCommentReq,
   CreateConversationReq,
   CreateDiscussionReq,
@@ -70,6 +69,9 @@ import type {
   EditorAssetPage,
   ErrorModel,
   Event,
+  ExploreFlashcardSetsParams,
+  ExploreQuizzesParams,
+  ExploreWorkspacesParams,
   File,
   FileLinks,
   FilePage,
@@ -127,9 +129,9 @@ import type {
   PastReviewsOutputBody,
   PendingWorkspaceInvite,
   ProjectMaterialReq,
-  PublicFlashcardSet,
-  PublicQuiz,
-  PublicWorkspace,
+  PublicFlashcardSetPage,
+  PublicQuizPage,
+  PublicWorkspacePage,
   PurgeTrashedParams,
   Quiz,
   RateReviewItemReq,
@@ -143,7 +145,6 @@ import type {
   ReviewOverview,
   ReviewResult,
   ReviewSession,
-  SaveCanvasReq,
   SearchParams,
   SearchResult,
   SetChatPrefsReq,
@@ -2847,7 +2848,7 @@ const res = await fetch(getUpdateEventUrl(id),
 
 
 export type exploreFlashcardSetsResponse200 = {
-  data: PublicFlashcardSet[]
+  data: PublicFlashcardSetPage
   status: 200
 }
 
@@ -2865,20 +2866,27 @@ export type exploreFlashcardSetsResponseError = (exploreFlashcardSetsResponseDef
 
 export type exploreFlashcardSetsResponse = (exploreFlashcardSetsResponseSuccess | exploreFlashcardSetsResponseError)
 
-export const getExploreFlashcardSetsUrl = () => {
+export const getExploreFlashcardSetsUrl = (params?: ExploreFlashcardSetsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/explore/flashcards`
+  return stringifiedParams.length > 0 ? `/api/explore/flashcards?${stringifiedParams}` : `/api/explore/flashcards`
 }
 
 /**
  * @summary Public flashcards
  */
-export const exploreFlashcardSets = async ( options?: RequestInit): Promise<exploreFlashcardSetsResponse> => {
+export const exploreFlashcardSets = async (params?: ExploreFlashcardSetsParams, options?: RequestInit): Promise<exploreFlashcardSetsResponse> => {
 
-  const res = await fetch(getExploreFlashcardSetsUrl(),
+  const res = await fetch(getExploreFlashcardSetsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2897,7 +2905,7 @@ export const exploreFlashcardSets = async ( options?: RequestInit): Promise<expl
 
 
 export type exploreQuizzesResponse200 = {
-  data: PublicQuiz[]
+  data: PublicQuizPage
   status: 200
 }
 
@@ -2915,20 +2923,27 @@ export type exploreQuizzesResponseError = (exploreQuizzesResponseDefault) & {
 
 export type exploreQuizzesResponse = (exploreQuizzesResponseSuccess | exploreQuizzesResponseError)
 
-export const getExploreQuizzesUrl = () => {
+export const getExploreQuizzesUrl = (params?: ExploreQuizzesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/explore/quizzes`
+  return stringifiedParams.length > 0 ? `/api/explore/quizzes?${stringifiedParams}` : `/api/explore/quizzes`
 }
 
 /**
  * @summary Public quizzes
  */
-export const exploreQuizzes = async ( options?: RequestInit): Promise<exploreQuizzesResponse> => {
+export const exploreQuizzes = async (params?: ExploreQuizzesParams, options?: RequestInit): Promise<exploreQuizzesResponse> => {
 
-  const res = await fetch(getExploreQuizzesUrl(),
+  const res = await fetch(getExploreQuizzesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2947,7 +2962,7 @@ export const exploreQuizzes = async ( options?: RequestInit): Promise<exploreQui
 
 
 export type exploreWorkspacesResponse200 = {
-  data: PublicWorkspace[]
+  data: PublicWorkspacePage
   status: 200
 }
 
@@ -2965,20 +2980,27 @@ export type exploreWorkspacesResponseError = (exploreWorkspacesResponseDefault) 
 
 export type exploreWorkspacesResponse = (exploreWorkspacesResponseSuccess | exploreWorkspacesResponseError)
 
-export const getExploreWorkspacesUrl = () => {
+export const getExploreWorkspacesUrl = (params?: ExploreWorkspacesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/explore/workspaces`
+  return stringifiedParams.length > 0 ? `/api/explore/workspaces?${stringifiedParams}` : `/api/explore/workspaces`
 }
 
 /**
  * @summary Public workspaces
  */
-export const exploreWorkspaces = async ( options?: RequestInit): Promise<exploreWorkspacesResponse> => {
+export const exploreWorkspaces = async (params?: ExploreWorkspacesParams, options?: RequestInit): Promise<exploreWorkspacesResponse> => {
 
-  const res = await fetch(getExploreWorkspacesUrl(),
+  const res = await fetch(getExploreWorkspacesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -8003,6 +8025,73 @@ const res = await fetch(getRedeemShareLinkUrl(),
 
 
 
+export type checkSharedNoteQuizResponse200 = {
+  data: GradedQuiz
+  status: 200
+}
+
+export type checkSharedNoteQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type checkSharedNoteQuizResponseSuccess = (checkSharedNoteQuizResponse200) & {
+  headers: Headers;
+};
+export type checkSharedNoteQuizResponseError = (checkSharedNoteQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type checkSharedNoteQuizResponse = (checkSharedNoteQuizResponseSuccess | checkSharedNoteQuizResponseError)
+
+export const getCheckSharedNoteQuizUrl = (token: string,
+    quizId: string,) => {
+
+
+
+
+  return `/api/shared/notes/${token}/quizzes/${quizId}/check`
+}
+
+/**
+ * @summary Grade a signed-in check of a quiz embedded in a shared note
+ */
+export const checkSharedNoteQuiz = async (token: string,
+    quizId: string,
+    checkSharedNoteQuizReq: NonReadonly<CheckSharedNoteQuizReq>, options?: RequestInit): Promise<checkSharedNoteQuizResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCheckSharedNoteQuizUrl(token,quizId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(checkSharedNoteQuizReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkSharedNoteQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkSharedNoteQuizResponse
+}
+
+
+
 export type getSourceUploadPolicyResponse200 = {
   data: SourceUploadPolicy
   status: 200
@@ -8393,235 +8482,6 @@ const res = await fetch(getUpdateTaskUrl(id),
 
   const data: updateTaskResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateTaskResponse
-}
-
-
-
-export type listCanvasesResponse200 = {
-  data: Canvas[]
-  status: 200
-}
-
-export type listCanvasesResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listCanvasesResponseSuccess = (listCanvasesResponse200) & {
-  headers: Headers;
-};
-export type listCanvasesResponseError = (listCanvasesResponseDefault) & {
-  headers: Headers;
-};
-
-export type listCanvasesResponse = (listCanvasesResponseSuccess | listCanvasesResponseError)
-
-export const getListCanvasesUrl = () => {
-
-
-
-
-  return `/api/thinking`
-}
-
-/**
- * @summary List thinking canvases
- */
-export const listCanvases = async ( options?: RequestInit): Promise<listCanvasesResponse> => {
-
-  const res = await fetch(getListCanvasesUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listCanvasesResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listCanvasesResponse
-}
-
-
-
-export type createCanvasResponse201 = {
-  data: Canvas
-  status: 201
-}
-
-export type createCanvasResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createCanvasResponseSuccess = (createCanvasResponse201) & {
-  headers: Headers;
-};
-export type createCanvasResponseError = (createCanvasResponseDefault) & {
-  headers: Headers;
-};
-
-export type createCanvasResponse = (createCanvasResponseSuccess | createCanvasResponseError)
-
-export const getCreateCanvasUrl = () => {
-
-
-
-
-  return `/api/thinking`
-}
-
-/**
- * @summary Create a canvas
- */
-export const createCanvas = async (createCanvasReq: NonReadonly<CreateCanvasReq>, options?: RequestInit): Promise<createCanvasResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getCreateCanvasUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(createCanvasReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createCanvasResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createCanvasResponse
-}
-
-
-
-export type getCanvasResponse200 = {
-  data: Canvas
-  status: 200
-}
-
-export type getCanvasResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type getCanvasResponseSuccess = (getCanvasResponse200) & {
-  headers: Headers;
-};
-export type getCanvasResponseError = (getCanvasResponseDefault) & {
-  headers: Headers;
-};
-
-export type getCanvasResponse = (getCanvasResponseSuccess | getCanvasResponseError)
-
-export const getGetCanvasUrl = (id: string,) => {
-
-
-
-
-  return `/api/thinking/${id}`
-}
-
-/**
- * @summary Get a canvas
- */
-export const getCanvas = async (id: string, options?: RequestInit): Promise<getCanvasResponse> => {
-
-  const res = await fetch(getGetCanvasUrl(id),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getCanvasResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getCanvasResponse
-}
-
-
-
-export type saveCanvasResponse200 = {
-  data: Canvas
-  status: 200
-}
-
-export type saveCanvasResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type saveCanvasResponseSuccess = (saveCanvasResponse200) & {
-  headers: Headers;
-};
-export type saveCanvasResponseError = (saveCanvasResponseDefault) & {
-  headers: Headers;
-};
-
-export type saveCanvasResponse = (saveCanvasResponseSuccess | saveCanvasResponseError)
-
-export const getSaveCanvasUrl = (id: string,) => {
-
-
-
-
-  return `/api/thinking/${id}`
-}
-
-/**
- * @summary Save a canvas
- */
-export const saveCanvas = async (id: string,
-    saveCanvasReq: NonReadonly<SaveCanvasReq>, options?: RequestInit): Promise<saveCanvasResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getSaveCanvasUrl(id),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(saveCanvasReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: saveCanvasResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as saveCanvasResponse
 }
 
 

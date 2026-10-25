@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"regexp"
@@ -59,7 +58,7 @@ func wantOverQuotaLock(t *testing.T, what string, err error) {
 func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	rich := json.RawMessage(`[{"type":"p","children":[{"text":"hi"}]}]`)
+	commentText := "hi"
 
 	frozenUser := newBlobTestUser(t, s, "frozen_user")
 	healthyUser := newBlobTestUser(t, s, "healthy_user")
@@ -84,7 +83,7 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 	}
 	inFrozen, inHealthy := material(frozenWS, frozenUser), material(healthyWS, frozenUser)
 	trashable := material(frozenWS, healthyUser)
-	discussion, err := s.CreateCommentDiscussion(ctx, inFrozen.ID, healthyUser, nil, nil, nil, 1, "", rich)
+	discussion, err := s.CreateCommentDiscussion(ctx, inFrozen.ID, healthyUser, nil, nil, nil, 1, "", commentText)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +109,7 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 			title := "Renamed"
 			_, err = s.UpdateMaterial(ctx, c.mt.ID, MaterialPatch{Title: &title, UpdatedBy: c.who})
 			wantOverQuotaLock(t, "rename", err)
-			_, err = s.CreateCommentDiscussion(ctx, c.mt.ID, c.who, nil, nil, nil, 1, "", rich)
+			_, err = s.CreateCommentDiscussion(ctx, c.mt.ID, c.who, nil, nil, nil, 1, "", commentText)
 			wantOverQuotaLock(t, "comment", err)
 			if _, err := s.CreateConversation(ctx, c.who, c.ws.ID, "Chat"); err != nil {
 				t.Fatalf("workspace chat is open to frozen accounts: %v", err)
@@ -118,7 +117,7 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 		})
 	}
 
-	_, err = s.AddComment(ctx, discussion.ID, healthyUser, rich)
+	_, err = s.AddComment(ctx, discussion.ID, healthyUser, commentText)
 	wantOverQuotaLock(t, "reply", err)
 	if err := s.SoftDeleteDiscussion(ctx, discussion.ID, healthyUser); err != nil {
 		t.Fatalf("deleting a comment stays open: %v", err)
@@ -184,7 +183,7 @@ func TestGraceBlocksOnlyStorageGrowth(t *testing.T) {
 func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	rich := json.RawMessage(`[{"type":"p","children":[{"text":"hi"}]}]`)
+	commentText := "hi"
 	mark := PDFAnnotationBody{SourceIdentity: "revision:1", Page: 1, Kind: "rectangle", Color: "#d94848", Rects: []PDFRect{{X: 10, Y: 20, Width: 200, Height: 50}}}
 	for name, reach := range map[string]func(owner, ws string){
 		"full": func(owner, _ string) {
@@ -223,7 +222,7 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 						t.Fatalf("%s by %s = %v, want the owner's storage limit", what, who, err)
 					}
 				}
-				_, err := s.CreateCommentDiscussion(ctx, note.ID, who, nil, nil, nil, 1, "", rich)
+				_, err := s.CreateCommentDiscussion(ctx, note.ID, who, nil, nil, nil, 1, "", commentText)
 				want("comment", err)
 				_, err = s.SavePDFAnnotation(ctx, who, pdf.ID, "", mark)
 				want("PDF mark", err)

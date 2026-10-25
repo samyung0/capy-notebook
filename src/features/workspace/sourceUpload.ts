@@ -1,4 +1,3 @@
-import { isApiError } from '@/api/client';
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { m } from '@/i18n';
@@ -198,32 +197,4 @@ export async function mapWithConcurrency<T, R>(
     })
   );
   return results;
-}
-
-/** An upload reservation answered 429 gets 3 attempts in all. */
-const UPLOAD_ATTEMPTS = 3;
-
-export function retryAfterMs(error: unknown): number | null {
-  if (!isApiError(error) || error.status !== 429) return null;
-  const seconds = Number(error.body?.retryAfterSeconds);
-  if (!Number.isFinite(seconds) || seconds <= 0) return 1000;
-  return Math.min(30_000, Math.ceil(seconds) * 1000);
-}
-
-/** Runs an upload, retrying a 429 up to UPLOAD_ATTEMPTS in all; `fn` hears
- * whether a 429 of its attempt will be retried. */
-export async function withUploadRetry<T>(
-  fn: (willRetry: boolean) => Promise<T>,
-  wait: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms))
-): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fn(attempt + 1 < UPLOAD_ATTEMPTS);
-    } catch (error) {
-      const delay = retryAfterMs(error);
-      if (delay == null || attempt + 1 >= UPLOAD_ATTEMPTS) throw error;
-      await wait(delay);
-    }
-  }
 }

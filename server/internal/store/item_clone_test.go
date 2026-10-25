@@ -820,7 +820,7 @@ func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
 	}
 	canClone := func(userID string) map[string]bool {
 		t.Helper()
-		quizzes, err := s.ListPublicQuizzes(ctx, userID)
+		quizzes, _, err := s.ListPublicQuizzes(ctx, userID, "")
 		if err != nil {
 			t.Fatal(err)
 		}

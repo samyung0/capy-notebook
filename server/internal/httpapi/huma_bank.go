@@ -14,7 +14,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/samyung0/capy-notebook/server/internal/bank"
-	"github.com/samyung0/capy-notebook/server/internal/mail"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
@@ -336,9 +335,6 @@ func (a *api) bankComment(ctx context.Context, in *bankCommentInput) (*Empty, er
 	if text == "" {
 		return nil, huma.Error422UnprocessableEntity("comment is required")
 	}
-	if a.cfg.MailSender == nil {
-		return nil, huma.Error503ServiceUnavailable("email unavailable")
-	}
 	detail, err := a.cfg.Bank.Get(ctx, in.ID)
 	if err != nil {
 		return nil, bankHTTPError(err)
@@ -349,10 +345,9 @@ func (a *api) bankComment(ctx context.Context, in *bankCommentInput) (*Empty, er
 	}
 	link := strings.TrimRight(a.cfg.AppURL, "/") + "/qb/" + url.PathEscape(detail.TopicID) + "/" + url.PathEscape(in.ID) + "?mode=edit"
 	body := fmt.Sprintf("%s\n%s · %s · %s\nQuestion %d\nFrom: %s <%s>\n\n%s", link, detail.ExamLabel, detail.SubjectLabel, detail.TopicLabel, detail.Position, name, email, text)
-	sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	if _, err := a.cfg.MailSender.Send(sendCtx, mail.Message{To: a.cfg.BankCommentEmail, Subject: "Question bank comment", Text: body}); err != nil {
-		return nil, huma.Error503ServiceUnavailable("comment email could not be sent")
+	// Stored for the 4-hourly digest (cmd/api runBankCommentDigestWorker).
+	if err := a.s.AddBankCommentNotice(ctx, userID(ctx), a.cfg.BankCommentEmail, body); err != nil {
+		return nil, hErr(err)
 	}
 	return &Empty{}, nil
 }

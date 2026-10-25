@@ -16,6 +16,7 @@ import {
 } from '@/lib/localDb';
 import { redeemShareToken } from '@/lib/shareRedeem';
 import { signedIn, useSignedIn } from './session';
+import { takeTurnstileToken } from './turnstile';
 
 function Frame({
   children,
@@ -104,6 +105,8 @@ export function SharedQuiz({
           const graded = await gradeAnonymousQuiz(token, {
             answers,
             localId: await anonymousId().catch(() => undefined),
+            // Only a signed-out check carries a Turnstile token.
+            turnstileToken: await takeTurnstileToken(),
           });
           const attempt: LocalQuizAttempt = {
             answers,

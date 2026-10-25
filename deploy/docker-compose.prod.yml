@@ -97,6 +97,7 @@ services:
       REDIS_URL: redis://capy-redis:6379/0
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:?set COLLABORATION_SECRET}
       SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:?set SHARE_LINK_SECRET}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?set TURNSTILE_SECRET_KEY}
       JEV_TYPESAFE_API_KEY: ${JEV_TYPESAFE_API_KEY:?set JEV_TYPESAFE_API_KEY}
       # Chat voice input: Alibaba Model Studio (Singapore). Unset answers 503.
       ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
@@ -274,6 +275,18 @@ services:
       CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S: ${CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S:-15}
       CAPY_INTERACTIVE_STREAM_IDLE_S: ${CAPY_INTERACTIVE_STREAM_IDLE_S:-120}
       CAPY_INTERACTIVE_STREAM_MAX_S: ${CAPY_INTERACTIVE_STREAM_MAX_S:-600}
+      # One sync connection per default-executor thread, so a model call's
+      # admission never queues for a connection (Epo 2026-10-24, Q297).
+      CAPY_DB_SYNC_POOL_MAX_SIZE: "8"
+      # Chat and generate turns in progress per environment (scripts/env/config.py
+      # render: production 96, UAT 48; Q338, Q343).
+      CAPY_TURN_SLOTS: ${RETRIEVAL_TURN_SLOTS:?set RETRIEVAL_TURN_SLOTS}
+      # The collaboration server's allocator settings (Q343): two glibc arenas
+      # and fixed 128 KiB trim and mmap thresholds give freed request buffers
+      # back after a burst instead of keeping the process at its high-water mark.
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      MALLOC_MMAP_THRESHOLD_: "131072"
       # UAT only (the renderer refuses it in production, and the service will
       # not start with it unless SENTRY_ENVIRONMENT is uat): a chat message
       # carrying the [uat-scripted-tools] script runs it instead of the model.

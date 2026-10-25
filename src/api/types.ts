@@ -46,7 +46,6 @@ import type {
   MaterialListItem as GenMaterialListItem,
   MaterialPage as GenMaterialPage,
   Message as GenMessage,
-  PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
   ResourceEffectOperation as GenResourceEffectOperation,
   ReviewAnswer as GenReviewAnswer,
@@ -91,14 +90,12 @@ export type {
   AutoReloadResp,
   BillingCheckoutReq,
   BillingInfo,
-  Canvas as ThinkingCanvas,
   Chapter,
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResp as CloneWorkspaceResult,
   CollaborationTokenResponse as MaterialCollaborationToken,
   ContentOrderItem,
-  CreateCanvasReq,
   CreateConversationReq,
   CreateEventReq,
   CreateFlashcardSetReq,
@@ -134,7 +131,11 @@ export type {
   PaymentMethod,
   PendingWorkspaceInvite,
   PublicFlashcardSet,
+  PublicFlashcardSetPage,
+  PublicQuiz,
+  PublicQuizPage,
   PublicWorkspace,
+  PublicWorkspacePage,
   Ref as ModelRef,
   Region,
   ReloadState,
@@ -143,7 +144,6 @@ export type {
   ReportEditIncidentReq,
   RequestAccountDeletionReq,
   RetryProcessingInputBody as RetryProcessingReq,
-  SaveCanvasReq,
   SetModelPrefsReq,
   ShareRedemption,
   SourceImportStatus,
@@ -332,11 +332,6 @@ export type {
   ComputationCheckResp,
   GradeAnonymousQuizReq,
 } from './gen/model';
-/** An Explore quiz, answer-free. */
-export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
-  questions: LearnerQuestion[];
-};
-
 /** A card or question in a review session; questions are answer-free and
  * checked through POST /review/check. */
 export type ReviewItem = Omit<GenReviewItem, 'question'> & {
@@ -447,18 +442,9 @@ export type CreateEmbeddedMaterialReq = Omit<
   GenCreateEmbeddedMaterialReq,
   'questions'
 > & { questions?: Question[] };
-export type CreateDiscussionReq = Omit<
-  GenCreateDiscussionReq,
-  'contentRich'
-> & {
-  contentRich: import('@/features/materials/document').MaterialValue;
-};
-export type CreateCommentReq = Omit<GenCreateCommentReq, 'contentRich'> & {
-  contentRich: import('@/features/materials/document').MaterialValue;
-};
-export type UpdateCommentReq = Omit<GenUpdateCommentReq, 'contentRich'> & {
-  contentRich: import('@/features/materials/document').MaterialValue;
-};
+export type CreateDiscussionReq = GenCreateDiscussionReq;
+export type CreateCommentReq = GenCreateCommentReq;
+export type UpdateCommentReq = GenUpdateCommentReq;
 
 /** Ownership moves through the transfer endpoint, never through an invite or a
  * role change, so those bodies exclude it. */
@@ -553,7 +539,14 @@ export type WireMessage = Omit<GenMessage, 'citations'> & {
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 export type ChatStatus = 'streaming' | 'complete' | 'aborted' | 'error';
-export type ChatPhase = 'planning' | 'running_tools' | 'answering';
+/** The waiting phases: for the per-user limiter (sent by the API) and for an
+ * AI process slot (sent by the pipeline), shown in the trace (Q268). */
+export type ChatWaitingPhase = 'waiting_limit' | 'waiting_capacity';
+export type ChatPhase =
+  | 'planning'
+  | 'running_tools'
+  | 'answering'
+  | ChatWaitingPhase;
 
 export interface ChatMessage {
   activity?: ActivityBlock[];
@@ -699,13 +692,8 @@ export type {
 } from './gen/model';
 
 /* ---------------- Plate collaboration ---------------- */
-export type MaterialComment = Omit<GenComment, 'contentRich'> & {
-  contentRich: import('@/features/materials/document').MaterialValue | null;
-};
-
-export type MaterialDiscussion = Omit<GenDiscussion, 'comments'> & {
-  comments: MaterialComment[];
-};
+export type MaterialComment = GenComment;
+export type MaterialDiscussion = GenDiscussion;
 
 export type {
   BrowserSourceSession as SourceSession,

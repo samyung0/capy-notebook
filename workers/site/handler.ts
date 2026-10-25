@@ -1,6 +1,11 @@
 import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
 import type { ShareKind } from '../../src/share/state';
 import { handlePublicRequest, SHARED_CACHE } from './public';
+import {
+  SHARE_READ_HEADER,
+  shareReadHeader,
+  visitorAddress,
+} from './shareRead';
 import { pageClasses, usedCss } from './usedCss';
 
 type SharePagePieces = ReturnType<
@@ -205,6 +210,17 @@ async function allowTemplateScripts(
   );
 }
 
+/** Cloudflare Turnstile, which a signed-out answer check solves (Epo
+ * 2026-10-24, Q271): its script and challenge frame, allowed only on the
+ * pages that grade answers, a shared quiz and a shared note's embedded
+ * quizzes (src/share/turnstile.ts). */
+const TURNSTILE = 'https://challenges.cloudflare.com';
+const FRAME_SRC = /frame-src [^;]*/;
+export const allowTurnstile = (policy: string) =>
+  policy
+    .replace("script-src 'self'", `script-src 'self' ${TURNSTILE}`)
+    .replace(FRAME_SRC, (directive) => `${directive} ${TURNSTILE}`);
+
 const headers = (extra: HeadersInit = {}) => {
   const result = new Headers(extra);
   result.set('Cache-Control', 'no-store');
@@ -316,9 +332,17 @@ export async function handleSiteRequest(
         kind && (await verifiedShareToken(env.SHARE_LINK_SECRET, token));
       if (!(kind && id)) return failure(404);
       const apiStart = Date.now();
+      const path = `/api/public/${kind}/${token}`;
       const upstream = await fetcher(
-        new Request(`${apiOrigin}/api/public/${kind}/${token}`, {
-          headers: { Accept: 'application/json' },
+        new Request(`${apiOrigin}${path}`, {
+          headers: {
+            Accept: 'application/json',
+            [SHARE_READ_HEADER]: await shareReadHeader(
+              env.SHARE_LINK_SECRET,
+              visitorAddress(request),
+              path
+            ),
+          },
           redirect: 'manual',
           signal: AbortSignal.timeout(10_000),
         })
@@ -368,7 +392,10 @@ export async function handleSiteRequest(
       responseHeaders.set(IMAGE_POLICY_HEADER, IMAGE_POLICY);
       responseHeaders.set(
         PAGE_POLICY_HEADER,
-        await allowTemplateScripts(PAGE_POLICY, template)
+        await allowTemplateScripts(
+          kind === 'flashcards' ? PAGE_POLICY : allowTurnstile(PAGE_POLICY),
+          template
+        )
       );
       if (data.privacy === 'link')
         responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
@@ -398,9 +425,17 @@ export async function handleSiteRequest(
     // The API takes the token, not the bare id (it verifies it again).
     const token = url.pathname.slice('/w/'.length);
     const apiStart = Date.now();
+    const path = `/api/public/workspaces/${token}/summary`;
     const upstream = await fetcher(
-      new Request(`${apiOrigin}/api/public/workspaces/${token}/summary`, {
-        headers: { Accept: 'application/json' },
+      new Request(`${apiOrigin}${path}`, {
+        headers: {
+          Accept: 'application/json',
+          [SHARE_READ_HEADER]: await shareReadHeader(
+            env.SHARE_LINK_SECRET,
+            visitorAddress(request),
+            path
+          ),
+        },
         redirect: 'manual',
         signal: AbortSignal.timeout(10_000),
       })
