@@ -1,8 +1,9 @@
 """The turn context: one always-current message at the end of each request.
 
 It carries what the model must see on every call but must not compact away:
-the file the learner has open, the workspace's chapters, their study
-preferences, the library excerpts read this message and the budget left.
+the file the learner has open, their study preferences, the library excerpts
+read this message and the budget left. Chapters come from list_sources
+(Epo 2026-10-25).
 The loop rebuilds it before each request and sends it last, leaving earlier
 copies where they were sent so each request extends the previous one; it never
 reaches the stored conversation.
@@ -52,10 +53,20 @@ _ROLE_LINES = {
 }
 
 
+# An open file is where the learner is, not what they asked about (Epo
+# 2026-10-25: "make a note" after a penicillin answer built a note on the open
+# cell-division lecture).
+OPEN_CAUTION = (
+    "The open file may have nothing to do with the request: base your actions on "
+    "the learner's message and the conversation history."
+)
+
+
 def _open_line(
     resource: dict[str, Any], chapters: list[dict[str, Any]], role: str
 ) -> str:
-    return f"{_open_item(resource, chapters)} {_ROLE_LINES[role]}"
+    line = f"{_open_item(resource, chapters)} {_ROLE_LINES[role]}"
+    return f"{line} {OPEN_CAUTION}" if resource.get("id") else line
 
 
 def _open_item(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
@@ -64,22 +75,13 @@ def _open_item(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
     title = str(resource.get("title") or "").strip() or "untitled"
     where = next(
         (
-            f", in chapter {n}"
-            for n, chapter in enumerate(chapters, 1)
+            f", in chapter {chapter['name']} [{chapter['id']}]"
+            for chapter in chapters
             if chapter["id"] == resource.get("chapter_id")
         ),
         "",
     )
     return f"Open: {title} ({resource.get('kind') or 'file'} {resource['id']}){where}."
-
-
-def _chapter_lines(chapters: list[dict[str, Any]]) -> list[str]:
-    if not chapters:
-        return ["Workspace chapters: none."]
-    return [
-        "Workspace chapters, in order (chapter_id in brackets):",
-        *(f"{n}. {c['name']} [{c['id']}]" for n, c in enumerate(chapters, 1)),
-    ]
 
 
 def message(
@@ -88,7 +90,6 @@ def message(
     lines = [
         HEADER,
         _open_line(ctx.open_resource, ctx.chapters, ctx.role),
-        *_chapter_lines(ctx.chapters),
         "\nStudy preferences (a request that names one material gets only that material):",
     ]
     lines.extend(f"- {line}" for line in preferences.lines(ctx.study_preferences))

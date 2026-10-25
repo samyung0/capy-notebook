@@ -67,7 +67,6 @@ export function journeyUnavailable(id: string): string | undefined {
       explore: 'explore',
       schedule: 'schedule',
       tasks: 'tasks',
-      thinking: 'thinking',
     } as const
   )[id as 'explore'];
   return flag && !features[flag]

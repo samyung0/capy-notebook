@@ -87,7 +87,7 @@ func TestAStoredNoteARuleRefusesStillListsAndOpens(t *testing.T) {
 			t.Errorf("%s = %d %s, want the unreadable state", path, rec.Code, rec.Body.String())
 		}
 	}
-	rec = doReq(t, h, http.MethodPost, "/api/public/notes/"+token+"/quizzes/mat_any/grade", "", map[string]any{"answers": map[string]any{}})
+	rec = doReq(t, h, http.MethodPost, "/api/public/notes/"+token+"/quizzes/mat_any/grade", "", map[string]any{"questionId": "q1", "answers": map[string]any{}})
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "material_content_unreadable") {
 		t.Errorf("grading its embedded quiz = %d %s, want the unreadable state", rec.Code, rec.Body.String())
 	}

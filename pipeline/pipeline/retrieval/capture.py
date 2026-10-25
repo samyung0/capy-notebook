@@ -33,6 +33,7 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 
 from ..config import cfg
+from ..elitellm.client import RawJson
 from ..store import blobstore
 from . import accounting, limits, store
 
@@ -420,7 +421,9 @@ def render(
 
 
 def data_url(jpeg: bytes) -> str:
-    return "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+    """A capture's image as it rides in requests, encoded once when the capture
+    is taken: no later model call of its turn encodes it again (Q299)."""
+    return RawJson("data:image/jpeg;base64," + base64.b64encode(jpeg).decode())
 
 
 # ------------------------------------------------------------- image transport
@@ -428,16 +431,27 @@ def data_url(jpeg: bytes) -> str:
 
 def image_part(url: str, provider_slug: str) -> dict[str, Any]:
     if provider_slug == "anthropic":
-        header, data = url.split(",", 1)
+        header = url[: url.index(",")]
         return {
             "type": "image",
             "source": {
                 "type": "base64",
                 "media_type": header[5:].split(";")[0],
-                "data": data,
+                "data": _base64_data(url),
             },
         }
     return {"type": "image_url", "image_url": {"url": url}}
+
+
+def _base64_data(url: str) -> str:
+    """The data URL's base64 part; for a capture's, made on its first request
+    and kept on the URL for the rest of the turn."""
+    if not isinstance(url, RawJson):
+        return url.split(",", 1)[1]
+    kept = vars(url)
+    if "data" not in kept:
+        kept["data"] = RawJson(url.split(",", 1)[1])
+    return kept["data"]
 
 
 def inject_images(
@@ -453,7 +467,9 @@ def inject_images(
     Each image is a page of a source, so it sits in a <source> block
     (prompts/sources.py) after its label. Live compaction only folds exchanges
     into the turn note, so the captures of folded exchanges ride right after
-    the note: every capture stays until the answer (Epo 2026-10-21).
+    the note: live compaction drops none (Epo 2026-10-21). An image the turn's
+    image budget dropped is no longer in ``images``: nothing takes its place,
+    and its tool result keeps its ordinary text (Q349, Q370).
 
     ``tokens`` (call id -> the capture's pixel estimate) keeps each built
     message's estimate on it, so a request built for every model call does not
@@ -565,10 +581,17 @@ def split_images(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], 
     return out, tokens
 
 
-def image_tokens(captures: list[dict[str, Any]]) -> int:
-    """Tokens the turn's captures add to every later request of the turn: all
-    of them, since a folded exchange's capture rides after the turn note."""
-    return sum(int(record["estimatedImageTokens"]) for record in captures)
+def image_tokens(
+    captures: list[dict[str, Any]], images: dict[str, tuple[str, str]]
+) -> int:
+    """Tokens the turn's attached captures add to every later request of the
+    turn: all of them, since a folded exchange's capture rides after the turn
+    note, but none the image budget dropped (Q349)."""
+    return sum(
+        int(record["estimatedImageTokens"])
+        for record in captures
+        if record["callId"] in images
+    )
 
 
 def record(

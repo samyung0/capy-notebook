@@ -491,7 +491,8 @@ malformed question loses fields instead of failing the read.
 | `GET /api/quizzes/{id}` | anyone who can read the quiz, owners and editors included | none |
 | `GET /api/quizzes/{id}/edit` | whoever may edit it (`assertMaterialOwner`, the content-edit check); others 404 | full |
 | `GET /api/materials/{id}` for a quiz | readers; the workspace view (`materialdoc.LearnerQuiz`) | none |
-| `GET /api/explore/quizzes`, `GET /api/public/quizzes/{token}` | anyone; signed-out visitors | none |
+| `GET /api/explore/quizzes` | anyone; pages of 50 read from the stored preview: a question count, no questions | none |
+| `GET /api/public/quizzes/{token}` | signed-out visitors | none |
 | `GET /api/workspaces/{id}/review` | workspace readers; question items | none |
 | `GET /api/bank/questions/{id}`, `GET /api/bank/questions?ids=` | bank readers, editors included (View mode); `editor` still reports the grant | none |
 | `GET /api/bank/questions/{id}/edit` | bank editors on an editable bank; others 404 | full |
@@ -610,6 +611,27 @@ stop unrelated app features. The app database only stores `bank_editors` grants
 and learners' progress (below); the bank has its own migrations and roles. See
 [deployment-runbook.md](deployment-runbook.md) for provisioning, environment
 values, public/private buckets, local tunnel, comment recipient and backups.
+
+### Comments
+
+An editor's comment (1-2,000 characters) is not mailed on its own (Epo
+2026-10-24, Q243). `POST /api/bank/questions/{id}/comments` stores a notice in
+the app database's `bank_comment_notices`: the question's edit link, exam,
+subject and topic labels, its number, the author's name and address and the
+text, addressed to `BANK_COMMENT_EMAIL`. The API's digest job
+(`server/cmd/api/bank_comment_digest.go`) runs at start and every 4 hours and
+sends each recipient one email listing its oldest 200 unsent notices, then
+"and N more" with a link to the bank (`/qb`) when there are more, and marks
+all of them sent (Epo 2026-10-24, Q314); a failed send leaves them for the
+next run. A batch keeps its
+notices row-locked until it commits and a concurrent replica skips locked
+rows, so no notice is sent twice unless the commit fails after its email went
+out. A notice whose author has requested account deletion is held, and the
+purge deletes it. A sent notice is deleted 30 days after its email went out
+(Epo 2026-10-24, Q302; `PruneBankCommentNotices` in the API's minute sweep).
+A user posts at most 120 bank comments an hour, in bursts of up to 20 (the
+bank comment rate class, Q314). This is temporary until a
+shared pipeline for content notices (reports, feedback, forums) exists.
 
 Each source has a `kind`. A `library` source names an excerpt, book and the
 version it was written from; the excerpt id ends with that version's `_v<n>`.

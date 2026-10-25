@@ -307,7 +307,7 @@ function EmbedQuizEditor({
       ) : rooms.ready && rooms.content && rooms.keys ? (
         <div className="grid gap-4">
           {rooms.offline && <SaveBanner state={rooms.offline} />}
-          {itemEditingStopped(rooms.offline) ? (
+          {itemEditingStopped(rooms) ? (
             <QuizQuestionList disabled questions={questions} showAnswerKey />
           ) : (
             <QuizForm

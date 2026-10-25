@@ -37,4 +37,6 @@ export default defineConfig({
     ],
   },
   root: import.meta.dirname,
+  // As the app's: its workers split into modules, which IIFE workers cannot.
+  worker: { format: 'es' },
 });

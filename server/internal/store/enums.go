@@ -315,9 +315,8 @@ const (
 	SearchFile       SearchKind = "file"
 	SearchEvent      SearchKind = "event"
 	SearchFlashcards SearchKind = "flashcards"
-	SearchThinking   SearchKind = "thinking"
 )
 
 func (SearchKind) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "SearchKind", "workspace", "file", "event", "flashcards", "thinking")
+	return enumRef(r, "SearchKind", "workspace", "file", "event", "flashcards")
 }

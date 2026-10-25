@@ -120,7 +120,7 @@ OFFER = 'AskUser("Shall I make a note of this?", ["Make a note", "No thanks"])'
 # ------------------------------------------------------------- the switch
 
 
-def test_the_mode_line_goes_first_and_replays_with_its_message():
+def test_the_mode_note_comes_where_the_switch_is_first_known_or_changes():
     on = chat_prompts.chat_messages(
         locale="en", checkpoint=None, history=[], query="q", workspace_only=True
     )
@@ -132,16 +132,51 @@ def test_the_mode_line_goes_first_and_replays_with_its_message():
     # The cache rule: only the message differs.
     assert on[:-1] == off[:-1]
 
+    # Epo 2026-10-25: a note only at the first known switch and at each change.
     history = [
+        {"id": "u0", "role": "user", "content": "saved before the switch"},
+        {"id": "a0", "role": "assistant", "content": "answer"},
         {"id": "u1", "role": "user", "content": "first", "workspaceOnly": True},
         {"id": "a1", "role": "assistant", "content": "answer"},
-        {"id": "u0", "role": "user", "content": "saved before the switch"},
+        {"id": "u2", "role": "user", "content": "same mode", "workspaceOnly": True},
+        {"id": "a2", "role": "assistant", "content": "answer"},
+        {"id": "u3", "role": "user", "content": "flipped", "workspaceOnly": False},
+        {"id": "a3", "role": "assistant", "content": "answer"},
     ]
     replayed = asyncio.run(
         evidence.history_turns(history, ToolContext(workspace_id="ws"))
     )
-    assert replayed[0]["content"] == chat_prompts.with_mode_line("first", True)
-    assert replayed[-1]["content"] == "saved before the switch"
+    users = [m["content"] for m in replayed if m["role"] == "user"]
+    assert users == [
+        "saved before the switch",
+        chat_prompts.with_mode_line("first", True),
+        "same mode",
+        chat_prompts.with_mode_line("flipped", False),
+    ]
+    shown = evidence.mode_shown(history)
+    assert shown is False
+    same = chat_prompts.chat_messages(
+        locale="en",
+        checkpoint=None,
+        history=replayed,
+        query="q",
+        workspace_only=False,
+        mode_shown=shown,
+    )
+    assert same[-1]["content"] == "q"
+    changed = chat_prompts.chat_messages(
+        locale="en",
+        checkpoint=None,
+        history=replayed,
+        query="q",
+        workspace_only=True,
+        mode_shown=shown,
+    )
+    assert changed[-1]["content"] == chat_prompts.with_mode_line("q", True)
+    # Compaction that folds the noted history puts the note on the query once.
+    noted = chat_prompts.with_mode_note(same[-1])
+    assert noted["content"] == chat_prompts.with_mode_line("q", False)
+    assert chat_prompts.with_mode_note(noted) == noted
 
 
 def test_the_tool_list_is_the_same_in_both_modes(monkeypatch):

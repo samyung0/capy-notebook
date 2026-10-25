@@ -286,6 +286,7 @@ jobs:
           CAPY_SECRET_SHARE_LINK_SECRET: ${{ secrets.SHARE_LINK_SECRET }}
           CAPY_SECRET_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           CAPY_SECRET_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          CAPY_SECRET_TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
           DEPLOY_REVISION: ${{ inputs.revision }}
         run: python3 scripts/env/config.py render --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-config"

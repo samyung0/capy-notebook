@@ -208,6 +208,7 @@ class ConfigTest(unittest.TestCase):
             "COLLABORATION_SOURCE_DISK_BYTES",
             "RETRIEVAL_MEM_LIMIT",
             "RETRIEVAL_CPUS",
+            "RETRIEVAL_TURN_SLOTS",
         }
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
@@ -391,8 +392,9 @@ class ConfigTest(unittest.TestCase):
                 self.assertEqual(app["COLLABORATION_SOURCE_DISK_BYTES"], str(cap))
 
     def test_render_limits_retrieval_per_environment(self):
-        """Security regression (rate-limit audit L13): the retrieval container
-        gets a memory and CPU limit sized to each app host."""
+        """Security regression (rate-limit audit L13, M13): the retrieval
+        container gets a memory and CPU limit sized to each app host, and a
+        turns-in-progress ceiling sized to that memory (Q338, Q343)."""
         values = {
             key: "explicit"
             for key, rule in config.MANIFEST.items()
@@ -405,15 +407,20 @@ class ConfigTest(unittest.TestCase):
             DEPLOYMENT_APP_URL="https://app.example.com",
         )
         for environment, limits in (
-            ("production", ("3g", "2")),
-            ("uat", ("1536m", "1")),
+            ("production", ("3g", "2", "96")),
+            ("uat", ("1536m", "1", "48")),
         ):
             with tempfile.TemporaryDirectory() as temp:
                 with contextlib.redirect_stdout(io.StringIO()):
                     config.render(values, environment, temp, "a" * 40)
                 app = config.parse_dotenv(Path(temp, "app.env").read_text())
                 self.assertEqual(
-                    (app["RETRIEVAL_MEM_LIMIT"], app["RETRIEVAL_CPUS"]), limits
+                    (
+                        app["RETRIEVAL_MEM_LIMIT"],
+                        app["RETRIEVAL_CPUS"],
+                        app["RETRIEVAL_TURN_SLOTS"],
+                    ),
+                    limits,
                 )
 
     def test_render_gives_only_production_its_page_read_gates(self):

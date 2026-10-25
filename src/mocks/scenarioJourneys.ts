@@ -457,7 +457,6 @@ export async function runJourney(
     schedule: '/schedule',
     'service-503': '/workspaces',
     tasks: '/tasks',
-    thinking: '/thinking',
     'trash-load': '/files?tab=trash',
     'workspace-401': scenarioPath,
     'workspace-404': scenarioPath,

@@ -42,7 +42,7 @@ import {
 } from './officeRuntimeConfig';
 import { printPages } from './printPages';
 import { holdSource, takeSourceOpen } from './sourceOpen';
-import { savedSourceUpdate } from './sourceState';
+import { applyOwnUpdate, savedSourceUpdate } from './sourceState';
 import {
   canEncodeWebp,
   createThumbnailCapture,
@@ -444,8 +444,13 @@ export function useOfficeRuntime({
     const collaboration =
       mode === 'edit'
         ? {
+            // The id the room assigned this session (Q213): the editor
+            // writes under it.
+            clientId: source.doc!.clientID,
             epoch: source.session!.epoch,
             initialUpdate: Y.encodeStateAsUpdate(source.doc!).slice().buffer,
+            workerClientId:
+              format === 'docx' ? source.workerClientId : undefined,
           }
         : undefined;
     const imageMaxBytes =
@@ -454,11 +459,17 @@ export function useOfficeRuntime({
       mode === 'edit' ? source.session!.growthBudgetBytes : undefined;
     initializedFrame.current = frameGeneration;
     // An Office edit session always names the payer's image cap and the
-    // room's growth budget; without them the editor cannot open, so it fails
-    // here instead of hanging.
+    // room's growth budget, and a DOCX one its layout worker's client id
+    // (Q219); without them the editor cannot open, so it fails here instead
+    // of hanging or writing under an id the room refuses.
     if (
       mode === 'edit' &&
-      !(imageMaxBytes && imageMaxBytes > 0 && growthBudgetBytes !== undefined)
+      (!(
+        imageMaxBytes &&
+        imageMaxBytes > 0 &&
+        growthBudgetBytes !== undefined
+      ) ||
+        (format === 'docx' && !source.workerClientId))
     ) {
       setError(m.error_file_body());
       return;
@@ -503,6 +514,7 @@ export function useOfficeRuntime({
     source.bytes,
     source.synced,
     source.status,
+    source.workerClientId,
     viewBytes,
     canEdit,
     file.name,
@@ -517,6 +529,7 @@ export function useOfficeRuntime({
     !source.replaced &&
     !source.offlineLimit &&
     !source.outdated &&
+    !source.draftsSending &&
     source.status !== 'recovery' &&
     // `connecting` pauses only before the first sync: the document exists
     // only from then (each session start clears it), and the first save
@@ -742,7 +755,8 @@ export function useOfficeRuntime({
         )
           return;
         const replicaUpdate = new Uint8Array(message.bytes);
-        Y.applyUpdate(active.doc, replicaUpdate, SOURCE_IFRAME_ORIGIN);
+        // The editor writes under this document's client id (Q213).
+        applyOwnUpdate(active.doc, replicaUpdate, SOURCE_IFRAME_ORIGIN);
         if (message.type === 'update' && message.capture)
           captureRef.current?.edited();
         if (message.type === 'collaboration-ready') {

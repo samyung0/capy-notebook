@@ -465,7 +465,7 @@ function externalTarget(): Target {
 
 const UAT = {
   api: 'https://uat-api.capynotebook.com',
-  app: 'https://uat-app.capynotebook.com',
+  app: 'https://uat.capynotebook.com',
   collab: 'wss://uat-collab.capynotebook.com',
 };
 

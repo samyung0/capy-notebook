@@ -553,6 +553,25 @@ func (s *Store) Save(ctx context.Context, id, user string, q map[string]any, upd
 	}
 	return nil
 }
+
+// ForgetUser blanks a purged account's id where it last edited or reviewed a
+// question; the questions stay (Epo 2026-10-24, Q350). Without the editor
+// pool this gateway never wrote the bank, so there is nothing to blank.
+func (s *Store) ForgetUser(ctx context.Context, user string) error {
+	if !s.Editable() {
+		return nil
+	}
+	p, err := s.pool(ctx, true)
+	if err != nil {
+		return err
+	}
+	_, err = p.Exec(ctx, `UPDATE questions SET
+		updated_by=CASE WHEN updated_by=$1 THEN NULL ELSE updated_by END,
+		reviewed_by=CASE WHEN reviewed_by=$1 THEN NULL ELSE reviewed_by END
+		WHERE updated_by=$1 OR reviewed_by=$1`, user)
+	return dbError(err)
+}
+
 func (s *Store) Review(ctx context.Context, id, user string, reviewed bool) error {
 	p, err := s.pool(ctx, true)
 	if err != nil {

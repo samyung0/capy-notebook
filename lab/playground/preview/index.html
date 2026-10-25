@@ -16,6 +16,11 @@
       (other ? location.protocol + '//' + other + ':' + location.port : location.origin) +
       '/embed';
     </script>
+    <style>
+    /* The app shows a note's quiz behind a link card; drawn in place here, a
+     * static question's view would sit in its card's narrow first column. */
+    .slate-quiz_question > * { grid-column: 1 / -1; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

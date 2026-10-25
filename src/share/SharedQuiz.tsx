@@ -9,7 +9,7 @@ import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import {
   type QuizRunControl,
   useLocalRun,
-  useQuizRun,
+  useSharedAccountRun,
 } from '@/features/quizzes/quizRun';
 import { m } from '@/i18n';
 import {
@@ -19,6 +19,7 @@ import {
 } from '@/lib/localDb';
 import { redeemShareToken } from '@/lib/shareRedeem';
 import { signedIn, useSignedIn } from './session';
+import { useTurnstileCheck } from './TurnstileCheck';
 
 function Frame({
   children,
@@ -47,6 +48,7 @@ export function SharedQuiz({
   token: string;
 }) {
   const session = useSignedIn();
+  const turnstile = useTurnstileCheck();
   const [past, setPast] = useState<LocalQuizAttempt[]>([]);
   const quizId = quiz.id;
   useEffect(() => {
@@ -58,10 +60,7 @@ export function SharedQuiz({
 
   // A signed-in visitor presents the link once, then the attempt is the
   // account's; a signed-out one is graded by the link and kept here.
-  const account = useQuizRun(quizId, {
-    beforeCheck: () => redeemShareToken(token),
-    enabled: session === true,
-  });
+  const account = useSharedAccountRun(quizId, () => redeemShareToken(token));
   const local = useLocalRun(
     quiz,
     past,
@@ -70,6 +69,8 @@ export function SharedQuiz({
         answers,
         localId: await anonymousId().catch(() => undefined),
         questionId,
+        // Only a signed-out check carries a Turnstile token.
+        turnstileToken: await turnstile.take(),
       }),
     (attempt) =>
       setPast((current) => [
@@ -94,6 +95,7 @@ export function SharedQuiz({
     >
       <AttemptBody
         actions={<PublicActionMenu kind="quiz" token={token} />}
+        belowCheck={turnstile.view}
         byline={
           <PublicByline author={quiz.author} updatedAt={quiz.updatedAt} />
         }

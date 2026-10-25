@@ -154,13 +154,13 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 16;
+pub const CLIENT_PROTOCOL: u32 = 18;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets).
-pub const MIN_MATERIAL: u32 = 16;
+pub const MIN_MATERIAL: u32 = 18;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
-pub const MIN_SOURCE: u32 = 16;
+pub const MIN_SOURCE: u32 = 18;
 // A minimum above the server's own protocol would refuse every client.
 const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
 
@@ -179,13 +179,16 @@ pub struct Join {
     pub token: String,
     /// The client protocol (none from a client before the version gate).
     pub protocol: Option<u32>,
+    /// The session's Yjs client id (Q213): its first joined token's, the
+    /// only id it writes document changes and awareness under.
+    pub client: Option<u64>,
     /// An embedded quiz's or set's note channel on the same socket, inside
     /// which it joins (Epo 2026-10-20).
     pub parent: Option<u64>,
 }
 
 /// JOIN's payload: the room name, the token, then optionally the client
-/// protocol and an embed's note channel.
+/// protocol, the session's client id and an embed's note channel.
 pub fn decode_join(payload: &[u8]) -> Result<Join, FrameError> {
     let mut at = 0;
     let room = read_string(payload, &mut at)?.to_owned();
@@ -195,15 +198,20 @@ pub fn decode_join(payload: &[u8]) -> Result<Join, FrameError> {
     } else {
         None
     };
-    let parent = if at < payload.len() {
-        Some(read_var(payload, &mut at)?)
-    } else {
-        None
+    let mut next = || -> Result<Option<u64>, FrameError> {
+        if at < payload.len() {
+            read_var(payload, &mut at).map(Some)
+        } else {
+            Ok(None)
+        }
     };
+    let client = next()?;
+    let parent = next()?;
     Ok(Join {
         room,
         token,
         protocol,
+        client,
         parent,
     })
 }
@@ -367,22 +375,31 @@ mod tests {
     }
 
     #[test]
-    fn join_carries_the_client_protocol_and_an_embeds_note_channel_after_the_token() {
+    fn join_carries_the_protocol_client_id_and_an_embeds_note_channel_after_the_token() {
         let mut payload = Vec::new();
         write_string(&mut payload, "material:abc:schema:1");
         write_string(&mut payload, "token");
-        let join = |protocol, parent| Join {
+        let join = |protocol, client, parent| Join {
             room: "material:abc:schema:1".into(),
             token: "token".into(),
             protocol,
+            client,
             parent,
         };
         // A client from before the gate sends two fields.
-        assert_eq!(decode_join(&payload).unwrap(), join(None, None));
+        assert_eq!(decode_join(&payload).unwrap(), join(None, None, None));
         write_var(&mut payload, 300);
-        assert_eq!(decode_join(&payload).unwrap(), join(Some(300), None));
+        assert_eq!(decode_join(&payload).unwrap(), join(Some(300), None, None));
+        write_var(&mut payload, 4_000_000_000);
+        assert_eq!(
+            decode_join(&payload).unwrap(),
+            join(Some(300), Some(4_000_000_000), None)
+        );
         write_var(&mut payload, 7);
-        assert_eq!(decode_join(&payload).unwrap(), join(Some(300), Some(7)));
+        assert_eq!(
+            decode_join(&payload).unwrap(),
+            join(Some(300), Some(4_000_000_000), Some(7))
+        );
     }
 
     #[test]

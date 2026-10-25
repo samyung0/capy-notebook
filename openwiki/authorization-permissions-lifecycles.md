@@ -212,8 +212,14 @@ pattern lives in `src/features/questions/quantity.ts`. Mentions render the name 
 references in its current content and has not trashed, in reference order (quizzes answer-free, flashcards
 written cards only); they render in place (`src/share/PublicEmbed.tsx`) and are the only note data the page's
 script receives. The note's asset route also serves an image one of those embeds shows, owned by that embed.
-Visitors grade an embedded quiz at `POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same
-caps as the quiz grade, stores nothing, and returns 404 for any quiz the note does not embed and reference.
+Visitors grade an embedded quiz one question at a time (`questionId` in, the graded question out) at
+`POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same
+caps as the quiz grade, stores nothing, and returns 404 for any quiz the note does not embed and reference. A
+signed-in visitor's check, also one question, goes instead to `POST /api/shared/notes/{token}/quizzes/{quizId}/check`: the same
+share-token checks, graded under the user's daily grading parts with no captcha, storing nothing (Epo 2026-10-24,
+Q311). The page takes it only once the session is known to be signed in; while it is signed out, failed or not
+yet settled, the check takes the captcha route. A note page loads Clerk to learn the session only when the note
+embeds a quiz (`src/share/islands.tsx`, Q350).
 Embedded quizzes and flashcard sets are named by a random UUID that is never displayed, and they are left out of
 every materials listing, Explore, search and the workspace quiz count.
 
@@ -400,6 +406,18 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   own expiry or Cancel. Migration 0101 cleared the pending invites stored
   before it, since they held the resolved account email rather than the typed
   address.
+- An owner sends at most 50 invites per UTC day, new rows and resends alike
+  (429 `invite_limit`), and typing an address again within 10 minutes of its
+  last send, cancelled since or not, is refused with 429
+  `invite_recently_sent` (no new token, no email). An account invited under
+  another address in those 10 minutes gets no second notification or email:
+  the new row is listed as sent but stays inert until a resend after the
+  wait. All of this applies the same way to every address, with or without
+  an account, so it tells the inviter nothing (Epo 2026-10-24, rate-limit audit
+  M8; `server/internal/store/collaboration.go`). Inviting someone the owner
+  already sees in the roster (a current member's user id, the owner's own id
+  or email) sends nothing, so it skips both and answers as before; a member
+  typed by email is counted like any address.
 - The emailed invite link's token is minted when the email is sent
   (`MintInviteLink`), so no raw token is ever stored: the outbox payload holds
   only the invite id and the current token hash, and each send rotates the
@@ -516,6 +534,14 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - A user can edit only their own comment.
 - A user can delete their own comment or discussion. Only the workspace owner
   can delete another user's comment or discussion.
+- A note holds at most 500 comments in its open discussions: each
+  discussion's opening comment and every reply, deleted ones included (a
+  deleted comment keeps its row in the thread, so deleting frees no place;
+  deleting a whole discussion does) (409 `comment_limit`; rate-limit audit
+  M9, `server/internal/store/row_caps.go`). A comment is plain text of at most
+  3,000 characters and carries no rich content, so there is no byte cap
+  beyond the routes' 64 KiB body limit
+  ([plate-editor.md](frontend/plate-editor.md#relational-comments-with-yjs-anchors)).
 - Signed-in viewers get read-only collaboration tokens for content documents
   (never quiz keys): the collaboration server joins them read-only, relays no
   awareness to or from them and sends them no comment relays (Epo 2026-10-10)
@@ -592,9 +618,9 @@ and [material editor checks](../server/internal/store/share.go#L209).
   the effective nonmember grant; a share role is dormant while the workspace is
   private, so changing that role or widening privacy from private drains rather
   than discarding accepted edits. Restoration user events do not close
-  connections. Compaction uses the unload-and-reconnect durability drain. Material outbox
+  connections. Material outbox
   delivery resolves the current Yjs room epoch and rechecks it after eviction,
-  so an event enqueued beside compaction cannot acknowledge only an obsolete
+  so an event enqueued beside a discard cannot acknowledge only an obsolete
   room. A failed discard keeps the room blocked until a later retry verifies
   that unload succeeded. Within one eviction the room closes every channel
   and refuses joins and messages until it has unloaded (its task runs the
@@ -618,7 +644,11 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 
 - Readable shared quizzes can be attempted by any signed-in user. Attempts,
   study progress and review state belong to the user taking the quiz (see
-  Study progress below). Signed-out visitors can take standalone link/public
+  Study progress below). On a shared quiz page the attempt is held by the
+  page (`useSharedAccountRun`): each check posts to `/api/quizzes/{id}/check`
+  and continues the attempt the page's first check started, but opening the
+  page reads nothing, so a shared page's only read is the Worker's and a
+  reload starts a new attempt. Signed-out visitors can take standalone link/public
   quizzes and study flashcards; their progress stays in the browser (see
   Anonymous quizzes, flashcards and notes).
 - Answer keys follow one rule (Epo, 2026-10-06; details in
@@ -830,6 +860,10 @@ Details live in [study-progress.md](study-progress.md).
   owner, never deleted. Copying bank questions into a quiz (`POST
   /api/bank/copy`) is a content write: it needs edit access to the workspace,
   and frozen accounts and full payers of the quiz are refused.
+- Bank comment notices (`bank_comment_notices`, see
+  [question-bank.md](question-bank.md#comments)) hold the author's name and
+  address until the digest sends them and for 30 days after (Q302); a
+  deletion-pending author's notices are held and `PurgeUser` deletes them.
 - Signed-out visitors keep their study in the browser only (see Anonymous
   quizzes and flashcards); they record nothing on the bank.
 
@@ -893,17 +927,20 @@ Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 Events, tasks, labels, notifications, integrations, billing, search, quiz
 attempt history, and study progress and review state are scoped to the
 authenticated user's own rows, not to a workspace role. Frozen users delete events, tasks and labels but
-neither create nor edit them (the Schedule page hides event and label Edit),
-and cannot create or save thinking canvases (the Canvas page is read-only);
+neither create nor edit them (the Schedule page hides event and label Edit);
 account settings (profile, locale, model preferences, LLM keys, notification
 preferences, account deletion), notification read markers, quiz attempts,
 study progress and review ratings stay open. A frozen account edits nothing
 else: deleting a single flashcard and saving or deleting a PDF private
 annotation are edits and refused, while trashing whole files, materials and
 sets stays allowed.
-Planner, preference, credential, attempt, and canvas writes recheck account
+Planner, preference, credential and attempt writes recheck account
 lifecycle under the user-row lock in the mutation transaction rather than
 relying only on middleware admission.
+These rows sit outside storage, so their count is capped (rate-limit audit
+M9, `server/internal/store/row_caps.go`): 5,000 schedule events per user
+(409 `event_limit`). The thinking canvas was removed whole (Epo 2026-10-24,
+Q242; migration `0110` drops its table).
 
 Source: [schedule lifecycle gates](../server/internal/httpapi/huma_schedule.go#L47).
 
@@ -1132,11 +1169,14 @@ with a "Use a backup code" switch when backup codes exist; a phone or email
 code only when Clerk reports no authenticator for the user, sent as the step
 opens. "Back to Log In" clears the local attempt (`signIn.reset()`) and shows the
 form, so the user can start over with another factor or account; it does not end
-the attempt at Clerk, so a reload may open the code step again. Everyone else signs in exactly as before. Users turn
-two-step verification on and off on Clerk's hosted account page, with an
-authenticator app (QR code) and no SMS (Epo 2026-10-21): Settings → Account has
-a "Two-step verification" row whose Manage link opens the URL Clerk's SDK builds
-(`buildUserProfileUrl()`) in a new tab. Capy has no in-app enrolment.
+the attempt at Clerk, so a reload may open the code step again. Everyone else signs in exactly as before. Two-step
+verification stays off until production launch is planned, since Clerk offers
+its factors only on a paid plan (Q373). Clerk's hosted account page stays on but
+unlinked from Capy (Q377): Settings → Account has no password or two-step
+verification row, a forgotten password is reset from the sign-in page, and
+Clerk's page offers no account deletion, so an account is deleted only through
+Settings with its 30-day grace (Q375). Capy has no in-app password or
+two-step enrolment yet.
 
 The dashboard opens a first-run dialog when the Clerk user has no
 `unsafeMetadata.onboardedAt`. The profile chooser uses the fixed catalog in
@@ -1573,15 +1613,27 @@ the account's job history (job and attempt rows whose payload names its
 workspaces; billing rows keep theirs with the attempt link cleared). What it
 pays for in other people's workspaces goes too: its uploads, materials, and
 the images and audio it added to their notes, which then read as removed by
-their uploader (M16). A job it ran in another owner's workspace stays with
-that file, without its id.
+their uploader (M16). A job it ran or requested in another owner's workspace
+stays with that file, without its id (`actorUserId` and `requestedBy` are
+stripped from the payload). Every agent receipt it acted as
+(`agent_operations`) goes, those with no conversation in other owners'
+workspaces too: only the actor can Undo or read a receipt, and its chats are
+already gone (Epo 2026-10-24, Q355).
 Remaining cross-account attribution is anonymized. Profile PII is scrubbed;
 pseudonymous billing, usage, provider, storage, and audit ledgers may remain
 under their own retention requirements. The account's editing incidents
 (`edit_incidents`, see
 [observability-metering.md](observability-metering.md#editing-incidents)) are
 deleted with it; incidents that name no user, or another user, keep the
-purged account's file ids until their 90 days pass. `starter_grants` keeps
+purged account's file ids until their 90 days pass. Its open Checkout pages
+(`credit_checkouts`, a Stripe URL and amount) and its daily grading and invite
+counters (`grading_usage`, `invite_usage`) go too (Epo 2026-10-24, Q315).
+Questions it last edited or reviewed in the shared question bank stay, with
+its id blanked from `updated_by` and `reviewed_by`: the purge worker does that
+first, through the bank's editor pool, and leaves the account due while the
+bank cannot answer (Q350; `purgeAccount` in `server/cmd/api/account_workers.go`,
+`bank.ForgetUser`).
+`starter_grants` keeps
 the user id and the card's Stripe fingerprint through purge, so the same card
 cannot claim the starter credits again on a new account (see
 [observability-metering.md](observability-metering.md#purchased-credits-top-ups-and-auto-reload)). A purged account and the 30-day deleted
@@ -1721,7 +1773,9 @@ transfer use the collaboration eviction/outbox and processing fences.
 
 Private PDF annotations belong to one actor and exact source identity. Reading
 and mutation require current file access, and one actor cannot read or modify
-another actor's marks. Clones and downloads do not include them, and
+another actor's marks. A file holds at most 2,000 annotations across all
+authors (409 `annotation_limit`), as decided; at the cap, a reader learns
+only that the file is full, never whose marks fill it. Clones and downloads do not include them, and
 `PurgeUser` deletes the actor's marks at account purge.
 
 Image-caption reuse checks current containing files. Private workspace reuse

@@ -970,6 +970,36 @@ func TestResizableBlocksTakeOnlyTheResizeWidth(t *testing.T) {
 	}
 }
 
+// A column stores the widths the editor writes: its layout presets and Plate's
+// normalizer's floats, a plain decimal percentage above 0 and at most 100.
+func TestColumnsTakeOnlyTheEditorWidth(t *testing.T) {
+	validate := func(width any, set bool) error {
+		column := map[string]any{"type": "column", "children": []any{
+			map[string]any{"type": "p", "children": []any{textLeaf("a")}},
+		}}
+		if set {
+			column["width"] = width
+		}
+		group := map[string]any{"type": "column_group", "id": "g", "children": []any{column, map[string]any{
+			"type": "column", "children": []any{map[string]any{"type": "p", "children": []any{textLeaf("b")}}},
+		}}}
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{group}})
+	}
+	if err := validate(nil, false); err != nil {
+		t.Fatalf("column without width: %v", err)
+	}
+	for _, width := range []string{"50%", "33.333%", "33.334%", "66.667%", "49.9995%", "33.333333333333336%", "100%", "0.5%"} {
+		if err := validate(width, true); err != nil {
+			t.Fatalf("column width %q: %v", width, err)
+		}
+	}
+	for _, width := range []any{"0%", "101%", "100.5%", "050%", "50.0%", "50.%", ".5%", "5e1%", "-5%", "50", "50px", " 50%", "50%;color:red", float64(50), nil} {
+		if err := validate(width, true); err == nil || !strings.Contains(err.Error(), "column width must be a percentage above 0 and at most 100") {
+			t.Fatalf("column width %#v: %v", width, err)
+		}
+	}
+}
+
 // The every-block note (testdata/every-block-note.json) holds each Plate type
 // a note stores. The collaboration validator and the UAT note journey read the
 // same file, so a renamed or newly strict field fails here before a saved note

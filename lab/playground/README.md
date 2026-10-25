@@ -143,19 +143,20 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 
 | Field | Meaning |
 | --- | --- |
-| `model` | A `model_configs` pin (`provider_slug`, `model_slug`, `version`, `thinking`). Add `adhoc: {…}` to pin a model the catalog lacks; the provider's platform key must exist |
+| `model` | A `model_configs` pin (`provider_slug`, `model_slug`, `version`, `thinking`). Add `adhoc: {…}` to pin a model the catalog lacks; the provider's platform key must exist. The Model picker lists every adhoc pin a saved config holds beside the catalog, and picking one copies the whole pin |
 | `model.transport` | Send this pin to another OpenAI-compatible endpoint: `{"url", "key_env", "wire_model", "body"}`. `body` picks the request builder (`zai`, `openai`, `deepseek`). `null` uses the production route |
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
-| `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the library rules. The addon is appended either way |
-| `library_rules` | `null` keeps production's library rules; a string replaces them and `""` drops them. Sent in both modes of the Workspace only switch, before the answer format (or last when a replaced `system_prompt` dropped it) |
+| `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the all sources rules. The addon is appended either way |
+| `all_sources_rules` | `null` keeps production's all sources rules; a string replaces them and `""` drops them. Sent in both modes of the Workspace only switch, before the answer format (or last when a replaced `system_prompt` dropped it) |
 | `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `search_knowledge` still receives the live subject list |
 | `skills` | Map of skill names (`editing`, `note_building`, `deck_building`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text, which is the same in both modes of the Workspace only switch |
 | `skill_addons` | Map of skill names to text appended to what `read_skill` returns (after any `skills` replacement), so a teaching variant rides on production's current text; seen in the config JSON and each call's full context |
 | `workspace_only` | The per-message Workspace only switch (default off). The prompt and tools are the same either way; on, the turn's message carries the mode line and the library tools and `search_web` answer that they are not available. `search_web` calls DeepSeek's real search on the platform key when the switch is off |
 | `open_resource` | What the learner has open, `{"id", "kind", "title"}` or `null`; the turn context names it |
 | `study_preferences` | The learner's saved preferences; missing fields take the defaults in `pipeline/prompts/preferences.py` |
-| `preference_text` | `field=value` (`writingStyle=brief`, `mainFormat=note`, `visualAids=more`, `knowledgeChecks=questions`, `=cards` or `=off`) to the line that value adds to the turn context, in place of `pipeline/prompts/preferences.py`'s; edited in the Preference wording panel. The study preferences carry the style of notes and decks (Epo 2026-10-14), so this is where that style is tuned. A turn sends only the lines of its own `study_preferences` values |
+| `preference_text` | `field=value` (`writingStyle=brief`, `mainFormat=note`, `visualAids=more`, `knowledgeChecks=questions`, `=cards` or `=off`) to the line that value adds to the turn context, in place of `pipeline/prompts/preferences.py`'s; edited in the Preference wording panel. The study preferences carry the style of notes and decks (Epo 2026-10-14), so this is where that style is tuned. A turn sends only the lines of its own `study_preferences` values. |
 | `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakChapters`) |
+| `history_mode` | `"evidence"` (default) is production: earlier turns replay their messages and packed evidence. `"full"` replays the previous turn's last request and final response verbatim (`local/runs/<id>/full_history.json`, with its numbered passages, so old citation numbers keep their meaning), every tool exchange kept until compaction folds it; the page sends the conversation's last run as `prior_run` (2026-10-25 experiment) |
 | `tools` | `null` (default) offers what production offers for an editor; a list of tool names narrows it for an experiment. Limits are production's (`pipeline/retrieval/limits.py`) |
 | `search` | `top_k`, `per_file_cap` |
 | `capture.mode` | `pixels` attaches the JPEG to the conversation (needs a vision chat model); `ocr` sends it to Qwen3.5-OCR (`ocr_route` `docparse` or `chat`) and returns the transcript as a passage; `caption` asks the captioning model, question-aware when `question_aware` is true |
@@ -174,9 +175,10 @@ Loading a config or editing its JSON refreshes the editors from that config.
 
 `capture_page(file_id, page, bbox?)` renders the page or a box on the 0-1000
 page grid (top-left origin, the same space as chunk `regions`). In `pixels` mode
-the image rides in a user message placed after the tool results of that step,
-because chat-completions tool messages carry text only. Captures get a citation
-with the rendered box as its region.
+the capture goes into production's turn state, so production's agent attaches it
+(a user message after that step's tool results), keeps the turn's images within
+the image budget and counts it toward the 16 images per message, as in the app.
+Captures get a citation with the rendered box as its region.
 
 ## Building
 

@@ -38,23 +38,41 @@ WRITING = {
     "brief": "Explainers are short: key points first, one example where it helps.",
     "normal": "Explainers cover each idea with a definition, an explanation and an example.",
     "verbose": "Explainers are full: every idea explained step by step with worked examples.",
+    # From three narrated science-documentary transcripts: a scene with stakes,
+    # a question held open, the idea's history with each concept explained
+    # where the story needs it, turns, a closed loop (Epo 2026-10-25).
+    "story": (
+        "Explainers tell a story: open on a concrete moment with stakes (a "
+        "person, place or date the sources give, or a scene marked as imagined) "
+        "and pose the question it raises; then follow how the idea was found or "
+        "how the process unfolds, in order, explaining each concept exactly when "
+        "the story needs it, step by step, with an everyday comparison; let each "
+        "section turn on a surprise, a failure or a reversal; close by answering "
+        "the opening question and linking it to the learner's world. Never "
+        "invent names, dates, quotes or events; definitions and numbers stay "
+        "exact. Keep paragraphs short and easy to read."
+    ),
 }
 
 VISUALS = {
-    "fewer": "Add a diagram, mindmap or interactive block only where text cannot carry the idea.",
-    "more": "Add diagrams, mindmaps and interactive blocks wherever they make an idea easier to see.",
+    "fewer": "Add a chart, plot or interactive block only where text cannot carry the idea. Fewer images.",
+    "more": "Add more images whenever possible.",
 }
 
 # A note's knowledge checks: questions unless flashcards is set higher than
 # quiz (Epo 2026-10-14). Their size and placement are said here only.
 CHECKS = {
-    "questions": "Close each note section with a knowledge check of at most 2 questions.",
+    "questions": "Close each note section with a knowledge check of at most 1 question.",
     "cards": "Close each note section with a knowledge check of at most 3 flashcards.",
     "off": "Put no knowledge checks inside notes.",
 }
 
-# Questions or cards per chapter for each practice level.
-COUNT = {"more": 10, "less": 5}
+# Questions or cards per chapter for each practice level; a quiz is smaller
+# than a card set (Epo 2026-10-25).
+COUNT = {
+    "quiz": {"more": 5, "less": 2},
+    "flashcards": {"more": 10, "less": 5},
+}
 LEVEL = {"off": 0, "less": 1, "more": 2}
 
 
@@ -72,8 +90,12 @@ def lines(saved: dict[str, Any] | None) -> list[str]:
         "quiz": ("a quiz of {} questions", "quizzes"),
         "flashcards": ("a set of {} flashcards", "flashcards"),
     }
-    on = [made.format(COUNT[p[k]]) for k, (made, _) in items.items() if p[k] in COUNT]
-    off = [name for k, (_, name) in items.items() if p[k] not in COUNT]
+    on = [
+        made.format(COUNT[k][p[k]])
+        for k, (made, _) in items.items()
+        if p[k] in COUNT[k]
+    ]
+    off = [name for k, (_, name) in items.items() if p[k] not in COUNT[k]]
     # Knowledge checks are notes only; a check is a quiz or flashcards fence, so
     # with them on only standalone ones are off.
     notes = p["mainFormat"] != "deck"

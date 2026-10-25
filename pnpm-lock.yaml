@@ -222,6 +222,9 @@ importers:
       katex:
         specifier: ^0.19.0
         version: 0.19.0
+      libheif-js:
+        specifier: 1.23.5
+        version: 1.23.5
       linkedom:
         specifier: 0.18.13
         version: 0.18.13(canvas@3.2.3)
@@ -315,6 +318,9 @@ importers:
       usehooks-ts:
         specifier: ^3.1.1
         version: 3.1.1(react@19.2.8)
+      utif2:
+        specifier: 4.1.0
+        version: 4.1.0
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -9490,6 +9496,13 @@ packages:
     engines: { node: ">=16" }
     hasBin: true
 
+  libheif-js@1.23.5:
+    resolution:
+      {
+        integrity: sha512-umXZPthnWZtF3iG/5mQG+AZ2V6i0UeYpo3z2CkggTEgL8dKmIIwJT6TDuAMuabXa1yTW8uJ1ZAgR+CxNTklYYw==,
+      }
+    engines: { node: ">=8.0.0" }
+
   lie@3.1.1:
     resolution:
       {
@@ -12608,6 +12621,12 @@ packages:
     engines: { node: ">=16.15.0" }
     peerDependencies:
       react: ^16.8.0  || ^17 || ^18 || ^19 || ^19.0.0-rc
+
+  utif2@4.1.0:
+    resolution:
+      {
+        integrity: sha512-+oknB9FHrJ7oW7A2WZYajOcv4FcDR4CfoGB0dPNfxbi4GO05RRnFmt5oa23+9w32EanrYcSJWspUiJkLMs+37w==,
+      }
 
   util-deprecate@1.0.2:
     resolution:
@@ -18995,6 +19014,8 @@ snapshots:
     dependencies:
       isomorphic.js: 0.2.5
 
+  libheif-js@1.23.5: {}
+
   lie@3.1.1:
     dependencies:
       immediate: 3.0.6
@@ -21370,6 +21391,10 @@ snapshots:
     dependencies:
       lodash.debounce: 4.0.8
       react: 19.2.8
+
+  utif2@4.1.0:
+    dependencies:
+      pako: 1.0.11
 
   util-deprecate@1.0.2: {}
 

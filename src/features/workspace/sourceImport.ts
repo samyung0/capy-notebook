@@ -35,6 +35,7 @@ type ParsedSourceImportStatus =
       fileId?: string;
       jobId: string;
       name: string;
+      removedPictures: number;
       status: 'succeeded';
     }
   | {
@@ -150,6 +151,9 @@ function parseSourceImportStatus(value: unknown): ParsedSourceImportStatus {
         fileId,
         jobId,
         name,
+        // The EMF and WMF pictures the import worker removed (Epo 2026-10-24).
+        removedPictures:
+          typeof value.removedPictures === 'number' ? value.removedPictures : 0,
         status: value.status,
       };
     case 'failed':
@@ -273,7 +277,12 @@ export async function waitForSourceImport(
     }
     switch (job.status) {
       case 'succeeded':
-        if (job.fileId) return job.fileId;
+        if (job.fileId)
+          return {
+            fileId: job.fileId,
+            name: job.name,
+            removedPictures: job.removedPictures,
+          };
         throw new SourceImportFailedError('import_result_missing', job.name);
       case 'failed':
         throw new SourceImportFailedError(

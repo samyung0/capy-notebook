@@ -196,7 +196,7 @@ about 1.1 ms of gateway CPU and 1.0 ms of Postgres CPU.
 The member lists rewritten (`visibleWorkspacesSQL` in `listing.go`, the
 materials list filtering on `m.id IN (standalone rows UNION ALL rows of the
 visible workspaces)`, the files list on `f.workspace_id IN (...)`, the
-unused joins dropped) and migration `0113_study_progress_user_idx.sql`,
+unused joins dropped) and migration `0117_study_progress_user_idx.sql`,
 which the gateway applied to the bench database at start. Nothing left out
 of the tabs. Through the gateway the dashboard materials call took 3-31 ms
 and learning progress 5-8 ms on single calls, against 125 ms and more

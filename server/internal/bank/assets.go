@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 )
 
 // AssetMaxBytes is flat: the platform pays for bank figures, not a plan
@@ -53,15 +55,14 @@ func ValidateAsset(data []byte) (string, string, error) {
 		return "", "", errors.New("asset must be between 1 byte and 4 MiB")
 	}
 	mime := http.DetectContentType(data)
-	switch mime {
-	case "image/png":
-		return mime, ".png", nil
-	case "image/jpeg":
-		return mime, ".jpg", nil
-	case "image/gif":
-		return mime, ".gif", nil
-	case "image/webp":
-		return mime, ".webp", nil
+	ext := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}[mime]
+	if ext != "" {
+		// The editors' pixel limit too (Q332, Q348): the browser compresses
+		// a figure to it first.
+		if err := imagecheck.CheckEditorImage(bytes.NewReader(data)); err != nil {
+			return "", "", err
+		}
+		return mime, ext, nil
 	}
 	if len(data) > SVGMaxBytes {
 		return "", "", errors.New("SVG exceeds 256 KiB")

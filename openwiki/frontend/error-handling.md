@@ -42,7 +42,10 @@ the note placeholder (`errorCopy`) show it inline:
 An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
 without one of the typed codes `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`, `upload_queue_full` (the gateway's
-upload line is full: busy, try again), or an unknown status without a code)
+upload line is full: busy, try again), `rate_limit_unavailable`,
+`captcha_unavailable` (siteverify could not check a signed-out answer check;
+the quiz shows it under the question's Check with `captcha_failed`), or an unknown status
+without a code)
 shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
 the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
 one click selects the whole line (`select-all`) so a user can copy and quote it,
@@ -189,11 +192,13 @@ conflict. Zod's own messages follow the UI locale (`z.config` in
 copy.
 
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
-and `too_many_streams`. An upload answered 429 waits out
-`retryAfterSeconds` (at most 30 s) and gets 3 attempts in all, as does an
-import request after a network error, 408, 429 or 5xx
-(`src/features/workspace/sourceUpload.ts`, `sourceImport.ts`). The add-source
-dialog toasts it and keeps the unsent tail. Do not map it onto credits or the file-cap copy.
+and `too_many_streams`. An upload is never retried by the browser: one past
+the upload rate class waits in the gateway's upload line and its row shows
+its place (Epo 2026-10-24, Q282; backend-storage-quota § upload line), and
+any refusal fails its row. An import request gets 3 attempts in all after a
+network error, 408, 429 or 5xx, waiting out `retryAfterSeconds` (at most
+30 s) (`src/features/workspace/sourceImport.ts`). The add-source dialog
+toasts it and keeps the unsent tail. Do not map it onto credits or the file-cap copy.
 
 Browser analysis of a fast-parse row reports inline on that row, never as a
 toast: one message each for a user-password PDF, a damaged file, more pages
@@ -551,7 +556,7 @@ Reload remembers the selected button but does not replay actions.
 **New account: every list empty**, first in the panel under Empty states,
 answers every list a new account sees (workspaces, files, materials, attempts,
 Learning and question bank progress, reviews, notifications, tasks, calendar,
-canvases, trash, tags, search) with an empty result, and stays on across pages
+trash, tags, search) with an empty result, and stays on across pages
 and reloads until Reset, so each page's empty state can be checked directly.
 Explicit source fixtures retain their checkpoint identities and epochs in
 session storage; their drafts use the real IndexedDB code in the separate
@@ -595,7 +600,7 @@ follows it (its providers leave the room while the browser is offline), and
 `setCollaborationReachable(false)` in `src/mocks/collaboration.ts` keeps the
 service unreachable across a reload, so a reopened editor waits for it.
 `moveMockMaterialRoom` moves a note's room to its next schema, as a discard
-or compaction does, for the lineage journey; public summary failures
+does, for the lineage journey; public summary failures
 require the site worker tests. Feature-flagged pages keep their existing gates.
 When the application suppresses an error or a parent guard handles it first,
 the journey explains that behavior instead of inventing an inner error state.

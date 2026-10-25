@@ -1,5 +1,10 @@
-import { ApiError, parseErrorBody } from './client';
-import type { GradeAnonymousQuizReq, GradedQuestion } from './types';
+import { m } from '@/i18n';
+import { ApiError, api, parseErrorBody } from './client';
+import type {
+  CheckSharedNoteQuizReq,
+  GradeAnonymousQuizReq,
+  GradedQuestion,
+} from './types';
 
 /**
  * Signed-out images and grading of shared standalone quizzes, flashcard sets
@@ -53,6 +58,26 @@ export const gradeAnonymousQuiz = (
 /** The daily anonymous grading cap; the visitor can sign in to keep going. */
 export const isAnonymousGradingLimit = (err: unknown) =>
   err instanceof ApiError && err.code === 'anonymous_grading_limit';
+
+/** A signed-out check's Turnstile refusal, shown inline under its Check. */
+export function captchaCopy(err: unknown): string | undefined {
+  if (!(err instanceof ApiError)) return;
+  if (err.code === 'captcha_failed') return m.quiz_captcha_failed();
+  if (err.code === 'captcha_unavailable') return m.quiz_captcha_unavailable();
+}
+
+/** A signed-in visitor's check of one question of a quiz embedded in a
+ * shared note, through the note's link: graded under the user's daily
+ * grading parts with no captcha, storing nothing (Q311). */
+export const checkSharedNoteQuiz = (
+  token: string,
+  quizId: string,
+  body: CheckSharedNoteQuizReq
+) =>
+  api.post<GradedQuestion>(
+    `/shared/notes/${token}/quizzes/${quizId}/check`,
+    body
+  );
 
 /** Grades one question of a quiz embedded in a shared note, through the
  * note's link (the quiz has none of its own); it stores nothing. */

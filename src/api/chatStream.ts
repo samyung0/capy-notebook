@@ -192,6 +192,14 @@ export async function streamChat(
     return;
   }
 
+  // A wait (the limiter's or an AI slot's, Q268) can come at the start or
+  // before any model call of the turn, more than once: its phase shows until
+  // the next event of any kind, which puts back the phase before it (Q300).
+  // The pipeline sends that phase itself when the slot arrives (Q359); this
+  // covers a wait that ends some other way, and a phase event that follows a
+  // wait is shown once, not restored first.
+  let resume: ChatPhase = 'planning';
+  let waiting = false;
   const dispatch = (raw: string) => {
     const data = raw
       .split('\n')
@@ -236,6 +244,12 @@ export async function streamChat(
     } catch {
       return;
     }
+    const waits =
+      ev.type === 'phase' &&
+      (ev.phase === 'waiting_limit' || ev.phase === 'waiting_capacity');
+    if (waiting && ev.type !== 'phase') handlers.onPhase?.(resume);
+    waiting = waits;
+    if (ev.type === 'phase' && ev.phase && !waits) resume = ev.phase;
     switch (ev.type) {
       case 'start':
         handlers.onStart?.({

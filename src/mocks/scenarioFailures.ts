@@ -570,13 +570,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    id: 'thinking',
-    label: 'Thinking canvas GET 503',
-    method: 'get',
-    paths: ['/api/thinking', '/api/thinking/:id'],
-    status: 503,
-  },
-  {
     id: 'source-session',
     label: 'Source / Office session 503',
     method: 'get',

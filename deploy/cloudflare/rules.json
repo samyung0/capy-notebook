@@ -3,9 +3,16 @@
   "phases": {
     "http_request_firewall_custom": [
       {
+        "ref": "capy_block_internal_paths",
+        "description": "Internal service routes are reached over the private network only, never through Cloudflare",
+        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\" \"app.capynotebook.com\" \"uat.capynotebook.com\" \"collab.capynotebook.com\" \"uat-collab.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/api/internal/\") or starts_with(http.request.uri.path, \"/internal/\"))",
+        "action": "block",
+        "enabled": true
+      },
+      {
         "ref": "capy_webhooks_skip_security",
-        "description": "Webhooks on the API hosts skip every security rule: Stripe and Clerk retry in bursts and cannot solve a challenge",
-        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\"} and starts_with(http.request.uri.path, \"/webhooks/\")",
+        "description": "Webhooks on the API hosts from Stripe's and Svix's (Clerk's) published webhook addresses skip every security rule: they retry in bursts and cannot solve a challenge",
+        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\"} and starts_with(http.request.uri.path, \"/webhooks/\") and ip.src in {3.18.12.63 3.69.109.8 3.120.168.93 3.130.192.231 13.235.14.237 13.235.122.149 18.211.135.69 35.154.171.200 35.157.207.129 52.15.183.38 54.88.130.119 54.88.130.237 54.187.174.169 54.187.205.235 54.187.216.72 44.228.126.217 50.112.21.217 52.24.126.164 54.148.139.208 2600:1f24:64:8000::/56 54.164.207.221 54.90.7.123 2600:1f28:37:4000::/56 52.215.16.239 54.216.8.72 63.33.109.123 2a05:d028:17:8000::/56 13.239.204.236 54.66.246.217 54.252.65.96 2406:da2c:13:4000::/56 52.60.44.49 3.98.68.230 3.96.105.27 2600:1f21:1c:4000::/56}",
         "action": "skip",
         "action_parameters": {
           "ruleset": "current",
@@ -17,6 +24,34 @@
           "products": ["zoneLockdown", "uaBlock", "bic", "hot", "securityLevel"]
         },
         "logging": { "enabled": true },
+        "enabled": true
+      }
+    ],
+    "http_ratelimit": [
+      {
+        "ref": "capy_public_api_rate_limit",
+        "description": "Signed-out share reads and grading (/api/public/) on every host: 100 requests in 10 s per address, then blocked for 10 s",
+        "expression": "starts_with(http.request.uri.path, \"/api/public/\")",
+        "action": "block",
+        "ratelimit": {
+          "characteristics": ["ip.src", "cf.colo.id"],
+          "period": 10,
+          "requests_per_period": 100,
+          "mitigation_timeout": 10
+        },
+        "enabled": true
+      },
+      {
+        "ref": "capy_share_pages_rate_limit",
+        "description": "Shared pages (/share/, /w/) on the app hosts: 600 requests a minute per address, then a Managed Challenge (throttling; /p/ images and audio are left out, since a challenge breaks subresources)",
+        "expression": "http.host in {\"app.capynotebook.com\" \"uat.capynotebook.com\"} and (starts_with(http.request.uri.path, \"/share/\") or starts_with(http.request.uri.path, \"/w/\"))",
+        "action": "managed_challenge",
+        "ratelimit": {
+          "characteristics": ["ip.src", "cf.colo.id"],
+          "period": 60,
+          "requests_per_period": 600,
+          "mitigation_timeout": 0
+        },
         "enabled": true
       }
     ],
@@ -32,7 +67,7 @@
       {
         "ref": "capy_app_api_bypass_cache",
         "description": "The app hosts' same-origin /api/ is never cached",
-        "expression": "http.host in {\"app.capynotebook.com\" \"uat-app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
+        "expression": "http.host in {\"app.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
         "action": "set_cache_settings",
         "action_parameters": { "cache": false },
         "enabled": true
@@ -61,7 +96,7 @@
       {
         "ref": "capy_app_api_no_store_nosniff",
         "description": "The app hosts' same-origin /api/: no-store and nosniff, as the Worker set them",
-        "expression": "http.host in {\"app.capynotebook.com\" \"uat-app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
+        "expression": "http.host in {\"app.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
         "action": "rewrite",
         "action_parameters": {
           "headers": {
@@ -74,7 +109,7 @@
       {
         "ref": "capy_uat_app_noindex",
         "description": "The UAT app hosts are kept out of search indexes",
-        "expression": "http.host in {\"uat-app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"}",
+        "expression": "http.host in {\"uat.capynotebook.com\"}",
         "action": "rewrite",
         "action_parameters": {
           "headers": {

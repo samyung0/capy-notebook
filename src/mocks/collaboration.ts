@@ -645,10 +645,9 @@ export function mockMaterialRoom(materialId: string) {
 
 /**
  * The service moved a note's room to its next schema while a client was
- * away: a discard of unsaved room state keeps the saved state (`keepState`),
- * a compaction reseeds it from the projection with fresh identities.
+ * away: a discard of unsaved room state keeps the saved state.
  */
-export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
+export function moveMockMaterialRoom(materialId: string) {
   const old = mockMaterialRoom(materialId);
   const schema = Number(old.split(':').at(-1)) + 1;
   const next = `material:${materialId}:schema:${schema}`;
@@ -663,7 +662,7 @@ export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
     live.retired = true;
   }
   const saved = checkpoints.get(old);
-  if (keepState && saved) {
+  if (saved) {
     checkpoints.set(next, {
       updates: [...saved.updates],
       version: saved.version,
@@ -674,6 +673,8 @@ export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
 }
 
 interface MockCollaborationOptions {
+  /** As the room provider's: no JOIN until it settles (Q360). */
+  beforeJoin?: () => Promise<void> | undefined;
   initialValue: MaterialValue;
   materialId: string;
   name: string;
@@ -691,7 +692,11 @@ let buildRefused = false;
 class MockCollaborationProvider implements UnifiedProvider {
   readonly awareness: UnifiedProvider['awareness'];
   readonly document: Y.Doc;
+  // The room channel the editor reaches through the wrapper, as the capy
+  // provider's (a held draft send closes and reopens it, Q327).
   readonly provider = {
+    connect: () => this.connect(),
+    disconnect: () => this.disconnect(),
     sendStateless: (payload: string) => this.handleStateless(payload),
   };
   readonly type = 'mock';
@@ -707,6 +712,8 @@ class MockCollaborationProvider implements UnifiedProvider {
   private leave?: () => void;
   // Connected unless disconnected on purpose: a lost service reconnects.
   private wanted = false;
+  // The page's beforeJoin holding the JOIN (a held draft send, Q360).
+  private waiting: Promise<void> | null = null;
   private readonly onReachability = () => {
     if (!reachable()) this.drop();
     else if (this.wanted) this.connect();
@@ -738,7 +745,20 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   connect = () => {
     this.wanted = true;
-    if (this.isConnected || !reachable()) return;
+    if (this.isConnected || this.waiting) return;
+    // As the room provider: the JOIN waits until it settles, and a connect
+    // meanwhile asks nothing more.
+    const before = this.options.beforeJoin?.();
+    if (before) {
+      this.waiting = before;
+      void before.then(() => {
+        if (this.waiting !== before) return;
+        this.waiting = null;
+        if (this.wanted) this.connect();
+      });
+      return;
+    }
+    if (!reachable()) return;
     if (buildRefused) {
       this.options.onAuthenticationFailed?.(outdated);
       return;
@@ -783,6 +803,7 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   disconnect = () => {
     this.wanted = false;
+    this.waiting = null;
     this.drop();
   };
 
@@ -808,6 +829,14 @@ class MockCollaborationProvider implements UnifiedProvider {
   announceOutdated() {
     this.disconnect();
     this.options.onAuthenticationFailed?.(outdated);
+  }
+
+  /** The service closed this note's channel (an eviction): the editor
+   * rejoins at once, as its reconnector does on the shared socket. */
+  evicted(materialId: string) {
+    if (this.options.materialId !== materialId || !this.isConnected) return;
+    this.drop();
+    this.connect();
   }
 
   /** A room event the service sends this note's editors. */
@@ -875,6 +904,8 @@ class MockCollaborationProvider implements UnifiedProvider {
  * saves without publishing; View reads it through the viewer's session. */
 class MockSourceProvider implements SourceProvider {
   readonly awareness: Awareness;
+  /** A DOCX editor's layout worker id (Q219): the mock room checks none. */
+  readonly workerClientId = crypto.getRandomValues(new Uint32Array(1))[0] || 2;
   // The in-page room applies updates synchronously.
   readonly hasUnsyncedChanges = false;
   isAuthenticated = true;
@@ -1025,14 +1056,14 @@ export function refuseThisBuild() {
   ])
     provider.announceOutdated();
 }
-/** The service compacted an open note's room (Epo 2026-10-22's room swap):
- * the room moves to its next schema with its saved state, and the open
- * editors hear it. */
-export function compactMockMaterialRoom(materialId: string) {
+/** The service discarded unsaved state in an open note's room (a writer's
+ * update it threw away): the room moves to its next schema with its saved
+ * state and closes its editors' channels, whose rejoin names the next room
+ * and swaps the editor onto it (Epo 2026-10-22's room swap). */
+export function discardMockMaterialRoom(materialId: string) {
   const providers = [...materialProviders];
-  moveMockMaterialRoom(materialId, true);
-  for (const provider of providers)
-    provider.announce(materialId, { type: 'compaction-complete' });
+  moveMockMaterialRoom(materialId);
+  for (const provider of providers) provider.evicted(materialId);
 }
 /** The room refuses an open note's update for good (over a limit): its
  * editors keep their unsaved edits as a refused draft. */

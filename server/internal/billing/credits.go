@@ -40,7 +40,7 @@ const checkoutTTL = 30 * time.Minute
 
 // CreateTopUpCheckout opens hosted Checkout in payment mode for one top-up and
 // saves the card for off-session reuse.
-func CreateTopUpCheckout(customerID, userID string, amountCents int64, successURL, cancelURL string) (string, error) {
+func CreateTopUpCheckout(customerID, userID string, amountCents int64, successURL, cancelURL string) (CheckoutSession, error) {
 	meta := map[string]string{
 		"kind":    KindTopUp,
 		"user_id": userID,
@@ -76,17 +76,22 @@ func CreateTopUpCheckout(customerID, userID string, amountCents int64, successUR
 		CancelURL:       stripe.String(cancelURL),
 		Metadata:        meta,
 	}
+	return newCreditCheckout(params)
+}
+
+// newCreditCheckout opens a credit Checkout and returns its page.
+func newCreditCheckout(params *stripe.CheckoutSessionParams) (CheckoutSession, error) {
 	s, err := session.New(params)
 	if err != nil {
-		return "", err
+		return CheckoutSession{}, err
 	}
-	return s.URL, nil
+	return CheckoutSession{ID: s.ID, URL: s.URL, Status: string(s.Status), ExpiresAt: time.Unix(s.ExpiresAt, 0)}, nil
 }
 
 // CreateReloadMethodCheckout opens hosted Checkout in setup mode to save the
 // card auto-reload charges. The billing address is kept on the customer
 // because reload invoices compute tax from it.
-func CreateReloadMethodCheckout(customerID, userID, successURL, cancelURL string) (string, error) {
+func CreateReloadMethodCheckout(customerID, userID, successURL, cancelURL string) (CheckoutSession, error) {
 	meta := map[string]string{"kind": KindReloadMethod, "user_id": userID}
 	params := &stripe.CheckoutSessionParams{
 		Customer:                 stripe.String(customerID),
@@ -101,11 +106,7 @@ func CreateReloadMethodCheckout(customerID, userID, successURL, cancelURL string
 		CancelURL:                stripe.String(cancelURL),
 		Metadata:                 meta,
 	}
-	s, err := session.New(params)
-	if err != nil {
-		return "", err
-	}
-	return s.URL, nil
+	return newCreditCheckout(params)
 }
 
 // PaymentMethodInfo describes a payment method as the auto-reload dialog

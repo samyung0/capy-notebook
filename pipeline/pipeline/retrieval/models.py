@@ -13,6 +13,7 @@ invisible and the user is silently not charged for it.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import math
 import random
@@ -27,7 +28,7 @@ from ..config import cfg
 from ..prompts.captioning import VLM_PAGE_PROMPT
 from ..prompts.retrieval import qwen3_query
 from ..registry import ModelConfig
-from . import accounting, capture
+from . import accounting, capture, limits
 from .stream import (
     AssembledResponse,
     ChatCompletionsAssembler,
@@ -93,6 +94,76 @@ class _StreamReceipt:
         self.seen = False
         # The last usage block, None until the provider sends one.
         self.usage: NormalizedUsage | None = None
+
+
+CALL_LIMIT_BUSY = "the AI process is at its model call limit"
+
+
+class CallNotStarted(Exception):
+    """A call whose client left (a Stop or a lost hop) before it started:
+    nothing was sent."""
+
+
+@asynccontextmanager
+async def call_slot():
+    """One model call's process slot (Epo 2026-10-24, inner-turn slots), held
+    for its request and response, retries included, and its settlement and
+    lease release (``_tracked_call``), under the request's slot policy
+    (``limits.bind_call_slots``). Past a full CALL_SLOTS the call waits in
+    arrival order up to the policy's wait, or answers provider_busy at once;
+    with no policy bound the call takes no slot. Once the client has left, no
+    call starts and no waiting status is sent (Q359)."""
+    policy = limits.call_slot_policy()
+    if policy is None:
+        yield
+        return
+    if policy.left is not None and policy.left.is_set():
+        raise CallNotStarted("the client left before the call started")
+    slots = limits.CALL_SLOTS
+    granted = None
+    if not slots.take():
+        if policy.wait_s <= 0:
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        waiter = slots.join()  # in the queue from its refusal on (Q359)
+        if not await slots.wait_for(waiter, policy.wait_s, policy.left, policy.on_wait):
+            if policy.left is not None and policy.left.is_set():
+                raise CallNotStarted("the client left while the call waited")
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        granted = policy.on_granted
+    # Both callbacks run where a failure still gives the slot back.
+    try:
+        if granted is not None:
+            granted()
+        yield
+    finally:
+        slots.release()
+
+
+def _slotted(call):
+    """``call`` (a coroutine function) runs holding its call slot."""
+
+    @functools.wraps(call)
+    async def slotted(*args, **kwargs):
+        async with call_slot():
+            return await call(*args, **kwargs)
+
+    return slotted
+
+
+def _slotted_stream(stream):
+    """``stream`` (an async generator function) yields holding its call slot."""
+
+    @functools.wraps(stream)
+    async def slotted(*args, **kwargs):
+        async with call_slot():
+            async for item in stream(*args, **kwargs):
+                yield item
+
+    return slotted
 
 
 @asynccontextmanager
@@ -503,6 +574,7 @@ async def complete(
     return elitellm.message_from_response(resp)
 
 
+@_slotted
 async def complete_response(
     messages: list[dict[str, Any]],
     *,
@@ -750,6 +822,7 @@ def _responses_content(message: dict[str, Any]) -> Any:
     return parts
 
 
+@_slotted
 async def stream_agent_response(
     messages: list[dict[str, Any]],
     *,
@@ -888,6 +961,7 @@ async def _stream_via_adapter(
     return assembler.finish()
 
 
+@_slotted_stream
 async def stream_text(
     messages: list[dict[str, Any]],
     *,
@@ -982,6 +1056,7 @@ async def stream_text(
 VLM_PAGE_MAX_TOKENS = 2_000
 
 
+@_slotted
 async def read_page(
     data_url: str, *, credit_micros: int, scripted: str | None = None
 ) -> str | None:
@@ -1053,6 +1128,7 @@ async def read_page(
         return None
 
 
+@_slotted
 async def caption_image(data_url: str, prompt: str) -> str:
     """Describe a standalone image upload so it becomes searchable text.
 

@@ -12,11 +12,6 @@ use std::time::Duration;
 pub struct Config {
     pub allowed_origins: BTreeSet<String>,
     pub api_url: String,
-    pub compaction_floor_bytes: u64,
-    pub compaction_idle: Duration,
-    pub compaction_interval: Duration,
-    pub compaction_max_rooms: u64,
-    pub compaction_multiplier: u64,
     pub database_url: String,
     /// Note rooms' store debounce and its cap.
     pub debounce: Duration,
@@ -192,19 +187,6 @@ impl Config {
             api_url: optional(env, "API_URL", dev::API_URL)
                 .trim_end_matches('/')
                 .to_owned(),
-            compaction_floor_bytes: positive(
-                env,
-                "COLLABORATION_COMPACTION_FLOOR_BYTES",
-                256 * 1024,
-            )?,
-            compaction_idle: millis(env, "COLLABORATION_COMPACTION_IDLE_MS", 60 * 60 * 1000)?,
-            compaction_interval: millis(
-                env,
-                "COLLABORATION_COMPACTION_INTERVAL_MS",
-                15 * 60 * 1000,
-            )?,
-            compaction_max_rooms: positive(env, "COLLABORATION_COMPACTION_MAX_ROOMS", 10)?,
-            compaction_multiplier: positive(env, "COLLABORATION_COMPACTION_MULTIPLIER", 4)?,
             database_url: optional(env, "DATABASE_URL", dev::DATABASE_URL),
             debounce: millis(env, "COLLABORATION_DEBOUNCE_MS", 2000)?,
             max_debounce: millis(env, "COLLABORATION_MAX_DEBOUNCE_MS", 10_000)?,

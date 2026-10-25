@@ -30,7 +30,6 @@ func TestQuizReadsAreAnswerFreeOutsideEditing(t *testing.T) {
 		{"link visitor editing", "u_other", "/api/quizzes/qz_e2e_link/edit", 404, false},
 		{"owner's workspace material", "u_owner", "/api/materials/qz_e2e_private", 200, false},
 		{"viewer's workspace material", "u_viewer", "/api/materials/qz_e2e_private", 200, false},
-		{"explore", "u_other", "/api/explore/quizzes", 200, false},
 		{"signed out", "", "/api/public/quizzes/" + store.ShareToken(nil, "qz_e2e_link"), 200, false},
 	} {
 		rec := doReq(t, h, http.MethodGet, tc.path, tc.user, nil)

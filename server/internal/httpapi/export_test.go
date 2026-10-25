@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// SetTurnstileVerifyURL points siteverify at a local fake for one test.
+func SetTurnstileVerifyURL(t *testing.T, url string) {
+	previous := turnstileVerifyURL
+	turnstileVerifyURL = url
+	t.Cleanup(func() { turnstileVerifyURL = previous })
+}
+
 // SetUploadPutBound shortens the bound on an upload's B2 PUT for one test.
 func SetUploadPutBound(t *testing.T, bound time.Duration) {
 	previous := uploadPutBound

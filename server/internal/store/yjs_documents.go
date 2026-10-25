@@ -97,7 +97,7 @@ func (s *Store) ProjectMaterialContent(
 	}
 	defer tx.Rollback(ctx)
 
-	// Serialize persistence, projection and compaction for this material. The
+	// Serialize persistence, projection and folds for this material. The
 	// collaboration service takes the same transaction-scoped advisory lock
 	// before touching the Y.Doc, which also keeps our row-lock order aligned.
 	if _, err := tx.Exec(ctx,

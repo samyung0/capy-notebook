@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { applyOwnUpdate } from './sourceState';
 
 export const SOURCE_TEXT_INPUT = Symbol('source-text-input');
 const CARRIAGE_RETURNS = /\r\n|\r/g;
@@ -241,8 +242,17 @@ export function beginTextComposition(
     edit: (draft: Y.Text) => void,
     caret: (draft: Y.Text) => number
   ) => {
+    // The copy writes as this document's session (the room admits its
+    // changes only under the client id it assigned, Q213), from the clock
+    // this document is at: nothing of its own was written since `before`.
     const draft = new Y.Doc();
-    Y.applyUpdate(draft, before!);
+    draft.clientID = doc.clientID;
+    applyOwnUpdate(draft, before!);
+    if (
+      Y.getState(draft.store, doc.clientID) !==
+      Y.getState(doc.store, doc.clientID)
+    )
+      throw new Error('The document wrote during an IME composition');
     const vector = Y.encodeStateVector(draft);
     const drafted = draft.getText('source');
     edit(drafted);
@@ -252,7 +262,11 @@ export function beginTextComposition(
       at,
       at > 0 ? -1 : 0
     );
-    Y.applyUpdate(doc, Y.encodeStateAsUpdate(draft, vector), SOURCE_TEXT_INPUT);
+    applyOwnUpdate(
+      doc,
+      Y.encodeStateAsUpdate(draft, vector),
+      SOURCE_TEXT_INPUT
+    );
     draft.destroy();
     // A root text is never deleted, so its positions always resolve.
     return Y.createAbsolutePositionFromRelativePosition(position, doc)!.index;

@@ -144,8 +144,8 @@ func TestOversizedContentCommandIsALimitRefusal(t *testing.T) {
 	}
 }
 
-// A replace-block command refused because its room is being reset or
-// compacted (the authority's 503 unavailable_target) applied nothing: an
+// A replace-block command refused because its room is being reset (the
+// authority's 503 unavailable_target) applied nothing: an
 // expected outcome, so its error is not reported, while any other authority
 // 503 still is. The caller's answer is the unavailable authority's either way.
 func TestRoomUnavailableContentCommandIsNotReported(t *testing.T) {

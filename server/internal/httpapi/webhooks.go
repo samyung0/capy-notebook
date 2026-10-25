@@ -16,6 +16,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
+	"github.com/samyung0/capy-notebook/server/internal/integrations"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -50,6 +51,7 @@ type webhookStore interface {
 	RetryingReloadInvoices(ctx context.Context, userID string) ([]string, error)
 	ReloadRetryUnwanted(ctx context.Context, invoiceID string) (bool, error)
 	ArmReload(ctx context.Context, userID string) error
+	ForgetCreditCheckout(ctx context.Context, sessionID string) error
 }
 
 var errStripeSubscriptionNotReady = errors.New("stripe subscription mapping is not ready")
@@ -226,6 +228,8 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 	eventUserID := identity.UserID
 	if strings.HasPrefix(evt.Type, "user.") {
 		eventUserID = identity.ID
+		// A linked or unlinked account shows at once, not after the cache.
+		integrations.ForgetClerkUser(eventUserID)
 	}
 	claimUserID := eventUserID
 	if strings.HasPrefix(evt.Type, "user.") {
@@ -326,6 +330,15 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"message": "invalid signature"})
 		return
+	}
+	// Any event about a customer (an invoice created, finalized, paid,
+	// failed or voided, a Checkout completed) drops its cached invoice list,
+	// so the Invoices page shows the change at once; replays drop it too.
+	var about struct {
+		Customer *stripe.Customer `json:"customer"`
+	}
+	if json.Unmarshal(event.Data.Raw, &about) == nil && about.Customer != nil {
+		a.invoices.drop(about.Customer.ID)
 	}
 
 	claim, done, err := a.wh.ClaimWebhookEvent(
@@ -618,6 +631,10 @@ func (a *api) creditCheckoutCompleted(
 	}
 	if err := a.wh.AssociateWebhookEvent(ctx, "stripe", eventID, claim, userID); err != nil {
 		return false, err
+	}
+	// A finished page is never handed out again.
+	if err := a.wh.ForgetCreditCheckout(ctx, sess.ID); err != nil {
+		return true, err
 	}
 	if kind == billing.KindReloadMethod {
 		if sess.SetupIntent == nil {

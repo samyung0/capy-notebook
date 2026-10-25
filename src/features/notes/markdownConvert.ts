@@ -36,6 +36,10 @@ export function markdownToDocument(
 /** A library figure the agent placed: `![caption](figure:<figure id>)`. */
 const FIGURE_REF = /^figure:[\w-]+$/;
 
+/** The width a figure titled "small" takes; no title or "normal" keeps the
+ * full width (Epo 2026-10-25). */
+const SMALL_FIGURE_WIDTH = '50%';
+
 /** A note holds asset images only (Epo 2026-10-10). An agent's
  * `figure:<id>` image keeps that reference as its assetId: the server stores
  * the rendered figure as the note's own asset and puts the asset's id in its
@@ -50,7 +54,13 @@ function agentImages(nodes: MaterialValue): MaterialValue {
       ? (node.caption as { text?: unknown }[])
       : [];
     if (FIGURE_REF.test(url))
-      return { assetId: url, caption, children: [{ text: '' }], type: 'img' };
+      return {
+        assetId: url,
+        caption,
+        children: [{ text: '' }],
+        type: 'img',
+        ...(node.title === 'small' && { width: SMALL_FIGURE_WIDTH }),
+      };
     const label = caption.map((leaf) => String(leaf.text ?? '')).join('');
     return {
       children: [{ children: [{ text: label || url }], type: 'a', url }],

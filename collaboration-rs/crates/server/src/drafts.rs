@@ -4,19 +4,22 @@
 //! grew from (`X-Capy-Room`), its client protocol (`X-Capy-Protocol`, the
 //! JOIN's) and, for a source, their base (`X-Capy-Base`), and the merged rows
 //! as one Yjs update; the URL is the same for every
-//! document, so one preflight covers a sweep. The request runs a channel's
-//! JOIN checks (refused while the user is in a timeout, before any lookup),
-//! reads the body within `ydoc::MAX_UPDATE_BYTES` (a larger one is too large,
-//! which the page leaves to the editor, and times the user out) and a note's
-//! sync cap, takes it from the user's update allowance (the one their
-//! sockets take from, `rate.rs`), checks the eviction lease again,
-//! and goes through the room's writer admission (the room loads if need be
-//! and unloads when idle, as usual), so open editors receive the update live;
-//! the answer waits for the store that holds it and is the receipt for every
-//! row the request carried. The page sends a large group as pieces of at most
-//! 2 MiB, one request each, in order. A refusal answers its class alone (a
-//! timeout also the time it has left, `remainingMs`); its detail is logged
-//! and counted by class.
+//! document, so one preflight covers a sweep. The request counts against the
+//! user's draft sends (60 a minute, `rate.rs`, Q360) once its token checks
+//! out, runs a channel's JOIN checks (refused while the user is in a timeout,
+//! before any lookup), reads the body within `ydoc::MAX_UPDATE_BYTES` (a
+//! larger one is too large, which the page leaves to the editor, and times
+//! the user out) and a note's sync cap, checks a source room's eviction
+//! lease again, and goes to the room. There a group the room holds in full
+//! is a no-op (Q321); any other is taken from the user's update allowance
+//! (the one their sockets take from) and goes through the room's writer
+//! admission (the room loads if need be and unloads when idle, as usual),
+//! so open editors receive the update live. Either answer waits for the
+//! store that holds it and is the receipt for every row the request
+//! carried. The page sends a large group as pieces of at most 2 MiB, one
+//! request each, in order. A refusal answers its class alone (a timeout
+//! also the time it has left, `remainingMs`); its detail is logged and
+//! counted by class.
 
 use axum::body::{Body, Bytes};
 use axum::extract::State;
@@ -38,6 +41,9 @@ use crate::room::{self, Draft, Durable, NOTE_MAX_SYNC_BYTES, RoomCmd};
 const ROOM_HEADER: &str = "x-capy-room";
 const BASE_HEADER: &str = "x-capy-base";
 const PROTOCOL_HEADER: &str = "x-capy-protocol";
+/// The drafts' stored collaboration tokens, comma-separated (Q288): each may
+/// re-grant the client ids it offered under the reconnect rule.
+const GRANTS_HEADER: &str = "x-capy-grants";
 /// How long a browser keeps the preflight's answer (Chromium caps it at 2 h).
 const PREFLIGHT_MAX_AGE: &str = "7200";
 
@@ -61,6 +67,9 @@ pub enum Class {
     TooLarge,
     /// It needs content the room does not hold (a channel would resync).
     Unheld,
+    /// Structs under a client id not assigned to the sender's user: the
+    /// editor re-applies them under its own id (Epo 2026-10-24).
+    Unassigned,
     /// The room or a lookup is busy or failing: try at a later page load.
     Unavailable,
     /// The page's client protocol is outside its room family's (a stale
@@ -72,13 +81,14 @@ pub enum Class {
 }
 
 impl Class {
-    pub const ALL: [Class; 9] = [
+    pub const ALL: [Class; 10] = [
         Class::Lineage,
         Class::Limit,
         Class::Permission,
         Class::Malformed,
         Class::TooLarge,
         Class::Unheld,
+        Class::Unassigned,
         Class::Unavailable,
         Class::Outdated,
         Class::TooFast,
@@ -92,6 +102,7 @@ impl Class {
             Class::Malformed => "malformed",
             Class::TooLarge => "too_large",
             Class::Unheld => "unheld",
+            Class::Unassigned => "unassigned",
             Class::Unavailable => "unavailable",
             Class::Outdated => "outdated",
             Class::TooFast => "too_fast",
@@ -100,7 +111,7 @@ impl Class {
 
     fn status(self) -> StatusCode {
         match self {
-            Class::Lineage | Class::Unheld => StatusCode::CONFLICT,
+            Class::Lineage | Class::Unheld | Class::Unassigned => StatusCode::CONFLICT,
             Class::Limit => StatusCode::UNPROCESSABLE_ENTITY,
             Class::Permission => StatusCode::FORBIDDEN,
             Class::Malformed => StatusCode::BAD_REQUEST,
@@ -132,7 +143,7 @@ impl Refused {
     }
 
     /// The user is in a timeout; `started` when this send began it.
-    fn timed_out(app: &Shared, user: &str, verdict: Verdict) -> Option<Self> {
+    pub(crate) fn timed_out(app: &Shared, user: &str, verdict: Verdict) -> Option<Self> {
         let Verdict::TimedOut { remaining, started } = verdict else {
             return None;
         };
@@ -214,7 +225,7 @@ pub async fn preflight(State(app): State<Shared>, headers: HeaderMap) -> Respons
             (header::ACCESS_CONTROL_ALLOW_METHODS, "POST"),
             (
                 header::ACCESS_CONTROL_ALLOW_HEADERS,
-                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol",
+                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol, x-capy-grants",
             ),
             (header::ACCESS_CONTROL_MAX_AGE, PREFLIGHT_MAX_AGE),
         ],
@@ -275,6 +286,21 @@ async fn checked_and_stored(
         .and_then(|value| value.strip_prefix("Bearer "))
         .ok_or_else(|| Refused::new(Class::Permission, "a room token is required"))?;
     let protocol = header_text(headers, PROTOCOL_HEADER).and_then(|value| value.parse().ok());
+    // The user's draft sends, counted before any lookup (Q360); a bad token
+    // is refused below as for a JOIN.
+    if let Ok(claims) =
+        crate::auth::verify(token, &app.config.secret, room, crate::auth::now_seconds())
+        && !app.allowances.take_draft(&claims.sub, Instant::now())
+    {
+        return Err(Refused::new(
+            Class::TooFast,
+            format!(
+                "{} sent {} drafts this minute",
+                claims.sub,
+                crate::rate::DRAFT_REQUESTS
+            ),
+        ));
+    }
     let (name, context) =
         crate::socket::authenticate(app.clone(), room.to_owned(), token.to_owned(), protocol)
             .await
@@ -318,23 +344,27 @@ async fn checked_and_stored(
     if matches!(name, RoomName::Material { .. }) && update.len() > NOTE_MAX_SYNC_BYTES {
         return Err(Refused::new(Class::TooLarge, "past the writer's sync cap"));
     }
-    let verdict = app.allowances.take(user, update.len(), Instant::now());
-    if let Some(refusal) = Refused::timed_out(app, user, verdict) {
-        return Err(refusal);
-    }
-    // The lease and a local reset may have begun while the body arrived: a
-    // JOIN joins at once after its checks, a send only now (REVIEW1 S2).
-    let evicting = crate::socket::room_evicting(app, room)
-        .await
-        .map_err(|error| Refused::new(Class::Unavailable, error))?;
+    // A source room's publication lease and a local reset may have begun
+    // while the body arrived: a JOIN joins at once after its checks, a send
+    // only now (REVIEW1 S2).
+    let evicting = matches!(name, RoomName::Source { .. })
+        && crate::socket::room_evicting(app, room)
+            .await
+            .map_err(|error| Refused::new(Class::Unavailable, error))?;
     if evicting || app.evictions.blocks(room, false) {
         return Err(Refused::new(
             Class::Unavailable,
-            "the room is being reset, compacted or published",
+            "the room is being reset or published",
         ));
     }
     let base = header_text(headers, BASE_HEADER).map(str::to_owned);
-    let durable = admitted(app, &name, &context, update, base).await?;
+    // Ids the drafts' own tokens offered: the room checks each under the
+    // JOIN's rule (Q288). A token that grants nothing is ignored.
+    let now = crate::auth::now_seconds();
+    let granted = header_text(headers, GRANTS_HEADER)
+        .map(|header| crate::auth::granted_by(header, &app.config.secret, room, user, now))
+        .unwrap_or_default();
+    let durable = admitted(app, &name, &context, update, base, granted).await?;
     match durable.await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(Refused::new(Class::Unavailable, error)),
@@ -354,6 +384,7 @@ async fn admitted(
     context: &Context,
     update: Bytes,
     base: Option<String>,
+    granted: Vec<u64>,
 ) -> Result<Durable, Refused> {
     for _ in 0..2 {
         let handle = app.rooms.get_or_spawn(&name.to_string(), |id| {
@@ -364,6 +395,7 @@ async fn admitted(
             context: context.clone(),
             update: update.clone(),
             base: base.clone(),
+            granted: granted.clone(),
             reply,
         }));
         if handle.tx.send(command).await.is_err() {

@@ -18,4 +18,6 @@ export interface GradeAnonymousQuizReq {
      * @maxLength 128
      */
   questionId: string;
+  /** @maxLength 2048 */
+  turnstileToken?: string;
 }

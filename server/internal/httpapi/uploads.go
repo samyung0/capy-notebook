@@ -113,6 +113,11 @@ func readUploadMetadata(w http.ResponseWriter, r *http.Request, size int64, v an
 	if err := conn.SetReadDeadline(time.Now().Add(bodyDeadline(size))); err != nil {
 		return nil, err
 	}
+	// The answer follows the body, the bucket PUT and the bookkeeping, past
+	// the server's write timeout for a slow allowed upload.
+	if err := conn.SetWriteDeadline(time.Now().Add(bodyDeadline(size) + uploadPutBound + time.Minute)); err != nil {
+		return nil, err
+	}
 	form, err := r.MultipartReader()
 	if err != nil {
 		return nil, huma.Error400BadRequest("an upload is a multipart body")

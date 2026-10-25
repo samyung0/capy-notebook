@@ -33,7 +33,7 @@ Pending import scenarios keep their polling response until Reset.
 | Chat and AI | Chat history, HTTP failures, SSE failure/early close, coded SSE errors, tool failure, edit effect with refused Undo, pending sources, generation failures. |
 | Study | Quiz reads/edit/grading/submission/results; flashcard reads/progress save. |
 | Settings | Profile, model/key reads and writes, subscription/usage, checkout/portal, notification reads/preferences, integrations. A free-account checkout scenario exposes the payment action on the otherwise Pro seed. |
-| Feature-flagged pages | Read failures for Explore, Schedule, Tasks and Thinking. Existing VITE_FEATURE_* flags still control access. |
+| Feature-flagged pages | Read failures for Explore, Schedule and Tasks. Existing VITE_FEATURE_* flags still control access. |
 | Global | Offline and reconnecting status previews; real route-not-found navigation. |
 
 The mock chat stream uses the current `block_start` / `block_delta` /

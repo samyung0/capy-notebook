@@ -96,6 +96,18 @@ func TestBankMigrationAndReviewSurviveEdit(t *testing.T) {
 	if err != nil || current.ReviewedAt != nil || current.ReviewedBy != "" {
 		t.Fatalf("undo: %#v %v", current, err)
 	}
+	// A purged account's id leaves the question it edited and reviewed; the
+	// question stays (security regression: rate-limit audit r3 N-3, Q350).
+	if err := bank.Review(ctx, "q", "editor", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := bank.ForgetUser(ctx, "editor"); err != nil {
+		t.Fatal(err)
+	}
+	var updatedBy, reviewedBy string
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(updated_by,''),COALESCE(reviewed_by,'') FROM questions WHERE id='q'`).Scan(&updatedBy, &reviewedBy); err != nil || updatedBy != "" || reviewedBy != "" {
+		t.Fatalf("after the purge: updated_by %q, reviewed_by %q, %v", updatedBy, reviewedBy, err)
+	}
 	// Column grants are the independent write boundary, even without HTTP checks.
 	role := name + "_editor"
 	if _, err := pool.Exec(ctx, "CREATE ROLE "+pgx.Identifier{role}.Sanitize()+" NOLOGIN"); err != nil {

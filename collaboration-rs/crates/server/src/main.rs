@@ -9,6 +9,7 @@ mod access;
 mod app;
 mod auth;
 mod children;
+mod client_ids;
 mod config;
 mod drafts;
 mod edits;
@@ -256,7 +257,6 @@ async fn serve(config: Config) -> Result<(), String> {
     tokio::spawn(projection::run_pending(app.clone()));
     tokio::spawn(heartbeat(app.clone()));
     tokio::spawn(pubsub::run(app.clone()));
-    tokio::spawn(pubsub::run_compaction(app.clone()));
     let listener = tokio::net::TcpListener::bind(&address)
         .await
         .map_err(|error| error.to_string())?;

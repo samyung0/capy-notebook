@@ -1012,6 +1012,7 @@ export function AddSourceDialog({
     if (origin === 'local') {
       startSourceTransfer({
         importSources,
+        limits: uploadPolicy,
         local: sources.flatMap((source): LocalTransferRequest[] =>
           source.file
             ? [

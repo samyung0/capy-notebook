@@ -45,3 +45,20 @@ export function applySavedSource(
   }, origin);
   return updates.length > 0;
 }
+
+/** Applies an update written under `doc`'s own client id elsewhere (the
+ * Office editor's replica, an IME draft) as this document's own change. Yjs
+ * marks every applied update remote, even inside an outer transaction, and
+ * moves a document to a new client id when its own id arrives in a remote
+ * one; the room admits a session's changes only under the id it assigned
+ * (Q213), so the document keeps it. */
+export function applyOwnUpdate(
+  doc: Y.Doc,
+  update: Uint8Array,
+  origin?: unknown
+) {
+  doc.transact((transaction) => {
+    Y.applyUpdate(doc, update, origin);
+    transaction.local = true;
+  }, origin);
+}

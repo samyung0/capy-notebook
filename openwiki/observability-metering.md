@@ -231,15 +231,15 @@ rule decides whether a discard moves the epoch).
 
 | `kind` | Written by | When | `reason` | `size_bytes` |
 | --- | --- | --- | --- | --- |
-| `save_refused` | collaboration | a save refused for good discarded the room (an engine refusal, a 422, an ended epoch, an invalid note), or an Office update broke the room's roots and its writer went to recovery | the error: `engine_refused`, `epoch_changed`, `http_422`, `invalid_document`, `office_update` | room state, or the update |
+| `save_refused` | collaboration | a save refused for good discarded the room (an engine refusal, a 422, an ended epoch, an invalid note), an Office update broke the room's roots and its writer went to recovery, or an update under a client id not assigned to its writer's user was refused ([client ids](frontend/plate-editor.md#client-ids)) | the error: `client_id`, `engine_refused`, `epoch_changed`, `http_422`, `invalid_document`, `office_update` | room state, or the update |
 | `slow_save_limit` | collaboration | five minutes of failed saves discarded a source room | the last failure: `engine_transient`, `pending`, `backoff`, `http_503` | room state |
 | `over_limit` | collaboration | a note update or store past the document limits, a source update or save past its room's state cap | the limit code, `source_state_bytes` | room state, or the update |
 | `discard_unsaved` | collaboration | a discard with unsaved state for any other cause: lost write access at a store (read-only for the storage limit or a frozen account, revoked, the file gone, a locked account) or an outbox eviction; and a writer's update refused for lost write access | `storage_quota_exceeded`, `account_over_quota`, `read_only`, `forbidden`, `not_found`, an account-lock code, the outbox event type | room state, or the update |
 | `discard_unsaved` | browser | a connect or reconnect refused read-only discarded this session's unsaved edits; drafts deleted because the account lost the file (at open, on a refused reconnect, by the once-per-load sweep, or, after a save refused for lost access, the drafts of other lineages: this lineage's edits, another tab's included, are taken to have reached the room and be in the service's row, so a same-lineage tab that was offline at the refusal goes uncounted) | `read_only`, `forbidden`, `not_found` | unsaved bytes, or the drafts deleted |
 | `epoch_reset` | collaboration | that discard's epoch (or room schema) move landed | the discard's kind | NULL, user NULL |
 | `step2_unplaced` | collaboration | the second unplaceable sync step 2 in a row closed a connection; once per user and room until that user's update in the room is placed, across room unloads (a stuck client reconnects about every 30 s, often into a reloaded room), per instance and process, at most 10,000 pairs held | NULL | the step 2 |
-| `other_epoch_draft` | browser | a draft group of another epoch or room entered copy-only recovery, once per group: found at open (`reopen`), or a live source session whose file moved on (`epoch_changed`) or paused (`paused`), which marks every row of its lineage, adopted ones included. The rows keep a `reported` mark until Reload deletes them; a group with an unmarked row (newer edits over rows a kept epoch left marked) is a new episode and is reported | as listed | the drafts |
-| `draft_unrestorable` | browser | a stored group nothing could draw was dropped ("Some unsaved edits from your last session couldn't be restored."): its source base is not on this device. A base that failed to read keeps the group for the next open, unreported | `base_missing` | the drafts |
+| `other_epoch_draft` | browser | a draft group of another epoch or room entered copy-only recovery, once per group: found at open (`reopen`), or a live source session whose file moved on (`epoch_changed`) or paused (`paused`), which marks every row of its lineage, adopted ones included; or a note's or source's never-accepted rows of its own lineage that no draft send delivers opened copy-only (`held`, Q360: only those rows, since the service recorded the refused rows beside them). The rows keep a `reported` mark until Reload deletes them; a group with an unmarked row (newer edits over rows a kept epoch left marked) is a new episode and is reported | as listed | the drafts |
+| `draft_unrestorable` | browser | a stored group nothing could draw was dropped ("Some unsaved edits from your last session couldn't be restored."): its source base is not on this device; or restored rows the room's document could not place (their base gone) went at the first receipt, with the same notice. A base that failed to read keeps the group for the next open, unreported | `base_missing` | the drafts |
 | `draft_storage_failed` | browser | a draft write failed (the `offline-unstored` banner offline; a failure while offline is sent after the reconnect), or a recovery group's base failed to read (the group is kept for the next open; reported once per page load) | `quota`, `unavailable`, `write` | unsaved bytes, or the kept group |
 | `unconfirmed_edit` | browser | the save-delay warning (25 s for notes, 45 s for sources), once until a receipt arrives | NULL | unsaved bytes |
 | `offline_episode` | browser | an editor's offline episode ended, reported after the reconnect | `browser_offline`, `unreachable` | unsaved bytes at the reconnect |
@@ -255,7 +255,8 @@ the API's schema again. A report is sent once and never retried (a failure is
 only logged); the file is not access-checked, so drafts of a file the account
 lost are reported too. The draft store (`src/lib/editDrafts.ts`) reports
 storage failures, offline episodes, lost drafts and recovery groups; the note
-and source editors report the rest. A browser row's unsaved bytes are the
+and source editors report the rest. An item room (an embedded quiz or
+flashcard set) reports its draft store's incidents under its material. A browser row's unsaved bytes are the
 session's local updates no receipt covered plus the stored rows it adopted,
 for notes and sources alike (a source counted its whole state before
 2026-10-07). A tab closed while offline never reports
@@ -339,8 +340,8 @@ info, with no Sentry event. The file itself ends ready and unindexed with
 expected outcome: the ingest worker logs the refused publication
 (`office_rebase_refused`) and collaboration logs a refused rebuild
 (`office_rebuild_refused`), and neither captures it. So is an agent edit, its
-Undo or a replace-block command refused because its room is being reset or
-compacted: nothing applied, so the caller may retry. Collaboration answers 503
+Undo or a replace-block command refused because its room is being reset:
+nothing applied, so the caller may retry. Collaboration answers 503
 `unavailable_target` and logs `edit refused: room unavailable` without
 capturing it (`DocumentError::Unavailable` in
 `collaboration-rs/crates/server/src/edits.rs`). The gateway marks that answer
@@ -579,7 +580,7 @@ named provider directly. These exact routing exceptions are allowed:
   Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
   migration `0112_chat_sources.sql`), which sends the chat pin's effort
   (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
-  goes to Together alone. Every OpenRouter
+  goes to Together, then Wafer (Epo 2026-10-25). Every OpenRouter
   model, GLM included, takes its provider list from `OPENROUTER_ROUTING` in
   `pipeline/elitellm/client.py`: an
   ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
@@ -640,7 +641,10 @@ codes are `capability_missing` and `agentic_loop_not_certified`. The
 Certification requires a current two-turn streaming replay for the exact
 `(provider_slug, model_slug)` identity. `zai/glm-5.3-flash` holds one, so the
 clean seed offers it for chat as well as captioning. Migration `0009` makes
-GLM the chat default. Migration `0010` replaces Flash Vision with
+GLM the chat default, and `0116` moves the chat default and new accounts'
+chat pin to `deepseek/deepseek-flash` at its default high reasoning (Epo
+2026-10-25), refusing to run without an enabled chat row at high; existing
+accounts keep their pin. Migration `0010` replaces Flash Vision with
 `deepseek/deepseek-flash` (V4.1 Flash, text and vision), preserving versioned
 credit rates and other model choices. Existing Flash Vision preferences move
 to Flash 4.1. Migration `0012` deletes the retained Flash Vision rows and the
@@ -714,19 +718,60 @@ output, so grading is **recorded, never charged**: signed-in requests write one
 `POST /api/questions/computation-check` writes one per check. Attempt points
 stay on the quiz snapshot for the taker and are not a trusted score.
 
+A signed-in user's open parts are capped at 2,000 per UTC day
+(`grading_usage`, `store.SignedInGradingPartsPerDay`), shared by quiz
+attempts, review checks, bank checks and computation checks (one part each).
+Parts are reserved before any Jev call and stay counted when grading fails;
+past the cap the API answers 429 `grading_limit` and closed-only attempts are
+still graded.
+
 Anonymous grading has no actor, so it is kept in `anonymous_grading_usage` per
-UTC day, salted client-IP hash (HMAC with `SHARE_LINK_SECRET`) and the random
-id the browser keeps in IndexedDB. Parts are counted before any Jev call and
-stay counted when grading fails. Caps: 300 graded parts per IP hash per day
-(generous because a classroom shares one IP) and 50,000 per day overall; over
-either, the API answers 429 `anonymous_grading_limit` and the page asks the
-visitor to sign in. The local id is reporting only, because the client
-chooses it. Rows older than 30 days are pruned by the API's maintenance loop.
-No browser fingerprinting is used. `/api/public/*` stays in the default
-anonymous class (60/minute per IP) rather than the AI class, whose 15/minute
-burst would stop a classroom sharing one IP. Same-zone Worker subrequests carry the
-visitor's IP in `CF-Connecting-IP`; this needs checking on UAT before the
-per-IP cap is relied on.
+UTC day, salted client-address hash (HMAC with `SHARE_LINK_SECRET`; an IPv6
+address by its /56) and the random id the browser keeps in IndexedDB. The
+share token is verified before the body is read. Parts are counted before any
+Jev call and stay counted when grading fails. Caps: 300 graded parts per
+address hash per day (generous because a classroom shares one IP) and 50,000
+per day overall; over either, the API answers 429 `anonymous_grading_limit`
+and the page asks the visitor to sign in. There is no per-shared-item cap:
+each signed-out answer check carries a Cloudflare Turnstile token instead (Epo
+2026-10-24, Q243, Q271), since an address-rotating client defeats any per-item
+or per-address count. A shared page runs at most one widget (managed mode, a
+challenge only when Cloudflare asks), rendered at the first signed-out check
+and solved again only when a check asks, never in the background (it renders
+with `refresh-expired: never`, Q350, and `refresh-timeout: manual`, so a
+timed-out interactive challenge waits for the visitor). Answers are checked
+one question at a time, and the widget sits under the Check button that asks,
+rendering again under another question's Check when that one asks; a captcha
+refusal shows under that Check too. Its slot shows while a solve runs (the invisible widget
+takes no room, and its solve needs a rendered container) and is hidden once
+the token settles or the interaction ends, which clears the widget's success
+box. While Cloudflare shows a challenge the hint "Complete the challenge below
+to check your answer." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
+15 s, a clock that stops while an interactive challenge shows, so the check
+waits until the challenge is solved or errors; the API's refusal of an empty
+token shows the failed-check copy (Epo 2026-10-24, Q309;
+`src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
+quiz). The API verifies it with siteverify (5 s timeout) after the share
+token's check and before grading (`checkCaptcha`, `server/internal/httpapi/
+turnstile.go`): a missing or refused token, or one solved on a host other
+than the environment's app hosts (the hosts of `APP_URL`,
+`CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS`; not checked in
+development and e2e, whose test keys name no app host), answers 403
+`captcha_failed`, and a siteverify that cannot answer 503
+`captcha_unavailable`, refusing rather than skipping the check; the page shows
+both under the question's Check (Q308). A deployed gateway refuses Cloudflare's published
+test secrets at boot, and an empty app host list, which would check no host
+(Q350; `turnstileHosts`, `server/cmd/api/main.go`). Signed-in checks take no token, a signed-in
+visitor's check of a quiz embedded in a shared note included (Q311). Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
+is reporting only, because the client chooses it. Rows older than 30 days are pruned by the API's
+maintenance loop. No browser fingerprinting is used.
+The visitor's grading post goes straight to `/api/public/.../grade`, so it
+carries the visitor's own address and takes the anonymous class (60/minute
+per address) rather than the AI class, whose 15/minute burst would stop a
+classroom sharing one IP. The site Worker's own reads of `/api/public/`
+carry no visitor address (a same-zone Worker subrequest reaches the origin
+without one); they sign the visitor's address and count per visitor and
+shared page (§6).
 
 Ingest and captioning are pinned onto the job at enqueue (`ingestJobPayload`),
 because their defaults are hot-reloadable and a queued job may outlive one.
@@ -751,7 +796,7 @@ where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400, OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
-1200 (Together's list price, its only route, 2026-10-24), embedding 40,
+1200 (Together's list price, which Wafer matches, 2026-10-24), embedding 40,
 reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
@@ -1563,9 +1608,16 @@ Three layers, each doing what the ones below it cannot:
 
 | Layer | Sees | Handles |
 | --- | --- | --- |
-| Cloudflare | IP, path | volumetric floods, before origin bandwidth is spent |
-| Go middleware | Clerk identity, plan, route class | per-user semantic limits |
+| Cloudflare | IP, path | one rate limiting rule (Free plan): `/api/public/`, 100 requests in 10 s per address, then blocked for 10 s; the WAF blocks internal paths on the public hosts ([deployment-runbook.md](deployment-runbook.md#2-cloudflare--rules)) |
+| Go middleware | Clerk identity, plan, route class | per-user semantic limits, and per address for signed-out callers |
 | Credits ledger | measured cost | spend, in money rather than requests |
+
+Everything but `/api/public/` reaches the gateway with no edge limit: chat,
+uploads, the collaboration host and the webhooks are bounded in Go (or the
+Rust collaboration server) or not at all. The site Worker's own reads of
+`/api/public/` skip the zone's rate-limit phase (a same-zone subrequest goes
+straight to the origin), so the edge counts each visitor once, by the
+request they send.
 
 The collaboration server limits its own writers apart: each user's SYNC,
 awareness and query messages, over every socket and draft send, take from an
@@ -1583,8 +1635,9 @@ limits hold across replicas — the in-process counters it replaces only ever
 worked with one.
 
 **Route classes** (`middleware.go`): request cost across this API varies by four
-orders of magnitude. Listing workspaces touches one index. A chat turn is
-capped at 12 planning responses and 12 accepted tool calls. Provider completion,
+orders of magnitude. Listing workspaces touches one index. A chat turn gets
+12 responses before its first write, 4 tool calls per response and 160 per
+turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
 (`/chat/stream`, `/generate`, `/ai/command`, question checks (`/check`: a
 quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
@@ -1598,7 +1651,10 @@ import routes) carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
-file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Chat voice
+file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). A ticket
+takes the upload budget inside the upload line, which lines up a ticket past
+it instead of a 429 (Epo 2026-10-24, Q282; backend-storage-quota § upload
+line); an import past it answers 429. Chat voice
 input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
 with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
 person talking, apart from the chat allowance the turns they send then use.
@@ -1607,12 +1663,92 @@ scores every quiz and set in scope) has its own class, 60/hour with burst 10;
 continuing one is not counted.
 Credits remain the money bound; these limits only stop abuse patterns.
 
+The rate-limit audit (Epo 2026-10-24) added these classes:
+
+| Class | Routes | Limit | Key |
+| --- | --- | --- | --- |
+| Integration | `/api/integrations*` and `PATCH /api/me` (each reads Clerk, whose Backend API limit the whole instance shares) | 30/minute | user |
+| Stripe session | subscription Checkout, top-up, card setup, portal, portal cancel (`checkout_limit`) | 10/hour | user |
+| Share page | every GET or HEAD under `/api/public/{kind}/{token}/`, direct or through the site Worker (instead of the base class) | 300/minute (Epo 2026-10-24, Q244) | visitor and share token |
+| Bank comment | `POST /api/bank/questions/{id}/comments`, each a notice in the maintainers' 4-hourly digest ([question-bank.md](question-bank.md#comments)) | 120/hour, burst 20 (Epo 2026-10-24, Q314) | user |
+
+The Integration class counts by method and path; the limiter never reads a
+body. Import routes take the upload and the integration budgets. Clerk's
+OAuth tokens and connected providers are kept in process for 3 minutes per
+user (a token never within a minute of its expiry, and not at all without
+one); a disconnect and every Clerk `user.*` webhook drop the user's entries.
+Stripe Checkout pages for the same top-up amount or card setup are handed out
+again while they have 5 minutes left and Stripe still reports them open (one
+status read; a completed or expired page is dropped and a new one made), and
+invoice lists are cached for 60 s per customer, and any signed Stripe event
+about the customer (an invoice created, finalized, paid, failed or voided, a
+Checkout completed) drops its list, so a payment shows at once. The cache
+lives in the one API process each environment runs. Every top-up or card click takes the
+Stripe session bucket, the reused ones included.
+
+**Share reads per visitor and page** (Epo 2026-10-24, Q244). A GET or HEAD
+under `/api/public/{kind}/{token}/` takes one bucket keyed by visitor and share
+token together, 300 a minute, in place of the base class (one charge per
+read): a signed-in visitor by user id, a signed-out one by address (IPv6 by
+its /56). A token that is not a share link signed with `SHARE_LINK_SECRET`
+counts in the base class instead, so a made-up token gets no bucket of its
+own (Q308). The site Worker's reads reach the origin without the visitor's
+address, so the Worker signs it: `X-Capy-Share-Read: {unix}.{address}.
+{base64url HMAC-SHA256(SHARE_LINK_SECRET,
+"share-read:v2:{unix}:{address}:{path}")}`, the address being the visitor's
+`CF-Connecting-IP` (`workers/site/shareRead.ts`). Go trusts the address only
+when the header verifies for that path within a minute of its clock and the
+address parses as an IP (`ratelimit.signedVisitor`); an unsigned, forged,
+stale or other-path claim counts by the request's own address. A visitor's
+direct read and the Worker's read for them share the bucket. Signed-out
+grading posts keep the anonymous class and their daily caps. At the edge,
+the shared pages (`/share/`, `/w/`) get a Managed Challenge past 600
+requests a minute per address (Epo 2026-10-24, Q324;
+[deployment-runbook.md](deployment-runbook.md) § rate limiting rules). Workers Cache entries are
+unchanged (each query string keeps its own).
+
+Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its
+/56 and IPv4 by the address (`obs.ClientAddress`; Epo 2026-10-24, Q246): the
+anonymous limiter, signed-out grading's allowance and signed-out share reads. `Retry-After` is rounded up, so a client that
+waits exactly that long gets through.
+
+**Waiting instead of an immediate 429** (Epo 2026-10-24, Q268;
+`ratelimit.MaxWait`, `server/internal/ratelimit/wait.go`). A refused bucket
+names its GCRA retry-after; two kinds of request wait for it when it ends
+within 10 s:
+
+- A chat send (`POST .../chat/stream`) whose AI or AI-burst bucket refuses
+  opens its stream, sends `{"type":"phase","phase":"waiting_limit"}` after
+  `start`, waits, takes the buckets and runs the turn
+  (`ratelimit.PendingWait` in `chatStream`). Past 10 s it answers 429 before
+  any stream; a wait that runs out (another request took the slot) ends the
+  turn with an in-stream `ai_rate_limited` error. A stop ends the wait. The
+  base bucket never waits.
+- An answer check (a quiz attempt, the review and bank checks, the
+  computation check, a signed-out grade) waits for every bucket it spends
+  behind its normal spinner, then is graded or answers 429.
+
+Every other limited route answers 429 at once, and nothing retries a 429
+automatically (L12): a gateway upload past its class waits in the upload
+line instead (Q282), and only an import request keeps the browser's retry
+(`sourceImport.ts`). The pipeline's wait for an
+AI process slot is the other half of the contract: it sends
+`{"type":"phase","phase":"waiting_capacity"}` while it waits (up to 60 s, Q293) and
+ends the stream with the in-stream `provider_busy` error when the wait runs
+out. The chat trace shows both phases as the same row, the thinking hourglass
+with "Waiting" (Epo 2026-10-24, Q300: limit and captcha copy says what the
+user sees and can do, not slots, limiters or vendors).
+
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.
 They authenticate by signature and both providers apply their own delivery rate.
+At the edge they skip the security rules only from the providers' published
+addresses.
 
 The secret-authenticated service routes `/api/internal/*` and
-`/internal/collaboration/*` also bypass the user/IP limiter. Collaboration
+`/internal/collaboration/*` also bypass the user/IP limiter. Their callers
+use the private network; on the public hosts the edge blocks both paths
+([deployment-runbook.md](deployment-runbook.md#2-cloudflare--rules)). Collaboration
 bootstrap, access checks, saves, publication and note projection share a service
 IP and must not consume one anonymous caller's 60/minute allowance. Their
 service-secret checks, per-file authorization and ingest admission gates still
@@ -1648,12 +1784,18 @@ sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
 The retrieval process bounds itself behind those per-user caps (Epo
-2026-10-24): at most 64 chat and generate requests at once, past which a
-generate request answers the existing 503 `provider_busy` with `Retry-After`
-and a chat waits up to 60 s in arrival order (its stream sends the
-`waiting_capacity` phase, then the in-stream `provider_busy` error if the wait
-runs out); deck scripts, renders and captures on a pool of two threads of their
-own; one Office capture at a time
+2026-10-24): at most 64 model calls in flight, each holding its slot for its
+request, response and settlement only, so a turn running tools holds none; at
+most 96 chat turns and generate requests in progress (48 on UAT), a ceiling
+from a memory measurement (Q338, Q343). Past either, a chat waits up to 60 s
+in arrival order (its stream sends the `waiting_capacity` phase on each wait
+and the planning phase when the slot arrives, or the in-stream
+`provider_busy` error if the wait runs out) and a generate or editor AI
+request answers the existing 503 `provider_busy` with `Retry-After` at once,
+the editor routes before starting a response (Q359). Model-call
+admission holds the model-wide lock for one conditional insert, and a call's
+lease goes with its settlement. Deck scripts, renders and captures run on a
+pool of two threads of their own; one Office capture at a time
 ([agentic-retrieval.md](agentic-retrieval.md#process-capacity)).
 
 **Per-model outbound concurrency** bounds what reaches a provider.
@@ -1695,7 +1837,7 @@ keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
 rows: DeepSeek Flash 2500/1500, GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 and V4.1 Flash 1017 64/0 (ingest-only,
 so no interactive reserve; page reads lease the `vlm_page` gate instead),
-MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together held 16
+MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and Wafer each held 16
 calls at once in the 2026-10-23 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an
 environment that already has rows changes them in Ops.
@@ -1719,8 +1861,26 @@ provider and model for the selected range; the pre-call row carries
 the provider and model so abandoned attempts are attributable. A gate
 refusal writes no call row and is not counted.
 
-**Redis failures fail open.** A limiter outage must not become an API outage;
-the edge still bounds the blast radius.
+**Redis failures fail open, except AI and uploads.** While the limiter's
+Redis errors, the AI and upload classes (and the import routes, which take
+the upload bucket) answer 503 `rate_limit_unavailable` with
+`Retry-After: 5`: those are the classes whose requests spend money or GPU
+after the answer. Every other class lets the request through, since a
+limiter outage must not become an API outage; the edge covers only
+`/api/public/`.
+
+**Server timeouts.** The gateway's `http.Server` reads a request's headers and
+body within 1 minute, writes an answer within 5 minutes and closes idle
+connections after 2 minutes (`httpapi.NewServer`). A chat stream, an
+AI command, the event stream and an allowed upload extend their own
+deadlines once admitted (`extendDeadlines`). A cloud import's content
+stream has an upload's body deadline for the plan's file cap (30 s plus the
+cap at 100 KB/s, at most 5 minutes); its provider client bounds only the
+dial, TLS and response headers, so a slow browser does not cut it. The chat
+stream body is capped at 128 KiB before it is decoded (413 `query_too_long`).
+
+**Request logs.** A 5xx whose client went away first is logged at WARN, not
+ERROR, so aborted streams do not page.
 
 Disabled under `APP_ENV=e2e`, where Playwright drives hundreds of requests per
 second through a handful of fixed users.

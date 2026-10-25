@@ -6,6 +6,7 @@ import {
   noProviderCalls,
   openFile,
   sha256,
+  storedBytes,
   string,
   upload,
   workspace,
@@ -42,10 +43,12 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     const workspaceId = await workspace(run, `rich-${format}`);
     const marker = `UAT_${randomUUID().replaceAll('-', '')}`;
     const name = richFiles[format];
-    const bytes = await fixture(name, marker, 'rich-content');
-    const seed = await seedSHA256(format, bytes);
+    const picked = await fixture(name, marker, 'rich-content');
     const before = await storageCharge(run);
-    const fileId = await upload(run, workspaceId, name, bytes, true);
+    const fileId = await upload(run, workspaceId, name, picked, true);
+    // What the browser sent, its pictures compressed (Epo 2026-10-24).
+    const bytes = await storedBytes(run, fileId);
+    const seed = await seedSHA256(format, bytes);
     const editor = await run.createActor(`rich-${format}-editor`);
     await invite(run, workspaceId, editor, 'editor');
 

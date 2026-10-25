@@ -27,11 +27,13 @@ async function holdRooms(page: Page, held: boolean) {
   }, held);
 }
 
-async function compact(page: Page, materialId: string) {
+/** The service discards unsaved room state and moves the note's room on:
+ * its open editors' channels close and their rejoin swaps to the next room. */
+async function discard(page: Page, materialId: string) {
   await page.evaluate(async (id) => {
     const path = '/src/mocks/collaboration.ts';
-    const { compactMockMaterialRoom } = await import(path);
-    compactMockMaterialRoom(id);
+    const { discardMockMaterialRoom } = await import(path);
+    discardMockMaterialRoom(id);
   }, materialId);
 }
 
@@ -81,7 +83,7 @@ function offsetIn(page: Page, phase: string, id: string) {
   );
 }
 
-test('a compaction keeps the note on screen read-only until the next editor paints, then shows it at the same block', async ({
+test('a discard keeps the note on screen read-only until the next editor paints, then shows it at the same block', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -91,7 +93,7 @@ test('a compaction keeps the note on screen read-only until the next editor pain
   if (before === null) throw new Error('The heading is not on screen');
 
   await holdRooms(page, true);
-  await compact(page, MATRIX);
+  await discard(page, MATRIX);
   // Paused: the old editor stays, read-only, beside the next one building
   // hidden; the header says Reconnecting.
   const paused = page.locator('[data-note-mount="paused"]');
@@ -130,7 +132,7 @@ test('a hidden tab swaps at once, with no paused note', async ({ page }) => {
     });
   });
   await holdRooms(page, true);
-  await compact(page, EDITOR_NOTE.id);
+  await discard(page, EDITOR_NOTE.id);
   // The next editor is already in place, still waiting for its room.
   const live = page.locator('[data-note-mount="live"]');
   await expect(live.getByText(m.editor_connecting())).toBeVisible();
@@ -156,7 +158,7 @@ test("a note reload whose JOIN is never answered ends at the join's 30 s", async
     const { holdRoomJoins } = await import(path);
     holdRoomJoins(true);
   });
-  await compact(page, EDITOR_NOTE.id);
+  await discard(page, EDITOR_NOTE.id);
   const paused = page.locator('[data-note-mount="paused"]');
   await expect(paused).toBeVisible();
   await expect(saveState(page)).toHaveAttribute(
@@ -171,7 +173,9 @@ test("a note reload whose JOIN is never answered ends at the join's 30 s", async
 
 // A note's join starts at its token request (Epo 2026-10-23): a first open
 // whose token never answers ends in the connection error 30 s on, not a
-// loading pane for ever.
+// loading pane for ever. Timed from the page's last token request, not the
+// load: a busy runner sends it up to 40 s after the load, and a reload (MSW's,
+// while its worker does not control the page yet) starts the join again.
 test("a first open whose token request hangs ends at the join's 30 s", async ({
   page,
 }) => {
@@ -182,13 +186,21 @@ test("a first open whose token request hangs ends at the join's 30 s", async ({
     const { holdNoteTokens } = await import(path);
     holdNoteTokens(id);
   }, EDITOR_NOTE.id);
+  let requested = 0;
+  page.on('request', (request) => {
+    if (
+      request.url().endsWith(`/materials/${EDITOR_NOTE.id}/collaboration-token`)
+    )
+      requested = Date.now();
+  });
   await page.goto(
     `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}&mode=edit`
   );
   const failed = page.getByText(m.editor_collab_unavailable());
-  await page.waitForTimeout(15_000);
-  await expect(failed).toHaveCount(0);
-  await expect(failed).toBeVisible({ timeout: 30_000 });
+  await expect(failed).toBeVisible({ timeout: 90_000 });
+  const shown = Date.now() - requested;
+  expect(shown).toBeGreaterThan(28_000);
+  expect(shown).toBeLessThan(38_000);
   await expect(page.locator('[data-note-mount]')).toHaveCount(0);
 });
 
@@ -270,7 +282,7 @@ test("a note reload's join counts its 30 s from the token request", async ({
     holdRoomJoins(true);
   }, EDITOR_NOTE.id);
   const requested = Date.now();
-  await compact(page, EDITOR_NOTE.id);
+  await discard(page, EDITOR_NOTE.id);
   const paused = page.locator('[data-note-mount="paused"]');
   await expect(paused).toBeVisible({ timeout: 30_000 });
   // About 30 s after the request; counting from the editor's mount would
@@ -291,7 +303,7 @@ test.describe('on a phone', () => {
     await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
     await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
     await holdRooms(page, true);
-    await compact(page, EDITOR_NOTE.id);
+    await discard(page, EDITOR_NOTE.id);
     // One renderer: the new editor in the old one's place, building under a
     // plain copy of the paused note that still reads and selects.
     const copy = page.locator('[data-paused-copy]');
@@ -370,7 +382,7 @@ test('a swap keeps the reading place and gives the caret back', async ({
   if (!intro) throw new Error('The caret is not in a block');
 
   await holdRooms(page, true);
-  await compact(page, MATRIX);
+  await discard(page, MATRIX);
   const paused = page.locator('[data-note-mount="paused"]');
   await expect(paused).toBeVisible();
   await holdRooms(page, false);
@@ -462,7 +474,7 @@ test('a paused note takes no edit', async ({ page }) => {
     text: 'か',
   });
   await holdRooms(page, true);
-  await compact(page, MATRIX);
+  await discard(page, MATRIX);
   const paused = page.locator('[data-note-mount="paused"]');
   await expect(paused).toBeVisible();
   const content = paused.locator('[data-slate-editor]');
@@ -536,7 +548,7 @@ test('a breakpoint crossing during a build still swaps', async ({ page }) => {
   await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   await holdRooms(page, true);
-  await compact(page, EDITOR_NOTE.id);
+  await discard(page, EDITOR_NOTE.id);
   await expect(page.locator('[data-note-mount="paused"]')).toBeVisible();
   await expect(page.locator('[data-note-mount="standby"]')).toBeAttached();
   await page.setViewportSize({ height: 740, width: 360 });
@@ -555,9 +567,9 @@ test('a reload during a build swaps to the newest room', async ({ page }) => {
   await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   await holdRooms(page, true);
-  await compact(page, EDITOR_NOTE.id);
+  await discard(page, EDITOR_NOTE.id);
   await expect(page.locator('[data-note-mount="standby"]')).toBeAttached();
-  await compact(page, EDITOR_NOTE.id);
+  await discard(page, EDITOR_NOTE.id);
   await holdRooms(page, false);
   await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
     timeout: 30_000,
@@ -580,7 +592,7 @@ test('leaving a note during its build opens the next one cleanly', async ({
   await openEditorNote(page, MATRIX, 'Editor feature matrix');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   await holdRooms(page, true);
-  await compact(page, MATRIX);
+  await discard(page, MATRIX);
   await expect(page.locator('[data-note-mount="paused"]')).toBeVisible();
   await page
     .locator('[data-workspace-file-tree]')

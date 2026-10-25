@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -61,8 +63,9 @@ func envList(key string) []string {
 // rateLimitConfig disables limiting under e2e, where Playwright drives hundreds
 // of requests per second through a handful of fixed users and would otherwise
 // trip every budget.
-func rateLimitConfig(appEnv string) ratelimit.Config {
+func rateLimitConfig(appEnv, shareLinkSecret string) ratelimit.Config {
 	cfg := ratelimit.DefaultConfig()
+	cfg.ShareReadSecret = []byte(shareLinkSecret)
 	if (appEnv == "e2e" && !loadTest) || envBool("RATE_LIMIT_DISABLED") {
 		cfg.Disabled = true
 		return cfg
@@ -117,6 +120,73 @@ func strongEmailSecret(value string) bool {
 		}
 	}
 	return count >= 3
+}
+
+// validateServiceSecrets refuses, outside development and e2e, a set
+// PIPELINE_SECRET or the COLLABORATION_SECRET in use (its unset default is the
+// development value) shorter than 32 characters, as SHARE_LINK_SECRET's floor.
+// Local stacks keep their short development values.
+func validateServiceSecrets(appEnv, pipelineSecret, collaborationSecret string) error {
+	if appEnv == "development" || appEnv == "e2e" {
+		return nil
+	}
+	if pipelineSecret != "" && len(pipelineSecret) < 32 {
+		return errors.New("PIPELINE_SECRET must be at least 32 characters")
+	}
+	if len(collaborationSecret) < 32 {
+		return errors.New("COLLABORATION_SECRET must be at least 32 characters and match the collaboration server's")
+	}
+	return nil
+}
+
+// validateTurnstileSecret refuses, outside development and e2e, a gateway
+// without TURNSTILE_SECRET_KEY: every gateway serves signed-out grading, whose
+// answer checks it verifies with Turnstile (Epo 2026-10-24, Q271). Local
+// stacks set Cloudflare's published test secret.
+func validateTurnstileSecret(appEnv, secret string) error {
+	if appEnv == "development" || appEnv == "e2e" {
+		return nil
+	}
+	if secret == "" {
+		return errors.New("TURNSTILE_SECRET_KEY is required: signed-out answer checks are verified with Turnstile")
+	}
+	if slices.Contains(turnstileTestSecrets, secret) {
+		return errors.New("TURNSTILE_SECRET_KEY is one of Cloudflare's published test secrets, which verify nothing")
+	}
+	return nil
+}
+
+// turnstileTestSecrets are Cloudflare's published test secrets: they pass,
+// fail or spend every token, so a deployed gateway refuses them (Q308).
+var turnstileTestSecrets = []string{
+	"1x0000000000000000000000000000000AA",
+	"2x0000000000000000000000000000000AA",
+	"3x0000000000000000000000000000000AA",
+}
+
+// turnstileHosts are the hosts a signed-out check's Turnstile token must have
+// been solved on (Q308): the app hosts of APP_URL, CORS_ALLOWED_ORIGINS and
+// COLLABORATION_ALLOWED_ORIGINS (UAT's lists hold uat and local.uat). Development and e2e use Cloudflare's test keys, whose tokens
+// name no app host, so they check none. Elsewhere an empty list would check
+// no host, so the gateway refuses to boot (Q350).
+func turnstileHosts(appEnv string, origins ...string) ([]string, error) {
+	if appEnv == "development" || appEnv == "e2e" {
+		return nil, nil
+	}
+	var hosts []string
+	for _, origin := range origins {
+		u, err := url.Parse(origin)
+		if err != nil || u.Hostname() == "" {
+			continue
+		}
+		if host := strings.ToLower(u.Hostname()); !slices.Contains(hosts, host) {
+			hosts = append(hosts, host)
+		}
+	}
+	if len(hosts) == 0 {
+		return nil, errors.New("no app host for Turnstile tokens: APP_URL, CORS_ALLOWED_ORIGINS and COLLABORATION_ALLOWED_ORIGINS name none")
+	}
+	return hosts, nil
 }
 
 func validateAuthConfiguration(
@@ -329,6 +399,19 @@ func main() {
 	}
 
 	pipeSecret := env("PIPELINE_SECRET", "")
+	collaborationSecret := env("COLLABORATION_SECRET", "dev-collaboration-secret")
+	if err := validateServiceSecrets(appEnv, pipeSecret, collaborationSecret); err != nil {
+		log.Fatal(err)
+	}
+	turnstileSecret := env("TURNSTILE_SECRET_KEY", "")
+	if err := validateTurnstileSecret(appEnv, turnstileSecret); err != nil {
+		log.Fatal(err)
+	}
+	// Read only by Config below, so dropping it there fails the build.
+	turnstileTokenHosts, err := turnstileHosts(appEnv, append(append([]string{appURL}, corsOrigins...), authorizedParties...)...)
+	if err != nil {
+		log.Fatal(err)
+	}
 	var pipe *pipeline.Client
 	if u := env("PIPELINE_URL", ""); u != "" {
 		pipe = pipeline.New(u, pipeSecret)
@@ -432,11 +515,14 @@ func main() {
 			if err := st.PruneUploadSessions(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune upload sessions: %v", err)
 			}
-			if err := st.PruneAnonymousGradingUsage(ctx); err != nil && ctx.Err() == nil {
+			if err := st.PruneDailyUsage(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune anonymous grading usage: %v", err)
 			}
 			if err := st.PruneEditIncidents(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune edit incidents: %v", err)
+			}
+			if err := st.PruneBankCommentNotices(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("prune bank comment notices: %v", err)
 			}
 		}
 		sweep()
@@ -457,12 +543,13 @@ func main() {
 		CaptionDays: envInt("CAPY_CAPTION_CACHE_TTL_DAYS", 90),
 	})
 	go runBlobSweep(ctx, st, blobStore)
-	go runAccountPurgeWorker(ctx, st, clerkSecret != "")
 	go runOverQuotaNoticeWorker(ctx, st)
 	go runCollaborationEvictionWorker(ctx, st, rdb)
 	go runSourceBatchWorker(ctx, st, rdb)
+	go runBankCommentDigestWorker(ctx, st, emailSender, appURL)
 
 	bankStore := bank.New(env("BANK_DATABASE_URL", ""), env("BANK_EDITOR_DATABASE_URL", ""), env("BANK_ASSETS_URL", ""), env("LIBRARY_DATABASE_URL", ""))
+	go runAccountPurgeWorker(ctx, st, bankStore.ForgetUser, clerkSecret != "")
 	// Questions copied from the bank into quizzes keep linking its figures.
 	questions.QuizBankAssetsURL = env("BANK_ASSETS_URL", "")
 	defer bankStore.Close()
@@ -481,7 +568,8 @@ func main() {
 		BankAssets:             bankAssets,
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),
 		BankCommentEmail:       env("BANK_COMMENT_EMAIL", ""),
-		MailSender:             emailSender,
+		TurnstileSecret:        turnstileSecret,
+		TurnstileHosts:         turnstileTokenHosts,
 		ReleaseSHA:             env("RELEASE_SHA", ""),
 		APIDocs:                appEnv == "development",
 		ClerkSecretKey:         clerkSecret,
@@ -496,14 +584,14 @@ func main() {
 		StripePricePro:         stripePricePro,
 		AppURL:                 appURL,
 		EmailUnsubscribeSecret: emailUnsubscribeSecret,
-		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
+		CollaborationSecret:    collaborationSecret,
 		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
 		PipelineSecret:         pipeSecret,
 		ParseMaxPages:          parseMaxPages,
 		ParseMaxOCRPages:       parseMaxOCRPages,
 		AllowedOrigins:         corsOrigins,
 		AuthorizedParties:      authorizedParties,
-		RateLimit:              rateLimitConfig(appEnv),
+		RateLimit:              rateLimitConfig(appEnv, shareLinkSecret),
 		ModelRegistry:          modelReg,
 		Jev:                    jev.New(env("JEV_TYPESAFE_API_KEY", "")),
 		Voice:                  voice,
@@ -514,11 +602,7 @@ func main() {
 
 	// Upload spools a crashed run left behind count against nothing now.
 	httpapi.RemoveUploadSpools(os.TempDir())
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           httpapi.New(st, blobStore, pipe, rdb, parser, cfg),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := httpapi.NewServer(addr, httpapi.New(st, blobStore, pipe, rdb, parser, cfg))
 	runUsageWorkers(ctx, st, rdb, reconcile.Config{
 		StripeSecretKey: cfg.StripeSecretKey,
 		StripePricePro:  cfg.StripePricePro,

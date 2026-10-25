@@ -4,6 +4,7 @@ import { useUndoEdit } from '@/api/hooks';
 import type {
   ChatMessage,
   ChatSteps,
+  ChatWaitingPhase,
   Citation,
   MaterialRefType,
   ResourceEffect,
@@ -176,19 +177,24 @@ const UNKNOWN_ERROR = { code: 'outcome_unknown', message: '' };
 function ThinkingRow({
   running,
   seconds,
+  waiting,
 }: {
   running: boolean;
   seconds?: number;
+  waiting?: ChatWaitingPhase;
 }) {
   return (
     <div className={ROW}>
       <ActivityIcon kind="think" running={running} />
       <span className="min-w-0 truncate">
-        {running
-          ? m.chat_trace_thinking()
-          : seconds
-            ? m.chat_trace_thought_for({ seconds })
-            : m.chat_trace_thought()}
+        {/* The limiter's and an AI slot's waits read the same (Q300). */}
+        {waiting
+          ? m.chat_trace_waiting()
+          : running
+            ? m.chat_trace_thinking()
+            : seconds
+              ? m.chat_trace_thought_for({ seconds })
+              : m.chat_trace_thought()}
       </span>
     </div>
   );
@@ -478,7 +484,13 @@ function Row({
         </div>
       );
     case 'thinking':
-      return <ThinkingRow running={row.running} seconds={row.seconds} />;
+      return (
+        <ThinkingRow
+          running={row.running}
+          seconds={row.seconds}
+          waiting={row.waiting}
+        />
+      );
     case 'step':
       return <StepRow state={row.state} tool={row.tool} />;
     case 'group':
@@ -645,6 +657,11 @@ export function ChatTrace({
     startedAt: msg.createdAt,
     stopped: msg.status === 'aborted',
     thinking,
+    waiting:
+      live &&
+      (msg.phase === 'waiting_limit' || msg.phase === 'waiting_capacity')
+        ? msg.phase
+        : undefined,
   };
   const answering = !live || msg.phase === 'answering' || !!msg.content;
 

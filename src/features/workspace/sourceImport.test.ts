@@ -15,6 +15,7 @@ function status(
   return {
     jobId: 'imp_1',
     name: 'file.pdf',
+    removedPictures: 0,
     status: value,
     ...fields,
   };
@@ -30,7 +31,7 @@ describe('waitForSourceImport', () => {
 
     await expect(
       waitForSourceImport(read, 'imp_1', { initialDelayMilliseconds: 0 })
-    ).resolves.toBe('f_1');
+    ).resolves.toEqual({ fileId: 'f_1', name: 'file.pdf', removedPictures: 0 });
     expect(read).toHaveBeenCalledTimes(3);
   });
 
@@ -134,7 +135,7 @@ describe('waitForSourceImport', () => {
       await vi.advanceTimersByTimeAsync(149);
       expect(read).toHaveBeenCalledTimes(2);
       await vi.advanceTimersByTimeAsync(1);
-      await expect(result).resolves.toBe('f_1');
+      await expect(result).resolves.toMatchObject({ fileId: 'f_1' });
     } finally {
       vi.useRealTimers();
     }

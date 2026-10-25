@@ -121,7 +121,7 @@ export function LiveFlashcards({
   return (
     <div className="flex flex-col gap-4">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
-      {snapshot.access !== 'write' || itemEditingStopped(snapshot.offline) ? (
+      {snapshot.access !== 'write' || itemEditingStopped(snapshot) ? (
         grid
       ) : (
         <CollaborationHold>

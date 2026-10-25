@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -60,6 +61,18 @@ func openInternalHTTPWith(
 	configure func(*store.Store, *httpapi.Config),
 ) (http.Handler, *store.Store, *blob.Memory, *models.Registry) {
 	t.Helper()
+	return openInternalHTTPWithRedis(t, pipe, nil, configure)
+}
+
+// openInternalHTTPWithRedis is openInternalHTTPWith with a Redis client, for
+// a test of the rate limiter.
+func openInternalHTTPWithRedis(
+	t *testing.T,
+	pipe *pipeline.Client,
+	rdb *redis.Client,
+	configure func(*store.Store, *httpapi.Config),
+) (http.Handler, *store.Store, *blob.Memory, *models.Registry) {
+	t.Helper()
 	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
@@ -87,7 +100,7 @@ func openInternalHTTPWith(
 	if configure != nil {
 		configure(st, &config)
 	}
-	h := httpapi.New(st, mem, pipe, nil, "docling", config)
+	h := httpapi.New(st, mem, pipe, rdb, "docling", config)
 	return h, st, mem, reg
 }
 

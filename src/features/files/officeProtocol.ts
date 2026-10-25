@@ -124,7 +124,16 @@ export type OfficeHostMessage =
       canEdit: boolean;
       mode: OfficeMode;
       revision: number;
-      collaboration?: { epoch: number; initialUpdate: ArrayBuffer };
+      /** The session's Yjs client id (Q213), which the editor writes
+       * under. */
+      collaboration?: {
+        clientId: number;
+        epoch: number;
+        initialUpdate: ArrayBuffer;
+        /** A DOCX session's id for the editor's resident layout worker
+         * (Q219). */
+        workerClientId?: number;
+      };
       /**
        * Edit mode only: the plan image cap of the account paying for the
        * file; an inserted image over it is shrunk first.
@@ -524,7 +533,10 @@ export function isOfficeHostMessage(
           .checkpointSeedSHA256
       ) &&
       (candidate.mode === 'view' ||
-        (isCollaboration(candidate.collaboration) &&
+        (isCollaboration(
+          candidate.collaboration,
+          candidate.format === 'docx'
+        ) &&
           isCount(candidate.imageMaxBytes) &&
           candidate.imageMaxBytes > 0 &&
           isCount(candidate.growthBudgetBytes)))) ||
@@ -751,11 +763,19 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function isCollaboration(value: unknown): boolean {
+/** An edit load's collaboration; a DOCX one names its layout worker's id
+ * (Q219), with no random fallback (Q226 L4). */
+function isCollaboration(value: unknown, worker: boolean): boolean {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   return (
-    isCount(candidate.epoch) && candidate.initialUpdate instanceof ArrayBuffer
+    isCount(candidate.clientId) &&
+    candidate.clientId > 0 &&
+    (worker
+      ? isCount(candidate.workerClientId) && candidate.workerClientId > 0
+      : candidate.workerClientId === undefined) &&
+    isCount(candidate.epoch) &&
+    candidate.initialUpdate instanceof ArrayBuffer
   );
 }
 

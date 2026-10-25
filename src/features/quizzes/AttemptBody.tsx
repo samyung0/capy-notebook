@@ -6,10 +6,12 @@ import {
   useRef,
   useState,
 } from 'react';
-import { isAnonymousGradingLimit } from '@/api/anonymous';
+import { flushSync } from 'react-dom';
+import { captchaCopy, isAnonymousGradingLimit } from '@/api/anonymous';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
+import { InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type {
@@ -83,6 +85,7 @@ const WideBody = ({ children }: { children: ReactNode }) => (
 );
 export function AttemptBody({
   actions,
+  belowCheck,
   byline,
   control,
   embedded,
@@ -97,6 +100,9 @@ export function AttemptBody({
   trail,
 }: {
   actions?: ReactNode;
+  /** Under the Check last clicked while taking the quiz: the shared pages'
+   * Turnstile challenge (Q372). */
+  belowCheck?: ReactNode;
   /** The owner, on shared links. */
   byline?: ReactNode;
   /** The try in progress and how a question is checked: on the account,
@@ -130,6 +136,10 @@ export function AttemptBody({
   // The question being checked: one at a time, so each check builds on the
   // run the page shows.
   const [checking, setChecking] = useState<string | null>(null);
+  // Where belowCheck renders: under the Check clicked last, which keeps a
+  // challenge or a captcha refusal under it after the check ends.
+  const [lastChecked, setLastChecked] = useState<string | null>(null);
+  const [checkError, setCheckError] = useState<string>();
   // Confetti greets a try finished here, not one reopened finished.
   const [celebrate, setCelebrate] = useState(false);
   const setAnswer = useCallback(
@@ -241,12 +251,23 @@ export function AttemptBody({
     const answers = Object.fromEntries(
       Object.entries(drafts).filter(([id]) => own.has(id))
     );
-    setChecking(question.id);
+    // Committed now, so a signed-out check finds its Turnstile slot under
+    // this Check when it asks for a token.
+    flushSync(() => {
+      setChecking(question.id);
+      setLastChecked(question.id);
+      setCheckError(undefined);
+    });
     try {
       finishedByCheck.current = checkedCount === questions.length - 1;
       await check(question.id, answers);
     } catch (err) {
       finishedByCheck.current = false;
+      const captcha = captchaCopy(err);
+      if (captcha) {
+        setCheckError(captcha);
+        return;
+      }
       if (isAnonymousGradingLimit(err)) {
         toastSignInRequired(
           m.quiz_anonymous_limit_title(),
@@ -331,19 +352,31 @@ export function AttemptBody({
           questions={shown}
           renderAfter={(question) =>
             !checkedById.has(question.id) && (
-              <div className="flex justify-end">
-                {/* Sized like the review session's Check. */}
-                <Button
-                  className="h-9 px-3.5"
-                  disabled={checking !== null}
-                  onClick={() => void checkQuestion(question)}
-                  rounded="normal"
-                  size="sm"
-                >
-                  {checking === question.id
-                    ? m.quiz_grading()
-                    : m.question_ui_check()}
-                </Button>
+              <div>
+                <div className="flex justify-end">
+                  {/* Sized like the review session's Check. */}
+                  <Button
+                    className="h-9 px-3.5"
+                    disabled={checking !== null}
+                    onClick={() => void checkQuestion(question)}
+                    rounded="normal"
+                    size="sm"
+                  >
+                    {checking === question.id
+                      ? m.quiz_grading()
+                      : m.question_ui_check()}
+                  </Button>
+                </div>
+                {lastChecked === question.id && (
+                  <>
+                    {belowCheck}
+                    {checkError && (
+                      <InputError className="mt-2 justify-end">
+                        {checkError}
+                      </InputError>
+                    )}
+                  </>
+                )}
               </div>
             )
           }

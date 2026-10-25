@@ -182,16 +182,20 @@ impl Refusal {
     }
 }
 
-type AuthResult = (u64, u64, Result<(RoomName, Context), Refusal>);
+/// An authentication answered: channel, attempt, and the room, the
+/// context and the session's client id from the JOIN, or the refusal.
+type AuthResult = (u64, u64, Result<(RoomName, Context, Option<u64>), Refusal>);
 /// A join's answer: channel, attempt, and the joined room or the refusal.
 type JoinResult = (u64, u64, RoomName, Context, Result<RoomHandle, Refusal>);
 
 /// Joins `name`'s room (loading it if need be). A room that just unloaded
 /// fails the send or the join: look up again once.
+#[allow(clippy::too_many_arguments)]
 async fn join_room(
     app: &Shared,
     name: &RoomName,
     context: &Context,
+    client: Option<u64>,
     key: (u64, u64),
     out: Outbox,
     socket: String,
@@ -206,6 +210,7 @@ async fn join_room(
         let join = RoomCmd::Join {
             key,
             context: context.clone(),
+            client,
             out: out.clone(),
             socket: socket.clone(),
             inside,
@@ -223,6 +228,17 @@ async fn join_room(
                     ..Refusal::plain(error)
                 });
             }
+            // The browser joins again with a fresh token (Q213), or, for an
+            // id the room holds no more, opens a new document.
+            Ok(Err(error))
+                if error == crate::client_ids::REFUSED_REASON
+                    || error == crate::client_ids::UNASSIGNED_REASON =>
+            {
+                return Err(Refusal {
+                    reason: error.clone(),
+                    ..Refusal::plain(error)
+                });
+            }
             Ok(Err(error)) => return Err(Refusal::plain(error)),
             Err(_) => continue,
         }
@@ -230,7 +246,8 @@ async fn join_room(
     Err(Refusal::plain("collaboration room unavailable"))
 }
 
-/// Whether a room is under the eviction lease (compaction or a publication).
+/// Whether a source room is under the eviction lease (a publication's
+/// handoff); nothing takes it for a material room.
 pub async fn room_evicting(app: &Shared, room: &str) -> Result<bool, String> {
     let mut redis = app.redis.clone();
     let key = format!("capy:collaboration:evicting:{room}");
@@ -283,13 +300,12 @@ pub async fn authenticate(
     if let Some(remaining) = app.allowances.remaining(&claims.sub, Instant::now()) {
         return Err(Refusal::timed_out(&claims.sub, remaining));
     }
-    if room_evicting(&app, &room).await.map_err(Refusal::plain)? {
-        return Err(match name {
-            RoomName::Source { .. } => Refusal {
-                reason: "source-publishing".into(),
-                ..Refusal::plain("Source room is locked for a publication")
-            },
-            RoomName::Material { .. } => Refusal::plain("collaboration room is being compacted"),
+    if matches!(name, RoomName::Source { .. })
+        && room_evicting(&app, &room).await.map_err(Refusal::plain)?
+    {
+        return Err(Refusal {
+            reason: "source-publishing".into(),
+            ..Refusal::plain("Source room is locked for a publication")
         });
     }
     let mut viewer = false;
@@ -694,13 +710,17 @@ impl Connection {
                 room,
                 token,
                 protocol: client,
+                client: session,
                 parent,
             }) = protocol::decode_join(&message.payload)
             else {
                 return false;
             };
             if let Some(joined) = self.remove_joined(channel).await {
-                let _ = joined.tx.send(RoomCmd::Leave((self.id, channel))).await;
+                let _ = joined
+                    .tx
+                    .send(RoomCmd::Leave((self.id, channel), false))
+                    .await;
             }
             self.forget(channel);
             // A bad token is refused here, before any lookup, so it never
@@ -753,7 +773,9 @@ impl Connection {
             }
             let (app, tx) = (self.app.clone(), self.auth_tx.clone());
             tokio::spawn(async move {
-                let result = authenticate(app, room, token, client).await;
+                let result = authenticate(app, room, token, client)
+                    .await
+                    .map(|(name, context)| (name, context, session));
                 let _ = tx.send((channel, attempt, result));
             });
             return true;
@@ -871,7 +893,9 @@ impl Connection {
                 self.remove_joined(channel).await;
                 self.timers
                     .retain(|(_, timer_channel), _| *timer_channel != channel);
-                RoomCmd::Leave(key)
+                // One byte: 0 when the tab holds no unsent edits for the
+                // document (Q236); anything else keeps its rows.
+                RoomCmd::Leave(key, message.payload.as_ref() == [0])
             }
             Kind::Token => {
                 self.token(channel, &message.payload).await;
@@ -903,7 +927,10 @@ impl Connection {
         let room = self.remove_joined(channel).await;
         self.forget(channel);
         if let Some(room) = room {
-            let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            let _ = room
+                .tx
+                .send(RoomCmd::Leave((self.id, channel), false))
+                .await;
         }
     }
 
@@ -941,7 +968,10 @@ impl Connection {
         self.remove_joined(channel).await;
         self.timers
             .retain(|(_, timer_channel), _| *timer_channel != channel);
-        let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+        let _ = room
+            .tx
+            .send(RoomCmd::Leave((self.id, channel), false))
+            .await;
     }
 
     /// Takes a joined channel off this socket and gives back its room (the
@@ -982,7 +1012,7 @@ impl Connection {
         };
         self.send(embed, Kind::Closed, &protocol::closed(0, reason));
         self.forget(embed);
-        let _ = room.tx.send(RoomCmd::Leave((self.id, embed))).await;
+        let _ = room.tx.send(RoomCmd::Leave((self.id, embed), false)).await;
     }
 
     /// An embed of `name` joins inside `note`: the note's earlier channel of
@@ -1048,12 +1078,12 @@ impl Connection {
         &mut self,
         channel: u64,
         attempt: u64,
-        result: Result<(RoomName, Context), Refusal>,
+        result: Result<(RoomName, Context, Option<u64>), Refusal>,
     ) {
         if !self.authenticating(channel, attempt) {
             return;
         }
-        let (name, context) = match result {
+        let (name, context, client) = match result {
             Ok(joined) => joined,
             Err(Refusal {
                 remaining: Some(remaining),
@@ -1126,11 +1156,11 @@ impl Connection {
             self.socket_id.clone(),
         );
         tokio::spawn(async move {
-            let result = join_room(&app, &name, &context, key, out, socket, inside).await;
+            let result = join_room(&app, &name, &context, client, key, out, socket, inside).await;
             if let Err(unsent) = tx.send((channel, attempt, name, context, result)) {
                 // The socket closed meanwhile: leave the room it joined.
                 if let (.., Ok(handle)) = unsent.0 {
-                    let _ = handle.tx.send(RoomCmd::Leave(key)).await;
+                    let _ = handle.tx.send(RoomCmd::Leave(key, false)).await;
                 }
             }
         });
@@ -1157,7 +1187,10 @@ impl Connection {
             }
         };
         if !current {
-            let _ = handle.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            let _ = handle
+                .tx
+                .send(RoomCmd::Leave((self.id, channel), false))
+                .await;
             return;
         }
         // An embed's note may have left while its room loaded.
@@ -1168,7 +1201,10 @@ impl Connection {
         if let Some((note, note_attempt)) = parent
             && !self.note_joined(note, note_attempt)
         {
-            let _ = handle.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            let _ = handle
+                .tx
+                .send(RoomCmd::Leave((self.id, channel), false))
+                .await;
             self.refuse(channel, &Refusal::note_closed());
             return;
         }
@@ -1270,7 +1306,7 @@ impl Connection {
                     &protocol::closed(4401, "collaboration token expired"),
                 );
                 if let Some(room) = self.remove_joined(channel).await {
-                    let _ = room.tx.try_send(RoomCmd::Leave((self.id, channel)));
+                    let _ = room.tx.try_send(RoomCmd::Leave((self.id, channel), false));
                 }
             } else {
                 self.send(channel, Kind::TokenRequest, &[]);
@@ -1280,10 +1316,16 @@ impl Connection {
 
     /// `onTokenSync`: verify the fresh token, recheck access, re-arm.
     async fn token(&mut self, channel: u64, payload: &[u8]) {
-        let Some(Channel::Joined { room, name, .. }) = self.channels.get(&channel) else {
+        let Some(Channel::Joined {
+            room,
+            name,
+            context: joined,
+            ..
+        }) = self.channels.get(&channel)
+        else {
             return;
         };
-        let (room, name) = (room.clone(), name.clone());
+        let (room, name, user) = (room.clone(), name.clone(), joined.user_id.clone());
         let Ok(token) = protocol::decode_text(payload) else {
             return;
         };
@@ -1295,6 +1337,9 @@ impl Connection {
             auth::now_seconds(),
         );
         let result = match verified {
+            // A channel stays its user's: another user's token, even for the
+            // same room, is refused (r2 S4).
+            Ok(claims) if claims.sub != user => Err("the token names another user".to_owned()),
             Ok(claims) => token_access(&self.app, &name, &claims.sub, claims.access)
                 .await
                 .map(|()| Context::from(&claims)),
@@ -1328,7 +1373,10 @@ impl Connection {
     async fn close_all(&mut self) {
         for (channel, state) in self.channels.drain() {
             if let Channel::Joined { room, .. } = state {
-                let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+                let _ = room
+                    .tx
+                    .send(RoomCmd::Leave((self.id, channel), false))
+                    .await;
             }
         }
     }

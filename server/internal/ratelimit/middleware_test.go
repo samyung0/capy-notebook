@@ -45,8 +45,8 @@ func TestCollaborationBypassesExhaustedAnonymousBudget(t *testing.T) {
 			t.Errorf("%s: status %d, want %d", path, rec.Code, want)
 		}
 	}
-	request("/api/public/workspaces/ws_1", http.StatusNoContent)
-	request("/api/public/workspaces/ws_1", http.StatusTooManyRequests)
+	request("/api/me", http.StatusNoContent)
+	request("/api/me", http.StatusTooManyRequests)
 	for _, path := range []string{
 		"/internal/collaboration/files/f_1/bootstrap",
 		"/internal/collaboration/files/f_1/access",
@@ -57,7 +57,7 @@ func TestCollaborationBypassesExhaustedAnonymousBudget(t *testing.T) {
 	} {
 		request(path, http.StatusNoContent)
 	}
-	request("/api/public/workspaces/ws_1", http.StatusTooManyRequests)
+	request("/api/me", http.StatusTooManyRequests)
 }
 
 // TestThumbnailCapturesStopAt60AnHour (security regression: review T3 S5,
