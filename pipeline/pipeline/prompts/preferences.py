@@ -41,8 +41,8 @@ WRITING = {
 }
 
 VISUALS = {
-    "fewer": "Add a diagram, mindmap or interactive block only where text cannot carry the idea.",
-    "more": "Add diagrams, mindmaps and interactive blocks wherever they make an idea easier to see.",
+    "fewer": "Add a chart, plot or interactive block only where text cannot carry the idea.",
+    "more": "Add charts, plots and interactive blocks wherever they make an idea easier to see.",
 }
 
 # A note's knowledge checks: questions unless flashcards is set higher than
@@ -53,8 +53,12 @@ CHECKS = {
     "off": "Put no knowledge checks inside notes.",
 }
 
-# Questions or cards per chapter for each practice level.
-COUNT = {"more": 10, "less": 5}
+# Questions or cards per chapter for each practice level; a quiz is smaller
+# than a card set (Epo 2026-10-25).
+COUNT = {
+    "quiz": {"more": 5, "less": 2},
+    "flashcards": {"more": 10, "less": 5},
+}
 LEVEL = {"off": 0, "less": 1, "more": 2}
 
 
@@ -72,8 +76,12 @@ def lines(saved: dict[str, Any] | None) -> list[str]:
         "quiz": ("a quiz of {} questions", "quizzes"),
         "flashcards": ("a set of {} flashcards", "flashcards"),
     }
-    on = [made.format(COUNT[p[k]]) for k, (made, _) in items.items() if p[k] in COUNT]
-    off = [name for k, (_, name) in items.items() if p[k] not in COUNT]
+    on = [
+        made.format(COUNT[k][p[k]])
+        for k, (made, _) in items.items()
+        if p[k] in COUNT[k]
+    ]
+    off = [name for k, (_, name) in items.items() if p[k] not in COUNT[k]]
     # Knowledge checks are notes only; a check is a quiz or flashcards fence, so
     # with them on only standalone ones are off.
     notes = p["mainFormat"] != "deck"

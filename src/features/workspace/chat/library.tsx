@@ -5,7 +5,6 @@ import { ignoreEmptyExtras } from './answer';
 import { AskUser } from './blocks/AskUser';
 import { Chart, Plot } from './blocks/ChatChart';
 import { ChatHtmlEmbed } from './blocks/ChatHtmlEmbed';
-import { ChatMermaid } from './blocks/ChatMermaid';
 import { ChatTable } from './blocks/ChatTable';
 import { Accordion, Cards, ChatTabs, Facts } from './blocks/layout';
 import { Callout, Md, Reveal, Steps } from './blocks/text';
@@ -32,7 +31,6 @@ export const chatLibrary = buildLibrary({
   Facts,
   HtmlEmbed: ChatHtmlEmbed,
   Md,
-  Mermaid: ChatMermaid,
   Plot,
   Point: leaf,
   RefLine: leaf,

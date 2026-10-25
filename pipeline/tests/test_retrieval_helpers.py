@@ -508,7 +508,7 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert "Open: Cells.pdf (file f_1). The learner owns this workspace." in body
     assert "key points first" in body, "brief writing"
     assert "a deck explains each chapter" in body
-    assert "a quiz of 5 questions and a set of 10 flashcards" in body
+    assert "a quiz of 2 questions and a set of 10 flashcards" in body
     # Knowledge checks are notes only: a deck's turn gets no check line.
     assert "knowledge check" not in body, "deck main format"
     ctx.study_preferences["mainFormat"] = "note"
@@ -533,7 +533,7 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert "Open: nothing. The learner can only view this workspace." in empty
     assert "Library excerpts" not in empty
     assert (
-        "a quiz of 5 questions; make no standalone flashcards unless asked." in empty
+        "a quiz of 2 questions; make no standalone flashcards unless asked." in empty
     ), "default preferences: quiz less, flashcards off said off"
     assert "a note explains each chapter" in empty
     assert "knowledge check of at most 2 questions" in empty

@@ -25,7 +25,7 @@ OFFICE_BUILDING_WHEN = (
 )
 
 # The general guideline for every write (Epo 2026-10-14): the build plan, the
-# quiz, flashcards, mindmap and diagram formats, and how to edit. A note's and
+# quiz and flashcards formats, and how to edit; no Mermaid (Epo 2026-10-25). A note's and
 # a deck's own instructions are note_building and deck_building.
 _EDITING = f"""How to write to the workspace: build study materials, add to them and edit files.
 
@@ -37,7 +37,7 @@ Plan:
 What to build:
 - Each chapter gets one main explainer, a note or a deck as the output-files preference says; note_building or deck_building says how to write it.
 - Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id from list_sources.
-- For a request to learn a chapter or topic, make other materials, a standalone mindmap or diagram included, as the study preferences and what teaching it needs say. A request that names one material (a short note, a quiz) gets only that, with the knowledge checks the preferences put inside notes.
+- For a request to learn a chapter or topic, make other materials as the study preferences and what teaching it needs say. A request that names one material (a short note, a quiz) gets only that, with the knowledge checks the preferences put inside notes.
 - Follow the study preferences in the turn context unless the request says otherwise.
 
 Budget:
@@ -55,8 +55,6 @@ Precautions:
 Quizzes: add_questions writes multiple-choice, short-answer and open (written-answer, with a markscheme) questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; options are shown shuffled, so never refer to an option by its letter or position (A, B, "the first", "all of the above") in a question, option or explanation; add_question_media puts a chart, a plot or a library figure under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
 
 Flashcards: cards, a list of {{front, back}}.
-
-Mindmaps and diagrams: content is one ```mermaid fence; edit_document replace_block rewrites it whole, expecting the source inspect shows as its text; its caption, width and theme stay.
 
 When done, answer with the materials made, what each covers and its size, and the work still open."""
 
@@ -98,7 +96,7 @@ _EDITING_LIBRARY = """
 
 _NOTE_BUILDING = """How to write a note, a chapter's main explainer when the output-files preference says Capy Note.
 
-- Mindmaps, diagrams and interactive blocks go inside the note where they help an idea, as the study preferences say.
+- Charts, plots and interactive blocks go inside the note where they help an idea, as the study preferences say.
 - A quiz or flashcards fence inside a note is a knowledge check, sized and placed as the study preferences say.
 - Grow a long note section by section: create it with its first sections, then append each next section with one edit_document insert_markdown command after block "end" rather than rewriting the note.
 

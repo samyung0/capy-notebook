@@ -2276,7 +2276,7 @@
   "study_pref_writing_normal": "适中",
   "study_pref_writing_verbose": "详尽",
   "study_pref_quiz": "测验",
-  "study_pref_quiz_hint": "每章练习的题目：较多 10 题，较少 5 题。",
+  "study_pref_quiz_hint": "每章练习的题目：较多 5 题，较少 2 题。",
   "study_pref_flashcards": "抽认卡",
   "study_pref_flashcards_hint": "每章练习的卡片：较多 10 张，较少 5 张。",
   "study_pref_level_more": "较多",
