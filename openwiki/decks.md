@@ -47,7 +47,10 @@ serially.
    one slide per call, finish the deck in the turn that creates it: its slides
    last only until the turn ends, and the final notice says an unfinished deck
    was not saved), the slide rules
-   (`prompts/skills.py` `deck_rules`) and the style with its reference slides
+   (`prompts/skills.py` `deck_rules`; since 2026-10-25 they also say to anchor
+   a box's label at its centre or right edge so text near the right side grows
+   inward, and to move, reflow or widen before cutting words after a refusal)
+   and the style with its reference slides
    (`prompts/deck_styles/editorial/`: `style.md`, `examples/*.svg`). Both deck
    tools are refused until `editing` and `deck_building` are in the request
    (`skills.REQUIRES`). The catalog words it as the chapters' skill when the
