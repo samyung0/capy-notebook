@@ -13,7 +13,9 @@ const post = (message: FitResponse) => workerScope.postMessage(message);
 
 workerScope.onmessage = async ({ data }: MessageEvent<FitRequest>) => {
   try {
-    post({ file: await fitImage(data.file, data.maxBytes) });
+    post({
+      file: await fitImage(data.file, data.maxBytes, { png: data.png }),
+    });
   } catch (error) {
     post({
       code:

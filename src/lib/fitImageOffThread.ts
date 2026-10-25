@@ -1,10 +1,13 @@
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
-import { imageLimit } from '@/lib/fitImage';
+import { ImageUnreadableError, imageLimit } from '@/lib/fitImage';
+import { pngFromSvg } from '@/lib/svgImage';
 
 export interface FitRequest {
   file: File;
   maxBytes: number;
+  /** The file is an SVG drawn as a PNG, which stays PNG (Q364). */
+  png: boolean;
 }
 
 export type FitResponse =
@@ -13,9 +16,15 @@ export type FitResponse =
 
 /** fitImage for a note, quiz, flashcard or bank image in its own worker, so
  * a large photo's decode and colour scan stay off the main thread (Q348,
- * review N5). An image no decoder reads or no size fits is refused with its
- * copy. */
-export function fitImageOffThread(file: File, maxBytes: number) {
+ * review N5); an SVG is drawn as a PNG first, on the page (Q364). An image no
+ * decoder reads or no size fits is refused with its copy. */
+export async function fitImageOffThread(picked: File, maxBytes: number) {
+  const png = await pngFromSvg(picked).catch((error: unknown) => {
+    throw error instanceof ImageUnreadableError
+      ? new CopyError(m.image_unreadable())
+      : error;
+  });
+  const file = png ?? picked;
   return new Promise<File>((resolve, reject) => {
     const worker = new Worker(
       new URL('./fitImage.worker.ts', import.meta.url),
@@ -39,6 +48,10 @@ export function fitImageOffThread(file: File, maxBytes: number) {
       worker.terminate();
       reject(new Error('image compression failed'));
     };
-    worker.postMessage({ file, maxBytes } satisfies FitRequest);
+    worker.postMessage({
+      file,
+      maxBytes,
+      png: png !== null,
+    } satisfies FitRequest);
   });
 }

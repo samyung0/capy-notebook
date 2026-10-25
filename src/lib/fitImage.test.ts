@@ -7,6 +7,7 @@ import {
   ImageTooManyPixelsError,
   ImageUnreadableError,
   isAnimatedGif,
+  isSvgImage,
   pixelTraits,
 } from './fitImage';
 import { fakeImage, type Look, stubImageCodec } from './imageCodec.testing';
@@ -178,6 +179,63 @@ describe('fitImage', () => {
     await expect(fitImage(tiff, 2 * MB, { office: true })).rejects.toThrow(
       ImageUnreadableError
     );
+  });
+
+  it('keeps an SVG drawn as a PNG a PNG, as a source past 5 MP and as a note image past the cap', async () => {
+    // Review r4 N3 (Q364): never JPEG or WebP, however photo-like.
+    const drawn = picked('logo.png', 'image/png', 3 * MB, 2400, 2400);
+    const source = await fitImage(drawn, 30 * MB, {
+      maxPixels: 5_000_000,
+      png: true,
+    });
+    expect(source.type).toBe('image/png');
+    expect(encodes).toEqual(['image/png 2236x2236 0.85']);
+    encodes.length = 0;
+    codec.encoded = (_type, width) => (width > 1400 ? 3 * MB : MB);
+    const note = await fitImage(drawn, 2 * MB, { png: true });
+    expect(note.name).toBe('logo.png');
+    expect(encodes).toEqual([
+      'image/png 2400x2400 0.85',
+      'image/png 2000x2000',
+      'image/png 1400x1400',
+    ]);
+  });
+});
+
+describe('SVG_ROOT', () => {
+  it('answers at once on a run of comments and still finds real SVG roots within 4 KiB', () => {
+    // Security regression (review r4 S2): under the old lazy comment, 32
+    // empty comments split 2^31 ways (about half a minute warm).
+    // Warmed first, so the bound holds against a compiled pattern too.
+    isSvgImage(new TextEncoder().encode('<svg>'));
+    const started = performance.now();
+    expect(
+      isSvgImage(new TextEncoder().encode(`${'<!---->'.repeat(32)}x`))
+    ).toBe(false);
+    expect(performance.now() - started).toBeLessThan(100);
+    const head =
+      '\uFEFF<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "svg11.dtd">\n' +
+      '<!-- Generator: Illustrator -- 24 -->\n<svg version="1.1">';
+    expect(isSvgImage(new TextEncoder().encode(head))).toBe(true);
+    // Review r5 nit 2: a doctype with an internal subset (Illustrator).
+    const illustrator =
+      '<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "svg11.dtd" [\n\t<!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">\n]>\n<svg version="1.1">';
+    expect(isSvgImage(new TextEncoder().encode(illustrator))).toBe(true);
+    // Review r6 N1: a bracket inside a quoted literal, in the doctype or its
+    // subset.
+    for (const doctype of [
+      '<!DOCTYPE svg SYSTEM "x[y.dtd">',
+      '<!DOCTYPE svg [<!ENTITY a "]">]>',
+    ])
+      expect(
+        isSvgImage(
+          new TextEncoder().encode(`<?xml version="1.0"?>${doctype}<svg/>`)
+        )
+      ).toBe(true);
+    expect(
+      isSvgImage(new TextEncoder().encode(`${' '.repeat(4096)}<svg>`))
+    ).toBe(false);
   });
 });
 

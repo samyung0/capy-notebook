@@ -568,6 +568,7 @@
   "source_name_too_long": "File names must be {max} characters or shorter. Rename the file and add it again.",
   "source_import_invalid_name": "The file's name is over {max} characters or has slashes or invisible characters.",
   "source_import_cancelled": "The import was cancelled.",
+  "source_import_too_slow": "This file took too long to process.",
   "source_import_invalid_response": "The import service returned an invalid response. Please try again.",
   "source_google_picker_missing_config": "Google Drive import is unavailable. Please try again later.",
   "source_parse_hint": "Fast parsing reads the text layer, and a vision model reads pages without one. It accepts files up to {mb} MB. Figures and tables are read from the page itself when you ask about them in chat.",

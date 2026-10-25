@@ -21,10 +21,12 @@ in the worker, which imports no decoder, handing each picture to the helper.
 
 from __future__ import annotations
 
+import bisect
 import io
 import math
 import posixpath
 import re
+import time
 import warnings
 import zipfile
 from collections.abc import Callable
@@ -41,6 +43,10 @@ FLAT_COLOURS = 256
 # one is stored as it is and the header check decides.
 MAX_ENTRIES = 4096
 MAX_EXPANDED = 256 << 20
+# One relationships part's cap (Q367), by the size its directory record
+# declares, before it is inflated; CPython stops reading at that size, so a
+# read stays within it too.
+MAX_RELATIONSHIPS = 4 << 20
 OFFICE_FORMATS = {"PNG", "JPEG", "GIF"}
 SOURCE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
@@ -158,8 +164,17 @@ _RASTER_SIGNATURES = (
     b"II*\x00",
     b"MM\x00*",
 )
+# An SVG root after an XML declaration, comments and a doctype. A comment
+# ends at its first "-->", so the match is linear: a lazy comment inside the
+# repeat let a run of comments split 2^n ways, and CPython holds the GIL
+# while it matches (review r4 B2).
 _SVG_ROOT = re.compile(
-    rb"^(?:\s|<\?[^>]*\?>|<!--.*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]", re.DOTALL
+    rb"^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->).)*-->"
+    # A doctype may carry one internal subset (Illustrator's entities); both
+    # skip quoted literals, so a bracket inside one counts for nothing.
+    rb"|<!DOCTYPE(?:[^>\[\"']|\"[^\"]*\"|'[^']*')*"
+    rb"(?:\[(?:[^\]\"']|\"[^\"]*\"|'[^']*')*\]\s*)?>)*<svg[\s>/]",
+    re.DOTALL,
 )
 
 
@@ -174,10 +189,11 @@ def is_vector(data: bytes, path: str) -> bool:
 
 
 def is_svg(data: bytes, path: str) -> bool:
-    """An SVG picture, by name or by its root element."""
+    """An SVG picture, by name or by its root element in the first 4 KiB, as
+    the browser and the gateway read it."""
     if path.rsplit(".", 1)[-1].lower() in {"svg", "svgz"}:
         return True
-    return _SVG_ROOT.match(data.removeprefix(b"\xef\xbb\xbf")) is not None
+    return _SVG_ROOT.match(data[:4096].removeprefix(b"\xef\xbb\xbf")) is not None
 
 
 def picture_kind(data: bytes, path: str) -> str | None:
@@ -207,7 +223,12 @@ def resolve_target(source_dir: str, target: str) -> str:
     return "/".join(parts)
 
 
-_RELATIONSHIP = re.compile(r"<Relationship\b[^>]*>")
+# The XML tokens below end at the next "<" where XML allows none (a tag, a
+# relationship, an extension list) or at the end of the text (a comment,
+# CDATA, a declaration), so an unclosed one is scanned once and a finditer
+# stays linear; before, each unclosed opener scanned to the end of the part,
+# holding the GIL (review r5 X1).
+_RELATIONSHIP = re.compile(r"<Relationship\b[^<>]*>")
 _MEDIA = re.compile(r"^(word|ppt|xl)/media/")
 # The relationship types whose targets are pictures: images (pictures, fills,
 # object previews, SVG) and HD Photo originals; audio and video stay media.
@@ -287,43 +308,55 @@ def _containers(path: str) -> list[str] | None:
     return None
 
 
-def _last(stack: list[str], name: str, before: int) -> int:
-    for index in range(before - 1, -1, -1):
-        if stack[index] == name:
-            return index
-    return -1
+# The open elements _pick looks for, by kind ("container" for the part's
+# containers, "ext" for extensions): each kind's stack indices, innermost
+# last, kept as elements open and close, so a reference costs a binary
+# search instead of a walk down the open elements (review r5 follow-up).
+_MARKED = ("w:object", "w:txbxContent", "p:oleObj", "p:graphicFrame", "mc:Fallback")
 
 
-def _pick(names: list[str], stack: list[str]) -> int:
+def _kinds(name: str, names: list[str]) -> list[str]:
+    kinds = [name] if name in _MARKED else []
+    if name in names:
+        kinds.append("container")
+    if name.endswith(":ext"):
+        kinds.append("ext")
+    return kinds
+
+
+def _pick(stack: list[dict], marks: dict[str, list[int]]) -> int:
+    def before(kind: str, at: int) -> int:
+        found = marks[kind]
+        index = bisect.bisect_left(found, at)
+        return found[index - 1] if index else -1
+
+    def name(index: int) -> str:
+        return stack[index]["name"] if index >= 0 else ""
+
+    top = len(stack) - 1
     # An SVG or HD Photo beside a picture's own blip: only the extension
     # holding it goes, and the picture stays.
-    if stack[-1].endswith((":svgBlip", ":imgLayer")):
-        for index in range(len(stack) - 2, -1, -1):
-            if stack[index].endswith(":ext"):
-                return index
-    at = next((i for i in range(len(stack) - 1, -1, -1) if stack[i] in names), -1)
+    if name(top).endswith((":svgBlip", ":imgLayer")):
+        ext = before("ext", top)
+        if ext >= 0:
+            return ext
+    at = marks["container"][-1] if marks["container"] else -1
     if at < 0:
         return -1
-    obj = _last(stack, "w:object", at)
-    if obj >= 0 and "w:txbxContent" not in stack[obj:at]:
+    obj = before("w:object", at)
+    if obj >= 0 and before("w:txbxContent", at) < obj:
         at = obj
-    ole = _last(stack, "p:oleObj", at)
-    if stack[at] != "p:graphicFrame" and ole >= 0:
-        at = _last(stack, "p:graphicFrame", ole)
+    ole = before("p:oleObj", at)
+    if name(at) != "p:graphicFrame" and ole >= 0:
+        at = before("p:graphicFrame", ole)
         if at < 0:
             return -1
-    if (
-        stack[at] == "a:blipFill"
-        and at >= 2
-        and stack[at - 1] == "p:bgPr"
-        and stack[at - 2] == "p:bg"
-    ):
+    if name(at) == "a:blipFill" and name(at - 1) == "p:bgPr" and name(at - 2) == "p:bg":
         at -= 2
     if (
-        stack[at] in ("p:graphicFrame", "oleObject")
-        and at >= 2
-        and stack[at - 2] == "mc:AlternateContent"
-        and stack[at - 1] in ("mc:Choice", "mc:Fallback")
+        name(at) in ("p:graphicFrame", "oleObject")
+        and name(at - 2) == "mc:AlternateContent"
+        and name(at - 1) in ("mc:Choice", "mc:Fallback")
     ):
         at -= 2
     return at
@@ -333,54 +366,136 @@ _REFERENCE = re.compile(
     r"\s[\w.-]+:(?:embed|link|id|pict|relid)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')"
 )
 _MARKUP = re.compile(
-    r"<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[?!].*?>"
-    r"|<(/?)([A-Za-z_][\w.:-]*)((?:[^>\"']|\"[^\"]*\"|'[^']*')*?)(/?)>",
+    r"<!--.*?(?:-->|\Z)|<!\[CDATA\[.*?(?:\]\]>|\Z)|<[?!][^>]*(?:>|\Z)"
+    # A name never gives characters back to the attributes after it.
+    r"|<(/?)([A-Za-z_][\w.:-]*)(?![\w.:-])"
+    r"((?:[^<>\"']|\"[^<\"]*\"|'[^<']*')*?)(/?)>",
     re.DOTALL,
 )
-_EMPTY_EXTENSIONS = re.compile(r"<([\w.-]+:)?extLst\b[^>]*>\s*</\1extLst>")
+_EMPTY_EXTENSIONS = re.compile(r"<([\w.-]+:)?extLst\b[^<>]*>\s*</\1extLst>")
+# Each with its namespace prefix, if any (ElementTree writes <ns0:Types>).
+_OVERRIDE = re.compile(r"<((?:[\w.-]+:)?)Override\b[^<>]*>", re.IGNORECASE)
+_DEFAULT = re.compile(r"<(?:[\w.-]+:)?Default\b[^<>]*>", re.IGNORECASE)
+_TYPES = re.compile(r"<((?:[\w.-]+:)?)Types\b[^<>]*>")
+
+
+def content_types(
+    types: str, deleted: set[str], renames: dict[str, tuple[str, str]]
+) -> str:
+    """[Content_Types].xml without the overrides of ``deleted`` parts and
+    with those of renamed parts rewritten, in one pass (a search per part
+    grew with parts times size, review r5 X1), then a Default for each
+    extension a rename brings."""
+    gone = {f"/{part}".lower() for part in deleted}
+    moved = {f"/{path}".lower(): value for path, value in renames.items()}
+
+    def override(match: re.Match) -> str:
+        name = _attribute(match.group(0), "PartName").lower()
+        if name in gone:
+            return ""
+        if name in moved:
+            renamed, content_type = moved[name]
+            return f'<{match.group(1)}Override PartName="/{renamed}" ContentType="{content_type}"/>'
+        return match.group(0)
+
+    types = _OVERRIDE.sub(override, types)
+    have = {
+        _attribute(element.group(0), "Extension").lower()
+        for element in _DEFAULT.finditer(types)
+    }
+    for renamed, content_type in renames.values():
+        ext = renamed.rsplit(".", 1)[-1]
+        if ext.lower() in have:
+            continue
+        have.add(ext.lower())
+        types = _TYPES.sub(
+            lambda match, ext=ext, content_type=content_type: (
+                f'{match.group(0)}<{match.group(1)}Default Extension="{ext}" ContentType="{content_type}"/>'
+            ),
+            types,
+            count=1,
+        )
+    return types
+
+
+_TARGET = re.compile(r"(\sTarget\s*=\s*)([\"'])[^\"']*\2")
+
+
+def rewrite_relationships(xml: str, dead: set[str], changes: dict[str, str]) -> str:
+    """A relationships part without the relationships whose Id is in ``dead``
+    and with each element in ``changes`` replaced, in one pass (a replace per
+    relationship grew with their number times the part's size, review r5
+    follow-up)."""
+
+    def rewrite(match: re.Match) -> str:
+        element = match.group(0)
+        if dead and _attribute(element, "Id") in dead:
+            return ""
+        return changes.get(element, element)
+
+    return _RELATIONSHIP.sub(rewrite, xml)
 
 
 def _references(xml: str) -> list[str]:
     return [a if a is not None else b for a, b in _REFERENCE.findall(xml)]
 
 
-def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str], int]:
+# How many tokens remove_pictures reads between deadline checks.
+_TOKENS_PER_CHECK = 1 << 16
+
+
+def remove_pictures(
+    path: str, xml: str, ids: set[str], deadline: float
+) -> tuple[str, list[str], int]:
     """The part without each container that refers to one of ``ids``, the
     ids the removed elements referred to, and how many were removed where
     they show (none inside mc:Fallback, in a VML part, or an extension beside
-    a picture that stays)."""
+    a picture that stays). Raises OutOfTime once ``deadline`` (a
+    time.monotonic() value) has passed, checked every _TOKENS_PER_CHECK
+    tokens, since one pass over a large part can outlast the import's margin
+    (Q363, review r6 N2)."""
     names = _containers(path)
     if not names:
         return xml, [], 0
     stack: list[dict] = []
+    marks: dict[str, list[int]] = {kind: [] for kind in (*_MARKED, "container", "ext")}
     spans: list[tuple[int, int, bool]] = []
-    for match in _MARKUP.finditer(xml):
+
+    def pop() -> dict:
+        opened = stack.pop()
+        for kind in _kinds(opened["name"], names):
+            marks[kind].pop()
+        return opened
+
+    for tokens, match in enumerate(_MARKUP.finditer(xml), 1):
+        if tokens % _TOKENS_PER_CHECK == 0 and time.monotonic() >= deadline:
+            raise OutOfTime(f"removals in {path} past the deadline")
         close, name, attrs, self_closing = match.groups()
         if not name:
             continue
         start, end = match.span()
         if close:
             if stack:
-                opened = stack.pop()
+                opened = pop()
                 if opened["remove"]:
                     spans.append((opened["start"], end, opened["counted"]))
             continue
         entry = {"counted": False, "name": name, "remove": False, "start": start}
+        for kind in _kinds(name, names):
+            marks[kind].append(len(stack))
         stack.append(entry)
         if any(ref in ids for ref in _references(attrs)):
-            open_names = [opened["name"] for opened in stack]
-            at = _pick(names, open_names)
+            at = _pick(stack, marks)
             if at >= 0:
+                fallback = bisect.bisect_left(marks["mc:Fallback"], at) > 0
                 stack[at]["remove"] = True
                 stack[at]["counted"] = (
                     not path.endswith(".vml")
                     and not stack[at]["name"].endswith(":ext")
-                    and not any(
-                        opened["name"] == "mc:Fallback" for opened in stack[:at]
-                    )
+                    and not fallback
                 )
         if self_closing:
-            stack.pop()
+            pop()
             if entry["remove"]:
                 spans.append((start, end, entry["counted"]))
     if not spans:
@@ -399,8 +514,14 @@ def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str],
     return _EMPTY_EXTENSIONS.sub("", result), refs, count
 
 
+class OutOfTime(Exception):
+    """The pictures did not finish before the deadline (Q363)."""
+
+
 def compress_office(
-    data: bytes, picture: Callable[[bytes], tuple[bytes, str] | str]
+    data: bytes,
+    picture: Callable[[bytes], tuple[bytes, str] | str],
+    deadline: float,
 ) -> tuple[bytes | None, int]:
     """The package with its pictures compressed by ``picture`` (one picture's
     bytes to (bytes, "png" or "jpeg"), or "keep", "unreadable" or
@@ -409,14 +530,30 @@ def compress_office(
     compressor does not try and pictures it cannot decode. Vector parts
     nothing refers to, EMF/WMF document thumbnails and SVG parts outside the
     pictures go too, uncounted.
-    Returns None when nothing changed, and how many pictures were removed
-    where they show."""
+    Returns None when nothing changed (or a relationships part declares more
+    than MAX_RELATIONSHIPS, left to the header check), and how many pictures
+    were removed where they show. Raises OutOfTime when a picture would start,
+    or ends, at or past ``deadline`` (a time.monotonic() value), or a part's
+    removals or the repacking would start past it, since a job timeout cannot
+    stop the thread this runs in (Q363)."""
+
+    def on_time(what: str) -> None:
+        if time.monotonic() >= deadline:
+            raise OutOfTime(what)
+
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
         infos = archive.infolist()
     except (zipfile.BadZipFile, ValueError):
         return None, 0
     if len(infos) > MAX_ENTRIES or sum(info.file_size for info in infos) > MAX_EXPANDED:
+        return None, 0
+    # Before any part is read (review r4 B1): the header check refuses it.
+    if any(
+        info.filename.endswith(".rels") and info.file_size > MAX_RELATIONSHIPS
+        for info in infos
+        if not info.is_dir()
+    ):
         return None, 0
     parts: dict[str, bytes] = {}
     try:
@@ -436,9 +573,6 @@ def compress_office(
         for path in parts
         if path.endswith(".rels")
     }
-
-    def targeted(part: str) -> bool:
-        return any(rel["part"] == part for listed in rels.values() for rel in listed)
 
     pictures = picture_parts(
         list(parts), {path: text(path) for path in parts if path.endswith(".rels")}
@@ -461,10 +595,19 @@ def compress_office(
         or (not path.endswith((".xml", ".rels")) and is_vector(parts[path], path))
     }
     renames: dict[str, tuple[str, str]] = {}
+    # The names renames took, and per new name the next number to try: the
+    # parts' names do not change here and a taken name stays taken, so
+    # pictures sharing a name try each candidate once (review r5 follow-up).
+    taken: set[str] = set()
+    tried: dict[str, int] = {}
     for path in sorted(pictures):
         if kinds[path] != "raster":
             continue
+        on_time(f"pictures still to compress at {path}")
         result = picture(parts[path])
+        # And after it, so the last one ending late leaves repacking and the
+        # upload their margin (review r4 S1).
+        on_time(f"{path} finished past the deadline")
         if result == "unreadable":
             gone.add(path)
             continue
@@ -479,29 +622,33 @@ def compress_office(
         if ext in wanted:
             continue
         stem = path.rsplit(".", 1)[0]
-        renamed = f"{stem}.{wanted[0]}"
-        number = 1
-        taken = {new for new, _ in renames.values()}
+        first = f"{stem}.{wanted[0]}"
+        number = tried.get(first, 0)
+        renamed = f"{stem}-{number}.{wanted[0]}" if number else first
         while renamed in parts or renamed in taken:
-            renamed = f"{stem}-{number}.{wanted[0]}"
             number += 1
+            renamed = f"{stem}-{number}.{wanted[0]}"
+        tried[first] = number + 1
+        taken.add(renamed)
         renames[path] = (renamed, "image/png" if kind == "png" else "image/jpeg")
 
+    # Each relationships part is rewritten once, below (review r5 follow-up).
+    dead_by_part: dict[str, set[str]] = {}
     if gone:
         dropped: list[str] = []
         for rels_path, listed in list(rels.items()):
             ids = {rel["id"] for rel in listed if rel["part"] in gone}
             if not ids:
                 continue
+            on_time(f"removals still to make at {rels_path}")
             source = _source_of(rels_path)
-            rels_xml = text(rels_path)
             # Every relationship nothing refers to any more goes: those of the
             # removed elements, and those of a removed picture no part shows
             # (a document thumbnail's, uncounted, among them).
             refs: list[str] = list(ids)
             left: set[str] = set()
             if source in parts:
-                xml, found, count = remove_pictures(source, text(source), ids)
+                xml, found, count = remove_pictures(source, text(source), ids, deadline)
                 if xml != text(source):
                     parts[source] = xml.encode()
                     removed += count
@@ -509,20 +656,17 @@ def compress_office(
                 refs.extend(found)
                 left = set(_references(xml))
             dead = {ref for ref in refs if ref not in left}
-            kept = []
-            for rel in listed:
-                if rel["id"] in dead:
-                    rels_xml = rels_xml.replace(rel["element"], "", 1)
-                    if rel["part"]:
-                        dropped.append(rel["part"])
-                else:
-                    kept.append(rel)
             if dead:
-                rels[rels_path] = kept
-                parts[rels_path] = rels_xml.encode()
+                dropped.extend(
+                    rel["part"] for rel in listed if rel["id"] in dead and rel["part"]
+                )
+                rels[rels_path] = [rel for rel in listed if rel["id"] not in dead]
+                dead_by_part[rels_path] = dead
                 changed = True
+        # Once, not a search of every relationship per part.
+        targets = {rel["part"] for listed in rels.values() for rel in listed}
         for part in {*dropped, *gone}:
-            if part in parts and not targeted(part):
+            if part in parts and part not in targets:
                 deleted.add(part)
                 folder, base = posixpath.split(part)
                 own = posixpath.join(folder, "_rels", base + ".rels")
@@ -535,7 +679,7 @@ def compress_office(
         return None, 0
 
     for rels_path, listed in rels.items():
-        rels_xml = text(rels_path)
+        changes: dict[str, str] = {}
         for rel in listed:
             rename = renames.get(rel["part"]) if rel["part"] else None
             if not rename:
@@ -546,49 +690,24 @@ def compress_office(
                 if rel["target"].endswith(old)
                 else "/" + rename[0]
             )
-            element = re.sub(
-                r"(\sTarget\s*=\s*)([\"'])[^\"']*\2",
+            changes[rel["element"]] = _TARGET.sub(
                 lambda match, target=target: (
                     f"{match.group(1)}{match.group(2)}{target}{match.group(2)}"
                 ),
                 rel["element"],
                 count=1,
             )
-            rels_xml = rels_xml.replace(rel["element"], element, 1)
-        if rels_xml != text(rels_path):
-            parts[rels_path] = rels_xml.encode()
+        dead = dead_by_part.get(rels_path, set())
+        if dead or changes:
+            parts[rels_path] = rewrite_relationships(
+                text(rels_path), dead, changes
+            ).encode()
     if "[Content_Types].xml" in parts:
-        types = text("[Content_Types].xml")
-        for part in deleted:
-            types = re.sub(
-                rf"<Override\b[^>]*PartName\s*=\s*[\"']/{re.escape(part)}[\"'][^>]*>",
-                "",
-                types,
-                count=1,
-                flags=re.IGNORECASE,
-            )
-        for path, (renamed, content_type) in renames.items():
-            types = re.sub(
-                rf"<Override\b[^>]*PartName\s*=\s*[\"']/{re.escape(path)}[\"'][^>]*>",
-                f'<Override PartName="/{renamed}" ContentType="{content_type}"/>',
-                types,
-                count=1,
-                flags=re.IGNORECASE,
-            )
-            ext = renamed.rsplit(".", 1)[-1]
-            if not re.search(
-                rf"<Default\b[^>]*Extension\s*=\s*[\"']{ext}[\"']", types, re.IGNORECASE
-            ):
-                types = re.sub(
-                    r"<Types\b[^>]*>",
-                    lambda match, ext=ext, content_type=content_type: (
-                        f'{match.group(0)}<Default Extension="{ext}" ContentType="{content_type}"/>'
-                    ),
-                    types,
-                    count=1,
-                )
-        parts["[Content_Types].xml"] = types.encode()
+        parts["[Content_Types].xml"] = content_types(
+            text("[Content_Types].xml"), deleted, renames
+        ).encode()
 
+    on_time("repacking past the deadline")
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as rebuilt:
         for info in infos:

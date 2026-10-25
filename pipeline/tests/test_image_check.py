@@ -337,6 +337,28 @@ def test_office_check_refuses_packages_it_cannot_read_whole():
     assert _refused(lambda: check(big, 2 * MB)) == "office_unreadable"
 
 
+def test_office_check_refuses_a_relationship_part_over_4_mib():
+    """Security regression (Q367, review r3 S1): a relationships part over 4
+    MiB (by its declared size, before it is inflated) refuses the package;
+    one at 4 MiB passes."""
+    head = b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    tail = b"</Relationships>"
+
+    def package(size: int) -> bytes:
+        body = head + b" " * (size - len(head) - len(tail)) + tail
+        return office(
+            {
+                "word/document.xml": b"<w:document/>",
+                "word/_rels/document.xml.rels": body,
+            }
+        )
+
+    image_check.check_office(package(image_check.MAX_RELATIONSHIPS), 2 * MB)
+    with pytest.raises(image_check.Refused, match="is over") as over:
+        image_check.check_office(package(image_check.MAX_RELATIONSHIPS + 1), 2 * MB)
+    assert over.value.code == "office_unreadable"
+
+
 def test_office_check_refuses_anything_but_one_archive():
     """Security regression (Q348, review r2 B2): two archives in one file,
     whichever comes last, data before the archive, or an end record that

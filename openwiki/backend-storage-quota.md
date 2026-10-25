@@ -755,6 +755,20 @@ header (Server checks below).
   megapixel message. The per-file source cap applies to the result.
 - An image no decoder reads is refused before upload (Q333), after the lazy
   decoders below.
+- A picked SVG image (a source, or a note, quiz, flashcard or bank image) is
+  drawn as a PNG on the page first (Q364, `src/lib/svgImage.ts`), since a
+  worker has no image element and `createImageBitmap` refuses an SVG: an
+  `<img>` from a blob URL (where an SVG runs no script and loads nothing
+  external) onto a canvas, at its own size within 2,400 px when its root
+  names a width and a height, else at 2,400 px on the long side with its
+  viewBox's ratio (finite numbers only). Only heads are read on the page: 4
+  KiB for the detection, up to 64 KiB for the root tag's size attributes. The name takes `.png` and the compressor keeps it
+  PNG (`png`: lossless, shrunk at 2,000, 1,400 and 1,000 px past the cap, a
+  source resized within 5 megapixels as PNG), so servers receive no SVG
+  image. One that does not load, that nothing sizes, or that cannot be drawn
+  or encoded (a tainted canvas) is refused as unreadable. An Office file's
+  SVG picture is still dropped with its PNG copy kept, and an SVG imported
+  from a provider stays refused.
 
 The image cap counts the compressed bytes.
 
@@ -797,6 +811,16 @@ Office file the same way, one sandboxed call per picture with a 10 s CPU limit
 and a 20 s wall-clock deadline (the ingest host's parsers share its cores)
 inside the 768 MiB sandbox (Q347, `decode.py` mode `picture`); a picture past
 its limit, or one Pillow cannot decode, is removed and counted like any other.
+The pictures stop at the import job's time limit (`CAPY_IMPORT_JOB_TIMEOUT`,
+10 min, less 30 s for the picture in flight, `IMPORT_PICTURE_MARGIN_S`),
+checked before and after each picture, before each part's removals, every
+65,536 tokens within them (review r6 N2) and before repacking, since the job timeout cannot stop the thread they run in,
+so the upload keeps the margin; an import
+past it fails without a retry (`import_too_slow`, "This file took too long
+to process.", Q363). The worker refuses to start with a timeout within the
+margin. A package whose relationships part declares more than 4 MiB is left
+unread by the compressor (before any part is inflated) and refused by the
+check (Q367).
 The completion carries the count (`source_import_jobs.removed_pictures`, read
 back as `removedPictures`), which shows the same toast; a completion that only
 resumes an earlier attempt's upload names none and keeps the first count
@@ -848,12 +872,27 @@ none reads parts the checks did not:
 
 The entry cap is read from the end record before the directory loads. An entry counts as a folder only when its name ends in `/`,
 never by its attributes, and every part, `.rels` included, is classified by
-its bytes.
+its bytes. An SVG root is looked for in a part's first 4 KiB, past an XML
+declaration, comments and a doctype (with one internal subset, as Illustrator
+writes; a bracket inside a quoted literal counts for nothing, review r6 N1); a comment ends at its first `-->`, so the match takes linear time in
+the worker and the browser (Go's RE2 is linear anyway; review r4 B2, S2).
+The compressors' XML tokenizers (`images.py`, `officeImages.ts`) end a tag,
+relationship or extension list at the next `<` and a comment, CDATA or
+declaration at the end of the text, so unclosed markup is scanned once, and
+`[Content_Types].xml` is rewritten in one pass, not a search per part
+(review r5 X1). The open elements a reference's container is picked from are
+kept as a part is read (each kind's indices, searched by bisection), each
+relationships part is rewritten once for its removals and renames, and the
+parts nothing targets any more are worked out once, not per removed part; a
+renamed picture's new name (`<stem>.jpeg`, then `<stem>-1.jpeg`, ...) is
+tried from where the last picture sharing that name stopped (review r5
+follow-up). A `[Content_Types].xml` with a namespace prefix (ElementTree's
+`<ns0:Types>`) is rewritten with that prefix (review r6 N3).
 
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Editor image     | not PNG, JPEG, WebP, GIF or AVIF by its bytes, its header gives no size, or over 2,400 px on either side                                        | `image_unreadable`, `image_too_large`                                                        |
-| Office file      | not a zip, over 4,096 entries, not one contiguous archive (above), a part that does not read, or past 256 MiB inflated in all                     | `office_unreadable`                                                                          |
+| Office file      | not a zip, over 4,096 entries, not one contiguous archive (above), a relationships part over 4 MiB by its declared size (Q367), a part that does not read, or past 256 MiB inflated in all | `office_unreadable`                                                                          |
 | Office file      | an EMF or WMF part (by name or signature); an SVG part; a picture part that is not PNG, JPEG or GIF by its bytes, or whose header gives no size   | `office_vector_image`, `office_image_unsupported`                                            |
 | Office file      | any part whose bytes are WebP, AVIF, HEIF, BMP, TIFF, ICO or CUR, JPEG XR or JPEG 2000                                                            | `office_image_unsupported`                                                                   |
 | Office file      | a PNG, JPEG or GIF part over the image cap (counted as it inflates) or 2,400 px                                                                    | `office_image_too_large`                                                                     |

@@ -46,6 +46,11 @@ const (
 	MaxInflated = 256 << 20
 )
 
+// MaxRelationships bounds one relationships part (Q367), by the size its
+// directory record declares, before it is inflated; archive/zip refuses data
+// past that size, so the read stays within it too.
+const MaxRelationships = 4 << 20
+
 // headerBytes bounds what a header read may consume: a JPEG's frame header
 // follows its metadata segments, each at most 64 KiB.
 const headerBytes = 1 << 20
@@ -237,8 +242,9 @@ func Vector(name string, head []byte) bool {
 }
 
 // svgRoot finds an <svg> root after an XML declaration, comments or a
-// doctype.
-var svgRoot = regexp.MustCompile(`^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]`)
+// doctype, which may carry one internal subset (Illustrator's entities); both
+// skip quoted literals, so a bracket inside one counts for nothing.
+var svgRoot = regexp.MustCompile(`^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE(?:[^>\["']|"[^"]*"|'[^']*')*(?:\[(?:[^\]"']|"[^"]*"|'[^']*')*\]\s*)?>)*<svg[\s>/]`)
 
 // OtherImage reports an image format a browser may decode that an Office
 // picture may not be (Q344), by signature: WebP, AVIF, HEIF, BMP, TIFF, ICO
@@ -353,8 +359,10 @@ type directoryEnd struct {
 }
 
 // endWindow is how far from the end of a file zip 9, the collaboration
-// server's reader, looks for end records (64 KiB and 26 bytes); Go and
-// CPython look within it too.
+// server's reader, looks for end records (64 KiB and 26 bytes). Go looks
+// within 66,560 bytes and CPython within 65,557, but both take the
+// highest-offset record, which is the one this check reads once it is the
+// only one in endWindow and ends the file.
 const endWindow = 1<<16 + 26
 
 // readDirectoryEnd reads the end record on a layout where every zip reader
@@ -555,6 +563,9 @@ func (c *officeCheck) pictureParts(files []*zip.File) (map[string]bool, error) {
 	for _, file := range files {
 		if strings.HasSuffix(file.Name, "/") || !strings.HasSuffix(file.Name, ".rels") {
 			continue
+		}
+		if file.UncompressedSize64 > MaxRelationships {
+			return nil, unreadablePackage(fmt.Sprintf("%s is over %d bytes", file.Name, MaxRelationships))
 		}
 		part, err := c.open(file)
 		if err != nil {

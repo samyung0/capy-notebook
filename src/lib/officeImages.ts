@@ -1,5 +1,5 @@
 import { unzipSync, type Zippable, zipSync } from 'fflate';
-import { fitImage, ImageUnreadableError } from '@/lib/fitImage';
+import { fitImage, ImageUnreadableError, isSvgImage } from '@/lib/fitImage';
 
 /** A DOCX, PPTX or XLSX upload with its pictures compressed and the pictures
  * nothing can show removed with what shows them (Epo 2026-10-24, Q337):
@@ -48,16 +48,11 @@ export function pictureKind(bytes: Uint8Array, path: string) {
   return null;
 }
 
-const SVG_ROOT =
-  /^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]/;
-
 /** An SVG, by name or by its root element in the first 4 KiB, as the server
  * checks read it. */
 function isSvg(bytes: Uint8Array, path: string) {
   const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-  if (ext === 'svg' || ext === 'svgz') return true;
-  // The decoder drops a byte-order mark.
-  return SVG_ROOT.test(decoder.decode(bytes.subarray(0, 4096)));
+  return ext === 'svg' || ext === 'svgz' || isSvgImage(bytes);
 }
 
 const dirOf = (path: string) => path.slice(0, path.lastIndexOf('/') + 1);
@@ -109,9 +104,16 @@ const sourceOf = (rels: string) =>
  * media. */
 const PICTURE_TYPES = ['/image', '/hdphoto'];
 
+// The XML tokens end at the next "<" where XML allows none (a tag, a
+// relationship, an extension list) or at the end of the text (a comment,
+// CDATA, a declaration), so an unclosed one is scanned once and a matchAll
+// stays linear; before, each unclosed opener scanned to the end of the part
+// (review r5 X1).
+const RELATIONSHIP = /<Relationship\b[^<>]*>/g;
+
 function relationships(rels: string, xml: string): Relationship[] {
   const sourceDir = dirOf(sourceOf(rels));
-  return [...xml.matchAll(/<Relationship\b[^>]*>/g)].map(([element]) => {
+  return [...xml.matchAll(RELATIONSHIP)].map(([element]) => {
     const target = attribute(element, 'Target');
     return {
       element,
@@ -145,39 +147,74 @@ function containers(path: string): string[] | null {
   return null;
 }
 
-/** The element to remove for a reference inside `stack` (open element names,
- * outermost first), or -1: the innermost container, widened to the object
- * that holds it (a DOCX object, a PPTX OLE frame, a slide background, or the
- * alternate content around an OLE frame or sheet object). */
+/** The open elements `pick` looks for, by kind ("container" for the part's
+ * containers, "ext" for extensions): each kind's stack indices, innermost
+ * last, kept as elements open and close, so a reference costs a binary
+ * search instead of a walk down the open elements (review r5 follow-up). */
+const MARKED = [
+  'w:object',
+  'w:txbxContent',
+  'p:oleObj',
+  'p:graphicFrame',
+  'mc:Fallback',
+];
+type Marks = Record<string, number[]>;
+
+function kinds(name: string, names: string[]) {
+  const out = MARKED.includes(name) ? [name] : [];
+  if (names.includes(name)) out.push('container');
+  if (name.endsWith(':ext')) out.push('ext');
+  return out;
+}
+
+/** The innermost open element of `kind` outside the one at `at`, or -1. */
+function before(marks: Marks, kind: string, at: number) {
+  const found = marks[kind];
+  let low = 0;
+  let high = found.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (found[middle] < at) low = middle + 1;
+    else high = middle;
+  }
+  return low ? found[low - 1] : -1;
+}
+
+/** The element to remove for a reference in the innermost open element, or
+ * -1: the innermost container, widened to the object that holds it (a DOCX
+ * object, a PPTX OLE frame, a slide background, or the alternate content
+ * around an OLE frame or sheet object). */
 const ALTERNATE = /^mc:(Choice|Fallback)$/;
 const BESIDE_BLIP = /:(svgBlip|imgLayer)$/;
 
-function pick(names: string[], stack: string[]) {
+function pick(stack: { name: string }[], marks: Marks) {
+  const name = (index: number) => stack[index]?.name ?? '';
+  const top = stack.length - 1;
   // An SVG or HD Photo beside a picture's own blip: only the extension
   // holding it goes, and the picture stays.
-  if (BESIDE_BLIP.test(stack.at(-1) ?? ''))
-    for (let i = stack.length - 2; i >= 0; i--)
-      if (stack[i].endsWith(':ext')) return i;
-  let at = -1;
-  for (let i = stack.length - 1; i >= 0 && at < 0; i--)
-    if (names.includes(stack[i])) at = i;
+  if (BESIDE_BLIP.test(name(top))) {
+    const ext = before(marks, 'ext', top);
+    if (ext >= 0) return ext;
+  }
+  let at = marks.container.at(-1) ?? -1;
   if (at < 0) return -1;
-  const object = stack.lastIndexOf('w:object', at);
-  if (object >= 0 && !stack.slice(object, at).includes('w:txbxContent'))
-    at = object;
-  const ole = stack.lastIndexOf('p:oleObj', at);
-  if (stack[at] !== 'p:graphicFrame' && ole >= 0)
-    at = stack.lastIndexOf('p:graphicFrame', ole);
+  const object = before(marks, 'w:object', at);
+  if (object >= 0 && before(marks, 'w:txbxContent', at) < object) at = object;
+  const ole = before(marks, 'p:oleObj', at);
+  if (name(at) !== 'p:graphicFrame' && ole >= 0) {
+    at = before(marks, 'p:graphicFrame', ole);
+    if (at < 0) return -1;
+  }
   if (
-    stack[at] === 'a:blipFill' &&
-    stack[at - 1] === 'p:bgPr' &&
-    stack[at - 2] === 'p:bg'
+    name(at) === 'a:blipFill' &&
+    name(at - 1) === 'p:bgPr' &&
+    name(at - 2) === 'p:bg'
   )
     at -= 2;
   if (
-    (stack[at] === 'p:graphicFrame' || stack[at] === 'oleObject') &&
-    stack[at - 2] === 'mc:AlternateContent' &&
-    ALTERNATE.test(stack[at - 1] ?? '')
+    (name(at) === 'p:graphicFrame' || name(at) === 'oleObject') &&
+    name(at - 2) === 'mc:AlternateContent' &&
+    ALTERNATE.test(name(at - 1))
   )
     at -= 2;
   return at;
@@ -185,14 +222,71 @@ function pick(names: string[], stack: string[]) {
 
 const MEDIA = /^(word|ppt|xl)\/media\//;
 const TARGET = /(\sTarget\s*=\s*)(["'])[^"']*\2/;
-const TYPES = /<Types\b[^>]*>/;
+// Each with its namespace prefix, if any (ElementTree writes <ns0:Types>).
+const TYPES = /<((?:[\w.-]+:)?)Types\b[^<>]*>/;
+const OVERRIDE = /<((?:[\w.-]+:)?)Override\b[^<>]*>/gi;
+const DEFAULT = /<(?:[\w.-]+:)?Default\b[^<>]*>/gi;
 const REFERENCE =
   /\s[\w.-]+:(?:embed|link|id|pict|relid)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const references = (xml: string) =>
   [...xml.matchAll(REFERENCE)].map((match) => match[1] ?? match[2]);
+// A tag's name never gives characters back to the attributes after it.
 const MARKUP =
-  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<[?!][\s\S]*?>|<(\/?)([A-Za-z_][\w.:-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
-const EMPTY_EXTENSIONS = /<([\w.-]+:)?extLst\b[^>]*>\s*<\/\1extLst>/g;
+  /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<[?!][^>]*(?:>|$)|<(\/?)([A-Za-z_][\w.:-]*)(?![\w.:-])((?:[^<>"']|"[^<"]*"|'[^<']*')*?)(\/?)>/g;
+const EMPTY_EXTENSIONS = /<([\w.-]+:)?extLst\b[^<>]*>\s*<\/\1extLst>/g;
+
+/** [Content_Types].xml without the overrides of `deleted` parts and with
+ * those of renamed parts rewritten, in one pass (a search per part grew
+ * with parts times size, review r5 X1), then a Default for each extension a
+ * rename brings. */
+export function contentTypes(
+  types: string,
+  deleted: Set<string>,
+  renames: Map<string, { path: string; type: string }>
+) {
+  const gone = new Set([...deleted].map((part) => `/${part}`.toLowerCase()));
+  const moved = new Map(
+    [...renames].map(([path, rename]) => [`/${path}`.toLowerCase(), rename])
+  );
+  let out = types.replace(OVERRIDE, (element, prefix: string) => {
+    const name = attribute(element, 'PartName').toLowerCase();
+    if (gone.has(name)) return '';
+    const rename = moved.get(name);
+    return rename
+      ? `<${prefix}Override PartName="/${rename.path}" ContentType="${rename.type}"/>`
+      : element;
+  });
+  const have = new Set(
+    [...out.matchAll(DEFAULT)].map(([element]) =>
+      attribute(element, 'Extension').toLowerCase()
+    )
+  );
+  for (const rename of renames.values()) {
+    const ext = rename.path.slice(rename.path.lastIndexOf('.') + 1);
+    if (have.has(ext.toLowerCase())) continue;
+    have.add(ext.toLowerCase());
+    out = out.replace(
+      TYPES,
+      (open, prefix: string) =>
+        `${open}<${prefix}Default Extension="${ext}" ContentType="${rename.type}"/>`
+    );
+  }
+  return out;
+}
+
+/** A relationships part without the relationships whose Id is in `dead` and
+ * with each element in `changes` replaced, in one pass (a replace per
+ * relationship grew with their number times the part's size, review r5
+ * follow-up). */
+export function rewriteRelationships(
+  xml: string,
+  dead: Set<string>,
+  changes: Map<string, string>
+) {
+  return xml.replace(RELATIONSHIP, (element) =>
+    dead.has(attribute(element, 'Id')) ? '' : (changes.get(element) ?? element)
+  );
+}
 
 /** Removes from a part's XML every container (`containers`) that refers to
  * one of `ids`. Returns the new XML, the ids the removed elements referred
@@ -209,6 +303,14 @@ export function removePictures(path: string, xml: string, ids: Set<string>) {
     remove: boolean;
     start: number;
   }[] = [];
+  const marks: Marks = Object.fromEntries(
+    [...MARKED, 'container', 'ext'].map((kind) => [kind, []])
+  );
+  const pop = () => {
+    const open = stack.pop();
+    if (open) for (const kind of kinds(open.name, names)) marks[kind].pop();
+    return open;
+  };
   const spans: [number, number, boolean][] = [];
   for (const match of xml.matchAll(MARKUP)) {
     const [whole, close, name, attrs, selfClosing] = match;
@@ -216,27 +318,25 @@ export function removePictures(path: string, xml: string, ids: Set<string>) {
     const start = match.index;
     const end = start + whole.length;
     if (close) {
-      const open = stack.pop();
+      const open = pop();
       if (open?.remove) spans.push([open.start, end, open.counted]);
       continue;
     }
     const entry = { counted: false, name, remove: false, start };
+    for (const kind of kinds(name, names)) marks[kind].push(stack.length);
     stack.push(entry);
     if (references(attrs).some((id) => ids.has(id))) {
-      const at = pick(
-        names,
-        stack.map((open) => open.name)
-      );
+      const at = pick(stack, marks);
       if (at >= 0) {
         stack[at].remove = true;
         stack[at].counted =
           !path.endsWith('.vml') &&
           !stack[at].name.endsWith(':ext') &&
-          !stack.slice(0, at).some((open) => open.name === 'mc:Fallback');
+          before(marks, 'mc:Fallback', at) < 0;
       }
     }
     if (selfClosing) {
-      stack.pop();
+      pop();
       if (entry.remove) spans.push([start, end, entry.counted]);
     }
   }
@@ -302,8 +402,6 @@ export async function compressOfficeImages(
       .filter((path) => path.endsWith('.rels'))
       .map((path) => [path, relationships(path, text(path))])
   );
-  const targeted = (part: string) =>
-    [...rels.values()].some((list) => list.some((rel) => rel.part === part));
   // An image relationship's targets, and media parts no other relationship
   // targets.
   const other = new Set<string>();
@@ -344,6 +442,11 @@ export async function compressOfficeImages(
   // and its content type.
   const rasters = paths.filter((path) => pictures.has(path) && !gone.has(path));
   const renames = new Map<string, { path: string; type: string }>();
+  // The names renames took, and per new name the next number to try: the
+  // parts' names do not change here and a taken name stays taken, so pictures
+  // sharing a name try each candidate once (review r5 follow-up).
+  const taken = new Set<string>();
+  const tried = new Map<string, number>();
   for (const [index, path] of rasters.entries()) {
     const type = kinds.get(path)!;
     let result: File;
@@ -370,21 +473,25 @@ export async function compressOfficeImages(
       continue;
     }
     const stem = path.slice(0, path.lastIndexOf('.'));
-    let renamed = `${stem}.${wanted[0]}`;
-    for (
-      let n = 1;
-      renamed in parts || [...renames.values()].some((r) => r.path === renamed);
-      n++
-    )
-      renamed = `${stem}-${n}.${wanted[0]}`;
+    const first = `${stem}.${wanted[0]}`;
+    let number = tried.get(first) ?? 0;
+    let renamed = number ? `${stem}-${number}.${wanted[0]}` : first;
+    while (renamed in parts || taken.has(renamed)) {
+      number += 1;
+      renamed = `${stem}-${number}.${wanted[0]}`;
+    }
+    tried.set(first, number + 1);
+    taken.add(renamed);
     renames.set(path, { path: renamed, type: result.type });
     parts[path] = bytes;
   }
 
   // Removals: each element that shows a removed picture goes, then every
   // relationship nothing refers to any more (a thumbnail's, whose package
-  // shows it nowhere, among them), then the parts nothing targets.
+  // shows it nowhere, among them), then the parts nothing targets. Each
+  // relationships part is rewritten once, below (review r5 follow-up).
   const dropped: string[] = [];
+  const deadByPart = new Map<string, Set<string>>();
   for (const [relsPath, list] of rels) {
     const ids = list
       .filter((rel) => rel.part && gone.has(rel.part))
@@ -405,19 +512,21 @@ export async function compressOfficeImages(
     }
     const dead = new Set(refs.filter((id) => !left.has(id)));
     if (dead.size === 0) continue;
-    let relsXml = text(relsPath);
     const kept = list.filter((rel) => {
       if (!dead.has(rel.id)) return true;
-      relsXml = relsXml.replace(rel.element, '');
       if (rel.part) dropped.push(rel.part);
       return false;
     });
     rels.set(relsPath, kept);
-    write(relsPath, relsXml);
+    deadByPart.set(relsPath, dead);
     changed = true;
   }
+  // Once, not a search of every relationship per part.
+  const targets = new Set(
+    [...rels.values()].flatMap((list) => list.map((rel) => rel.part))
+  );
   for (const part of new Set([...dropped, ...gone]))
-    if (part in parts && !targeted(part)) {
+    if (part in parts && !targets.has(part)) {
       deleted.add(part);
       const ownRels = `${dirOf(part)}_rels/${baseOf(part)}.rels`;
       if (ownRels in parts) deleted.add(ownRels);
@@ -427,7 +536,7 @@ export async function compressOfficeImages(
   if (!changed) return unchanged;
 
   for (const [relsPath, list] of rels) {
-    let relsXml = text(relsPath);
+    const changes = new Map<string, string>();
     for (const rel of list) {
       const rename = rel.part ? renames.get(rel.part) : undefined;
       if (!rename) continue;
@@ -435,7 +544,7 @@ export async function compressOfficeImages(
       const target = rel.target.endsWith(old)
         ? rel.target.slice(0, -old.length) + baseOf(rename.path)
         : `/${rename.path}`;
-      relsXml = relsXml.replace(
+      changes.set(
         rel.element,
         rel.element.replace(
           TARGET,
@@ -443,41 +552,15 @@ export async function compressOfficeImages(
         )
       );
     }
-    if (relsXml !== text(relsPath)) write(relsPath, relsXml);
+    const dead = deadByPart.get(relsPath) ?? new Set<string>();
+    if (dead.size > 0 || changes.size > 0)
+      write(relsPath, rewriteRelationships(text(relsPath), dead, changes));
   }
-  if ('[Content_Types].xml' in parts) {
-    let types = text('[Content_Types].xml');
-    for (const part of deleted)
-      types = types.replace(
-        new RegExp(
-          `<Override\\b[^>]*PartName\\s*=\\s*["']/${escapeRegExp(part)}["'][^>]*>`,
-          'i'
-        ),
-        ''
-      );
-    for (const [path, rename] of renames) {
-      types = types.replace(
-        new RegExp(
-          `<Override\\b[^>]*PartName\\s*=\\s*["']/${escapeRegExp(path)}["'][^>]*>`,
-          'i'
-        ),
-        `<Override PartName="/${rename.path}" ContentType="${rename.type}"/>`
-      );
-      const ext = rename.path.slice(rename.path.lastIndexOf('.') + 1);
-      if (
-        !new RegExp(
-          `<Default\\b[^>]*Extension\\s*=\\s*["']${ext}["']`,
-          'i'
-        ).test(types)
-      )
-        types = types.replace(
-          TYPES,
-          (open) =>
-            `${open}<Default Extension="${ext}" ContentType="${rename.type}"/>`
-        );
-    }
-    write('[Content_Types].xml', types);
-  }
+  if ('[Content_Types].xml' in parts)
+    write(
+      '[Content_Types].xml',
+      contentTypes(text('[Content_Types].xml'), deleted, renames)
+    );
 
   const zippable: Zippable = {};
   for (const [path, bytes] of Object.entries(parts)) {
@@ -493,6 +576,3 @@ export async function compressOfficeImages(
     removed,
   };
 }
-
-const escapeRegExp = (text: string) =>
-  text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

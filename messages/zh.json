@@ -568,6 +568,7 @@
   "source_name_too_long": "文件名不得超过 {max} 个字符。请重命名后重新添加。",
   "source_import_invalid_name": "文件名超过 {max} 个字符，或包含斜杠或不可见字符。",
   "source_import_cancelled": "导入已取消。",
+  "source_import_too_slow": "此文件处理时间过长。",
   "source_import_invalid_response": "导入服务返回了无效响应，请重试。",
   "source_google_picker_missing_config": "Google 云端硬盘导入暂时不可用，请稍后重试。",
   "source_parse_hint": "快速解析读取文字层，没有文字层的页面由视觉模型读取。接受不超过 {mb} MB 的文件。在聊天中问到图表时，会直接读取页面本身。",

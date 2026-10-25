@@ -8,13 +8,13 @@ import {
   ImageUnreadableError,
 } from '@/lib/fitImage';
 import { compressOfficeImages } from '@/lib/officeImages';
-import type { CompressRequest, CompressResponse } from './sourceCompress';
+import type { CompressMessage, CompressResponse } from './sourceCompress';
 
 // The page makes the copy of each error from its code.
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 const post = (message: CompressResponse) => workerScope.postMessage(message);
 
-workerScope.onmessage = async ({ data }: MessageEvent<CompressRequest>) => {
+workerScope.onmessage = async ({ data }: MessageEvent<CompressMessage>) => {
   try {
     if (data.compression === 'office') {
       const { file, removed } = await compressOfficeImages(
@@ -28,6 +28,7 @@ workerScope.onmessage = async ({ data }: MessageEvent<CompressRequest>) => {
     }
     const file = await fitImage(data.file, data.maxBytes, {
       maxPixels: SOURCE_IMAGE_MAX_PIXELS,
+      png: data.png,
     });
     post({ file, removed: 0, type: 'done' });
   } catch (error) {
