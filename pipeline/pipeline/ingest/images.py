@@ -25,6 +25,7 @@ import io
 import math
 import posixpath
 import re
+import time
 import warnings
 import zipfile
 from collections.abc import Callable
@@ -399,8 +400,14 @@ def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str],
     return _EMPTY_EXTENSIONS.sub("", result), refs, count
 
 
+class OutOfTime(Exception):
+    """The pictures did not finish before the deadline (Q363)."""
+
+
 def compress_office(
-    data: bytes, picture: Callable[[bytes], tuple[bytes, str] | str]
+    data: bytes,
+    picture: Callable[[bytes], tuple[bytes, str] | str],
+    deadline: float,
 ) -> tuple[bytes | None, int]:
     """The package with its pictures compressed by ``picture`` (one picture's
     bytes to (bytes, "png" or "jpeg"), or "keep", "unreadable" or
@@ -410,7 +417,9 @@ def compress_office(
     nothing refers to, EMF/WMF document thumbnails and SVG parts outside the
     pictures go too, uncounted.
     Returns None when nothing changed, and how many pictures were removed
-    where they show."""
+    where they show. Raises OutOfTime when a picture would start at or past
+    ``deadline`` (a time.monotonic() value), since a job timeout cannot stop
+    the thread this runs in (Q363)."""
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
         infos = archive.infolist()
@@ -464,6 +473,8 @@ def compress_office(
     for path in sorted(pictures):
         if kinds[path] != "raster":
             continue
+        if time.monotonic() >= deadline:
+            raise OutOfTime(f"pictures still to compress at {path}")
         result = picture(parts[path])
         if result == "unreadable":
             gone.add(path)

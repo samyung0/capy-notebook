@@ -353,8 +353,10 @@ type directoryEnd struct {
 }
 
 // endWindow is how far from the end of a file zip 9, the collaboration
-// server's reader, looks for end records (64 KiB and 26 bytes); Go and
-// CPython look within it too.
+// server's reader, looks for end records (64 KiB and 26 bytes). Go looks
+// within 66,560 bytes and CPython within 65,557, but both take the
+// highest-offset record, which is the one this check reads once it is the
+// only one in endWindow and ends the file.
 const endWindow = 1<<16 + 26
 
 // readDirectoryEnd reads the end record on a layout where every zip reader

@@ -528,6 +528,52 @@ def test_office_import_still_breaking_the_rules_is_refused_finally(monkeypatch):
     assert failure.value.code == "office_unreadable"
 
 
+def test_office_import_pictures_stop_at_the_job_limit_without_a_retry(monkeypatch):
+    """Security regression (Q363, review r2 S3): the picture loop runs in a
+    thread the job timeout cannot stop, so it checks the import's deadline
+    before each picture. A picture that runs past it ends the loop: no
+    further picture starts and the import fails terminally (no retry)."""
+    from types import SimpleNamespace
+
+    from pipeline.config import cfg
+    from pipeline.ingest import images
+    from pipeline.jobs import TerminalError
+
+    clock = SimpleNamespace(now=1000.0)
+    fake_time = SimpleNamespace(monotonic=lambda: clock.now)
+    monkeypatch.setattr(import_stage, "time", fake_time)
+    monkeypatch.setattr(images, "time", fake_time)
+    started = []
+
+    def office_picture(data, *, image_max_bytes, max_pixels):
+        started.append(data)
+        # The first picture alone takes the whole job limit.
+        clock.now += cfg.import_job_timeout
+        return "keep"
+
+    monkeypatch.setattr(import_stage.decode, "office_picture", office_picture)
+    rels = b"".join(
+        b'<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/'
+        b'officeDocument/2006/relationships/image" Target="media/image%d.png"/>'
+        % (i, i)
+        for i in range(3)
+    )
+    package = _zip(
+        {
+            "word/document.xml": b"<w:document/>",
+            "word/_rels/document.xml.rels": b"<Relationships>"
+            + rels
+            + b"</Relationships>",
+            **{f"word/media/image{i}.png": _png_header(100 + i, 50) for i in range(3)},
+        }
+    )
+    with pytest.raises(import_stage.ImportFailure) as failure:
+        _image_run(monkeypatch, "plan.docx", "doc", package)
+    assert failure.value.code == "import_too_slow"
+    assert isinstance(failure.value, TerminalError)
+    assert len(started) == 1
+
+
 def test_image_source_import_is_shrunk_and_renamed(monkeypatch):
     shrunk = (
         b"\xff\xd8\xff\xc0\x00\x11\x08" + bytes([0x07, 0x00, 0x09, 0x00]) + b"\0" * 32

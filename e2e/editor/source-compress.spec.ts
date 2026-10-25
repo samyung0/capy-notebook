@@ -187,7 +187,7 @@ test('a DOCX upload stores its large picture compressed and its WMF equation rem
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
 });
 
-test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 through their decoders and saved as JPEG even when small, and a corrupt HEIC is refused', async ({
+test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 through their decoders and saved as JPEG even when small, an SVG as PNG, and a corrupt HEIC is refused', async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -209,6 +209,22 @@ test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 
       mimeType: 'application/octet-stream',
       name: name.replace(/^(\w+)\.(\w+)$/, '$2-$1.$2'),
     })),
+    // Drawn as PNG on the page (Q364): a viewBox-only SVG at 2,400 px on
+    // its long side, a sized one at its own size.
+    {
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><rect width="200" height="100" fill="#3a7"/></svg>'
+      ),
+      mimeType: 'image/svg+xml',
+      name: 'logo.svg',
+    },
+    {
+      buffer: Buffer.from(
+        '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="300" height="150"><circle cx="75" cy="75" r="60" fill="#a37"/></svg>'
+      ),
+      mimeType: 'image/svg+xml',
+      name: 'badge.svg',
+    },
   ]);
   // The 12 MP photo, as 2,581 x 1,936.
   expect(await decoded(page, (await stored(page, 'camera.jpg')).bytes)).toBe(
@@ -222,6 +238,13 @@ test('an image source arrives at 5 megapixels at most, HEIC, TIFF and JPEG 2000 
       `ffd8ff ${width}x${height}`
     );
   }
+  // The server receives PNGs, never an SVG.
+  expect(await decoded(page, (await stored(page, 'logo.png')).bytes)).toBe(
+    '89504e 2400x1200'
+  );
+  expect(await decoded(page, (await stored(page, 'badge.png')).bytes)).toBe(
+    '89504e 300x150'
+  );
   // Refused before anything was sent, with its reason.
   await expect(
     page.getByText(m.source_image_unreadable()).first()

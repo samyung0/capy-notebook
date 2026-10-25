@@ -37,6 +37,19 @@ export const IMAGE_EXTENSIONS: Record<string, string> = {
  * re-encoded (Epo 2026-10-13). */
 const OFFICE_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png']);
 
+/** An SVG's root element, after any XML declaration, comments and doctype,
+ * as the server checks find it. */
+export const SVG_ROOT =
+  /^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]/;
+
+const decoder = new TextDecoder();
+
+/** Whether an image is an SVG, by its root element in the first 4 KiB (the
+ * decoder drops a byte-order mark). */
+export function isSvgImage(bytes: Uint8Array) {
+  return SVG_ROOT.test(decoder.decode(bytes.subarray(0, 4096)));
+}
+
 /** A byte cap as the image messages name it. */
 export const imageLimit = (maxBytes: number) =>
   `${Math.round(maxBytes / 1024 ** 2)} MB`;

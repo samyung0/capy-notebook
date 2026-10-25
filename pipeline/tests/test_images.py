@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import re
 import zipfile
 from pathlib import Path
@@ -14,6 +15,12 @@ import pytest
 from PIL import Image, UnidentifiedImageError
 
 from pipeline.ingest import images
+
+
+def _compress(data, picture):
+    """The compressor with no deadline to meet."""
+    return images.compress_office(data, picture, math.inf)
+
 
 FIXTURES = Path(__file__).parents[2] / "e2e/fixtures/files"
 MANIFEST = json.loads((FIXTURES / "images/manifest.json").read_text())
@@ -148,9 +155,7 @@ def test_docx_photos_shrink_a_png_photo_turns_jpeg_and_a_wmf_equation_goes():
             '<Override PartName="/word/embeddings/oleObject1.bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>',
         )
 
-    package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), _picture
-    )
+    package, removed = _compress(_package("exchange-plan.docx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         names = archive.namelist()
@@ -191,7 +196,7 @@ def test_pptx_emf_picture_goes_and_every_slide_follows_a_rename():
             _rel("rId100", "image", "../media/image99.emf"),
         )
 
-    package, removed = images.compress_office(_package("lecture.pptx", edit), _picture)
+    package, removed = _compress(_package("lecture.pptx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "ppt/media/image99.emf" not in archive.namelist()
@@ -219,9 +224,7 @@ def test_xlsx_emf_anchor_goes():
             + "</Relationships>"
         ).encode()
 
-    package, removed = images.compress_office(
-        _package("course-guide.xlsx", edit), _picture
-    )
+    package, removed = _compress(_package("course-guide.xlsx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "xl/media/image2.emf" not in archive.namelist()
@@ -236,7 +239,7 @@ def test_a_package_whose_pictures_cannot_shrink_is_kept():
         for name in ("image1", "image2", "image3"):
             parts[f"word/media/{name}.png"] = buffer.getvalue()
 
-    assert images.compress_office(_package("exchange-plan.docx", edit), _picture) == (
+    assert _compress(_package("exchange-plan.docx", edit), _picture) == (
         None,
         0,
     )
@@ -306,9 +309,7 @@ def test_thumbnails_orphans_and_chart_fills_in_emf_or_wmf_go():
             _rel("rIdFill", "image", "../media/fill.emf"),
         )
 
-    package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), _picture
-    )
+    package, removed = _compress(_package("exchange-plan.docx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         names = archive.namelist()
@@ -373,9 +374,7 @@ def test_svg_and_hd_photo_beside_a_blip_go_and_undecodable_pictures_are_removed(
             + _rel("rIdClip", "video", "media/clip.mp4"),
         )
 
-    package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), _picture
-    )
+    package, removed = _compress(_package("exchange-plan.docx", edit), _picture)
     assert removed == 2
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         names = archive.namelist()
@@ -403,7 +402,7 @@ def test_a_picture_past_its_time_is_removed_like_an_unreadable_one():
     def edit(parts):
         parts["ppt/media/image1.png"] = _png((300, 200))
 
-    package, removed = images.compress_office(
+    package, removed = _compress(
         _package("lecture.pptx", edit), lambda _data: "unreadable"
     )
     assert removed >= 1
@@ -419,9 +418,7 @@ def test_an_svg_outside_the_pictures_goes_uncounted():
     def edit(parts):
         parts["word/embeddings/icon.svg"] = SVG
 
-    package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), _picture
-    )
+    package, removed = _compress(_package("exchange-plan.docx", edit), _picture)
     assert removed == 0
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "word/embeddings/icon.svg" not in archive.namelist()

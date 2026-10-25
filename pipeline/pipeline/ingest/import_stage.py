@@ -8,8 +8,9 @@ enqueues the ordinary parse or ingest job. A parse or ingest job therefore only
 exists once the bytes are durably in B2.
 
 Before the bytes are stored (Epo 2026-10-24) an Office file has its pictures
-compressed, each in the sandboxed decode helper with its own 10 s (Q347), and
-the pictures nothing can show removed (Q337); an image source is shrunk to 5
+compressed, each in the sandboxed decode helper with its own 10 s (Q347),
+stopping at the import job's time limit (Q363), and the pictures nothing can
+show removed (Q337); an image source is shrunk to 5
 megapixels or re-saved as JPEG or PNG (Q344), a HEIC through libheif's tool
 first (Q353). Then the header check (image_check.py) refuses what still
 breaks the image rules, finally.
@@ -24,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from urllib.parse import urlsplit
 
 import requests
@@ -40,6 +42,11 @@ _LEASE_WAIT_BACKOFF_S = 30
 _RETRY_STATUSES = {408, 425, 429}
 _GOOGLE_RATE_LIMIT_REASONS = ("rateLimitExceeded", "userRateLimitExceeded")
 _TOKEN_KEY = "_importAttemptToken"
+# The pictures stop this long before the import job's own timeout: one
+# picture's 20 s wall deadline (decode.py) plus slack, so the picture in
+# flight ends and this import fails as too slow, without a retry, before the
+# job timeout would retry it (Q363).
+_PICTURE_DEADLINE_MARGIN_S = 30
 
 
 class ImportRetry(RetryableError):
@@ -207,9 +214,10 @@ def _download(grant: dict, max_bytes: int) -> bytearray:
     return body
 
 
-def _prepare(data: bytes, acquired: dict) -> tuple[bytes, dict]:
+def _prepare(data: bytes, acquired: dict, deadline: float) -> tuple[bytes, dict]:
     """The bytes to store and what the completion reports beside them: an
-    Office file with its pictures compressed one by one (Q347), an image
+    Office file with its pictures compressed one by one (Q347) until
+    ``deadline``, past which the import fails without a retry (Q363), an image
     source shrunk or re-saved as JPEG or PNG (with its new name and type when
     its format changed, Q344), each then checked from its headers. The
     original was already refused past the per-file cap at the download
@@ -220,14 +228,18 @@ def _prepare(data: bytes, acquired: dict) -> tuple[bytes, dict]:
         image_max_bytes = int(acquired.get("imageMaxBytes") or 0)
         if image_max_bytes <= 0:
             raise ImportRetry("acquire_invalid", "acquire response names no image cap")
-        package, removed = images.compress_office(
-            data,
-            lambda picture: decode.office_picture(
-                picture,
-                image_max_bytes=image_max_bytes,
-                max_pixels=cfg.image_max_pixels,
-            ),
-        )
+        try:
+            package, removed = images.compress_office(
+                data,
+                lambda picture: decode.office_picture(
+                    picture,
+                    image_max_bytes=image_max_bytes,
+                    max_pixels=cfg.image_max_pixels,
+                ),
+                deadline,
+            )
+        except images.OutOfTime as exc:
+            raise ImportFailure("import_too_slow", str(exc)) from exc
         stored = package if package is not None else data
         try:
             image_check.check_office(stored, image_max_bytes)
@@ -279,6 +291,8 @@ def _prepare(data: bytes, acquired: dict) -> tuple[bytes, dict]:
 
 
 def _run(job: dict) -> None:
+    # The job's limit runs from about now (the worker's timeout wraps this).
+    deadline = time.monotonic() + cfg.import_job_timeout - _PICTURE_DEADLINE_MARGIN_S
     payload = job.get("payload") or {}
     import_id = str(payload.get("importJobId") or "")
     if not import_id:
@@ -315,7 +329,7 @@ def _run(job: dict) -> None:
         telemetry.stage("download")
         data = _download(acquired.get("download") or {}, max_bytes)
         telemetry.stage("images")
-        stored, landed = _prepare(bytes(data), acquired)
+        stored, landed = _prepare(bytes(data), acquired, deadline)
         telemetry.stage("upload")
         try:
             blobstore.write_bytes(

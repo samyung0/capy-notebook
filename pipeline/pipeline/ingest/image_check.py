@@ -198,7 +198,9 @@ def other_image(head: bytes) -> bool:
 
 
 # How far from the end of a file zip 9, the collaboration server's reader,
-# looks for end records (64 KiB and 26 bytes); Go and CPython look within it.
+# looks for end records (64 KiB and 26 bytes). Go looks within 66,560 bytes
+# and CPython within 65,557, but both take the highest-offset record, which
+# is the one this check reads once it is the only one here and ends the file.
 _END_WINDOW = (1 << 16) + 26
 
 

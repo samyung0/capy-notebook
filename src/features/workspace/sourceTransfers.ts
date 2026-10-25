@@ -173,6 +173,9 @@ export function sourceImportFailureReason(code: string) {
       return m.source_import_invalid_name({ max: FILE_NAME_CHARACTER_LIMIT });
     case 'source_import_cancelled':
       return m.source_import_cancelled();
+    // Its pictures ran past the import's time limit (Q363).
+    case 'import_too_slow':
+      return m.source_import_too_slow();
     // The import worker's image checks (Epo 2026-10-24).
     case 'office_image_too_large':
       return m.error_office_image_too_large_title();

@@ -1,5 +1,5 @@
 import { unzipSync, type Zippable, zipSync } from 'fflate';
-import { fitImage, ImageUnreadableError } from '@/lib/fitImage';
+import { fitImage, ImageUnreadableError, isSvgImage } from '@/lib/fitImage';
 
 /** A DOCX, PPTX or XLSX upload with its pictures compressed and the pictures
  * nothing can show removed with what shows them (Epo 2026-10-24, Q337):
@@ -48,16 +48,11 @@ export function pictureKind(bytes: Uint8Array, path: string) {
   return null;
 }
 
-const SVG_ROOT =
-  /^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]/;
-
 /** An SVG, by name or by its root element in the first 4 KiB, as the server
  * checks read it. */
 function isSvg(bytes: Uint8Array, path: string) {
   const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-  if (ext === 'svg' || ext === 'svgz') return true;
-  // The decoder drops a byte-order mark.
-  return SVG_ROOT.test(decoder.decode(bytes.subarray(0, 4096)));
+  return ext === 'svg' || ext === 'svgz' || isSvgImage(bytes);
 }
 
 const dirOf = (path: string) => path.slice(0, path.lastIndexOf('/') + 1);
