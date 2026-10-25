@@ -31,7 +31,8 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// list, an element in a material kind it does not list it for, and Go's
 /// wording for figures; `multi`, merged into `mcq` (Epo 2026-10-15); a
 /// void element holding anything but one empty text leaf (Epo 2026-10-18);
-/// and a column width the editor never writes (2026-10-25).
+/// a column width the editor never writes (2026-10-25); and an indent that
+/// is not a number (2026-10-26).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -67,6 +68,7 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.starts_with("chart, plot and graph embeds")
         || message.ends_with("holds one empty text leaf")
         || message.starts_with("column width must be")
+        || message == "indent must be a number"
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()
@@ -277,6 +279,88 @@ fn columns_take_only_the_widths_the_editor_writes() {
             refused.0, "column width must be a percentage above 0 and at most 100",
             "{width}"
         );
+    }
+}
+
+/// A table stores the column sizes and left margin Plate's table resizing
+/// writes, px as numbers of 0 or more, a column size possibly empty (Go's
+/// `TestTablesTakeOnlyThePlateSizes`).
+#[test]
+fn tables_take_only_the_plate_sizes() {
+    let validate = |sizes: Value| {
+        let mut table = json!({ "type": "table", "id": "t", "children": [
+            { "type": "tr", "children": [
+                { "type": "td", "children": [{ "type": "p", "children": [{ "text": "a" }] }] },
+            ] },
+        ] });
+        for (key, value) in sizes.as_object().unwrap() {
+            table[key] = value.clone();
+        }
+        material::assert_canonical_with(&[table], "note", &Policy::default())
+    };
+    for sizes in [
+        json!({}),
+        json!({ "colSizes": [120, 0, 48.5, null] }),
+        json!({ "colSizes": [] }),
+        json!({ "marginLeft": 0 }),
+        json!({ "marginLeft": 24 }),
+    ] {
+        validate(sizes.clone()).unwrap_or_else(|e| panic!("{sizes}: {e}"));
+    }
+    for sizes in [
+        json!({ "colSizes": ["120"] }),
+        json!({ "colSizes": ["120px;color:red"] }),
+        json!({ "colSizes": [-1] }),
+        json!({ "colSizes": "120" }),
+        json!({ "colSizes": null }),
+        json!({ "marginLeft": "24px" }),
+        json!({ "marginLeft": -1 }),
+        json!({ "marginLeft": null }),
+    ] {
+        let refused = validate(sizes.clone()).unwrap_err();
+        assert!(refused.0.starts_with("table "), "{sizes}: {}", refused.0);
+    }
+}
+
+/// An indent is a number, which Plate draws as a class and a margin (Go's
+/// `TestIndentIsANumber`).
+#[test]
+fn an_indent_is_a_number() {
+    let validate = |indent: Value| {
+        let node =
+            json!({ "type": "p", "id": "p", "indent": indent, "children": [{ "text": "a" }] });
+        material::assert_canonical_with(&[node], "note", &Policy::default())
+    };
+    for indent in [Value::Null, json!(1), json!(1.5), json!(8)] {
+        validate(indent.clone()).unwrap_or_else(|e| panic!("{indent}: {e}"));
+    }
+    for indent in [json!("1"), json!("1 fixed"), json!(true)] {
+        let refused = validate(indent.clone()).unwrap_err();
+        assert_eq!(refused.0, "indent must be a number", "{indent}");
+    }
+}
+
+/// The marks Plate draws as styles live on text: an element carrying one is
+/// refused, a leaf keeps it (Go's `TestTextMarksStayOnText`).
+#[test]
+fn text_marks_stay_on_text() {
+    let marks = [
+        ("color", "#c0392b"),
+        ("backgroundColor", "#fdebd0"),
+        ("fontSize", "20px"),
+        ("fontFamily", "Georgia"),
+    ];
+    let mut leaf = json!({ "text": "a" });
+    for (key, value) in marks {
+        leaf[key] = json!(value);
+    }
+    let note = |node: Value| material::assert_canonical_with(&[node], "note", &Policy::default());
+    note(json!({ "type": "p", "id": "p", "children": [leaf] })).unwrap();
+    for (key, value) in marks {
+        let refused =
+            note(json!({ "type": "p", "id": "p", key: value, "children": [{ "text": "a" }] }))
+                .unwrap_err();
+        assert_eq!(refused.0, format!("p cannot carry {key}"));
     }
 }
 

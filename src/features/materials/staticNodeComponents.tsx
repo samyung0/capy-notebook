@@ -75,7 +75,12 @@ import type {
   QuestionFigureElement,
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
-import { isColumnWidth, quizQuestionElementToQuestion } from './document';
+import {
+  isColumnWidth,
+  isTableSize,
+  mediaWidth,
+  quizQuestionElementToQuestion,
+} from './document';
 import { EmbedLoading } from './embeds/EmbedView';
 import { Island, StaticMathContext } from './Island';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
@@ -175,7 +180,10 @@ function Table(props: SlateElementProps) {
   const table = props.element as TTableElement;
   const colSizes = Array.from(
     { length: getTableColumnCount(table) },
-    (_, index) => table.colSizes?.[index] || 120
+    (_, index) => {
+      const size = table.colSizes?.[index];
+      return isTableSize(size) && size > 0 ? size : 120;
+    }
   );
 
   return (
@@ -370,7 +378,7 @@ function YouTubeElement(props: SlateElementProps) {
                 </a>
               </ToolbarButton>
             }
-            width={element.width}
+            width={mediaWidth(element.width)}
           >
             <YouTubeEmbed videoId={element.videoId} />
           </MediaFrame>

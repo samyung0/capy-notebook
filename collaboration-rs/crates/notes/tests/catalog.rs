@@ -579,6 +579,15 @@ fn admission_checks_placement_values_and_the_embed_count() {
         ("column", "width", text("50%;color:red")),
         ("column", "width", text("0%")),
         (
+            "table",
+            "colSizes",
+            yrs::Any::Array(vec![text("120px;color:red"), yrs::Any::Number(100.0)].into()),
+        ),
+        ("table", "colSizes", text("120")),
+        ("table", "marginLeft", text("24px")),
+        ("table", "marginLeft", yrs::Any::Number(-1.0)),
+        ("p", "indent", text("1 fixed")),
+        (
             "html_embed",
             "html",
             text(&"x".repeat(catalog::HTML_EMBED_MAX_BYTES + 1)),
@@ -596,6 +605,17 @@ fn admission_checks_placement_values_and_the_embed_count() {
             yrs::Any::Number((catalog::LIST_INDENT_MAX + 1) as f64),
         ),
     ];
+    // The marks Plate draws as styles live on text: the catalog forbids them
+    // on every element.
+    for key in ["color", "backgroundColor", "fontSize", "fontFamily"] {
+        assert!(
+            refused_as(
+                admit(&room, &set("p", key, text("red"))),
+                limits::FORBIDDEN_KEY
+            ),
+            "a p's {key}"
+        );
+    }
     // A figure's block is its live map only, never one plain value
     // (Epo 2026-10-18).
     assert!(refused_as(
@@ -616,6 +636,12 @@ fn admission_checks_placement_values_and_the_embed_count() {
         ("video", "videoId", text("aaaaaaaaaaa")),
         ("chart", "width", text("100%")),
         ("column", "width", text("49.9995%")),
+        (
+            "table",
+            "colSizes",
+            yrs::Any::Array(vec![yrs::Any::Number(120.0), yrs::Any::Null].into()),
+        ),
+        ("table", "marginLeft", yrs::Any::Number(24.0)),
         ("html_embed", "caption", text("New caption")),
         (
             "html_embed",
