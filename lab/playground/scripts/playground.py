@@ -362,24 +362,48 @@ PREFERENCE_TABLES = {
 }
 
 
+# Preference values production does not offer yet, tried here first: each joins
+# its field's table for the turn and the wording panel.
+PLAYGROUND_PREFERENCES = {
+    # Story mode (Epo 2026-10-25), from three narrated science-documentary
+    # transcripts: a scene with stakes, a question held open, the idea's history
+    # with each concept explained where the story needs it, turns, a closed loop.
+    "writingStyle=story": (
+        "Explainers tell a story: open on a concrete moment with stakes (a "
+        "person, place or date the sources give, or a scene marked as imagined) "
+        "and pose the question it raises; then follow how the idea was found or "
+        "how the process unfolds, in order, explaining each concept exactly when "
+        "the story needs it, step by step, with an everyday comparison; let each "
+        "section turn on a surprise, a failure or a reversal; close by answering "
+        "the opening question and linking it to the learner's world. Never invent "
+        "names, dates, quotes or events; definitions and numbers stay exact."
+    ),
+}
+
+
 def preference_texts() -> dict[str, str]:
-    """Production's turn-context line for each preference value, as field=value."""
+    """The turn-context line for each preference value, as field=value:
+    production's, then the playground's own values."""
     from pipeline.prompts import preferences
 
     return {
-        f"{field}={value}": text
-        for field, table in PREFERENCE_TABLES.items()
-        for value, text in getattr(preferences, table).items()
+        **{
+            f"{field}={value}": text
+            for field, table in PREFERENCE_TABLES.items()
+            for value, text in getattr(preferences, table).items()
+        },
+        **PLAYGROUND_PREFERENCES,
     }
 
 
 @contextmanager
 def preference_wording(c: dict[str, Any]):
-    """The config's preference_text in place of production's lines for one turn."""
+    """The playground's own values and the config's preference_text in place of
+    production's lines for one turn."""
     from pipeline.prompts import preferences
 
     with ExitStack() as stack:
-        for name, text in c["preference_text"].items():
+        for name, text in {**PLAYGROUND_PREFERENCES, **c["preference_text"]}.items():
             field, value = name.split("=", 1)
             table = getattr(preferences, PREFERENCE_TABLES[field])
             stack.enter_context(patch.dict(table, {value: text}))
@@ -2692,6 +2716,11 @@ def check_preferences() -> None:
             *production[:1], "Short.", *production[2:]
         ]
     assert preferences.lines({"writingStyle": "brief"}) == production
+    # A playground-only value (story mode) is a line for the turn alone.
+    story = PLAYGROUND_PREFERENCES["writingStyle=story"]
+    with preference_wording(merged({})):
+        assert story in preferences.lines({"writingStyle": "story"})
+    assert "story" not in preferences.WRITING
     try:
         merged({"preference_text": {"writingStyle=terse": "x"}})
     except HTTPException:
