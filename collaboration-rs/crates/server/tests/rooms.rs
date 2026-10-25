@@ -360,14 +360,28 @@ fn join_payload(room: &str, token: &str, protocol: Option<u64>) -> Vec<u8> {
     join_payload_as(room, &token, protocol, client)
 }
 
-/// A JOIN's payload naming the session's client id `client`.
+/// A JOIN's payload naming the session's client id `client`, a new session
+/// holding no stored version.
 fn join_payload_as(room: &str, token: &str, protocol: Option<u64>, client: u64) -> Vec<u8> {
+    join_payload_at(room, token, protocol, client, 0)
+}
+
+/// A JOIN's payload naming the session's client id and the stored version
+/// it holds (in-place collection).
+fn join_payload_at(
+    room: &str,
+    token: &str,
+    protocol: Option<u64>,
+    client: u64,
+    version: u64,
+) -> Vec<u8> {
     let mut payload = Vec::new();
     varbytes(&mut payload, room.as_bytes());
     varbytes(&mut payload, token.as_bytes());
     if let Some(protocol) = protocol {
         var(&mut payload, protocol);
         var(&mut payload, client);
+        var(&mut payload, version);
     }
     payload
 }
@@ -475,10 +489,18 @@ impl Client {
     }
 
     /// Leaves its channel as a browser tab does (Q236): `unsent` when it
-    /// still holds unsent edits for the document. Later JOINs go on the next
-    /// channel of the same socket.
+    /// still holds unsent edits for the document, naming its session. Later
+    /// JOINs go on the next channel of the same socket.
     async fn leave(&mut self, unsent: bool) {
-        self.send(3, &[u8::from(unsent)]).await;
+        let session = self.id();
+        self.leave_naming(unsent, session).await;
+    }
+
+    /// A Leave naming the session `session`.
+    async fn leave_naming(&mut self, unsent: bool, session: u64) {
+        let mut payload = vec![u8::from(unsent)];
+        var(&mut payload, session);
+        self.send(3, &payload).await;
         self.channel += 1;
         self.inbox.clear();
     }
@@ -9528,6 +9550,7 @@ async fn a_draft_preflight_answers_an_allowed_origin_alone() {
         "x-capy-base",
         "x-capy-protocol",
         "x-capy-grants",
+        "x-capy-version",
     ] {
         assert!(
             header("access-control-allow-headers").contains(name),
@@ -10352,4 +10375,293 @@ async fn a_repeated_block_id_is_repaired_at_save_with_no_reset() {
     assert!(a.settle(distinct).await);
     assert!(b.settle(distinct).await);
     assert_eq!(room_schema(&env, &material).await, 1);
+}
+
+// ------------------------------------------------- note sessions (in-place collection)
+
+/// A note session's row (`sessions.rs`): its acknowledged version, whether
+/// it is a live session (seen), and the deletions it holds.
+async fn session_row(env: &Env, material: &str, client: u64) -> (i64, bool, yrs::IdSet) {
+    let row = db(env)
+        .await
+        .query_one(
+            "SELECT acked_version, seen_at IS NOT NULL, held FROM material_yjs_client_ids
+             WHERE material_id=$1 AND document='content' AND client_id=$2",
+            &[&material, &(client as i64)],
+        )
+        .await
+        .expect("the session's row");
+    let held: Option<Vec<u8>> = row.get(2);
+    (
+        row.get(0),
+        row.get(1),
+        held.map_or_else(yrs::IdSet::new, |bytes| held_ids(&bytes)),
+    )
+}
+
+/// The deletions a stored `held` column holds: batches of an arrival time
+/// and a Yjs delete set.
+fn held_ids(bytes: &[u8]) -> yrs::IdSet {
+    let mut at = 0;
+    let mut ids = yrs::IdSet::new();
+    for _ in 0..read_var(bytes, &mut at) {
+        let _arrived = read_var(bytes, &mut at);
+        let len = read_var(bytes, &mut at) as usize;
+        ids.merge_with(yrs::IdSet::decode_v1(&bytes[at..at + len]).expect("ids"));
+        at += len;
+    }
+    ids
+}
+
+impl Client {
+    /// The next `stored` notice past `version`: the version it names.
+    async fn stored_past(&mut self, version: i64) -> i64 {
+        loop {
+            let (notice, _) = self.stateless("stored").await;
+            let stored = notice["version"].as_i64().expect("a version");
+            if stored > version {
+                return stored;
+            }
+        }
+    }
+
+    /// Acknowledges a stored version, as a tab does on each `stored`.
+    async fn ack_version(&mut self, version: i64) {
+        let ack = serde_json::json!({ "type": "ack", "version": version }).to_string();
+        let mut payload = Vec::new();
+        varbytes(&mut payload, ack.as_bytes());
+        self.send(9, &payload).await;
+    }
+
+    /// Deletes `len` units at `index` of the first block, sent at once when
+    /// `send`: the deletions it made.
+    async fn delete_in_block(&mut self, index: u32, len: u32, send: bool) -> yrs::IdSet {
+        let before = self.doc.transact().state_vector();
+        let deleted = {
+            let root = self.doc.get_or_insert_text("content");
+            let mut txn = self.doc.transact_mut();
+            let block = root
+                .diff(&txn, yrs::types::text::YChange::identity)
+                .into_iter()
+                .find_map(|chunk| match chunk.insert {
+                    yrs::Out::YXmlText(block) => Some(block),
+                    _ => None,
+                })
+                .expect("a block");
+            block.remove_range(&mut txn, index, len);
+            txn.commit();
+            txn.delete_set().clone()
+        };
+        if send {
+            let update = self.doc.transact().encode_state_as_update_v1(&before);
+            self.send(5, &sync(2, &update)).await;
+        }
+        deleted
+    }
+
+    /// Joins again as the same session (its own id, offered by `token`)
+    /// naming `version`, and syncs: its step 2 carries all it holds.
+    async fn rejoin_at(&mut self, room: &str, token: &str, version: u64) {
+        let payload = join_payload_at(room, token, Some(client_protocol()), self.id(), version);
+        self.send(0, &payload).await;
+        self.until(1).await.expect("joined");
+        let sv = self.doc.transact().state_vector().encode_v1();
+        self.send(5, &sync(0, &sv)).await;
+    }
+}
+
+/// In-place collection, step 1 (Epo 2026-10-23): a note room tells a synced
+/// editor the stored version it holds once it answered its step 1 and after
+/// each store; the session counts at the version its JOIN named, then at
+/// each `ack` (never above the room's version), and its row keeps that with
+/// the next store.
+#[tokio::test]
+async fn a_note_session_counts_at_its_join_and_acknowledged_versions() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    let offered = fresh_client_id();
+    a.doc = Doc::with_options(ydoc::doc_options(offered));
+    a.rejoin_at(&room, &token_offering(&room, &user, "write", offered), 1)
+        .await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    assert_eq!(a.stored_past(0).await, 1, "the answer's stored version");
+    a.type_text("-a").await;
+    let second = a.stored_past(1).await;
+    assert_eq!(session_row(&env, &material, a.id()).await.0, 1);
+    // An acknowledgement above the room counts as the room's version.
+    a.ack_version(second + 50).await;
+    a.type_text("-b").await;
+    a.stored_past(second).await;
+    let (version, seen, held) = session_row(&env, &material, a.id()).await;
+    assert_eq!((version, seen, held.is_empty()), (second, true, true));
+}
+
+/// In-place collection, step 1: a session holds the deletions its own
+/// updates made. A reconnect's step 2 resends the whole delete set and adds
+/// only what the room held undeleted: the session's offline deletions,
+/// never another writer's that it heard. Fails if a held set takes the
+/// resent deletions too, or the live ones go unheld.
+#[tokio::test]
+async fn a_step_2_holds_only_the_sessions_own_deletions() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "abcdef").await;
+    let material = material_of(&room).to_owned();
+    let mut a = Client::open(server.port).await;
+    let offered = fresh_client_id();
+    a.doc = Doc::with_options(ydoc::doc_options(offered));
+    let a_token = token_offering(&room, &owner, "write", offered);
+    a.rejoin_at(&room, &a_token, 0).await;
+    let mut b = Client::open(server.port).await;
+    b.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(a.settle(|c| c.block_text() == "abcdef").await);
+    assert!(b.settle(|c| c.block_text() == "abcdef").await);
+    // B deletes "ab" live; A hears it.
+    let bs = b.delete_in_block(0, 2, true).await;
+    let stored = b.stored_past(1).await;
+    assert!(a.settle(|c| c.block_text() == "cdef").await);
+    // A leaves with unsent edits, deletes "ef" offline and comes back.
+    a.leave(true).await;
+    let a_deleted = a.delete_in_block(2, 2, false).await;
+    a.rejoin_at(&room, &a_token, stored as u64).await;
+    // Reading up to a sync message answers the room's step 1 (its step 2);
+    // syncs never wait in the inbox, unlike the old channel's notices.
+    a.until(5).await.expect("a sync");
+    assert!(b.settle(|c| c.block_text() == "cd").await);
+    b.stored_past(stored).await;
+    assert_eq!(session_row(&env, &material, a.id()).await.2, a_deleted);
+    assert_eq!(session_row(&env, &material, b.id()).await.2, bs);
+}
+
+/// Security regression (in-place collection, plan section 8): a clean Leave
+/// ends only the session bound to the leaving channel. One naming another
+/// user's session ends nothing, so that session stays counted and keeps the
+/// deletions its Undo restores. Fails if a Leave ends whichever session it
+/// names.
+#[tokio::test]
+async fn a_leave_ends_only_the_leaving_channels_own_session() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "abcdef").await;
+    let material = material_of(&room).to_owned();
+    let mut victim = Client::open(server.port).await;
+    victim.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(victim.settle(|c| c.block_text() == "abcdef").await);
+    let held = victim.delete_in_block(0, 2, true).await;
+    let stored = victim.stored_past(1).await;
+    assert_eq!(session_row(&env, &material, victim.id()).await.2, held);
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(other.settle(|c| c.block_text() == "cdef").await);
+    other.leave_naming(false, victim.id()).await;
+    // The victim's next store writes its session as it stands.
+    victim.type_text("-x").await;
+    victim.stored_past(stored).await;
+    let (_, seen, kept) = session_row(&env, &material, victim.id()).await;
+    assert!(seen, "the victim's session ended");
+    assert_eq!(kept, held);
+}
+
+/// Editor 2026-10-26 (in-place collection, step 1): the version a room sends
+/// after answering a step 1 is the latest one already committed. A session
+/// joining while a store is pending hears the committed version, holding
+/// more, and the pending one only once it commits. Fails if the notice names
+/// a store that has not committed.
+#[tokio::test]
+async fn a_session_joining_while_a_store_is_pending_hears_the_committed_version() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    let committed = writer.stored_past(0).await;
+    let mut lock = db(&env).await;
+    let held = lock.transaction().await.expect("transaction");
+    held.batch_execute("LOCK TABLE material_yjs_updates IN EXCLUSIVE MODE")
+        .await
+        .expect("lock");
+    writer.type_text("-a").await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let waiting = db(&env)
+            .await
+            .query_one(
+                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' \
+                 AND query ILIKE '%material_yjs_updates%'",
+                &[],
+            )
+            .await
+            .expect("activity")
+            .get::<_, i64>(0);
+        if waiting > 0 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the store never reached the lock"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let mut joining = Client::open(server.port).await;
+    joining.joined(&room, &token(&room, &user, "write")).await;
+    assert!(joining.settle(|c| c.block_text() == "base-a").await);
+    let (notice, _) = joining.stateless("stored").await;
+    assert_eq!(notice["version"], committed, "the pending store's version");
+    held.rollback().await.expect("release");
+    assert_eq!(joining.stored_past(committed).await, committed + 1);
+}
+
+/// Editor 2026-10-26 (in-place collection, step 1): a session that never
+/// wrote is counted in its room's memory only and gets no row, so the next
+/// room life does not count it; it holds no deletions and no unsent edits,
+/// so a collection passing it costs it only a remount (the late path), and
+/// it comes back with its document whole. Fails if such a session gets a
+/// row.
+#[tokio::test]
+async fn a_session_that_never_wrote_is_counted_only_while_its_room_lives() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    writer.type_text("-w").await;
+    let stored = writer.stored_past(1).await;
+    let offered = fresh_client_id();
+    let mut reader = Client::open(server.port).await;
+    reader.doc = Doc::with_options(ydoc::doc_options(offered));
+    reader
+        .rejoin_at(&room, &token_offering(&room, &user, "write", offered), 0)
+        .await;
+    assert!(reader.settle(|c| c.block_text() == "base-w").await);
+    assert_eq!(reader.stored_past(0).await, stored);
+    let kept = reader
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    drop(reader);
+    drop(writer);
+    wait_unloaded(server.port).await;
+    let rows: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM material_yjs_client_ids WHERE material_id=$1 AND client_id=$2",
+            &[&material, &(offered as i64)],
+        )
+        .await
+        .expect("count")
+        .get(0);
+    assert_eq!(rows, 0, "a session that never wrote has no row");
+    let mut back = Client::open(server.port).await;
+    back.doc = Doc::with_options(ydoc::doc_options(offered));
+    back.doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&kept).expect("state"))
+        .expect("apply");
+    back.rejoin_at(
+        &room,
+        &token_offering(&room, &user, "write", offered),
+        stored as u64,
+    )
+    .await;
+    assert!(back.settle(|c| c.block_text() == "base-w").await);
 }

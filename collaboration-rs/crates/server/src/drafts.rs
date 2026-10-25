@@ -2,8 +2,9 @@
 //! editor open on it (the sweep in `src/lib/editDrafts.ts`). The page sends
 //! the editor's own room token (`Authorization: Bearer`), the room its rows
 //! grew from (`X-Capy-Room`), its client protocol (`X-Capy-Protocol`, the
-//! JOIN's) and, for a source, their base (`X-Capy-Base`), and the merged rows
-//! as one Yjs update; the URL is the same for every
+//! JOIN's) and, for a source, their base (`X-Capy-Base`), the stored version
+//! their oldest row was made at (`X-Capy-Version`, in-place collection), and
+//! the merged rows as one Yjs update; the URL is the same for every
 //! document, so one preflight covers a sweep. The request counts against the
 //! user's draft sends (60 a minute, `rate.rs`, Q360) once its token checks
 //! out, runs a channel's JOIN checks (refused while the user is in a timeout,
@@ -44,6 +45,8 @@ const PROTOCOL_HEADER: &str = "x-capy-protocol";
 /// The drafts' stored collaboration tokens, comma-separated (Q288): each may
 /// re-grant the client ids it offered under the reconnect rule.
 const GRANTS_HEADER: &str = "x-capy-grants";
+/// The stored version the group's oldest row was made at (`sessions.rs`).
+const VERSION_HEADER: &str = "x-capy-version";
 /// How long a browser keeps the preflight's answer (Chromium caps it at 2 h).
 const PREFLIGHT_MAX_AGE: &str = "7200";
 
@@ -225,7 +228,7 @@ pub async fn preflight(State(app): State<Shared>, headers: HeaderMap) -> Respons
             (header::ACCESS_CONTROL_ALLOW_METHODS, "POST"),
             (
                 header::ACCESS_CONTROL_ALLOW_HEADERS,
-                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol, x-capy-grants",
+                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol, x-capy-grants, x-capy-version",
             ),
             (header::ACCESS_CONTROL_MAX_AGE, PREFLIGHT_MAX_AGE),
         ],
@@ -364,7 +367,8 @@ async fn checked_and_stored(
     let granted = header_text(headers, GRANTS_HEADER)
         .map(|header| crate::auth::granted_by(header, &app.config.secret, room, user, now))
         .unwrap_or_default();
-    let durable = admitted(app, &name, &context, update, base, granted).await?;
+    let version = header_text(headers, VERSION_HEADER).and_then(|value| value.parse().ok());
+    let durable = admitted(app, &name, &context, update, base, granted, version).await?;
     match durable.await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(Refused::new(Class::Unavailable, error)),
@@ -385,6 +389,7 @@ async fn admitted(
     update: Bytes,
     base: Option<String>,
     granted: Vec<u64>,
+    version: Option<u64>,
 ) -> Result<Durable, Refused> {
     for _ in 0..2 {
         let handle = app.rooms.get_or_spawn(&name.to_string(), |id| {
@@ -396,6 +401,7 @@ async fn admitted(
             update: update.clone(),
             base: base.clone(),
             granted: granted.clone(),
+            version,
             reply,
         }));
         if handle.tx.send(command).await.is_err() {

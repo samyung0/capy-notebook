@@ -27,6 +27,7 @@ mod pubsub;
 mod rate;
 mod room;
 mod seats;
+mod sessions;
 mod socket;
 mod source_rooms;
 

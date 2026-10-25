@@ -11,9 +11,10 @@ import { FileBanner } from './FileBanner';
  *   full disk). `offline-limit`: the device holds as much as the file allows,
  *   and the editor stops taking edits until it reconnects.
  * - `refused`: a save was refused for good. `changed`: the file moved on
- *   (a newer version, a room reset) while the edits waited to sync. Both show
- *   the edits read-only for copying; Reload is the only way out, so these two
- *   cannot be closed.
+ *   (a newer version, a room reset) while the edits waited to sync.
+ *   `expired`: the edits are past the 7-day expiry, too old to sync. All
+ *   three show the edits read-only for copying; Reload is the only way out,
+ *   so these cannot be closed.
  * - `outdated`: Capy was updated and the room refuses this build (the
  *   version gate); the editor is read-only, its edits stay on this device for
  *   the reloaded page to send, and Reload waits for the new app.
@@ -27,6 +28,7 @@ export type SaveBannerState =
   | 'offline-limit'
   | 'refused'
   | 'changed'
+  | 'expired'
   | 'outdated'
   | 'outdated-unstored';
 
@@ -35,7 +37,16 @@ export function isOutdatedBanner(state: SaveBannerState | null | undefined) {
 }
 
 export function isRecoveryBanner(state: SaveBannerState | null) {
-  return state === 'refused' || state === 'changed';
+  return state === 'refused' || state === 'changed' || state === 'expired';
+}
+
+/** The strip of a copy-only group of stored edits. */
+export function recoveryBanner(group: {
+  expired?: boolean;
+  refused: boolean;
+}): SaveBannerState {
+  if (group.expired) return 'expired';
+  return group.refused ? 'refused' : 'changed';
 }
 
 const MESSAGES: Record<
@@ -44,6 +55,7 @@ const MESSAGES: Record<
 > = {
   changed: () => m.editor_recovery_changed(),
   delayed: () => m.editor_save_delayed(),
+  expired: () => m.editor_recovery_expired(),
   offline: () => m.editor_offline_banner(),
   'offline-limit': () => m.editor_offline_limit(),
   'offline-unstored': () => m.editor_offline_unstored(),

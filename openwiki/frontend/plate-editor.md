@@ -251,6 +251,16 @@ and the fork's yrs in `Item::redo` (`third_party/yrs/src/block.rs`), so
 browser notes and items, the server's agent Undo and the Office editors all
 follow it.
 
+Undo reaches back at most 24 h (Epo 2026-10-23, the in-place collection's
+Q2): every stack item of the note editor's history and of the item rooms'
+managers records when it was made, and steps older than 24 h by the tab's own
+clock are dropped before each Undo and Redo, whoever calls it (`limitUndo` in
+`src/features/collaboration/undo.ts`). The server keeps the deletions an Undo
+may restore 25 h after they arrived (see [editing
+sessions](#editing-sessions)). The toolbar can still show Undo for a step past
+the horizon; pressing it drops the step and undoes nothing older. Office
+editors keep their own history.
+
 ### Room presence
 
 Developer Epo decided the avatar group and verified cursor labels on
@@ -1577,7 +1587,8 @@ from any page.
   batch still failing after its retries (about 15 s), or a queue a closing
   room drops, is logged as an error. A Leave says whether the tab still holds unsent edits for the
   document (one byte: 0 when it holds none, beyond the provider's
-  unacknowledged updates and the drafts not yet covered by a receipt); a
+  unacknowledged updates and the drafts not yet covered by a receipt), then
+  names the session's client id (see [editing sessions](#editing-sessions)); a
   clean Leave expires the recorded ids its token offered, so they never bind
   again (an id it bound otherwise, its user's other tab's, stays), and a
   socket drop or a Leave with unsent edits keeps them. Each room load
@@ -1713,14 +1724,73 @@ from any page.
   `src/features/files/sourceState.ts`): Yjs moves a document to a new id when
   its own id arrives in an applied update.
 
+### Editing sessions
+
+Epo approved the in-place Yjs collection on 2026-10-23
+([storage quota](../backend-storage-quota.md#yjs-storage-growth)): a note's
+stored state is to be collected when a room folds it, keeping what an open
+session or an Undo may still name. This is its first step, the bookkeeping;
+nothing is collected yet. Notes only (Q274, 2026-10-24): quiz, flashcard and
+other item rooms and source rooms keep no sessions and their full history.
+
+- **A session is one Y.Doc**, named by its client id (see [client
+  ids](#client-ids)): one editor in one tab, whose Undo stack lives as long.
+  A viewer, who never edits, has none.
+- **Versions.** Every JOIN names the stored version its document holds after
+  the client id (0: a new document that holds nothing; one that took stored
+  drafts before its first JOIN names theirs, `unsentFrom`). A note room tells
+  a synced editor the stored version it holds right after answering its step
+  1 and after each store commits, once every update the store holds went out
+  (`{"type": "stored", "version": v}`, `STORED_TYPE` in `room.rs`); the tab
+  answers `{"type": "ack", "version": v}`. The room counts the session at its
+  JOIN's version, then at each `ack` (never above the room's own version).
+- **The oldest unsent edit.** A tab never reports a version above the one its
+  oldest unsent edit was made at (`RoomProvider.reportedVersion`): an edit
+  stays unsent from the moment it is made until the room acknowledged the
+  message carrying it, in flight, held for a resend after a dropped channel,
+  or not sent yet (offline, in a timeout, parked). Its JOIN, its `ack`s and
+  its stored drafts carry at most that. Each stored draft row keeps the
+  version the tab reported when it was made (`EditDraft.version`, a merged row
+  its oldest), and a draft send names its group's oldest in `X-Capy-Version`
+  (a row from before versions counts as 1, older than any collection).
+- **Held deletions.** A session holds the deletions its own channel's updates
+  made: what the room held undeleted, so a reconnect's step 2, which resends
+  the whole delete set, adds only the session's own (`ydoc::apply_deleting`).
+  They are what its Undo may restore. Each is stamped with its arrival (to
+  the minute, the batch's latest) and released 25 h after it, since Undo
+  reaches back 24 h on the tab's clock. A draft send's deletions are held for
+  no one: its session ended.
+- **Counted.** A session counts while connected and for 24 h after it was
+  last seen. It ends at that cap, or on a clean Leave naming it, only the
+  session bound to the leaving channel (a user ends only their own); its held
+  deletions go then. A Leave with unsent edits or a dropped socket keeps it.
+- **Stored** (migration 0117) as columns of the session's client-id row
+  (`material_yjs_client_ids`: `acked_version`, `seen_at`, NULL when there is
+  no session or it ended, and `held`, the batches as arrival times and Yjs
+  delete sets). A store writes the sessions changed since the last one in its
+  own transaction, so a held deletion is durable with the state that holds
+  it; the unload writes what changed after the last store. Only sessions whose
+  id is recorded have a row: a deletion is an accepted write, so a session
+  that only deleted is recorded too. A session that never wrote is counted in
+  memory for its room's life. A room load reads the sessions seen within 24 h.
+- **The fold's input** (`Sessions::holds`): the oldest version every counted
+  session reached (none when no session counts) and their held deletions. The
+  folds log it until the collection uses it.
+- **Late.** A JOIN or a draft group naming a version below the latest
+  collection's window has missed what that collection discarded (`late` in
+  `sessions.rs`, version 0 never is). Nothing is collected yet, so nothing is
+  late.
+
 ### Client protocol and the release nudge
 
 Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
 design, option d), and the nudge's release file on 2026-10-17.
 
 - **The gate.** Every JOIN carries the build's client protocol after the
-  token (`room, token, varuint protocol, varuint clientId`, then an embed's
-  note channel; the client id is the Y.Doc's, see [client ids](#client-ids)),
+  token (`room, token, varuint protocol, varuint clientId, varuint version`,
+  then an embed's note channel; the client id is the Y.Doc's, see [client
+  ids](#client-ids), and the version the stored one it holds, see [editing
+  sessions](#editing-sessions)),
   and every draft send carries it as
   `X-Capy-Protocol`. The number is `CLIENT_PROTOCOL` in
   `src/features/collaboration/protocol.ts` and
@@ -1867,6 +1937,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   writes under its assigned id, Q219) raised `CLIENT_PROTOCOL` to 18 and both
   minimums to 18. Its deploy request names "client protocol 17 -> 18,
   material 16 -> 18, source 17 -> 18".
+  The editing sessions (the in-place collection's bookkeeping, Epo
+  2026-10-23: every JOIN names the stored version its Y.Doc holds after the
+  client id, note rooms send `stored` and take `ack`, a Leave names its
+  session) raised `CLIENT_PROTOCOL` to 20 and `MIN_MATERIAL` to 20;
+  `MIN_SOURCE` stays as it was, since a source JOIN or Leave from an older
+  build carries no version or session and still reads. Its deploy request
+  names "client protocol 19 -> 20, material 18 -> 20".
 
 #### When to bump
 
@@ -1972,7 +2049,11 @@ the token's room are applied before the room connects (updates whose base is
 missing stay pending until the sync brings it) and saved like any edit; rows
 of another room, and refused rows, open read-only in copy-only recovery
 (`NoteRecovery`: the static renderer under a `changed` or `refused` banner
-whose Reload deletes them, one group at a time). A group with no `state` row
+whose Reload deletes them, one group at a time). A lineage's rows expire 7
+days after its newest row (`draftGroups`, Epo 2026-10-24): that group opens
+once under the `expired` banner and is deleted as it opens
+(`dropExpiredGroup`), and the draft sweep never sends it; for notes until the
+merge view (Q251). A group with no `state` row
 cannot be drawn (a tab closed online, then the room moved): it is dropped
 with "Some unsaved edits from your last session couldn't be restored."
 

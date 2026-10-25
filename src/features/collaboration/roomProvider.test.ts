@@ -5,7 +5,7 @@ import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSourceProvider } from '@/features/files/sourceProvider';
 import type { DraftMessage, DraftReply } from '@/lib/draftStore';
-import { readDrafts, recordDrafts } from '@/lib/editDrafts';
+import { draftsVersion, readDrafts, recordDrafts } from '@/lib/editDrafts';
 import { resetAllowance, tabAllowance } from './allowance';
 import { isHeld } from './held';
 import { NoteSeat } from './noteSeat';
@@ -199,9 +199,11 @@ it('joins with its token, syncs both ways and counts unacknowledged updates', as
   expect(reader.varString()).toBe('material:m1:schema:1');
   expect(reader.varString()).toBe(token('token-1'));
   // The version gate: the build's client protocol follows the token, then
-  // the client id the document took from it (Q213).
+  // the client id the document took from it (Q213) and the stored version
+  // it holds (none: a new document).
   expect(reader.varUint()).toBe(CLIENT_PROTOCOL);
   expect(reader.varUint()).toBe(clientIdOf('token-1'));
+  expect(reader.varUint()).toBe(0);
   expect(reader.done).toBe(true);
   expect(document.clientID).toBe(clientIdOf('token-1'));
   const channel = join.channel;
@@ -398,8 +400,9 @@ it('presents its previous token for 70 s of client id refusals, then asks for fr
   }
 });
 
-it('says on Leave whether the tab still holds unsent edits', async () => {
-  // Q236: only a clean Leave lets the room expire the session's ids.
+it('says on Leave whether the tab still holds unsent edits, naming its session', async () => {
+  // Q236: only a clean Leave lets the room expire the session's ids; it ends
+  // the session it names (in-place collection).
   let drafts = false;
   for (const [edit, stored, unsent] of [
     [false, false, 0],
@@ -415,8 +418,138 @@ it('says on Leave whether the tab still holds unsent edits', async () => {
     if (edit) document.getText('content').insert(0, 'typed');
     provider.disconnect();
     const [leave] = socket.take(MessageKind.Leave);
-    expect([...leave.payload]).toEqual([unsent]);
+    const reader = new Reader(leave.payload);
+    expect(reader.byte()).toBe(unsent);
+    expect(reader.varUint()).toBe(document.clientID);
+    expect(reader.done).toBe(true);
   }
+});
+
+/** The JOIN's stored version (after the room, token, protocol and id). */
+function joinVersion(join: Message) {
+  const reader = new Reader(join.payload);
+  reader.varString();
+  reader.varString();
+  reader.varUint();
+  reader.varUint();
+  return reader.varUint();
+}
+
+/** The `ack` versions the provider sent since the last call. */
+function acks(socket: FakeSocket) {
+  return socket
+    .take(MessageKind.Stateless)
+    .map((sent) => JSON.parse(new Reader(sent.payload).varString()))
+    .filter((event) => event.type === 'ack')
+    .map((event) => event.version as number);
+}
+
+const stored = (channel: number, version: number) =>
+  message(
+    channel,
+    MessageKind.Stateless,
+    text(JSON.stringify({ type: 'stored', version }))
+  );
+
+/** Joined and synced with the server's document, its step 2 acknowledged. */
+async function synced(
+  options: Partial<ConstructorParameters<typeof RoomProvider>[0]> = {}
+) {
+  const opened = await joined(options);
+  const { join, socket } = opened;
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(new Y.Doc()))
+    ),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(new Y.Doc()))
+    )
+  );
+  socket.take(MessageKind.Sync);
+  return opened;
+}
+
+const ack = (channel: number, count: number) =>
+  message(channel, MessageKind.Ack, new Writer().varUint(count).done());
+
+// In-place collection (Epo 2026-10-23): a tab acknowledges each store's
+// version, but never above the version its oldest unsent edit was made at,
+// so no collection passes what that edit names.
+it('acknowledges stored versions, never above its oldest unsent edit', async () => {
+  const { document, join, provider, socket } = await synced();
+  const channel = join.channel;
+  // Its step 2 is in flight, made at version 0.
+  socket.deliver(stored(channel, 5));
+  expect(acks(socket)).toEqual([0]);
+  socket.deliver(ack(channel, 1), stored(channel, 6));
+  expect(acks(socket)).toEqual([6]);
+  // An edit made at 6, unacknowledged when 7 is stored.
+  document.getText('content').insert(0, 'a');
+  socket.deliver(stored(channel, 7));
+  expect(acks(socket)).toEqual([6]);
+  socket.deliver(ack(channel, 1), stored(channel, 8));
+  expect(acks(socket)).toEqual([8]);
+  // Held for a resend: the channel ends with an edit in flight, and the
+  // next JOIN names the version it was made at.
+  document.getText('content').insert(0, 'b');
+  socket.deliver(stored(channel, 9));
+  expect(acks(socket)).toEqual([8]);
+  provider.disconnect();
+  document.getText('content').insert(0, 'c');
+  expect(provider.reportedVersion).toBe(8);
+  provider.connect();
+  await flush();
+  const [rejoin] = socket.take(MessageKind.Join);
+  expect(joinVersion(rejoin)).toBe(8);
+  provider.destroy();
+});
+
+it('acknowledges nothing before it synced', async () => {
+  const { join, socket } = await joined();
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    stored(join.channel, 4)
+  );
+  expect(acks(socket)).toEqual([]);
+});
+
+it('joins with its stored drafts version and reports it until the room took them', async () => {
+  // L10 (late-merge review): rows applied before the JOIN are not new.
+  const { join, provider, socket } = await joined({ unsentFrom: 3 });
+  expect(joinVersion(join)).toBe(3);
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(new Y.Doc()))
+    ),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(new Y.Doc()))
+    ),
+    stored(join.channel, 9)
+  );
+  expect(acks(socket)).toEqual([3]);
+  socket.deliver(ack(join.channel, 1), stored(join.channel, 10));
+  expect(acks(socket)).toEqual([10]);
+  // A held draft send's steps go in later: made at 4.
+  provider.unsentFrom(4);
+  expect(provider.reportedVersion).toBe(4);
+});
+
+it('joins restored rows stored before versions at 1, never as new', async () => {
+  // L10 (Editor 2026-10-26): a row without a version is older than any
+  // collection, so the JOIN names 1, not 0 (a new tab's).
+  const rows = [{}, { version: 7 }];
+  const { join } = await joined({ unsentFrom: draftsVersion(rows) });
+  expect(joinVersion(join)).toBe(1);
 });
 
 it('keeps taking token ids while its joins are read-only', async () => {
@@ -572,6 +705,8 @@ it('joins an embed inside its note, ending and joining again with it', async () 
     CLIENT_PROTOCOL,
   ]);
   expect(reader.varUint()).toBe(clientIdOf('embed-token'));
+  // Its stored version (none: new), then its note's channel.
+  expect(reader.varUint()).toBe(0);
   expect(reader.varUint()).toBe(noteJoin.channel);
   socket.deliver(message(first.channel, MessageKind.Joined, Uint8Array.of(1)));
   expect(embed.isAuthenticated).toBe(true);

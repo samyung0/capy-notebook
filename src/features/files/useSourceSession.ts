@@ -6,6 +6,7 @@ import { useMe } from '@/api/hooks';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import {
   isRecoveryBanner,
+  recoveryBanner,
   type SaveBannerState,
 } from '@/components/banners/SaveBanner';
 import { userToast } from '@/components/ui/userToast';
@@ -35,6 +36,7 @@ import {
   draftKey as documentDraftKey,
   draftGroups,
   draftSender,
+  dropExpiredGroup,
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
@@ -499,6 +501,7 @@ export function useSourceSession(
       const lineage = sourceLineage(session);
       const {
         current: restoredDrafts,
+        expired,
         recovery: found,
         refused,
       } = await draftGroups(
@@ -512,9 +515,11 @@ export function useSourceSession(
         : null;
       if (cancelled) return;
       if (draft && opened && typeof opened === 'object') {
-        // Recovery shows the edits over their own base.
+        // Recovery shows the edits over their own base, an expired group
+        // once.
         controller.abort();
-        reportRecoveryGroup(found, report, refused);
+        if (expired) dropExpiredGroup(found, report);
+        else reportRecoveryGroup(found, report, refused);
         recoveryDrafts = found;
         shared.destroy();
         const recovered = opened.doc;
@@ -534,7 +539,7 @@ export function useSourceSession(
         });
         setStatus('recovery');
         setDirty(true);
-        setBanner(refused ? 'refused' : 'changed');
+        setBanner(recoveryBanner({ expired, refused }));
         // No room joins: recovery is its answer.
         reconnect.dispose();
         return;

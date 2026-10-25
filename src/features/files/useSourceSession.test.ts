@@ -257,7 +257,7 @@ describe('an edit session opening with stored drafts', () => {
       key: 'u_1:file:f_1',
       kind: 'update',
       lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
-      savedAt: 0,
+      savedAt: Date.now(),
       seq: 1,
     } as const;
     const accepted: EditDraft = {
@@ -317,7 +317,7 @@ describe('an edit session opening with stored drafts', () => {
       key: 'u_1:file:f_1',
       kind: 'update',
       lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
-      savedAt: 0,
+      savedAt: Date.now(),
       seq: 1,
       session: 'b',
     };

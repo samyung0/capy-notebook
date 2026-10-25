@@ -22,11 +22,15 @@ import {
   type DraftRef,
   type DraftReply,
   type DraftRequest,
+  draftsVersion,
   grantsOf,
   MERGE_RUN,
   mergedRows,
   type StorageError,
+  versionOf,
 } from './draftStore';
+
+export { draftsVersion } from './draftStore';
 
 /**
  * Unsaved collaborative edits kept on this device (notes, Office and text
@@ -75,6 +79,10 @@ export interface EditDraft {
   /** The session's local edit count this row covers. */
   seq: number;
   session: string;
+  /** The stored version the tab reported when it made the row's edits
+   * (in-place collection): a merged row's oldest. A draft send names its
+   * group's oldest, and an editor opening the rows reports no newer one. */
+  version?: number;
 }
 
 type DocOptions = ConstructorParameters<typeof Y.Doc>[0];
@@ -309,12 +317,28 @@ export function markDraftsReported(key: string, ids: string[]): Promise<void> {
   return markDrafts(key, ids, 'reported');
 }
 
+/** Unsent edits expire 7 days after their group's last edit (Epo
+ * 2026-10-24, human/frontend/error-handling.md): the next open on the device
+ * shows them once copy-only with a line that they are too old to sync, then
+ * deletes them, and no sweep sends them. For notes until the merge view
+ * exists (Q251); other kinds keep it. */
+export const DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Whether a group of rows is past the expiry: its last edit (its newest
+ * row) is over 7 days old. */
+export function draftsExpired(
+  rows: readonly { savedAt: number }[],
+  now = Date.now()
+) {
+  return now - Math.max(...rows.map((row) => row.savedAt)) > DRAFT_EXPIRY_MS;
+}
+
 /**
  * Split a document's rows against the room it opens: `current` merges into
- * the live document; `recovery` is one group (refused rows, or one other
- * lineage) to show read-only first, `refused` saying which. Further groups
- * wait for the next open. `same` compares lineages (text sources ignore the
- * base).
+ * the live document; `recovery` is one group (refused rows, one other
+ * lineage, or a lineage's rows past the 7-day expiry) to show read-only
+ * first, `refused` and `expired` saying which. Further groups wait for the
+ * next open. `same` compares lineages (text sources ignore the base).
  *
  * Rows of this lineage from a session the room never accepted that no draft
  * send delivers (held after one, or with no stored token) open copy-only
@@ -329,9 +353,19 @@ export async function draftGroups(
   rows: EditDraft[],
   lineage: string,
   same: (left: string, right: string) => boolean = (left, right) =>
-    left === right
+    left === right,
+  now = Date.now()
 ) {
+  // A lineage's rows expire together, 7 days after the newest.
+  const group = (row: EditDraft) =>
+    same(row.lineage, lineage) ? lineage : row.lineage;
+  const groups = new Map<string, EditDraft[]>();
+  for (const row of rows)
+    groups.set(group(row), [...(groups.get(group(row)) ?? []), row]);
+  const old = (row: EditDraft) =>
+    draftsExpired(groups.get(group(row)) ?? [row], now);
   const unsendable = (row: EditDraft) =>
+    !old(row) &&
     same(row.lineage, lineage) &&
     !row.refused &&
     !row.accepted &&
@@ -348,17 +382,38 @@ export async function draftGroups(
     }));
   const refused = (row: EditDraft) =>
     !!row.refused || (shown && unsendable(row));
-  const first = rows.find((row) => refused(row) || !same(row.lineage, lineage));
-  return {
-    current: rows.filter((row) => !refused(row) && same(row.lineage, lineage)),
-    recovery: first
-      ? rows.filter(
+  const first = rows.find(
+    (row) => old(row) || refused(row) || !same(row.lineage, lineage)
+  );
+  const expired = !!first && old(first);
+  let recovery: EditDraft[] = [];
+  if (first)
+    recovery = expired
+      ? (groups.get(group(first)) ?? [])
+      : rows.filter(
           (row) =>
             same(row.lineage, first.lineage) && refused(row) === refused(first)
-        )
-      : [],
-    refused: !!first && refused(first),
+        );
+  return {
+    current: rows.filter(
+      (row) => !(old(row) || refused(row)) && same(row.lineage, lineage)
+    ),
+    expired,
+    recovery,
+    refused: !expired && !!first && refused(first),
   };
+}
+
+/** An expired group shown copy-only goes at once, so it shows once
+ * (`draftsExpired`); its loss is reported. */
+export function dropExpiredGroup(
+  group: EditDraft[],
+  report: EditIncidentReporter
+) {
+  report('draft_unrestorable', 'expired', draftBytes(group));
+  void deleteDrafts(group).catch((error) =>
+    console.warn('Draft storage failed:', error)
+  );
 }
 
 /** The bytes a group of rows holds (edit_incidents sizes). */
@@ -484,6 +539,9 @@ export interface DraftRecorderOptions {
   report?: EditIncidentReporter;
   /** The session's last signed room token, which its rows keep (Q288). */
   token?: () => string | undefined;
+  /** The stored version the tab reports now (`RoomProvider`), which each
+   * row keeps (in-place collection). */
+  version?: () => number | undefined;
 }
 
 /**
@@ -510,6 +568,7 @@ export function recordDrafts({
   onStorage,
   report,
   token,
+  version,
 }: DraftRecorderOptions) {
   const session = crypto.randomUUID();
   const keep = stored(key);
@@ -557,6 +616,7 @@ export function recordDrafts({
   ): EditDraft => ({
     ...grantsOf(token?.()),
     ...(accepted && { accepted }),
+    ...versionOf(version?.()),
     data,
     id: kind === 'state' ? `${session}:state` : `${session}:${seq}`,
     key,
@@ -937,11 +997,15 @@ function sendableGroups(rows: DraftInfo[], room: string) {
     if (row.refused || row.held || row.lineage.split('@')[0] !== room) continue;
     groups.set(row.lineage, [...(groups.get(row.lineage) ?? []), row]);
   }
-  return [...groups.values()].map((group) => ({
-    base: group[0].base,
-    grants: groupGrants(group),
-    refs: group.map(({ id, key, seq }) => ({ id, key, seq })),
-  }));
+  // An expired group waits for the next open, which shows it once.
+  return [...groups.values()]
+    .filter((group) => !draftsExpired(group))
+    .map((group) => ({
+      base: group[0].base,
+      grants: groupGrants(group),
+      refs: group.map(({ id, key, seq }) => ({ id, key, seq })),
+      version: draftsVersion(group),
+    }));
 }
 
 /** POST one group to the collaboration service's `/drafts` (its WebSocket
@@ -952,7 +1016,7 @@ function sendableGroups(rows: DraftInfo[], room: string) {
  * one row of the pieces not sent (Epo 2026-10-18), which `refs` names. */
 async function sendGroup(
   token: RoomToken,
-  group: { base?: string; grants: string[]; refs: DraftRef[] }
+  group: { base?: string; grants: string[]; refs: DraftRef[]; version: number }
 ): Promise<{ refs: DraftRef[]; sent: Sent }> {
   let pieces: Uint8Array<ArrayBuffer>[] | null;
   try {
@@ -991,7 +1055,7 @@ const DRAFT_PACING = {};
 
 async function sendPiece(
   token: RoomToken,
-  group: { base?: string; grants: string[] },
+  group: { base?: string; grants: string[]; version: number },
   body: Uint8Array<ArrayBuffer>
 ): Promise<Sent> {
   // Over the service's cap (a struct that cannot be cut): never sendable as
@@ -1008,6 +1072,8 @@ async function sendPiece(
     'content-type': 'application/octet-stream',
     'x-capy-protocol': String(CLIENT_PROTOCOL),
     'x-capy-room': token.room,
+    // The stored version its oldest row was made at (in-place collection).
+    'x-capy-version': String(group.version),
   };
   if (group.base !== undefined) headers['x-capy-base'] = group.base;
   // The drafts' own client ids (Q288): a tab whose edits never reached the

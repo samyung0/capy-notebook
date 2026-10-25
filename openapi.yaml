@@ -4705,6 +4705,7 @@ components:
             - epoch_changed
             - paused
             - base_missing
+            - expired
             - quota
             - unavailable
             - write

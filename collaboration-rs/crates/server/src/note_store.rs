@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use crate::access::{self, AccessError};
 use crate::model::Model;
+use crate::sessions;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -247,7 +248,9 @@ pub async fn load(
 }
 
 /// One store: rechecks every contributor in the snapshot, then appends the
-/// row and advances `stored_version`. Returns the new version.
+/// row and advances `stored_version`, with the note sessions' changed rows
+/// (`sessions.rs`) in the same transaction, so a held deletion is durable
+/// with the state that holds it. Returns the new version.
 pub async fn append(
     pool: &Pool,
     material_id: &str,
@@ -255,6 +258,7 @@ pub async fn append(
     doc: Doc,
     row: &[u8],
     actors: &[String],
+    sessions: &[sessions::Row],
 ) -> Result<i64, StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
@@ -279,8 +283,96 @@ pub async fn append(
     }
     let version = current.get::<_, i64>("stored_version") + 1;
     append_row(&tx, doc, material_id, version, row).await?;
+    save_sessions(&tx, material_id, sessions).await?;
     tx.commit().await?;
     Ok(version)
+}
+
+/// A note's sessions as stored (`sessions.rs`): those seen within the cap.
+pub async fn load_sessions(
+    pool: &Pool,
+    material_id: &str,
+) -> Result<sessions::Sessions, StoreError> {
+    let client = pool.get().await?;
+    let rows = client
+        .query(
+            "SELECT client_id, user_id, acked_version, seen_at, held FROM material_yjs_client_ids
+             WHERE material_id=$1 AND document='content' AND NOT expired
+               AND seen_at > now() - make_interval(hours => $2)",
+            &[
+                &material_id,
+                &((sessions::COUNTED_FOR.as_secs() / 3600) as i32),
+            ],
+        )
+        .await?;
+    sessions::Sessions::load(rows.iter().map(|row| {
+        (
+            row.get::<_, i64>(0) as u64,
+            row.get(1),
+            row.get(2),
+            row.get(3),
+            row.get(4),
+        )
+    }))
+    .map_err(StoreError::Other)
+}
+
+/// Writes note sessions' rows beside their client id's record: a live
+/// session's version, last seen and held deletions (the record's row is
+/// made if its first write's has not landed yet), an ended one's cleared.
+pub(crate) async fn save_sessions(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    rows: &[sessions::Row],
+) -> Result<(), StoreError> {
+    for row in rows {
+        match row.seen {
+            Some(seen) => {
+                tx.execute(
+                    "INSERT INTO material_yjs_client_ids
+                       (material_id, document, client_id, user_id, acked_version, seen_at, held)
+                     VALUES ($1, 'content', $2, $3, $4, $5, $6)
+                     ON CONFLICT (material_id, document, client_id) DO UPDATE
+                     SET acked_version=EXCLUDED.acked_version, seen_at=EXCLUDED.seen_at,
+                         held=EXCLUDED.held
+                     WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
+                    &[
+                        &material_id,
+                        &row.client,
+                        &row.user,
+                        &row.version,
+                        &seen,
+                        &row.held,
+                    ],
+                )
+                .await?;
+            }
+            None => {
+                tx.execute(
+                    "UPDATE material_yjs_client_ids SET seen_at=NULL, held=NULL
+                     WHERE material_id=$1 AND document='content' AND client_id=$2 AND user_id=$3",
+                    &[&material_id, &row.client, &row.user],
+                )
+                .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The sessions' rows when a note room unloads (the acknowledgements and
+/// departures after its last store): best effort, since older rows only
+/// count a session for less long or at an older version.
+pub async fn save_sessions_now(
+    pool: &Pool,
+    material_id: &str,
+    rows: &[sessions::Row],
+) -> Result<(), StoreError> {
+    let mut client = pool.get().await?;
+    let tx = client.transaction().await?;
+    save_sessions(&tx, material_id, rows).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Appends `row` as version `version` of `doc` under the caller's lock: the

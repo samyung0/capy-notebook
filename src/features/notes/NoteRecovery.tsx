@@ -2,7 +2,7 @@ import { yTextToSlateElement } from '@slate-yjs/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import type { Material } from '@/api/types';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { recoveryBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import type {
   MaterialDocument,
   MaterialValue,
@@ -12,6 +12,7 @@ import {
   deleteDrafts,
   draftBytes,
   draftGroups,
+  dropExpiredGroup,
   type EditDraft,
   readDrafts,
   recoveryDocument,
@@ -32,8 +33,14 @@ export interface NoteDrafts {
   /** Rows of never-accepted sessions with stored tokens: the draft send
    * takes them while the editor joins (Q319). */
   pending: EditDraft[];
-  /** One refused or other-lineage group, shown read-only first. */
-  recovery: { doc: Y.Doc; refused: boolean; rows: EditDraft[] } | null;
+  /** One refused, other-lineage or expired group, shown read-only first
+   * (an expired one once: its rows are deleted as it opens). */
+  recovery: {
+    doc: Y.Doc;
+    expired: boolean;
+    refused: boolean;
+    rows: EditDraft[];
+  } | null;
 }
 
 /**
@@ -62,7 +69,10 @@ export function useNoteDrafts(
         return [] as EditDraft[];
       });
       for (;;) {
-        const { current, recovery, refused } = await draftGroups(rows, room);
+        const { current, expired, recovery, refused } = await draftGroups(
+          rows,
+          room
+        );
         if (!recovery.length) {
           if (!active) return;
           const { apply, send } = splitOpenDrafts(current);
@@ -76,13 +86,14 @@ export function useNoteDrafts(
         }
         const doc = recoveryDocument(recovery);
         if (doc) {
-          reportRecoveryGroup(recovery, report, refused);
+          if (expired) dropExpiredGroup(recovery, report);
+          else reportRecoveryGroup(recovery, report, refused);
           if (active)
             setDrafts({
               current,
               for: `${room}:${generation}`,
               pending: [],
-              recovery: { doc, refused, rows: recovery },
+              recovery: { doc, expired, refused, rows: recovery },
             });
           return;
         }
@@ -154,7 +165,7 @@ export function NoteRecovery({
             .then(onReload);
         }}
         reloading={reloading}
-        state={recovery.refused ? 'refused' : 'changed'}
+        state={recoveryBanner(recovery)}
       />
       <div
         className="min-h-0 flex-1 overflow-auto"
