@@ -3590,7 +3590,9 @@ materials are sources.
   reaches the stored conversation. It names the open item
   (`Open: <title> (<kind> <id>), in chapter <name> [<chapter id>].` or
   `Open: nothing.`) followed by the learner's workspace role (Go's `role`: "The
-  learner owns / can edit / can only view this workspace."). It lists no
+  learner owns / can edit / can only view this workspace."), and with a file
+  open `OPEN_CAUTION`: the file may have nothing to do with the request, so the
+  agent acts on the learner's message and the conversation (Epo 2026-10-25). It lists no
   chapters (Epo 2026-10-25): the model reads them and their ids through
   `list_sources`; the turn still loads them (`store.workspace_chapters`, at
   most 20, `MaxChaptersPerWorkspace` in Go) for the open item's chapter and the

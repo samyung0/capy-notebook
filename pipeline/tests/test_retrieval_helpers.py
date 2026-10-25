@@ -524,6 +524,8 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     filed = turn_context.message(ctx)["content"]
     assert "Open: Cells.pdf (file f_1), in chapter Genes [ch_2]." in filed
     assert "ch_1" not in filed
+    # The open file is no request of its own (Epo 2026-10-25).
+    assert turn_context.OPEN_CAUTION in filed
 
     viewer = _library_ctx()
     viewer.role = "viewer"

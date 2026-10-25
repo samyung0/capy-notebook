@@ -53,10 +53,20 @@ _ROLE_LINES = {
 }
 
 
+# An open file is where the learner is, not what they asked about (Epo
+# 2026-10-25: "make a note" after a penicillin answer built a note on the open
+# cell-division lecture).
+OPEN_CAUTION = (
+    "The open file may have nothing to do with the request: base your actions on "
+    "the learner's message and the conversation history."
+)
+
+
 def _open_line(
     resource: dict[str, Any], chapters: list[dict[str, Any]], role: str
 ) -> str:
-    return f"{_open_item(resource, chapters)} {_ROLE_LINES[role]}"
+    line = f"{_open_item(resource, chapters)} {_ROLE_LINES[role]}"
+    return f"{line} {OPEN_CAUTION}" if resource.get("id") else line
 
 
 def _open_item(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
