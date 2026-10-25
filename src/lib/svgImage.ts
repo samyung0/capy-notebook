@@ -7,6 +7,10 @@ import {
 } from '@/lib/fitImage';
 
 const decoder = new TextDecoder();
+/** How much of a picked SVG is read for its root tag's size attributes,
+ * when a long prolog or attribute list takes the tag past the 4 KiB the
+ * detection reads. */
+const ROOT_HEAD = 64 << 10;
 const ROOT_TAG = /^<svg\b[^>]*>/;
 const ATTRIBUTE = /\s(width|height|viewBox)\s*=\s*(["'])(.*?)\2/g;
 const BOX_SEPARATOR = /[\s,]+/;
@@ -74,7 +78,7 @@ async function encodePng(
  * drawn or encoded (a tainted canvas) throws an ImageUnreadableError. The
  * name takes .png, and the compressor keeps it PNG (`png`). */
 export async function pngFromSvg(file: File): Promise<File | null> {
-  // Only the head is read on the page; the <img> parses the file itself.
+  // Only heads are read on the page; the <img> parses the file itself.
   const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
   if (!isSvgImage(head)) return null;
   const url = URL.createObjectURL(new Blob([file], { type: 'image/svg+xml' }));
@@ -84,7 +88,8 @@ export async function pngFromSvg(file: File): Promise<File | null> {
     await image.decode().catch(() => {
       throw new ImageUnreadableError();
     });
-    const size = svgSize(decoder.decode(head), {
+    const root = await file.slice(0, ROOT_HEAD).arrayBuffer();
+    const size = svgSize(decoder.decode(root), {
       height: image.naturalHeight,
       width: image.naturalWidth,
     });

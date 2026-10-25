@@ -49,6 +49,17 @@ describe('pngFromSvg', () => {
     ).rejects.toBeInstanceOf(ImageUnreadableError);
   });
 
+  it('reads the root tag past the first 4 KiB for its viewBox', async () => {
+    // Review r5 nit 3: a long attribute list takes the viewBox past the head
+    // the detection reads.
+    await pngFromSvg(
+      svg(
+        `${' '.repeat(4000)}<svg xmlns="http://www.w3.org/2000/svg" data-x="${'x'.repeat(2000)}" viewBox="0 0 200 100"></svg>`
+      )
+    );
+    expect(codec.encodes).toEqual(['image/png 2400x1200']);
+  });
+
   it('refuses an SVG the canvas cannot encode as unreadable', async () => {
     // Review r4 N2: a tainted canvas throws on encode.
     vi.stubGlobal(

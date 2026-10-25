@@ -761,8 +761,8 @@ header (Server checks below).
   `<img>` from a blob URL (where an SVG runs no script and loads nothing
   external) onto a canvas, at its own size within 2,400 px when its root
   names a width and a height, else at 2,400 px on the long side with its
-  viewBox's ratio (finite numbers only). Only the first 4 KiB is read on the
-  page, for the root tag. The name takes `.png` and the compressor keeps it
+  viewBox's ratio (finite numbers only). Only heads are read on the page: 4
+  KiB for the detection, up to 64 KiB for the root tag's size attributes. The name takes `.png` and the compressor keeps it
   PNG (`png`: lossless, shrunk at 2,000, 1,400 and 1,000 px past the cap, a
   source resized within 5 megapixels as PNG), so servers receive no SVG
   image. One that does not load, that nothing sizes, or that cannot be drawn
@@ -872,9 +872,14 @@ none reads parts the checks did not:
 The entry cap is read from the end record before the directory loads. An entry counts as a folder only when its name ends in `/`,
 never by its attributes, and every part, `.rels` included, is classified by
 its bytes. An SVG root is looked for in a part's first 4 KiB, past an XML
-declaration, comments and a doctype; a comment ends at its first `-->`, so
-the match takes linear time in the worker and the browser (Go's RE2 is linear
-anyway; review r4 B2, S2).
+declaration, comments and a doctype (with one internal subset, as Illustrator
+writes); a comment ends at its first `-->`, so the match takes linear time in
+the worker and the browser (Go's RE2 is linear anyway; review r4 B2, S2).
+The compressors' XML tokenizers (`images.py`, `officeImages.ts`) end a tag,
+relationship or extension list at the next `<` and a comment, CDATA or
+declaration at the end of the text, so unclosed markup is scanned once, and
+`[Content_Types].xml` is rewritten in one pass, not a search per part
+(review r5 X1).
 
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |

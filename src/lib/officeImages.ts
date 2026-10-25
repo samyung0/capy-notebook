@@ -104,9 +104,16 @@ const sourceOf = (rels: string) =>
  * media. */
 const PICTURE_TYPES = ['/image', '/hdphoto'];
 
+// The XML tokens end at the next "<" where XML allows none (a tag, a
+// relationship, an extension list) or at the end of the text (a comment,
+// CDATA, a declaration), so an unclosed one is scanned once and a matchAll
+// stays linear; before, each unclosed opener scanned to the end of the part
+// (review r5 X1).
+const RELATIONSHIP = /<Relationship\b[^<>]*>/g;
+
 function relationships(rels: string, xml: string): Relationship[] {
   const sourceDir = dirOf(sourceOf(rels));
-  return [...xml.matchAll(/<Relationship\b[^>]*>/g)].map(([element]) => {
+  return [...xml.matchAll(RELATIONSHIP)].map(([element]) => {
     const target = attribute(element, 'Target');
     return {
       element,
@@ -180,14 +187,56 @@ function pick(names: string[], stack: string[]) {
 
 const MEDIA = /^(word|ppt|xl)\/media\//;
 const TARGET = /(\sTarget\s*=\s*)(["'])[^"']*\2/;
-const TYPES = /<Types\b[^>]*>/;
+const TYPES = /<Types\b[^<>]*>/;
+const OVERRIDE = /<Override\b[^<>]*>/gi;
+const DEFAULT = /<Default\b[^<>]*>/gi;
 const REFERENCE =
   /\s[\w.-]+:(?:embed|link|id|pict|relid)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const references = (xml: string) =>
   [...xml.matchAll(REFERENCE)].map((match) => match[1] ?? match[2]);
+// A tag's name never gives characters back to the attributes after it.
 const MARKUP =
-  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<[?!][\s\S]*?>|<(\/?)([A-Za-z_][\w.:-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
-const EMPTY_EXTENSIONS = /<([\w.-]+:)?extLst\b[^>]*>\s*<\/\1extLst>/g;
+  /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<[?!][^>]*(?:>|$)|<(\/?)([A-Za-z_][\w.:-]*)(?![\w.:-])((?:[^<>"']|"[^<"]*"|'[^<']*')*?)(\/?)>/g;
+const EMPTY_EXTENSIONS = /<([\w.-]+:)?extLst\b[^<>]*>\s*<\/\1extLst>/g;
+
+/** [Content_Types].xml without the overrides of `deleted` parts and with
+ * those of renamed parts rewritten, in one pass (a search per part grew
+ * with parts times size, review r5 X1), then a Default for each extension a
+ * rename brings. */
+export function contentTypes(
+  types: string,
+  deleted: Set<string>,
+  renames: Map<string, { path: string; type: string }>
+) {
+  const gone = new Set([...deleted].map((part) => `/${part}`.toLowerCase()));
+  const moved = new Map(
+    [...renames].map(([path, rename]) => [`/${path}`.toLowerCase(), rename])
+  );
+  let out = types.replace(OVERRIDE, (element) => {
+    const name = attribute(element, 'PartName').toLowerCase();
+    if (gone.has(name)) return '';
+    const rename = moved.get(name);
+    return rename
+      ? `<Override PartName="/${rename.path}" ContentType="${rename.type}"/>`
+      : element;
+  });
+  const have = new Set(
+    [...out.matchAll(DEFAULT)].map(([element]) =>
+      attribute(element, 'Extension').toLowerCase()
+    )
+  );
+  for (const rename of renames.values()) {
+    const ext = rename.path.slice(rename.path.lastIndexOf('.') + 1);
+    if (have.has(ext.toLowerCase())) continue;
+    have.add(ext.toLowerCase());
+    out = out.replace(
+      TYPES,
+      (open) =>
+        `${open}<Default Extension="${ext}" ContentType="${rename.type}"/>`
+    );
+  }
+  return out;
+}
 
 /** Removes from a part's XML every container (`containers`) that refers to
  * one of `ids`. Returns the new XML, the ids the removed elements referred
@@ -440,39 +489,11 @@ export async function compressOfficeImages(
     }
     if (relsXml !== text(relsPath)) write(relsPath, relsXml);
   }
-  if ('[Content_Types].xml' in parts) {
-    let types = text('[Content_Types].xml');
-    for (const part of deleted)
-      types = types.replace(
-        new RegExp(
-          `<Override\\b[^>]*PartName\\s*=\\s*["']/${escapeRegExp(part)}["'][^>]*>`,
-          'i'
-        ),
-        ''
-      );
-    for (const [path, rename] of renames) {
-      types = types.replace(
-        new RegExp(
-          `<Override\\b[^>]*PartName\\s*=\\s*["']/${escapeRegExp(path)}["'][^>]*>`,
-          'i'
-        ),
-        `<Override PartName="/${rename.path}" ContentType="${rename.type}"/>`
-      );
-      const ext = rename.path.slice(rename.path.lastIndexOf('.') + 1);
-      if (
-        !new RegExp(
-          `<Default\\b[^>]*Extension\\s*=\\s*["']${ext}["']`,
-          'i'
-        ).test(types)
-      )
-        types = types.replace(
-          TYPES,
-          (open) =>
-            `${open}<Default Extension="${ext}" ContentType="${rename.type}"/>`
-        );
-    }
-    write('[Content_Types].xml', types);
-  }
+  if ('[Content_Types].xml' in parts)
+    write(
+      '[Content_Types].xml',
+      contentTypes(text('[Content_Types].xml'), deleted, renames)
+    );
 
   const zippable: Zippable = {};
   for (const [path, bytes] of Object.entries(parts)) {
@@ -488,6 +509,3 @@ export async function compressOfficeImages(
     removed,
   };
 }
-
-const escapeRegExp = (text: string) =>
-  text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

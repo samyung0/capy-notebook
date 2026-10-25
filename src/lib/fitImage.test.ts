@@ -204,11 +204,13 @@ describe('fitImage', () => {
 
 describe('SVG_ROOT', () => {
   it('answers at once on a run of comments and still finds real SVG roots within 4 KiB', () => {
-    // Security regression (review r4 S2): under the old lazy comment, 24
-    // empty comments split 2^23 ways (seconds on the main thread).
+    // Security regression (review r4 S2): under the old lazy comment, 32
+    // empty comments split 2^31 ways (about half a minute warm).
+    // Warmed first, so the bound holds against a compiled pattern too.
+    isSvgImage(new TextEncoder().encode('<svg>'));
     const started = performance.now();
     expect(
-      isSvgImage(new TextEncoder().encode(`${'<!---->'.repeat(24)}x`))
+      isSvgImage(new TextEncoder().encode(`${'<!---->'.repeat(32)}x`))
     ).toBe(false);
     expect(performance.now() - started).toBeLessThan(100);
     const head =
@@ -216,6 +218,10 @@ describe('SVG_ROOT', () => {
       '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "svg11.dtd">\n' +
       '<!-- Generator: Illustrator -- 24 -->\n<svg version="1.1">';
     expect(isSvgImage(new TextEncoder().encode(head))).toBe(true);
+    // Review r5 nit 2: a doctype with an internal subset (Illustrator).
+    const illustrator =
+      '<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "svg11.dtd" [\n\t<!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">\n]>\n<svg version="1.1">';
+    expect(isSvgImage(new TextEncoder().encode(illustrator))).toBe(true);
     expect(
       isSvgImage(new TextEncoder().encode(`${' '.repeat(4096)}<svg>`))
     ).toBe(false);

@@ -445,6 +445,107 @@ def test_svg_detection_stays_fast_on_a_run_of_comments():
     )
     assert images.is_svg(head, "word/media/image1.bin")
     assert not images.is_svg(b" " * 4096 + b"<svg>", "word/media/image1.bin")
+    # Review r5 nit 2: a doctype with an internal subset (Illustrator).
+    illustrator = (
+        b'<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" '
+        b'"svg11.dtd" [\n\t<!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">\n'
+        b']>\n<svg version="1.1">'
+    )
+    assert images.is_svg(illustrator, "word/media/image1.bin")
+
+
+def _timed(call) -> float:
+    import time
+
+    started = time.perf_counter()
+    call()
+    return time.perf_counter() - started
+
+
+def test_xml_tokenizers_answer_at_once_on_unclosed_markup():
+    """Security regression (review r5 X1): every unclosed opener is scanned
+    once, so a part full of them answers at once; the old tokenizers
+    rescanned to the part's end from each (5 to 11 s per shape here, 51.7 s
+    for a 778-byte DOCX), holding the GIL. The picture is still removed."""
+    picture = (
+        '<w:document><w:body><w:drawing><a:blip r:embed="rId1"/></w:drawing>'
+        "</w:body></w:document>"
+    )
+    for name, tail in {
+        "tags": "<a " * 10000,
+        "comments": "<!--" * 15000,
+        "CDATA": "<![CDATA[" * 9000,
+        "declarations": "<?" * 25000,
+        "a long name": "<" + "a" * 12000 + "<",
+        "unclosed quotes": '<a "' * 9000,
+        "extension lists": "<a:extLst " * 30000,
+    }.items():
+        result = []
+        seconds = _timed(
+            lambda tail=tail, result=result: result.append(
+                images.remove_pictures("word/document.xml", picture + tail, {"rId1"})
+            )
+        )
+        assert seconds < 1, (name, seconds)
+        assert result[0][1:] == (["rId1"], 1), name
+
+
+def test_relationships_answer_at_once_on_unclosed_elements():
+    """Security regression (review r5 X1): a relationships part ending in
+    unclosed elements answers at once (about 5 s under the old pattern) and
+    its relationships still count."""
+    rels = (
+        '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/'
+        'officeDocument/2006/relationships/image" Target="embeddings/pic.png"/>'
+        "</Relationships>" + "<Relationship " * 25000
+    )
+    found = []
+    seconds = _timed(
+        lambda: found.append(
+            images.picture_parts(
+                ["word/document.xml", "word/embeddings/pic.png"],
+                {"word/_rels/document.xml.rels": rels},
+            )
+        )
+    )
+    assert seconds < 1, seconds
+    assert "word/embeddings/pic.png" in found[0]
+
+
+def test_content_types_are_rewritten_in_one_pass():
+    """Security regression (review r5 X1): removed and renamed parts' overrides
+    are rewritten in one pass; 600 removed parts over 20,000 other overrides
+    answer at once (about 6 s as a search per part)."""
+    others = "".join(
+        f'<Override PartName="/word/p{i}.xml" ContentType="x"/>' for i in range(20000)
+    )
+    types = (
+        '<Types xmlns="x"><Default Extension="xml" ContentType="application/xml"/>'
+        + others
+        + '<Override PartName="/word/media/image1.emf" ContentType="image/x-emf"/>'
+        '<Override PartName="/WORD/media/image2.png" ContentType="image/png"/></Types>'
+    )
+    deleted = {"word/media/image1.emf"} | {
+        f"word/media/gone{i}.emf" for i in range(600)
+    }
+    out = []
+    seconds = _timed(
+        lambda: out.append(
+            images.content_types(
+                types,
+                deleted,
+                {"word/media/image2.png": ("word/media/image2.jpeg", "image/jpeg")},
+            )
+        )
+    )
+    assert seconds < 1, seconds
+    assert "image1.emf" not in out[0]
+    assert (
+        '<Override PartName="/word/media/image2.jpeg" ContentType="image/jpeg"/>'
+        in out[0]
+    )
+    assert out[0].count('<Default Extension="jpeg" ContentType="image/jpeg"/>') == 1
+    assert out[0].count("<Override") == 20001
 
 
 def test_an_svg_outside_the_pictures_goes_uncounted():

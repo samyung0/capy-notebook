@@ -168,7 +168,9 @@ _RASTER_SIGNATURES = (
 # repeat let a run of comments split 2^n ways, and CPython holds the GIL
 # while it matches (review r4 B2).
 _SVG_ROOT = re.compile(
-    rb"^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->).)*-->|<!DOCTYPE[^>]*>)*<svg[\s>/]",
+    rb"^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->).)*-->"
+    # A doctype may carry one internal subset (Illustrator's entities).
+    rb"|<!DOCTYPE[^>\[]*(?:\[[^\]]*\]\s*)?>)*<svg[\s>/]",
     re.DOTALL,
 )
 
@@ -218,7 +220,12 @@ def resolve_target(source_dir: str, target: str) -> str:
     return "/".join(parts)
 
 
-_RELATIONSHIP = re.compile(r"<Relationship\b[^>]*>")
+# The XML tokens below end at the next "<" where XML allows none (a tag, a
+# relationship, an extension list) or at the end of the text (a comment,
+# CDATA, a declaration), so an unclosed one is scanned once and a finditer
+# stays linear; before, each unclosed opener scanned to the end of the part,
+# holding the GIL (review r5 X1).
+_RELATIONSHIP = re.compile(r"<Relationship\b[^<>]*>")
 _MEDIA = re.compile(r"^(word|ppt|xl)/media/")
 # The relationship types whose targets are pictures: images (pictures, fills,
 # object previews, SVG) and HD Photo originals; audio and video stay media.
@@ -344,11 +351,55 @@ _REFERENCE = re.compile(
     r"\s[\w.-]+:(?:embed|link|id|pict|relid)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')"
 )
 _MARKUP = re.compile(
-    r"<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[?!].*?>"
-    r"|<(/?)([A-Za-z_][\w.:-]*)((?:[^>\"']|\"[^\"]*\"|'[^']*')*?)(/?)>",
+    r"<!--.*?(?:-->|\Z)|<!\[CDATA\[.*?(?:\]\]>|\Z)|<[?!][^>]*(?:>|\Z)"
+    # A name never gives characters back to the attributes after it.
+    r"|<(/?)([A-Za-z_][\w.:-]*)(?![\w.:-])"
+    r"((?:[^<>\"']|\"[^<\"]*\"|'[^<']*')*?)(/?)>",
     re.DOTALL,
 )
-_EMPTY_EXTENSIONS = re.compile(r"<([\w.-]+:)?extLst\b[^>]*>\s*</\1extLst>")
+_EMPTY_EXTENSIONS = re.compile(r"<([\w.-]+:)?extLst\b[^<>]*>\s*</\1extLst>")
+_OVERRIDE = re.compile(r"<Override\b[^<>]*>", re.IGNORECASE)
+_DEFAULT = re.compile(r"<Default\b[^<>]*>", re.IGNORECASE)
+_TYPES = re.compile(r"<Types\b[^<>]*>")
+
+
+def content_types(
+    types: str, deleted: set[str], renames: dict[str, tuple[str, str]]
+) -> str:
+    """[Content_Types].xml without the overrides of ``deleted`` parts and
+    with those of renamed parts rewritten, in one pass (a search per part
+    grew with parts times size, review r5 X1), then a Default for each
+    extension a rename brings."""
+    gone = {f"/{part}".lower() for part in deleted}
+    moved = {f"/{path}".lower(): value for path, value in renames.items()}
+
+    def override(match: re.Match) -> str:
+        name = _attribute(match.group(0), "PartName").lower()
+        if name in gone:
+            return ""
+        if name in moved:
+            renamed, content_type = moved[name]
+            return f'<Override PartName="/{renamed}" ContentType="{content_type}"/>'
+        return match.group(0)
+
+    types = _OVERRIDE.sub(override, types)
+    have = {
+        _attribute(element.group(0), "Extension").lower()
+        for element in _DEFAULT.finditer(types)
+    }
+    for renamed, content_type in renames.values():
+        ext = renamed.rsplit(".", 1)[-1]
+        if ext.lower() in have:
+            continue
+        have.add(ext.lower())
+        types = _TYPES.sub(
+            lambda match, ext=ext, content_type=content_type: (
+                f'{match.group(0)}<Default Extension="{ext}" ContentType="{content_type}"/>'
+            ),
+            types,
+            count=1,
+        )
+    return types
 
 
 def _references(xml: str) -> list[str]:
@@ -591,36 +642,9 @@ def compress_office(
         if rels_xml != text(rels_path):
             parts[rels_path] = rels_xml.encode()
     if "[Content_Types].xml" in parts:
-        types = text("[Content_Types].xml")
-        for part in deleted:
-            types = re.sub(
-                rf"<Override\b[^>]*PartName\s*=\s*[\"']/{re.escape(part)}[\"'][^>]*>",
-                "",
-                types,
-                count=1,
-                flags=re.IGNORECASE,
-            )
-        for path, (renamed, content_type) in renames.items():
-            types = re.sub(
-                rf"<Override\b[^>]*PartName\s*=\s*[\"']/{re.escape(path)}[\"'][^>]*>",
-                f'<Override PartName="/{renamed}" ContentType="{content_type}"/>',
-                types,
-                count=1,
-                flags=re.IGNORECASE,
-            )
-            ext = renamed.rsplit(".", 1)[-1]
-            if not re.search(
-                rf"<Default\b[^>]*Extension\s*=\s*[\"']{ext}[\"']", types, re.IGNORECASE
-            ):
-                types = re.sub(
-                    r"<Types\b[^>]*>",
-                    lambda match, ext=ext, content_type=content_type: (
-                        f'{match.group(0)}<Default Extension="{ext}" ContentType="{content_type}"/>'
-                    ),
-                    types,
-                    count=1,
-                )
-        parts["[Content_Types].xml"] = types.encode()
+        parts["[Content_Types].xml"] = content_types(
+            text("[Content_Types].xml"), deleted, renames
+        ).encode()
 
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as rebuilt:

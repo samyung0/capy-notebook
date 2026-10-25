@@ -40,9 +40,10 @@ const OFFICE_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png']);
 /** An SVG's root element, after any XML declaration, comments and doctype,
  * as the server checks find it. A comment ends at its first "-->", so the
  * match is linear: a lazy comment inside the repeat let a run of comments
- * split 2^n ways and froze the tab (review r4 S2). */
+ * split 2^n ways and froze the tab (review r4 S2). A doctype may carry one
+ * internal subset (Illustrator's entities). */
 export const SVG_ROOT =
-  /^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->)[\s\S])*-->|<!DOCTYPE[^>]*>)*<svg[\s>/]/;
+  /^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->)[\s\S])*-->|<!DOCTYPE[^>[]*(?:\[[^\]]*\]\s*)?>)*<svg[\s>/]/;
 
 const decoder = new TextDecoder();
 

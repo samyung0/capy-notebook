@@ -17,6 +17,7 @@ import {
 import { fakeImage, stubImageCodec } from './imageCodec.testing';
 import {
   compressOfficeImages,
+  contentTypes,
   removePictures,
   resolveTarget,
 } from './officeImages';
@@ -526,6 +527,95 @@ describe('removePictures', () => {
         '<w:r><w:drawing><wps:txbx><w:txbxContent><w:p><w:r></w:r></w:p></w:txbxContent></wps:txbx></w:drawing></w:r>'
     );
     expect(result.count).toBe(2);
+  });
+});
+
+// Security regression (review r5 X1): every unclosed opener is scanned once,
+// so a part full of them answers at once; the old tokenizers rescanned to the
+// part's end from each (3 to 7 s per shape here, warm).
+describe('the XML tokenizers', () => {
+  const seconds = (call: () => unknown) => {
+    const started = performance.now();
+    call();
+    return (performance.now() - started) / 1000;
+  };
+
+  it('answer at once on unclosed markup, and the picture still goes', () => {
+    const picture =
+      '<w:document><w:body><w:drawing><a:blip r:embed="rId1"/></w:drawing></w:body></w:document>';
+    for (const [name, tail] of Object.entries({
+      'a long name': `<${'a'.repeat(50_000)}<`,
+      CDATA: '<![CDATA['.repeat(30_000),
+      comments: '<!--'.repeat(50_000),
+      declarations: '<?'.repeat(80_000),
+      'extension lists': '<a:extLst '.repeat(25_000),
+      tags: '<a '.repeat(40_000),
+      'unclosed quotes': '<a "'.repeat(30_000),
+    })) {
+      let result: ReturnType<typeof removePictures> | undefined;
+      const took = seconds(() => {
+        result = removePictures(
+          'word/document.xml',
+          picture + tail,
+          new Set(['rId1'])
+        );
+      });
+      expect(took, name).toBeLessThan(1);
+      expect(result?.count, name).toBe(1);
+    }
+  });
+
+  it('answer at once on a relationships part ending in unclosed elements', async () => {
+    const rels =
+      '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/a.png"/></Relationships>' +
+      '<Relationship '.repeat(20_000);
+    const file = pack(
+      {
+        '[Content_Types].xml': strToU8('<Types xmlns="x"/>'),
+        'word/_rels/document.xml.rels': strToU8(rels),
+        'word/document.xml': strToU8('<w:document/>'),
+      },
+      'plan.docx'
+    );
+    const started = performance.now();
+    await compressOfficeImages(file, 2 * MB);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('rewrite [Content_Types].xml in one pass', () => {
+    // 2,000 removed parts over 20,000 other overrides (about 4 s as a search
+    // per part).
+    const others = Array.from(
+      { length: 20_000 },
+      (_, i) => `<Override PartName="/word/p${i}.xml" ContentType="x"/>`
+    ).join('');
+    const types = `<Types xmlns="x"><Default Extension="xml" ContentType="application/xml"/>${others}<Override PartName="/word/media/image1.emf" ContentType="image/x-emf"/><Override PartName="/WORD/media/image2.png" ContentType="image/png"/></Types>`;
+    const deleted = new Set([
+      'word/media/image1.emf',
+      ...Array.from({ length: 2000 }, (_, i) => `word/media/gone${i}.emf`),
+    ]);
+    let out = '';
+    const took = seconds(() => {
+      out = contentTypes(
+        types,
+        deleted,
+        new Map([
+          [
+            'word/media/image2.png',
+            { path: 'word/media/image2.jpeg', type: 'image/jpeg' },
+          ],
+        ])
+      );
+    });
+    expect(took).toBeLessThan(1);
+    expect(out).not.toContain('image1.emf');
+    expect(out).toContain(
+      '<Override PartName="/word/media/image2.jpeg" ContentType="image/jpeg"/>'
+    );
+    expect(
+      out.split('<Default Extension="jpeg" ContentType="image/jpeg"/>')
+    ).toHaveLength(2);
+    expect(out.split('<Override')).toHaveLength(20_002);
   });
 });
 
