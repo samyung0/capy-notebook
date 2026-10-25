@@ -52,7 +52,10 @@ import { BaseTocPlugin } from '@platejs/toc';
 import { common, createLowlight } from 'lowlight';
 import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
-import { FONT_SIZE_NODE_PROPS } from '@/features/notes/nodeStyles';
+import {
+  FONT_SIZE_NODE_PROPS,
+  INDENT_NODE_PROPS,
+} from '@/features/notes/nodeStyles';
 import { UnsupportedBlockNotice } from './UnsupportedBlock';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
@@ -145,7 +148,7 @@ const UnsupportedBlockPlugin = createSlatePlugin({
    All of this is plain render logic and static-safe. */
 const StaticListKit: AnyPlugin[] = [
   BaseIndentPlugin.configure({
-    inject: { targetPlugins: listTargets },
+    inject: { nodeProps: INDENT_NODE_PROPS, targetPlugins: listTargets },
     options: { offset: 24 },
   }),
   BaseListPlugin.configure({
@@ -280,12 +283,13 @@ export const StaticMaterialKit: AnyPlugin[] = [
   StaticInlineEquationPlugin,
   StaticEquationPlugin,
   BaseMentionPlugin,
-  BaseFontColorPlugin,
-  BaseFontBackgroundColorPlugin,
+  // Text marks: an element carrying one is refused, and none is drawn.
+  BaseFontColorPlugin.configure({ inject: { isLeaf: true } }),
+  BaseFontBackgroundColorPlugin.configure({ inject: { isLeaf: true } }),
   BaseFontSizePlugin.configure({
-    inject: { nodeProps: FONT_SIZE_NODE_PROPS },
+    inject: { isLeaf: true, nodeProps: FONT_SIZE_NODE_PROPS },
   }),
-  BaseFontFamilyPlugin.configure({ inject: { targetPlugins: [KEYS.p] } }),
+  BaseFontFamilyPlugin.configure({ inject: { isLeaf: true } }),
   BaseTextAlignPlugin.configure({
     inject: {
       nodeProps: {
