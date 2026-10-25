@@ -14,6 +14,7 @@ import {
 import type { CSSProperties } from 'react';
 import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
 import { Popover, PopoverAnchor } from '@/components/ui/Popover';
+import { isColumnWidth } from '@/features/materials/document';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -112,7 +113,7 @@ function ColumnFloatingToolbarContent() {
 
 export function Column(props: PlateElementProps) {
   const readOnly = useReadOnly();
-  const width = (props.element as { width?: string }).width;
+  const width = (props.element as { width?: unknown }).width;
   const draggable = useDraggable({
     canDropNode: ({ dragEntry, dropEntry }) =>
       PathApi.equals(
@@ -135,7 +136,11 @@ export function Column(props: PlateElementProps) {
         draggable.isDragging && 'opacity-45'
       )}
       ref={useComposedRef(props.ref, draggable.previewRef, draggable.nodeRef)}
-      style={width ? ({ '--column-width': width } as CSSProperties) : undefined}
+      style={
+        isColumnWidth(width)
+          ? ({ '--column-width': width } as CSSProperties)
+          : undefined
+      }
     >
       {!readOnly && (
         <button

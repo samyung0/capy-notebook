@@ -75,7 +75,7 @@ import type {
   QuestionFigureElement,
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
-import { quizQuestionElementToQuestion } from './document';
+import { isColumnWidth, quizQuestionElementToQuestion } from './document';
 import { EmbedLoading } from './embeds/EmbedView';
 import { Island, StaticMathContext } from './Island';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
@@ -196,12 +196,16 @@ function Table(props: SlateElementProps) {
 }
 
 function Column(props: SlateElementProps) {
-  const width = (props.element as { width?: string }).width;
+  const width = (props.element as { width?: unknown }).width;
   return (
     <SlateElement
       {...props}
       className={COLUMN_CLASS}
-      style={width ? ({ '--column-width': width } as CSSProperties) : undefined}
+      style={
+        isColumnWidth(width)
+          ? ({ '--column-width': width } as CSSProperties)
+          : undefined
+      }
     >
       {props.children}
     </SlateElement>

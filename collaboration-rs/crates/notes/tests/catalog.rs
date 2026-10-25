@@ -576,6 +576,8 @@ fn admission_checks_placement_values_and_the_embed_count() {
         ("video", "videoId", text("short")),
         ("chart", "width", text("15%")),
         ("img", "width", text("100")),
+        ("column", "width", text("50%;color:red")),
+        ("column", "width", text("0%")),
         (
             "html_embed",
             "html",
@@ -613,6 +615,7 @@ fn admission_checks_placement_values_and_the_embed_count() {
         ("material_ref", "refKind", text("flashcards")),
         ("video", "videoId", text("aaaaaaaaaaa")),
         ("chart", "width", text("100%")),
+        ("column", "width", text("49.9995%")),
         ("html_embed", "caption", text("New caption")),
         (
             "html_embed",
