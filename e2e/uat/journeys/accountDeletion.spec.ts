@@ -340,7 +340,9 @@ test('account deletion: an owner with an Office file, a note image, a member and
       [image.object_path]
     )
   ).toEqual([]);
-  expect((await run.blob(image.object_path)).sha256).toBe(sha256(png));
+  expect((await run.blob(image.object_path)).sha256).toBe(
+    sha256(image.uploaded)
+  );
 
   // 7. The clone holder keeps the copy, its image and its charge.
   expect(
@@ -354,7 +356,7 @@ test('account deletion: an owner with an Office file, a note image, a member and
   assert(JSON.stringify(read.content).includes(copy.id));
   expect(
     object(await api(cloner, `/api/editor-assets/${copy.id}/resolve`)).sizeBytes
-  ).toBe(png.length);
+  ).toBe(image.uploaded.length);
   expect(
     object(
       await api(

@@ -378,10 +378,11 @@ func (a *api) listUsageEvents(ctx context.Context, in *usageEventsInput) (*usage
 }
 
 // invoiceCacheTTL is how long a customer's invoice list is served without
-// asking Stripe again.
+// asking Stripe again, unless a Stripe event for the customer drops it first.
 const invoiceCacheTTL = time.Minute
 
-// invoiceCache holds recent invoice lists by Stripe customer.
+// invoiceCache holds recent invoice lists by Stripe customer. It lives in the
+// one API process an environment runs, so the webhook's drop reaches it.
 type invoiceCache struct {
 	mu      sync.Mutex
 	entries map[string]cachedInvoices
@@ -397,6 +398,13 @@ func (c *invoiceCache) get(customerID string, now time.Time) ([]apimodel.Invoice
 	defer c.mu.Unlock()
 	entry, ok := c.entries[customerID]
 	return entry.items, ok && now.Before(entry.until)
+}
+
+// drop forgets a customer's list, so the next read asks Stripe.
+func (c *invoiceCache) drop(customerID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.entries, customerID)
 }
 
 func (c *invoiceCache) put(customerID string, items []apimodel.Invoice, now time.Time) {

@@ -331,6 +331,15 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"message": "invalid signature"})
 		return
 	}
+	// Any event about a customer (an invoice created, finalized, paid,
+	// failed or voided, a Checkout completed) drops its cached invoice list,
+	// so the Invoices page shows the change at once; replays drop it too.
+	var about struct {
+		Customer *stripe.Customer `json:"customer"`
+	}
+	if json.Unmarshal(event.Data.Raw, &about) == nil && about.Customer != nil {
+		a.invoices.drop(about.Customer.ID)
+	}
 
 	claim, done, err := a.wh.ClaimWebhookEvent(
 		r.Context(), event.ID, "stripe", string(event.Type), "", event.Data.Raw,

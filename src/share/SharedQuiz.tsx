@@ -16,7 +16,7 @@ import {
 } from '@/lib/localDb';
 import { redeemShareToken } from '@/lib/shareRedeem';
 import { signedIn, useSignedIn } from './session';
-import { takeTurnstileToken } from './turnstile';
+import { useTurnstileCheck } from './TurnstileCheck';
 
 function Frame({
   children,
@@ -45,6 +45,7 @@ export function SharedQuiz({
   token: string;
 }) {
   const session = useSignedIn();
+  const check = useTurnstileCheck();
   const [past, setPast] = useState<LocalQuizAttempt[]>([]);
   const quizId = quiz.id;
   useEffect(() => {
@@ -60,6 +61,7 @@ export function SharedQuiz({
     >
       <AttemptBody
         actions={<PublicActionMenu kind="quiz" token={token} />}
+        belowSubmit={check.view}
         byline={
           <PublicByline author={quiz.author} updatedAt={quiz.updatedAt} />
         }
@@ -106,7 +108,7 @@ export function SharedQuiz({
             answers,
             localId: await anonymousId().catch(() => undefined),
             // Only a signed-out check carries a Turnstile token.
-            turnstileToken: await takeTurnstileToken(),
+            turnstileToken: await check.take(),
           });
           const attempt: LocalQuizAttempt = {
             answers,

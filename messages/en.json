@@ -867,6 +867,7 @@
   "quiz_grade_failed": "Could not mark your answers",
   "quiz_captcha_failed": "We couldn't check your answers. Submit them again.",
   "quiz_captcha_unavailable": "Checking answers is unavailable right now. Try again in a moment.",
+  "quiz_captcha_challenge": "Complete the check below to submit.",
   "quiz_grade_failed_body": "Grading is unavailable right now. Try again in a moment.",
   "quiz_level_recall": "Recall",
   "quiz_level_application": "Application",
