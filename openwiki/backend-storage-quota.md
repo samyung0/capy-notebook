@@ -761,11 +761,14 @@ header (Server checks below).
   `<img>` from a blob URL (where an SVG runs no script and loads nothing
   external) onto a canvas, at its own size within 2,400 px when its root
   names a width and a height, else at 2,400 px on the long side with its
-  viewBox's ratio. The name takes `.png` and the PNG then follows the rules
-  above, so servers receive no SVG image. One that does not load, or that
-  nothing sizes, is refused as unreadable. An Office file's SVG picture is
-  still dropped with its PNG copy kept, and an SVG imported from a provider
-  stays refused.
+  viewBox's ratio (finite numbers only). Only the first 4 KiB is read on the
+  page, for the root tag. The name takes `.png` and the compressor keeps it
+  PNG (`png`: lossless, shrunk at 2,000, 1,400 and 1,000 px past the cap, a
+  source resized within 5 megapixels as PNG), so servers receive no SVG
+  image. One that does not load, that nothing sizes, or that cannot be drawn
+  or encoded (a tainted canvas) is refused as unreadable. An Office file's
+  SVG picture is still dropped with its PNG copy kept, and an SVG imported
+  from a provider stays refused.
 
 The image cap counts the compressed bytes.
 
@@ -809,10 +812,14 @@ and a 20 s wall-clock deadline (the ingest host's parsers share its cores)
 inside the 768 MiB sandbox (Q347, `decode.py` mode `picture`); a picture past
 its limit, or one Pillow cannot decode, is removed and counted like any other.
 The pictures stop at the import job's time limit (`CAPY_IMPORT_JOB_TIMEOUT`,
-10 min, less 30 s for the picture in flight), checked before each picture
-since the job timeout cannot stop the thread they run in; an import past it
-fails without a retry (`import_too_slow`, "This file took too long to
-process.", Q363).
+10 min, less 30 s for the picture in flight, `IMPORT_PICTURE_MARGIN_S`),
+checked before and after each picture since the job timeout cannot stop the
+thread they run in, so repacking and the upload keep the margin; an import
+past it fails without a retry (`import_too_slow`, "This file took too long
+to process.", Q363). The worker refuses to start with a timeout within the
+margin. A package whose relationships part declares more than 4 MiB is left
+unread by the compressor (before any part is inflated) and refused by the
+check (Q367).
 The completion carries the count (`source_import_jobs.removed_pictures`, read
 back as `removedPictures`), which shows the same toast; a completion that only
 resumes an earlier attempt's upload names none and keeps the first count
@@ -864,7 +871,10 @@ none reads parts the checks did not:
 
 The entry cap is read from the end record before the directory loads. An entry counts as a folder only when its name ends in `/`,
 never by its attributes, and every part, `.rels` included, is classified by
-its bytes.
+its bytes. An SVG root is looked for in a part's first 4 KiB, past an XML
+declaration, comments and a doctype; a comment ends at its first `-->`, so
+the match takes linear time in the worker and the browser (Go's RE2 is linear
+anyway; review r4 B2, S2).
 
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |

@@ -573,6 +573,46 @@ def test_office_import_pictures_stop_at_the_job_limit_without_a_retry(monkeypatc
     assert isinstance(failure.value, TerminalError)
     assert len(started) == 1
 
+    # Review r4 S1: a single picture that ends past the deadline fails the
+    # import too, before repacking and the upload.
+    single = _zip(
+        {
+            "word/document.xml": b"<w:document/>",
+            "word/media/image0.png": _png_header(100, 50),
+        }
+    )
+    started.clear()
+    with pytest.raises(import_stage.ImportFailure) as late:
+        _image_run(monkeypatch, "plan.docx", "doc", single)
+    assert late.value.code == "import_too_slow"
+    assert len(started) == 1
+
+
+def test_an_import_timeout_within_the_picture_margin_fails_at_start():
+    """Review r4 N5: a CAPY_IMPORT_JOB_TIMEOUT that leaves no time after the
+    picture margin is refused when the worker starts, not on every import."""
+    import os
+    import subprocess
+    import sys
+
+    from pipeline.config import IMPORT_PICTURE_MARGIN_S
+
+    for timeout, ok in (
+        (IMPORT_PICTURE_MARGIN_S, False),
+        (IMPORT_PICTURE_MARGIN_S + 1, True),
+    ):
+        run = subprocess.run(
+            [sys.executable, "-c", "import pipeline.config"],
+            check=False,
+            env={**os.environ, "CAPY_IMPORT_JOB_TIMEOUT": str(timeout)},
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parents[1],
+        )
+        assert (run.returncode == 0) is ok, run.stderr[-300:]
+        if not ok:
+            assert "CAPY_IMPORT_JOB_TIMEOUT" in run.stderr
+
 
 def test_image_source_import_is_shrunk_and_renamed(monkeypatch):
     shrunk = (

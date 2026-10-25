@@ -38,9 +38,11 @@ export const IMAGE_EXTENSIONS: Record<string, string> = {
 const OFFICE_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png']);
 
 /** An SVG's root element, after any XML declaration, comments and doctype,
- * as the server checks find it. */
+ * as the server checks find it. A comment ends at its first "-->", so the
+ * match is linear: a lazy comment inside the repeat let a run of comments
+ * split 2^n ways and froze the tab (review r4 S2). */
 export const SVG_ROOT =
-  /^(?:\s|<\?[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]/;
+  /^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->)[\s\S])*-->|<!DOCTYPE[^>]*>)*<svg[\s>/]/;
 
 const decoder = new TextDecoder();
 
@@ -181,7 +183,9 @@ async function decodeLazily(file: File) {
  * source, Epo 2026-10-24) the area is the limit instead of the side, a PNG,
  * JPEG, GIF or WebP within it is kept as it is (Q344), anything else takes
  * the Office rules, and an animated GIF past it throws an
- * ImageTooManyPixelsError. The import worker applies the same rules
+ * ImageTooManyPixelsError. With `png` (an SVG drawn as a PNG, Q364) the
+ * result stays PNG whatever the image holds: lossless, shrunk at PNG_SIDES
+ * past the cap. The import worker applies the same rules
  * (pipeline/pipeline/ingest/images.py). */
 export async function fitImage(
   file: File,
@@ -189,7 +193,8 @@ export async function fitImage(
   {
     maxPixels = 0,
     office = maxPixels > 0,
-  }: { maxPixels?: number; office?: boolean } = {}
+    png = false,
+  }: { maxPixels?: number; office?: boolean; png?: boolean } = {}
 ): Promise<File> {
   const bitmap = await decode(file);
   try {
@@ -238,15 +243,18 @@ export async function fitImage(
       // A browser without the encoder returns PNG and ignores quality.
       return blob.type === type ? blob : null;
     };
-    const lossless = alpha || (office && flat);
+    const lossless = png || alpha || (office && flat);
     let type = lossless ? 'image/png' : 'image/jpeg';
-    let blob = office ? null : await encode(canvas, 'image/webp', QUALITY);
+    let blob =
+      office || png ? null : await encode(canvas, 'image/webp', QUALITY);
     if (blob) type = 'image/webp';
     else blob = await encode(canvas, type, QUALITY);
     if (!blob) throw new ImageTooLargeError(maxBytes);
-    const keeps = office
-      ? OFFICE_TYPES.has(file.type)
-      : file.type in IMAGE_EXTENSIONS;
+    const keeps = png
+      ? file.type === 'image/png'
+      : office
+        ? OFFICE_TYPES.has(file.type)
+        : file.type in IMAGE_EXTENSIONS;
     if (!resized && keeps && file.size <= maxBytes && blob.size >= file.size)
       return file;
     const named = (result: Blob) =>
@@ -257,7 +265,7 @@ export async function fitImage(
       );
     if (blob.size <= maxBytes) return named(blob);
     const longSide = Math.max(target.width, target.height);
-    if (alpha && type === 'image/png') {
+    if ((alpha || png) && type === 'image/png') {
       for (const side of PNG_SIDES) {
         if (side >= longSide) continue;
         blob = await draw(

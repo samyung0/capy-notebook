@@ -42,6 +42,10 @@ FLAT_COLOURS = 256
 # one is stored as it is and the header check decides.
 MAX_ENTRIES = 4096
 MAX_EXPANDED = 256 << 20
+# One relationships part's cap (Q367), by the size its directory record
+# declares, before it is inflated; CPython stops reading at that size, so a
+# read stays within it too.
+MAX_RELATIONSHIPS = 4 << 20
 OFFICE_FORMATS = {"PNG", "JPEG", "GIF"}
 SOURCE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
@@ -159,8 +163,13 @@ _RASTER_SIGNATURES = (
     b"II*\x00",
     b"MM\x00*",
 )
+# An SVG root after an XML declaration, comments and a doctype. A comment
+# ends at its first "-->", so the match is linear: a lazy comment inside the
+# repeat let a run of comments split 2^n ways, and CPython holds the GIL
+# while it matches (review r4 B2).
 _SVG_ROOT = re.compile(
-    rb"^(?:\s|<\?[^>]*\?>|<!--.*?-->|<!DOCTYPE[^>]*>)*<svg[\s>/]", re.DOTALL
+    rb"^(?:\s|<\?[^>]*\?>|<!--(?:(?!-->).)*-->|<!DOCTYPE[^>]*>)*<svg[\s>/]",
+    re.DOTALL,
 )
 
 
@@ -175,10 +184,11 @@ def is_vector(data: bytes, path: str) -> bool:
 
 
 def is_svg(data: bytes, path: str) -> bool:
-    """An SVG picture, by name or by its root element."""
+    """An SVG picture, by name or by its root element in the first 4 KiB, as
+    the browser and the gateway read it."""
     if path.rsplit(".", 1)[-1].lower() in {"svg", "svgz"}:
         return True
-    return _SVG_ROOT.match(data.removeprefix(b"\xef\xbb\xbf")) is not None
+    return _SVG_ROOT.match(data[:4096].removeprefix(b"\xef\xbb\xbf")) is not None
 
 
 def picture_kind(data: bytes, path: str) -> str | None:
@@ -416,16 +426,24 @@ def compress_office(
     compressor does not try and pictures it cannot decode. Vector parts
     nothing refers to, EMF/WMF document thumbnails and SVG parts outside the
     pictures go too, uncounted.
-    Returns None when nothing changed, and how many pictures were removed
-    where they show. Raises OutOfTime when a picture would start at or past
-    ``deadline`` (a time.monotonic() value), since a job timeout cannot stop
-    the thread this runs in (Q363)."""
+    Returns None when nothing changed (or a relationships part declares more
+    than MAX_RELATIONSHIPS, left to the header check), and how many pictures
+    were removed where they show. Raises OutOfTime when a picture would start,
+    or ends, at or past ``deadline`` (a time.monotonic() value), since a job
+    timeout cannot stop the thread this runs in (Q363)."""
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
         infos = archive.infolist()
     except (zipfile.BadZipFile, ValueError):
         return None, 0
     if len(infos) > MAX_ENTRIES or sum(info.file_size for info in infos) > MAX_EXPANDED:
+        return None, 0
+    # Before any part is read (review r4 B1): the header check refuses it.
+    if any(
+        info.filename.endswith(".rels") and info.file_size > MAX_RELATIONSHIPS
+        for info in infos
+        if not info.is_dir()
+    ):
         return None, 0
     parts: dict[str, bytes] = {}
     try:
@@ -476,6 +494,10 @@ def compress_office(
         if time.monotonic() >= deadline:
             raise OutOfTime(f"pictures still to compress at {path}")
         result = picture(parts[path])
+        # And after it, so the last one ending late leaves repacking and the
+        # upload their margin (review r4 S1).
+        if time.monotonic() >= deadline:
+            raise OutOfTime(f"{path} finished past the deadline")
         if result == "unreadable":
             gone.add(path)
             continue

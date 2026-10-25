@@ -30,7 +30,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from ..config import cfg
+from ..config import IMPORT_PICTURE_MARGIN_S, cfg
 from ..jobs import CapacityWait, RetryableError, TerminalError
 from ..store import blobstore, db
 from . import decode, image_check, images, pinned_http, telemetry
@@ -42,11 +42,6 @@ _LEASE_WAIT_BACKOFF_S = 30
 _RETRY_STATUSES = {408, 425, 429}
 _GOOGLE_RATE_LIMIT_REASONS = ("rateLimitExceeded", "userRateLimitExceeded")
 _TOKEN_KEY = "_importAttemptToken"
-# The pictures stop this long before the import job's own timeout: one
-# picture's 20 s wall deadline (decode.py) plus slack, so the picture in
-# flight ends and this import fails as too slow, without a retry, before the
-# job timeout would retry it (Q363).
-_PICTURE_DEADLINE_MARGIN_S = 30
 
 
 class ImportRetry(RetryableError):
@@ -292,7 +287,7 @@ def _prepare(data: bytes, acquired: dict, deadline: float) -> tuple[bytes, dict]
 
 def _run(job: dict) -> None:
     # The job's limit runs from about now (the worker's timeout wraps this).
-    deadline = time.monotonic() + cfg.import_job_timeout - _PICTURE_DEADLINE_MARGIN_S
+    deadline = time.monotonic() + cfg.import_job_timeout - IMPORT_PICTURE_MARGIN_S
     payload = job.get("payload") or {}
     import_id = str(payload.get("importJobId") or "")
     if not import_id:

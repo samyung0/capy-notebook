@@ -1,47 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImageUnreadableError } from './fitImage';
-import { stubImageCodec } from './imageCodec.testing';
+import { stubImageCodec, stubSvgImage } from './imageCodec.testing';
 import { pngFromSvg, svgSize } from './svgImage';
-
-const SIZE_ATTRIBUTE = /\s(width|height)="(\d+)"/g;
-
-/** An <img> as the browser loads an SVG blob: it decodes when the bytes hold
- * an <svg> root with a closing tag, and its natural size is the root's
- * width and height in px (none for a viewBox-only SVG). */
-function stubImage() {
-  const blobs = new Map<string, Blob>();
-  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
-    const url = `blob:test/${blobs.size}`;
-    blobs.set(url, blob as Blob);
-    return url;
-  });
-  vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => {
-    blobs.delete(url);
-  });
-  vi.stubGlobal(
-    'Image',
-    class {
-      look = 'flat';
-      naturalHeight = 0;
-      naturalWidth = 0;
-      src = '';
-      async decode() {
-        const text = (await blobs.get(this.src)?.text()) ?? '';
-        if (!(text.includes('<svg') && text.includes('</svg>')))
-          throw new Error('broken');
-        const size = Object.fromEntries(
-          [...text.matchAll(SIZE_ATTRIBUTE)].map(([, name, value]) => [
-            name,
-            Number(value),
-          ])
-        );
-        this.naturalWidth = size.width ?? 0;
-        this.naturalHeight = size.height ?? 0;
-      }
-    }
-  );
-  return blobs;
-}
 
 const svg = (body: string) =>
   new File([body], 'logo.svg', { type: 'image/svg+xml' });
@@ -50,7 +10,7 @@ let codec: ReturnType<typeof stubImageCodec>;
 let blobs: Map<string, Blob>;
 beforeEach(() => {
   codec = stubImageCodec();
-  blobs = stubImage();
+  blobs = stubSvgImage();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -72,13 +32,43 @@ describe('pngFromSvg', () => {
     expect(blobs.size).toBe(0);
   });
 
-  it("draws a viewBox-only SVG at 2,400 px on its long side, keeping the viewBox's ratio", async () => {
+  it("draws a viewBox-only SVG at 2,400 px on its long side, keeping the viewBox's ratio, and refuses a viewBox that sizes nothing", async () => {
     await pngFromSvg(
       svg(
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"></svg>'
       )
     );
     expect(codec.encodes).toEqual(['image/png 2400x1200']);
+    // Review r4 N2: an infinite viewBox gives no size.
+    await expect(
+      pngFromSvg(
+        svg(
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 Infinity 1"></svg>'
+        )
+      )
+    ).rejects.toBeInstanceOf(ImageUnreadableError);
+  });
+
+  it('refuses an SVG the canvas cannot encode as unreadable', async () => {
+    // Review r4 N2: a tainted canvas throws on encode.
+    vi.stubGlobal(
+      'OffscreenCanvas',
+      class {
+        getContext() {
+          return { drawImage() {} };
+        }
+        convertToBlob() {
+          return Promise.reject(new DOMException('tainted', 'SecurityError'));
+        }
+      }
+    );
+    await expect(
+      pngFromSvg(
+        svg(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="3" height="3"></svg>'
+        )
+      )
+    ).rejects.toBeInstanceOf(ImageUnreadableError);
   });
 
   it('refuses an SVG that does not load as unreadable, and passes over any other image', async () => {

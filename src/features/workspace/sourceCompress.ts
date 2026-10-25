@@ -13,6 +13,12 @@ export interface CompressRequest {
   maxBytes: number;
 }
 
+/** What the worker receives: the request, its file an SVG drawn as a PNG
+ * when `png`, which stays PNG (Q364). */
+export interface CompressMessage extends CompressRequest {
+  png: boolean;
+}
+
 export type CompressResponse =
   | { type: 'progress'; value: number }
   | { file: File; removed: number; type: 'done' }
@@ -39,7 +45,9 @@ export async function compressSource(
             : error;
         })
       : null;
-  const request = png ? { ...picked, file: png } : picked;
+  const request: CompressMessage = png
+    ? { ...picked, file: png, png: true }
+    : { ...picked, png: false };
   return new Promise<{ file: File; removed: number }>((resolve, reject) => {
     const worker = new Worker(
       new URL('./sourceCompress.worker.ts', import.meta.url),

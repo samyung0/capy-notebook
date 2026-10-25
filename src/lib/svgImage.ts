@@ -6,6 +6,7 @@ import {
   SVG_ROOT,
 } from '@/lib/fitImage';
 
+const decoder = new TextDecoder();
 const ROOT_TAG = /^<svg\b[^>]*>/;
 const ATTRIBUTE = /\s(width|height|viewBox)\s*=\s*(["'])(.*?)\2/g;
 const BOX_SEPARATOR = /[\s,]+/;
@@ -36,7 +37,12 @@ export function svgSize(
   if (sized && drawable)
     return fitSize(natural.width, natural.height, IMAGE_MAX_SIDE);
   const box = named.get('viewBox')?.split(BOX_SEPARATOR).map(Number);
-  if (box?.length === 4 && box[2] > 0 && box[3] > 0) {
+  if (
+    box?.length === 4 &&
+    box.every(Number.isFinite) &&
+    box[2] > 0 &&
+    box[3] > 0
+  ) {
     const scale = IMAGE_MAX_SIDE / Math.max(box[2], box[3]);
     return {
       height: Math.max(1, Math.round(box[3] * scale)),
@@ -48,16 +54,29 @@ export function svgSize(
     : null;
 }
 
+/** The image drawn at `size` and encoded as PNG. */
+async function encodePng(
+  image: HTMLImageElement,
+  { height, width }: { height: number; width: number }
+) {
+  const canvas = new OffscreenCanvas(width, height);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('2d canvas is unavailable');
+  context.drawImage(image, 0, 0, width, height);
+  return canvas.convertToBlob({ type: 'image/png' });
+}
+
 /** A picked image that is an SVG (by its content) as a PNG, so servers
  * receive no SVG image (Q364); null for any other image. It is drawn on the
  * page, since a worker has no image element and createImageBitmap refuses
  * an SVG: through an <img> from a blob URL, where an SVG runs no script and
- * loads nothing external. One that does not load or has no size throws an
- * ImageUnreadableError. The name takes .png; the compressor then treats the
- * PNG as any picked image. */
+ * loads nothing external. One that does not load, has no size, or cannot be
+ * drawn or encoded (a tainted canvas) throws an ImageUnreadableError. The
+ * name takes .png, and the compressor keeps it PNG (`png`). */
 export async function pngFromSvg(file: File): Promise<File | null> {
-  if (!isSvgImage(new Uint8Array(await file.slice(0, 4096).arrayBuffer())))
-    return null;
+  // Only the head is read on the page; the <img> parses the file itself.
+  const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+  if (!isSvgImage(head)) return null;
   const url = URL.createObjectURL(new Blob([file], { type: 'image/svg+xml' }));
   try {
     const image = new Image();
@@ -65,16 +84,15 @@ export async function pngFromSvg(file: File): Promise<File | null> {
     await image.decode().catch(() => {
       throw new ImageUnreadableError();
     });
-    const size = svgSize(await file.text(), {
+    const size = svgSize(decoder.decode(head), {
       height: image.naturalHeight,
       width: image.naturalWidth,
     });
     if (!size) throw new ImageUnreadableError();
-    const canvas = new OffscreenCanvas(size.width, size.height);
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('2d canvas is unavailable');
-    context.drawImage(image, 0, 0, size.width, size.height);
-    const png = await canvas.convertToBlob({ type: 'image/png' });
+    // One that cannot be drawn or encoded never will be (review r4 N2).
+    const png = await encodePng(image, size).catch(() => {
+      throw new ImageUnreadableError();
+    });
     return new File([png], `${file.name.replace(EXTENSION, '')}.png`, {
       type: 'image/png',
     });

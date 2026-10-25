@@ -20,13 +20,16 @@ import struct
 import zipfile
 
 from ..generated.limits import IMAGE_MAX_SIDE, SOURCE_IMAGE_MAX_PIXELS
-from .images import MAX_ENTRIES, MAX_EXPANDED, is_svg, is_vector, picture_parts
+from .images import (
+    MAX_ENTRIES,
+    MAX_EXPANDED,
+    MAX_RELATIONSHIPS,
+    is_svg,
+    is_vector,
+    picture_parts,
+)
 
 MAX_INFLATED = MAX_EXPANDED
-# One relationships part's cap (Q367), by the size its directory record
-# declares, before it is inflated; CPython stops reading at that size, so the
-# read stays within it too.
-MAX_RELATIONSHIPS = 4 << 20
 # A JPEG's frame header follows its metadata segments, each at most 64 KiB.
 _HEADER_BYTES = 1 << 20
 # A part that is no picture is read this far.

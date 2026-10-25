@@ -135,3 +135,43 @@ export function stubImageCodec() {
   );
   return codec;
 }
+
+const SIZE_ATTRIBUTE = /\s(width|height)="(\d+)"/g;
+
+/** An <img> as the browser loads an SVG blob: it decodes when the bytes hold
+ * an <svg> root with a closing tag, and its natural size is the root's
+ * width and height in px (none for a viewBox-only SVG). */
+export function stubSvgImage() {
+  const blobs = new Map<string, Blob>();
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+    const url = `blob:test/${blobs.size}`;
+    blobs.set(url, blob as Blob);
+    return url;
+  });
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => {
+    blobs.delete(url);
+  });
+  vi.stubGlobal(
+    'Image',
+    class {
+      look = 'flat';
+      naturalHeight = 0;
+      naturalWidth = 0;
+      src = '';
+      async decode() {
+        const text = (await blobs.get(this.src)?.text()) ?? '';
+        if (!(text.includes('<svg') && text.includes('</svg>')))
+          throw new Error('broken');
+        const size = Object.fromEntries(
+          [...text.matchAll(SIZE_ATTRIBUTE)].map(([, name, value]) => [
+            name,
+            Number(value),
+          ])
+        );
+        this.naturalWidth = size.width ?? 0;
+        this.naturalHeight = size.height ?? 0;
+      }
+    }
+  );
+  return blobs;
+}

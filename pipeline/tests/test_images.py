@@ -410,6 +410,43 @@ def test_a_picture_past_its_time_is_removed_like_an_unreadable_one():
         assert "ppt/media/image1.png" not in archive.namelist()
 
 
+def test_a_relationships_part_over_the_cap_is_left_unread():
+    """Security regression (Q367, review r4 B1): a package whose relationships
+    part declares more than 4 MiB comes back unchanged before any part is
+    read or decoded, so the import never inflates it (the header check then
+    refuses it)."""
+    seen = []
+
+    def edit(parts):
+        parts["word/_rels/document.xml.rels"] += b" " * images.MAX_RELATIONSHIPS
+
+    def picture(data):
+        seen.append(data)
+        return _picture(data)
+
+    assert _compress(_package("exchange-plan.docx", edit), picture) == (None, 0)
+    assert seen == []
+
+
+def test_svg_detection_stays_fast_on_a_run_of_comments():
+    """Security regression (review r4 B2): the SVG root match is linear, so a
+    part of empty comments (2^25 ways to split under the old pattern, about
+    8 s) answers at once, holding the GIL only briefly; real SVG heads still
+    match, within the first 4 KiB."""
+    import time
+
+    started = time.perf_counter()
+    assert not images.is_svg(b"<!---->" * 26 + b"x", "word/settings.xml")
+    assert time.perf_counter() - started < 0.5
+    head = (
+        b'\xef\xbb\xbf<?xml version="1.0" encoding="UTF-8"?>\n'
+        b'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "svg11.dtd">\n'
+        b'<!-- Generator: Illustrator -- 24 -->\n<svg version="1.1">'
+    )
+    assert images.is_svg(head, "word/media/image1.bin")
+    assert not images.is_svg(b" " * 4096 + b"<svg>", "word/media/image1.bin")
+
+
 def test_an_svg_outside_the_pictures_goes_uncounted():
     """Review r2 N12, r3 N3: an SVG part no picture relationship names is
     removed, since the checks refuse it, and uncounted like an unreferenced

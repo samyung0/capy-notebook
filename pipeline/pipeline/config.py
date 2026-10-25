@@ -392,13 +392,24 @@ if not 0 < cfg.confidence_note_below <= 1:
 if cfg.capture_cache_max_bytes <= 0 or cfg.capture_max_edge <= 0:
     raise ValueError("capture cache size and edge must be positive")
 
+# The import worker stops an Office file's pictures this long before the
+# import job's timeout (Q363): one picture's 20 s wall deadline (decode.py)
+# plus slack, so the picture in flight ends and the import fails as too slow,
+# without a retry, before the job timeout would retry it.
+IMPORT_PICTURE_MARGIN_S = 30
+
 if cfg.ingest_timeout <= 0:
     raise ValueError("CAPY_INGEST_TIMEOUT must be positive")
 
 # The gateway fences each import attempt with a twelve-minute lease; a longer
-# transfer would finish only to lose its completion.
-if not 0 < cfg.import_job_timeout < 720:
-    raise ValueError("CAPY_IMPORT_JOB_TIMEOUT must be between 1 and 719 seconds")
+# transfer would finish only to lose its completion. An Office file's pictures
+# stop IMPORT_PICTURE_MARGIN_S before the timeout (Q363), so a timeout within
+# the margin would fail every one of them as too slow.
+if not IMPORT_PICTURE_MARGIN_S < cfg.import_job_timeout < 720:
+    raise ValueError(
+        f"CAPY_IMPORT_JOB_TIMEOUT must be over {IMPORT_PICTURE_MARGIN_S} "
+        "(the picture margin) and under 720 seconds"
+    )
 
 if not cfg.import_download_hosts:
     raise ValueError("CAPY_IMPORT_DOWNLOAD_HOSTS must name at least one host")
