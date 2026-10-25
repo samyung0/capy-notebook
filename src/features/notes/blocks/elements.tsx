@@ -30,6 +30,7 @@ import {
   type MaterialNode,
   type MaterialRefElement as MaterialRefNode,
   type MermaidElement as MermaidNode,
+  mediaWidth,
   normalizeMaterialValue,
   type QuestionFigureElement as QuestionFigureNode,
   type QuizQuestionElement as QuizQuestionNode,
@@ -655,13 +656,13 @@ export function MermaidElement(props: PlateElementProps) {
               </>
             )
           }
-          width={element.width}
+          width={mediaWidth(element.width)}
         >
           <Mermaid
             code={element.source}
             // A live source changes per keystroke, here and for every peer.
             delay={MERMAID_TYPING_DELAY_MS}
-            fill={element.width !== undefined}
+            fill={mediaWidth(element.width) !== undefined}
             onDrawn={setDrawn}
             theme={theme}
           />

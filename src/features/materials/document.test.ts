@@ -352,6 +352,87 @@ describe('Universal Plate material documents', () => {
       expect(valid(width), String(width)).toBe(false);
   });
 
+  // As Go and the collaboration server: a table's column sizes and left
+  // margin are what Plate's table resizing writes, px as numbers of 0 or more.
+  it('takes only the sizes Plate writes on tables (security)', () => {
+    const valid = (sizes: object) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          {
+            children: [
+              {
+                children: [
+                  {
+                    children: [{ children: [{ text: 'a' }], type: 'p' }],
+                    type: 'td',
+                  },
+                ],
+                type: 'tr',
+              },
+            ],
+            id: 't',
+            type: 'table',
+            ...sizes,
+          },
+        ],
+      });
+    for (const sizes of [
+      {},
+      { colSizes: [120, 0, 48.5, null] },
+      { colSizes: [] },
+      { marginLeft: 0 },
+      { marginLeft: 24 },
+    ])
+      expect(valid(sizes), JSON.stringify(sizes)).toBe(true);
+    for (const sizes of [
+      { colSizes: ['120'] },
+      { colSizes: ['120px;color:red'] },
+      { colSizes: [-1] },
+      { colSizes: '120' },
+      { colSizes: null },
+      { marginLeft: '24px' },
+      { marginLeft: -1 },
+      { marginLeft: null },
+    ])
+      expect(valid(sizes), JSON.stringify(sizes)).toBe(false);
+  });
+
+  // As Go and the collaboration server: an indent is a number, which Plate
+  // draws as a class and a margin.
+  it('refuses an indent that is not a number (security)', () => {
+    const valid = (indent: unknown) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [{ children: [{ text: 'a' }], indent, type: 'p' }],
+      });
+    for (const indent of [undefined, null, 1, 1.5, LIST_INDENT_MAX])
+      expect(valid(indent), String(indent)).toBe(true);
+    for (const indent of ['1', '1 fixed', true, LIST_INDENT_MAX + 1])
+      expect(valid(indent), String(indent)).toBe(false);
+  });
+
+  // As Go and the collaboration server: the editor writes the marks Plate
+  // draws as styles on text only, so an element carrying one is refused.
+  it('refuses text marks on elements (security)', () => {
+    const valid = (marks: object, leafMarks: object = {}) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          { children: [{ text: 'a', ...leafMarks }], type: 'p', ...marks },
+        ],
+      });
+    const marks = {
+      backgroundColor: '#fdebd0',
+      color: '#c0392b',
+      fontFamily: 'Georgia',
+      fontSize: '20px',
+    };
+    expect(valid({}, marks)).toBe(true);
+    for (const [key, value] of Object.entries(marks))
+      expect(valid({ [key]: value }), key).toBe(false);
+  });
+
   // As Go and the collaboration server (Epo 2026-10-22): a Mermaid source
   // stops at MERMAID_SOURCE_MAX UTF-16 units, an astral character two.
   it('caps a Mermaid source at the catalog max', () => {
