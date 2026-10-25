@@ -20,7 +20,14 @@ import struct
 import zipfile
 
 from ..generated.limits import IMAGE_MAX_SIDE, SOURCE_IMAGE_MAX_PIXELS
-from .images import MAX_ENTRIES, MAX_EXPANDED, is_svg, is_vector, picture_parts
+from .images import (
+    MAX_ENTRIES,
+    MAX_EXPANDED,
+    MAX_RELATIONSHIPS,
+    is_svg,
+    is_vector,
+    picture_parts,
+)
 
 MAX_INFLATED = MAX_EXPANDED
 # A JPEG's frame header follows its metadata segments, each at most 64 KiB.
@@ -198,7 +205,9 @@ def other_image(head: bytes) -> bool:
 
 
 # How far from the end of a file zip 9, the collaboration server's reader,
-# looks for end records (64 KiB and 26 bytes); Go and CPython look within it.
+# looks for end records (64 KiB and 26 bytes). Go looks within 66,560 bytes
+# and CPython within 65,557, but both take the highest-offset record, which
+# is the one this check reads once it is the only one here and ends the file.
 _END_WINDOW = (1 << 16) + 26
 
 
@@ -327,6 +336,8 @@ def check_office(data: bytes, image_max_bytes: int) -> None:
     rels = {}
     for info in infos:
         if not info.is_dir() and info.filename.endswith(".rels"):
+            if info.file_size > MAX_RELATIONSHIPS:
+                raise _unreadable(f"{info.filename} is over {MAX_RELATIONSHIPS} bytes")
             # Never past the budget left: a byte past it refuses.
             body = read(info, MAX_INFLATED - inflated + 1)
             rels[info.filename] = body.decode("utf-8", "replace")

@@ -1,6 +1,7 @@
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
-import { imageLimit } from '@/lib/fitImage';
+import { ImageUnreadableError, imageLimit } from '@/lib/fitImage';
+import { pngFromSvg } from '@/lib/svgImage';
 import type { SourceCompression } from './sourceUpload';
 
 export interface CompressRequest {
@@ -12,6 +13,12 @@ export interface CompressRequest {
   maxBytes: number;
 }
 
+/** What the worker receives: the request, its file an SVG drawn as a PNG
+ * when `png`, which stays PNG (Q364). */
+export interface CompressMessage extends CompressRequest {
+  png: boolean;
+}
+
 export type CompressResponse =
   | { type: 'progress'; value: number }
   | { file: File; removed: number; type: 'done' }
@@ -20,15 +27,27 @@ export type CompressResponse =
       type: 'error';
     };
 
-/** Runs one source's compression in its own worker, which `signal` stops.
- * Resolves the file to upload (the picked one when nothing changed) and how
- * many pictures nothing can show were removed; an image no decoder reads or
- * no size fits is refused with its reason, final like the server's. */
-export function compressSource(
-  request: CompressRequest,
+/** Runs one source's compression in its own worker, which `signal` stops,
+ * an SVG image drawn as a PNG first, on the page (Q364). Resolves the file to
+ * upload (the picked one when nothing changed) and how many pictures nothing
+ * can show were removed; an image no decoder reads or no size fits is
+ * refused with its reason, final like the server's. */
+export async function compressSource(
+  picked: CompressRequest,
   onProgress: (value: number) => void,
   signal: AbortSignal
 ) {
+  const png =
+    picked.compression === 'image'
+      ? await pngFromSvg(picked.file).catch((error: unknown) => {
+          throw error instanceof ImageUnreadableError
+            ? new CopyError(m.source_image_unreadable())
+            : error;
+        })
+      : null;
+  const request: CompressMessage = png
+    ? { ...picked, file: png, png: true }
+    : { ...picked, png: false };
   return new Promise<{ file: File; removed: number }>((resolve, reject) => {
     const worker = new Worker(
       new URL('./sourceCompress.worker.ts', import.meta.url),

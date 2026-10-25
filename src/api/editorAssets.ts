@@ -60,7 +60,9 @@ async function editorAssetMaxBytes(
 // documents should persist assetId, never a resolved short-lived URL. An
 // image is compressed first, off the main thread; a file still over the cap is refused
 // before anything is sent (Epo 2026-10-22), naming the limit. The gateway
-// checks the cap again.
+// checks the cap again. The stored file takes the compressor's extension, but
+// the asset comes back with the name the user picked, which a note's image
+// shows as its alt text (Q371).
 export async function uploadEditorAsset(
   materialId: string,
   picked: File,
@@ -80,7 +82,7 @@ export async function uploadEditorAsset(
     purpose,
     sizeBytes: file.size,
   };
-  return uploadWithTicket(
+  const asset = await uploadWithTicket(
     uploadsPath(materialId),
     metadata,
     (path) => {
@@ -98,6 +100,7 @@ export async function uploadEditorAsset(
     },
     { signal: options.signal }
   );
+  return { ...asset, name: picked.name };
 }
 
 // Resolve at render/download time. Callers must not persist or cache the URL.

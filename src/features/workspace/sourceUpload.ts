@@ -42,15 +42,16 @@ export function isTextKind(
  * file shrunk to at most 5 megapixels. */
 export type SourceCompression = 'office' | 'image';
 
-/** The compression a picked file gets, if any. An SVG has no pixels to
- * shrink. Such a file's per-file cap applies once it is compressed. */
+/** The compression a picked file gets, if any; an SVG image is drawn as a
+ * PNG first (Q364). Such a file's per-file cap applies once it is
+ * compressed. */
 export function sourceCompression(
   name: string,
   kind: FileKind
 ): SourceCompression | null {
   const ext = fileExt(name);
   if (ext === 'docx' || ext === 'pptx' || ext === 'xlsx') return 'office';
-  return kind === 'image' && ext !== 'svg' ? 'image' : null;
+  return kind === 'image' ? 'image' : null;
 }
 
 export function parseModeIssues(

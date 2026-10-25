@@ -17,8 +17,10 @@ import {
 import { fakeImage, stubImageCodec } from './imageCodec.testing';
 import {
   compressOfficeImages,
+  contentTypes,
   removePictures,
   resolveTarget,
+  rewriteRelationships,
 } from './officeImages';
 
 // The fork's headless engines: a file they seed opens in Capy's editors.
@@ -527,6 +529,214 @@ describe('removePictures', () => {
     );
     expect(result.count).toBe(2);
   });
+});
+
+// Security regression (review r5 X1): every unclosed opener is scanned once,
+// so a part full of them answers at once; the old tokenizers rescanned to the
+// part's end from each (3 to 7 s per shape here, warm).
+const seconds = (call: () => unknown) => {
+  const started = performance.now();
+  call();
+  return (performance.now() - started) / 1000;
+};
+
+describe('the XML tokenizers', () => {
+  it('answer at once on unclosed markup, and the picture still goes', () => {
+    const picture =
+      '<w:document><w:body><w:drawing><a:blip r:embed="rId1"/></w:drawing></w:body></w:document>';
+    for (const [name, tail] of Object.entries({
+      'a long name': `<${'a'.repeat(50_000)}<`,
+      CDATA: '<![CDATA['.repeat(30_000),
+      comments: '<!--'.repeat(50_000),
+      declarations: '<?'.repeat(80_000),
+      'extension lists': '<a:extLst '.repeat(25_000),
+      tags: '<a '.repeat(40_000),
+      'unclosed quotes': '<a "'.repeat(30_000),
+    })) {
+      let result: ReturnType<typeof removePictures> | undefined;
+      const took = seconds(() => {
+        result = removePictures(
+          'word/document.xml',
+          picture + tail,
+          new Set(['rId1'])
+        );
+      });
+      expect(took, name).toBeLessThan(1);
+      expect(result?.count, name).toBe(1);
+    }
+  });
+
+  it('answer at once on a relationships part ending in unclosed elements', async () => {
+    const rels =
+      '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/a.png"/></Relationships>' +
+      '<Relationship '.repeat(20_000);
+    const file = pack(
+      {
+        '[Content_Types].xml': strToU8('<Types xmlns="x"/>'),
+        'word/_rels/document.xml.rels': strToU8(rels),
+        'word/document.xml': strToU8('<w:document/>'),
+      },
+      'plan.docx'
+    );
+    const started = performance.now();
+    await compressOfficeImages(file, 2 * MB);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('rewrite [Content_Types].xml in one pass', () => {
+    // 2,000 removed parts over 20,000 other overrides (about 4 s as a search
+    // per part).
+    const others = Array.from(
+      { length: 20_000 },
+      (_, i) => `<Override PartName="/word/p${i}.xml" ContentType="x"/>`
+    ).join('');
+    const types = `<Types xmlns="x"><Default Extension="xml" ContentType="application/xml"/>${others}<Override PartName="/word/media/image1.emf" ContentType="image/x-emf"/><Override PartName="/WORD/media/image2.png" ContentType="image/png"/></Types>`;
+    const deleted = new Set([
+      'word/media/image1.emf',
+      ...Array.from({ length: 2000 }, (_, i) => `word/media/gone${i}.emf`),
+    ]);
+    let out = '';
+    const took = seconds(() => {
+      out = contentTypes(
+        types,
+        deleted,
+        new Map([
+          [
+            'word/media/image2.png',
+            { path: 'word/media/image2.jpeg', type: 'image/jpeg' },
+          ],
+        ])
+      );
+    });
+    expect(took).toBeLessThan(1);
+    expect(out).not.toContain('image1.emf');
+    expect(out).toContain(
+      '<Override PartName="/word/media/image2.jpeg" ContentType="image/jpeg"/>'
+    );
+    expect(
+      out.split('<Default Extension="jpeg" ContentType="image/jpeg"/>')
+    ).toHaveLength(2);
+    expect(out.split('<Override')).toHaveLength(20_002);
+  });
+});
+
+describe('contentTypes', () => {
+  it('follows renames and removals in a [Content_Types].xml with a namespace prefix', () => {
+    // Review r6 N3: ElementTree writes <ns0:Types>.
+    const types =
+      '<ns0:Types xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<ns0:Default Extension="png" ContentType="image/png"/>' +
+      '<ns0:Override PartName="/ppt/media/a.emf" ContentType="image/x-emf"/>' +
+      '<ns0:Override PartName="/ppt/media/b.png" ContentType="image/png"/>' +
+      '</ns0:Types>';
+    expect(
+      contentTypes(
+        types,
+        new Set(['ppt/media/a.emf']),
+        new Map([
+          ['ppt/media/b.png', { path: 'ppt/media/b.jpeg', type: 'image/jpeg' }],
+        ])
+      )
+    ).toBe(
+      '<ns0:Types xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<ns0:Default Extension="jpeg" ContentType="image/jpeg"/>' +
+        '<ns0:Default Extension="png" ContentType="image/png"/>' +
+        '<ns0:Override PartName="/ppt/media/b.jpeg" ContentType="image/jpeg"/>' +
+        '</ns0:Types>'
+    );
+  });
+});
+
+describe('one pass per part', () => {
+  const links = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) =>
+        `<Relationship Id="rIdx${i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/${i}" TargetMode="External"/>`
+    ).join('');
+
+  it('removePictures keeps the open elements as it reads, so many references deep in a part answer at once', () => {
+    // 4,000 references under 50,000 open elements: about 6 s, warm, as a
+    // walk down the open elements per reference (review r5 follow-up).
+    const drawing = '<w:drawing><a:blip r:embed="rId1"/></w:drawing>';
+    const deep = (depth: number, refs: number) =>
+      `<w:document>${'<w:p>'.repeat(depth)}${drawing.repeat(refs)}${'</w:p>'.repeat(depth)}`;
+    const ids = new Set(['rId1']);
+    removePictures('word/document.xml', deep(2000, 200), ids);
+    const xml = deep(50_000, 4000);
+    let result: ReturnType<typeof removePictures> | undefined;
+    const took = seconds(() => {
+      result = removePictures('word/document.xml', xml, ids);
+    });
+    expect(took).toBeLessThan(1);
+    expect(result?.count).toBe(4000);
+    expect(result?.xml).not.toContain('w:drawing');
+  });
+
+  it('rewriteRelationships renames 4,000 and removes 2,000 relationships of a 4 MiB part in one pass', () => {
+    // About 6.6 s, warm, as a replace per relationship (review r5 follow-up).
+    const renamed = Array.from({ length: 4000 }, (_, i) =>
+      rel(`rId${i}`, 'image', `media/image${i}.png`)
+    );
+    const removed = Array.from({ length: 2000 }, (_, i) =>
+      rel(`rIdg${i}`, 'image', `media/gone${i}.emf`)
+    );
+    const xml = `<Relationships>${links(18_000)}${removed.join('')}${renamed.join('')}</Relationships>`;
+    expect(xml.length).toBeLessThan(4 * MB);
+    const dead = new Set(Array.from({ length: 2000 }, (_, i) => `rIdg${i}`));
+    const changes = new Map(
+      renamed.map((element) => [element, element.replace('.png', '.jpeg')])
+    );
+    rewriteRelationships(xml.slice(0, 10_000), dead, changes);
+    let out = '';
+    const took = seconds(() => {
+      out = rewriteRelationships(xml, dead, changes);
+    });
+    expect(took).toBeLessThan(1);
+    expect(out).not.toContain('gone');
+    expect(out).not.toContain('.png');
+    expect(out.split('.jpeg')).toHaveLength(4001);
+    expect(out.split('<Relationship ')).toHaveLength(22_001);
+  });
+
+  it('compressOfficeImages renames 2,000 pictures sharing one name at once, past a name a part has', async () => {
+    // About 14 s, warm, trying every candidate from the first against every
+    // rename (review r5 follow-up).
+    codec.encoded = () => 5000;
+    const shared = (count: number) => {
+      const parts: Record<string, Uint8Array> = {
+        'word/document.xml': strToU8('<w:document/>'),
+        'word/media/x-2.jpeg': fakeImage('image/jpeg', 100, 100),
+      };
+      for (let i = 0; i < count; i++)
+        parts[`word/media/x.p${i}`] = fakeImage('image/png', 3000, 2000);
+      return pack(parts, 'plan.docx');
+    };
+    await compressOfficeImages(shared(20), 2 * MB);
+    const file = shared(2000);
+    const started = performance.now();
+    const { file: out } = await compressOfficeImages(file, 2 * MB);
+    expect(performance.now() - started).toBeLessThan(2000);
+    const names = Object.keys(
+      unzipSync(new Uint8Array(await out.arrayBuffer()))
+    );
+    expect(names.slice(0, 5)).toEqual([
+      'word/document.xml',
+      'word/media/x-2.jpeg',
+      'word/media/x.jpeg',
+      'word/media/x-1.jpeg',
+      'word/media/x-3.jpeg',
+    ]);
+    expect([...names].sort()).toEqual(
+      [
+        'word/document.xml',
+        'word/media/x-2.jpeg',
+        'word/media/x.jpeg',
+        'word/media/x-1.jpeg',
+        ...Array.from({ length: 1998 }, (_, i) => `word/media/x-${i + 3}.jpeg`),
+      ].sort()
+    );
+  }, 60_000);
 });
 
 describe('resolveTarget', () => {

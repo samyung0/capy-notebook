@@ -247,6 +247,18 @@ func TestCheckOfficeRefusesPicturesByContent(t *testing.T) {
 		"a JPEG 2000 outside the picture parts": {
 			[]part{{"word/x.dat", []byte("\x00\x00\x00\x0cjP  \r\n\x87\n")}}, "office_image_unsupported",
 		},
+		"an SVG whose doctype has an internal subset": {
+			[]part{{"word/embeddings/logo.bin", []byte("<?xml version=\"1.0\"?>\n<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"svg11.dtd\" [\n\t<!ENTITY ns_extend \"http://ns.adobe.com/Extensibility/1.0/\">\n]>\n<svg version=\"1.1\">")}},
+			"office_image_unsupported",
+		},
+		"an SVG whose doctype quotes a bracket": {
+			[]part{{"word/embeddings/logo.bin", []byte("<?xml version=\"1.0\"?><!DOCTYPE svg SYSTEM \"x[y.dtd\"><svg/>")}},
+			"office_image_unsupported",
+		},
+		"an SVG whose doctype subset quotes a bracket": {
+			[]part{{"word/embeddings/logo.bin", []byte("<!DOCTYPE svg [<!ENTITY a \"]\">]><svg/>")}},
+			"office_image_unsupported",
+		},
 		"an SVG named as relationships": {
 			[]part{rels("image media/a.rels"), {"word/media/a.rels", []byte("<svg/>")}}, "office_image_unsupported",
 		},
@@ -306,6 +318,28 @@ func TestCheckOfficeRefusesPackagesItCannotReadWhole(t *testing.T) {
 	overlapped := overlappedZip(t)
 	if code := refusal(t, CheckOffice(overlapped, overlapped.Size(), testCap)); code != "office_unreadable" {
 		t.Fatalf("overlapping entries: code = %s", code)
+	}
+}
+
+// Security regression (Q367, review r3 S1): a relationships part over 4 MiB
+// (by its declared size, before it is inflated) refuses the package; one at
+// 4 MiB passes.
+func TestCheckOfficeRefusesARelationshipPartOver4MiB(t *testing.T) {
+	relsOf := func(size int) part {
+		head, tail := `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`, `</Relationships>`
+		return part{"word/_rels/document.xml.rels",
+			[]byte(head + strings.Repeat(" ", size-len(head)-len(tail)) + tail)}
+	}
+	document := part{"word/document.xml", []byte("<w:document/>")}
+	file := officeFile(t, document, relsOf(MaxRelationships))
+	if err := CheckOffice(file, file.Size(), testCap); err != nil {
+		t.Fatalf("a 4 MiB relationships part refused: %v", err)
+	}
+	file = officeFile(t, document, relsOf(MaxRelationships+1))
+	var over *Refusal
+	if err := CheckOffice(file, file.Size(), testCap); !errors.As(err, &over) ||
+		over.Code != "office_unreadable" || !strings.Contains(over.Detail, "is over") {
+		t.Fatalf("a relationships part over 4 MiB: %v", err)
 	}
 }
 

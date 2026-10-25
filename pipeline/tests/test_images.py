@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import re
 import zipfile
 from pathlib import Path
@@ -14,6 +15,12 @@ import pytest
 from PIL import Image, UnidentifiedImageError
 
 from pipeline.ingest import images
+
+
+def _compress(data, picture):
+    """The compressor with no deadline to meet."""
+    return images.compress_office(data, picture, math.inf)
+
 
 FIXTURES = Path(__file__).parents[2] / "e2e/fixtures/files"
 MANIFEST = json.loads((FIXTURES / "images/manifest.json").read_text())
@@ -148,9 +155,7 @@ def test_docx_photos_shrink_a_png_photo_turns_jpeg_and_a_wmf_equation_goes():
             '<Override PartName="/word/embeddings/oleObject1.bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>',
         )
 
-    package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), _picture
-    )
+    package, removed = _compress(_package("exchange-plan.docx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         names = archive.namelist()
@@ -191,7 +196,7 @@ def test_pptx_emf_picture_goes_and_every_slide_follows_a_rename():
             _rel("rId100", "image", "../media/image99.emf"),
         )
 
-    package, removed = images.compress_office(_package("lecture.pptx", edit), _picture)
+    package, removed = _compress(_package("lecture.pptx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "ppt/media/image99.emf" not in archive.namelist()
@@ -219,9 +224,7 @@ def test_xlsx_emf_anchor_goes():
             + "</Relationships>"
         ).encode()
 
-    package, removed = images.compress_office(
-        _package("course-guide.xlsx", edit), _picture
-    )
+    package, removed = _compress(_package("course-guide.xlsx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "xl/media/image2.emf" not in archive.namelist()
@@ -236,7 +239,7 @@ def test_a_package_whose_pictures_cannot_shrink_is_kept():
         for name in ("image1", "image2", "image3"):
             parts[f"word/media/{name}.png"] = buffer.getvalue()
 
-    assert images.compress_office(_package("exchange-plan.docx", edit), _picture) == (
+    assert _compress(_package("exchange-plan.docx", edit), _picture) == (
         None,
         0,
     )
@@ -250,7 +253,9 @@ def test_remove_pictures_takes_a_pptx_ole_frame_whole_and_counts_it_once():
         '</mc:AlternateContent><p:sp><p:spPr><a:blipFill><a:blip r:embed="rId3"/></a:blipFill></p:spPr>'
         "<p:txBody>kept</p:txBody></p:sp></p:spTree>"
     )
-    out, refs, count = images.remove_pictures("ppt/slides/slide1.xml", xml, {"rId3"})
+    out, refs, count = images.remove_pictures(
+        "ppt/slides/slide1.xml", xml, {"rId3"}, math.inf
+    )
     assert (
         out
         == "<p:spTree><p:sp><p:spPr></p:spPr><p:txBody>kept</p:txBody></p:sp></p:spTree>"
@@ -306,9 +311,7 @@ def test_thumbnails_orphans_and_chart_fills_in_emf_or_wmf_go():
             _rel("rIdFill", "image", "../media/fill.emf"),
         )
 
-    package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), _picture
-    )
+    package, removed = _compress(_package("exchange-plan.docx", edit), _picture)
     assert removed == 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         names = archive.namelist()
@@ -373,9 +376,7 @@ def test_svg_and_hd_photo_beside_a_blip_go_and_undecodable_pictures_are_removed(
             + _rel("rIdClip", "video", "media/clip.mp4"),
         )
 
-    package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), _picture
-    )
+    package, removed = _compress(_package("exchange-plan.docx", edit), _picture)
     assert removed == 2
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         names = archive.namelist()
@@ -403,12 +404,377 @@ def test_a_picture_past_its_time_is_removed_like_an_unreadable_one():
     def edit(parts):
         parts["ppt/media/image1.png"] = _png((300, 200))
 
-    package, removed = images.compress_office(
+    package, removed = _compress(
         _package("lecture.pptx", edit), lambda _data: "unreadable"
     )
     assert removed >= 1
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "ppt/media/image1.png" not in archive.namelist()
+
+
+def test_a_relationships_part_over_the_cap_is_left_unread():
+    """Security regression (Q367, review r4 B1): a package whose relationships
+    part declares more than 4 MiB comes back unchanged before any part is
+    read or decoded, so the import never inflates it (the header check then
+    refuses it)."""
+    seen = []
+
+    def edit(parts):
+        parts["word/_rels/document.xml.rels"] += b" " * images.MAX_RELATIONSHIPS
+
+    def picture(data):
+        seen.append(data)
+        return _picture(data)
+
+    assert _compress(_package("exchange-plan.docx", edit), picture) == (None, 0)
+    assert seen == []
+
+
+def test_svg_detection_stays_fast_on_a_run_of_comments():
+    """Security regression (review r4 B2): the SVG root match is linear, so a
+    part of empty comments (2^25 ways to split under the old pattern, about
+    8 s) answers at once, holding the GIL only briefly; real SVG heads still
+    match, within the first 4 KiB."""
+    import time
+
+    started = time.perf_counter()
+    assert not images.is_svg(b"<!---->" * 26 + b"x", "word/settings.xml")
+    assert time.perf_counter() - started < 0.5
+    head = (
+        b'\xef\xbb\xbf<?xml version="1.0" encoding="UTF-8"?>\n'
+        b'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "svg11.dtd">\n'
+        b'<!-- Generator: Illustrator -- 24 -->\n<svg version="1.1">'
+    )
+    assert images.is_svg(head, "word/media/image1.bin")
+    assert not images.is_svg(b" " * 4096 + b"<svg>", "word/media/image1.bin")
+    # Review r5 nit 2: a doctype with an internal subset (Illustrator).
+    illustrator = (
+        b'<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" '
+        b'"svg11.dtd" [\n\t<!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">\n'
+        b']>\n<svg version="1.1">'
+    )
+    assert images.is_svg(illustrator, "word/media/image1.bin")
+    # Review r6 N1: a bracket inside a quoted literal, in the doctype or its
+    # subset.
+    for doctype in (
+        b'<!DOCTYPE svg SYSTEM "x[y.dtd">',
+        b'<!DOCTYPE svg [<!ENTITY a "]">]>',
+    ):
+        assert images.is_svg(b'<?xml version="1.0"?>' + doctype + b"<svg/>", "x.bin")
+
+
+def _timed(call) -> float:
+    import time
+
+    started = time.perf_counter()
+    call()
+    return time.perf_counter() - started
+
+
+def test_xml_tokenizers_answer_at_once_on_unclosed_markup():
+    """Security regression (review r5 X1): every unclosed opener is scanned
+    once, so a part full of them answers at once; the old tokenizers
+    rescanned to the part's end from each (5 to 11 s per shape here, 51.7 s
+    for a 778-byte DOCX), holding the GIL. The picture is still removed."""
+    picture = (
+        '<w:document><w:body><w:drawing><a:blip r:embed="rId1"/></w:drawing>'
+        "</w:body></w:document>"
+    )
+    for name, tail in {
+        "tags": "<a " * 10000,
+        "comments": "<!--" * 15000,
+        "CDATA": "<![CDATA[" * 9000,
+        "declarations": "<?" * 25000,
+        "a long name": "<" + "a" * 12000 + "<",
+        "unclosed quotes": '<a "' * 9000,
+        "extension lists": "<a:extLst " * 30000,
+    }.items():
+        result = []
+        seconds = _timed(
+            lambda tail=tail, result=result: result.append(
+                images.remove_pictures(
+                    "word/document.xml", picture + tail, {"rId1"}, math.inf
+                )
+            )
+        )
+        assert seconds < 1, (name, seconds)
+        assert result[0][1:] == (["rId1"], 1), name
+
+
+def test_relationships_answer_at_once_on_unclosed_elements():
+    """Security regression (review r5 X1): a relationships part ending in
+    unclosed elements answers at once (about 5 s under the old pattern) and
+    its relationships still count."""
+    rels = (
+        '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/'
+        'officeDocument/2006/relationships/image" Target="embeddings/pic.png"/>'
+        "</Relationships>" + "<Relationship " * 25000
+    )
+    found = []
+    seconds = _timed(
+        lambda: found.append(
+            images.picture_parts(
+                ["word/document.xml", "word/embeddings/pic.png"],
+                {"word/_rels/document.xml.rels": rels},
+            )
+        )
+    )
+    assert seconds < 1, seconds
+    assert "word/embeddings/pic.png" in found[0]
+
+
+def test_content_types_are_rewritten_in_one_pass():
+    """Security regression (review r5 X1): removed and renamed parts' overrides
+    are rewritten in one pass; 600 removed parts over 20,000 other overrides
+    answer at once (about 6 s as a search per part)."""
+    others = "".join(
+        f'<Override PartName="/word/p{i}.xml" ContentType="x"/>' for i in range(20000)
+    )
+    types = (
+        '<Types xmlns="x"><Default Extension="xml" ContentType="application/xml"/>'
+        + others
+        + '<Override PartName="/word/media/image1.emf" ContentType="image/x-emf"/>'
+        '<Override PartName="/WORD/media/image2.png" ContentType="image/png"/></Types>'
+    )
+    deleted = {"word/media/image1.emf"} | {
+        f"word/media/gone{i}.emf" for i in range(600)
+    }
+    out = []
+    seconds = _timed(
+        lambda: out.append(
+            images.content_types(
+                types,
+                deleted,
+                {"word/media/image2.png": ("word/media/image2.jpeg", "image/jpeg")},
+            )
+        )
+    )
+    assert seconds < 1, seconds
+    assert "image1.emf" not in out[0]
+    assert (
+        '<Override PartName="/word/media/image2.jpeg" ContentType="image/jpeg"/>'
+        in out[0]
+    )
+    assert out[0].count('<Default Extension="jpeg" ContentType="image/jpeg"/>') == 1
+    assert out[0].count("<Override") == 20001
+
+
+def test_remove_pictures_walks_deep_nesting_once():
+    """Security regression (review r5 follow-up): the open elements a
+    reference's container is picked from are kept as the part is read, so
+    2,000 references under 20,000 open elements answer at once (about 7 s
+    as a walk down the open elements per reference)."""
+    drawing = '<w:drawing><a:blip r:embed="rId1"/></w:drawing>'
+    xml = "<w:document>" + "<w:p>" * 20000 + drawing * 2000 + "</w:p>" * 20000
+    result = []
+    seconds = _timed(
+        lambda: result.append(
+            images.remove_pictures("word/document.xml", xml, {"rId1"}, math.inf)
+        )
+    )
+    assert seconds < 1, seconds
+    out, refs, count = result[0]
+    assert (count, refs) == (2000, ["rId1"] * 2000)
+    assert "w:drawing" not in out
+
+
+IMAGE_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+
+
+def _links(count: int) -> str:
+    """External hyperlink relationships, a large part's bulk."""
+    return "".join(
+        f'<Relationship Id="rIdx{i}" Type="http://schemas.openxmlformats.org/'
+        f'officeDocument/2006/relationships/hyperlink" Target="https://example.com/{i}"'
+        ' TargetMode="External"/>'
+        for i in range(count)
+    )
+
+
+def test_relationships_are_rewritten_in_one_pass():
+    """Security regression (review r5 follow-up): 4,000 renamed and 2,000
+    removed relationships in a 4 MiB part are rewritten in one pass (about
+    5 s as a replace per relationship)."""
+    renamed = [
+        f'<Relationship Id="rId{i}" Type="{IMAGE_TYPE}" Target="media/image{i}.png"/>'
+        for i in range(4000)
+    ]
+    removed = [
+        f'<Relationship Id="rIdg{i}" Type="{IMAGE_TYPE}" Target="media/gone{i}.emf"/>'
+        for i in range(2000)
+    ]
+    xml = "<Relationships>" + _links(18000) + "".join(removed + renamed)
+    xml += "</Relationships>"
+    assert len(xml) < images.MAX_RELATIONSHIPS
+    changes = {element: element.replace(".png", ".jpeg") for element in renamed}
+    out = []
+    seconds = _timed(
+        lambda: out.append(
+            images.rewrite_relationships(
+                xml, {f"rIdg{i}" for i in range(2000)}, changes
+            )
+        )
+    )
+    assert seconds < 1, seconds
+    assert "gone" not in out[0] and ".png" not in out[0]
+    assert out[0].count(".jpeg") == 4000
+    assert out[0].count("<Relationship ") == 22000
+
+
+def test_removed_pictures_free_their_parts_in_one_pass():
+    """Security regression (review r5 follow-up): which parts nothing
+    targets any more is worked out once, so 4,000 removed pictures beside a
+    4 MiB relationships part answer at once (about 9 s as a search of every
+    relationship per removed part)."""
+    rels = "".join(
+        f'<Relationship Id="rId{i}" Type="{IMAGE_TYPE}" Target="media/image{i}.png"/>'
+        for i in range(4000)
+    )
+    body = "".join(
+        f'<w:drawing><a:blip r:embed="rId{i}"/></w:drawing>' for i in range(4000)
+    )
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", f"<w:document>{body}</w:document>")
+        archive.writestr(
+            "word/_rels/document.xml.rels",
+            f"<Relationships>{rels}{_links(21000)}</Relationships>",
+        )
+        for i in range(4000):
+            archive.writestr(f"word/media/image{i}.png", b"\x89PNG\r\n\x1a\n")
+    result = []
+    seconds = _timed(
+        lambda: result.append(_compress(out.getvalue(), lambda _data: "unreadable"))
+    )
+    assert seconds < 3, seconds
+    package, removed = result[0]
+    assert removed == 4000
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        assert archive.namelist() == [
+            "word/document.xml",
+            "word/_rels/document.xml.rels",
+        ]
+        assert "rId1" not in archive.read("word/_rels/document.xml.rels").decode()
+
+
+def test_pictures_sharing_a_name_are_renamed_at_once():
+    """Security regression (review r5 follow-up): each new name keeps the
+    next number to try, so 4,000 pictures sharing one name are renamed at
+    once (about 2 s trying every candidate from the first per picture), with
+    the names as before: in order, past a name a part already has."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("word/document.xml", "<w:document/>")
+        archive.writestr("word/media/x-2.jpeg", b"\xff\xd8\xff")
+        for i in range(4000):
+            archive.writestr(f"word/media/x.p{i}", b"\x89PNG\r\n\x1a\n")
+    result = []
+    seconds = _timed(
+        lambda: result.append(
+            _compress(out.getvalue(), lambda _data: (b"\xff\xd8\xff", "jpeg"))
+        )
+    )
+    assert seconds < 1, seconds
+    with zipfile.ZipFile(io.BytesIO(result[0][0])) as archive:
+        names = archive.namelist()
+    # Named in path order (x.p0, x.p1, x.p10, ...), kept in the archive's.
+    assert names[2:4] == ["word/media/x.jpeg", "word/media/x-1.jpeg"]
+    assert names[12] == "word/media/x-3.jpeg"
+    assert sorted(names) == sorted(
+        [
+            "word/document.xml",
+            "word/media/x-2.jpeg",
+            "word/media/x.jpeg",
+            "word/media/x-1.jpeg",
+            *(f"word/media/x-{n}.jpeg" for n in range(3, 4001)),
+        ]
+    )
+
+
+def test_removals_and_repacking_stop_at_the_deadline(monkeypatch):
+    """Q363 (review r5 follow-up): removals run in the thread the job timeout
+    cannot stop too, so the deadline is checked before each part's removals
+    and before repacking; past it the import fails like a late picture."""
+    from types import SimpleNamespace
+
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr(images, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    real = images.remove_pictures
+    removing = []
+
+    def slow_removal(path, xml, ids, deadline):
+        removing.append(path)
+        clock.now += 100
+        return real(path, xml, ids, deadline)
+
+    monkeypatch.setattr(images, "remove_pictures", slow_removal)
+
+    def package(sources):
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as archive:
+            for source in sources:
+                archive.writestr(
+                    f"word/{source}",
+                    '<w:hdr><w:drawing><a:blip r:embed="rId1"/></w:drawing></w:hdr>',
+                )
+                archive.writestr(
+                    f"word/_rels/{source}.rels",
+                    "<Relationships>"
+                    + _rel("rId1", "image", f"media/{source}.emf")
+                    + "</Relationships>",
+                )
+                archive.writestr(f"word/media/{source}.emf", EMF)
+        return out.getvalue()
+
+    # One part: only the check before repacking sees the time gone.
+    with pytest.raises(images.OutOfTime, match="repacking"):
+        images.compress_office(package(["document.xml"]), _picture, 50)
+    # Two parts: the second part's removals never start.
+    clock.now = 0.0
+    removing.clear()
+    with pytest.raises(images.OutOfTime):
+        images.compress_office(package(["document.xml", "header1.xml"]), _picture, 50)
+    assert removing == ["word/document.xml"]
+
+
+def test_a_large_part_stops_its_removals_at_the_deadline(monkeypatch):
+    """Q363 (review r6 N2): one part's removals check the deadline every
+    65,536 tokens, so a large part cannot outlast the margin; a part under
+    that many tokens is read whole."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(images, "time", SimpleNamespace(monotonic=lambda: 100.0))
+    picture = '<w:drawing><a:blip r:embed="rId1"/></w:drawing>'
+    small = "<w:document>" + "<w:p/>" * 1000 + picture + "</w:document>"
+    assert images.remove_pictures("word/document.xml", small, {"rId1"}, 50)[2] == 1
+    large = "<w:document>" + "<w:p/>" * 70000 + picture + "</w:document>"
+    with pytest.raises(images.OutOfTime, match="removals in word/document.xml"):
+        images.remove_pictures("word/document.xml", large, {"rId1"}, 50)
+
+
+def test_content_types_with_a_namespace_prefix_follow_renames_and_removals():
+    """Review r6 N3: a [Content_Types].xml with a prefix (ElementTree's
+    <ns0:Types>) gets the renamed picture's extension and loses a removed
+    part's override, each with that prefix."""
+    types = (
+        '<ns0:Types xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<ns0:Default Extension="png" ContentType="image/png"/>'
+        '<ns0:Override PartName="/ppt/media/a.emf" ContentType="image/x-emf"/>'
+        '<ns0:Override PartName="/ppt/media/b.png" ContentType="image/png"/>'
+        "</ns0:Types>"
+    )
+    out = images.content_types(
+        types,
+        {"ppt/media/a.emf"},
+        {"ppt/media/b.png": ("ppt/media/b.jpeg", "image/jpeg")},
+    )
+    assert out == (
+        '<ns0:Types xmlns:ns0="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<ns0:Default Extension="jpeg" ContentType="image/jpeg"/>'
+        '<ns0:Default Extension="png" ContentType="image/png"/>'
+        '<ns0:Override PartName="/ppt/media/b.jpeg" ContentType="image/jpeg"/>'
+        "</ns0:Types>"
+    )
 
 
 def test_an_svg_outside_the_pictures_goes_uncounted():
@@ -419,9 +785,7 @@ def test_an_svg_outside_the_pictures_goes_uncounted():
     def edit(parts):
         parts["word/embeddings/icon.svg"] = SVG
 
-    package, removed = images.compress_office(
-        _package("exchange-plan.docx", edit), _picture
-    )
+    package, removed = _compress(_package("exchange-plan.docx", edit), _picture)
     assert removed == 0
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
         assert "word/embeddings/icon.svg" not in archive.namelist()
