@@ -505,25 +505,34 @@ func TestAdoptEditorAssets(t *testing.T) {
 	}
 }
 
-// Every material's assets take the payer's plan caps: images the image cap
-// (human/backend-storage-quota.md 2026-10-09), 2 MiB Free and 5 MiB Pro, and
-// audio the per-file cap (human/frontend/plate-editor.md 2026-10-15), 10 MiB
-// Free and 30 MiB Pro.
-func TestEditorAssetMaterialTakesPayerCaps(t *testing.T) {
+// Every asset takes its uploader's plan caps, whatever the material's payer
+// has (M16): images the image cap (human/backend-storage-quota.md
+// 2026-10-09), 2 MiB on every plan since 2026-10-24, and audio the per-file cap
+// (human/frontend/plate-editor.md 2026-10-15), 10 MiB Free and 30 MiB Pro.
+func TestEditorAssetMaterialTakesTheUploadersCaps(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	ownerID := newBlobTestUser(t, s, "u_asset_cap")
+	ownerID := newBlobTestUser(t, s, "u_asset_cap_owner")
+	editorID := newBlobTestUser(t, s, "u_asset_cap_editor")
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Caps", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addWorkspaceEditor(t, s, workspace.ID, editorID)
 	note, err := materialdoc.Marshal(materialdoc.Empty())
 	if err != nil {
 		t.Fatal(err)
 	}
-	material, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "note", Content: note})
+	material, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name, Kind: "note", Title: "note", Content: note})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
 	caps := func() (image, audio int64) {
 		t.Helper()
-		_, limits, err := s.EditorAssetMaterial(ctx, material.ID)
+		_, limits, err := s.EditorAssetMaterial(ctx, material.ID, editorID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -532,10 +541,10 @@ func TestEditorAssetMaterialTakesPayerCaps(t *testing.T) {
 	if image, audio := caps(); image != 2<<20 || audio != 10<<20 {
 		t.Fatalf("free caps = %d image, %d audio; want 2 and 10 MiB", image, audio)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, ownerID); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if image, audio := caps(); image != 5<<20 || audio != 30<<20 {
-		t.Fatalf("pro caps = %d image, %d audio; want 5 and 30 MiB", image, audio)
+	if image, audio := caps(); image != 2<<20 || audio != 30<<20 {
+		t.Fatalf("pro caps = %d image, %d audio; want 2 and 30 MiB", image, audio)
 	}
 }

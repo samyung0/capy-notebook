@@ -19,6 +19,17 @@ function sourceDoc(value: string) {
   return { doc, text };
 }
 
+/** A peer's edit: typed in a replica under the peer's own client id and
+ * applied here as a remote update, as the room relays it. */
+function peerInsert(doc: Y.Doc, index: number, value: string) {
+  const peer = new Y.Doc();
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+  const vector = Y.encodeStateVector(peer);
+  peer.getText('source').insert(index, value);
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer, vector), 'remote');
+  peer.destroy();
+}
+
 /** What a textarea holds and does for one input, as the browser leaves it:
  * `value` with LF newlines, the caret after the edit. */
 function textarea(value: string, caret: number) {
@@ -206,6 +217,10 @@ describe('IME composition', () => {
     Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote), 'remote');
     composition.commit('日本語 ');
     expect(text.toString()).toBe('> alpha 日本語 beta!');
+    // Written under this document's client id: the room admits no other (Q213).
+    expect(
+      [...Y.decodeStateVector(Y.encodeStateVector(doc)).keys()].sort()
+    ).toEqual([doc.clientID, remote.clientID].sort());
     undo.undo();
     expect(text.toString()).toBe('> alpha beta!');
     undo.destroy();
@@ -217,7 +232,7 @@ describe('IME composition', () => {
     const { doc, text } = sourceDoc('one two three');
     const composition = beginTextComposition(text, 4, 7, sourceLines('x'));
     composition.peerEdit();
-    text.insert(5, 'X', 'remote');
+    peerInsert(doc, 5, 'X');
     // The caret goes after the composed text.
     expect(composition.commit('二')).toBe(5);
     expect(text.toString()).toBe('one 二X three');
@@ -236,7 +251,7 @@ describe('IME composition', () => {
     // each transaction not its own); the textarea never saw it.
     const busy = beginTextComposition(text, 5, 5, lines);
     busy.peerEdit();
-    text.insert(0, '> ', 'remote');
+    peerInsert(doc, 0, '> ');
     expect(busy.missed).toBe(true);
     // The IME rewrote "2" as "two"; the caret after it moves with the
     // peer's text before it.
@@ -335,7 +350,7 @@ describe('the textarea binding', () => {
     expect(text.toString().replace(/\r\n/g, '\n')).toBe(input.value);
     // A peer's edit refills the textarea and keeps the caret in place.
     input.setSelectionRange(3, 3);
-    text.insert(text.length, '!', 'remote');
+    peerInsert(doc, text.length, '!');
     expect(input.value.endsWith('beta!')).toBe(true);
     expect(input.selectionStart).toBe(3);
     input.fire('keydown', { ctrlKey: true, key: 'z', preventDefault() {} });
@@ -355,8 +370,8 @@ describe('the textarea binding', () => {
     input.type('insertCompositionText', 4, 7, '二', '二');
     expect(text.toString()).toBe('one two three');
     // A peer types inside the replaced word and at the start meanwhile.
-    text.insert(5, 'X', 'remote');
-    text.insert(0, '> ', 'remote');
+    peerInsert(doc, 5, 'X');
+    peerInsert(doc, 0, '> ');
     expect(input.value).toBe('one 二 three');
     input.fire('compositionend', { data: '二' });
     await flushed;
@@ -374,7 +389,7 @@ describe('the textarea binding', () => {
     input.fire('compositionstart');
     // The IME recomposes the word before the caret ("2" becomes "two").
     input.type('insertCompositionText', 4, 5, 'two', 'two');
-    text.insert(0, '> ', 'remote');
+    peerInsert(doc, 0, '> ');
     input.fire('compositionend', { data: 'two' });
     expect(text.toString()).toBe('> one two three');
     expect(input.value).toBe('> one two three');

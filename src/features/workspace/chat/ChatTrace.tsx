@@ -4,6 +4,7 @@ import { useUndoEdit } from '@/api/hooks';
 import type {
   ChatMessage,
   ChatSteps,
+  ChatWaitingPhase,
   Citation,
   MaterialRefType,
   ResourceEffect,
@@ -13,6 +14,11 @@ import type {
 import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/Tooltip';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
@@ -29,11 +35,13 @@ import {
   groupTitle,
   latestStep,
   type StepState,
+  stepProgress,
   stepTitle,
   THINKING_DELAY_MS,
   type ToolBlock,
   type TraceRow,
   toolIcon,
+  unappliedWarning,
   undoAction,
   undoRefused,
 } from './trace';
@@ -72,11 +80,12 @@ function useDelayed(on: boolean, ms: number) {
   return on && shown;
 }
 
-/** A row sentence with its label (file, query, page) emphasised. */
+/** A row sentence with its label (file, query, page) emphasised. It and an
+ * Aside after it share a baseline; the row's icons stay centred. */
 function Title({ text, label }: { text: string; label?: string }) {
   const at = label ? text.indexOf(label) : -1;
   return (
-    <span className="min-w-0 truncate">
+    <span className="min-w-0 self-baseline truncate">
       {at < 0 || !label ? (
         text
       ) : (
@@ -94,6 +103,36 @@ function Title({ text, label }: { text: string; label?: string }) {
 
 const ROW =
   'group/row flex w-fit min-w-0 max-w-full items-center gap-2 text-fg-muted text-sm data-[state=failed]:text-tint-error-fg';
+
+/** A row's muted words after its sentence, on the sentence's baseline: a
+ * count, a group's detail. */
+function Aside({ children }: { children?: string }) {
+  return children ? (
+    <span className="shrink-0 self-baseline text-[12.5px] opacity-80">
+      {children}
+    </span>
+  ) : null;
+}
+
+/** A call that left commands unapplied: a warning icon whose tooltip says
+ * how many, focusable like the question editor's issue icon (Epo
+ * 2026-10-23, Q171). */
+function WarningIcon({ text }: { text?: string }) {
+  if (!text) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        aria-label={text}
+        className="inline-grid size-4 shrink-0 place-items-center rounded-button text-tint-warning-fg outline-none focus-visible:ring-2 focus-visible:ring-action"
+        render={<span role="img" />}
+        tabIndex={0}
+      >
+        <Icon className="size-3.5" name="alert" />
+      </TooltipTrigger>
+      <TooltipContent side="top">{text}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 function StepRow({ tool, state }: { tool: ToolBlock; state: StepState }) {
   const title = stepTitle(tool, state);
@@ -114,6 +153,10 @@ function StepRow({ tool, state }: { tool: ToolBlock; state: StepState }) {
           />
         )}
         <Title label={title.label} text={title.text} />
+        <Aside>{stepProgress(tool, state)}</Aside>
+        {state === 'done' ? (
+          <WarningIcon text={unappliedWarning(tool)} />
+        ) : null}
       </div>
       {failed || state === 'unknown' ? (
         <p
@@ -134,19 +177,24 @@ const UNKNOWN_ERROR = { code: 'outcome_unknown', message: '' };
 function ThinkingRow({
   running,
   seconds,
+  waiting,
 }: {
   running: boolean;
   seconds?: number;
+  waiting?: ChatWaitingPhase;
 }) {
   return (
     <div className={ROW}>
       <ActivityIcon kind="think" running={running} />
       <span className="min-w-0 truncate">
-        {running
-          ? m.chat_trace_thinking()
-          : seconds
-            ? m.chat_trace_thought_for({ seconds })
-            : m.chat_trace_thought()}
+        {/* The limiter's and an AI slot's waits read the same (Q300). */}
+        {waiting
+          ? m.chat_trace_waiting()
+          : running
+            ? m.chat_trace_thinking()
+            : seconds
+              ? m.chat_trace_thought_for({ seconds })
+              : m.chat_trace_thought()}
       </span>
     </div>
   );
@@ -219,12 +267,8 @@ function ExpandRow({
         type="button"
       >
         {icon}
-        <span className="min-w-0 truncate">{title}</span>
-        {description ? (
-          <span className="shrink-0 text-[12.5px] opacity-80">
-            {description}
-          </span>
-        ) : null}
+        <span className="min-w-0 self-baseline truncate">{title}</span>
+        <Aside>{description}</Aside>
         <Icon
           className={cn(
             '-ml-1 size-3.5 shrink-0 transition-transform duration-(--motion-duration-quick) ease-(--motion-ease-smooth-out) motion-reduce:transition-none',
@@ -344,11 +388,15 @@ function ReceiptRow({
   effect,
   handlers,
   deck = false,
+  warning,
 }: {
   effect: ResourceEffect;
   handlers: UndoHandlers;
   /** create_deck: a source file whose title may carry no extension. */
   deck?: boolean;
+  /** The commands its call left unapplied, warned of while its edit
+   * stands. */
+  warning?: string;
 }) {
   const { resource } = effect;
   const label = resource.title || resource.id;
@@ -382,6 +430,7 @@ function ReceiptRow({
         </span>
         {text.slice(at + label.length)}
       </span>
+      {muted ? null : <WarningIcon text={warning} />}
       <span className="ml-auto flex shrink-0 items-center gap-2 pl-1">
         {hasUndo(effect) ? (
           <UndoButton effect={effect} handlers={handlers} />
@@ -435,7 +484,13 @@ function Row({
         </div>
       );
     case 'thinking':
-      return <ThinkingRow running={row.running} seconds={row.seconds} />;
+      return (
+        <ThinkingRow
+          running={row.running}
+          seconds={row.seconds}
+          waiting={row.waiting}
+        />
+      );
     case 'step':
       return <StepRow state={row.state} tool={row.tool} />;
     case 'group':
@@ -457,10 +512,17 @@ function Row({
           deck={row.tool.name === 'create_deck'}
           effect={row.effect}
           handlers={handlers}
+          warning={unappliedWarning(row.tool)}
         />
       );
     case 'edited':
-      return <ReceiptRow effect={row.effect} handlers={handlers} />;
+      return (
+        <ReceiptRow
+          effect={row.effect}
+          handlers={handlers}
+          warning={unappliedWarning(row.tool)}
+        />
+      );
   }
 }
 
@@ -595,6 +657,11 @@ export function ChatTrace({
     startedAt: msg.createdAt,
     stopped: msg.status === 'aborted',
     thinking,
+    waiting:
+      live &&
+      (msg.phase === 'waiting_limit' || msg.phase === 'waiting_capacity')
+        ? msg.phase
+        : undefined,
   };
   const answering = !live || msg.phase === 'answering' || !!msg.content;
 

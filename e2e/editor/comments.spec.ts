@@ -137,7 +137,7 @@ async function postDocumentComment(page: Page, text: string) {
     {
       body: {
         anchorVersion: 1,
-        contentRich: [{ children: [{ text }], type: 'p' }],
+        text,
       },
       method: 'POST',
     }

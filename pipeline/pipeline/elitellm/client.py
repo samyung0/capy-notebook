@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+import secrets
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, Self
 
 import httpx
 
@@ -42,6 +44,11 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
     },
     "z-ai/glm-5.3-flash": {
         "order": ["DigitalOcean", "Z.AI"],
+        "allow_fallbacks": False,
+    },
+    # A chat choice (decision 2026-10-24, Q224): Together only.
+    "minimax/minimax-m3.1-flash": {
+        "order": ["together"],
         "allow_fallbacks": False,
     },
 }
@@ -228,10 +235,21 @@ def deepseek_thinking_body(thinking: str) -> dict[str, Any]:
     return {"thinking": {"type": "enabled"}, "reasoning_effort": effort}
 
 
+# OpenRouter's effort for each thinking level a MiniMax row offers.
+MINIMAX_EFFORTS = {
+    "minimax/minimax-m3.1-flash": {"low": "low", "mid": "medium", "high": "high"},
+}
+
+
 def openrouter_reasoning(spec: ModelConfig, thinking: str) -> dict[str, Any]:
     """GLM cannot turn reasoning off, and a request without an effort reasons
     as at max, so every GLM request names its effort (decision 2026-10-21).
-    The DeepSeek pins run with reasoning off."""
+    MiniMax reasons at the chat pin's effort too. The DeepSeek pins run with
+    reasoning off."""
+    if spec.model_slug in MINIMAX_EFFORTS:
+        if thinking not in MINIMAX_EFFORTS[spec.model_slug]:
+            raise RegistryError("MiniMax supports only low, mid, or high reasoning")
+        return {"effort": MINIMAX_EFFORTS[spec.model_slug][thinking]}
     if spec.provider_slug != "zai":
         return {"enabled": False}
     if thinking not in ("low", "high", "max"):
@@ -506,45 +524,6 @@ def _flat_tools(schemas: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     return out
 
 
-def context_components(
-    spec: ModelConfig,
-    messages: list[dict[str, Any]],
-    *,
-    tools: list[dict[str, Any]] | None = None,
-    response_format: dict[str, Any] | None = None,
-    reasoning: bool | None = None,
-    input_items: list[dict[str, Any]] | None = None,
-) -> tuple[Any, Any, Any]:
-    """Return provider-shaped content split for context accounting."""
-    thinking = _thinking_for_call(spec, reasoning)
-    if _uses_responses(spec, thinking, bool(tools)):
-        items = list(input_items or [])
-        system = [item for item in items if item.get("role") == "system"]
-        conversation = [item for item in items if item.get("role") != "system"]
-        schemas: list[Any] = list(_flat_tools(tools))
-        if response_format:
-            schemas.append({"text": {"format": response_format}})
-        return system, conversation, schemas
-    if spec.provider_slug == "anthropic":
-        body = anthropic_request(
-            spec,
-            messages,
-            temperature=None,
-            tools=tools,
-            max_tokens=None,
-            thinking=thinking,
-        )
-        schemas = list(body.get("tools") or [])
-        return body.get("system") or "", body.get("messages") or [], schemas
-
-    system = [message for message in messages if message.get("role") == "system"]
-    conversation = [message for message in messages if message.get("role") != "system"]
-    schemas = list(tools or [])
-    if response_format:
-        schemas.append(response_format)
-    return system, conversation, schemas
-
-
 def _interactive() -> bool:
     from ..retrieval import accounting
 
@@ -593,19 +572,64 @@ def _client() -> httpx.AsyncClient:
     return client
 
 
-def jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
+_JSON_AS_IS = re.compile(r"[A-Za-z0-9+/=:;,._-]*")
+
+
+class RawJson(str):
+    """A string JSON leaves as it is (a base64 data URL), checked once when it
+    is made: request bodies copy it between quotes instead of encoding it
+    again, so a capture's image is encoded when it is taken, not on every model
+    call of its turn (Epo 2026-10-24, Q299)."""
+
+    def __new__(cls, value: str) -> Self:
+        if not _JSON_AS_IS.fullmatch(value):
+            raise ValueError("RawJson holds only characters JSON leaves as they are")
+        return super().__new__(cls, value)
+
+
+def jsonable(value: Any, raw: list[str] | None = None, mark: str = "") -> Any:
+    """``value`` as plain JSON types; with ``raw``, each RawJson becomes
+    ``mark`` and is appended to ``raw`` in the order the encoder writes it."""
+    if isinstance(value, str):
+        if raw is not None and isinstance(value, RawJson):
+            raw.append(value)
+            return mark
+        return value
+    if value is None or isinstance(value, (int, float, bool)):
         return value
     if isinstance(value, dict):
-        return {str(key): jsonable(child) for key, child in value.items()}
+        return {str(key): jsonable(child, raw, mark) for key, child in value.items()}
     if isinstance(value, list):
-        return [jsonable(item) for item in value]
+        return [jsonable(item, raw, mark) for item in value]
     dump = getattr(value, "model_dump", None)
     if callable(dump):
-        return jsonable(dump())
+        return jsonable(dump(), raw, mark)
     if hasattr(value, "__dict__"):
-        return jsonable(vars(value))
+        return jsonable(vars(value), raw, mark)
     return value
+
+
+def encode_json(body: Any) -> bytes:
+    """``body`` as httpx's ``json=`` sends it, each RawJson copied in."""
+    raw: list[str] = []
+    mark = f"\x00raw-{secrets.token_hex(8)}\x00"
+    text = json.dumps(
+        jsonable(body, raw, mark),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    if raw:
+        # Each copy is dropped as soon as the next one is made, so a request
+        # peaks at its text and its bytes, as with httpx.
+        pieces = text.split(json.dumps(mark))
+        joined = [pieces[0]]
+        for value, piece in zip(raw, pieces[1:], strict=True):
+            joined += ['"', value, '"', piece]
+        del text, pieces
+        text = "".join(joined)
+        del joined
+    return text.encode()
 
 
 async def _post_json(
@@ -619,7 +643,10 @@ async def _post_json(
         timeout = _call_timeout()
     async with asyncio.timeout(timeout):
         response = await _client().post(
-            url, headers=headers, json=jsonable(body), timeout=httpx.Timeout(timeout)
+            url,
+            headers=headers,
+            content=encode_json(body),
+            timeout=httpx.Timeout(timeout),
         )
     if response.status_code >= 400:
         raise _error_from_response(
@@ -683,7 +710,7 @@ async def _stream_sse(
         "POST",
         url,
         headers=headers,
-        json=jsonable(body),
+        content=encode_json(body),
         timeout=httpx.Timeout(first_idle, read=None),
     )
     response = await bounded(stream.__aenter__())

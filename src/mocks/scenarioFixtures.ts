@@ -234,6 +234,16 @@ async function prepareOfficeSource(
   });
 }
 
+/** An Office file the mock upload stored opens to view from its own bytes,
+ * as a file without saved changes does (the image compression e2e). */
+export function seedUploadedOffice(
+  fileId: string,
+  format: OfficeFormat,
+  sourceURL: string
+) {
+  sourceSeeds.set(fileId, { epoch: 1, format, sourceURL });
+}
+
 export function prepareScenarioOffice(
   format: OfficeFormat,
   signal: AbortSignal

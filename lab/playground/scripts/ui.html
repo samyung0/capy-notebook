@@ -200,7 +200,7 @@ img.capture {
       <label>Quality file <span class="muted" id="quality">none</span></label>
     </div>
     <div class="row">
-      <label><input id="library" type="checkbox"> Library</label>
+      <label><input id="workspaceOnly" type="checkbox"> Workspace only</label>
       <label>Open <select id="openFile"><option value="">nothing</option></select></label>
       <span class="muted">materials are written as JSON files under the run</span>
     </div>
@@ -496,7 +496,7 @@ function setConfig(c, resetDrafts = false) {
   });
   $('models').value = modelOption?.value || '';
   $('workspaces').value = c.workspace_id || state.defaults.workspace_id;
-  $('library').checked = c.library !== false;
+  $('workspaceOnly').checked = c.workspace_only === true;
   const prefs = { ...PREF_DEFAULTS, ...(c.study_preferences || {}) };
   $('prefWriting').value = prefs.writingStyle;
   $('prefQuiz').value = prefs.quiz;
@@ -606,9 +606,9 @@ const PREF_DEFAULTS = {
   visualAids: 'more',
   writingStyle: 'normal',
 };
-$('library').onchange = () => {
+$('workspaceOnly').onchange = () => {
   const c = currentConfig();
-  c.library = $('library').checked;
+  c.workspace_only = $('workspaceOnly').checked;
   setConfig(c);
 };
 $('openFile').onchange = () => {
@@ -946,7 +946,7 @@ function configCard(label, c, prompt) {
   const cit = (c.answer && c.answer.citations) || 'as_is';
   card(
     'stat',
-    `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || '')})${via} · ${esc(c.workspace_id)}${c.library !== false ? ' · library' : ''} · tools: ${esc(c.tools ? c.tools.join(', ') : 'production')} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)}` +
+    `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || '')})${via} · ${esc(c.workspace_id)}${c.workspace_only ? ' · workspace only' : ''} · tools: ${esc(c.tools ? c.tools.join(', ') : 'production')} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)}` +
       `<details><summary>config JSON</summary><pre>${esc(JSON.stringify(c, null, 2))}</pre></details>` +
       (prompt
         ? `<details><summary>system prompt sent</summary><pre>${esc(prompt)}</pre></details>`

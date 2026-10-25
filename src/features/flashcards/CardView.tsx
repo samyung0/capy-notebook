@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/Card';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import {
   AssetUrlContext,
+  RemovedMedia,
   useResolvedAsset,
 } from '@/features/materials/MediaAssetView';
 import { cn } from '@/lib/cn';
@@ -81,6 +82,15 @@ function ResolvedCardImage({
   className?: string;
 }) {
   const [asset] = useResolvedAsset(assetId);
+  if (asset.status === 'error' && asset.kind === 'removed')
+    return (
+      <RemovedMedia
+        className={cn(
+          'min-h-0 gap-2 overflow-hidden px-3 py-2 text-xs',
+          className
+        )}
+      />
+    );
   return asset.status === 'ready' ? (
     <img
       alt=""

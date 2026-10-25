@@ -19,7 +19,7 @@ set +a
 
 key="${UAT_SSH_KEY:-$HOME/.ssh/id_ed25519_capy_uat}"
 host="${UAT_APP_HOST:-root@159.195.250.206}"
-project="${UAT_COMPOSE_PROJECT:-9kx3durs3sxyfotgy20scemv}"
+project="${UAT_COMPOSE_PROJECT:-capy}"
 db=$(ssh -i "$key" -o BatchMode=yes "$host" \
   "docker ps --format '{{.Names}}' --filter label=com.docker.compose.service=db --filter label=com.docker.compose.project=$project | head -1")
 [ -n "$db" ] || { echo "no UAT db container running" >&2; exit 1; }

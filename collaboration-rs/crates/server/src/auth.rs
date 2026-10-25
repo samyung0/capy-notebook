@@ -31,6 +31,11 @@ pub struct Claims {
     pub aud: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
+    /// The Yjs client id this token offers the session joining with it (Go
+    /// mints a fresh one per token, Q213): a session takes its first joined
+    /// token's id, and the room records it as the user's (`client_ids.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<u64>,
     pub exp: i64,
     pub iat: i64,
     pub iss: String,
@@ -44,6 +49,10 @@ pub struct Claims {
     pub room: String,
     pub schema: i64,
     pub sub: String,
+    /// A DOCX editing session's second id, for the editor's resident layout
+    /// worker (Q219): the join that stores `client_id` stores it too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_client_id: Option<u64>,
 }
 
 /// Who a channel is: the token's user and access, and when it expires.
@@ -53,6 +62,12 @@ pub struct Context {
     pub expires_at: i64,
     pub token_id: String,
     pub user_id: String,
+    /// The client id the token offers (none in a test's server context).
+    /// Yjs ids are u32 (`verify` refuses larger), which keeps a channel's
+    /// state small.
+    pub client_id: Option<u32>,
+    /// The worker id a DOCX write token offers beside it (Q219).
+    pub worker_client_id: Option<u32>,
     /// A viewer (no editing role) reads only and has no presence: it neither
     /// sends nor hears awareness (Epo 2026-10-10). Set at join from the
     /// material's access, never from the token.
@@ -80,6 +95,10 @@ impl From<&Claims> for Context {
             expires_at: claims.exp,
             token_id: claims.jti.clone(),
             user_id: claims.sub.clone(),
+            client_id: claims.client_id.and_then(|id| u32::try_from(id).ok()),
+            worker_client_id: claims
+                .worker_client_id
+                .and_then(|id| u32::try_from(id).ok()),
             viewer: false,
             parent: claims.parent.clone(),
             identity: Box::new(Identity {
@@ -226,6 +245,50 @@ fn sign(secret: &str, signed: &str) -> Vec<u8> {
 
 /// `verifyCollaborationToken`.
 pub fn verify(token: &str, secret: &str, room: &str, now: i64) -> Result<Claims, TokenError> {
+    checked(token, secret, room, now, true)
+}
+
+/// How old a stored draft's token may be and still re-grant its client ids
+/// (Epo 2026-10-24, Q288): the unsent-edit expiry.
+const GRANT_SECONDS: i64 = 7 * 24 * 60 * 60;
+
+/// The client ids `token` offered, when it may re-grant them to a draft send
+/// by `user` in `room` (Q288, the reconnect rule of Q236): our signature, the
+/// same user and room, issued at most 7 days ago; its expiry is otherwise
+/// ignored. None for anything else.
+pub fn granted_ids(token: &str, secret: &str, room: &str, user: &str, now: i64) -> Vec<u64> {
+    match checked(token, secret, room, now, false) {
+        Ok(claims) if claims.sub == user && claims.iat >= now - GRANT_SECONDS => {
+            [claims.client_id, claims.worker_client_id]
+                .into_iter()
+                .flatten()
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The most stored tokens one draft send presents (a page sends one per
+/// session).
+pub const MAX_GRANTS: usize = 16;
+
+/// The client ids a draft send's stored tokens (comma-separated, the first
+/// [MAX_GRANTS] read) grant `user` in `room` (Q288).
+pub fn granted_by(header: &str, secret: &str, room: &str, user: &str, now: i64) -> Vec<u64> {
+    header
+        .split(',')
+        .take(MAX_GRANTS)
+        .flat_map(|stored| granted_ids(stored.trim(), secret, room, user, now))
+        .collect()
+}
+
+fn checked(
+    token: &str,
+    secret: &str,
+    room: &str,
+    now: i64,
+    expiring: bool,
+) -> Result<Claims, TokenError> {
     let parts: Vec<&str> = token.split('.').collect();
     let [header, payload, signature] = parts.as_slice() else {
         return Err(TokenError::Malformed);
@@ -254,7 +317,14 @@ pub fn verify(token: &str, secret: &str, room: &str, now: i64) -> Result<Claims,
         || claims.sub.is_empty()
         || claims.jti.is_empty()
         || claims.iat > now + 30
-        || claims.exp <= now
+        || (expiring && claims.exp <= now)
+        || [claims.client_id, claims.worker_client_id]
+            .into_iter()
+            .flatten()
+            .any(|id| id == 0 || id > u64::from(u32::MAX))
+        || claims
+            .worker_client_id
+            .is_some_and(|worker| claims.client_id.is_none_or(|id| id == worker))
     {
         return Err(TokenError::Claims);
     }
@@ -277,6 +347,7 @@ pub fn claims_for(room: &str, user: &str, access: Access, now: i64, seconds: i64
         access,
         aud: "capy-collaboration".into(),
         avatar_url: None,
+        client_id: Some(uuid::Uuid::new_v4().as_u128() as u32 as u64 | 1),
         exp: now + seconds,
         iat: now,
         iss: "capy-api".into(),
@@ -286,6 +357,7 @@ pub fn claims_for(room: &str, user: &str, access: Access, now: i64, seconds: i64
         room: room.into(),
         schema: RoomName::parse(room).map(|name| name.number()).unwrap_or(0),
         sub: user.into(),
+        worker_client_id: None,
     }
 }
 
@@ -393,6 +465,85 @@ mod tests {
             verify("a.b", "secret", ROOM, now),
             Err(TokenError::Malformed)
         );
+    }
+
+    /// Security regression (Q213, Q219): a token's client ids are Yjs ids
+    /// (1 to 2^32-1), and a worker id comes only beside a different
+    /// session id. Fails with any of these checks removed from `verify`.
+    #[test]
+    fn a_tokens_client_ids_are_yjs_ids_and_its_worker_id_its_own() {
+        let now = 1_800_000_000;
+        let verified = |client: Option<u64>, worker: Option<u64>| {
+            let mut claims = claims_for(ROOM, "u_1", Access::Write, now, 300);
+            claims.client_id = client;
+            claims.worker_client_id = worker;
+            verify(&mint("secret", &claims), "secret", ROOM, now).map(|_| ())
+        };
+        assert_eq!(verified(Some(7), Some(8)), Ok(()));
+        assert_eq!(verified(Some(u64::from(u32::MAX)), None), Ok(()));
+        for (client, worker) in [
+            (Some(0), None),
+            (Some(u64::from(u32::MAX) + 1), None),
+            (Some(7), Some(0)),
+            (Some(7), Some(u64::from(u32::MAX) + 1)),
+            (Some(7), Some(7)),
+            (None, Some(8)),
+        ] {
+            assert_eq!(
+                verified(client, worker),
+                Err(TokenError::Claims),
+                "{client:?} {worker:?}"
+            );
+        }
+    }
+
+    /// Security regression (Q288, Q322 N5): a stored draft token grants its
+    /// ids only with our signature, for the same room and user, issued at
+    /// most 7 days ago (its expiry ignored), and a send's first 16 tokens
+    /// alone are read. Fails with any of these checks removed.
+    #[test]
+    fn a_stored_token_grants_its_ids_only_for_its_room_and_user_within_7_days() {
+        let now = 1_800_000_000;
+        let week = 7 * 24 * 60 * 60;
+        let stored = |secret: &str, room: &str, user: &str, issued: i64, client: u64| {
+            let mut claims = claims_for(room, user, Access::Write, issued, 300);
+            claims.client_id = Some(client);
+            claims.worker_client_id = Some(client + 1);
+            mint(secret, &claims)
+        };
+        let granted = |token: &str| granted_ids(token, "secret", ROOM, "u_1", now);
+        // Expired, issued within 7 days: both ids.
+        assert_eq!(
+            granted(&stored("secret", ROOM, "u_1", now - 3600, 7)),
+            [7, 8]
+        );
+        assert_eq!(
+            granted(&stored("secret", ROOM, "u_1", now - week, 7)),
+            [7, 8]
+        );
+        for (token, case) in [
+            (
+                stored("secret", ROOM, "u_1", now - week - 1, 7),
+                "over 7 days old",
+            ),
+            (stored("secret", ROOM, "u_2", now, 7), "another user's"),
+            (
+                stored("secret", "keys:mat_1:schema:2", "u_1", now, 7),
+                "another room's",
+            ),
+            (stored("other", ROOM, "u_1", now, 7), "forged"),
+            ("a.b".to_owned(), "malformed"),
+        ] {
+            assert!(granted(&token).is_empty(), "{case}");
+        }
+        // The 17th token is not read.
+        let tokens: Vec<String> = (0..17)
+            .map(|index| stored("secret", ROOM, "u_1", now, 10 + 2 * index))
+            .collect();
+        let header = tokens.join(",");
+        let ids = granted_by(&header, "secret", ROOM, "u_1", now);
+        assert_eq!(ids.len(), 2 * MAX_GRANTS);
+        assert!(!ids.contains(&(10 + 2 * 16)));
     }
 
     #[test]

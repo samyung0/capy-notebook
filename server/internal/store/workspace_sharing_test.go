@@ -872,9 +872,9 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rich := json.RawMessage(`[{"type":"p","children":[{"text":"root"}]}]`)
+	commentText := "root"
 	discussion, err := s.CreateCommentDiscussion(
-		ctx, material.ID, editorID, nil, nil, nil, 1, "", rich,
+		ctx, material.ID, editorID, nil, nil, nil, 1, "", commentText,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -884,7 +884,7 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 		WHERE id=$1`, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddComment(ctx, discussion.ID, editorID, rich); err == nil {
+	if _, err := s.AddComment(ctx, discussion.ID, editorID, commentText); err == nil {
 		t.Fatal("suspended editor added a comment")
 	} else {
 		var locked *AccountLockedError
@@ -901,7 +901,7 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddComment(ctx, discussion.ID, editorID, rich); !errors.Is(err, ErrForbidden) {
+	if _, err := s.AddComment(ctx, discussion.ID, editorID, commentText); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("viewer comment error = %v, want forbidden", err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='editor'
@@ -913,7 +913,7 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 		WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddComment(ctx, discussion.ID, editorID, rich); !errors.Is(err, ErrNotFound) {
+	if _, err := s.AddComment(ctx, discussion.ID, editorID, commentText); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleting-owner comment error = %v, want not found", err)
 	}
 }

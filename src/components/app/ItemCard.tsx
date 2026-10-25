@@ -214,44 +214,44 @@ export function ItemCard({
       </div>
     );
   }
-  // Drive's card: icon, title and ⋯ on top, the thumbnail, then the hint.
-  // From `sm` one-line titles keep every card in a row the same height;
-  // narrower cards wrap the title to two lines and drop the workspace.
+  // Borderless card: the thumbnail with its ⋯ over the top right corner
+  // (on hover, focus or touch), then the title and the hint. From `sm`
+  // one-line titles keep every card in a row the same height; narrower
+  // cards wrap the title to two lines and drop the workspace.
   return (
     <Card
-      border="solid"
       className={cn(
-        '@container relative gap-0 p-1.5',
-        selected &&
-          'border-solid-accent-1 bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
+        '@container group/card relative gap-0 p-1.5 hover:bg-surface-hover-bg',
+        selected && 'bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
       )}
       data-item
-      // A selectable card picks on click, so it shows no link affordance
-      // (pointer, lift): a click must not look like it opens the file.
-      interactive={!!link && !pickable}
+      radius="button"
+      theme="transparent"
     >
       {overlay}
-      <div className="flex min-h-8.5 min-w-0 items-start gap-2 pt-1.5 pb-1.5 pl-1.5 sm:h-8.5 sm:items-center sm:pt-0">
+      <div className="relative">
+        <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
+        {actions ? (
+          <div className="absolute top-1.5 right-1.5 z-10 opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/card:opacity-100 has-[[data-state=open]]:opacity-100 [&_button]:bg-surface [&_button]:p-1 [&_button]:shadow-card [&_button]:hover:bg-surface-hover-bg">
+            {actions}
+          </div>
+        ) : null}
+      </div>
+      <div className="box-content flex min-w-0 items-start gap-2 px-1.5 pt-2.5 sm:h-5 sm:items-center">
         <FileIcon
           className="mt-px size-4 shrink-0 sm:mt-0 sm:-translate-y-px"
           name={icon}
         />
         <Title
-          className="line-clamp-2 min-w-0 flex-1 break-words font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card sm:line-clamp-none sm:truncate"
+          className="line-clamp-2 min-w-0 flex-1 break-words font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-button sm:line-clamp-none sm:truncate"
           link={titleLink}
         >
           {title}
         </Title>
-        {actions ? (
-          <div className="relative z-10 -mt-1.5 shrink-0 sm:-my-0.5 [&_button]:p-1.5">
-            {actions}
-          </div>
-        ) : null}
       </div>
-      <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
       {/* A fixed-height line, so cards with and without a workspace match;
           pinned to the bottom when a wrapped title makes a row taller. */}
-      <div className="mt-auto box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-2.5 pb-1 text-[13px] text-fg">
+      <div className="mt-auto box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-1.5 pb-1 text-[13px] text-fg">
         {workspaceLabel && (
           <span
             className={cn(
@@ -389,21 +389,18 @@ export function ItemSkeletonGrid({
   return (
     <ItemGrid aria-label={m.a11y_loading()} className={className} role="status">
       {Array.from({ length: count }, (_, i) => (
-        <div
-          className="@container rounded-card border border-transparent p-1.5"
-          key={i}
-        >
-          <div className="flex h-8.5 items-center gap-2 pb-1.5 pl-1.5">
-            <Skeleton className="size-4 shrink-0" />
-            <Skeleton className="h-3.5 w-2/3" />
-          </div>
+        <div className="@container p-1.5" key={i}>
           <Skeleton
             className={cn(
               'rounded-[13px]',
               dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
             )}
           />
-          <div className="box-content flex h-5 items-center px-1.5 pt-2.5 pb-1">
+          <div className="box-content flex h-5 items-center gap-2 px-1.5 pt-2.5">
+            <Skeleton className="size-4 shrink-0" />
+            <Skeleton className="h-3.5 w-2/3" />
+          </div>
+          <div className="box-content flex h-5 items-center px-1.5 pt-1.5 pb-1">
             <Skeleton className="h-3.5 w-1/2" />
           </div>
         </div>

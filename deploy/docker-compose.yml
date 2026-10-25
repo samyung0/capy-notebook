@@ -1,8 +1,8 @@
 # Dev stack for the Capy Notebook backend.
 #   docker compose -f deploy/docker-compose.yml up --build
 #
-# Production / Coolify: deploy/docker-compose.prod.yml
-# (MIGRATE=false, /migrate one-shot, no host ports). See
+# UAT and production: deploy/docker-compose.prod.yml
+# (MIGRATE=false, /migrate one-shot, CI-built images). See
 # openwiki/deployment-runbook.md §1.1.
 #
 # - db        : Postgres 16 + pgvector. The retrieval index lives in the same
@@ -27,8 +27,8 @@
 # Shared by every process that reports errors. LOG_FORMAT / LOG_LEVEL are
 # omitted on purpose: an empty string from compose interpolation would override
 # the code defaults (text in development, json otherwise).
-x-observability: &observability
-  # This stack is local development; the e2e and prod files name their own.
+x-observability:
+  &observability # This stack is local development; the e2e and prod files name their own.
   APP_ENV: development
   RELEASE_SHA: ${RELEASE_SHA:-}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
@@ -151,8 +151,13 @@ services:
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-dev-collaboration-secret}
       # Vite's summary middleware falls back to the same value (vite.config.ts).
       SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:-dev-share-link-secret-0123456789abcdef}
+      # Cloudflare's published Turnstile test secret, which always passes.
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
       # Grades open quiz parts; without it grading answers 503.
       JEV_TYPESAFE_API_KEY: ${JEV_TYPESAFE_API_KEY:-}
+      # Chat voice input: Alibaba Model Studio; without it voice input answers 503.
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       COLLABORATION_URL: ${COLLABORATION_URL:-ws://localhost:1234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Vestigial label stored on the job payload; the parse route is chosen by
@@ -290,6 +295,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Uploaded audio: Alibaba Model Studio Filetrans.
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       CAPY_CAPTION_MAX_EDGE: ${CAPY_CAPTION_MAX_EDGE:-1280}
       CAPY_IMAGE_MAX_PIXELS: ${CAPY_IMAGE_MAX_PIXELS:-100000000}
@@ -386,6 +394,15 @@ services:
       CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S: ${CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S:-15}
       CAPY_INTERACTIVE_STREAM_IDLE_S: ${CAPY_INTERACTIVE_STREAM_IDLE_S:-120}
       CAPY_INTERACTIVE_STREAM_MAX_S: ${CAPY_INTERACTIVE_STREAM_MAX_S:-600}
+      # One sync connection per default-executor thread, so a model call's
+      # admission never queues for a connection (Epo 2026-10-24, Q297).
+      CAPY_DB_SYNC_POOL_MAX_SIZE: "8"
+      # The collaboration server's allocator settings (Q343): two glibc arenas
+      # and fixed 128 KiB trim and mmap thresholds give freed request buffers
+      # back after a burst instead of keeping the process at its high-water mark.
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      MALLOC_MMAP_THRESHOLD_: "131072"
     ports:
       # Bound to localhost: this is a debug port. Do not publish :8001 on a
       # public interface — the gateway reaches retrieval over the docker network.

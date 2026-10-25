@@ -592,7 +592,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if !slices.ContainsFunc(listed, func(item Workspace) bool { return item.ID == workspace.ID }) {
 		t.Fatalf("restored workspace missing from member listing: %#v", listed)
 	}
-	public, err := s.ListPublicWorkspaces(ctx, "")
+	public, _, err := s.ListPublicWorkspaces(ctx, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -901,7 +901,7 @@ func TestDeletionPendingHidesContentAndCancelsAsyncWork(t *testing.T) {
 	if _, err := s.WorkspaceAccess(ctx, viewerID, workspace.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("direct shared access error=%v, want not found", err)
 	}
-	public, err := s.ListPublicWorkspaces(ctx, "")
+	public, _, err := s.ListPublicWorkspaces(ctx, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1041,6 +1041,17 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// A Yjs client id the leaver was assigned in the host's note (Q226).
+	if _, err := s.pool.Exec(ctx, `INSERT INTO material_yjs_documents
+		(material_id, state, stored_version, projected_version) VALUES ($1,'\x00',1,1)`,
+		hostMaterial.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO material_yjs_client_ids
+		(material_id, document, client_id, user_id) VALUES ($1,'content',4242,$2)`,
+		hostMaterial.ID, leaverID); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := s.RequestAccountDeletion(ctx, leaverID, true); err != nil {
 		t.Fatal(err)
@@ -1073,6 +1084,7 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 		{name: "invite", query: `SELECT count(*) FROM workspace_invites WHERE id=$1`, args: []any{inviteID}},
 		{name: "mail", query: `SELECT count(*) FROM email_outbox WHERE id=$1`, args: []any{mailID}},
 		{name: "edit incidents", query: `SELECT count(*) FROM edit_incidents WHERE user_id=$1`, args: []any{leaverID}},
+		{name: "client ids", query: `SELECT count(*) FROM material_yjs_client_ids WHERE user_id=$1`, args: []any{leaverID}},
 		{name: "host workspace", query: `SELECT count(*) FROM workspaces WHERE id=$1`, args: []any{hostWorkspace.ID}, want: 1},
 		{name: "leaver material", query: `SELECT count(*) FROM materials WHERE id=$1`, args: []any{material.ID}},
 		{name: "host material", query: `SELECT count(*) FROM materials WHERE id=$1`, args: []any{hostMaterial.ID}, want: 1},
@@ -1229,5 +1241,106 @@ func TestPurgeDeletesTheAccountsJobHistory(t *testing.T) {
 	}
 	if actor != nil {
 		t.Fatalf("host job keeps the purged actor %q", *actor)
+	}
+}
+
+// TestPurgeDeletesCheckoutsAndDailyCounters (security regression: rate-limit
+// audit r2 N-10, Q315). A purged account's open Checkout page (its URL and
+// amount) and its daily grading and invite counters go with it.
+func TestPurgeDeletesCheckoutsAndDailyCounters(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	leaver := newBlobTestUser(t, s, "u_purge_checkouts")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO credit_checkouts (user_id, kind, amount_cents, session_id, url, expires_at)
+		VALUES ($1, 'topup', 1000, $2, 'https://checkout.example.test/c', now() + interval '1 hour')`,
+		leaver, uid("cs")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO grading_usage (day, user_id, parts) VALUES (current_date, $1, 3)`, leaver); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO invite_usage (day, user_id, invites) VALUES (current_date, $1, 2)`, leaver); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestAccountDeletion(ctx, leaver, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeUser(ctx, leaver); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM credit_checkouts WHERE user_id=$1)
+		+ (SELECT count(*) FROM grading_usage WHERE user_id=$1)
+		+ (SELECT count(*) FROM invite_usage WHERE user_id=$1)`, leaver).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("%d checkout or counter rows survived the purge", left)
+	}
+}
+
+// A job the account requested in another owner's workspace stays, without its
+// id (Q315; security regression: rate-limit audit r3 N-3).
+func TestPurgeStripsTheAccountFromJobsItRequested(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	leaver := newBlobTestUser(t, s, "u_purge_requested")
+	job := uid("job")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1, 'source_refresh', $2)`,
+		job, map[string]any{"workspaceId": uid("ws_other"), "requestedBy": leaver}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = s.pool.Exec(context.Background(), `DELETE FROM jobs WHERE id=$1`, job) })
+	if _, err := s.RequestAccountDeletion(ctx, leaver, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeUser(ctx, leaver); err != nil {
+		t.Fatal(err)
+	}
+	var named bool
+	if err := s.pool.QueryRow(ctx, `SELECT payload ? 'requestedBy' FROM jobs WHERE id=$1`, job).Scan(&named); err != nil || named {
+		t.Fatalf("job still names the purged account: %v %v", named, err)
+	}
+}
+
+// A receipt the account acted as in another owner's workspace, with no
+// conversation, goes with the purge; another user's receipt stays (Q355;
+// security regression: rate-limit audit r3 N-3).
+func TestPurgeDeletesTheAccountsAgentReceipts(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	leaver := newBlobTestUser(t, s, "u_purge_receipts")
+	owner := newBlobTestUser(t, s, "u_receipts_owner")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Theirs", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, theirs := uid("op"), uid("op")
+	for id, actor := range map[string]string{mine: leaver, theirs: owner} {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO agent_operations (id, kind, request_hash, actor_user_id, workspace_id, outcome)
+			VALUES ($1, 'edit_document', 'hash', $2, $3, 'succeeded')`, id, actor, ws.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.RequestAccountDeletion(ctx, leaver, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeUser(ctx, leaver); err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	rows, err := s.pool.Query(ctx, `SELECT id FROM agent_operations WHERE id = ANY($1)`, []string{mine, theirs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		left = append(left, id)
+	}
+	if err := rows.Err(); err != nil || len(left) != 1 || left[0] != theirs {
+		t.Fatalf("receipts left %v, want only the other user's %s (%v)", left, theirs, err)
 	}
 }

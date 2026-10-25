@@ -195,9 +195,11 @@ peer's 8,000-cell paste (1,000 rows by 8 columns from the fixture's cell) and
 row insert (a whole recalculation) straight to the runtime as host updates;
 the XLSX engine in Node (the fork's loader) makes each from the fixture and
 its room's state under its own client id, so the room never sees them. Then
-it pastes the same block from the clipboard and runs Insert › Row above as a
-menu command: per operation the longest and summed long tasks and the delay
-to the painted grid. `typing while a peer pastes and inserts a row` types
+it pastes the same block one row on from the clipboard, so every cell
+changes, and runs Insert › Row above as a menu command: per operation the
+longest and summed long tasks and the delay to the painted grid (a peer's)
+or until the formula bar shows the result (the user's; the paste keeps its
+top-left cell active). `typing while a peer pastes and inserts a row` types
 twenty values with Enter into the gradebook's column while the same kind of
 updates arrive, checks the selection walked on by twenty and every value is
 in its cell, and reports the typing span and the long tasks meanwhile.
@@ -479,6 +481,8 @@ First dispatch has nothing to diff. That is expected. After that, GHA-vs-GHA
 only. Do not check in a laptop JSON.
 
 You can dispatch from any branch. Baselines are not automatically `main`.
+`share_pages` is the exception: its `uat` environment admits only `main`, so
+on another branch GitHub rejects that job before it starts.
 
 ## What the relative table includes
 

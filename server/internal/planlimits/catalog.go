@@ -24,7 +24,8 @@ type Limits struct {
 	OwnedWorkspaces   int
 	FilesPerWorkspace int
 	FilesPerUpload    int
-	// ImageBytes caps one uploaded image; the browser shrinks larger ones.
+	// ImageBytes caps one uploaded image (2 MiB on every plan, Epo
+	// 2026-10-24); the browser compresses every image to fit.
 	ImageBytes int64
 }
 

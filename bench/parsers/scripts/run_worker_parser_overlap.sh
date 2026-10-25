@@ -30,7 +30,7 @@ docker run -d \
   --pids-limit 256 \
   -v "$spool:/var/lib/capy-parse" \
   -e PARSER_BIND_ADDRESS=127.0.0.1 \
-  -e PARSER_TOKEN=worker-stress-token \
+  -e PARSER_TOKEN=worker-stress-token-for-local-bench-runs \
   -e CAPY_PARSE_CONCURRENCY=4 \
   -e CAPY_MINERU_SLICE_PAGES=26 \
   -e CAPY_PARSE_SLICE_TIMEOUT=600 \
@@ -78,7 +78,7 @@ run_parse_worker() {
     -v "$spool:/var/lib/capy-parse" \
     -v "$bench_root/bench/parsers/scripts/bench_worker_job.py:/bench_worker_job.py:ro" \
     -e PARSER_URL=http://127.0.0.1:8090/file_parse \
-    -e PARSER_TOKEN=worker-stress-token \
+    -e PARSER_TOKEN=worker-stress-token-for-local-bench-runs \
     -e RELEASE_SHA="$release_sha" \
     -e CAPY_PARSE_METHOD=auto \
     -e CAPY_PARSE_SHARED_DIR=/var/lib/capy-parse \

@@ -22,7 +22,7 @@ from . import contract, deck
 @dataclass(frozen=True)
 class Skill:
     when: str
-    text: Callable[[bool], str]  # library on -> instructions
+    text: Callable[[], str]
     # The output-files preference (mainFormat) whose chapter explainers it writes.
     builds: str | None = None
 
@@ -32,17 +32,15 @@ NOTE_BUILDING = "note_building"
 DECK_BUILDING = "deck_building"
 OFFICE_BUILDING = "office_building"
 SKILLS: dict[str, Skill] = {
-    EDITING: Skill(
-        prompts.EDITING_WHEN, lambda library: prompts.editing(library=library)
-    ),
+    EDITING: Skill(prompts.EDITING_WHEN, prompts.editing),
     NOTE_BUILDING: Skill(
         prompts.NOTE_BUILDING_WHEN,
-        lambda library: prompts.note_building(contract.FORMATS, library=library),
+        lambda: prompts.note_building(contract.FORMATS),
         builds="note",
     ),
     DECK_BUILDING: Skill(
         prompts.DECK_BUILDING_WHEN,
-        lambda _library: prompts.deck_building(
+        lambda: prompts.deck_building(
             prompts.deck_rules(deck.VIEWBOX),
             deck.DEFAULT_STYLE,
             deck.style_text(deck.DEFAULT_STYLE),
@@ -51,9 +49,7 @@ SKILLS: dict[str, Skill] = {
     ),
     # Reading it offers the Office tools for the rest of the conversation
     # (tools._read_skill, Epo 2026-10-20).
-    OFFICE_BUILDING: Skill(
-        prompts.OFFICE_BUILDING_WHEN, lambda _library: prompts.office_building()
-    ),
+    OFFICE_BUILDING: Skill(prompts.OFFICE_BUILDING_WHEN, prompts.office_building),
 }
 
 # The skills each tool needs: editing for every write, note_building for note

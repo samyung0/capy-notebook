@@ -10,6 +10,7 @@ export type ReportEditIncidentReqReason = typeof ReportEditIncidentReqReason[key
 
 export const ReportEditIncidentReqReason = {
   reopen: 'reopen',
+  held: 'held',
   epoch_changed: 'epoch_changed',
   paused: 'paused',
   base_missing: 'base_missing',

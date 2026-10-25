@@ -60,14 +60,8 @@ def request_context(
     spec: ModelConfig,
     *,
     schemas: list[dict[str, Any]] | None = None,
-    reasoning: bool | None = None,
 ) -> accounting.ContextComposition:
-    return models.measure_request_context(
-        messages,
-        model=spec,
-        tools=schemas,
-        reasoning=reasoning,
-    )
+    return models.measure_request_context(messages, model=spec, tools=schemas)
 
 
 def needs_compact(
@@ -79,9 +73,7 @@ def needs_compact(
     max_tokens: int | None = None,
     reasoning: bool | None = None,
 ) -> bool:
-    measured = request_context(
-        messages, spec, schemas=schemas, reasoning=reasoning
-    ).total_tokens
+    measured = request_context(messages, spec, schemas=schemas).total_tokens
     return measured + max(0, extra) > usable_input_limit(
         spec, max_tokens=max_tokens, reasoning=reasoning
     )

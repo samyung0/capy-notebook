@@ -4,14 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateCommentReqContentRichItem } from './createCommentReqContentRichItem.ts';
 
 export interface CreateCommentReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   /**
-     * @minItems 1
-     * @nullable
+     * @minLength 1
+     * @maxLength 3000
      */
-  contentRich: CreateCommentReqContentRichItem[] | null;
+  text: string;
 }

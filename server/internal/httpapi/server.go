@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -20,6 +21,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
 
+	"github.com/samyung0/capy-notebook/server/internal/alibaba"
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
@@ -69,12 +71,23 @@ type Config struct {
 	// RateLimit governs per-user and per-IP request limits. The zero value
 	// disables limiting entirely.
 	RateLimit ratelimit.Config
+	// TurnstileSecret verifies signed-out answer checks' Turnstile tokens
+	// (TURNSTILE_SECRET_KEY); CaptchaVerifier replaces siteverify in tests.
+	TurnstileSecret string
+	// TurnstileHosts are the hosts a Turnstile token must have been solved
+	// on, the environment's app hosts; empty skips the check (development
+	// and e2e, whose test keys name no app host).
+	TurnstileHosts  []string
+	CaptchaVerifier CaptchaVerifier
 	// ModelRegistry is the process-wide model config cache. Nil disables
 	// per-model pricing and pinning (tests).
 	ModelRegistry *models.Registry
 	// Jev grades open quiz parts. Nil (no JEV_TYPESAFE_API_KEY) makes grading
 	// answer 503 rather than falling back to another model.
 	Jev *jev.Client
+	// Voice transcribes chat voice input. Nil (no ALIBABA_MODELSTUDIO_KEY or
+	// _URL) makes voice input answer 503 voice_unavailable.
+	Voice *alibaba.Client
 	// PipelineSecret authenticates the retrieval service's and the ingest
 	// host's callbacks into /api/internal/*. Empty disables those routes and
 	// therefore Drive/OneDrive imports, which need the import worker.
@@ -88,7 +101,6 @@ type Config struct {
 	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
 	// APP_ENV=e2e.
 	MailRecorder     mail.Recorder
-	MailSender       mail.Sender
 	Bank             *bank.Store
 	BankAssets       bank.AssetWriter
 	BankAssetsURL    string
@@ -105,6 +117,7 @@ type api struct {
 	cfg                Config
 	mailRecorder       mail.Recorder
 	limiter            *ratelimit.Limiter
+	captcha            CaptchaVerifier
 	modelReg           *models.Registry
 	jev                *jev.Client
 	stripeSubscription func(string) (*stripe.Subscription, error)
@@ -115,13 +128,20 @@ type api struct {
 	stripeGetCheckout    func(sessionID string) (billing.CheckoutSession, error)
 	stripeExpireCheckout func(sessionID string) error
 	// Credit top-up and auto-reload calls, replaced by tests.
-	stripeTopUpMethod   func(string) (store.PaymentMethod, error)
-	stripeSetupMethod   func(string) (store.PaymentMethod, error)
-	stripeVoidInvoice   func(string) error
-	stripeReloadOutcome func(string) (billing.ReloadResult, error)
-	streamMu            sync.Mutex
-	streamByUser        map[string]int
-	streamTotal         int
+	stripeTopUpMethod func(string) (store.PaymentMethod, error)
+	stripeSetupMethod func(string) (store.PaymentMethod, error)
+	// The card a Pro Checkout saved, for the starter grant.
+	stripeSubscriptionMethod func(string) (store.PaymentMethod, error)
+	stripeVoidInvoice        func(string) error
+	stripeReloadOutcome      func(string) (billing.ReloadResult, error)
+	// Credit Checkout and portal sessions, replaced by tests.
+	stripeTopUpCheckout  func(customerID, userID string, amountCents int64, successURL, cancelURL string) (billing.CheckoutSession, error)
+	stripeMethodCheckout func(customerID, userID, successURL, cancelURL string) (billing.CheckoutSession, error)
+	stripePortal         func(customerID, returnURL, cancelSubscriptionID string) (string, error)
+	invoices             invoiceCache
+	streamMu             sync.Mutex
+	streamByUser         map[string]int
+	streamTotal          int
 	// uploads admits the gateway uploads (upload_queue.go).
 	uploads *uploadQueue
 	// undos run the requests for one chat Undo step one at a time
@@ -158,6 +178,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		cfg:                cfg,
 		mailRecorder:       cfg.MailRecorder,
 		limiter:            ratelimit.New(rdb, cfg.RateLimit),
+		captcha:            cfg.CaptchaVerifier,
 		jev:                cfg.Jev,
 		modelReg:           cfg.ModelRegistry,
 		stripeSubscription: billing.RetrieveSubscription,
@@ -168,11 +189,19 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeGetCheckout:    billing.GetCheckoutSession,
 		stripeExpireCheckout: billing.ExpireCheckoutSession,
 
-		stripeTopUpMethod:   billing.TopUpPaymentMethod,
-		stripeSetupMethod:   billing.SetupPaymentMethod,
-		stripeVoidInvoice:   billing.VoidInvoice,
-		stripeReloadOutcome: billing.ReloadOutcome,
-		streamByUser:        make(map[string]int),
+		stripeTopUpMethod:        billing.TopUpPaymentMethod,
+		stripeSetupMethod:        billing.SetupPaymentMethod,
+		stripeSubscriptionMethod: billing.SubscriptionPaymentMethod,
+		stripeVoidInvoice:        billing.VoidInvoice,
+		stripeReloadOutcome:      billing.ReloadOutcome,
+
+		stripeTopUpCheckout:  billing.CreateTopUpCheckout,
+		stripeMethodCheckout: billing.CreateReloadMethodCheckout,
+		stripePortal:         billing.CreatePortalSession,
+		streamByUser:         make(map[string]int),
+	}
+	if a.captcha == nil {
+		a.captcha = newTurnstileVerifier(cfg.TurnstileSecret, cfg.TurnstileHosts)
 	}
 	a.uploads = newUploadQueue(func(batch string, removed bool) {
 		if removed {
@@ -181,6 +210,10 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 			a.failSourceBatchFile(context.Background(), batch)
 		}
 	})
+	// A ticket past its user's upload class waits in line (Q282).
+	a.uploads.admitClass = func(ctx context.Context, user string) (time.Duration, error) {
+		return a.limiter.TakeUpload(ctx, user)
+	}
 	if rdb != nil {
 		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
 		go a.listenWorkspaceTree(context.Background())
@@ -314,6 +347,39 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 
 /* ------------------------------------------------------------------ helpers */
 
+// The API listener's timeouts: a request has a minute to send its headers and
+// body and five to be answered, and an idle keep-alive connection closes after
+// two. Routes that stream or take a long upload body extend their own
+// deadlines (extendDeadlines, readUploadMetadata).
+const (
+	serverReadTimeout  = time.Minute
+	serverWriteTimeout = 5 * time.Minute
+	serverIdleTimeout  = 2 * time.Minute
+)
+
+// NewServer is the API's http.Server for handler on addr.
+func NewServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       serverReadTimeout,
+		WriteTimeout:      serverWriteTimeout,
+		IdleTimeout:       serverIdleTimeout,
+	}
+}
+
+// extendDeadlines lets a streaming request read and write for d from now,
+// past the server's timeouts; the connection's read deadline also ends a
+// stream, since a failed background read cancels the request. A writer
+// without deadlines (a test recorder) keeps none.
+func extendDeadlines(w http.ResponseWriter, d time.Duration) {
+	conn := http.NewResponseController(w)
+	at := time.Now().Add(d)
+	_ = conn.SetReadDeadline(at)
+	_ = conn.SetWriteDeadline(at)
+}
+
 // internalBodyMaxBytes caps every service-to-service body at the largest an
 // internal route takes (a source state); routes with a tighter bound keep it.
 const internalBodyMaxBytes = 150 << 20
@@ -419,6 +485,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"code":    "operation_conflict",
 			"message": "this operation id was already used with a different request",
+		})
+		return
+	}
+	if errors.Is(err, store.ErrAudioTranscribing) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "audio_transcribing",
+			"message": audioTranscribingDetail,
 		})
 		return
 	}

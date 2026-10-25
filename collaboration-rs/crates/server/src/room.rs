@@ -6,7 +6,7 @@
 //! idle and unloads once empty and clean. Note rooms validate Plate content
 //! (`notes`); source rooms admit and store through `sources`.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -19,6 +19,7 @@ use yrs::{Doc, ReadTxn, StateVector, Transact};
 
 use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
 use crate::auth::{Access, Context, RoomName};
+use crate::client_ids::{self, ClientIds};
 use crate::drafts::{Class, Refused};
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::markers::{self, Contributor, Markers};
@@ -40,10 +41,8 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness entry a room keeps and relays.
 pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
-/// Awareness client ids one channel may hold, and a room (Epo 2026-10-19):
-/// an editor sends its document's one, a new one only when Yjs renews it.
-/// A new id past either is not kept.
-pub const MAX_CLIENTS_PER_MEMBER: usize = 4;
+/// Awareness client ids a room keeps (Epo 2026-10-19); a channel writes only
+/// its session's (Q213). A new id past the cap is not kept.
 pub const MAX_CLIENTS_PER_ROOM: usize = 256;
 /// Why a note room holding a block the embed catalog does not list refuses
 /// every writer (Epo 2026-10-13): the browser shows it for the
@@ -64,6 +63,14 @@ pub const MAX_PRESENCE: usize = 64;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
+/// A client-id row batch that failed is tried again after these waits; a
+/// batch failing them all is logged as lost (r2 S3).
+const ROW_RETRIES: [Duration; 4] = [
+    Duration::from_millis(250),
+    Duration::from_secs(1),
+    Duration::from_secs(4),
+    Duration::from_secs(10),
+];
 
 pub type MemberKey = (u64, u64);
 
@@ -72,13 +79,17 @@ pub enum RoomCmd {
     Join {
         key: MemberKey,
         context: Context,
+        /// The session's client id the JOIN names (`client_ids.rs`).
+        client: Option<u64>,
         out: Outbox,
         socket: String,
         /// An embed's channel inside its note's (Epo 2026-10-20).
         inside: bool,
         reply: oneshot::Sender<Result<(), String>>,
     },
-    Leave(MemberKey),
+    /// A channel's Leave; `clean`: its tab holds no unsent edits for the
+    /// document (Q236).
+    Leave(MemberKey, bool),
     Sync(MemberKey, bytes::Bytes),
     Awareness(MemberKey, bytes::Bytes),
     QueryAwareness(MemberKey),
@@ -86,6 +97,11 @@ pub enum RoomCmd {
     Token(MemberKey, Context),
     /// A store's I/O finished.
     Stored(Box<StoreDone>),
+    /// The head of the client-id row queue was written, or failed every try.
+    RowsWritten(Result<(), String>),
+    /// The client ids bound to live channels, for the server's own id draws
+    /// (r2 N7).
+    LiveIds(oneshot::Sender<HashSet<u64>>),
     /// A projection finished.
     Projected(i64, Result<(), String>),
     /// Store now (if anything is unsaved) and answer once it is durable.
@@ -156,6 +172,9 @@ pub struct Draft {
     pub update: bytes::Bytes,
     /// The base the drafts grew over (an Office file needs the room's).
     pub base: Option<String>,
+    /// Client ids the drafts' stored tokens offered (Q288), checked here
+    /// under the JOIN's rule before the drafts may write under them.
+    pub granted: Vec<u64>,
     pub reply: oneshot::Sender<Result<Durable, Refused>>,
 }
 
@@ -251,7 +270,12 @@ struct Member {
     socket: String,
     /// An embed's channel inside its note's: it hears no room presence.
     inside: bool,
-    /// Awareness client ids this channel sent.
+    /// The session's client id, bound at join (Q213): the only id its
+    /// awareness goes under.
+    client: u64,
+    /// Its DOCX layout worker's client id, bound at join (Q219).
+    worker: Option<u64>,
+    /// Awareness client ids this channel holds (its session's, or none).
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
     unplaced: u32,
@@ -289,8 +313,6 @@ impl Drop for OpenTurn {
 struct AwarenessEntry {
     entry: awareness::Entry,
     owner: Option<MemberKey>,
-    /// The user whose channel set it: only their channels write it.
-    user: String,
 }
 
 /// A note room's own state.
@@ -339,6 +361,9 @@ struct Source {
     estimate: sources::Estimate,
     /// The room's state cap (`sources::state_cap`).
     state_cap: u64,
+    /// The picture byte cap on Word and PowerPoint edits
+    /// (`sources::Loaded::image_cap`).
+    image_cap: u64,
     /// An Office room's seed state vector (`sources::Loaded::seed`).
     seed: Option<StateVector>,
     checkpoint: u64,
@@ -437,6 +462,8 @@ pub struct Room {
     name: String,
     doc: Doc,
     members: HashMap<MemberKey, Member>,
+    /// Which user each client id was recorded to (Q213).
+    client_ids: ClientIds,
     awareness: HashMap<u64, AwarenessEntry>,
     changed_awareness: BTreeSet<u64>,
     /// Presence changed since it last went out; when it may go next.
@@ -466,6 +493,10 @@ pub struct Room {
     /// Children passes waiting, and whether one waits on the API.
     child_passes: std::collections::VecDeque<ChildPass>,
     child_running: bool,
+    /// Client-id rows to write, in order, one batch at a time off the room's
+    /// task (r2 S3); the room unloads only once they are written.
+    rows: VecDeque<client_ids::Rows>,
+    rows_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
@@ -522,12 +553,12 @@ fn stored_bytes(kind: &Kindly) -> i64 {
     }
 }
 
-/// Picks a client id the loaded state does not hold (markers and server
-/// edits are written under it).
-fn fresh_doc(held: &StateVector) -> Doc {
+/// Picks a client id the loaded state does not hold and no user was
+/// assigned (Q226): markers and server edits are written under it.
+fn fresh_doc(held: &StateVector, assigned: &HashSet<u64>) -> Doc {
     loop {
         let doc = Doc::with_options(ydoc::doc_options(0));
-        if held.get(&doc.client_id()) == 0 {
+        if held.get(&doc.client_id()) == 0 && !assigned.contains(&doc.client_id().get()) {
             return doc;
         }
     }
@@ -551,11 +582,18 @@ impl From<String> for LoadError {
     }
 }
 
-async fn load(
-    app: &Shared,
-    name: &RoomName,
-    actor: &str,
-) -> Result<(Doc, Kindly, ydoc::Durable, Option<sources::LoadTimes>), LoadError> {
+/// What a load gives the room.
+type Loaded = (
+    Doc,
+    Kindly,
+    ydoc::Durable,
+    Option<sources::LoadTimes>,
+    ClientIds,
+);
+
+async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, LoadError> {
+    let client_ids = ClientIds::load(&app.db, name).await?;
+    let assigned = client_ids.ids();
     match name {
         RoomName::Material {
             material_id,
@@ -603,7 +641,7 @@ async fn load(
                     let state = scratch
                         .transact()
                         .encode_state_as_update_v1(&StateVector::default());
-                    let doc = fresh_doc(&held);
+                    let doc = fresh_doc(&held, &assigned);
                     {
                         let mut txn = doc.transact_mut();
                         txn.apply_update(ydoc::decode(&state).map_err(|error| error.to_string())?)
@@ -676,13 +714,13 @@ async fn load(
                 base_bytes,
                 folding: false,
             };
-            Ok((doc, Kindly::Note(Box::new(note)), durable, None))
+            Ok((doc, Kindly::Note(Box::new(note)), durable, None, client_ids))
         }
         RoomName::Source { .. } => {
             let room = name
                 .source_room()
                 .ok_or_else(|| "invalid source room".to_owned())?;
-            let doc = Doc::with_options(ydoc::doc_options(0));
+            let doc = fresh_doc(&StateVector::default(), &assigned);
             let loaded = match app.sources.load(&room, actor, &doc).await {
                 Ok(loaded) => loaded,
                 // Expected while loaded rooms fill the disk store: logged and
@@ -729,6 +767,7 @@ async fn load(
                 format: loaded.format,
                 estimate: sources::Estimate::new(loaded.bytes),
                 state_cap: loaded.state_cap,
+                image_cap: loaded.image_cap,
                 seed: loaded.seed,
                 checkpoint: loaded.checkpoint,
                 log_bytes: loaded.row_bytes as i64,
@@ -746,6 +785,7 @@ async fn load(
                 Kindly::Source(Box::new(source)),
                 durable,
                 Some(loaded.times),
+                client_ids,
             ))
         }
     }
@@ -800,7 +840,7 @@ async fn run(
     let room_name = name.to_string();
     let started = Instant::now();
     let loaded = load(&app, &name, &actor).await;
-    let (doc, kind, durable, times) = match loaded {
+    let (doc, kind, durable, times, client_ids) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
             let error = match error {
@@ -846,6 +886,7 @@ async fn run(
         name: room_name,
         doc,
         members: HashMap::new(),
+        client_ids,
         awareness: HashMap::new(),
         changed_awareness: BTreeSet::new(),
         presence_dirty: false,
@@ -877,6 +918,8 @@ async fn run(
         forced_unload: Vec::new(),
         child_passes: std::collections::VecDeque::new(),
         child_running: false,
+        rows: VecDeque::new(),
+        rows_running: false,
         applying: false,
         agent_changes: HashMap::new(),
         agent_reverted: HashMap::new(),
@@ -1017,10 +1060,11 @@ impl Room {
     }
 
     fn unloadable(&self) -> bool {
+        let empty = self.members.is_empty() && self.rows.is_empty() && !self.rows_running;
         if self.discard_pending.is_some() || !self.forced_unload.is_empty() {
-            return self.members.is_empty() && !self.store.running;
+            return empty && !self.store.running;
         }
-        self.members.is_empty()
+        empty
             && self.child_passes.is_empty()
             && !self.child_running
             && !self.store.dirty
@@ -1036,14 +1080,25 @@ impl Room {
             RoomCmd::Join {
                 key,
                 context,
+                client,
                 out,
                 socket,
                 inside,
                 reply,
             } => {
-                let _ = reply.send(self.join(key, context, out, socket, inside));
+                let (history, live) = (self.in_history(), self.live_ids());
+                let answer = self
+                    .client_ids
+                    .bind(&context, client, history, live)
+                    .and_then(|bound| self.join(key, context, bound, out, socket, inside));
+                let _ = reply.send(answer);
             }
-            RoomCmd::Leave(key) => self.leave(key),
+            RoomCmd::Leave(key, clean) => {
+                if clean {
+                    self.left_clean(key);
+                }
+                self.leave(key);
+            }
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
                 Some(since) => self.on_step1(key, since).await,
                 None => self.on_sync(key, &payload),
@@ -1053,6 +1108,8 @@ impl Room {
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
+                    // A token turned writable: the channel's bound id is its
+                    // own, recorded at its first accepted write (Q226 M1).
                     member.read_only = member.held_read_only || context.access == Access::Read;
                     // A narrowed writer of a source room leaves its presence.
                     let was = in_presence(member, &self.kind);
@@ -1066,6 +1123,15 @@ impl Room {
                 }
             }
             RoomCmd::Stored(done) => self.stored(*done),
+            RoomCmd::RowsWritten(result) => self.rows_written(result),
+            RoomCmd::LiveIds(reply) => {
+                let live: HashSet<u64> = self
+                    .members
+                    .values()
+                    .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+                    .collect();
+                let _ = reply.send(live);
+            }
             RoomCmd::Projected(version, result) => self.projected(version, result),
             RoomCmd::Persist(reply) => {
                 if !self.store.dirty
@@ -1226,8 +1292,17 @@ impl Room {
             context,
             update,
             base,
+            granted,
             reply,
         } = draft;
+        let (history, live) = (self.in_history(), self.live_ids());
+        let granted: Vec<u64> = granted
+            .into_iter()
+            .filter(|&id| {
+                self.client_ids
+                    .grantable(id, &context.user_id, &history, &live)
+            })
+            .collect();
         if let Kindly::Source(source) = &self.kind {
             // A publication handoff holds every writer read-only.
             let refused = if self.app.handoff().busy(&self.name) {
@@ -1244,6 +1319,46 @@ impl Room {
                 return;
             }
         }
+        let answer = match self.admit_draft(&context, &update, &granted) {
+            // Held in full, or admitted: the receipt waits for the store.
+            Ok(None | Some(Outcome::Admitted)) => Ok(self.durable().await),
+            Ok(Some(Outcome::Unheld)) => Err(Refused::new(
+                Class::Unheld,
+                "the update needs content the room does not hold",
+            )),
+            Ok(Some(Outcome::Refused { reason, class, .. })) => Err(Refused::new(class, reason)),
+            Err(refusal) => Err(refusal),
+        };
+        let _ = reply.send(answer);
+    }
+
+    /// A draft's admission, decoding it once (no await: a decoded update
+    /// may not cross one). None for a group the room already holds in full
+    /// (the sweep, an opening editor and another tab may all send it): a
+    /// no-op, with no allowance charge and no new store (Epo 2026-10-24,
+    /// Q321), whose answer still waits for the store that holds the group
+    /// (Q360), since the browser deletes its rows on it. The room handles
+    /// writes in order, so back-to-back duplicates count once.
+    fn admit_draft(
+        &mut self,
+        context: &Context,
+        update: &[u8],
+        granted: &[u64],
+    ) -> Result<Option<Outcome>, Refused> {
+        let decoded = ydoc::decode(update).ok();
+        if decoded
+            .as_ref()
+            .is_some_and(|decoded| !ydoc::contains_changes(&self.doc.transact(), decoded))
+        {
+            return Ok(None);
+        }
+        let verdict = self
+            .app
+            .allowances
+            .take(&context.user_id, update.len(), Instant::now());
+        if let Some(refusal) = Refused::timed_out(&self.app, &context.user_id, verdict) {
+            return Err(refusal);
+        }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
         let read_only = context.access != Access::Write;
         let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1252,30 +1367,25 @@ impl Room {
             if update == IT_PANIC_UPDATE {
                 panic!("integration test panic");
             }
-            self.admit_update(None, &context, read_only, &update)
+            self.admit_update(None, context, read_only, update, decoded, granted)
         }));
-        let outcome = checked.unwrap_or_else(|_| {
+        Ok(Some(checked.unwrap_or_else(|_| {
             self.update_panicked(None, update.len());
             Outcome::refused(Class::Malformed, "update cannot be checked")
-        });
-        let answer = match outcome {
-            Outcome::Admitted => {
-                let (done, durable) = oneshot::channel();
-                if self.nothing_to_store() {
-                    let _ = done.send(Ok(()));
-                } else {
-                    self.store.waiters.push(done);
-                    self.start_store().await;
-                }
-                Ok(durable)
-            }
-            Outcome::Unheld => Err(Refused::new(
-                Class::Unheld,
-                "the update needs content the room does not hold",
-            )),
-            Outcome::Refused { reason, class, .. } => Err(Refused::new(class, reason)),
-        };
-        let _ = reply.send(answer);
+        })))
+    }
+
+    /// A draft's receipt: answered once nothing is left to store, so after
+    /// the store that holds what the room took.
+    async fn durable(&mut self) -> Durable {
+        let (done, durable) = oneshot::channel();
+        if self.nothing_to_store() {
+            let _ = done.send(Ok(()));
+        } else {
+            self.store.waiters.push(done);
+            self.start_store().await;
+        }
+        durable
     }
 
     /// Starts the next waiting children pass: the update's child writes as
@@ -1379,6 +1489,8 @@ impl Room {
             expires_at: i64::MAX,
             token_id: "children-pass".into(),
             user_id: actor.to_owned(),
+            client_id: None,
+            worker_client_id: None,
             viewer: false,
             parent: None,
             identity: Default::default(),
@@ -1749,6 +1861,8 @@ impl Room {
             expires_at: i64::MAX,
             token_id: String::new(),
             user_id: actor.clone(),
+            client_id: None,
+            worker_client_id: None,
             viewer: false,
             parent: None,
             identity: Default::default(),
@@ -2204,6 +2318,7 @@ impl Room {
         &mut self,
         key: MemberKey,
         context: Context,
+        bound: client_ids::Bound,
         out: Outbox,
         socket: String,
         inside: bool,
@@ -2240,6 +2355,8 @@ impl Room {
                 out,
                 socket,
                 inside,
+                client: bound.client,
+                worker: bound.worker,
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
@@ -2406,12 +2523,9 @@ impl Room {
                 member.out.frame(frame.freeze());
             }
         }
-        // Removed clients are forgotten once their removal went out, or, while
-        // a presence is due, once it went out too (`send_presence`).
-        if !self.presence_dirty {
-            self.awareness
-                .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
-        }
+        // Removed clients are forgotten once their removal went out.
+        self.awareness
+            .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
     }
 
     fn broadcast_update(&mut self, sender: Option<MemberKey>, update: Vec<u8>) {
@@ -2542,7 +2656,7 @@ impl Room {
             return;
         };
         let (context, read_only) = (member.context.clone(), member.read_only);
-        match self.admit_update(Some(key), &context, read_only, bytes) {
+        match self.admit_update(Some(key), &context, read_only, bytes, None, &[]) {
             Outcome::Admitted => {}
             Outcome::Unheld => self.resync(key, step2, &context),
             Outcome::Refused {
@@ -2561,6 +2675,8 @@ impl Room {
         context: &Context,
         read_only: bool,
         bytes: &[u8],
+        decoded: Option<yrs::Update>,
+        granted: &[u64],
     ) -> Outcome {
         if self.app.evictions.blocks(&self.name, false) {
             return Outcome::refused(Class::Unavailable, "collaboration room is being reset");
@@ -2568,7 +2684,8 @@ impl Room {
         if context.expires_at <= crate::auth::now_seconds() {
             return Outcome::refused(Class::Permission, "collaboration token expired");
         }
-        let Ok(update) = ydoc::decode(bytes) else {
+        // A draft send decoded its update already (the no-op check).
+        let Some(update) = decoded.or_else(|| ydoc::decode(bytes).ok()) else {
             return Outcome::refused(Class::Malformed, "malformed update");
         };
         let changes = ydoc::contains_changes(&self.doc.transact(), &update);
@@ -2614,6 +2731,27 @@ impl Room {
                 "client update changed collaboration metadata",
             );
         }
+        // A writer adds structs only under ids its user holds (Q213): ones
+        // recorded to the user, bound to one of the user's live channels (a
+        // draft send has none of its own) or granted to a draft by its stored
+        // token (Q288). Reserved copy ids are refused until override-seed
+        // copies exist (r2 N8).
+        let state = self.doc.transact().state_vector();
+        let bound: Vec<u64> = self
+            .members
+            .values()
+            .filter(|member| member.context.user_id == context.user_id)
+            .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+            .collect();
+        if let Some(client) = client_ids::foreign(&state, &update, |id| {
+            self.client_ids.owned_by(id, &context.user_id)
+                || bound.contains(&id)
+                || granted.contains(&id)
+        }) {
+            return self.foreign_update_refused(context, client, bytes.len());
+        }
+        // Recorded once the update is accepted and applied (r2 S1).
+        let written = client_ids::written(&state, &update);
         // Admission and apply run off the runtime's workers while the room
         // waits, unless the update is a small edit of a few structs (REVIEW2
         // S1, REVIEW3 S1): a trial on a copy, a source's exact measure near
@@ -2655,6 +2793,7 @@ impl Room {
                     bytes,
                     &mut source.estimate,
                     source.state_cap,
+                    source.image_cap,
                 ) {
                     sources::Admission::Accept => Verdict::Accept,
                     sources::Admission::Unheld => Verdict::Unheld,
@@ -2750,6 +2889,14 @@ impl Room {
         if let Kindly::Source(source) = &mut self.kind {
             source.estimate.applied(applied as u64, freed);
         }
+        // The first accepted write under an id in this room's life records
+        // it as the user's (Q236), or refreshes its row once a day (M3).
+        if let Some(rows) =
+            self.client_ids
+                .first_writes(&context.user_id, &written, std::time::Instant::now())
+        {
+            self.write_rows(rows);
+        }
         self.ack(writer);
         if !content.is_empty() {
             self.content_changed();
@@ -2811,6 +2958,51 @@ impl Room {
             note.validator.invalidate();
         }
         self.broadcast_update(None, fix);
+    }
+
+    /// An update with structs under a client id its writer's user was not
+    /// assigned: refused on entry, as an invalid document (a note or item:
+    /// the editor keeps its unsaved edits to copy and reloads) or an
+    /// unrecoverable source update (recovery). An honest editor sends one
+    /// only after the server lost unstored state its tab holds (Q213).
+    fn foreign_update_refused(&self, context: &Context, client: u64, bytes: usize) -> Outcome {
+        log(
+            Level::Warn,
+            "update under another user's client id refused",
+            json!({ "client": client, "room": self.name, "user_id": context.user_id }),
+        );
+        incidents::record(
+            &self.app,
+            vec![Incident {
+                cause: Cause::new(IncidentKind::SaveRefused, "client_id"),
+                room: self.name.clone(),
+                size_bytes: Some(bytes as u64),
+                user_id: Some(context.user_id.clone()),
+            }],
+        );
+        // `unassigned`: the browser does not resend them as they are; it
+        // re-applies them under its assigned id (Epo 2026-10-24).
+        let payload = match &self.kind {
+            Kindly::Note(_) => json!({
+                "code": "unassigned",
+                "materialId": self.material_id(),
+                "room": self.name,
+                "type": "document-rejected",
+            }),
+            Kindly::Source(source) => json!({
+                "checkpointIds": [],
+                "code": "unassigned",
+                "epoch": source.room.epoch,
+                "fileId": source.room.file_id,
+                "recoverable": false,
+                "type": "source-checkpoint-failed",
+            }),
+        };
+        Outcome::Refused {
+            payloads: vec![payload.to_string()],
+            reason: client_ids::FOREIGN_UPDATE.into(),
+            class: Class::Unassigned,
+        }
     }
 
     /// The writer's update was placed: its channel's unplaceable count and
@@ -2999,14 +3191,12 @@ impl Room {
         // A channel's ids name its cursors in the room's presence.
         let mut clients_changed = false;
         for entry in entries {
-            let current = self.awareness.get(&entry.client);
-            // A client id is its user's: another user's channel neither
-            // writes nor removes it (Epo 2026-10-19), nor takes it once it is
-            // released until the presence after that went out, since until
-            // then co-editors still label it with its user's name.
-            if current.is_some_and(|state| state.user != member.context.user_id) {
+            // A channel writes and removes only its session's client id
+            // (Q213), which no other user's channel can hold.
+            if entry.client != member.client {
                 continue;
             }
+            let current = self.awareness.get(&entry.client);
             // y-protocols: a newer clock wins; at the same clock a removal wins.
             let take = match current {
                 None => !entry.removed(),
@@ -3026,8 +3216,8 @@ impl Room {
             // removed in a loop stay capped too.
             if !entry.removed()
                 && held != Some(key)
-                && (member.clients.len() >= MAX_CLIENTS_PER_MEMBER
-                    || (current.is_none() && self.awareness.len() >= MAX_CLIENTS_PER_ROOM))
+                && current.is_none()
+                && self.awareness.len() >= MAX_CLIENTS_PER_ROOM
             {
                 continue;
             }
@@ -3044,7 +3234,6 @@ impl Room {
                 entry.client,
                 AwarenessEntry {
                     owner: (!entry.removed()).then_some(key),
-                    user: member.context.user_id.clone(),
                     entry,
                 },
             );
@@ -3122,12 +3311,6 @@ impl Room {
             );
             self.send(*key, Kind::Stateless, &protocol::text(&payload));
         }
-        // An id released before this presence, which no longer lists it, is
-        // free for anyone now that its removal went out too (`on_awareness`).
-        let unsent = &self.changed_awareness;
-        self.awareness.retain(|client, state| {
-            !(state.entry.removed() && state.owner.is_none()) || unsent.contains(client)
-        });
     }
 
     /// Sends the room's awareness states to a channel; returns their bytes.
@@ -3405,6 +3588,96 @@ impl Room {
     }
 
     /// This room's registry handle (none once it unloaded).
+    /// Whether the room's state holds structs under an id (Q213).
+    fn in_history(&self) -> impl Fn(u64) -> bool + use<> {
+        let held = self.doc.transact().state_vector();
+        move |id| held.get(&yrs::block::ClientID::new(id)) > 0
+    }
+
+    /// Whether an id is bound to a live channel (a session's or its DOCX
+    /// worker's) or is the room's own (Q213, Q226).
+    fn live_ids(&self) -> impl Fn(u64) -> bool + use<> {
+        let own = self.doc.client_id().get();
+        let bound: HashSet<u64> = self
+            .members
+            .values()
+            .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+            .collect();
+        move |id| id == own || bound.contains(&id)
+    }
+
+    /// A clean Leave (Q236): the channel's recorded ids its token offered
+    /// expire; an id it bound otherwise (another tab's, r2 N6) stays.
+    fn left_clean(&mut self, key: MemberKey) {
+        let Some(member) = self.members.get(&key) else {
+            return;
+        };
+        let offered = [member.context.client_id, member.context.worker_client_id];
+        let ids: Vec<u64> = std::iter::once(member.client)
+            .chain(member.worker)
+            .filter(|&id| offered.iter().flatten().any(|&own| u64::from(own) == id))
+            .collect();
+        let user = member.context.user_id.clone();
+        if let Some(rows) = self.client_ids.left_clean(&user, &ids) {
+            self.write_rows(rows);
+        }
+    }
+
+    /// Queues client-id rows (r2 S3): written in order, one batch at a time
+    /// off the room's task (Q226 M4: a slow database stalls no channel), and
+    /// the room unloads only once the queue is empty.
+    fn write_rows(&mut self, rows: client_ids::Rows) {
+        self.rows.push_back(rows);
+        self.next_rows();
+    }
+
+    /// Writes the queue's head, retrying a failure a few times.
+    fn next_rows(&mut self) {
+        if self.rows_running {
+            return;
+        }
+        let Some(rows) = self.rows.front().cloned() else {
+            return;
+        };
+        let Some(handle) = self.own_handle() else {
+            // Closing: nothing more can be written.
+            log(
+                Level::Error,
+                "client id rows lost",
+                json!({ "batches": self.rows.len(), "error": "the room has no handle", "room": self.name }),
+            );
+            self.rows.clear();
+            return;
+        };
+        self.rows_running = true;
+        let db = self.app.db.clone();
+        tokio::spawn(async move {
+            let mut result = rows.run(&db).await;
+            for delay in ROW_RETRIES {
+                if result.is_ok() {
+                    break;
+                }
+                tokio::time::sleep(delay).await;
+                result = rows.run(&db).await;
+            }
+            let _ = handle.tx.send(RoomCmd::RowsWritten(result)).await;
+        });
+    }
+
+    /// The queue's head was written, or failed every try (logged as lost).
+    fn rows_written(&mut self, result: Result<(), String>) {
+        self.rows_running = false;
+        self.rows.pop_front();
+        if let Err(error) = result {
+            log(
+                Level::Error,
+                "client id rows lost",
+                json!({ "error": error, "room": self.name }),
+            );
+        }
+        self.next_rows();
+    }
+
     fn own_handle(&self) -> Option<RoomHandle> {
         self.app
             .rooms

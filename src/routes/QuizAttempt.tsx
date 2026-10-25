@@ -13,6 +13,10 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
+import {
+  RemovedAssetsContext,
+  useRemovedAssets,
+} from '@/features/materials/MediaAssetView';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { blockHomeCrumb } from '@/features/quizzes/crumbs';
@@ -39,6 +43,7 @@ function Attempt({ quizId }: { quizId: string }) {
     isError,
     isLoading,
     isFetchedAfterMount,
+    refetch,
   } = useQuiz(quizId, {
     errorBoundary: 'unlessMissing',
     fresh: true,
@@ -60,6 +65,7 @@ function Attempt({ quizId }: { quizId: string }) {
   const navigate = useNavigate();
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  const removed = useRemovedAssets(quiz?.removedAssetIds, refetch);
 
   if (fetchStatus === 'paused') {
     return (
@@ -81,68 +87,70 @@ function Attempt({ quizId }: { quizId: string }) {
     return <WorkspaceError backLabel={m.quiz_back()} backTo="/quizzes" />;
 
   return (
-    <AttemptBody
-      actions={
-        !quiz.canEdit &&
-        !quiz.parentMaterialId &&
-        (!quiz.workspaceId || workspace?.canClone) && (
-          <>
-            <Button
-              disabled={frozen}
-              iconLeft="plus"
-              onClick={() => setCloning(true)}
-              rounded="large"
-              size="sm"
-              variant="outline"
-            >
-              {m.action_clone_quiz()}
+    <RemovedAssetsContext.Provider value={removed}>
+      <AttemptBody
+        actions={
+          !quiz.canEdit &&
+          !quiz.parentMaterialId &&
+          (!quiz.workspaceId || workspace?.canClone) && (
+            <>
+              <Button
+                disabled={frozen}
+                iconLeft="plus"
+                onClick={() => setCloning(true)}
+                rounded="large"
+                size="sm"
+                variant="outline"
+              >
+                {m.action_clone_quiz()}
+              </Button>
+              {cloning && (
+                <CloneItemDialog
+                  item={{
+                    id: quiz.id,
+                    kind: 'quiz',
+                    name: quiz.name,
+                    type: 'material',
+                    workspaceId: quiz.workspaceId,
+                  }}
+                  onClose={() => setCloning(false)}
+                />
+              )}
+            </>
+          )
+        }
+        emptyAction={
+          <Link
+            className="mt-6 inline-flex"
+            preload="intent"
+            search={{ tab: 'blocks' }}
+            to="/files"
+          >
+            <Button iconLeft="navigationBack" rounded="large">
+              {m.quiz_back()}
             </Button>
-            {cloning && (
-              <CloneItemDialog
-                item={{
-                  id: quiz.id,
-                  kind: 'quiz',
-                  name: quiz.name,
-                  type: 'material',
-                  workspaceId: quiz.workspaceId,
-                }}
-                onClose={() => setCloning(false)}
-              />
-            )}
-          </>
-        )
-      }
-      emptyAction={
-        <Link
-          className="mt-6 inline-flex"
-          preload="intent"
-          search={{ tab: 'blocks' }}
-          to="/files"
-        >
-          <Button iconLeft="navigationBack" rounded="large">
-            {m.quiz_back()}
-          </Button>
-        </Link>
-      }
-      frame={PagePanel}
-      grade={async (answers, startedAt) => {
-        const attempt = await submit({ answers, quizId, startedAt });
-        return {
-          awarded: attempt.correct,
-          max: attempt.total,
-          questions: attempt.questions,
-        };
-      }}
-      inApp
-      name={quiz.name}
-      onBack={() =>
-        canGoBack
-          ? router.history.back()
-          : void navigate({ search: { tab: 'blocks' }, to: '/files' })
-      }
-      provenance={quiz.provenance}
-      questions={questions}
-      trail={[blockHomeCrumb(quiz)]}
-    />
+          </Link>
+        }
+        frame={PagePanel}
+        grade={async (answers, startedAt) => {
+          const attempt = await submit({ answers, quizId, startedAt });
+          return {
+            awarded: attempt.correct,
+            max: attempt.total,
+            questions: attempt.questions,
+          };
+        }}
+        inApp
+        name={quiz.name}
+        onBack={() =>
+          canGoBack
+            ? router.history.back()
+            : void navigate({ search: { tab: 'blocks' }, to: '/files' })
+        }
+        provenance={quiz.provenance}
+        questions={questions}
+        trail={[blockHomeCrumb(quiz)]}
+      />
+    </RemovedAssetsContext.Provider>
   );
 }

@@ -164,13 +164,13 @@ func TestRequestBodyValidation(t *testing.T) {
 			name:   "create discussion omit anchorVersion",
 			method: http.MethodPost,
 			path:   "/api/materials/mat_1/discussions",
-			body:   `{"contentRich":[{"type":"p"}]}`,
+			body:   `{"text":"x"}`,
 		},
 		{
 			name:   "create discussion anchorVersion zero",
 			method: http.MethodPost,
 			path:   "/api/materials/mat_1/discussions",
-			body:   `{"anchorVersion":0,"contentRich":[{"type":"p"}]}`,
+			body:   `{"anchorVersion":0,"text":"x"}`,
 		},
 		// Only the browser's kinds and reasons, and sizes up to 1 GiB.
 		{

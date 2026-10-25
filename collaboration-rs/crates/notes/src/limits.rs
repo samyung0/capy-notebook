@@ -476,6 +476,23 @@ fn plain_content<T: ReadTxn>(
     // the one before it); a chain that loops is none.
     let mut places: HashMap<yrs::ID, Option<Place>> = HashMap::new();
     let mut place = |start: &yrs::block::Item| -> Option<Place> {
+        // Place an item that overlaps the room's held clock, or sits next to a
+        // collected unit, where yrs integrates it (phase 0 review).
+        match incoming.landing(store, &state, start) {
+            ydoc::Landing::Gone => {
+                places.insert(*start.id(), None);
+                return None;
+            }
+            ydoc::Landing::At(id) => {
+                let found = store.get_item(&id).map(|held| match held.parent_sub() {
+                    Some(key) => Place::Entry(key.clone(), held.parent_branch().map(|b| b.id())),
+                    None => Place::Sequence(held.parent_branch().map(|b| b.id())),
+                });
+                places.insert(*start.id(), found.clone());
+                return found;
+            }
+            ydoc::Landing::Chain => {}
+        }
         let mut chain: Vec<yrs::ID> = Vec::new();
         let mut seen: HashSet<yrs::ID> = HashSet::new();
         let mut item = start;

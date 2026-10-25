@@ -2,3 +2,15 @@
 # scripts/ci/trivy-image.sh) skips: one CVE id per line, with a comment
 # saying why it has to wait and which image. Prefer bumping the base image;
 # drop an entry once its fix lands.
+
+# pgvector/pgvector:0.8.7-pg16 (bookworm), the Postgres image in
+# deploy/docker-compose.prod.yml (Epo 2026-10-23): DB container, no perl run,
+# plperl absent, not exposed. Pin the next clean upstream rebuild instead.
+CVE-2026-13221 exp:2026-11-22
+CVE-2026-42496 exp:2026-11-22
+CVE-2026-42497 exp:2026-11-22
+CVE-2026-48962 exp:2026-11-22
+CVE-2026-57432 exp:2026-11-22
+CVE-2026-57433 exp:2026-11-22
+CVE-2026-8376 exp:2026-11-22
+CVE-2026-103111 exp:2026-11-22

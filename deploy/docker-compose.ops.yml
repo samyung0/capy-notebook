@@ -1,16 +1,12 @@
-# Independent Ops application on the same Coolify host as the main stack.
-# The main stack owns Postgres and migrations. Enable Connect to Predefined
-# Network on both Coolify applications and use the database container hostname.
+# Independent Ops stack (Compose project `capy-ops`) on the app host, deployed
+# by Deploy Ops through the same deploy command as the main stack. The main
+# stack owns Postgres and migrations; Ops joins its `capy` network and reaches
+# the database as `db`. The image is built per environment (deploy-ops.yml)
+# and runs by digest (CAPY_OPS_IMAGE); the host runs this file only when its
+# sha256 matches that image's compose label.
 services:
   ops:
-    build:
-      context: .
-      dockerfile: ops/Dockerfile
-      args:
-        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?set VITE_CLERK_PUBLISHABLE_KEY}
-        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN_OPS:-}
-        VITE_APP_ENV: ${SENTRY_ENVIRONMENT:-production}
-        VITE_RELEASE_SHA: ${RELEASE_SHA:-}
+    image: ${CAPY_OPS_IMAGE:?set CAPY_OPS_IMAGE}
     environment:
       APP_ENV: production
       RELEASE_SHA: ${RELEASE_SHA:?set RELEASE_SHA}
@@ -45,9 +41,17 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     expose:
       - "8082"
+    # cloudflared reaches it on loopback, behind Cloudflare Access.
+    ports:
+      - "127.0.0.1:8082:8082"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8082/healthz"]
       interval: 5s
       timeout: 3s
       retries: 12
     restart: unless-stopped
+
+networks:
+  default:
+    name: capy
+    external: true

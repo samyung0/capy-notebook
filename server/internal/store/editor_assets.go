@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
@@ -43,8 +45,8 @@ type EditorAssetUpload struct {
 	AssetID     string
 	WorkspaceID string
 	MaterialID  string
-	// UserID is the material's payer, charged for the reservation; CreatedBy
-	// reserved it and is the only account that completes it.
+	// UserID is charged for the reservation: its uploader (M16), who is also
+	// CreatedBy, the only account that completes it.
 	UserID       string
 	CreatedBy    string
 	ObjectPath   string
@@ -56,7 +58,7 @@ type EditorAssetUpload struct {
 }
 
 // NewEditorAssetReservation names the material that uploads it, and its
-// workspace when it has one. The material's payer pays (Sam 2026-10-19). The
+// workspace when it has one. The uploader pays (Epo 2026-10-24, M16). The
 // material's saves and purge delete it.
 type NewEditorAssetReservation struct {
 	AssetID      string
@@ -82,6 +84,9 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 
 	ownerID, err := s.lockEditorAssetScopeTx(ctx, tx, in.WorkspaceID, in.MaterialID, in.CreatedBy)
 	if err != nil {
+		return EditorAsset{}, EditorAssetUpload{}, err
+	}
+	if err := s.assertMaterialNotFullTx(ctx, tx, in.MaterialID); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
 	if err := s.reserveStorageTx(ctx, tx, ownerID, in.DeclaredSize); err != nil {
@@ -130,7 +135,26 @@ func (s *Store) AssertEditorAssetRoom(ctx context.Context, workspaceID, material
 	if err != nil {
 		return err
 	}
+	if err := s.assertMaterialNotFullTx(ctx, tx, materialID); err != nil {
+		return err
+	}
 	return s.gateStorageTx(ctx, tx, payerID, size)
+}
+
+// assertMaterialNotFullTx refuses a new image or audio clip for a material
+// that is view-only because its own payer is at its storage limit: its
+// content could not save the node, so nobody is charged for it (M16). The
+// scope lock refuses a frozen payer.
+func (s *Store) assertMaterialNotFullTx(ctx context.Context, tx pgx.Tx, materialID string) error {
+	var payerID string
+	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`, materialID).Scan(&payerID)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return s.storageFullErr(ctx, tx, payerID)
 }
 
 const editorAssetCols = `id, COALESCE(workspace_id,''), COALESCE(material_id,''), user_id, created_by, name, purpose, object_path,
@@ -214,7 +238,7 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 	if err != nil {
 		return EditorAsset{}, err
 	}
-	// The reservation is charged to the material's payer.
+	// The reservation is charged to its uploader.
 	if storedOwnerID != ownerID {
 		return EditorAsset{}, ErrEditorAssetUploadState
 	}
@@ -300,19 +324,18 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 }
 
 // EditorAssetMaterial returns the live material's workspace (empty when
-// standalone) and the plan limits of its payer, who pays for the images and
-// audio added to it whoever adds them (Sam 2026-10-19, Google Docs model).
-func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, limits planlimits.Limits, err error) {
-	var payerID string
-	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), owner_user_id
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &payerID)
+// standalone) and the plan limits of the uploader, who pays for the images and
+// audio it adds (Epo 2026-10-24, M16).
+func (s *Store) EditorAssetMaterial(ctx context.Context, id, uploaderID string) (workspaceID string, limits planlimits.Limits, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,'')
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID)
 	if isNoRows(err) {
 		return "", planlimits.Limits{}, ErrNotFound
 	}
 	if err != nil {
 		return "", planlimits.Limits{}, err
 	}
-	limits, err = s.PayerPlanLimits(ctx, payerID)
+	limits, err = s.PayerPlanLimits(ctx, uploaderID)
 	return workspaceID, limits, err
 }
 
@@ -384,11 +407,11 @@ func (s *Store) PurgeTrashedEditorAssets(ctx context.Context, limit int) (int, e
 // asset, for an image pasted from another note or quiz. It returns the target's
 // asset id per adoptable source: the same id when the asset is already the
 // target's (restored when trashed), else a new ready row sharing the stored
-// object under blob refcounting and charged to the target's payer; a trashed
-// source is copied too. A source that is unknown (purged), not
+// object under blob refcounting and charged to the actor, who pasted it (M16);
+// a trashed source is copied too. A source that is unknown (purged), not
 // ready, or unreadable by the actor (the resolve rule) is left out, as is one
-// over the payer's plan cap for its purpose (limits.EditorAssetBytes).
-// When the copies do not fit the payer's quota none is made and refused is
+// over the actor's plan cap for its purpose (limits.EditorAssetBytes).
+// When the copies do not fit the actor's quota none is made and refused is
 // true; restores still land.
 func (s *Store) AdoptEditorAssets(
 	ctx context.Context,
@@ -507,18 +530,18 @@ func editorAssetReadableTx(ctx context.Context, tx pgx.Tx, actorID string, asset
 }
 
 // lockEditorAssetScopeTx admits an editor-asset write for the actor and returns
-// the payer: the material's own payer, who pays for every image, audio clip
-// and embedded item in it (Sam 2026-10-19); the actor for a workspace asset
-// naming no material. A workspace asset needs workspace edit access; a
-// standalone material is edited only by its owner. Accounts lock before the
-// material row, matching material saves.
+// the payer: the actor, who pays for the images and audio it adds, as for a
+// file (Epo 2026-10-24, M16). A workspace asset needs workspace edit access; a
+// standalone material is edited only by its owner. Nobody adds to a material
+// whose own payer is frozen: its view-only state follows that payer alone.
+// Accounts lock before the material row, matching material saves.
 func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, actorID string) (string, error) {
 	if workspaceID != "" {
-		payerID := actorID
+		materialPayerID := ""
 		if materialID != "" {
 			// Set once at insert, so the unlocked read is stable.
 			err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
-				WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`, materialID, workspaceID).Scan(&payerID)
+				WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`, materialID, workspaceID).Scan(&materialPayerID)
 			if isNoRows(err) {
 				return "", ErrNotFound
 			}
@@ -526,15 +549,14 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 				return "", err
 			}
 		}
-		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID, payerID); err != nil {
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID, materialPayerID); err != nil {
 			return "", err
 		}
-		// Nothing more is charged to a frozen payer.
-		if err := s.assertEditableTx(ctx, tx, payerID); err != nil {
+		if err := s.assertEditableTx(ctx, tx, materialPayerID); err != nil {
 			return "", HideOtherAccountLock(err, actorID)
 		}
 		if materialID == "" {
-			return payerID, nil
+			return actorID, nil
 		}
 		// The asset also names the material, which must be live there.
 		var live bool
@@ -545,7 +567,7 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 		if !live {
 			return "", ErrNotFound
 		}
-		return payerID, nil
+		return actorID, nil
 	}
 	var ownerID string
 	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
@@ -572,4 +594,166 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 		return "", err
 	}
 	return ownerID, nil
+}
+
+// EditorAssetItem is an image or audio clip the caller pays for, wherever it
+// sits (M16). The Files page's Embeds tab lists it under its note's title:
+// one the caller can open opens that note, one it cannot is deleted there.
+type EditorAssetItem struct {
+	ID        string    `json:"assetId"`
+	Name      string    `json:"name"`
+	Purpose   string    `json:"purpose" enum:"image,audio"`
+	SizeBytes int64     `json:"sizeBytes"`
+	CreatedAt time.Time `json:"createdAt"`
+	// MaterialID is the note, quiz or set it sits in (an embedded quiz's or
+	// set's note), to open; empty when LostAccess.
+	MaterialID string `json:"materialId,omitempty"`
+	// MaterialTitle and WorkspaceName are blank once that workspace's owner is
+	// no longer live.
+	MaterialTitle string `json:"materialTitle"`
+	WorkspaceName string `json:"workspaceName"`
+	// LostAccess: the caller can no longer open its note (lostAccessSQL).
+	LostAccess bool `json:"lostAccess"`
+}
+
+type EditorAssetPage struct {
+	Items      []EditorAssetItem `json:"items" nullable:"false"`
+	NextCursor string            `json:"nextCursor,omitempty"`
+}
+
+// EditorAssetAccess narrows ListEditorAssets to media in notes the caller can
+// open or to those it cannot; empty lists both.
+type EditorAssetAccess string
+
+const (
+	EditorAssetsOpen EditorAssetAccess = "open"
+	EditorAssetsLost EditorAssetAccess = "lost"
+)
+
+var editorAssetSort = listSort{column: "a.created_at", kind: "time"}
+
+// ListEditorAssets pages, newest first, through the images and audio the user
+// pays for (editor_assets_payer_idx). Media in a trashed note or set it can
+// still open are left out: they go with that material's trash and purge.
+func (s *Store) ListEditorAssets(
+	ctx context.Context,
+	userID string,
+	access EditorAssetAccess,
+	limit int,
+	cursor string,
+) (EditorAssetPage, error) {
+	if limit <= 0 || limit > listPageMax {
+		limit = listPageMax
+	}
+	filter := `(l.lost OR (m.trashed_at IS NULL AND top.trashed_at IS NULL))`
+	switch access {
+	case EditorAssetsOpen:
+		filter = `NOT l.lost AND m.trashed_at IS NULL AND top.trashed_at IS NULL`
+	case EditorAssetsLost:
+		filter = `l.lost`
+	}
+	clause, cursorArgs, err := cursorClause(editorAssetSort, "a.id", false, cursor, 2)
+	if err != nil {
+		return EditorAssetPage{}, err
+	}
+	args := append([]any{userID}, cursorArgs...)
+	args = append(args, limit+1)
+	rows, err := s.pool.Query(ctx, `SELECT a.id, a.name, a.purpose, a.size_bytes, a.created_at,
+			CASE WHEN l.lost THEN '' ELSE top.id END,
+			`+workspaceNameSQL("top.workspace_id", "top.title")+`,
+			`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`, l.lost
+		FROM editor_assets a
+		JOIN materials m ON m.id=a.material_id
+		JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
+		CROSS JOIN LATERAL (SELECT `+lostAccessSQL("top.workspace_id", "$1")+` AS lost) l
+		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND `+filter+clause+
+		orderClause(editorAssetSort, "a.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
+	if err != nil {
+		return EditorAssetPage{}, err
+	}
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EditorAssetItem, error) {
+		var item EditorAssetItem
+		return item, row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt,
+			&item.MaterialID, &item.MaterialTitle, &item.WorkspaceName, &item.LostAccess)
+	})
+	if err != nil {
+		return EditorAssetPage{}, err
+	}
+	page := EditorAssetPage{Items: items}
+	if len(items) > limit {
+		last := items[limit-1]
+		page.Items = items[:limit]
+		page.NextCursor = encodeListCursor(cursorPrimary(editorAssetSort, last.CreatedAt, "", 0), last.ID)
+	}
+	return page, nil
+}
+
+// DeleteEditorAsset deletes an image or audio clip its payer added, wherever
+// it sits and whatever the payer may still do there (Q273): the material
+// keeps the node, which then reads as removed by its uploader
+// (MissingEditorAssetIDs), instead of the delete editing its content. It goes
+// at once: a trashed asset would come back with the material's next save.
+func (s *Store) DeleteEditorAsset(ctx context.Context, payerID, assetID string) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		var workspaceID string
+		err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id,'') FROM editor_assets
+			WHERE id=$1 AND user_id=$2 AND status='ready'`, assetID, payerID).Scan(&workspaceID)
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		// Only the payer's account must be live, frozen or not, as for its
+		// files there.
+		if workspaceID != "" {
+			_, err = s.lockWorkspacePayerTx(ctx, tx, workspaceID, payerID)
+		} else {
+			err = s.lockAccountSessionsTx(ctx, tx, payerID)
+		}
+		if err != nil {
+			return err
+		}
+		if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM editor_assets WHERE id=$1`, assetID)
+		if err == nil && tag.RowsAffected() == 0 {
+			err = ErrNotFound
+		}
+		return err
+	})
+}
+
+// MaterialRemovedAssetIDs is MissingEditorAssetIDs for the images and audio a
+// material's stored content references.
+func (s *Store) MaterialRemovedAssetIDs(ctx context.Context, materialID string) ([]string, error) {
+	var content string
+	err := s.pool.QueryRow(ctx, `SELECT content FROM materials WHERE id=$1`, materialID).Scan(&content)
+	if isNoRows(err) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	ids, err := materialdoc.EditorAssetIDs(content)
+	if err != nil {
+		return nil, err
+	}
+	return s.MissingEditorAssetIDs(ctx, ids)
+}
+
+// MissingEditorAssetIDs returns the ids, of those a material's content
+// references, that name no editor asset any more: images and audio their
+// uploader deleted, or that went with the uploader's account (M16).
+func (s *Store) MissingEditorAssetIDs(ctx context.Context, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT ref.id FROM unnest($1::text[]) AS ref(id)
+		WHERE NOT EXISTS (SELECT 1 FROM editor_assets a WHERE a.id=ref.id) ORDER BY ref.id`, ids)
+	if err != nil {
+		return nil, err
+	}
+	return scanIDs(rows)
 }

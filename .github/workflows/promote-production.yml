@@ -87,9 +87,11 @@ jobs:
       revision: ${{ needs.validate_candidate.outputs.revision }}
 
   # Code review and agent scans run locally and are not a promotion gate.
+  # Production runs the image digests UAT ran, not whatever the tags name now.
   deploy_production:
     needs:
       - validate_candidate
+      - restage_uat
       - uat_quality_gate
       - editor_perf
     permissions:
@@ -99,4 +101,5 @@ jobs:
     with:
       environment_name: production
       revision: ${{ needs.validate_candidate.outputs.revision }}
+      image_digests: ${{ needs.restage_uat.outputs.image_digests }}
     secrets: inherit

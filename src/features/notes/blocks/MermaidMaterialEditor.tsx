@@ -159,7 +159,7 @@ export default function MermaidMaterialEditor({
           history={room.history}
           live={live}
           provenance={provenance}
-          readOnly={itemEditingStopped(snapshot.offline)}
+          readOnly={itemEditingStopped(snapshot)}
           title={title}
         />
       </CollaborationHold>

@@ -21,7 +21,8 @@ from `pipeline/ppt-master-requirements.txt`: exact versions with hashes,
 regenerated with the command in its header after `PPT_MASTER_DEPS` changes
 (`test_deck.py` checks every name is pinned). Its attribution guard refuses a
 partial copy, so nothing is vendored piecemeal. The retrieval service calls two
-scripts as subprocesses (`retrieval/deck.py`, 180 s each):
+scripts as subprocesses (`retrieval/deck.py`, 180 s each), from its render pool
+rather than the default executor ([agentic-retrieval.md](agentic-retrieval.md#process-capacity)):
 `svg_quality_checker.py <project> --quick-generate --canonical-authoring --stage final --json`
 and `svg_to_pptx.py <project> --quick-generate --no-notes -o <pptx>`. The
 checker's width estimator is table-based, so the image needs no fonts. The
@@ -65,9 +66,11 @@ serially.
    characters of SVG. Our checks first: the XML parses, the root is `<svg>`
    with `viewBox="0 0 1280 720"` and `lang`, and every `<image>` is
    `../images/c<n>.jpg` for capture n of this turn, made with a bbox (a
-   capture's result names n; a whole page or a number no capture holds is
-   refused). Captures are numbered rather than named by page so page 4 of two
-   sources cannot collide (Epo 2026-10-14). Then ppt-master's checker runs on
+   capture's result names n; a whole page, a number no capture holds, or a
+   capture the turn's image budget has dropped, "no longer available", is
+   refused; agentic-retrieval.md, Q349). Captures are numbered rather than
+   named by page so page 4 of two sources cannot collide (Epo 2026-10-14).
+   Then ppt-master's checker runs on
    the slide alone in a temporary project, and up to six of its errors come
    back as the refusal. A passing slide is kept (writing it again replaces it)
    and counts as a landed write for the stall guard.
@@ -94,7 +97,9 @@ slide SVGs themselves live on the deck record.
 **Figures.** Nothing is rasterised: drawn diagrams export as native shapes and
 book figures are the turn's bbox crops, embedded as images. A slide names a
 capture by its page; the JPEG comes from the capture's attached image
-(`ToolContext.pending_images`), and a later capture of the same page wins. A
+(`ToolContext.pending_images`), and a later capture of the same page wins. The
+turn's image budget can drop an older capture mid-turn (Q349); a slide naming
+it is then refused as no longer available. A
 crop from `capture_knowledge_page` carries its `excerptId`, so the slide credits
 that excerpt's book whether or not `excerpt_ids` named it. The library admits
 only CC BY, BY-SA, CC0 and public domain, so every crop may be redistributed

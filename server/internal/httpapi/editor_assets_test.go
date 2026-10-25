@@ -8,11 +8,11 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
-// The plan caps an editor asset takes (plan_limits): images 2 MiB Free and
-// 5 MiB Pro, audio the per-file cap, 10 MiB Free and 30 MiB Pro.
+// The plan caps an editor asset takes (plan_limits): images 2 MiB on every
+// plan, audio the per-file cap, 10 MiB Free and 30 MiB Pro.
 var (
 	freeAssetLimits = planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 10 << 20}
-	proAssetLimits  = planlimits.Limits{ImageBytes: 5 << 20, SourceFileBytes: 30 << 20}
+	proAssetLimits  = planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 30 << 20}
 )
 
 func TestValidateEditorAssetMetadata(t *testing.T) {
@@ -81,8 +81,7 @@ func TestValidateEditorAssetMetadataPlanCaps(t *testing.T) {
 	}{
 		{"free image at 2 MiB", image(2 << 20), freeAssetLimits, ""},
 		{"free image over 2 MiB", image(2<<20 + 1), freeAssetLimits, "2 MB"},
-		{"pro image over 2 MiB", image(2<<20 + 1), proAssetLimits, ""},
-		{"pro image over 5 MiB", image(5<<20 + 1), proAssetLimits, "5 MB"},
+		{"pro image over 2 MiB", image(2<<20 + 1), proAssetLimits, "2 MB"},
 		{"free audio at 10 MiB", audio(10 << 20), freeAssetLimits, ""},
 		{"free audio over 10 MiB", audio(10<<20 + 1), freeAssetLimits, "10 MB"},
 		{"pro audio over 10 MiB", audio(10<<20 + 1), proAssetLimits, ""},

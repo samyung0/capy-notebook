@@ -14,6 +14,7 @@ import (
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/setupintent"
+	"github.com/stripe/stripe-go/v82/subscription"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -39,7 +40,7 @@ const checkoutTTL = 30 * time.Minute
 
 // CreateTopUpCheckout opens hosted Checkout in payment mode for one top-up and
 // saves the card for off-session reuse.
-func CreateTopUpCheckout(customerID, userID string, amountCents int64, successURL, cancelURL string) (string, error) {
+func CreateTopUpCheckout(customerID, userID string, amountCents int64, successURL, cancelURL string) (CheckoutSession, error) {
 	meta := map[string]string{
 		"kind":    KindTopUp,
 		"user_id": userID,
@@ -75,17 +76,22 @@ func CreateTopUpCheckout(customerID, userID string, amountCents int64, successUR
 		CancelURL:       stripe.String(cancelURL),
 		Metadata:        meta,
 	}
+	return newCreditCheckout(params)
+}
+
+// newCreditCheckout opens a credit Checkout and returns its page.
+func newCreditCheckout(params *stripe.CheckoutSessionParams) (CheckoutSession, error) {
 	s, err := session.New(params)
 	if err != nil {
-		return "", err
+		return CheckoutSession{}, err
 	}
-	return s.URL, nil
+	return CheckoutSession{ID: s.ID, URL: s.URL, Status: string(s.Status), ExpiresAt: time.Unix(s.ExpiresAt, 0)}, nil
 }
 
 // CreateReloadMethodCheckout opens hosted Checkout in setup mode to save the
 // card auto-reload charges. The billing address is kept on the customer
 // because reload invoices compute tax from it.
-func CreateReloadMethodCheckout(customerID, userID, successURL, cancelURL string) (string, error) {
+func CreateReloadMethodCheckout(customerID, userID, successURL, cancelURL string) (CheckoutSession, error) {
 	meta := map[string]string{"kind": KindReloadMethod, "user_id": userID}
 	params := &stripe.CheckoutSessionParams{
 		Customer:                 stripe.String(customerID),
@@ -100,11 +106,7 @@ func CreateReloadMethodCheckout(customerID, userID, successURL, cancelURL string
 		CancelURL:                stripe.String(cancelURL),
 		Metadata:                 meta,
 	}
-	s, err := session.New(params)
-	if err != nil {
-		return "", err
-	}
-	return s.URL, nil
+	return newCreditCheckout(params)
 }
 
 // PaymentMethodInfo describes a payment method as the auto-reload dialog
@@ -116,8 +118,23 @@ func PaymentMethodInfo(pm *stripe.PaymentMethod) store.PaymentMethod {
 		out.Last4 = pm.Card.Last4
 		out.ExpMonth = int(pm.Card.ExpMonth)
 		out.ExpYear = int(pm.Card.ExpYear)
+		if pm.Card.Fingerprint != "" {
+			out.CardKey = "card:" + pm.Card.Fingerprint
+		}
 	}
 	return out
+}
+
+// SubscriptionPaymentMethod reads the card a subscription Checkout saved as
+// the subscription's default; empty when it saved none.
+func SubscriptionPaymentMethod(subscriptionID string) (store.PaymentMethod, error) {
+	params := &stripe.SubscriptionParams{}
+	params.AddExpand("default_payment_method")
+	sub, err := subscription.Get(subscriptionID, params)
+	if err != nil || sub.DefaultPaymentMethod == nil {
+		return store.PaymentMethod{}, err
+	}
+	return PaymentMethodInfo(sub.DefaultPaymentMethod), nil
 }
 
 // TopUpPaymentMethod reads the payment method a paid top-up used.

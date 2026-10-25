@@ -6,6 +6,7 @@ once every slide is written. ppt-master itself is stubbed here; the playground's
 from __future__ import annotations
 
 import re
+import threading
 from pathlib import Path
 
 import pytest
@@ -156,6 +157,32 @@ async def test_checker_refusal_reaches_the_model_and_keeps_the_slide_unwritten(d
     assert "text exceeds the module bounds" in spilled.text()
     assert ctx.decks[rid]["deck"]["slides"][0]["svg"] is None
     assert not exports and not posts
+
+
+async def test_deck_scripts_run_on_the_render_pool(decks, monkeypatch):
+    """(security regression: rate-limit audit M13) ppt-master's checker and
+    exporter run on the bounded render pool, never on the default executor
+    every model call's admission uses."""
+    ctx, exports, _posts = decks
+    threads: list[str] = []
+    check, export = deck.check, deck.export
+
+    def checked(project: Path) -> dict[str, list[str]]:
+        threads.append(threading.current_thread().name)
+        return check(project)
+
+    def exported(project: Path, pptx: Path) -> str:
+        threads.append(threading.current_thread().name)
+        return export(project, pptx)
+
+    monkeypatch.setattr(deck, "check", checked)
+    monkeypatch.setattr(deck, "export", exported)
+    rid = await _outline(ctx, slides=1)
+    written = await _write(ctx, rid, 1, _slide())
+
+    assert not written.refused, written.text()
+    assert exports and len(threads) == 2
+    assert all(name.startswith("capy-render") for name in threads)
 
 
 async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks):

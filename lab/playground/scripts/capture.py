@@ -1,7 +1,10 @@
 """capture_page: render a source page, or a box on it, on demand inside the agent loop.
 
 Return modes, chosen per config:
-- pixels   the JPEG is attached to the conversation for a vision-capable chat model
+- pixels   the JPEG is attached to the conversation for a vision-capable chat model,
+           through production's turn state (ToolContext captures, pending images and
+           image budget, Q349; the 16 images per message), so production's agent
+           attaches it and drops it as in the app
 - ocr      Qwen3.5-OCR transcribes the crop; the text becomes a citable passage
 - caption  the captioning model describes the crop (optionally aware of the question)
 """
@@ -125,18 +128,25 @@ async def ocr_transcribe(data_url: str, route: str) -> str:
 def make_handler(
     config: dict[str, Any], resolver: PdfResolver, state: dict[str, Any], question: str
 ):
-    """Bind one turn's capture handler. `state` collects captures and pending images."""
+    """Bind one turn's capture handler. `state` collects the playground's capture
+    records; a pixels-mode image goes on the ToolContext as production's does."""
     from pipeline.prompts.captioning import IMAGE_PROMPT
+    from pipeline.retrieval import capture as production
     from pipeline.retrieval import models, tools
     from pipeline.retrieval.search import Passage
 
     cap = config["capture"]
     run_dir: Path = state["run_dir"]
+    pixels = cap["mode"] == "pixels"
 
     async def handler(args: dict[str, Any], ctx) -> tools.ToolResult:
         file_id, page, bbox = args.get("file_id"), args.get("page"), args.get("bbox")
         if not isinstance(file_id, str) or type(page) is not int:
             return tools._refused("capture_page needs file_id and an integer page.")
+        # Production's per-message image cap, checked again after the render
+        # since a response's captures run side by side.
+        if pixels and (limit := tools._image_limit(ctx)) is not None:
+            return limit
         scope = await tools._resolve_scope(ctx, [file_id])
         if isinstance(scope, tools.ToolResult):
             return scope
@@ -155,6 +165,8 @@ def make_handler(
             jpeg, box = render(pdf, page, bbox, cap["max_edge"])
         except (KeyError, ValueError) as exc:
             return tools._refused(f"capture_page: {exc}")
+        if pixels and (limit := tools._image_limit(ctx)) is not None:
+            return limit
         n = len(state["captures"]) + 1
         image_path = run_dir / "captures" / f"{n}.jpg"
         image_path.parent.mkdir(parents=True, exist_ok=True)
@@ -180,11 +192,26 @@ def make_handler(
             "est_image_tokens": patch_tokens(width, height),
         }
         state["captures"].append(record)
-        if cap["mode"] == "pixels":
-            state["images"][args["_tool_call_id"]] = (
-                f"capture_page result {n}: {label}",
-                data_url,
+        if pixels:
+            call_id = str(args.get("_tool_call_id") or "")
+            # Production numbers a capture among the turn's captures of every kind.
+            number = len(ctx.captures) + 1
+            ctx.captures.append(
+                production.record(
+                    call_id=call_id,
+                    file_id=file_id,
+                    page=page,
+                    box=box,
+                    jpeg=jpeg,
+                    size=(width, height),
+                    started=started,
+                )
             )
+            ctx.pending_images[call_id] = (
+                f"capture_page result {number}: {label}",
+                production.data_url(jpeg),
+            )
+            ctx.budget_images.add(call_id)
             text = "(captured page image; read it in the attached image)"
             note = (
                 f"Captured {label}. The rendered image is attached to the next message; "
@@ -223,11 +250,12 @@ def make_handler(
         ]
         if cap["citation"] == "page" and existing:
             record["cited_as"] = existing
+            if pixels:
+                # Production's capture_page text, built by the same function.
+                return tools._imaged(ctx, tools._capture_note(label, number, existing))
             numbers = "".join(f"[{n}]" for n in existing)
             note += f" This page is already in the evidence as {numbers}; cite those numbers for what the capture shows."
-            return tools.ToolResult(
-                text_parts=[note] if cap["mode"] == "pixels" else [note, text]
-            )
+            return tools.ToolResult(text_parts=[note, text])
         passage = Passage(
             chunk_id=f"capture:{file_id}:{page}:{','.join(str(int(v)) for v in box)}:{n}",
             file_id=file_id,
@@ -240,111 +268,55 @@ def make_handler(
             page_end=page,
             regions=[{"page": page, "bbox": box, "space": "page-1000-topleft"}],
         )
+        if pixels:
+            note = tools._imaged(ctx, note).text()
         return tools.ToolResult(text_parts=[note], passages=[passage])
 
     return handler
 
 
-def image_part(
-    data_url: str, provider_slug: str, detail: str | None = None
-) -> dict[str, Any]:
-    if provider_slug == "anthropic":
-        header, data = data_url.split(",", 1)
-        return {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": header[5:].split(";")[0],
-                "data": data,
-            },
-        }
-    part: dict[str, Any] = {"type": "image_url", "image_url": {"url": data_url}}
-    if detail and provider_slug == "openai":
-        # The only provider here with a density switch; GLM, DeepSeek and Qwen
-        # price by pixels sent, so max_edge and bbox are the knobs for them.
-        part["image_url"]["detail"] = detail
-    return part
-
-
-def inject_images(
-    messages: list[dict[str, Any]],
-    images: dict[str, tuple[str, str]],
-    provider_slug: str = "",
-    detail: str | None = None,
+def with_detail(
+    messages: list[dict[str, Any]], provider_slug: str, detail: str | None
 ) -> list[dict[str, Any]]:
-    """Attach captured images after the tool-result block that produced them.
-
-    Chat-completions tool messages carry text only, and every tool result of one
-    assistant step must stay contiguous, so the images ride in one user message
-    placed after the last tool message of that step.
-    """
-    if not images:
+    """The request production built, with OpenAI's image density switch on its
+    image parts; GLM, DeepSeek and Qwen price by pixels sent, so max_edge and
+    bbox are the knobs for them and the request goes as built."""
+    if not detail or provider_slug != "openai":
         return messages
-    out: list[dict[str, Any]] = []
-    pending: list[tuple[str, str]] = []
-    for i, message in enumerate(messages):
-        out.append(message)
-        if message.get("role") == "tool" and message.get("tool_call_id") in images:
-            pending.append(images[message["tool_call_id"]])
-        following = messages[i + 1] if i + 1 < len(messages) else None
-        if pending and (following is None or following.get("role") != "tool"):
-            content: list[dict[str, Any]] = [
-                {"type": "text", "text": "Images from the capture_page calls above:"}
+    out = []
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list) and any(
+            isinstance(p, dict) and p.get("type") == "image_url" for p in content
+        ):
+            content = [
+                {**p, "image_url": {**p["image_url"], "detail": detail}}
+                if isinstance(p, dict) and p.get("type") == "image_url"
+                else p
+                for p in content
             ]
-            for label, url in pending:
-                content.append({"type": "text", "text": label})
-                content.append(image_part(url, provider_slug, detail))
-            out.append({"role": "user", "content": content})
-            pending = []
+            message = {**message, "content": content}
+        out.append(message)
     return out
 
 
 def check() -> None:
-    # Two tool results in one step: the image message must follow both.
-    msgs = [
-        {"role": "system", "content": "s"},
-        {"role": "user", "content": "q"},
-        {"role": "assistant", "content": "", "tool_calls": [{"id": "a"}, {"id": "b"}]},
-        {"role": "tool", "tool_call_id": "a", "content": "ra"},
-        {"role": "tool", "tool_call_id": "b", "content": "rb"},
-        {"role": "assistant", "content": "", "tool_calls": [{"id": "c"}]},
-        {"role": "tool", "tool_call_id": "c", "content": "rc"},
-    ]
-    out = inject_images(msgs, {"a": ("A", "data:a"), "c": ("C", "data:c")})
-    roles = [(m["role"], m.get("tool_call_id")) for m in out]
-    assert roles == [
-        ("system", None),
-        ("user", None),
-        ("assistant", None),
-        ("tool", "a"),
-        ("tool", "b"),
-        ("user", None),
-        ("assistant", None),
-        ("tool", "c"),
-        ("user", None),
-    ], roles
-    assert out[5]["content"][2]["image_url"]["url"] == "data:a"
-    assert out[-1]["content"][2]["image_url"]["url"] == "data:c"
-    assert inject_images(msgs, {}) is msgs
-    claude = inject_images(
-        msgs, {"a": ("A", "data:image/jpeg;base64,QUJD")}, "anthropic"
-    )
-    assert claude[5]["content"][2] == {
-        "type": "image",
-        "source": {"type": "base64", "media_type": "image/jpeg", "data": "QUJD"},
-    }
     assert _OSS_LINK.sub("[x]", "a ![h.jpeg](http://oss/x?token=1) b") == "a [x] b"
     assert patch_tokens(1568, 1211) == 56 * 44 and patch_tokens(28, 28) == 1
-    assert (
-        image_part("data:image/jpeg;base64,QQ==", "openai", "low")["image_url"][
-            "detail"
-        ]
-        == "low"
-    )
-    assert (
-        "detail"
-        not in image_part("data:image/jpeg;base64,QQ==", "zai", "low")["image_url"]
-    )
+    request = [
+        {"role": "tool", "tool_call_id": "a", "content": "ra"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "A"},
+                {"type": "image_url", "image_url": {"url": "data:a"}},
+            ],
+        },
+    ]
+    sent = with_detail(request, "openai", "low")
+    assert sent[1]["content"][1]["image_url"] == {"url": "data:a", "detail": "low"}
+    assert "detail" not in request[1]["content"][1]["image_url"]
+    assert with_detail(request, "zai", "low") is request
     import pymupdf
 
     with pymupdf.open() as doc:
@@ -379,7 +351,72 @@ def check() -> None:
             raise AssertionError(f"{bad} should have been rejected")
     finally:
         path.unlink()
+    check_pixels_capture()
     print("capture checks passed")
+
+
+def check_pixels_capture() -> None:
+    """A pixels-mode capture lives in production's turn state: its record in
+    ctx.captures, its image in ctx.pending_images and ctx.budget_images, counted
+    toward the 16 images per message (the 16th says so, the 17th is refused).
+    A cited page gets production's capture_page text."""
+    import asyncio
+    import shutil
+    import tempfile
+
+    import pymupdf
+    from pipeline.retrieval import tools
+    from pipeline.retrieval.search import Passage
+
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf = Path(tmp) / "one.pdf"
+        with pymupdf.open() as doc:
+            doc.new_page(width=200, height=100).insert_text((20, 50), "hello")
+            doc.save(pdf)
+
+        class Resolver:
+            async def path(self, _file_id: str) -> Path:
+                return pdf
+
+        config = {
+            "capture": {
+                "mode": "pixels",
+                "require_seen_page": False,
+                "max_edge": 100,
+                "citation": "page",
+            }
+        }
+        LOCAL.mkdir(parents=True, exist_ok=True)
+        run_dir = Path(tempfile.mkdtemp(dir=LOCAL))
+        state: dict[str, Any] = {"run_dir": run_dir, "captures": []}
+        handler = make_handler(config, Resolver(), state, "q")
+        ctx = tools.ToolContext(workspace_id="ws", file_ids=["f_1"])
+        ctx._scope_outline = {
+            "chapters": [],
+            "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1}],
+        }
+        ctx.citations.append(
+            Passage("c_1", "f_1", "one.pdf", 0, "", "hello", page_start=1, page_end=1)
+        )
+
+        async def take(n: int):
+            args = {"file_id": "f_1", "page": 1, "_tool_call_id": f"k{n}"}
+            return await handler(args, ctx)
+
+        try:
+            results = [asyncio.run(take(n)) for n in range(1, 18)]
+        finally:
+            shutil.rmtree(run_dir, ignore_errors=True)
+    assert [record["callId"] for record in ctx.captures] == [f"k{n}" for n in range(1, 17)]
+    assert sorted(ctx.pending_images) == sorted(f"k{n}" for n in range(1, 17))
+    assert ctx.budget_images == {f"k{n}" for n in range(1, 17)}
+    assert ctx.pending_images["k1"][0] == "capture_page result 1: one.pdf page 1"
+    assert ctx.images_taken == 16
+    assert results[0].text() == tools._capture_note("one.pdf page 1", 1, [1])
+    assert not results[0].passages
+    limit = "\n\n" + tools.IMAGE_LIMIT
+    assert results[15].text() == tools._capture_note("one.pdf page 1", 16, [1]) + limit
+    assert results[16].refused and results[16].error_code == "limit_reached"
 
 
 if __name__ == "__main__":

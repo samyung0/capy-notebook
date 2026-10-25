@@ -206,8 +206,11 @@ async def test_generation_fits_full_provider_request_without_trimming_pending(
         == "Generated cards"
     )
     assert compact.fits_request(sent, spec)
+    # Measuring keeps each message's estimate on it under "_tokens".
     assert [
-        message for message in sent if message.get("_kind") == "pending_sources"
+        {k: v for k, v in message.items() if k != "_tokens"}
+        for message in sent
+        if message.get("_kind") == "pending_sources"
     ] == ([expected_changes] if with_pending else [])
     next_passage = workflows.Passage.from_row(read_rows[len(passages)])
     larger = context + "\n\n" + next_passage.as_context(len(passages) + 1)
@@ -310,7 +313,7 @@ async def test_a_resolved_source_image_rides_in_the_next_request(monkeypatch):
         assert image.size == (40, 20)
         red, green, blue = image.getpixel((20, 10))
     assert red > 240 and green < 20 and blue < 20
-    assert capture.image_tokens(ctx.captures) > 0
+    assert capture.image_tokens(ctx.captures, ctx.pending_images) > 0
 
 
 async def test_a_source_image_with_another_hash_or_no_render_is_refused(monkeypatch):

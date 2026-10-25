@@ -23,8 +23,9 @@ WORKDIR /workspace
 COPY vendor/betteroffice vendor/betteroffice
 COPY collaboration-rs collaboration-rs
 WORKDIR /workspace/collaboration-rs
-# Cache mounts keep compiled output across deploys even when the layer cache
-# misses (Coolify ARG injection must stay off, see the deployment runbook).
+# Cache mounts keep compiled output across builds even when the layer cache
+# misses. The image takes no build argument: the deploy's images job sets the
+# revision as a label, so a new commit never invalidates these layers.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/workspace/collaboration-rs/target,sharing=locked \
     cargo build --release --locked -p server \

@@ -10,12 +10,12 @@ export interface Comment {
   readonly $schema?: string;
   authorAvatarUrl?: string;
   authorName: string;
-  contentRich: unknown;
   createdAt: string;
   discussionId: string;
   id: string;
   isDeleted: boolean;
   isEdited: boolean;
+  text: string;
   updatedAt: string;
   userId: string;
 }

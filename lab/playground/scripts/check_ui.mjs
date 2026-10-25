@@ -33,6 +33,13 @@ const html = readFileSync(new URL('./ui.html', import.meta.url), 'utf8');
 const script = html
   .match(/<script>([\s\S]*)<\/script>/)[1]
   .replace(/loadState\(\);\s*$/, '');
+// The fake DOM makes any element on demand, so check the page has every one
+// the script looks up: a handler on a removed control stops the script.
+const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+assert.deepEqual(
+  [...script.matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]).filter((id) => !ids.has(id)),
+  []
+);
 vm.runInContext(script, context);
 vm.runInContext(
   "state = {defaults: {model: {}}, quality_files: [], target: 'local'}",

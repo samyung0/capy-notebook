@@ -1,5 +1,5 @@
 diff --git a/dist/yjs.cjs b/dist/yjs.cjs
-index 5b5690e..0967784 100644
+index 5b5690eb2f172cd99d244ff33394ff59f44fe103..25e41aad79e6eee3df0f9b598f6360b79865b231 100644
 --- a/dist/yjs.cjs
 +++ b/dist/yjs.cjs
 @@ -3334,7 +3334,10 @@ const cleanupTransactions = (transactionCleanups, i) => {
@@ -14,8 +14,32 @@ index 5b5690e..0967784 100644
              cleanupYTextAfterTransaction(transaction);
            }
          });
+@@ -9729,6 +9732,23 @@ const redoItem = (transaction, item, redoitems, itemsToDelete, ignoreRemoteMapCh
+       }
+       right = right.right;
+     }
++    // Capy patch: the traced right stays only when it lies after the left. A
++    // trace through a copy an earlier Undo made can land at or before the
++    // left, and a copy whose right origin comes before its origin reads
++    // elsewhere on peers and after a reload. Then the item now after the left
++    // is the right, as a local insert takes it. The walk is bounded (measured
++    // walks stay within 20 steps); past the bound the item after the left is
++    // the right too.
++    if (right !== null) {
++      const afterLeft = left === null ? parentType._start : left.right;
++      let next = afterLeft;
++      for (let steps = 0; next !== null && next !== right && steps < 4096; steps++) {
++        next = next.right;
++      }
++      if (next !== right) {
++        right = afterLeft;
++      }
++    }
+   } else {
+     right = null;
+     if (item.right && !ignoreRemoteMapChanges) {
 diff --git a/dist/yjs.mjs b/dist/yjs.mjs
-index 10d633d..1f28cc4 100644
+index 10d633d8e71171b2702c45376553832504921877..e3a7efc608de152c89264242e8fdff76adff2c83 100644
 --- a/dist/yjs.mjs
 +++ b/dist/yjs.mjs
 @@ -3297,7 +3297,10 @@ const cleanupTransactions = (transactionCleanups, i) => {
@@ -30,3 +54,27 @@ index 10d633d..1f28cc4 100644
              cleanupYTextAfterTransaction(transaction);
            }
          });
+@@ -9692,6 +9695,23 @@ const redoItem = (transaction, item, redoitems, itemsToDelete, ignoreRemoteMapCh
+       }
+       right = right.right;
+     }
++    // Capy patch: the traced right stays only when it lies after the left. A
++    // trace through a copy an earlier Undo made can land at or before the
++    // left, and a copy whose right origin comes before its origin reads
++    // elsewhere on peers and after a reload. Then the item now after the left
++    // is the right, as a local insert takes it. The walk is bounded (measured
++    // walks stay within 20 steps); past the bound the item after the left is
++    // the right too.
++    if (right !== null) {
++      const afterLeft = left === null ? parentType._start : left.right;
++      let next = afterLeft;
++      for (let steps = 0; next !== null && next !== right && steps < 4096; steps++) {
++        next = next.right;
++      }
++      if (next !== right) {
++        right = afterLeft;
++      }
++    }
+   } else {
+     right = null;
+     if (item.right && !ignoreRemoteMapChanges) {

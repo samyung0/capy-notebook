@@ -172,21 +172,24 @@ type TransferWorkspaceReq struct {
 	RecipientID string `json:"recipientId" minLength:"1"`
 }
 
+// Comments are plain fields (Epo 2026-10-24): a discussion holds its block
+// id, anchor range and quote, each comment its plain text; the store refuses
+// whitespace-only text and control characters but newline and tab.
 type CreateDiscussionReq struct {
-	BlockID       *string          `json:"blockId,omitempty"`
-	AnchorStart   []byte           `json:"anchorStart,omitempty" maxLength:"4096"`
-	AnchorEnd     []byte           `json:"anchorEnd,omitempty" maxLength:"4096"`
-	AnchorVersion int              `json:"anchorVersion" minimum:"1"`
-	AnchorQuote   string           `json:"anchorQuote,omitempty" maxLength:"1000"`
-	ContentRich   []map[string]any `json:"contentRich" minItems:"1"`
+	BlockID       *string     `json:"blockId,omitempty" minLength:"1" maxLength:"128"`
+	AnchorStart   []byte      `json:"anchorStart,omitempty" maxLength:"4096"`
+	AnchorEnd     []byte      `json:"anchorEnd,omitempty" maxLength:"4096"`
+	AnchorVersion int         `json:"anchorVersion" minimum:"1"`
+	AnchorQuote   string      `json:"anchorQuote,omitempty" maxLength:"1000"`
+	Text          CommentText `json:"text" minLength:"1"`
 }
 
 type CreateCommentReq struct {
-	ContentRich []map[string]any `json:"contentRich" minItems:"1"`
+	Text CommentText `json:"text" minLength:"1"`
 }
 
 type UpdateCommentReq struct {
-	ContentRich []map[string]any `json:"contentRich" minItems:"1"`
+	Text CommentText `json:"text" minLength:"1"`
 }
 
 type CreateQuizReq struct {
@@ -222,6 +225,15 @@ type GradeAnonymousQuizReq struct {
 	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
 	// LocalID is the anonymous browser's reporting id for the grading caps.
 	LocalID string `json:"localId,omitempty" maxLength:"64"`
+	// TurnstileToken is the Cloudflare Turnstile token the page solved for this
+	// check; the API verifies it before grading.
+	TurnstileToken string `json:"turnstileToken,omitempty" maxLength:"2048"`
+}
+
+// CheckSharedNoteQuizReq is a signed-in visitor's check of a quiz embedded in
+// a shared note (Q311).
+type CheckSharedNoteQuizReq struct {
+	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
 }
 
 // CheckReviewItemReq checks one question of a review session.
@@ -287,6 +299,10 @@ type CreateSourceUploadReq struct {
 	// PageCount is the browser's page count for a fast-parse document; a
 	// count past the upload policy's maxPages is refused.
 	PageCount int `json:"pageCount,omitempty" minimum:"0"`
+	// DurationSeconds is the browser's reading of an audio file's length,
+	// required for audio; a duration past the upload policy's
+	// audioMaxDurationSeconds is refused.
+	DurationSeconds int `json:"durationSeconds,omitempty" minimum:"0"`
 	// BatchID names the upload (one AddSourceDialog submission) this file
 	// belongs to; its notification fires once BatchTotal files settle.
 	BatchID    string `json:"batchId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$"`
@@ -330,6 +346,9 @@ type SourceImportStatus struct {
 	Name      string  `json:"name"`
 	FileID    *string `json:"fileId,omitempty"`
 	ErrorCode string  `json:"errorCode,omitempty"`
+	// RemovedPictures counts the EMF and WMF pictures removed from an
+	// imported Office file (Epo 2026-10-24).
+	RemovedPictures int `json:"removedPictures"`
 }
 
 // UpdateFlashcardSetReq changes relational metadata only.
@@ -375,15 +394,6 @@ type UpdateConversationReq struct {
 	Title    *ConversationTitle `json:"title,omitempty" minLength:"1"`
 	Pinned   *bool              `json:"pinned,omitempty"`
 	Archived *bool              `json:"archived,omitempty" doc:"true archives and unpins; false puts the thread back in the list"`
-}
-
-type CreateCanvasReq struct {
-	Name MaterialTitle `json:"name,omitempty"`
-}
-
-type SaveCanvasReq struct {
-	Name  *MaterialTitle `json:"name,omitempty" minLength:"1"`
-	Scene any            `json:"scene,omitempty"`
 }
 
 type BillingCheckoutReq struct {
@@ -550,7 +560,7 @@ type ReportEditIncidentReq struct {
 	FileID   string `json:"fileId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$" doc:"The note (material) or source file"`
 	FileKind string `json:"fileKind" enum:"material,source_file"`
 	Kind     string `json:"kind" enum:"other_epoch_draft,draft_unrestorable,draft_storage_failed,unconfirmed_edit,offline_episode,discard_unsaved"`
-	Reason   string `json:"reason,omitempty" enum:"reopen,epoch_changed,paused,base_missing,quota,unavailable,write,browser_offline,unreachable,read_only,forbidden,not_found"`
+	Reason   string `json:"reason,omitempty" enum:"reopen,held,epoch_changed,paused,base_missing,quota,unavailable,write,browser_offline,unreachable,read_only,forbidden,not_found"`
 	// The bytes at risk: the drafts involved, or what the device held unsaved.
 	// 1 GiB is far above the 100 MB source state cap.
 	SizeBytes *int64 `json:"sizeBytes,omitempty" minimum:"0" maximum:"1073741824"`

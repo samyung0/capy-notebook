@@ -1,0 +1,21 @@
+{
+  "office": {
+    "photo.jpg": ["jpeg", 2400, 1600],
+    "photo.png": ["jpeg", 2400, 1200],
+    "alpha.png": ["png", 2400, 1200],
+    "flat.png": ["png", 1200, 800],
+    "tall.png": ["png", 480, 2400],
+    "small.jpg": ["jpeg", 800, 600]
+  },
+  "source": {
+    "photo.jpg": ["jpeg", 2738, 1825],
+    "photo.png": ["png", 2600, 1300],
+    "alpha.png": ["png", 2600, 1300],
+    "small.jpg": ["jpeg", 800, 600],
+    "small.tif": ["jpeg", 800, 600],
+    "photo.tif": ["jpeg", 2738, 1825],
+    "photo.jp2": ["jpeg", 2738, 1825],
+    "photo.heic": ["jpeg", 2738, 1825]
+  },
+  "unreadable": ["corrupt.heic"]
+}

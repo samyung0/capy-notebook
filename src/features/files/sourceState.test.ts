@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 
-import { applySavedSource, savedSourceUpdate } from './sourceState';
+import {
+  applyOwnUpdate,
+  applySavedSource,
+  savedSourceUpdate,
+} from './sourceState';
 
 const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 
@@ -50,5 +54,24 @@ describe('applySavedSource', () => {
     );
     expect(doc.getText('source').toString()).toBe('hello world!');
     expect(applySavedSource(new Y.Doc(), { state: null })).toBe(false);
+  });
+});
+
+describe('applyOwnUpdate', () => {
+  it('keeps the client id the room assigned when an edit under it arrives', () => {
+    // The Office editor's replica writes under the session's id (Q213).
+    const doc = new Y.Doc();
+    const replica = new Y.Doc();
+    replica.clientID = doc.clientID;
+    replica.getText('source').insert(0, 'typed');
+    const origin = Symbol('replica');
+    let local: boolean | undefined;
+    doc.on('update', (_update, from, _doc, transaction) => {
+      if (from === origin) local = transaction.local;
+    });
+    applyOwnUpdate(doc, Y.encodeStateAsUpdate(replica), origin);
+    expect(doc.clientID).toBe(replica.clientID);
+    expect(local).toBe(true);
+    expect(doc.getText('source').toString()).toBe('typed');
   });
 });

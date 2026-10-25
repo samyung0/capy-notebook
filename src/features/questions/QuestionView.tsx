@@ -2,7 +2,10 @@ import type { ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Icon } from '@/components/ui/Icon';
-import { useResolvedAsset } from '@/features/materials/MediaAssetView';
+import {
+  RemovedMedia,
+  useResolvedAsset,
+} from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { TextView } from './TextView';
@@ -98,6 +101,8 @@ function AssetFigure({
   block: ImageBlock | GraphBlock;
 }) {
   const [asset] = useResolvedAsset(assetId);
+  if (asset.status === 'error' && asset.kind === 'removed')
+    return <RemovedMedia className="mx-auto w-fit max-w-full" />;
   return (
     <Figure
       block={block}

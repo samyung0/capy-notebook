@@ -8,6 +8,9 @@
 export interface Region {
   /** @nullable */
   bbox: number[] | null;
+  end_ms?: number;
   page: number;
   space: string;
+  speaker?: number;
+  start_ms?: number;
 }

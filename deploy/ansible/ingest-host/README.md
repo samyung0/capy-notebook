@@ -60,8 +60,8 @@ trigger a restart only if its revision matches `active`, no release is pending,
 and the watchdog acquires the release operation lock. Stopped containers stay
 stopped. The parser's per-document deadline owns stuck-work detection.
 
-After failed or canceled deployment, verify the exact Coolify deployment is
-terminal and identify the live backend SHA before recovery. Unknown provider
+After failed or canceled deployment, verify the app deploy has finished (its
+workflow run is terminal) and identify the live backend SHA before recovery. Unknown provider
 state retains pending evidence and paused consumers. Do not delete pending
 state or restore old ingest while the new backend is running. Promote a
 previous compatible revision through the full workflow for a later rollback.

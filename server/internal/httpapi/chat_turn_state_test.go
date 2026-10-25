@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
@@ -104,5 +105,50 @@ func TestChatTurnEndingWithoutDoneSavesTheTurnSoFar(t *testing.T) {
 
 			checkTurn(t, readTurn(t, st, convID), "error", tc.evidence)
 		})
+	}
+}
+
+// An Office edit the engine cut at a per-call limit (Epo 2026-10-23, Q171):
+// the browser gets its tool_progress and its tool_end's counts, and the row
+// keeps the counts the turn ended with.
+func TestChatRelaysToolProgressAndSavesTheCommandsNotApplied(t *testing.T) {
+	block := `{"id":"c1","kind":"tool","callId":"c1","name":"edit_office_document","outcome":"succeeded","applied":30,"total":32}`
+	frames := []string{
+		`{"type":"tool_start","callId":"c1","name":"edit_office_document","detail":"Budget.xlsx","startedAt":"2026-10-23T00:00:00.000Z"}`,
+		`{"type":"tool_progress","callId":"c1","applied":30,"total":32}`,
+		`{"type":"tool_end","callId":"c1","outcome":"succeeded","endedAt":"2026-10-23T00:00:01.000Z","applied":30,"total":32}`,
+		`{"type":"done","activity":[` + block + `],"toolEvidence":{"tools":[],"passages":[],"skills":[]}}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", frame)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	h, st, _, _ := openInternalHTTPWithPipeline(t, pipeline.New(upstream.URL, ""))
+	convID := newTurnConversation(t, h, st)
+
+	rec := doAsUser(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/chat/stream", "u_editor", map[string]any{"conversationId": convID, "text": "fill the budget"})
+
+	counted := map[string]bool{}
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		var ev struct {
+			Type    string `json:"type"`
+			Applied *int   `json:"applied"`
+			Total   *int   `json:"total"`
+		}
+		if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &ev) == nil &&
+			ev.Applied != nil && ev.Total != nil && *ev.Applied == 30 && *ev.Total == 32 {
+			counted[ev.Type] = true
+		}
+	}
+	if !counted["tool_progress"] || !counted["tool_end"] {
+		t.Fatalf("browser frames with 30 of 32: %v\n%s", counted, rec.Body.String())
+	}
+	saved := readTurn(t, st, convID).Activity
+	if len(saved) != 1 || saved[0].Applied == nil || saved[0].Total == nil ||
+		*saved[0].Applied != 30 || *saved[0].Total != 32 {
+		t.Fatalf("saved activity = %+v, want 30 of 32 applied", saved)
 	}
 }

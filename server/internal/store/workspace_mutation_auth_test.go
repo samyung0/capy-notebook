@@ -99,7 +99,7 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 	if _, err := s.GetConversation(ctx, editorID, conversation.ID); err != nil {
 		t.Fatalf("viewer chat read error = %v", err)
 	}
-	if _, err := s.AddUserMessage(ctx, editorID, conversation.ID, "still here"); err != nil {
+	if _, err := s.AddUserMessage(ctx, editorID, conversation.ID, "still here", false); err != nil {
 		t.Fatalf("viewer chat write error = %v", err)
 	}
 	// Threads are private per user even inside one workspace.
@@ -128,7 +128,7 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 	if _, err := s.GetConversation(ctx, visitorID, visitorConv.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoked visitor chat read error = %v, want not found", err)
 	}
-	if _, err := s.AddUserMessage(ctx, visitorID, visitorConv.ID, "late"); !errors.Is(err, ErrNotFound) {
+	if _, err := s.AddUserMessage(ctx, visitorID, visitorConv.ID, "late", false); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoked visitor chat write error = %v, want not found", err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET deletion_requested_at=now(),

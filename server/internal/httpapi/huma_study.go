@@ -199,6 +199,27 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) 
 	if err != nil {
 		return nil, storedContentError(ctx, "", err)
 	}
+	return a.reviewOutput(ctx, res)
+}
+
+// reviewOutput is a session to study: answer keys hidden (learnerSession) and
+// the images of the items still to answer that no longer exist named: deleted
+// by their uploader, or with the uploader's account (M16). Answered items are
+// graded copies, whose missing images keep the plain empty box (Q270).
+func (a *api) reviewOutput(ctx context.Context, res store.ReviewSession) (*reviewOutput, error) {
+	var ids []string
+	for _, it := range res.Items {
+		if it.Image != nil {
+			ids = append(ids, it.Image.AssetID)
+		}
+		if it.Question != nil {
+			ids = append(ids, questions.AssetIDs(it.Question)...)
+		}
+	}
+	var err error
+	if res.RemovedAssetIDs, err = a.s.MissingEditorAssetIDs(ctx, ids); err != nil {
+		return nil, hErr(err)
+	}
 	return &reviewOutput{Body: learnerSession(res)}, nil
 }
 
@@ -225,7 +246,7 @@ func (a *api) resumeReviewSession(ctx context.Context, in *reviewSessionIDInput)
 	if err != nil {
 		return nil, storedContentError(ctx, "", err)
 	}
-	return &reviewOutput{Body: learnerSession(res)}, nil
+	return a.reviewOutput(ctx, res)
 }
 
 func (a *api) getReviewResult(ctx context.Context, in *reviewSessionIDInput) (*reviewResultOutput, error) {

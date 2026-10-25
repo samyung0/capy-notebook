@@ -38,6 +38,14 @@ describe('list search', () => {
     expect(parseFilesSearch({ sort: 'name', tab: 'trash' })).toEqual({
       tab: 'trash',
     });
+    // Embeds keeps only its access filter, and only a known one.
+    expect(
+      parseFilesSearch({ access: 'lost', kind: 'pdf', tab: 'embeds' })
+    ).toEqual({ access: 'lost', tab: 'embeds' });
+    expect(parseFilesSearch({ access: 'all', tab: 'embeds' })).toEqual({
+      access: undefined,
+      tab: 'embeds',
+    });
     // The router parses number-like values; a tag can be one.
     expect(parseWorkspacesSearch({ tag: 2024 })).toEqual({ tag: '2024' });
   });

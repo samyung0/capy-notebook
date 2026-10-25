@@ -186,6 +186,72 @@ test('the image jobs name no secret and pass only allow-listed build arguments',
   }
 });
 
+// The app host's SSH key and pinned host key sit only on the step that writes
+// them, and the Access service token only on the step that connects; each of
+// the two deploy jobs has both steps (security regression: the deploy key
+// works only through Access, each step holds its own secrets).
+const APP_HOST_STEP =
+  /^scripts\/deploy\/app-host-release\.sh (configure|deploy)\b/;
+const APP_HOST_SECRETS = {
+  configure: ['APP_HOST_KNOWN_HOSTS', 'APP_HOST_SSH_PRIVATE_KEY'],
+  deploy: ['APP_HOST_ACCESS_CLIENT_ID', 'APP_HOST_ACCESS_CLIENT_SECRET'],
+};
+
+test('the app host SSH secrets sit only on their own SSH step', () => {
+  let found = 0;
+  for (const [where, step] of steps) {
+    const named = [
+      ...JSON.stringify(step.env ?? {}).matchAll(/\bsecrets\.(\w+)/g),
+    ].map((match) => match[1]);
+    const mode = step.run?.match(APP_HOST_STEP)?.[1];
+    if (mode) {
+      found += 1;
+      assert.deepEqual(named.sort(), APP_HOST_SECRETS[mode], where);
+    } else {
+      assert(!named.some((name) => name.startsWith('APP_HOST_')), where);
+    }
+  }
+  assert.equal(found, 4);
+});
+
+// The host runs a compose file only when it hashes to the anchor image's
+// label, and each image by digest; production runs the digests UAT ran
+// (security regression, review H1/M2).
+const COMPOSE_LABEL =
+  /^org\.capynotebook\.compose\.sha256=\$\{\{ steps\.compose\.outputs\.sha256 \}\}$/m;
+
+test('the deploy images carry their compose hash and production runs the digests UAT ran', () => {
+  for (const [file, name] of IMAGE_JOBS) {
+    const build = parse(read(file)).jobs[name].steps.find((step) =>
+      step.uses?.startsWith('docker/build-push-action@')
+    );
+    assert.match(build.with.labels, COMPOSE_LABEL, file);
+  }
+  const promotion = parse(read('.github/workflows/promote-production.yml'));
+  assert.equal(
+    promotion.jobs.deploy_production.with.image_digests,
+    `${EXPRESSION} needs.restage_uat.outputs.image_digests }}`
+  );
+});
+
+// Deploy Ops checks the revision is on main before its image builds, and the
+// job holding the deploy secrets reads nothing but code and packages
+// (security regression, review L2/L3).
+const ON_MAIN = /git merge-base --is-ancestor "\$revision" origin\/main/;
+
+test('Deploy Ops checks the revision before building and its deploy job reads only code and packages', () => {
+  const { jobs } = parse(read('.github/workflows/deploy-ops.yml'));
+  const resolve = jobs.resolve_revision.steps.find(
+    (step) => step.id === 'resolve'
+  );
+  assert.match(resolve.run, ON_MAIN);
+  assert.equal(jobs.image.needs, 'resolve_revision');
+  assert.deepEqual(jobs.deploy.permissions, {
+    contents: 'read',
+    packages: 'read',
+  });
+});
+
 test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies, on every push and daily', () => {
   const audit = parse(read('.github/workflows/audit.yml'));
   assert.deepEqual(
