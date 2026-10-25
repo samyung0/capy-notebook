@@ -722,12 +722,17 @@ and the page asks the visitor to sign in. There is no per-shared-item cap:
 each signed-out answer check carries a Cloudflare Turnstile token instead (Epo
 2026-10-24, Q243, Q271), since an address-rotating client defeats any per-item
 or per-address count. A shared page runs at most one widget (managed mode, a
-challenge only when Cloudflare asks, shown fixed on screen), rendered at the
-first signed-out check and solved again only when a check asks, never in the
-background (it renders with `refresh-expired: never`, Q350, and
-`refresh-timeout: manual`, so a timed-out interactive challenge waits for the
-visitor); a check stops waiting for its token after 15 s and the API's
-refusal shows the failed-check copy (Epo 2026-10-24, Q309;
+challenge only when Cloudflare asks), rendered at the first signed-out check
+and solved again only when a check asks, never in the background (it renders
+with `refresh-expired: never`, Q350, and `refresh-timeout: manual`, so a
+timed-out interactive challenge waits for the visitor). It sits under the
+Submit of the check that asks, rendering again under another quiz's Submit
+when that one asks, and takes room only while Cloudflare shows a challenge,
+with the hint "Complete the check below to submit." (Epo 2026-10-25, Q372;
+`src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
+15 s, a clock that stops while an interactive challenge shows, so the check
+waits until the challenge is solved or errors; the API's refusal of an empty
+token shows the failed-check copy (Epo 2026-10-24, Q309;
 `src/share/turnstile.ts`, loaded only on a shared quiz or a shared note's
 quiz). The API verifies it with siteverify (5 s timeout) after the share
 token's check and before grading (`checkCaptcha`, `server/internal/httpapi/

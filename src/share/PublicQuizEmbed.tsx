@@ -4,31 +4,36 @@ import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { anonymousId } from '@/lib/localDb';
 import type { PublicEmbedProps } from './publicEmbeds';
 import { sessionNow } from './session';
-import { takeTurnstileToken } from './turnstile';
+import { useTurnstileCheck } from './TurnstileCheck';
 
 /** Grades a check of a quiz embedded in a shared note, recording nothing: a
  * signed-in visitor's under their daily grading parts with no captcha, any
  * other (signed out, or the session not yet settled) with a Turnstile token
- * (Q311). */
+ * from under its Submit (`takeToken`, Q311, Q372). */
 export async function gradeEmbeddedQuiz(
   token: string,
   quizId: string,
-  answers: GradeAnonymousQuizReq['answers']
+  answers: GradeAnonymousQuizReq['answers'],
+  takeToken: () => Promise<string>
 ) {
   if (sessionNow() === true) return checkSharedNoteQuiz(token, quizId, answers);
   return gradeAnonymousNoteQuiz(token, quizId, {
     answers,
     localId: await anonymousId().catch(() => undefined),
-    turnstileToken: await takeTurnstileToken(),
+    turnstileToken: await takeToken(),
   });
 }
 
 /** A quiz embedded in a shared note, graded through the note's link. */
 export function PublicQuizEmbed({ embed, token }: PublicEmbedProps) {
+  const check = useTurnstileCheck();
   return (
     <AttemptBody
+      belowSubmit={check.view}
       embedded
-      grade={(answers) => gradeEmbeddedQuiz(token, embed.id, answers)}
+      grade={(answers) =>
+        gradeEmbeddedQuiz(token, embed.id, answers, check.take)
+      }
       name=""
       provenance={embed.provenance}
       questions={embed.questions ?? []}

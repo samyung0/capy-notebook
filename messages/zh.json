@@ -867,6 +867,7 @@
   "quiz_grade_failed": "评分失败",
   "quiz_captcha_failed": "无法检查你的答案，请重新提交。",
   "quiz_captcha_unavailable": "暂时无法检查答案，请稍后再试。",
+  "quiz_captcha_challenge": "请完成下方的验证后提交。",
   "quiz_grade_failed_body": "评分暂时不可用，请稍后重试。",
   "quiz_level_recall": "记忆",
   "quiz_level_application": "应用",

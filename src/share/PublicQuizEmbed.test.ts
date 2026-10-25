@@ -11,7 +11,6 @@ const { anonymous, session, take } = vi.hoisted(() => ({
 }));
 vi.mock('@/api/anonymous', () => anonymous);
 vi.mock('./session', () => session);
-vi.mock('./turnstile', () => ({ takeTurnstileToken: take }));
 vi.mock('@/lib/localDb', () => ({ anonymousId: async () => 'local-1' }));
 
 const { gradeEmbeddedQuiz } = await import('./PublicQuizEmbed');
@@ -20,7 +19,7 @@ beforeEach(() => vi.clearAllMocks());
 
 it('grades a signed-in visitor through the signed-in check, with no captcha', async () => {
   session.sessionNow.mockReturnValue(true);
-  await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' });
+  await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' }, take);
   expect(anonymous.checkSharedNoteQuiz).toHaveBeenCalledWith(
     'note.tok',
     'qz_1',
@@ -34,7 +33,7 @@ it('takes the captcha route while signed out or not yet settled', async () => {
   for (const state of [false, undefined]) {
     vi.clearAllMocks();
     session.sessionNow.mockReturnValue(state);
-    await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' });
+    await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' }, take);
     expect(anonymous.gradeAnonymousNoteQuiz).toHaveBeenCalledWith(
       'note.tok',
       'qz_1',
