@@ -174,9 +174,10 @@ Loading a config or editing its JSON refreshes the editors from that config.
 
 `capture_page(file_id, page, bbox?)` renders the page or a box on the 0-1000
 page grid (top-left origin, the same space as chunk `regions`). In `pixels` mode
-the image rides in a user message placed after the tool results of that step,
-because chat-completions tool messages carry text only. Captures get a citation
-with the rendered box as its region.
+the capture goes into production's turn state, so production's agent attaches it
+(a user message after that step's tool results), keeps the turn's images within
+the image budget and counts it toward the 16 images per message, as in the app.
+Captures get a citation with the rendered box as its region.
 
 ## Building
 

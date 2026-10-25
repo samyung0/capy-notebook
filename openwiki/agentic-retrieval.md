@@ -4001,8 +4001,8 @@ the provider's cached prefix holds. A dropped image leaves
 `ToolContext.pending_images`, and its encoded part (Q299) is freed once the next
 request is built, since the request before it holds the image until then.
 Nothing takes its place: no note or hint, and its tool result keeps the ordinary
-text it always had, so the cached prefix stays the same (Epo 2026-10-25, Q370).
-The agent captures the page again, or reads it another way, when it needs it.
+text it always had (Epo 2026-10-25, Q370). The agent reads the page another
+way, or captures it again while under the 16 below, when it needs it.
 A dropped image still counts toward the 16 below, and a deck slide asking
 for a dropped capture finds it no longer available.
 A user message attaches 16 images, `capture_page`,
