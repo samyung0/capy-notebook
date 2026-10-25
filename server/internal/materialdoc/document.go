@@ -636,6 +636,11 @@ func validateNode(node map[string]any, depth int, live bool) error {
 		if _, hasChildren := node["children"]; hasChildren {
 			return errors.New("text leaf cannot contain children")
 		}
+		for _, key := range styleMarks {
+			if err := validateStyleValue(node, key); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	typ, ok := node["type"].(string)
@@ -669,6 +674,9 @@ func validateNode(node map[string]any, depth int, live bool) error {
 		if indent > embeds.ListIndentMax {
 			return fmt.Errorf("indent is over %d levels", embeds.ListIndentMax)
 		}
+	}
+	if err := validateStyleValue(node, "listStyleType"); err != nil {
+		return err
 	}
 	element, known := elements[typ]
 	if !known {
@@ -902,6 +910,28 @@ func validateTableSizes(node map[string]any) error {
 func tableSize(value any) bool {
 	size, ok := number(value)
 	return ok && !math.IsInf(size, 0) && !math.IsNaN(size) && size >= 0
+}
+
+// styleMarks are the text marks Plate draws straight into a style.
+var styleMarks = []string{"color", "backgroundColor", "fontSize", "fontFamily"}
+
+// validateStyleValue: a text mark's or a list's style value is a string with
+// no ";" and no control character (Epo Q380), as it goes into a style as
+// written; any other value a browser writes stays accepted. Mirrors
+// isStyleValue in the browser's document check.
+func validateStyleValue(node map[string]any, key string) error {
+	raw := node[key]
+	if raw == nil {
+		return nil
+	}
+	if value, ok := raw.(string); ok && !strings.ContainsFunc(value, styleBreak) {
+		return nil
+	}
+	return fmt.Errorf("%s may hold no semicolon or control character", key)
+}
+
+func styleBreak(r rune) bool {
+	return r == ';' || r < 0x20 || r == 0x7f
 }
 
 func validateQuiz(node map[string]any) error {

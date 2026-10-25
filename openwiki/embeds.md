@@ -74,7 +74,8 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   conflict order: checked on a copy of the room, as media are); a value the
   store refuses (a reference's `refKind`, a video's provider and id, a
   width, a table's `colSizes` and `marginLeft`, an indent that is not a
-  number, an interactive block's html size and caption, a figure's `block`, a
+  number, a `listStyleType` holding `;` or a control character (a text mark
+  holding one is refused as `MARK_VALUE`, Epo Q380), an interactive block's html size and caption, a figure's `block`, a
   Mermaid source, past `MERMAID_SOURCE_MAX` too); an eleventh interactive block (counted on the copy when
   an update makes one); or an element left without a key it requires
   (`OWN_KEYS`: the catalog's `required`, less the top-level `id` every block

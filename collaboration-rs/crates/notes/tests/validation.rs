@@ -31,8 +31,9 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// list, an element in a material kind it does not list it for, and Go's
 /// wording for figures; `multi`, merged into `mcq` (Epo 2026-10-15); a
 /// void element holding anything but one empty text leaf (Epo 2026-10-18);
-/// a column width the editor never writes (2026-10-25); and an indent that
-/// is not a number (2026-10-26).
+/// a column width the editor never writes (2026-10-25); an indent that is
+/// not a number (2026-10-26); and a style value holding `;` or a control
+/// character (Epo Q380).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -69,6 +70,7 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.ends_with("holds one empty text leaf")
         || message.starts_with("column width must be")
         || message == "indent must be a number"
+        || message.ends_with("may hold no semicolon or control character")
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()
@@ -361,6 +363,63 @@ fn text_marks_stay_on_text() {
             note(json!({ "type": "p", "id": "p", key: value, "children": [{ "text": "a" }] }))
                 .unwrap_err();
         assert_eq!(refused.0, format!("p cannot carry {key}"));
+    }
+}
+
+/// A text mark's or a list's style value holds any value a browser writes but
+/// no `;` and no control character (Epo Q380; Go's
+/// `TestStyleValuesHoldNoSemicolon`).
+#[test]
+fn style_values_hold_no_semicolon() {
+    let note = |node: Value| material::assert_canonical_with(&[node], "note", &Policy::default());
+    let leaf = |key: &str, value: Value| {
+        let mut text = json!({ "text": "a" });
+        text[key] = value;
+        json!({ "type": "p", "id": "p", "children": [text] })
+    };
+    let list = |value: Value| json!({ "type": "p", "id": "p", "indent": 1, "listStyleType": value, "children": [{ "text": "a" }] });
+    for (key, value) in [
+        ("backgroundColor", "color-mix(in srgb, red 50%, blue)"),
+        ("color", "var(--accent)"),
+        ("fontFamily", "\"Times New Roman\", serif"),
+        ("fontSize", "1.2em"),
+    ] {
+        note(leaf(key, json!(value))).unwrap_or_else(|e| panic!("{key}: {e}"));
+        note(leaf(key, Value::Null)).unwrap_or_else(|e| panic!("{key}: {e}"));
+        for bad in [
+            json!(format!("{value};x:y")),
+            json!(format!("{value}\u{0}")),
+            json!(format!("{value}\n")),
+            json!(format!("{value}\u{7f}")),
+            json!(["red"]),
+        ] {
+            let refused = note(leaf(key, bad.clone())).unwrap_err();
+            assert_eq!(
+                refused.0,
+                format!("{key} may hold no semicolon or control character"),
+                "{bad}"
+            );
+        }
+    }
+    for value in [
+        json!("decimal"),
+        json!("lower-alpha"),
+        json!("\"▪ \""),
+        Value::Null,
+    ] {
+        note(list(value.clone())).unwrap_or_else(|e| panic!("{value}: {e}"));
+    }
+    for bad in [
+        json!("decimal;x:y"),
+        json!("decimal\u{1f}"),
+        json!("decimal\u{7f}"),
+        json!(3),
+    ] {
+        let refused = note(list(bad.clone())).unwrap_err();
+        assert_eq!(
+            refused.0, "listStyleType may hold no semicolon or control character",
+            "{bad}"
+        );
     }
 }
 
