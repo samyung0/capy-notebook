@@ -1465,12 +1465,15 @@ def with_repairs(result: ToolResult, found: questions.Check) -> ToolResult:
 
 # ------------------------------------------------------------ note figures
 
-# A library figure placed in note markdown. The note stores the rendered
-# figure as its own image (Go agent_figures.go); the import keeps the
-# reference until then (src/features/notes/markdownConvert.ts).
+# A library figure placed in note markdown, its title the size. The note
+# stores the rendered figure as its own image (Go agent_figures.go); the
+# import keeps the reference until then and sizes it
+# (src/features/notes/markdownConvert.ts).
 FIGURE_IMAGE = re.compile(
-    r"!\[((?:[^\]\\]|\\.)*)\]\(\s*<?figure:([\w-]+)>?(?:\s+\"[^\"]*\")?\s*\)"
+    r"!\[((?:[^\]\\]|\\.)*)\]\(\s*<?figure:([\w-]+)>?(?:\s+\"([^\"]*)\")?\s*\)"
 )
+# A figure's size; none or empty is normal (Epo 2026-10-25).
+FIGURE_SIZES = ("small", "normal")
 # Any other image, which the import turns into a link to its URL.
 OTHER_IMAGE = re.compile(r"!\[(?:[^\]\\]|\\.)*\]\(\s*<?(?!figure:)[^)\s]")
 
@@ -1558,6 +1561,18 @@ async def note_figures(
     )
     if not refs:
         return NoteFigures(markdown=markdown, links=links)
+    sizes = {
+        m.group(3).strip()
+        for text in markdown
+        for m in FIGURE_IMAGE.finditer(text)
+        if m.group(3) and m.group(3).strip() not in FIGURE_SIZES
+    }
+    if sizes:
+        return _refused(
+            'Not applied: a figure\'s size is "small" or "normal", not '
+            + ", ".join(f'"{size}"' for size in sorted(sizes))
+            + "."
+        )
     checked = await library_figures(ctx, refs)
     if isinstance(checked, ToolResult):
         return checked
@@ -1565,7 +1580,11 @@ async def note_figures(
 
     def caption(match: re.Match[str]) -> str:
         figure = found[match.group(2)]
-        return f"![{_figure_caption(match.group(1), figure)}](figure:{figure.id})"
+        size = (match.group(3) or "").strip()
+        title = f' "{size}"' if size else ""
+        return (
+            f"![{_figure_caption(match.group(1), figure)}](figure:{figure.id}{title})"
+        )
 
     return NoteFigures(
         markdown=[FIGURE_IMAGE.sub(caption, text) for text in markdown],

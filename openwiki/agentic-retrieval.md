@@ -3856,7 +3856,12 @@ materials are sources.
   the provenance (and the note footer) exactly as a named excerpt does, and
   its caption becomes the model's text (else the printed label) followed by
   the printed credit in brackets (`(credit)`; a figure with no printed credit
-  shows none, its book still credited in the footer). After the write guard
+  shows none, its book still credited in the footer). A figure's size is
+  its image title, `![caption](figure:<id> "small")` (Epo 2026-10-25): no
+  title, an empty one or `"normal"` keeps the full image width, `"small"`
+  gives the image node `width: "50%"` at import (`agentImages` in
+  `markdownConvert.ts`), and the pipeline keeps the title through the caption
+  rewrite and refuses any other size before rendering. After the write guard
   passes, each figure's bbox is rendered as `capture_knowledge_page` renders it
   (`capture.render_knowledge`, JPEG q80, long edge `CAPY_CAPTURE_MAX_EDGE`),
   deterministic and CPU only, with no cache, and sent beside the write as

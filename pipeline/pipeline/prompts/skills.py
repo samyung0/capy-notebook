@@ -106,7 +106,7 @@ _BUILDING_LIBRARY = """
 
 Practice from the library (Workspace only off):
 - Use one primary excerpt per section, and keep one book's notation unless another fills a gap you can name.
-- To show a figure read_knowledge listed this turn, put `![caption](figure:<figure id>)` on its own line in a note: the note stores the picture with its printed credit and credits its book. Any other image URL becomes a plain link.
+- To show a figure read_knowledge listed this turn, put `![caption](figure:<figure id>)` on its own line in a note, or `![caption](figure:<figure id> "small")` for a half-width one: the note stores the picture with its printed credit and credits its book. Any other image URL becomes a plain link.
 - Reuse library exercises and worked examples before writing new questions. Keep a worked example's question, givens, model and solution together, and never splice numbers from different examples. Label adapted or new practice as such; call it a source exercise only when the source asks it."""
 
 
