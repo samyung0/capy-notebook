@@ -2924,7 +2924,14 @@ px as Plate's table resizing writes them, finite numbers of 0 or more
 its class and margin only for one (`INDENT_NODE_PROPS`). The text marks Plate
 draws as styles (`color`, `backgroundColor`, `fontSize`, `fontFamily`) live
 on text: the embed catalog forbids them on every element and both kits
-inject them on leaves only (`inject.isLeaf`). Media blocks draw only a width
+inject them on leaves only (`inject.isLeaf`). On text, and as a list's
+`listStyleType`, each holds any string a browser writes (`var()`,
+`color-mix()`, non-px sizes, quoted font names, custom list markers) but no
+`;` and no control character (Epo Q380, `isStyleValue`, Go's
+`validateStyleValue`, the notes crate's `style_value`): the document check,
+Go, the store and room admission (`MARK_VALUE` for a mark, `BAD_VALUE` for a
+list style) refuse one, and both kits draw none (`STYLE_MARK_NODE_PROPS`, the
+ordered list's `list-style-type`). Media blocks draw only a width
 `mediaWidth` takes. `src/features/notes/refusedValues.test.tsx` holds that the
 editor itself draws none of these refused values, so a crafted paste styles
 nothing even before the room refuses it.
