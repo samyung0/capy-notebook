@@ -190,7 +190,8 @@ export function ItemCard({
       <div
         className={cn(
           'relative flex flex-col gap-1 border-divider border-b py-3 text-sm hover:bg-surface-hover-bg md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
-          selected && 'bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
+          selected &&
+            'bg-tint-accent-1/60 frosted:bg-solid-accent-1/25 frosted:hover:bg-solid-accent-1/25 hover:bg-tint-accent-1/60'
         )}
         data-item
       >
@@ -229,7 +230,8 @@ export function ItemCard({
     <Card
       className={cn(
         '@container group/card relative gap-0 p-1.5 hover:bg-item-hover',
-        selected && 'bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
+        selected &&
+          'bg-tint-accent-1/60 frosted:bg-solid-accent-1/25 frosted:hover:bg-solid-accent-1/25 hover:bg-tint-accent-1/60'
       )}
       data-item
       radius="button"
@@ -379,7 +381,9 @@ export function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'grid w-full grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
+        // Cards stay at least 200px wide, so phones show one column; min() keeps
+        // a grid narrower than that from overflowing.
+        'grid w-full grid-cols-[repeat(auto-fill,minmax(min(200px,100%),1fr))] gap-4 xl:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
         className
       )}
       {...rest}

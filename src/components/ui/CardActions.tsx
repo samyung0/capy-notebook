@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn';
  * the card's hover (`group/card`), focus or while its menu is open; below
  * them and on touch screens it always shows, since there may be no mouse to
  * hover with. A frosted backing keeps it apart from what lies under it:
- * the card's colour at 60% over a blur, as the frosted sidebar's fill, so a
+ * the card's colour at 60% over a heavy (24px) blur, so a
  * dark thumbnail darkens it instead of a white tile sitting on top; light
  * grey on its own hover; `ink` tints both for a
  * cover. `backing="revealed"` keeps the backing to when it shows on hover,
@@ -34,8 +34,8 @@ export function CardActions({
         // it snaps to the blurred thumbnail when the fade ends.
         'absolute z-10 lg:[&_button]:opacity-0 lg:pointer-coarse:[&_button]:opacity-100 lg:has-data-[state=open]:[&_button]:opacity-100 lg:group-hover/card:[&_button]:opacity-100 lg:focus-within:[&_button]:opacity-100',
         always
-          ? '[&_button]:backdrop-blur-md'
-          : 'lg:pointer-fine:[&_button]:backdrop-blur-md',
+          ? '[&_button]:backdrop-blur-xl'
+          : 'lg:pointer-fine:[&_button]:backdrop-blur-xl',
         !ink &&
           (always
             ? '[&_button]:bg-surface/60 [&_button]:hover:bg-surface-hover-bg'
