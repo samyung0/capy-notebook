@@ -569,7 +569,7 @@ named provider directly. These exact routing exceptions are allowed:
   Flash (`minimax/minimax-m3.1-flash`, a chat choice since 2026-10-24, Q224,
   migration `0112_chat_sources.sql`), which sends the chat pin's effort
   (`low`, `mid` as `medium`, `high`; `MINIMAX_EFFORTS`) at temperature 0.2 and
-  goes to Together alone. Every OpenRouter
+  goes to Together, then Wafer (Epo 2026-10-25). Every OpenRouter
   model, GLM included, takes its provider list from `OPENROUTER_ROUTING` in
   `pipeline/elitellm/client.py`: an
   ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
@@ -774,7 +774,7 @@ where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400, OpenRouter
 DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
 decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
 price, its first route, decision 2026-10-21), MiniMax 3.1 Flash 300 / 30 /
-1200 (Together's list price, its only route, 2026-10-24), embedding 40,
+1200 (Together's list price, which Wafer matches, 2026-10-24), embedding 40,
 reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
@@ -1807,7 +1807,7 @@ keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
 rows: DeepSeek Flash 2500/1500, GLM 150/125 (still keyed `zai/glm-5.3-flash`),
 OpenRouter DeepSeek V4 Flash 0731 32/0 and V4.1 Flash 1017 64/0 (ingest-only,
 so no interactive reserve; page reads lease the `vlm_page` gate instead),
-MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together held 16
+MiniMax 3.1 Flash 16/15 (chat only, so all but one call reserved for it; Together and Wafer each held 16
 calls at once in the 2026-10-23 probe), Qwen
 embedding 200/80 (total/interactive reserve). Existing settings remain, so an
 environment that already has rows changes them in Ops.
