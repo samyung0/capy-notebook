@@ -12,6 +12,10 @@ export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';
  * Any other refusal is retried with a fresh token (roomConnection.ts). */
 export const COLLABORATION_NOT_FOUND_REASON = 'collaboration-not-found';
 export const COLLABORATION_FORBIDDEN_REASON = 'collaboration-forbidden';
+/** Refusal reason for a JOIN naming a client id the room holds for no user
+ * (never assigned, or a bound document's id cleared; Epo 2026-10-24): no
+ * retry joins, so the editor does not retry. */
+export const COLLABORATION_UNASSIGNED_ID_REASON = 'collaboration-unassigned-id';
 /** Refusal reason for a client protocol its room family no longer (or not
  * yet) accepts: the editor stops and asks for a reload (the version gate). */
 export const COLLABORATION_OUTDATED_REASON = 'collaboration-outdated';
@@ -48,10 +52,11 @@ export type CollaborationEvent =
       metrics: MaterialDocumentStats | null;
       type: 'checkpoint-persisted';
     }
-  /** The room refused this editor's state for good (a limit, or an invalid
-   * document): the editor reloads the last saved version. */
+  /** The room refused this editor's state for good (a limit, an invalid
+   * document, or edits under a client id it did not assign, `unassigned`):
+   * the editor reloads the last saved version. */
   | {
-      code: MaterialLimitCode | 'invalid_document';
+      code: MaterialLimitCode | 'invalid_document' | 'unassigned';
       materialId: string;
       metrics: MaterialDocumentStats | null;
       room: string;
@@ -137,12 +142,16 @@ export function parseCollaborationEvent(
       if (
         !materialId ||
         typeof code !== 'string' ||
-        !(LIMIT_CODES.has(code) || code === 'invalid_document')
+        !(
+          LIMIT_CODES.has(code) ||
+          code === 'invalid_document' ||
+          code === 'unassigned'
+        )
       ) {
         return null;
       }
       return {
-        code: code as MaterialLimitCode | 'invalid_document',
+        code: code as MaterialLimitCode | 'invalid_document' | 'unassigned',
         materialId,
         metrics: readStats(raw.metrics),
         room: typeof raw.room === 'string' ? raw.room : '',

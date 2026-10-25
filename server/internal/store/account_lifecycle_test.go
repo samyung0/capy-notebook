@@ -1041,6 +1041,17 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// A Yjs client id the leaver was assigned in the host's note (Q226).
+	if _, err := s.pool.Exec(ctx, `INSERT INTO material_yjs_documents
+		(material_id, state, stored_version, projected_version) VALUES ($1,'\x00',1,1)`,
+		hostMaterial.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO material_yjs_client_ids
+		(material_id, document, client_id, user_id) VALUES ($1,'content',4242,$2)`,
+		hostMaterial.ID, leaverID); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := s.RequestAccountDeletion(ctx, leaverID, true); err != nil {
 		t.Fatal(err)
@@ -1073,6 +1084,7 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 		{name: "invite", query: `SELECT count(*) FROM workspace_invites WHERE id=$1`, args: []any{inviteID}},
 		{name: "mail", query: `SELECT count(*) FROM email_outbox WHERE id=$1`, args: []any{mailID}},
 		{name: "edit incidents", query: `SELECT count(*) FROM edit_incidents WHERE user_id=$1`, args: []any{leaverID}},
+		{name: "client ids", query: `SELECT count(*) FROM material_yjs_client_ids WHERE user_id=$1`, args: []any{leaverID}},
 		{name: "host workspace", query: `SELECT count(*) FROM workspaces WHERE id=$1`, args: []any{hostWorkspace.ID}, want: 1},
 		{name: "leaver material", query: `SELECT count(*) FROM materials WHERE id=$1`, args: []any{material.ID}},
 		{name: "host material", query: `SELECT count(*) FROM materials WHERE id=$1`, args: []any{hostMaterial.ID}, want: 1},

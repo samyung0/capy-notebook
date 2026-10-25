@@ -1371,7 +1371,7 @@ export const ReportEditIncidentBody = zod.object({
   "fileId": zod.string().min(1).max(reportEditIncidentBodyFileIdMax).regex(reportEditIncidentBodyFileIdRegExp).describe('The note (material) or source file'),
   "fileKind": zod.enum(['material', 'source_file']),
   "kind": zod.enum(['other_epoch_draft', 'draft_unrestorable', 'draft_storage_failed', 'unconfirmed_edit', 'offline_episode', 'discard_unsaved']),
-  "reason": zod.enum(['reopen', 'epoch_changed', 'paused', 'base_missing', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found']).optional(),
+  "reason": zod.enum(['reopen', 'held', 'epoch_changed', 'paused', 'base_missing', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found']).optional(),
   "sizeBytes": zod.int().min(reportEditIncidentBodySizeBytesMin).max(reportEditIncidentBodySizeBytesMax).optional()
 })
 
@@ -2250,6 +2250,14 @@ export const CloneFileResponse = zod.object({
  */
 export const CreateSourceCollaborationTokenParams = zod.object({
   "id": zod.string()
+})
+
+export const createSourceCollaborationTokenBodyPreviousTokenMax = 8192;
+
+
+
+export const CreateSourceCollaborationTokenBody = zod.object({
+  "previousToken": zod.string().max(createSourceCollaborationTokenBodyPreviousTokenMax).optional()
 })
 
 export const CreateSourceCollaborationTokenResponse = zod.object({
@@ -3455,9 +3463,14 @@ export const CreateMaterialCollaborationTokenParams = zod.object({
   "id": zod.string()
 })
 
+export const createMaterialCollaborationTokenBodyPreviousTokenMax = 8192;
+
+
+
 export const CreateMaterialCollaborationTokenBody = zod.object({
   "access": zod.enum(['read']).optional(),
-  "document": zod.enum(['content', 'keys']).optional()
+  "document": zod.enum(['content', 'keys']).optional(),
+  "previousToken": zod.string().max(createMaterialCollaborationTokenBodyPreviousTokenMax).optional()
 })
 
 export const CreateMaterialCollaborationTokenResponse = zod.object({

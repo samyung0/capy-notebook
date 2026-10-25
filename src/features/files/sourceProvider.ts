@@ -28,9 +28,13 @@ export interface SourceProvider {
   sendStateless(payload: string): void;
   /** The shared socket: still 'connected' when the server closed only this room. */
   socketStatus?: string;
+  /** A DOCX session's id for its editor's layout worker (Q219). */
+  workerClientId?: number;
 }
 
 export interface SourceProviderConfig {
+  /** What a JOIN waits for first (`RoomProvider`, Q327). */
+  beforeJoin?: () => Promise<void> | undefined;
   document: Y.Doc;
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;
@@ -44,7 +48,10 @@ export interface SourceProviderConfig {
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;
-  token: () => Promise<string>;
+  /** A room token; `previous` asks for its client ids again (Q236). */
+  token: (previous?: string) => Promise<string>;
+  /** Stored drafts not yet covered by a receipt (`RoomProvider`). */
+  unsent?: () => boolean;
   url: string;
 }
 

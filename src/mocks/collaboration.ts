@@ -674,6 +674,8 @@ export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
 }
 
 interface MockCollaborationOptions {
+  /** As the room provider's: no JOIN until it settles (Q360). */
+  beforeJoin?: () => Promise<void> | undefined;
   initialValue: MaterialValue;
   materialId: string;
   name: string;
@@ -691,7 +693,11 @@ let buildRefused = false;
 class MockCollaborationProvider implements UnifiedProvider {
   readonly awareness: UnifiedProvider['awareness'];
   readonly document: Y.Doc;
+  // The room channel the editor reaches through the wrapper, as the capy
+  // provider's (a held draft send closes and reopens it, Q327).
   readonly provider = {
+    connect: () => this.connect(),
+    disconnect: () => this.disconnect(),
     sendStateless: (payload: string) => this.handleStateless(payload),
   };
   readonly type = 'mock';
@@ -707,6 +713,8 @@ class MockCollaborationProvider implements UnifiedProvider {
   private leave?: () => void;
   // Connected unless disconnected on purpose: a lost service reconnects.
   private wanted = false;
+  // The page's beforeJoin holding the JOIN (a held draft send, Q360).
+  private waiting: Promise<void> | null = null;
   private readonly onReachability = () => {
     if (!reachable()) this.drop();
     else if (this.wanted) this.connect();
@@ -738,7 +746,20 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   connect = () => {
     this.wanted = true;
-    if (this.isConnected || !reachable()) return;
+    if (this.isConnected || this.waiting) return;
+    // As the room provider: the JOIN waits until it settles, and a connect
+    // meanwhile asks nothing more.
+    const before = this.options.beforeJoin?.();
+    if (before) {
+      this.waiting = before;
+      void before.then(() => {
+        if (this.waiting !== before) return;
+        this.waiting = null;
+        if (this.wanted) this.connect();
+      });
+      return;
+    }
+    if (!reachable()) return;
     if (buildRefused) {
       this.options.onAuthenticationFailed?.(outdated);
       return;
@@ -783,6 +804,7 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   disconnect = () => {
     this.wanted = false;
+    this.waiting = null;
     this.drop();
   };
 
@@ -875,6 +897,8 @@ class MockCollaborationProvider implements UnifiedProvider {
  * saves without publishing; View reads it through the viewer's session. */
 class MockSourceProvider implements SourceProvider {
   readonly awareness: Awareness;
+  /** A DOCX editor's layout worker id (Q219): the mock room checks none. */
+  readonly workerClientId = crypto.getRandomValues(new Uint32Array(1))[0] || 2;
   // The in-page room applies updates synchronously.
   readonly hasUnsyncedChanges = false;
   isAuthenticated = true;
