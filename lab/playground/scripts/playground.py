@@ -961,6 +961,10 @@ async def deck_locally(
         # unreadable.
         captures, figures, excerpts = {}, {}, {}
         for n, cap in enumerate(state["captures"], 1):
+            if cap.get("call_id") and cap["call_id"] not in ctx.pending_images:
+                # Dropped by the turn's image budget, as production says (Q349).
+                captures[n] = f"capture {n} is no longer available"
+                continue
             if not cap.get("bbox") or list(cap["bbox"]) == production_deck.WHOLE_PAGE:
                 captures[n] = (
                     f"capture {n} is a whole page; capture it again with a bbox "
@@ -1319,7 +1323,6 @@ class Turn:
         self.state: dict[str, Any] = {
             "run_dir": self.run_dir,
             "captures": [],
-            "images": {},
             "calls": [],
             "provider_calls": [],
             "extra": [],
@@ -1673,7 +1676,7 @@ class Turn:
                     counts["tool_results"] += 1
                 else:
                     parts["assistant" if after_query else "history"] += tokens
-            attached = set(state["images"]) | set(ctx.pending_images)
+            attached = set(ctx.pending_images)
             parts["images_est"] = sum(
                 cap.get("est_image_tokens", 0)
                 for cap in state["captures"]
@@ -1693,8 +1696,10 @@ class Turn:
         async def stream(messages, **kw):
             started = time.perf_counter()
             state["last_messages"] = list(messages)
-            request = capture.inject_images(
-                messages, state["images"], spec.provider_slug, c["capture"]["detail"]
+            # Production's agent attached the turn's images, within its image
+            # budget (Q349); only OpenAI's density switch is added here.
+            request = capture.with_detail(
+                messages, spec.provider_slug, c["capture"]["detail"]
             )
             context = context_breakdown(request, kw.get("tools"))
             call = len(state["provider_calls"]) + 1
@@ -1744,7 +1749,7 @@ class Turn:
                     "cached_read_tokens": usage.cached_read_tokens,
                     "reasoning_tokens": usage.reasoning_tokens,
                     "tool_calls": [call.name for call in assembled.tool_calls],
-                    "images_attached": len(state["images"]),
+                    "images_attached": len(ctx.pending_images),
                     "response_format": bool(structured and tools_off(request, kw)),
                     "transport": transport["url"] if transport else "production",
                     "context": context,

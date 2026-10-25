@@ -116,8 +116,13 @@ async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
     assert not result.refused and not result.passages
     # A capture is a read: it passes the page's file changes on (r3 M17).
     assert "leaf relabelled" in result.pending
-    # The model is pointed at the number that already covers the page.
-    assert "already in the evidence as [2]" in result.text()
+    # The model is pointed at the number that already covers the page; the
+    # playground builds the same text through tools._capture_note.
+    assert result.text() == (
+        "Captured bio.pdf page 2 region [0, 0, 500, 500] as capture 1. The rendered "
+        "image is attached to the next message; read it directly. This page is "
+        "already in the evidence as [2]; cite those numbers for what the capture shows."
+    )
     assert len(ctx.citations) == 2
     label, url = ctx.pending_images["c7"]
     assert label == "capture_page result 1: bio.pdf page 2 region [0, 0, 500, 500]"
@@ -163,6 +168,49 @@ async def test_a_message_allows_sixteen_images(monkeypatch, rendered):
     for refused in [*(r for r in results if r.refused), knowledge]:
         assert refused.error_code == "limit_reached"
         assert refused.text() == tools.IMAGE_LIMIT
+
+
+def test_an_image_no_request_carried_is_never_dropped():
+    """(Q349) A drop takes only images an earlier request carried: past the
+    budget, the carried ones go oldest first, and the new ones stay even when
+    they alone are past half the budget (a capture edge raised by config)."""
+    ctx = ToolContext(workspace_id="ws_1")
+    for n, tokens in enumerate([10_000, 10_000, 10_000, 12_000, 12_000], 1):
+        call_id = f"k{n}"
+        ctx.captures.append({"callId": call_id, "estimatedImageTokens": tokens})
+        ctx.pending_images[call_id] = (f"capture_page result {n}", f"url{n}")
+        ctx.budget_images.add(call_id)
+    ctx.images_sent.update({"k1", "k2", "k3"})
+
+    tools.keep_images_within_budget(ctx)
+
+    assert sorted(ctx.pending_images) == ["k4", "k5"]
+
+
+async def test_dropped_captures_still_count_toward_the_sixteen(monkeypatch):
+    """(Q349) The image budget drops old captures from the requests, but each
+    capture still counts toward the 16 per message: the 17th is refused with
+    the limit sentence as before."""
+
+    async def _render_file(*_args):
+        return _jpeg(8, 8), [0.0, 0.0, 1000.0, 1000.0], (1568, 1568)
+
+    monkeypatch.setattr(capture, "render_file", _render_file)
+    ctx = _ctx(2)
+    for n in range(1, 17):
+        result = await tools._capture_page(
+            {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+        )
+        assert not result.refused
+        ctx.images_sent.update(ctx.pending_images)  # a request carried it
+        tools.keep_images_within_budget(ctx)
+    assert len(ctx.pending_images) < 16  # the budget dropped some
+    later = await tools._capture_page(
+        {"file_id": "f_1", "page": 2, "_tool_call_id": "k17"}, ctx
+    )
+    assert later.refused and later.error_code == "limit_reached"
+    assert later.text() == tools.IMAGE_LIMIT
+    assert ctx.images_taken == 16 and "k17" not in ctx.pending_images
 
 
 async def test_source_change_images_share_the_cap(monkeypatch, rendered):
@@ -491,7 +539,52 @@ def test_context_measurement_counts_images_by_pixels_not_base64():
         {"callId": "k1", "estimatedImageTokens": 10},
         {"callId": "k2", "estimatedImageTokens": 5},
     ]
-    assert capture.image_tokens(captures) == 15
+    attached = {"k1": ("capture 1", "u1"), "k2": ("capture 2", "u2")}
+    assert capture.image_tokens(captures, attached) == 15
+
+
+def test_a_request_after_a_drop_counts_only_its_attached_images():
+    """(security regression: rate-limit audit Q238; Q349) A capture the budget
+    dropped is no longer among the images passed in, though the turn's token
+    map still holds it: the images message keeps an estimate of its text and
+    its own images only, the same as measuring it by decoding."""
+    from pipeline.registry import ModelConfig
+    from pipeline.retrieval import accounting, models
+
+    spec = ModelConfig(
+        version=1,
+        provider_name="Z.ai",
+        model_name="GLM",
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        platform_enabled=True,
+        byok_enabled=False,
+        thinking_levels=("low", "high"),
+        default_thinking="high",
+    )
+    messages = [
+        {"role": "assistant", "content": "", "tool_calls": []},
+        {"role": "tool", "tool_call_id": "k1", "content": "Captured page 1."},
+        {"role": "tool", "tool_call_id": "k2", "content": "Captured page 2."},
+    ]
+    images = {"k2": ("capture_page result 2", capture.data_url(_jpeg(560, 280)))}
+    tokens = {
+        "k1": capture.patch_tokens(1568, 1568),
+        "k2": capture.patch_tokens(560, 280),
+    }
+
+    kept = capture.inject_images(messages, images, "zai", tokens)
+    fresh = capture.inject_images(messages, images, "zai")
+
+    assert [part["type"] for part in kept[-1]["content"]] == [
+        "text",
+        "text",
+        "image_url",
+        "text",
+    ]
+    assert accounting.kept_tokens(kept[-1]) is not None
+    measured = models.measure_request_context(fresh, model=spec)
+    assert models.measure_request_context(kept, model=spec) == measured
 
 
 def test_a_folded_capture_stays_attached_after_the_turn_note():

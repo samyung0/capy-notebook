@@ -239,6 +239,10 @@ class ToolContext:
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
     pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # The images the image budget counts (page captures and source-change
+    # images, by call id) and those a request has carried (Q349, Q369).
+    budget_images: set[str] = field(default_factory=set)
+    images_sent: set[str] = field(default_factory=set)
     # Images this message attached: page captures and source-change images.
     images_taken: int = 0
     # search_web calls this message that count toward its cap, failures that
@@ -677,6 +681,17 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
 # source change past the cap fails with its own reason.
 MAX_IMAGES = 16
 IMAGE_LIMIT = "capture_page limit reached, do not call capture_page anymore."
+# A turn's page captures and source-change images stay within this many image
+# tokens, counted with the patch estimate the context accounting uses
+# (capture.patch_tokens; about 15 full 1568 px pages). A new image that takes
+# them past it drops the oldest ones a request has already carried, of either
+# kind, until at most IMAGE_BUDGET_AFTER_DROP remains. A dropped image leaves no
+# note: its tool result keeps its ordinary text (Q370). Drops come in batches,
+# so the requests between them start the same and the provider's cached prefix
+# holds (Epo 2026-10-24, Q349; 35k and both kinds 2026-10-25, Q368, Q369). A
+# dropped image still counts toward MAX_IMAGES.
+IMAGE_BUDGET = 35_000
+IMAGE_BUDGET_AFTER_DROP = IMAGE_BUDGET // 2
 SOURCE_IMAGE_LIMIT = (
     "resolve_source_change: this message's image limit is reached, so the "
     "change's image cannot be attached."
@@ -696,6 +711,27 @@ def _source_image_limit(ctx: ToolContext) -> ToolResult | None:
     if ctx.images_taken >= MAX_IMAGES:
         return _failed(SOURCE_IMAGE_LIMIT, code="limit_reached")
     return None
+
+
+def keep_images_within_budget(ctx: ToolContext) -> None:
+    """Before a model call: past IMAGE_BUDGET, drop the oldest images (page
+    captures and source-change images) a request has carried until
+    IMAGE_BUDGET_AFTER_DROP remains. An image no request has carried yet is
+    never dropped, so the model sees each once."""
+    kept = [
+        record
+        for record in ctx.captures
+        if record["callId"] in ctx.budget_images
+        and record["callId"] in ctx.pending_images
+    ]
+    total = sum(int(record["estimatedImageTokens"]) for record in kept)
+    if total <= IMAGE_BUDGET:
+        return
+    for record in kept:
+        if total <= IMAGE_BUDGET_AFTER_DROP or record["callId"] not in ctx.images_sent:
+            return
+        del ctx.pending_images[record["callId"]]
+        total -= int(record["estimatedImageTokens"])
 
 
 def _imaged(ctx: ToolContext, text: str) -> ToolResult:
@@ -763,15 +799,20 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         f"capture_page result {n}: {label}",
         capture.data_url(jpeg),
     )
-    numbers = "".join(f"[{i}]" for i in existing)
-    result = _imaged(
-        ctx,
-        f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
-        "read it directly. This page is already in the evidence as "
-        f"{numbers}; cite those numbers for what the capture shows.",
-    )
+    ctx.budget_images.add(call_id)
+    result = _imaged(ctx, _capture_note(label, n, existing))
     result.pending = changes
     return result
+
+
+def _capture_note(label: str, n: int, existing: list[int]) -> str:
+    """capture_page's result text; the lab playground builds its captures' with it."""
+    numbers = "".join(f"[{i}]" for i in existing)
+    return (
+        f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
+        "read it directly. This page is already in the evidence as "
+        f"{numbers}; cite those numbers for what the capture shows."
+    )
 
 
 # ------------------------------------------------ knowledge library tools
@@ -1077,6 +1118,7 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         f"capture_knowledge_page result {n}: {label}",
         capture.data_url(jpeg),
     )
+    ctx.budget_images.add(call_id)
     return _imaged(
         ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next "
@@ -1998,6 +2040,7 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         f"resolve_source_change result: change {change_id} of file {file_id}",
         capture.data_url(jpeg),
     )
+    ctx.budget_images.add(call_id)
     ctx.images_taken += 1  # counted, with no limit sentence (Epo 2026-10-22)
     return _result(
         "The pending source image is attached to the next message; read it directly."
