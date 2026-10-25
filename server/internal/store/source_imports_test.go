@@ -305,15 +305,24 @@ func TestSourceImportLeaseAndFailureReleaseReservation(t *testing.T) {
 		t.Fatalf("tokenless fail replaced a live attempt: %v", err)
 	}
 	if _, err := s.PrepareSourceImportUpload(
-		ctx, job.ID, "stale-token", 400,
+		ctx, job.ID, "stale-token", ImportLanded{Size: 400},
 	); !errors.Is(err, ErrImportLeaseLost) {
 		t.Fatalf("stale prepare err=%v", err)
 	}
+	removed := 3
 	prepared, err := s.PrepareSourceImportUpload(
-		ctx, job.ID, claimed.LeaseToken, 400,
+		ctx, job.ID, claimed.LeaseToken, ImportLanded{Size: 400, RemovedPictures: &removed},
 	)
 	if err != nil || prepared.DeclaredSize != 400 {
 		t.Fatalf("prepared=%+v err=%v", prepared, err)
+	}
+	// A completion that only resumes the stored upload names no count and
+	// keeps the first attempt's (review S10).
+	if _, err := s.PrepareSourceImportUpload(ctx, job.ID, claimed.LeaseToken, ImportLanded{Size: 400}); err != nil {
+		t.Fatal(err)
+	}
+	if kept, err := s.GetSourceImportByID(ctx, job.ID); err != nil || kept.RemovedPictures != 3 {
+		t.Fatalf("removed pictures after a resumed completion = %+v, %v", kept, err)
 	}
 	usage, err := s.StorageUsage(ctx, owner)
 	if err != nil || usage.ReservedBytes != 400 {
@@ -388,7 +397,7 @@ func TestSourceImportFinalizeRejectsReplacedAttemptAtomically(t *testing.T) {
 		t.Fatalf("current completion fence err=%v", err)
 	}
 	if _, err := s.PrepareSourceImportUpload(
-		ctx, job.ID, first.LeaseToken, 401,
+		ctx, job.ID, first.LeaseToken, ImportLanded{Size: 401},
 	); !errors.Is(err, ErrImportLeaseLost) {
 		t.Fatalf("stale prepare err=%v", err)
 	}
@@ -419,7 +428,7 @@ func TestSourceImportFinalizeRejectsReplacedAttemptAtomically(t *testing.T) {
 	if err != nil || replay.FileID == nil || *replay.FileID != file.ID {
 		t.Fatalf("fence replay=%+v err=%v", replay, err)
 	}
-	replay, err = s.PrepareSourceImportUpload(ctx, job.ID, second.LeaseToken, 401)
+	replay, err = s.PrepareSourceImportUpload(ctx, job.ID, second.LeaseToken, ImportLanded{Size: 401})
 	if err != nil || replay.FileID == nil || *replay.FileID != file.ID || replay.DeclaredSize != 400 {
 		t.Fatalf("prepare replay=%+v err=%v", replay, err)
 	}

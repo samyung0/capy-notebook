@@ -196,6 +196,13 @@ export function pdf(
   return Buffer.concat(out);
 }
 
+/** The bytes the gateway stored for a file: an Office upload's after the
+ * browser compressed its pictures. */
+export async function storedBytes(run: UatRun, fileId: string) {
+  const stored = await run.blob(string((await fileRow(run, fileId)).blob_path));
+  return Buffer.from(stored.bodyBase64, 'base64');
+}
+
 export async function fileRow(run: UatRun, fileId: string) {
   const rows = await run.query(
     `SELECT id,workspace_id,user_id,name,kind,status,indexed,index_limit,parse_mode,
@@ -289,6 +296,65 @@ export async function openFile(
   );
 }
 
+const MEDIA = /^(word|ppt|xl)\/media\//;
+const sameBytes = (a?: Uint8Array, b?: Uint8Array) =>
+  a !== undefined && b !== undefined && Buffer.from(a).equals(Buffer.from(b));
+
+/** The targets of a relationships part's entries, by id. */
+function relationshipTargets(xml: Uint8Array | undefined) {
+  const out = new Map<string, string>();
+  for (const [element] of strFromU8(xml ?? new Uint8Array()).matchAll(
+    /<Relationship[\s/][^>]*>/g
+  ))
+    out.set(
+      /\sId="([^"]*)"/.exec(element)?.[1] ?? '',
+      /\sTarget="([^"]*)"/.exec(element)?.[1] ?? ''
+    );
+  return out;
+}
+
+/** Asserts a stored Office upload is the picked file with only its pictures
+ * changed (src/lib/officeImages.ts): a non-empty ZIP holding every part
+ * outside word/, ppt/ and xl/media byte-identical, except relationships,
+ * content types, and, where a relationship went, the part it belonged to
+ * (which showed a removed picture) and the part it targeted (a removed
+ * picture's OLE object or thumbnail). */
+export function picturesOnlyChanged(picked: Buffer, stored: Buffer) {
+  assert(stored.length > 0);
+  assert(stored.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 3, 4])));
+  const before = unzipSync(picked);
+  const after = unzipSync(stored);
+  const edited = new Set<string>();
+  for (const [rels, xml] of Object.entries(before)) {
+    if (!rels.endsWith('.rels')) continue;
+    const kept = relationshipTargets(after[rels]);
+    const source = rels.replace(/_rels\/([^/]*)\.rels$/, '$1');
+    const folder = source.slice(0, source.lastIndexOf('/') + 1);
+    for (const [id, target] of relationshipTargets(xml)) {
+      if (kept.has(id)) continue;
+      edited.add(source);
+      const parts: string[] = [];
+      for (const segment of (target.startsWith('/')
+        ? target
+        : folder + target
+      ).split('/'))
+        if (segment === '..') parts.pop();
+        else if (segment && segment !== '.') parts.push(segment);
+      edited.add(parts.join('/'));
+    }
+  }
+  for (const [part, bytes] of Object.entries(before)) {
+    if (
+      MEDIA.test(part) ||
+      part.endsWith('.rels') ||
+      part === '[Content_Types].xml' ||
+      edited.has(part)
+    )
+      continue;
+    assert(sameBytes(bytes, after[part]), `${part} changed in the stored file`);
+  }
+}
+
 /** `uploader` uploads from its browser and pays for the file (uploader pays,
  * Sam 2026-10-18): the run's owner unless another editor of the workspace. */
 export async function upload(
@@ -361,13 +427,22 @@ export async function upload(
   await run.record('upload', uploadId, { workspaceId });
   const row = await fileRow(run, id);
   const key = string(row.blob_path);
-  await run.record('blob', key, {
-    fileId: id,
-    sourceSha256: sha256(bytes),
-  });
+  // In the manifest before it is read, so a failed read cannot leave it out.
+  await run.record('blob', key, { fileId: id });
   const stored = await run.blob(key);
-  assert.equal(stored.sha256, sha256(bytes));
-  assert.equal(stored.size, bytes.length);
+  // The browser compresses an Office file's pictures and removes the ones
+  // nothing can show before sending (Epo 2026-10-24): the stored object is
+  // the reference. Other files arrive as picked.
+  const office = /\.(docx|pptx|xlsx)$/i.test(name);
+  await run.record('blob', key, {
+    sourceSha256: office ? stored.sha256 : sha256(bytes),
+  });
+  if (office)
+    picturesOnlyChanged(bytes, Buffer.from(stored.bodyBase64, 'base64'));
+  else {
+    assert.equal(stored.sha256, sha256(bytes));
+    assert.equal(stored.size, bytes.length);
+  }
   assert.equal(row.user_id, uploader.id);
   if (storeOnly) {
     assert.equal(row.parse_mode, 'none');
@@ -389,7 +464,7 @@ export async function upload(
     [uploader.id]
   );
   assert.equal(Number(storage[0]?.reserved_bytes), 0);
-  assert(Number(storage[0]?.used_bytes) >= bytes.length);
+  assert(Number(storage[0]?.used_bytes) >= stored.size);
   return id;
 }
 

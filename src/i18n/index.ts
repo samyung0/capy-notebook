@@ -12,6 +12,7 @@ export {
   baseLocale,
   getLocale,
   locales,
+  overwriteGetLocale,
   setLocale,
   // @ts-expect-error generated at build time by the Paraglide Vite plugin
 } from '@paraglide/runtime';
