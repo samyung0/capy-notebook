@@ -203,6 +203,26 @@ export function isTableSize(size: unknown): size is number {
 export function isIndent(indent: unknown): indent is number {
   return typeof indent === 'number' && indent <= LIST_INDENT_MAX;
 }
+/** The text marks Plate draws straight into a style. */
+export const STYLE_MARKS = [
+  'color',
+  'backgroundColor',
+  'fontSize',
+  'fontFamily',
+] as const;
+/** A text mark's or a list's style value (Epo Q380): any string a browser
+ * writes (`var()`, `color-mix()`, non-px sizes, quoted font names, custom list
+ * markers) but no `;` and no control character (U+0000-U+001F, U+007F), since
+ * the value goes into a style as written. Go and the collaboration server
+ * refuse any other, and renderers draw none. */
+export function isStyleValue(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0x3b || code < 0x20 || code === 0x7f) return false;
+  }
+  return true;
+}
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -453,11 +473,16 @@ export function isMaterialNode(
   depth = 0,
   live = false
 ): value is MaterialNode {
-  if (isTextNode(value)) return true;
+  if (isTextNode(value))
+    return STYLE_MARKS.every(
+      (key) => value[key] == null || isStyleValue(value[key])
+    );
   if (!isElementNode(value)) return false;
   if (!value.children.every((child) => isMaterialNode(child, depth + 1, live)))
     return false;
   if (value.indent != null && !isIndent(value.indent)) return false;
+  if (value.listStyleType != null && !isStyleValue(value.listStyleType))
+    return false;
   const catalog = ELEMENTS.get(value.type);
   // A stored document holding a type the catalog does not list stays
   // readable; building one to write refuses it (createMaterialDocument).

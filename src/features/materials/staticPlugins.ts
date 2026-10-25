@@ -55,7 +55,9 @@ import { createElement } from 'react';
 import {
   FONT_SIZE_NODE_PROPS,
   INDENT_NODE_PROPS,
+  STYLE_MARK_NODE_PROPS,
 } from '@/features/notes/nodeStyles';
+import { isStyleValue } from './document';
 import { UnsupportedBlockNotice } from './UnsupportedBlock';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
@@ -228,7 +230,9 @@ const StaticListKit: AnyPlugin[] = [
               className: 'relative m-0 ml-6 p-0',
               start: element.listStart,
               style: {
-                listStyleType: element.listStyleType,
+                listStyleType: isStyleValue(element.listStyleType)
+                  ? element.listStyleType
+                  : undefined,
                 marginLeft: element.indent
                   ? `${element.indent * 24}px`
                   : undefined,
@@ -284,12 +288,18 @@ export const StaticMaterialKit: AnyPlugin[] = [
   StaticEquationPlugin,
   BaseMentionPlugin,
   // Text marks: an element carrying one is refused, and none is drawn.
-  BaseFontColorPlugin.configure({ inject: { isLeaf: true } }),
-  BaseFontBackgroundColorPlugin.configure({ inject: { isLeaf: true } }),
+  BaseFontColorPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+  }),
+  BaseFontBackgroundColorPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+  }),
   BaseFontSizePlugin.configure({
     inject: { isLeaf: true, nodeProps: FONT_SIZE_NODE_PROPS },
   }),
-  BaseFontFamilyPlugin.configure({ inject: { isLeaf: true } }),
+  BaseFontFamilyPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+  }),
   BaseTextAlignPlugin.configure({
     inject: {
       nodeProps: {

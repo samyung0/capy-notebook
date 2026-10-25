@@ -23,7 +23,8 @@ function render(value: object[]) {
 describe('values the document check refuses', () => {
   // A crafted paste is in the paster's editor before the room refuses it;
   // the editor draws none of its refused values either (the renderers share
-  // the document check's predicates).
+  // the document check's predicates), a text mark or list style holding `;`
+  // included (Epo Q380), while browser values draw as written.
   it('reach no style or class in the editor (security)', () => {
     const paragraph = (text: string) => ({
       children: [{ text }],
@@ -78,6 +79,42 @@ describe('values the document check refuses', () => {
         indent: 1,
         type: 'p',
       },
+      {
+        children: [
+          {
+            backgroundColor: 'red;zq:1',
+            color: 'red;zq:1',
+            fontFamily: 'Georgia;zq:1',
+            fontSize: '12px;zq:1',
+            text: 'semicolons',
+          },
+        ],
+        type: 'p',
+      },
+      {
+        children: [{ text: 'listed' }],
+        indent: 1,
+        listStyleType: 'decimal;zq:1',
+        type: 'p',
+      },
+      {
+        children: [{ text: 'lettered' }],
+        indent: 1,
+        listStyleType: 'lower-alpha',
+        type: 'p',
+      },
+      {
+        children: [
+          {
+            backgroundColor: 'color-mix(in srgb, red 50%, blue)',
+            color: 'var(--accent)',
+            fontFamily: '"Times New Roman", serif',
+            fontSize: '1.2em',
+            text: 'browser values',
+          },
+        ],
+        type: 'p',
+      },
     ]);
     const attributes = [...html.matchAll(STYLE_OR_CLASS)].map(
       (match) => match[1]
@@ -88,5 +125,10 @@ describe('values the document check refuses', () => {
     expect(html).toContain('slate-indent-1');
     expect(html).toContain('margin-left:24px');
     expect(html).toContain('color:#c0392b');
+    expect(html).toContain('list-style-type:lower-alpha');
+    expect(html).toContain('color:var(--accent)');
+    expect(html).toContain('color-mix(in srgb, red 50%, blue)');
+    expect(html).toContain('font-family:&quot;Times New Roman&quot;, serif');
+    expect(html).toContain('font-size:1.2em');
   });
 });
