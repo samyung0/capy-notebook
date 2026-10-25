@@ -20,6 +20,7 @@ import {
   contentTypes,
   removePictures,
   resolveTarget,
+  rewriteRelationships,
 } from './officeImages';
 
 // The fork's headless engines: a file they seed opens in Capy's editors.
@@ -533,13 +534,13 @@ describe('removePictures', () => {
 // Security regression (review r5 X1): every unclosed opener is scanned once,
 // so a part full of them answers at once; the old tokenizers rescanned to the
 // part's end from each (3 to 7 s per shape here, warm).
-describe('the XML tokenizers', () => {
-  const seconds = (call: () => unknown) => {
-    const started = performance.now();
-    call();
-    return (performance.now() - started) / 1000;
-  };
+const seconds = (call: () => unknown) => {
+  const started = performance.now();
+  call();
+  return (performance.now() - started) / 1000;
+};
 
+describe('the XML tokenizers', () => {
   it('answer at once on unclosed markup, and the picture still goes', () => {
     const picture =
       '<w:document><w:body><w:drawing><a:blip r:embed="rId1"/></w:drawing></w:body></w:document>';
@@ -616,6 +617,59 @@ describe('the XML tokenizers', () => {
       out.split('<Default Extension="jpeg" ContentType="image/jpeg"/>')
     ).toHaveLength(2);
     expect(out.split('<Override')).toHaveLength(20_002);
+  });
+});
+
+describe('one pass per part', () => {
+  const links = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) =>
+        `<Relationship Id="rIdx${i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/${i}" TargetMode="External"/>`
+    ).join('');
+
+  it('removePictures keeps the open elements as it reads, so many references deep in a part answer at once', () => {
+    // 4,000 references under 50,000 open elements: about 6 s, warm, as a
+    // walk down the open elements per reference (review r5 follow-up).
+    const drawing = '<w:drawing><a:blip r:embed="rId1"/></w:drawing>';
+    const deep = (depth: number, refs: number) =>
+      `<w:document>${'<w:p>'.repeat(depth)}${drawing.repeat(refs)}${'</w:p>'.repeat(depth)}`;
+    const ids = new Set(['rId1']);
+    removePictures('word/document.xml', deep(2000, 200), ids);
+    const xml = deep(50_000, 4000);
+    let result: ReturnType<typeof removePictures> | undefined;
+    const took = seconds(() => {
+      result = removePictures('word/document.xml', xml, ids);
+    });
+    expect(took).toBeLessThan(1);
+    expect(result?.count).toBe(4000);
+    expect(result?.xml).not.toContain('w:drawing');
+  });
+
+  it('rewriteRelationships renames 4,000 and removes 2,000 relationships of a 4 MiB part in one pass', () => {
+    // About 6.6 s, warm, as a replace per relationship (review r5 follow-up).
+    const renamed = Array.from({ length: 4000 }, (_, i) =>
+      rel(`rId${i}`, 'image', `media/image${i}.png`)
+    );
+    const removed = Array.from({ length: 2000 }, (_, i) =>
+      rel(`rIdg${i}`, 'image', `media/gone${i}.emf`)
+    );
+    const xml = `<Relationships>${links(18_000)}${removed.join('')}${renamed.join('')}</Relationships>`;
+    expect(xml.length).toBeLessThan(4 * MB);
+    const dead = new Set(Array.from({ length: 2000 }, (_, i) => `rIdg${i}`));
+    const changes = new Map(
+      renamed.map((element) => [element, element.replace('.png', '.jpeg')])
+    );
+    rewriteRelationships(xml.slice(0, 10_000), dead, changes);
+    let out = '';
+    const took = seconds(() => {
+      out = rewriteRelationships(xml, dead, changes);
+    });
+    expect(took).toBeLessThan(1);
+    expect(out).not.toContain('gone');
+    expect(out).not.toContain('.png');
+    expect(out.split('.jpeg')).toHaveLength(4001);
+    expect(out.split('<Relationship ')).toHaveLength(22_001);
   });
 });
 

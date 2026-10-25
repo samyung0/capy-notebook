@@ -548,6 +548,150 @@ def test_content_types_are_rewritten_in_one_pass():
     assert out[0].count("<Override") == 20001
 
 
+def test_remove_pictures_walks_deep_nesting_once():
+    """Security regression (review r5 follow-up): the open elements a
+    reference's container is picked from are kept as the part is read, so
+    2,000 references under 20,000 open elements answer at once (about 7 s
+    as a walk down the open elements per reference)."""
+    drawing = '<w:drawing><a:blip r:embed="rId1"/></w:drawing>'
+    xml = "<w:document>" + "<w:p>" * 20000 + drawing * 2000 + "</w:p>" * 20000
+    result = []
+    seconds = _timed(
+        lambda: result.append(
+            images.remove_pictures("word/document.xml", xml, {"rId1"})
+        )
+    )
+    assert seconds < 1, seconds
+    out, refs, count = result[0]
+    assert (count, refs) == (2000, ["rId1"] * 2000)
+    assert "w:drawing" not in out
+
+
+IMAGE_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+
+
+def _links(count: int) -> str:
+    """External hyperlink relationships, a large part's bulk."""
+    return "".join(
+        f'<Relationship Id="rIdx{i}" Type="http://schemas.openxmlformats.org/'
+        f'officeDocument/2006/relationships/hyperlink" Target="https://example.com/{i}"'
+        ' TargetMode="External"/>'
+        for i in range(count)
+    )
+
+
+def test_relationships_are_rewritten_in_one_pass():
+    """Security regression (review r5 follow-up): 4,000 renamed and 2,000
+    removed relationships in a 4 MiB part are rewritten in one pass (about
+    5 s as a replace per relationship)."""
+    renamed = [
+        f'<Relationship Id="rId{i}" Type="{IMAGE_TYPE}" Target="media/image{i}.png"/>'
+        for i in range(4000)
+    ]
+    removed = [
+        f'<Relationship Id="rIdg{i}" Type="{IMAGE_TYPE}" Target="media/gone{i}.emf"/>'
+        for i in range(2000)
+    ]
+    xml = "<Relationships>" + _links(18000) + "".join(removed + renamed)
+    xml += "</Relationships>"
+    assert len(xml) < images.MAX_RELATIONSHIPS
+    changes = {element: element.replace(".png", ".jpeg") for element in renamed}
+    out = []
+    seconds = _timed(
+        lambda: out.append(
+            images.rewrite_relationships(
+                xml, {f"rIdg{i}" for i in range(2000)}, changes
+            )
+        )
+    )
+    assert seconds < 1, seconds
+    assert "gone" not in out[0] and ".png" not in out[0]
+    assert out[0].count(".jpeg") == 4000
+    assert out[0].count("<Relationship ") == 22000
+
+
+def test_removed_pictures_free_their_parts_in_one_pass():
+    """Security regression (review r5 follow-up): which parts nothing
+    targets any more is worked out once, so 4,000 removed pictures beside a
+    4 MiB relationships part answer at once (about 9 s as a search of every
+    relationship per removed part)."""
+    rels = "".join(
+        f'<Relationship Id="rId{i}" Type="{IMAGE_TYPE}" Target="media/image{i}.png"/>'
+        for i in range(4000)
+    )
+    body = "".join(
+        f'<w:drawing><a:blip r:embed="rId{i}"/></w:drawing>' for i in range(4000)
+    )
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", f"<w:document>{body}</w:document>")
+        archive.writestr(
+            "word/_rels/document.xml.rels",
+            f"<Relationships>{rels}{_links(21000)}</Relationships>",
+        )
+        for i in range(4000):
+            archive.writestr(f"word/media/image{i}.png", b"\x89PNG\r\n\x1a\n")
+    result = []
+    seconds = _timed(
+        lambda: result.append(_compress(out.getvalue(), lambda _data: "unreadable"))
+    )
+    assert seconds < 3, seconds
+    package, removed = result[0]
+    assert removed == 4000
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        assert archive.namelist() == [
+            "word/document.xml",
+            "word/_rels/document.xml.rels",
+        ]
+        assert "rId1" not in archive.read("word/_rels/document.xml.rels").decode()
+
+
+def test_removals_and_repacking_stop_at_the_deadline(monkeypatch):
+    """Q363 (review r5 follow-up): removals run in the thread the job timeout
+    cannot stop too, so the deadline is checked before each part's removals
+    and before repacking; past it the import fails like a late picture."""
+    from types import SimpleNamespace
+
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr(images, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    real = images.remove_pictures
+    removing = []
+
+    def slow_removal(path, xml, ids):
+        removing.append(path)
+        clock.now += 100
+        return real(path, xml, ids)
+
+    monkeypatch.setattr(images, "remove_pictures", slow_removal)
+
+    def package(sources):
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as archive:
+            for source in sources:
+                archive.writestr(
+                    f"word/{source}",
+                    '<w:hdr><w:drawing><a:blip r:embed="rId1"/></w:drawing></w:hdr>',
+                )
+                archive.writestr(
+                    f"word/_rels/{source}.rels",
+                    "<Relationships>"
+                    + _rel("rId1", "image", f"media/{source}.emf")
+                    + "</Relationships>",
+                )
+                archive.writestr(f"word/media/{source}.emf", EMF)
+        return out.getvalue()
+
+    # One part: only the check before repacking sees the time gone.
+    with pytest.raises(images.OutOfTime, match="repacking"):
+        images.compress_office(package(["document.xml"]), _picture, 50)
+    # Two parts: the second part's removals never start.
+    clock.now = 0.0
+    removing.clear()
+    with pytest.raises(images.OutOfTime):
+        images.compress_office(package(["document.xml", "header1.xml"]), _picture, 50)
+    assert removing == ["word/document.xml"]
+
+
 def test_an_svg_outside_the_pictures_goes_uncounted():
     """Review r2 N12, r3 N3: an SVG part no picture relationship names is
     removed, since the checks refuse it, and uncounted like an unreferenced

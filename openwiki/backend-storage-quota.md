@@ -813,8 +813,9 @@ inside the 768 MiB sandbox (Q347, `decode.py` mode `picture`); a picture past
 its limit, or one Pillow cannot decode, is removed and counted like any other.
 The pictures stop at the import job's time limit (`CAPY_IMPORT_JOB_TIMEOUT`,
 10 min, less 30 s for the picture in flight, `IMPORT_PICTURE_MARGIN_S`),
-checked before and after each picture since the job timeout cannot stop the
-thread they run in, so repacking and the upload keep the margin; an import
+checked before and after each picture, before each part's removals and
+before repacking, since the job timeout cannot stop the thread they run in,
+so the upload keeps the margin; an import
 past it fails without a retry (`import_too_slow`, "This file took too long
 to process.", Q363). The worker refuses to start with a timeout within the
 margin. A package whose relationships part declares more than 4 MiB is left
@@ -879,7 +880,11 @@ The compressors' XML tokenizers (`images.py`, `officeImages.ts`) end a tag,
 relationship or extension list at the next `<` and a comment, CDATA or
 declaration at the end of the text, so unclosed markup is scanned once, and
 `[Content_Types].xml` is rewritten in one pass, not a search per part
-(review r5 X1).
+(review r5 X1). The open elements a reference's container is picked from are
+kept as a part is read (each kind's indices, searched by bisection), each
+relationships part is rewritten once for its removals and renames, and the
+parts nothing targets any more are worked out once, not per removed part
+(review r5 follow-up).
 
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |

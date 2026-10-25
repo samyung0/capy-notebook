@@ -21,6 +21,7 @@ in the worker, which imports no decoder, handing each picture to the helper.
 
 from __future__ import annotations
 
+import bisect
 import io
 import math
 import posixpath
@@ -305,43 +306,55 @@ def _containers(path: str) -> list[str] | None:
     return None
 
 
-def _last(stack: list[str], name: str, before: int) -> int:
-    for index in range(before - 1, -1, -1):
-        if stack[index] == name:
-            return index
-    return -1
+# The open elements _pick looks for, by kind ("container" for the part's
+# containers, "ext" for extensions): each kind's stack indices, innermost
+# last, kept as elements open and close, so a reference costs a binary
+# search instead of a walk down the open elements (review r5 follow-up).
+_MARKED = ("w:object", "w:txbxContent", "p:oleObj", "p:graphicFrame", "mc:Fallback")
 
 
-def _pick(names: list[str], stack: list[str]) -> int:
+def _kinds(name: str, names: list[str]) -> list[str]:
+    kinds = [name] if name in _MARKED else []
+    if name in names:
+        kinds.append("container")
+    if name.endswith(":ext"):
+        kinds.append("ext")
+    return kinds
+
+
+def _pick(stack: list[dict], marks: dict[str, list[int]]) -> int:
+    def before(kind: str, at: int) -> int:
+        found = marks[kind]
+        index = bisect.bisect_left(found, at)
+        return found[index - 1] if index else -1
+
+    def name(index: int) -> str:
+        return stack[index]["name"] if index >= 0 else ""
+
+    top = len(stack) - 1
     # An SVG or HD Photo beside a picture's own blip: only the extension
     # holding it goes, and the picture stays.
-    if stack[-1].endswith((":svgBlip", ":imgLayer")):
-        for index in range(len(stack) - 2, -1, -1):
-            if stack[index].endswith(":ext"):
-                return index
-    at = next((i for i in range(len(stack) - 1, -1, -1) if stack[i] in names), -1)
+    if name(top).endswith((":svgBlip", ":imgLayer")):
+        ext = before("ext", top)
+        if ext >= 0:
+            return ext
+    at = marks["container"][-1] if marks["container"] else -1
     if at < 0:
         return -1
-    obj = _last(stack, "w:object", at)
-    if obj >= 0 and "w:txbxContent" not in stack[obj:at]:
+    obj = before("w:object", at)
+    if obj >= 0 and before("w:txbxContent", at) < obj:
         at = obj
-    ole = _last(stack, "p:oleObj", at)
-    if stack[at] != "p:graphicFrame" and ole >= 0:
-        at = _last(stack, "p:graphicFrame", ole)
+    ole = before("p:oleObj", at)
+    if name(at) != "p:graphicFrame" and ole >= 0:
+        at = before("p:graphicFrame", ole)
         if at < 0:
             return -1
-    if (
-        stack[at] == "a:blipFill"
-        and at >= 2
-        and stack[at - 1] == "p:bgPr"
-        and stack[at - 2] == "p:bg"
-    ):
+    if name(at) == "a:blipFill" and name(at - 1) == "p:bgPr" and name(at - 2) == "p:bg":
         at -= 2
     if (
-        stack[at] in ("p:graphicFrame", "oleObject")
-        and at >= 2
-        and stack[at - 2] == "mc:AlternateContent"
-        and stack[at - 1] in ("mc:Choice", "mc:Fallback")
+        name(at) in ("p:graphicFrame", "oleObject")
+        and name(at - 2) == "mc:AlternateContent"
+        and name(at - 1) in ("mc:Choice", "mc:Fallback")
     ):
         at -= 2
     return at
@@ -402,6 +415,24 @@ def content_types(
     return types
 
 
+_TARGET = re.compile(r"(\sTarget\s*=\s*)([\"'])[^\"']*\2")
+
+
+def rewrite_relationships(xml: str, dead: set[str], changes: dict[str, str]) -> str:
+    """A relationships part without the relationships whose Id is in ``dead``
+    and with each element in ``changes`` replaced, in one pass (a replace per
+    relationship grew with their number times the part's size, review r5
+    follow-up)."""
+
+    def rewrite(match: re.Match) -> str:
+        element = match.group(0)
+        if dead and _attribute(element, "Id") in dead:
+            return ""
+        return changes.get(element, element)
+
+    return _RELATIONSHIP.sub(rewrite, xml)
+
+
 def _references(xml: str) -> list[str]:
     return [a if a is not None else b for a, b in _REFERENCE.findall(xml)]
 
@@ -415,7 +446,15 @@ def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str],
     if not names:
         return xml, [], 0
     stack: list[dict] = []
+    marks: dict[str, list[int]] = {kind: [] for kind in (*_MARKED, "container", "ext")}
     spans: list[tuple[int, int, bool]] = []
+
+    def pop() -> dict:
+        opened = stack.pop()
+        for kind in _kinds(opened["name"], names):
+            marks[kind].pop()
+        return opened
+
     for match in _MARKUP.finditer(xml):
         close, name, attrs, self_closing = match.groups()
         if not name:
@@ -423,26 +462,26 @@ def remove_pictures(path: str, xml: str, ids: set[str]) -> tuple[str, list[str],
         start, end = match.span()
         if close:
             if stack:
-                opened = stack.pop()
+                opened = pop()
                 if opened["remove"]:
                     spans.append((opened["start"], end, opened["counted"]))
             continue
         entry = {"counted": False, "name": name, "remove": False, "start": start}
+        for kind in _kinds(name, names):
+            marks[kind].append(len(stack))
         stack.append(entry)
         if any(ref in ids for ref in _references(attrs)):
-            open_names = [opened["name"] for opened in stack]
-            at = _pick(names, open_names)
+            at = _pick(stack, marks)
             if at >= 0:
+                fallback = bisect.bisect_left(marks["mc:Fallback"], at) > 0
                 stack[at]["remove"] = True
                 stack[at]["counted"] = (
                     not path.endswith(".vml")
                     and not stack[at]["name"].endswith(":ext")
-                    and not any(
-                        opened["name"] == "mc:Fallback" for opened in stack[:at]
-                    )
+                    and not fallback
                 )
         if self_closing:
-            stack.pop()
+            pop()
             if entry["remove"]:
                 spans.append((start, end, entry["counted"]))
     if not spans:
@@ -480,8 +519,14 @@ def compress_office(
     Returns None when nothing changed (or a relationships part declares more
     than MAX_RELATIONSHIPS, left to the header check), and how many pictures
     were removed where they show. Raises OutOfTime when a picture would start,
-    or ends, at or past ``deadline`` (a time.monotonic() value), since a job
-    timeout cannot stop the thread this runs in (Q363)."""
+    or ends, at or past ``deadline`` (a time.monotonic() value), or a part's
+    removals or the repacking would start past it, since a job timeout cannot
+    stop the thread this runs in (Q363)."""
+
+    def on_time(what: str) -> None:
+        if time.monotonic() >= deadline:
+            raise OutOfTime(what)
+
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
         infos = archive.infolist()
@@ -515,9 +560,6 @@ def compress_office(
         if path.endswith(".rels")
     }
 
-    def targeted(part: str) -> bool:
-        return any(rel["part"] == part for listed in rels.values() for rel in listed)
-
     pictures = picture_parts(
         list(parts), {path: text(path) for path in parts if path.endswith(".rels")}
     )
@@ -542,13 +584,11 @@ def compress_office(
     for path in sorted(pictures):
         if kinds[path] != "raster":
             continue
-        if time.monotonic() >= deadline:
-            raise OutOfTime(f"pictures still to compress at {path}")
+        on_time(f"pictures still to compress at {path}")
         result = picture(parts[path])
         # And after it, so the last one ending late leaves repacking and the
         # upload their margin (review r4 S1).
-        if time.monotonic() >= deadline:
-            raise OutOfTime(f"{path} finished past the deadline")
+        on_time(f"{path} finished past the deadline")
         if result == "unreadable":
             gone.add(path)
             continue
@@ -571,14 +611,16 @@ def compress_office(
             number += 1
         renames[path] = (renamed, "image/png" if kind == "png" else "image/jpeg")
 
+    # Each relationships part is rewritten once, below (review r5 follow-up).
+    dead_by_part: dict[str, set[str]] = {}
     if gone:
         dropped: list[str] = []
         for rels_path, listed in list(rels.items()):
             ids = {rel["id"] for rel in listed if rel["part"] in gone}
             if not ids:
                 continue
+            on_time(f"removals still to make at {rels_path}")
             source = _source_of(rels_path)
-            rels_xml = text(rels_path)
             # Every relationship nothing refers to any more goes: those of the
             # removed elements, and those of a removed picture no part shows
             # (a document thumbnail's, uncounted, among them).
@@ -593,20 +635,17 @@ def compress_office(
                 refs.extend(found)
                 left = set(_references(xml))
             dead = {ref for ref in refs if ref not in left}
-            kept = []
-            for rel in listed:
-                if rel["id"] in dead:
-                    rels_xml = rels_xml.replace(rel["element"], "", 1)
-                    if rel["part"]:
-                        dropped.append(rel["part"])
-                else:
-                    kept.append(rel)
             if dead:
-                rels[rels_path] = kept
-                parts[rels_path] = rels_xml.encode()
+                dropped.extend(
+                    rel["part"] for rel in listed if rel["id"] in dead and rel["part"]
+                )
+                rels[rels_path] = [rel for rel in listed if rel["id"] not in dead]
+                dead_by_part[rels_path] = dead
                 changed = True
+        # Once, not a search of every relationship per part.
+        targets = {rel["part"] for listed in rels.values() for rel in listed}
         for part in {*dropped, *gone}:
-            if part in parts and not targeted(part):
+            if part in parts and part not in targets:
                 deleted.add(part)
                 folder, base = posixpath.split(part)
                 own = posixpath.join(folder, "_rels", base + ".rels")
@@ -619,7 +658,7 @@ def compress_office(
         return None, 0
 
     for rels_path, listed in rels.items():
-        rels_xml = text(rels_path)
+        changes: dict[str, str] = {}
         for rel in listed:
             rename = renames.get(rel["part"]) if rel["part"] else None
             if not rename:
@@ -630,22 +669,24 @@ def compress_office(
                 if rel["target"].endswith(old)
                 else "/" + rename[0]
             )
-            element = re.sub(
-                r"(\sTarget\s*=\s*)([\"'])[^\"']*\2",
+            changes[rel["element"]] = _TARGET.sub(
                 lambda match, target=target: (
                     f"{match.group(1)}{match.group(2)}{target}{match.group(2)}"
                 ),
                 rel["element"],
                 count=1,
             )
-            rels_xml = rels_xml.replace(rel["element"], element, 1)
-        if rels_xml != text(rels_path):
-            parts[rels_path] = rels_xml.encode()
+        dead = dead_by_part.get(rels_path, set())
+        if dead or changes:
+            parts[rels_path] = rewrite_relationships(
+                text(rels_path), dead, changes
+            ).encode()
     if "[Content_Types].xml" in parts:
         parts["[Content_Types].xml"] = content_types(
             text("[Content_Types].xml"), deleted, renames
         ).encode()
 
+    on_time("repacking past the deadline")
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as rebuilt:
         for info in infos:

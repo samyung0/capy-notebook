@@ -147,39 +147,74 @@ function containers(path: string): string[] | null {
   return null;
 }
 
-/** The element to remove for a reference inside `stack` (open element names,
- * outermost first), or -1: the innermost container, widened to the object
- * that holds it (a DOCX object, a PPTX OLE frame, a slide background, or the
- * alternate content around an OLE frame or sheet object). */
+/** The open elements `pick` looks for, by kind ("container" for the part's
+ * containers, "ext" for extensions): each kind's stack indices, innermost
+ * last, kept as elements open and close, so a reference costs a binary
+ * search instead of a walk down the open elements (review r5 follow-up). */
+const MARKED = [
+  'w:object',
+  'w:txbxContent',
+  'p:oleObj',
+  'p:graphicFrame',
+  'mc:Fallback',
+];
+type Marks = Record<string, number[]>;
+
+function kinds(name: string, names: string[]) {
+  const out = MARKED.includes(name) ? [name] : [];
+  if (names.includes(name)) out.push('container');
+  if (name.endsWith(':ext')) out.push('ext');
+  return out;
+}
+
+/** The innermost open element of `kind` outside the one at `at`, or -1. */
+function before(marks: Marks, kind: string, at: number) {
+  const found = marks[kind];
+  let low = 0;
+  let high = found.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (found[middle] < at) low = middle + 1;
+    else high = middle;
+  }
+  return low ? found[low - 1] : -1;
+}
+
+/** The element to remove for a reference in the innermost open element, or
+ * -1: the innermost container, widened to the object that holds it (a DOCX
+ * object, a PPTX OLE frame, a slide background, or the alternate content
+ * around an OLE frame or sheet object). */
 const ALTERNATE = /^mc:(Choice|Fallback)$/;
 const BESIDE_BLIP = /:(svgBlip|imgLayer)$/;
 
-function pick(names: string[], stack: string[]) {
+function pick(stack: { name: string }[], marks: Marks) {
+  const name = (index: number) => stack[index]?.name ?? '';
+  const top = stack.length - 1;
   // An SVG or HD Photo beside a picture's own blip: only the extension
   // holding it goes, and the picture stays.
-  if (BESIDE_BLIP.test(stack.at(-1) ?? ''))
-    for (let i = stack.length - 2; i >= 0; i--)
-      if (stack[i].endsWith(':ext')) return i;
-  let at = -1;
-  for (let i = stack.length - 1; i >= 0 && at < 0; i--)
-    if (names.includes(stack[i])) at = i;
+  if (BESIDE_BLIP.test(name(top))) {
+    const ext = before(marks, 'ext', top);
+    if (ext >= 0) return ext;
+  }
+  let at = marks.container.at(-1) ?? -1;
   if (at < 0) return -1;
-  const object = stack.lastIndexOf('w:object', at);
-  if (object >= 0 && !stack.slice(object, at).includes('w:txbxContent'))
-    at = object;
-  const ole = stack.lastIndexOf('p:oleObj', at);
-  if (stack[at] !== 'p:graphicFrame' && ole >= 0)
-    at = stack.lastIndexOf('p:graphicFrame', ole);
+  const object = before(marks, 'w:object', at);
+  if (object >= 0 && before(marks, 'w:txbxContent', at) < object) at = object;
+  const ole = before(marks, 'p:oleObj', at);
+  if (name(at) !== 'p:graphicFrame' && ole >= 0) {
+    at = before(marks, 'p:graphicFrame', ole);
+    if (at < 0) return -1;
+  }
   if (
-    stack[at] === 'a:blipFill' &&
-    stack[at - 1] === 'p:bgPr' &&
-    stack[at - 2] === 'p:bg'
+    name(at) === 'a:blipFill' &&
+    name(at - 1) === 'p:bgPr' &&
+    name(at - 2) === 'p:bg'
   )
     at -= 2;
   if (
-    (stack[at] === 'p:graphicFrame' || stack[at] === 'oleObject') &&
-    stack[at - 2] === 'mc:AlternateContent' &&
-    ALTERNATE.test(stack[at - 1] ?? '')
+    (name(at) === 'p:graphicFrame' || name(at) === 'oleObject') &&
+    name(at - 2) === 'mc:AlternateContent' &&
+    ALTERNATE.test(name(at - 1))
   )
     at -= 2;
   return at;
@@ -238,6 +273,20 @@ export function contentTypes(
   return out;
 }
 
+/** A relationships part without the relationships whose Id is in `dead` and
+ * with each element in `changes` replaced, in one pass (a replace per
+ * relationship grew with their number times the part's size, review r5
+ * follow-up). */
+export function rewriteRelationships(
+  xml: string,
+  dead: Set<string>,
+  changes: Map<string, string>
+) {
+  return xml.replace(RELATIONSHIP, (element) =>
+    dead.has(attribute(element, 'Id')) ? '' : (changes.get(element) ?? element)
+  );
+}
+
 /** Removes from a part's XML every container (`containers`) that refers to
  * one of `ids`. Returns the new XML, the ids the removed elements referred
  * to, and how many pictures were removed where they show (an element inside
@@ -253,6 +302,14 @@ export function removePictures(path: string, xml: string, ids: Set<string>) {
     remove: boolean;
     start: number;
   }[] = [];
+  const marks: Marks = Object.fromEntries(
+    [...MARKED, 'container', 'ext'].map((kind) => [kind, []])
+  );
+  const pop = () => {
+    const open = stack.pop();
+    if (open) for (const kind of kinds(open.name, names)) marks[kind].pop();
+    return open;
+  };
   const spans: [number, number, boolean][] = [];
   for (const match of xml.matchAll(MARKUP)) {
     const [whole, close, name, attrs, selfClosing] = match;
@@ -260,27 +317,25 @@ export function removePictures(path: string, xml: string, ids: Set<string>) {
     const start = match.index;
     const end = start + whole.length;
     if (close) {
-      const open = stack.pop();
+      const open = pop();
       if (open?.remove) spans.push([open.start, end, open.counted]);
       continue;
     }
     const entry = { counted: false, name, remove: false, start };
+    for (const kind of kinds(name, names)) marks[kind].push(stack.length);
     stack.push(entry);
     if (references(attrs).some((id) => ids.has(id))) {
-      const at = pick(
-        names,
-        stack.map((open) => open.name)
-      );
+      const at = pick(stack, marks);
       if (at >= 0) {
         stack[at].remove = true;
         stack[at].counted =
           !path.endsWith('.vml') &&
           !stack[at].name.endsWith(':ext') &&
-          !stack.slice(0, at).some((open) => open.name === 'mc:Fallback');
+          before(marks, 'mc:Fallback', at) < 0;
       }
     }
     if (selfClosing) {
-      stack.pop();
+      pop();
       if (entry.remove) spans.push([start, end, entry.counted]);
     }
   }
@@ -346,8 +401,6 @@ export async function compressOfficeImages(
       .filter((path) => path.endsWith('.rels'))
       .map((path) => [path, relationships(path, text(path))])
   );
-  const targeted = (part: string) =>
-    [...rels.values()].some((list) => list.some((rel) => rel.part === part));
   // An image relationship's targets, and media parts no other relationship
   // targets.
   const other = new Set<string>();
@@ -427,8 +480,10 @@ export async function compressOfficeImages(
 
   // Removals: each element that shows a removed picture goes, then every
   // relationship nothing refers to any more (a thumbnail's, whose package
-  // shows it nowhere, among them), then the parts nothing targets.
+  // shows it nowhere, among them), then the parts nothing targets. Each
+  // relationships part is rewritten once, below (review r5 follow-up).
   const dropped: string[] = [];
+  const deadByPart = new Map<string, Set<string>>();
   for (const [relsPath, list] of rels) {
     const ids = list
       .filter((rel) => rel.part && gone.has(rel.part))
@@ -449,19 +504,21 @@ export async function compressOfficeImages(
     }
     const dead = new Set(refs.filter((id) => !left.has(id)));
     if (dead.size === 0) continue;
-    let relsXml = text(relsPath);
     const kept = list.filter((rel) => {
       if (!dead.has(rel.id)) return true;
-      relsXml = relsXml.replace(rel.element, '');
       if (rel.part) dropped.push(rel.part);
       return false;
     });
     rels.set(relsPath, kept);
-    write(relsPath, relsXml);
+    deadByPart.set(relsPath, dead);
     changed = true;
   }
+  // Once, not a search of every relationship per part.
+  const targets = new Set(
+    [...rels.values()].flatMap((list) => list.map((rel) => rel.part))
+  );
   for (const part of new Set([...dropped, ...gone]))
-    if (part in parts && !targeted(part)) {
+    if (part in parts && !targets.has(part)) {
       deleted.add(part);
       const ownRels = `${dirOf(part)}_rels/${baseOf(part)}.rels`;
       if (ownRels in parts) deleted.add(ownRels);
@@ -471,7 +528,7 @@ export async function compressOfficeImages(
   if (!changed) return unchanged;
 
   for (const [relsPath, list] of rels) {
-    let relsXml = text(relsPath);
+    const changes = new Map<string, string>();
     for (const rel of list) {
       const rename = rel.part ? renames.get(rel.part) : undefined;
       if (!rename) continue;
@@ -479,7 +536,7 @@ export async function compressOfficeImages(
       const target = rel.target.endsWith(old)
         ? rel.target.slice(0, -old.length) + baseOf(rename.path)
         : `/${rename.path}`;
-      relsXml = relsXml.replace(
+      changes.set(
         rel.element,
         rel.element.replace(
           TARGET,
@@ -487,7 +544,9 @@ export async function compressOfficeImages(
         )
       );
     }
-    if (relsXml !== text(relsPath)) write(relsPath, relsXml);
+    const dead = deadByPart.get(relsPath) ?? new Set<string>();
+    if (dead.size > 0 || changes.size > 0)
+      write(relsPath, rewriteRelationships(text(relsPath), dead, changes));
   }
   if ('[Content_Types].xml' in parts)
     write(
