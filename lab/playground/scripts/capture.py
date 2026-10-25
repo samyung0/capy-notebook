@@ -194,6 +194,8 @@ def make_handler(
         state["captures"].append(record)
         if pixels:
             call_id = str(args.get("_tool_call_id") or "")
+            # Production numbers a capture among the turn's captures of every kind.
+            number = len(ctx.captures) + 1
             ctx.captures.append(
                 production.record(
                     call_id=call_id,
@@ -206,7 +208,7 @@ def make_handler(
                 )
             )
             ctx.pending_images[call_id] = (
-                f"capture_page result {n}: {label}",
+                f"capture_page result {number}: {label}",
                 production.data_url(jpeg),
             )
             ctx.budget_images.add(call_id)
@@ -248,10 +250,11 @@ def make_handler(
         ]
         if cap["citation"] == "page" and existing:
             record["cited_as"] = existing
+            if pixels:
+                # Production's capture_page text, built by the same function.
+                return tools._imaged(ctx, tools._capture_note(label, number, existing))
             numbers = "".join(f"[{n}]" for n in existing)
             note += f" This page is already in the evidence as {numbers}; cite those numbers for what the capture shows."
-            if pixels:
-                return tools._imaged(ctx, note)
             return tools.ToolResult(text_parts=[note, text])
         passage = Passage(
             chunk_id=f"capture:{file_id}:{page}:{','.join(str(int(v)) for v in box)}:{n}",
@@ -355,13 +358,15 @@ def check() -> None:
 def check_pixels_capture() -> None:
     """A pixels-mode capture lives in production's turn state: its record in
     ctx.captures, its image in ctx.pending_images and ctx.budget_images, counted
-    toward the 16 images per message (the 16th says so, the 17th is refused)."""
+    toward the 16 images per message (the 16th says so, the 17th is refused).
+    A cited page gets production's capture_page text."""
     import asyncio
     import shutil
     import tempfile
 
     import pymupdf
     from pipeline.retrieval import tools
+    from pipeline.retrieval.search import Passage
 
     with tempfile.TemporaryDirectory() as tmp:
         pdf = Path(tmp) / "one.pdf"
@@ -390,6 +395,9 @@ def check_pixels_capture() -> None:
             "chapters": [],
             "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1}],
         }
+        ctx.citations.append(
+            Passage("c_1", "f_1", "one.pdf", 0, "", "hello", page_start=1, page_end=1)
+        )
 
         async def take(n: int):
             args = {"file_id": "f_1", "page": 1, "_tool_call_id": f"k{n}"}
@@ -404,7 +412,10 @@ def check_pixels_capture() -> None:
     assert ctx.budget_images == {f"k{n}" for n in range(1, 17)}
     assert ctx.pending_images["k1"][0] == "capture_page result 1: one.pdf page 1"
     assert ctx.images_taken == 16
-    assert results[15].text().endswith(tools.IMAGE_LIMIT)
+    assert results[0].text() == tools._capture_note("one.pdf page 1", 1, [1])
+    assert not results[0].passages
+    limit = "\n\n" + tools.IMAGE_LIMIT
+    assert results[15].text() == tools._capture_note("one.pdf page 1", 16, [1]) + limit
     assert results[16].refused and results[16].error_code == "limit_reached"
 
 
