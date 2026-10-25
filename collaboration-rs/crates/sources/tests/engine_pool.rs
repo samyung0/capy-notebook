@@ -245,6 +245,103 @@ async fn a_timed_out_call_kills_its_process_and_the_queue_moves_to_a_new_one() {
     assert_eq!((save.timeouts, save.restarts, save.crashes), (1, 1, 0));
 }
 
+/// `count` calls of `method` queued on `room`'s background process, each on
+/// its own task.
+fn queue(
+    pool: &std::sync::Arc<EnginePool>,
+    room: &str,
+    method: &'static str,
+    args: Value,
+    count: usize,
+) -> Vec<tokio::task::JoinHandle<Result<sources::engine::Reply, EngineError>>> {
+    (0..count)
+        .map(|_| {
+            let (pool, room, args) = (pool.clone(), room.to_owned(), args.clone());
+            tokio::spawn(async move {
+                pool.call(Lane::Background, Some(&room), request(method, args))
+                    .await
+            })
+        })
+        .collect()
+}
+
+/// Security regression (the background lane's bound for the agent's by-id
+/// read, the Editor's calls 2026-10-24): a bounded read is busy once its
+/// room's background process holds 4 queued calls, counted per process;
+/// other calls queue past that and all run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_bounded_read_is_busy_at_four_queued_calls_and_others_still_run() {
+    let pool = std::sync::Arc::new(EnginePool::new(config(1, 1)));
+    let room = "source:f_q:epoch:1";
+    pid(&pool, Lane::Background, Some(room)).await;
+    let mut calls = queue(&pool, room, "test.sleep", json!({ "ms": 1200 }), 1);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    calls.extend(queue(&pool, room, "test.echo", json!({}), 3));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    pool.admit(Lane::Background, room, 4).unwrap();
+    calls.extend(queue(&pool, room, "test.echo", json!({}), 1));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        pool.admit(Lane::Background, room, 4).unwrap_err(),
+        sources::engine::busy()
+    );
+    // The save lane and its own processes are not counted.
+    pool.admit(Lane::Save, room, 4).unwrap();
+    // Unbounded calls are never refused at any depth: a fifth queues and runs.
+    calls.extend(queue(&pool, room, "test.echo", json!({}), 1));
+    for call in calls {
+        call.await.unwrap().unwrap();
+    }
+    pool.admit(Lane::Background, room, 4).unwrap();
+}
+
+/// Security regression (the by-id read's wait rule): a bounded call that
+/// waited past its limit behind a long one answers busy without running,
+/// and one whose caller is gone is skipped; an unbounded call that waited
+/// as long still runs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_bounded_call_is_busy_after_its_wait_and_skipped_when_its_caller_is_gone() {
+    let pool = std::sync::Arc::new(EnginePool::new(config(1, 1)));
+    let room = "source:f_w:epoch:1";
+    pid(&pool, Lane::Background, Some(room)).await;
+    let _ = pool.take_stats();
+    let long = queue(&pool, room, "test.sleep", json!({ "ms": 900 }), 1);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let bounded = {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            pool.call_bounded(
+                Lane::Background,
+                Some(room),
+                request("test.echo", json!({})),
+                Duration::from_millis(300),
+            )
+            .await
+        })
+    };
+    // The caller gives up before the call would start.
+    let abandoned = tokio::time::timeout(
+        Duration::from_millis(100),
+        pool.call_bounded(
+            Lane::Background,
+            Some(room),
+            request("test.echo", json!({ "abandoned": true })),
+            Duration::from_secs(60),
+        ),
+    )
+    .await;
+    assert!(abandoned.is_err());
+    let unbounded = queue(&pool, room, "test.echo", json!({}), 1);
+    assert_eq!(bounded.await.unwrap().unwrap_err(), sources::engine::busy());
+    for call in long.into_iter().chain(unbounded) {
+        call.await.unwrap().unwrap();
+    }
+    // The long sleep and the unbounded echo ran; the busy and the skipped
+    // calls did not.
+    let (_, background) = pool.take_stats();
+    assert_eq!(background.calls, 2, "{background:?}");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn running_out_of_memory_aborts_only_that_process() {
     let mut config = config(1, 1);

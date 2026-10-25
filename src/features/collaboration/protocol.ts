@@ -179,7 +179,7 @@ export function readSync(payload: Uint8Array) {
  * in protocol.rs is the same number (a test keeps them equal). When to bump:
  * openwiki/frontend/plate-editor.md "Client protocol".
  */
-export const CLIENT_PROTOCOL = 18;
+export const CLIENT_PROTOCOL = 19;
 
 /** A JOIN's payload: the room, the token, the client protocol, the Y.Doc's
  * client id (Q213); an embed's names its note's channel last (Epo

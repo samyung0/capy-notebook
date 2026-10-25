@@ -110,6 +110,17 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 		t.Fatalf("a PPTX slide's query: %v", sent)
 	}
 
+	// Pictures and charts by id, in any format, go as their ids alone.
+	for n, file := range []string{xlsx, docx} {
+		rec = inspect(file, map[string]any{"ids": []string{"a", "b"}, "start": 3})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("a by-id read = %d %s", rec.Code, rec.Body.String())
+		}
+		if sent := authority.sent("/internal/documents/inspect"); len(sent) != 4+n || string(sent[3+n]["office"]) != `{"ids":["a","b"]}` {
+			t.Fatalf("a by-id read's query: %v", sent)
+		}
+	}
+
 	rec = inspect(xlsx, nil)
 	if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "unsupported_operation" ||
 		!strings.Contains(rec.Body.String(), `read_skill(\"office_building\")`) {

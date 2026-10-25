@@ -332,6 +332,54 @@ async fn the_seed_check_seeds_each_base_once_and_reports_every_changed_seed() {
     );
 }
 
+/// The agent's by-id read (Epo 2026-10-24, Q278) answers a DOCX file's
+/// pictures through the pool, bytes included, as the crate does in process.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_by_id_read_returns_pictures_through_the_pool() {
+    use office_service::InspectQuery;
+
+    let pool = pool();
+    let base = fixture("vendor/betteroffice/poc/fixtures/images-10.docx");
+    let sha = office_service::sha256_hex(&base);
+    let on = On {
+        format: Format::Docx,
+        base: &base,
+        base_sha256: &sha,
+        room: Some("source:f_pictures:epoch:1"),
+    };
+    let seed = pool.seed(on).await.unwrap();
+    let page = InspectQuery {
+        count: Some(200),
+        ..InspectQuery::default()
+    };
+    let read = pool.inspect_scoped(on, &seed, &page).await.unwrap();
+    let ids: Vec<String> = read["paragraphs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|paragraph| paragraph["objects"].as_array().cloned().unwrap_or_default())
+        .filter_map(|object| object["id"].as_str().map(str::to_owned))
+        .take(2)
+        .collect();
+    assert_eq!(ids.len(), 2, "{read}");
+    let query = InspectQuery {
+        ids: Some(ids),
+        ..InspectQuery::default()
+    };
+    let answer = pool.inspect_scoped(on, &seed, &query).await.unwrap();
+    assert!(answer["items"][1]["data"].is_string(), "{answer}");
+    let checkpoint = Checkpoint {
+        format: Format::Docx,
+        schema_version: 1,
+        base_sha256: &sha,
+        state: &seed,
+    };
+    assert_eq!(
+        answer,
+        office_service::inspect_scoped(&base, checkpoint, &query).unwrap()
+    );
+}
+
 /// The agent's scoped XLSX and DOCX reads and `create` answer through the
 /// pool as the crate does in process; a refused read and a create of a format
 /// without a starter stay edit refusals with their sentence (Epo 2026-10-20).
