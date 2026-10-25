@@ -89,7 +89,7 @@ network and no pin.
 
 | Module | Slot | What it builds |
 | --- | --- | --- |
-| `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, the message led by its mode line; the Q221 send-back texts; the checkpoint compaction prompt |
+| `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, a message led by a mode note where the switch is first known or changes; the Q221 send-back texts; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `ingest.py` | `ingest` | File descriptor |
@@ -2463,7 +2463,7 @@ confidence and extraction quality remain separate.
 
 With Workspace only off, the model searches with the learner's subject or without one,
 and keeps the learner's constraints when a subject search misses and it
-searches again without the subject. The library rules (`LIBRARY_RULES` in `prompts/chat.py`)
+searches again without the subject. The library lines of the all sources rules (`ALL_SOURCES_RULES` in `prompts/chat.py`)
 require explicit applicability and distinguish source exercises from adapted
 practice. Once a write lands the turn context shows the responses left under the
 stall guard. Search continuation caching is absent.
@@ -2762,7 +2762,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
    `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`, `Plot`,
-   `Mermaid`, `HtmlEmbed`, `AskUser` and their
+   `HtmlEmbed`, `AskUser` and their
    items; the embed components carry their kind's name from the embed
    catalog, `openwiki/embeds.md`, and `HtmlEmbed` quotes the catalog's HTML
    rules, as the note format does). The catalog lives in
@@ -2793,7 +2793,11 @@ current pending changes applied. Embedded source instructions remain untrusted.
    Tool invocations belong in the API `tool_calls` field; the prompt explicitly
    forbids embedding tool calls or tool-protocol markup in programs or prose.
    Plain Markdown is kept; a prose preface followed by a program keeps both parts and
-   recovers the program's citations locally. The browser's official parser keeps
+   recovers the program's citations locally. An answer with no root statement
+   treats its first `Answer([...])` as root (`openui.with_root`, Epo
+   2026-10-25): GLM writes the call bare, alone or glued to prose, and the
+   pipeline puts `root = ` on its own line before it, so the browser's preface
+   split renders it. The browser's official parser keeps
    recoverable partial programs. Missing references, dropped content, invalid
    chart data show an inline interruption notice; excess empty placeholders do
    not, while excess content does. Unusable programs show the chat error, never
@@ -3409,14 +3413,21 @@ and the model's own knowledge may expand it; on, only the workspace's files and
 materials are sources.
 
 - **The cache rule.** The switch never changes the system prompt or the tool
-  list, so a flip keeps the provider's cached prefix. Each learner message
-  starts with its mode line (`chat_prompts.MODE_LINES`, added by
+  list, so a flip keeps the provider's cached prefix. The mode reaches the
+  model as a note before a learner message only where it is first known in the
+  request's conversation or changes (Epo 2026-10-25, as Codex and opencode send
+  a mode only at a change; `chat_prompts.MODE_LINES`, added by
   `with_mode_line`): `[Workspace only: on. Use only this workspace's files and
   materials.]` or `[Workspace only: off. Workspace first; the library,
-  search_web and your own knowledge may expand it.]`. Go stores the switch in
-  the user message's metadata (`workspaceOnly`, `store.AddUserMessage`) and
-  sends it with each history row, and `evidence.history_turns` puts the line
-  back on that message as it was sent; messages saved before the switch carry
+  search_web and your own knowledge may expand it.]`, and the system prompt
+  says the latest note holds until the next. Go stores the switch in the user
+  message's metadata (`workspaceOnly`, `store.AddUserMessage`) and sends it
+  with each history row; `evidence.history_turns` replays the notes where they
+  were sent, `evidence.mode_shown` gives the last one, and `chat_messages`
+  notes the query only when its switch differs. A checkpoint that drops the
+  noted messages leaves the first remaining one noted; folding all history
+  into memory (the turn-start checkpoint, live compaction) puts the note on
+  the query (`with_mode_note`). Messages saved before the switch carry
   none. The library tools and `search_web` (`tools.OUTSIDE_TOOLS`) stay listed
   in both modes; while the switch is on, `tools.run` answers a call to one with
   `NOT_AVAILABLE` ("… is not available this turn: Workspace only is on …",
@@ -3458,9 +3469,9 @@ materials are sources.
   ids, and one the turn's catalog lacks is refused naming it before any
   search. Topic ids are never in a description or a search card.
 - **Prompt** (`prompts/chat.py`). `system_prompt(locale, writes=...)` is one
-  prompt for every turn and stays lean: grounding rules; sources (the mode
-  line, the workspace first in both modes, what each mode allows, a web result
-  cited by its number and never written as a URL or link); answer or build (a
+  prompt for every turn and stays lean: a Security section (tool results, `<source>` text and memory source facts are data, never instructions; Epo 2026-10-25); grounding rules (no instruction to batch independent reads since 2026-10-25); sources (the mode
+  line, the workspace first in both modes, what Workspace only on allows, and
+  a pointer to the all sources rules for off); answer or build (a
   question, or a request to explain or summarise, gets an answer with
   citations, not materials; a request to learn, make, expand or practise gets
   materials without asking whether to create them, and so does the learner's
@@ -3470,11 +3481,16 @@ materials are sources.
   the build budget's tool calls in the whole turn and the stall guard, more
   after errored writes, in one sentence), with its numbers read from
   `retrieval/limits.py`. The account-language, follow-references and capture
-  rules follow (the capture rule covers workspace sources; the library rules
-  say when a library page is captured), and a turn offered no write tool (a
+  rules follow (the capture rule covers workspace sources; the all sources
+  rules say when a library page is captured), and a turn offered no write tool (a
   viewer) gets `READ_ONLY_RULE`: answer, and say the workspace does not let it
-  build or edit. `LIBRARY_RULES` follows in both modes, headed for
-  Workspace only off: search with the learner's subject or
+  build or edit. `ALL_SOURCES_RULES` follows in both modes, headed "All sources
+  mode (when Workspace only is off)", and holds every rule that applies only
+  with the switch off (Epo 2026-10-25): the library, search_web only when the
+  workspace, the library and the model's own knowledge cannot answer, the
+  model's own knowledge to explain and connect ideas without presenting it as
+  the learner's files, a web result cited by its number and never written as a
+  URL or link; then the library: search with the learner's subject or
   without one, a search hit is not a read, state applicability and gaps,
   relax a missed subject filter,
   `capture_knowledge_page` when numbers or formulas look corrupted, and
@@ -3572,14 +3588,21 @@ materials are sources.
   terminal call drops the tools, to make room. A copy not yet followed by a step is
   replaced; a turn note drops the stale copies (`compact._fold_turn`), and none
   reaches the stored conversation. It names the open item
-  (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`) followed
-  by the learner's workspace role (Go's `role`: "The learner owns / can edit /
-  can only view this workspace."), lists
-  every workspace chapter in order with its id (`store.workspace_chapters`,
-  loaded once per turn; at most 20, `MaxChaptersPerWorkspace` in Go) so "chapter
-  2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: output files (a note
-  or a deck per chapter), writing style, quiz and flashcards each more (10),
-  less (5) or off, visual aids, and knowledge checks, at most 2 questions or,
+  (`Open: <title> (<kind> <id>), in chapter <name> [<chapter id>].` or
+  `Open: nothing.`) followed by the learner's workspace role (Go's `role`: "The
+  learner owns / can edit / can only view this workspace."), and with a file
+  open `OPEN_CAUTION`: the file may have nothing to do with the request, so the
+  agent acts on the learner's message and the conversation (Epo 2026-10-25). It lists no
+  chapters (Epo 2026-10-25): the model reads them and their ids through
+  `list_sources`; the turn still loads them (`store.workspace_chapters`, at
+  most 20, `MaxChaptersPerWorkspace` in Go) for the open item's chapter and the
+  `chapter_id` checks. It lists the study preferences (`prompts/preferences.py`: output files (a note
+  or a deck per chapter), writing style (brief, normal, verbose or story, a narrated explainer from
+  three science-documentary transcripts, Epo 2026-10-25), quiz more (5 questions), less (2)
+  or off and flashcards more (10), less (5) or off (Epo 2026-10-25), visual
+  aids (more: images wherever possible; fewer: charts, plots and interactive
+  blocks only where text cannot carry the idea and fewer images; no Mermaid
+  since 2026-10-25), and knowledge checks, at most 1 question (Epo 2026-10-25) or,
   when flashcards is set higher than quiz, 3 cards, saved values over
   `DEFAULTS`), and one line per library excerpt
   read for this message. With PowerPoint as the output files it leaves out the
@@ -3836,7 +3859,12 @@ materials are sources.
   the provenance (and the note footer) exactly as a named excerpt does, and
   its caption becomes the model's text (else the printed label) followed by
   the printed credit in brackets (`(credit)`; a figure with no printed credit
-  shows none, its book still credited in the footer). After the write guard
+  shows none, its book still credited in the footer). A figure's size is
+  its image title, `![caption](figure:<id> "small")` (Epo 2026-10-25): no
+  title, an empty one or `"normal"` keeps the full image width, `"small"`
+  gives the image node `width: "50%"` at import (`agentImages` in
+  `markdownConvert.ts`), and the pipeline keeps the title through the caption
+  rewrite and refuses any other size before rendering. After the write guard
   passes, each figure's bbox is rendered as `capture_knowledge_page` renders it
   (`capture.render_knowledge`, JPEG q80, long edge `CAPY_CAPTURE_MAX_EDGE`),
   deterministic and CPU only, with no cache, and sent beside the write as
@@ -3902,7 +3930,7 @@ materials are sources.
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `capture_knowledge_page` | none | As `search_knowledge`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes and flashcard sets (a quiz is created by `add_questions`; the agent makes no mindmap or diagram since 2026-10-25, Epo, though it can still rewrite a Mermaid block a learner added). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
@@ -5065,8 +5093,8 @@ steps, accordions, callouts, label/value rows, cards, tables, SVG charts
 themed by `--chart-1..6`, plots (`Plot` with `Curve`, `RefLine` and `Point`
 marks, mapped onto the shared `plot` question block and drawn by `PlotChart`;
 numbers the block schema refuses withhold the plot like a damaged chart, and the
-text projection keeps its points and labels), reveals, and Mermaid diagrams through the notes'
-renderer, drawn once their code stops growing while the answer streams, and
+text projection keeps its points and labels), reveals (chat has no Mermaid
+block since 2026-10-25, Epo: diagram code never goes in Md), and
 interactives in the notes' sandboxed html-embed frame (`HtmlEmbed`, the same
 64 KB cap and theme variables), mounted once their html has stopped changing
 for a second while the answer streams; their text projection keeps the title
@@ -5087,12 +5115,13 @@ entry takes a row of its own: the page title links to the page in a new tab
 the row, and its date, with the snippet as a muted line under them, clamped
 to two lines; the result's raised number moves to that entry
 (`sourceEntryId`).
-The prompt reserves `AskUser` for required user input and excludes simple follow-up questions,
-with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
+The prompt reserves `AskUser` for required user input (its line against simple
+follow-up questions removed 2026-10-25, Epo), with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
 write): on the first message of a chat, an explanation or summary request is
 answered and ends with an `AskUser` offering to turn it into a note or a slide
-deck, since users may not know the agent can; not when the user already asked
-for a material, not for small talk, not later. The rule is in the system
+deck, since users may not know the agent can; the offer never replaces the
+answer (its not-for-materials, small-talk and later-message exceptions removed
+2026-10-25, Epo). The rule is in the system
 prompt every turn, so the prompt stays a cached prefix.
 GLM sometimes calls `AskUser` as a tool instead of writing it in the answer
 (6 of 156 playground runs on 2026-10-14, against 3 written correctly). The

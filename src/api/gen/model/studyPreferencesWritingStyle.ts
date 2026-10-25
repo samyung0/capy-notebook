@@ -12,4 +12,5 @@ export const StudyPreferencesWritingStyle = {
   brief: 'brief',
   normal: 'normal',
   verbose: 'verbose',
+  story: 'story',
 } as const;

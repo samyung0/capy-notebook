@@ -3986,7 +3986,7 @@ export const GetMeResponse = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
 }),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -4076,7 +4076,7 @@ export const UpdateMeResponse = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
 }),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -4221,7 +4221,7 @@ export const SetStudyPreferencesBody = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
 })
 
 export const SetStudyPreferencesResponse = zod.void()
