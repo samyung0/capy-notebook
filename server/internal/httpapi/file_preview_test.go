@@ -336,7 +336,8 @@ func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
 	if _, err := st.Pool().Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, owner); err != nil {
 		t.Fatal(err)
 	}
-	if body := session(""); !strings.Contains(body, `"imageMaxBytes":5242880`) {
+	// 2 MiB on every plan (Epo 2026-10-24).
+	if body := session(""); !strings.Contains(body, `"imageMaxBytes":2097152`) {
 		t.Fatalf("editor of a Pro owner's file: %s", body)
 	}
 	if body := session(""); strings.Contains(body, "thumbnailStale") {

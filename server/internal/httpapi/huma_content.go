@@ -8,7 +8,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -307,6 +309,24 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 		return nil, hErr(err)
 	}
 	patch := store.FilePatch{Name: apimodel.Str(in.Body.Name)}
+	if patch.Name != nil {
+		// A rename keeps the file's extension, which names its kind and the
+		// checks its upload passed (Epo 2026-10-24, Q346).
+		if !fieldlimits.ValidFileName(*patch.Name) {
+			return nil, invalidFileName()
+		}
+		file, err := a.s.GetFile(ctx, in.ID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		if sourceupload.Extension(*patch.Name) != sourceupload.Extension(file.Name) {
+			return nil, &huma.ErrorModel{
+				Status: http.StatusUnprocessableEntity, Title: http.StatusText(http.StatusUnprocessableEntity),
+				Detail: "a rename keeps the file's extension",
+				Errors: []*huma.ErrorDetail{{Message: "file_extension_changed"}},
+			}
+		}
+	}
 	// chapterId: "" unfiles (NULL), a real id files it, omitted leaves it.
 	if in.Body.ChapterID != nil {
 		if *in.Body.ChapterID == "" {

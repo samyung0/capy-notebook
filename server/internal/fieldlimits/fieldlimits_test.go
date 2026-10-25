@@ -25,3 +25,15 @@ func TestClampCountsRunes(t *testing.T) {
 		t.Fatalf("got %d runes", utf8.RuneCountInString(got))
 	}
 }
+
+func TestValidFileName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"Lecture 3.pdf": true, "计划 v2.docx": true, "👩‍💻 notes.txt": true,
+		"": false, "   ": false, "a/b.pdf": false, `a\b.pdf`: false, "x\u0000.pdf": false, "x\n.pdf": false,
+		"x\u202e.pdf": false, "x\u2067.pdf": false, strings.Repeat("a", FileName+1): false,
+	} {
+		if got := ValidFileName(name); got != want {
+			t.Errorf("ValidFileName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}

@@ -1,6 +1,6 @@
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/errors';
-import { fitImage } from '@/lib/fitImage';
+import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { api } from './client';
 import { materialQuery } from './hooks';
 import { queryClient } from './queryClient';
@@ -55,15 +55,10 @@ async function editorAssetMaxBytes(
   return purpose === 'image' ? imageMaxBytes : audioMaxBytes;
 }
 
-/** The reader's plan image cap for the material's assets. */
-export function editorImageMaxBytes(materialId: string) {
-  return editorAssetMaxBytes(materialId, 'image');
-}
-
 // Streams the file through the gateway once its ticket's turn comes, and the
 // gateway stores it and returns only stable metadata (Epo 2026-10-22). Plate
 // documents should persist assetId, never a resolved short-lived URL. An
-// image over the plan cap is shrunk first; a file still over it is refused
+// image is compressed first, off the main thread; a file still over the cap is refused
 // before anything is sent (Epo 2026-10-22), naming the limit. The gateway
 // checks the cap again.
 export async function uploadEditorAsset(
@@ -73,7 +68,8 @@ export async function uploadEditorAsset(
   options: EditorAssetUploadOptions = {}
 ): Promise<EditorAsset> {
   const maxBytes = await editorAssetMaxBytes(materialId, purpose);
-  const file = purpose === 'image' ? await fitImage(picked, maxBytes) : picked;
+  const file =
+    purpose === 'image' ? await fitImageOffThread(picked, maxBytes) : picked;
   if (file.size > maxBytes)
     throw new CopyError(
       m.editor_import_too_large({ mb: Math.round(maxBytes / 1024 / 1024) })

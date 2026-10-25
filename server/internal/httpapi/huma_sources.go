@@ -54,10 +54,11 @@ func (a *api) getSourceUploadPolicy(
 			return nil, hErr(err)
 		}
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
+	limits, err := a.s.PayerPlanLimits(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
+	maxBytes := limits.SourceFileBytes
 	extensionsByKind := sourceupload.ExtensionsByKind()
 	kindOrder := []store.FileKind{
 		store.FilePDF,
@@ -122,6 +123,7 @@ func (a *api) getSourceUploadPolicy(
 			// kind=unknown with no ingest job.
 			Accept:                       "",
 			MaxBytes:                     maxBytes,
+			ImageMaxBytes:                limits.ImageBytes,
 			AllowNoExtension:             true,
 			DigitalParsePageCreditMicros: rates[store.ResourceDigitalParsePage].CreditMicrosPerUnit,
 			VLMIngestPageCreditMicros:    rates[store.ResourceVLMIngestPage].CreditMicrosPerUnit,
@@ -296,10 +298,11 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 		return store.File{}, err
 	}
 	defer release()
-	maxBytes, err := a.sourceMaxBytes(ctx, uid(r))
+	limits, err := a.s.PayerPlanLimits(ctx, uid(r))
 	if err != nil {
 		return store.File{}, err
 	}
+	maxBytes := limits.SourceFileBytes
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+uploadMetadataMaxBytes)
 	if a.blob == nil {
 		return store.File{}, errors.New("blob store not configured")
@@ -335,7 +338,10 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	}); err != nil {
 		return store.File{}, err
 	}
-	file, err := a.storeSourceBytes(ctx, stream, uploadID, key, body.ContentType, body.SizeBytes)
+	check := func(spool io.ReaderAt, size int64) error {
+		return checkSourceImages(name, body.Kind, limits.ImageBytes, spool, size)
+	}
+	file, err := a.storeSourceBytes(ctx, stream, uploadID, key, body.ContentType, body.SizeBytes, check)
 	if err != nil {
 		// A failed upload is charged nothing; the release also queues the key
 		// for the reaper, which deletes it once nothing references it.
@@ -362,6 +368,9 @@ func (a *api) checkSourceUpload(
 		utf8.RuneCountInString(string(body.Name)) > fieldlimits.FileName ||
 		utf8.RuneCountInString(string(body.ChapterName)) > fieldlimits.ChapterName {
 		return "", "", huma.Error422UnprocessableEntity("validation failed")
+	}
+	if !fieldlimits.ValidFileName(string(body.Name)) {
+		return "", "", invalidFileName()
 	}
 	if err := a.openSourceBatch(ctx, wsID, "upload", body.BatchID, body.BatchTotal); err != nil {
 		return "", "", err
@@ -415,16 +424,22 @@ func (a *api) checkSourceUpload(
 	return name, chapterName, nil
 }
 
-// storeSourceBytes spools the file part, writes it in one PUT and finalizes the
-// reserved upload. Once the bytes are stored, finalize runs to its end even if
-// the browser leaves, so a committed file is never reported (and released) as
-// failed.
-func (a *api) storeSourceBytes(ctx context.Context, stream *uploadBody, uploadID, key, contentType string, size int64) (store.File, error) {
+// storeSourceBytes spools the file part, runs check on it, writes it in one
+// PUT and finalizes the reserved upload. Once the bytes are stored, finalize
+// runs to its end even if the browser leaves, so a committed file is never
+// reported (and released) as failed.
+func (a *api) storeSourceBytes(
+	ctx context.Context, stream *uploadBody, uploadID, key, contentType string, size int64,
+	check func(io.ReaderAt, int64) error,
+) (store.File, error) {
 	spool, sha, err := spoolUpload(stream, size, contentType)
 	if err != nil {
 		return store.File{}, err
 	}
 	defer dropSpool(spool)
+	if err := check(spool, size); err != nil {
+		return store.File{}, err
+	}
 	etag, err := putUpload(ctx, a.blob, uploadID, key, spool, contentType)
 	if err != nil {
 		return store.File{}, err
@@ -497,6 +512,33 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		a.failSourceBatchFile(ctx, in.Body.BatchID)
 	}
 	return out, err
+}
+
+// admitImport decides one imported file from its provider metadata: a
+// refusal code (invalid_name by the upload's name rule, Q346; file_too_large
+// past the per-file cap before any download, Q345; unsupported_file), or
+// the size it reserves, its kind and its parse mode.
+func admitImport(meta integrations.ImportFileMetadata, parseMode string, maxBytes int64) (code string, reserved int64, kind, mode string) {
+	if !fieldlimits.ValidFileName(meta.Name) {
+		return "invalid_name", 0, "", ""
+	}
+	if meta.Size != nil {
+		reserved = *meta.Size
+	} else if meta.ExportMIME != "" {
+		reserved = min(maxBytes, integrations.GoogleExportMaxBytes())
+	}
+	if reserved < 0 || reserved > maxBytes {
+		return "file_too_large", 0, "", ""
+	}
+	kind = integrations.KindFromName(meta.Name)
+	mode = parseMode
+	if mode == "" {
+		mode = sourceupload.DefaultParseMode(meta.Name, kind)
+	}
+	if err := sourceupload.Validate(meta.Name, kind, mode, reserved, maxBytes); err != nil {
+		return "unsupported_file", 0, "", ""
+	}
+	return "", reserved, kind, mode
 }
 
 func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*sourceImportOutput, error) {
@@ -649,35 +691,11 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 			continue
 		}
 		meta.Name = strings.TrimSpace(meta.Name)
-		if meta.Name == "" || utf8.RuneCountInString(meta.Name) > fieldlimits.FileName {
+		code, reservedSize, kind, mode := admitImport(meta, in.Body.ParseMode, maxBytes)
+		if code != "" {
 			rejected = append(rejected, apimodel.SourceImportRejected{
 				FileID: ref.ID,
-				Code:   "invalid_name",
-			})
-			continue
-		}
-		reservedSize := int64(0)
-		if meta.Size != nil {
-			reservedSize = *meta.Size
-		} else if meta.ExportMIME != "" {
-			reservedSize = min(maxBytes, integrations.GoogleExportMaxBytes())
-		}
-		if reservedSize < 0 || reservedSize > maxBytes {
-			rejected = append(rejected, apimodel.SourceImportRejected{
-				FileID: ref.ID,
-				Code:   "file_too_large",
-			})
-			continue
-		}
-		kind := integrations.KindFromName(meta.Name)
-		mode := in.Body.ParseMode
-		if mode == "" {
-			mode = sourceupload.DefaultParseMode(meta.Name, kind)
-		}
-		if err := sourceupload.Validate(meta.Name, kind, mode, reservedSize, maxBytes); err != nil {
-			rejected = append(rejected, apimodel.SourceImportRejected{
-				FileID: ref.ID,
-				Code:   "unsupported_file",
+				Code:   code,
 			})
 			continue
 		}
@@ -765,7 +783,7 @@ func (a *api) getSourceImport(
 	}
 	return &sourceImportStatusOutput{Body: apimodel.SourceImportStatus{
 		JobID: job.ID, Status: job.Status, Name: job.Name,
-		FileID: job.FileID, ErrorCode: job.LastErrorCode,
+		FileID: job.FileID, ErrorCode: job.LastErrorCode, RemovedPictures: job.RemovedPictures,
 	}}, nil
 }
 

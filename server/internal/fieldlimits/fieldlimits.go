@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -199,6 +200,20 @@ func Clamp(s string, max int) string {
 		return s
 	}
 	return strings.TrimSpace(string([]rune(s)[:max]))
+}
+
+// ValidFileName reports a file name of 1 to FileName characters (trimmed)
+// with no control character, bidi override or isolate character (the set
+// Q313 refuses in comments) and no path separator (Epo 2026-10-24, Q346).
+func ValidFileName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" || utf8.RuneCountInString(name) > FileName {
+		return false
+	}
+	return !strings.ContainsFunc(name, func(r rune) bool {
+		return unicode.IsControl(r) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) ||
+			r == '/' || r == '\\'
+	})
 }
 
 // ClampFileName cuts name to FileName runes while keeping its extension, which

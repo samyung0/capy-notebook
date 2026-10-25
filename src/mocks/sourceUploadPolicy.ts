@@ -96,6 +96,7 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
   audioMaxDurationSeconds: 7200,
   audioSecondCreditMicros: 16_667,
   digitalParsePageCreditMicros: 1_000_000,
+  imageMaxBytes: PLAN_LIMITS.free.imageMaxBytes,
   kinds: kindOrder.map((kind) => ({
     extensions: extensionsFor(kind),
     kind,

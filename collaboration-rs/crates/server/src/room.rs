@@ -361,6 +361,9 @@ struct Source {
     estimate: sources::Estimate,
     /// The room's state cap (`sources::state_cap`).
     state_cap: u64,
+    /// The picture byte cap on Word and PowerPoint edits
+    /// (`sources::Loaded::image_cap`).
+    image_cap: u64,
     /// An Office room's seed state vector (`sources::Loaded::seed`).
     seed: Option<StateVector>,
     checkpoint: u64,
@@ -764,6 +767,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 format: loaded.format,
                 estimate: sources::Estimate::new(loaded.bytes),
                 state_cap: loaded.state_cap,
+                image_cap: loaded.image_cap,
                 seed: loaded.seed,
                 checkpoint: loaded.checkpoint,
                 log_bytes: loaded.row_bytes as i64,
@@ -2789,6 +2793,7 @@ impl Room {
                     bytes,
                     &mut source.estimate,
                     source.state_cap,
+                    source.image_cap,
                 ) {
                     sources::Admission::Accept => Verdict::Accept,
                     sources::Admission::Unheld => Verdict::Unheld,

@@ -3,6 +3,7 @@ import { ApiError } from '@/api/client';
 import type { SourceFile } from '@/api/types';
 import { uploadWithTicket } from '@/api/uploadTurn';
 import { m } from '@/i18n';
+import { CopyError } from '@/lib/copyError';
 import {
   type LocalTransferRequest,
   type RemoteTransferRequest,
@@ -30,6 +31,11 @@ vi.mock('@/api/auth', async (importOriginal) => ({
 }));
 const userToast = vi.hoisted(() => vi.fn());
 vi.mock('@/components/ui/userToast', () => ({ userToast }));
+const compressSource = vi.hoisted(() => vi.fn());
+vi.mock('./sourceCompress', () => ({ compressSource }));
+
+/** The caps the browser compresses to and checks before sending. */
+const limits = { imageMaxBytes: 2 << 20, maxBytes: 10 << 20 };
 
 // Store-only PDFs skip ingest, so the runner does not wait on the files cache.
 const request = (name: string): LocalTransferRequest => ({
@@ -41,6 +47,17 @@ const request = (name: string): LocalTransferRequest => ({
   kind: 'pdf',
   name,
   parseMode: 'none',
+});
+
+const remote = (name: string): RemoteTransferRequest => ({
+  chapterId: null,
+  chapterName: null,
+  fileId: `drive_${name}`,
+  key: name,
+  kind: 'pdf',
+  name,
+  parseMode: 'none',
+  provider: 'google',
 });
 
 afterEach(() => {
@@ -77,6 +94,7 @@ describe('source transfers', () => {
 
     startSourceTransfer({
       importSources: vi.fn(),
+      limits,
       local: ['a.pdf', 'full.pdf', 'broken.pdf', 'b.pdf'].map(request),
       uploadSource: uploadSource as never,
       workspaceId: 'ws_1',
@@ -120,6 +138,113 @@ describe('source transfers', () => {
   });
 });
 
+describe('compressing before the upload', () => {
+  const office = (name: string, size: number): LocalTransferRequest => ({
+    ...request(name),
+    file: new File([new Uint8Array(size)], name),
+    kind: 'doc',
+  });
+
+  // Office pictures are compressed and EMF/WMF pictures removed before the
+  // upload, the per-file cap applies to the compressed file, and the toast
+  // names how many pictures went (Epo 2026-10-24).
+  it('uploads the compressed file, checks its cap, and tells how many pictures were removed', async () => {
+    compressSource.mockImplementation(
+      async ({ file }: { file: File }, onProgress: (value: number) => void) => {
+        onProgress(50);
+        return file.name === 'huge.docx'
+          ? {
+              file: new File([new Uint8Array(limits.maxBytes + 1)], file.name),
+              removed: 0,
+            }
+          : { file: new File(['small'], file.name), removed: 3 };
+      }
+    );
+    const uploadSource = vi.fn(async ({ file }: { file: File }) => ({
+      id: `f_${file.name}`,
+    }));
+    startSourceTransfer({
+      importSources: vi.fn(),
+      limits,
+      local: [office('plan.docx', limits.maxBytes + 5), office('huge.docx', 9)],
+      uploadSource: uploadSource as never,
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() =>
+      expect(useSourceTransfers.getState().unsent).toBe(0)
+    );
+    expect(compressSource.mock.calls.map(([call]) => call.compression)).toEqual(
+      ['office', 'office']
+    );
+    // The picked file was over the cap; what is sent is the compressed one.
+    expect(uploadSource).toHaveBeenCalledTimes(1);
+    expect(uploadSource.mock.calls[0][0].file.size).toBe(5);
+    expect(
+      useSourceTransfers
+        .getState()
+        .transfers.map(({ error, stage }) => [stage, error])
+    ).toEqual([
+      ['added', undefined],
+      ['failed', m.source_files_too_large({ mb: 10 })],
+    ]);
+    expect(userToast).toHaveBeenCalledWith({
+      description: m.source_pictures_removed_body({ count: 3 }),
+      title: m.source_pictures_removed({ name: 'plan.docx' }),
+      variant: 'warning',
+    });
+  });
+
+  it('refuses an image source no decoder reads before anything is sent', async () => {
+    compressSource.mockRejectedValue(
+      new CopyError(m.source_image_unreadable())
+    );
+    const uploadSource = vi.fn();
+    startSourceTransfer({
+      importSources: vi.fn(),
+      limits,
+      local: [{ ...request('photo.heic'), kind: 'image' }],
+      uploadSource,
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() =>
+      expect(useSourceTransfers.getState().unsent).toBe(0)
+    );
+    expect(compressSource.mock.calls[0][0].compression).toBe('image');
+    expect(uploadSource).not.toHaveBeenCalled();
+    expect(useSourceTransfers.getState().transfers[0]).toMatchObject({
+      error: m.source_image_unreadable(),
+      stage: 'failed',
+    });
+  });
+
+  it('tells how many pictures an import removed', async () => {
+    const importSources = vi.fn().mockResolvedValue({
+      jobs: [{ jobId: 'imp_1', name: 'deck.pptx', uploadId: 'up_1' }],
+      rejected: [],
+    });
+    get.mockResolvedValue({
+      fileId: 'f_1',
+      jobId: 'imp_1',
+      name: 'deck.pptx',
+      removedPictures: 2,
+      status: 'succeeded',
+    });
+    startSourceTransfer({
+      importSources: importSources as never,
+      remote: [remote('deck.pptx')],
+      uploadSource: vi.fn(),
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() =>
+      expect(userToast).toHaveBeenCalledWith({
+        description: m.source_pictures_removed_body({ count: 2 }),
+        title: m.source_pictures_removed({ name: 'deck.pptx' }),
+        variant: 'warning',
+      })
+    );
+  });
+});
+
 // An upload past the upload rate class waits in the gateway's line; one the
 // gateway still refuses 429 fails its row without a browser retry (security
 // regression: rate-limit audit Q282).
@@ -132,6 +257,7 @@ describe('a limited upload', () => {
     );
     startSourceTransfer({
       importSources: vi.fn(),
+      limits,
       local: [request('a.pdf')],
       uploadSource: uploadSource as never,
       workspaceId: 'ws_1',
@@ -164,6 +290,7 @@ describe('removing a row', () => {
     const send = vi.fn();
     startSourceTransfer({
       importSources: vi.fn(),
+      limits,
       local: [request('waiting.pdf')],
       uploadSource: (({
         onQueued,
@@ -210,6 +337,7 @@ describe('removing a row', () => {
     expect(names.length).toBe(SOURCE_UPLOAD_CONCURRENCY + 1);
     startSourceTransfer({
       importSources: vi.fn(),
+      limits,
       local: names.map(request),
       uploadSource: uploadSource as never,
       workspaceId: 'ws_1',
@@ -253,6 +381,7 @@ describe('removing a row', () => {
     del.mockResolvedValue(undefined);
     startSourceTransfer({
       importSources: vi.fn(),
+      limits,
       local: [request('late.pdf')],
       uploadSource: (({
         onQueued,
@@ -281,16 +410,6 @@ describe('removing a row', () => {
 
   // Upload-limits review r2 L7: an importing row's remove aborts its import
   // request, and counts the file only when the server holds nothing of it.
-  const remote = (name: string): RemoteTransferRequest => ({
-    chapterId: null,
-    chapterName: null,
-    fileId: `drive_${name}`,
-    key: name,
-    kind: 'pdf',
-    name,
-    parseMode: 'none',
-    provider: 'google',
-  });
 
   it('counts an import removed while it waits to retry', async () => {
     post.mockResolvedValue(undefined);
@@ -346,6 +465,7 @@ it('sends without AbortSignal.any', async () => {
   try {
     startSourceTransfer({
       importSources: vi.fn(),
+      limits,
       local: [request('old-safari.pdf')],
       uploadSource: (async () => ({ id: 'f_1' }) as SourceFile) as never,
       workspaceId: 'ws_1',

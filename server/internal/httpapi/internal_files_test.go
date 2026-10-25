@@ -1,6 +1,8 @@
 package httpapi_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -67,12 +69,66 @@ func openDeckFiles(t *testing.T) deckFileFixture {
 func (fx deckFileFixture) body(msgID, userID string) map[string]any {
 	return map[string]any{
 		"workspaceId": fx.ws, "userId": userID, "assistantMessageId": msgID, "toolCallId": "call_last_slide",
-		"name": "Tangents.pptx", "chapterId": fx.ch, "content": []byte("PK\x03\x04 a deck"),
+		"name": "Tangents.pptx", "chapterId": fx.ch, "content": deckPackage(pngSized(800, 600)),
 		"sources": []string{fx.ch, "Lecture 3, 14 Oct"},
 		"provenance": map[string]any{"books": []map[string]any{{
 			"id": "b_circles", "title": "Circles", "authors": []string{"A. Author"},
 			"license": "CC BY-SA 4.0", "excerptIds": []string{"exc_1"}, "version": 1,
 		}}},
+	}
+}
+
+// deckPackage is a PPTX holding one picture, the same bytes every time.
+func deckPackage(picture []byte) []byte {
+	var out bytes.Buffer
+	archive := zip.NewWriter(&out)
+	for _, part := range []struct {
+		name string
+		data []byte
+	}{{"ppt/presentation.xml", []byte("<p:presentation/>")}, {"ppt/media/image1.png", picture}} {
+		writer, err := archive.Create(part.name)
+		if err != nil {
+			panic(err)
+		}
+		writer.Write(part.data)
+	}
+	if err := archive.Close(); err != nil {
+		panic(err)
+	}
+	return out.Bytes()
+}
+
+// Security regression (Q348, review N2): a deck keeps the upload checks, so a
+// picture past 2,400 px is refused and nothing is stored.
+func TestInternalFileRefusesADeckPicturePastThePixelLimit(t *testing.T) {
+	fx := openDeckFiles(t)
+	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)
+	body := fx.body(msgID, fx.editor)
+	body["content"] = deckPackage(pngSized(2401, 10))
+	rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/files", pipeSecret, body)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_input") {
+		t.Fatalf("deck with a wide picture: %d %s", rec.Code, rec.Body.String())
+	}
+	if fx.blobs(t) != 0 {
+		t.Fatal("a refused deck left a blob behind")
+	}
+}
+
+// Security regression (Q346, review r2 N5): an agent's file takes the upload
+// name rule, so a bidi-spoofed or path name is refused and nothing stored.
+func TestInternalFileRefusesAnUnsafeName(t *testing.T) {
+	fx := openDeckFiles(t)
+	for _, name := range []string{"invoice\u202etpp.pptx", "a/b.pptx"} {
+		msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)
+		body := fx.body(msgID, fx.editor)
+		body["name"] = name
+		rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/files", pipeSecret, body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_input") {
+			t.Fatalf("%q: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if fx.blobs(t) != 0 {
+		t.Fatal("a refused name left a blob behind")
 	}
 }
 
@@ -109,7 +165,7 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if file.Kind != "slides" || file.ChapterID == nil || *file.ChapterID != fx.ch || file.SizeBytes != int64(len("PK\x03\x04 a deck")) {
+	if file.Kind != "slides" || file.ChapterID == nil || *file.ChapterID != fx.ch || file.SizeBytes != int64(len(deckPackage(pngSized(800, 600)))) {
 		t.Fatalf("file = %+v", file)
 	}
 	if file.Provenance == nil || len(file.Provenance.Books) != 1 || file.Provenance.License != "CC BY-SA 4.0" {

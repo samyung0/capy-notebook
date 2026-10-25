@@ -1048,11 +1048,15 @@ waits for the editor's replica, as the old Save button did. A click sends
 the frame no user activation, and the file goes over as `menu-file`. Every
 inserted image (that file, one picked from the editor's own toolbar button, or
 a DOCX picture watermark) passes the editor's `prepareImage` first: the runtime
-shrinks one over the payer's plan image cap, which the edit `load` carries as
-`imageMaxBytes` (protocol v10; an edit session without one fails with the file
-error instead of loading), and re-encodes any type but PNG, JPEG and GIF, to
-JPEG or PNG (`fitImage` with `office`;
-[backend-storage-quota.md](../backend-storage-quota.md)). It also shrinks one
+compresses it within 2,400 px and the payer's plan image cap, which the edit
+`load` carries as `imageMaxBytes` (protocol v10; an edit session without one
+fails with the file error instead of loading), as JPEG or PNG
+(`fitImage` with `office`;
+[backend-storage-quota.md](../backend-storage-quota.md#image-compression-and-checks)).
+The collaboration server refuses an edit that adds a picture past the plan
+image cap or 2,400 px, or one that is not a PNG, JPEG or GIF by its bytes, so
+only a client that skipped this meets it.
+It also shrinks one
 into the room's growth budget: the edit read's `growthBudgetBytes` (Go's
 `SourceGrowthBudget`: the export cap (the largest plan source file) less the
 base file, the 1 MiB margin, admission's 64 KiB reserve and the durable change
@@ -2093,9 +2097,10 @@ citation scrolling.
 ## Upload and import analysis
 
 Local selection and Google Drive/OneDrive selection both lead to the same
-details dialog. Files above the workspace owner's 10 MiB/30 MiB cap are
-rejected before they enter the list; unknown and legacy formats remain eligible
-for store-only upload. Cloud metadata comes
+details dialog. Files above the uploader's 10 MiB/30 MiB cap are
+rejected before they enter the list, except DOCX, PPTX, XLSX and raster
+images, whose cap is checked after the compression below; unknown and legacy
+formats remain eligible for store-only upload. Cloud metadata comes
 from `sources/import-inspect`; the analysis worker reads provider bytes through
 a bounded, authenticated same-origin proxy, so provider tokens never enter the
 browser. The proxy accepts only editor access, bounds response bytes, validates
@@ -2154,6 +2159,26 @@ The server-owned page rates (0.4 credits per page with a text layer,
 `vlmIngestPageCreditMicros`) are returned by `source-upload-policy`; the
 estimate charges each text-less page the VLM rate instead of the digital one.
 Parser receipts and the VLM reads remain authoritative for settlement.
+
+**Compression before the upload** (Epo 2026-10-24,
+[backend-storage-quota.md](../backend-storage-quota.md#image-compression-and-checks)).
+When a local DOCX, PPTX or XLSX row starts its transfer, a worker
+(`src/features/workspace/sourceCompress.ts`) compresses the pictures inside it
+and removes its EMF and WMF pictures with the drawings or objects that show
+them; an image row is shrunk to 5 megapixels the same way, HEIC/HEIF, TIFF and
+JPEG 2000 through decoders loaded only for them. The row reads "Compressing
+images…" meanwhile, then uploads the result, which is what is stored, charged,
+downloaded and opened: its SHA-256 is the base the edit session names. A
+picture whose format changes is renamed inside the package (`image1.png` to
+`image1.jpeg`), its relationships and content types following; an image source
+that changes format is stored as `<stem>.jpg` or `<stem>.png`. The per-file
+cap applies to the result. A file still over it or an image source that
+cannot be decoded fails in its row before anything is sent; a picture the
+worker could not read or fit stays as it is, and the gateway's header check
+refuses the file if it is still past the limits. Every such failure shows its
+reason in the row and is final. A warning toast after the upload names how many EMF or WMF pictures
+were removed. Cloud imports get the same treatment in the import worker before
+the file is stored, and the import status carries the same count.
 
 The same dialog submits each cloud row with its own chapter and parse mode;
 there is no caption toggle, because embedded figure captioning was retired.
