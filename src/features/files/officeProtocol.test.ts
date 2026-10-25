@@ -29,11 +29,47 @@ describe('office host protocol', () => {
     expect(isOfficeHostMessage({ ...load, mode: 'edit' })).toBe(false);
     const edit = {
       ...load,
-      collaboration: { epoch: 1, initialUpdate: new ArrayBuffer(2) },
+      collaboration: {
+        clientId: 7,
+        epoch: 1,
+        initialUpdate: new ArrayBuffer(2),
+        workerClientId: 9,
+      },
       mode: 'edit',
     };
     const limits = { growthBudgetBytes: 0, imageMaxBytes: 2_097_152 };
     expect(isOfficeHostMessage({ ...edit, ...limits })).toBe(true);
+    // The editor writes under the session's assigned client id (Q213).
+    for (const clientId of [undefined, 0, 1.5])
+      expect(
+        isOfficeHostMessage({
+          ...edit,
+          ...limits,
+          collaboration: { ...edit.collaboration, clientId },
+        })
+      ).toBe(false);
+    // A DOCX edit names its layout worker's id (Q219), never leaving the
+    // worker to draw one (Q226 L4); other formats name none.
+    for (const workerClientId of [undefined, 0, 1.5])
+      expect(
+        isOfficeHostMessage({
+          ...edit,
+          ...limits,
+          collaboration: { ...edit.collaboration, workerClientId },
+        })
+      ).toBe(false);
+    const { workerClientId: _, ...withoutWorker } = edit.collaboration;
+    expect(
+      isOfficeHostMessage({
+        ...edit,
+        ...limits,
+        collaboration: withoutWorker,
+        format: 'xlsx',
+      })
+    ).toBe(true);
+    expect(isOfficeHostMessage({ ...edit, ...limits, format: 'xlsx' })).toBe(
+      false
+    );
     // An editor always knows the payer's image cap and the room's growth
     // budget, which may be spent (0).
     for (const imageMaxBytes of [undefined, 0, -1, 1.5, '2097152'])

@@ -16,6 +16,7 @@ import {
   readDrafts,
   recoveryDocument,
   reportRecoveryGroup,
+  splitOpenDrafts,
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
@@ -23,20 +24,26 @@ import { afterPaint, type NoteView } from './roomSwap';
 import { toastDraftsLost } from './saveFailure';
 
 export interface NoteDrafts {
-  /** Rows of the current lineage, merged into the live note. */
+  /** Rows of the current lineage the editor applies: its accepted
+   * sessions' (Q326). */
   current: EditDraft[];
   /** The room and mount the rows were read for. */
   for: string;
+  /** Rows of never-accepted sessions with stored tokens: the draft send
+   * takes them while the editor joins (Q319). */
+  pending: EditDraft[];
   /** One refused or other-lineage group, shown read-only first. */
   recovery: { doc: Y.Doc; refused: boolean; rows: EditDraft[] } | null;
 }
 
 /**
  * Reads a note's stored edits for the room it opens (`for`: room and mount
- * generation, so a remount reads what the old mount wrote). A recovery group
+ * generation, so a remount reads what the old mount wrote), split by who
+ * sends them (`splitOpenDrafts`, Q326). A recovery group
  * nothing can draw is dropped with a toast and the next one is read. Both
- * are reported (edit_incidents): a group of another lineage once
- * (reportRecoveryGroup), a dropped group once per page load.
+ * are reported (edit_incidents): a group of another lineage or held rows
+ * shown copy-only once (reportRecoveryGroup), a dropped group once per page
+ * load.
  */
 export function useNoteDrafts(
   materialId: string,
@@ -55,24 +62,27 @@ export function useNoteDrafts(
         return [] as EditDraft[];
       });
       for (;;) {
-        const { current, recovery } = draftGroups(rows, room);
+        const { current, recovery, refused } = await draftGroups(rows, room);
         if (!recovery.length) {
-          if (active)
-            setDrafts({
-              current,
-              for: `${room}:${generation}`,
-              recovery: null,
-            });
+          if (!active) return;
+          const { apply, send } = splitOpenDrafts(current);
+          setDrafts({
+            current: apply,
+            for: `${room}:${generation}`,
+            pending: send,
+            recovery: null,
+          });
           return;
         }
         const doc = recoveryDocument(recovery);
         if (doc) {
-          reportRecoveryGroup(recovery, report);
+          reportRecoveryGroup(recovery, report, refused);
           if (active)
             setDrafts({
               current,
               for: `${room}:${generation}`,
-              recovery: { doc, refused: !!recovery[0].refused, rows: recovery },
+              pending: [],
+              recovery: { doc, refused, rows: recovery },
             });
           return;
         }

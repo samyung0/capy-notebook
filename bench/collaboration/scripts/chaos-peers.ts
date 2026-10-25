@@ -131,6 +131,8 @@ function mintToken(options: ChaosOptions, name: string): string {
   const claims = {
     access: options.access,
     aud: 'capy-collaboration',
+    // The Yjs client id the session writes under, fresh per token (Q213).
+    clientId: randomBytes(4).readUInt32BE(0) || 1,
     exp: now + 3600,
     iat: now,
     iss: 'capy-api',

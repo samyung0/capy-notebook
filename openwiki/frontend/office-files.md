@@ -456,7 +456,15 @@ reloads the page); text sources keep the newer-version banner.
 The parent owns the room provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
-and shared state, never an authentication token or protected source URL.
+and shared state, never an authentication token or protected source URL. An
+edit `load` names the session's Yjs client id (`collaboration.clientId`,
+Office protocol 13), the one the room assigned the parent's Y.Doc, and the
+replica writes under it; a DOCX load also names its resident layout worker's
+(`collaboration.workerClientId`, Q219), which the worker writes under, and
+a DOCX edit load without one fails explicitly (Q226 L4); the parent applies
+the replica's updates as its own
+(`applyOwnUpdate`), since the room admits a session's changes only under its
+assigned id ([plate-editor](plate-editor.md#client-ids)).
 Cursors cross the same way: the editor's own goes to the room's awareness and
 the co-editors' come back under the names the room's presence gives them
 ([plate-editor](plate-editor.md#office-cursors)). Input in the frame reaches
