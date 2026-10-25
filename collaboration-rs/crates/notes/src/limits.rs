@@ -386,11 +386,11 @@ const VALUE_KEYS: [&str; 9] = [
 
 /// Whether the store takes `value` under `key` on an element of type `kind`
 /// (`material::assert_canonical`): a reference names an item kind, a video
-/// is a YouTube id, a resizable block's width is one the handles write, an
-/// interactive block's html and caption fit, a figure's block is its live
-/// map (checked whole on the copy, [on_candidate]), a Mermaid source is a
-/// string (or its shared text), any block's indent stops at
-/// `LIST_INDENT_MAX`.
+/// is a YouTube id, a resizable block's width is one the handles write, a
+/// column's one the editor writes, an interactive block's html and caption
+/// fit, a figure's block is its live map (checked whole on the copy,
+/// [on_candidate]), a Mermaid source is a string (or its shared text), any
+/// block's indent stops at `LIST_INDENT_MAX`.
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
         (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
@@ -412,6 +412,9 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         }
         (_, "width", value) if catalog::element(kind).is_some_and(|e| e.resizable) => {
             matches!(value, Any::String(width) if crate::material::valid_width(width))
+        }
+        ("column", "width", value) => {
+            matches!(value, Any::String(width) if crate::material::valid_column_width(width))
         }
         (_, "indent", Any::Number(indent)) => *indent <= catalog::LIST_INDENT_MAX as f64,
         (crate::material::MATERIAL_REF_TYPE, "refKind", _)

@@ -225,6 +225,37 @@ describe('static study-block renderers', () => {
     expect(html).toContain('Narrow');
   });
 
+  // Share pages and previews draw a stored value the document check refuses
+  // as it is (MaterialPreview falls back to the raw value): a column width
+  // other than the editor's writes no style at all.
+  it('styles no column width the document check refuses (security)', () => {
+    const column = (text: string, width: string) => ({
+      children: [{ children: [{ text }], type: 'p' }],
+      type: 'column',
+      width,
+    });
+    const html = renderToStaticMarkup(
+      <MaterialPreview
+        content={{
+          schemaVersion: 1,
+          value: [
+            {
+              children: [
+                column('Left', '50%;color:red'),
+                column('Right', '50%'),
+              ],
+              type: 'column_group',
+            },
+          ],
+        }}
+      />
+    );
+    expect(html).toContain('Left');
+    // Only the right column is styled.
+    expect(html.split('--column-width:')).toHaveLength(2);
+    expect(html).toContain('--column-width:50%"');
+  });
+
   it('renders every quiz question shape as a read-only answer review', () => {
     const html = renderMaterial([
       quizNode({ questions: exampleQuestions }, 'quiz'),
