@@ -272,10 +272,10 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := gridRequest(snapshot)
-	flashRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}
+	removedRef := models.Ref{ProviderSlug: "openrouter", ModelSlug: "minimax/minimax-m3.1-flash"}
 	filtered := request.Cells[:0]
 	for _, cell := range request.Cells {
-		if cell.Row == flashRef && cell.Slot == "chat" {
+		if cell.Row == removedRef && cell.Slot == "chat" {
 			continue
 		}
 		filtered = append(filtered, cell)
@@ -285,7 +285,7 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO users (id, name, email, chat_model_provider_slug, chat_model_slug)
 		VALUES ($1, 'Ops Registry Test', $2, $3, $4)`,
-		userID, userID+"@example.test", flashRef.ProviderSlug, flashRef.ModelSlug,
+		userID, userID+"@example.test", removedRef.ProviderSlug, removedRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -302,8 +302,8 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 	).Scan(&preference.ProviderSlug, &preference.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
-	// The chat slot default is GLM (0009_default_chat_model.sql).
-	if preference != (models.Ref{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}) {
+	// The chat slot default is Flash (0116_deepseek_chat_default.sql).
+	if preference != (models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}) {
 		t.Fatalf("preference was not remapped: %q", preference)
 	}
 	var emails int
@@ -426,8 +426,8 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	); err != nil {
 		t.Fatal(err)
 	}
-	// Each slot lands on its own default: chat on GLM, editor on Flash.
-	want := [2]models.Ref{{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}, {ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}}
+	// Each slot lands on its own default, Flash for both.
+	want := [2]models.Ref{{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, {ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}}
 	if preferences != want {
 		t.Fatalf("preferences = %q, want %q", preferences, want)
 	}

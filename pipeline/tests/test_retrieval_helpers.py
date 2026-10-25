@@ -508,7 +508,7 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert "Open: Cells.pdf (file f_1). The learner owns this workspace." in body
     assert "key points first" in body, "brief writing"
     assert "a deck explains each chapter" in body
-    assert "a quiz of 5 questions and a set of 10 flashcards" in body
+    assert "a quiz of 2 questions and a set of 10 flashcards" in body
     # Knowledge checks are notes only: a deck's turn gets no check line.
     assert "knowledge check" not in body, "deck main format"
     ctx.study_preferences["mainFormat"] = "note"
@@ -518,16 +518,25 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
     assert turn_context.FINAL_NOTICE in turn_context.message(ctx, final=True)["content"]
 
+    # Chapters come from list_sources; the open file names its own (Epo 2026-10-25).
+    ctx.chapters = [{"id": "ch_1", "name": "Cells"}, {"id": "ch_2", "name": "Genes"}]
+    ctx.open_resource["chapter_id"] = "ch_2"
+    filed = turn_context.message(ctx)["content"]
+    assert "Open: Cells.pdf (file f_1), in chapter Genes [ch_2]." in filed
+    assert "ch_1" not in filed
+    # The open file is no request of its own (Epo 2026-10-25).
+    assert turn_context.OPEN_CAUTION in filed
+
     viewer = _library_ctx()
     viewer.role = "viewer"
     empty = turn_context.message(viewer)["content"]
     assert "Open: nothing. The learner can only view this workspace." in empty
     assert "Library excerpts" not in empty
     assert (
-        "a quiz of 5 questions; make no standalone flashcards unless asked." in empty
+        "a quiz of 2 questions; make no standalone flashcards unless asked." in empty
     ), "default preferences: quiz less, flashcards off said off"
     assert "a note explains each chapter" in empty
-    assert "knowledge check of at most 2 questions" in empty
+    assert "knowledge check of at most 1 question" in empty
 
 
 # --------------------------------------------------------------- citations
@@ -1321,14 +1330,14 @@ def test_chat_request_requires_enabled_thinking():
     assert ChatStreamReq(**fields, thinking="high").thinking == "high"
 
 
-def test_one_prompt_holds_the_library_rules_in_both_modes():
+def test_one_prompt_holds_the_all_sources_rules_in_both_modes():
     from pipeline.prompts import chat as chat_prompts
     from pipeline.prompts import skills
     from pipeline.retrieval import limits
 
     off = on = chat_prompts.system_prompt("en")
 
-    assert "Library (when Workspace only is off)" in off
+    assert "All sources mode (when Workspace only is off)" in off
     # Without a write tool (a viewer) the model is told it cannot write.
     assert chat_prompts.READ_ONLY_RULE in chat_prompts.system_prompt("en", writes=False)
     assert chat_prompts.READ_ONLY_RULE not in off
@@ -1338,12 +1347,12 @@ def test_one_prompt_holds_the_library_rules_in_both_modes():
     assert chat_prompts.FIRST_TURN_OFFER not in chat_prompts.system_prompt(
         "en", writes=False
     )
-    assert "lacks the learning scope or the learner's level" in skills.editing()
+    assert "the learning scope and learner's level" in skills.editing()
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
         assert "propose the plan" not in prompt
         # Only a turn that writes needs the scope question (Epo 2026-10-21).
-        assert "lacks the learning scope or the learner's level" not in prompt
+        assert "the learning scope and learner's level" not in prompt
         assert (
             f"Until its first successful write a turn has "
             f"{limits.PLANNING_RESPONSES} responses" in prompt

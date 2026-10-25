@@ -9,7 +9,7 @@ config field are in `README.md`; the scenarios to run are its Acceptance table.
 - **Base system prompt** (`pipeline/prompts/chat.py`, about 460 tokens of
   rules): grounding, answer or build, and the budget every turn shares (4 tool
   calls per response, 8 responses without a ledger). Then the language,
-  follow-references and capture rules, the library rules with Library on, and
+  follow-references and capture rules, the all sources rules (both modes), and
   the OpenUI answer format (about 2k tokens, the largest part).
 - **Skills** (`pipeline/prompts/skills.py`), read with `read_skill` only when
   the work needs them:

@@ -83,7 +83,7 @@ func TestGetLoadsPinnedVersionOnMissAndNeverFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if def.Version == 9999 || def.Ref() != glmRef {
+	if def.Version == 9999 || def.Ref() != flashRef {
 		t.Fatalf("default mutated by a miss: %#v", def)
 	}
 }
@@ -100,12 +100,14 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The chat slot default is GLM; a newer Flash version takes it over.
-	_, err = pool.Exec(ctx, `
+	// A newer Flash version takes the chat slot default over from its holder.
+	var holder Ref
+	var holderVersion int
+	if err := pool.QueryRow(ctx, `
 		UPDATE model_configs
 		   SET is_default_for = array_remove(is_default_for, 'chat')
-		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled`, glmRef.ProviderSlug, glmRef.ModelSlug)
-	if err != nil {
+		 WHERE 'chat' = ANY(is_default_for)
+		 RETURNING provider_slug, model_slug, version`).Scan(&holder.ProviderSlug, &holder.ModelSlug, &holderVersion); err != nil {
 		t.Fatal(err)
 	}
 	_, err = pool.Exec(ctx, `
@@ -127,7 +129,7 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `
 			UPDATE model_configs
 			   SET is_default_for = array_append(is_default_for, 'chat')
-			 WHERE provider_slug=$1 AND model_slug=$2 AND enabled`, glmRef.ProviderSlug, glmRef.ModelSlug)
+			 WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`, holder.ProviderSlug, holder.ModelSlug, holderVersion)
 	})
 	old, err := reg.Get(ctx, flashRef, 1)
 	if err != nil {

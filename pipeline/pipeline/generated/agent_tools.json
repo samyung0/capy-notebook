@@ -1,5 +1,5 @@
 {
-  "version": 40,
+  "version": 41,
   "operations": [
     "source.read",
     "material.read",
@@ -424,7 +424,7 @@
             "type": "string"
           },
           "content": {
-            "description": "note, mindmap or diagram only: markdown.",
+            "description": "note only: markdown.",
             "type": "string"
           },
           "excerpt_ids": {
@@ -439,8 +439,6 @@
           "kind": {
             "enum": [
               "flashcards",
-              "mindmap",
-              "diagram",
               "note"
             ],
             "type": "string"
@@ -908,7 +906,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math, and a mermaid block (a mindmap's or diagram's one block) as one ```mermaid fence, expecting the source inspect shows as its text. Any note block may be removed or replaced, media included; the only media an edit adds are library figures. A block rewritten as one of its own type keeps its caption and width (a diagram its theme too); an image swapped for a different picture or figure takes the new one's caption. PDFs cannot be edited. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math, and a Mermaid block a learner added as one ```mermaid fence, expecting the source inspect shows as its text. Any note block may be removed or replaced, media included; the only media an edit adds are library figures. A block rewritten as one of its own type keeps its caption and width (a diagram its theme too); an image swapped for a different picture or figure takes the new one's caption. PDFs cannot be edited. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2226,7 +2224,7 @@
     }
   ],
   "formats": {
-    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60 (1 or more for a scatter)}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check sized and placed as the study preferences say; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
+    "note": "Markdown. A note may also hold, where they help an idea: ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60 (1 or more for a scatter)}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check sized and placed as the study preferences say; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a still picture."
   },
   "mediaBlocks": {
     "chart": {

@@ -892,7 +892,7 @@ pub const EMBEDS: &[Embed] = &[
         element: "mermaid",
         fence_lang: "mermaid",
         fence_body: "text",
-        chat: "Mermaid",
+        chat: "",
         materials: &["mindmap", "diagram"],
         question_block: false,
         question_media: false,

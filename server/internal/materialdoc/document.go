@@ -53,6 +53,11 @@ var (
 	// Mermaid, chart, graph) stores: what MediaFrame's resize handles write, a
 	// whole percentage from 20 to 100. Mirrors MEDIA_WIDTH in the Node validator.
 	mediaWidth = regexp.MustCompile(`^(?:[2-9][0-9]|100)%$`)
+	// columnWidth is a column's width as the editor writes it: the layout
+	// presets, or Plate's column normalizer writing a float ("49.9995%"). A
+	// plain decimal percentage above 0 and at most 100, as JavaScript writes a
+	// number. Mirrors COLUMN_WIDTH in the browser's document check.
+	columnWidth = regexp.MustCompile(`^(?:100|[1-9][0-9]?(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])%$`)
 )
 
 // Envelope is the generic versioned JSON value persisted in materials.content.
@@ -766,6 +771,8 @@ func validateElement(node map[string]any, typ string, depth int, children []any,
 		return validateMediaWidth(node)
 	case "audio":
 		return validateMedia(node, typ)
+	case "column":
+		return validateColumnWidth(node)
 	case RefType:
 		return validateMaterialRef(node)
 	}
@@ -848,6 +855,17 @@ func validateMediaWidth(node map[string]any) error {
 		return nil
 	}
 	return errors.New("width must be a whole percentage from 20 to 100")
+}
+
+func validateColumnWidth(node map[string]any) error {
+	raw, ok := node["width"]
+	if !ok {
+		return nil
+	}
+	if width, ok := raw.(string); ok && columnWidth.MatchString(width) {
+		return nil
+	}
+	return errors.New("column width must be a percentage above 0 and at most 100")
 }
 
 func validateQuiz(node map[string]any) error {
