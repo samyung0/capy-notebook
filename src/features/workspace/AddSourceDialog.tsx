@@ -50,6 +50,7 @@ import {
 import { Separator } from '@/components/ui/Separator';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
+import { markGettingStarted } from '@/features/guide/gettingStarted';
 import type { OpenItem } from '@/features/materials/openItem';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -637,7 +638,7 @@ function SourceList({
           fixed && 'mt-3'
         )}
       >
-        <h3 className="t-card-title">{m.source_selected_files()}</h3>
+        <h3 className="t-subtitle">{m.source_selected_files()}</h3>
         <Popover>
           <PopoverTrigger asChild>
             <IconButton
@@ -664,8 +665,7 @@ function SourceList({
                 name={fileIconName(source)}
               />
               <span
-                // Phones: one step smaller, like the drop zone's heading.
-                className="t-body sm:t-subtitle min-w-0 flex-1 truncate font-semibold"
+                className="t-body min-w-0 flex-1 truncate"
                 title={source.name}
               >
                 {source.name}
@@ -678,10 +678,22 @@ function SourceList({
                   provider={source.provider}
                 />
               )}
-              <span className="t-meta text-fg-muted max-sm:text-xs">
-                {formatSize(source.sizeBytes, source.sizeEstimate)} ·{' '}
-                {source.kind.toUpperCase()}
-              </span>
+              {/* While a fast parse is analyzed, its progress takes the size and type slot. */}
+              {source.parseMode === 'fast' &&
+              (source.analysisStatus === 'queued' ||
+                source.analysisStatus === 'analyzing') ? (
+                <ProgressBar
+                  className="min-w-0 max-w-[140px] flex-1"
+                  height={4}
+                  showLabel
+                  value={source.analysisProgress?.percent ?? 0}
+                />
+              ) : (
+                <span className="t-meta text-fg-muted max-sm:text-xs">
+                  {formatSize(source.sizeBytes, source.sizeEstimate)} ·{' '}
+                  {source.kind.toUpperCase()}
+                </span>
+              )}
               <div className="ml-auto flex items-center">
                 {fixed ? null : creatingKey === source.key ? (
                   <NewChapterInput
@@ -744,25 +756,9 @@ function SourceList({
             )}
             {source.parseMode === 'fast' &&
               (source.analysisStatus === 'error' ||
-              source.analysisStatus === 'ready' ? (
+                source.analysisStatus === 'ready') && (
                 <SourceAnalysisNote policy={uploadPolicy} source={source} />
-              ) : (
-                source.analysisStatus !== 'idle' && (
-                  <div className="mt-1 flex flex-col gap-1">
-                    <ProgressBar
-                      height={4}
-                      value={source.analysisProgress?.percent ?? 0}
-                    />
-                    <p className="t-meta text-fg-muted">
-                      {m.source_analyzing_progress({
-                        percent: Math.round(
-                          source.analysisProgress?.percent ?? 0
-                        ),
-                      })}
-                    </p>
-                  </div>
-                )
-              ))}
+              )}
             {source.kind === 'audio' && source.origin === 'local' && (
               <p
                 className={cn('t-meta text-fg-muted', {
@@ -893,7 +889,12 @@ export function AddSourceDialog({
   const retryRead = useRef<string | null>(null);
   // Mutations keep running after the dialog unmounts, so the transfer
   // runner can hold on to these.
-  const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
+  const { mutateAsync: upload } = useUploadSource(workspaceId);
+  const uploadSource: typeof upload = async (vars) => {
+    const file = await upload(vars);
+    markGettingStarted('upload');
+    return file;
+  };
   const { mutateAsync: importSources } = useImportSources(workspaceId, {
     errorToast: false,
   });
@@ -1478,7 +1479,8 @@ export function AddSourceDialog({
               value: 'import',
             },
             { label: m.action_create(), value: 'create' },
-            { label: m.generate_ai(), value: 'generate' },
+            // TODO: refine with agentic harness. AI generate is hidden until
+            // then; its panel below still opens for initialMode 'generate'.
           ]}
           value={mode}
         />

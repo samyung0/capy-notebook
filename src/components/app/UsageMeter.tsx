@@ -12,30 +12,35 @@ export interface Segment {
   label: string;
 }
 
-/** Track with one coloured segment per share of the limit; a 2px surface
- * gap separates neighbours. `stripedFrom` (percent) hatches the bar from that
+/** Track with one coloured segment per share of the limit, then the empty
+ * rest; a real 2px gap separates neighbours, so a frosted panel shows
+ * through it as a card does. `stripedFrom` (percent) hatches the bar from that
  * point to the end, over the segments too, so filled purchased credits still
  * read as purchased. */
 export function UsageBar({
   segments,
   limit,
   stripedFrom,
+  className,
 }: {
   segments: Segment[];
   limit: number;
   stripedFrom?: number;
+  className?: string;
 }) {
   return (
-    <div className="relative mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-hover-bg">
+    <div
+      className={cn(
+        'relative mt-3 flex h-2.5 gap-0.5 overflow-hidden rounded-full',
+        className
+      )}
+    >
       {limit > 0 &&
         segments
           .filter((s) => s.amount > 0)
           .map((s) => (
             <div
-              className={cn(
-                'h-full shrink-0 shadow-[2px_0_0_var(--color-surface)]',
-                s.faint && 'opacity-35'
-              )}
+              className={cn('h-full shrink-0', s.faint && 'opacity-35')}
               key={s.key}
               style={{
                 backgroundColor: s.color,
@@ -43,6 +48,7 @@ export function UsageBar({
               }}
             />
           ))}
+      <div className="h-full min-w-0 flex-1 bg-surface-hover-bg" />
       {stripedFrom !== undefined && (
         // Muted stripes with surface-tinted gaps: the stripes show on the
         // empty track, the gaps on a coloured fill.

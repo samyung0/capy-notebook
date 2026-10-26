@@ -123,7 +123,7 @@ test.describe('workspace sharing', () => {
           page.getByRole('button', { name: m.action_clone_workspace() })
         ).toHaveCount(0);
         await expect(
-          page.getByRole('button', { name: m.action_add_file() })
+          page.getByRole('button', { name: m.action_new_file_or_chapter() })
         ).toHaveCount(0);
         expect(
           await page.locator('meta[name="robots"]').getAttribute('content')

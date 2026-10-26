@@ -240,8 +240,8 @@ export function refusalHandler(
 }
 
 /**
- * Toasts going offline (and arriving offline) and the storage status once per
- * workspace visit, and hosts the storage details dialog. A write refused for a
+ * Toasts going offline (and arriving offline), coming back online, and the
+ * storage status once per workspace visit, and hosts the storage details dialog. A write refused for a
  * frozen account or a storage limit refreshes the account, then shows the
  * status again as a fresh toast instead of a generic one (see refusalHandler).
  */
@@ -278,8 +278,22 @@ export function WorkspaceHealth({ workspace }: { workspace: Workspace }) {
     [qc, workspace.id]
   );
 
+  // Both toasts share an id, so coming back online replaces a visible
+  // offline toast instead of stacking under it.
+  const wasOffline = useRef(false);
   useEffect(() => {
-    if (online) return;
+    if (online) {
+      if (!wasOffline.current) return;
+      wasOffline.current = false;
+      userToast({
+        description: m.connection_online_body(),
+        id: 'workspace-offline',
+        title: m.connection_online_title(),
+        variant: 'success',
+      });
+      return;
+    }
+    wasOffline.current = true;
     userToast({
       description: m.connection_offline_body(),
       id: 'workspace-offline',

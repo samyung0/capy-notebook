@@ -40,7 +40,7 @@ const ThemeChooser = ({
         <button
           aria-label={t.label}
           aria-pressed={isSelected}
-          className="group flex w-16 flex-col items-center gap-1.5 rounded-button px-3 py-2 transition-colors ease-(--motion-ease-smooth-out) hover:bg-surface-hover-bg"
+          className="group flex w-16 flex-col items-center gap-1.5 rounded-button px-3 py-2 transition-colors ease-(--motion-ease-smooth-out) hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg focus-visible:outline-none"
           key={c}
           onClick={() => onChange(c)}
           type="button"
@@ -60,6 +60,66 @@ const ThemeChooser = ({
             )}
           >
             {t.label}
+          </span>
+        </button>
+      );
+    })}
+  </div>
+);
+
+/** Each drawer style's corner at its own radii (not the active style's
+ * tokens): a panel's top-left corner holding a button. */
+const STYLE_CORNERS: { style: Style; panel: string; button: string }[] = [
+  { button: 'rounded-[3px]', panel: 'rounded-tl-[6px]', style: 'capy' },
+  { button: 'rounded-full', panel: 'rounded-tl-[16px]', style: 'fisheye' },
+];
+
+const StyleChooser = ({
+  selected,
+  onChange,
+}: {
+  selected: Style;
+  onChange: (style: Style) => void;
+}) => (
+  <div className="flex w-full -translate-x-1 flex-wrap gap-0.5">
+    {STYLE_CORNERS.map(({ style, panel, button }) => {
+      const isSelected = selected === style;
+      return (
+        <button
+          aria-pressed={isSelected}
+          className="group flex w-22 flex-col items-center gap-1.5 rounded-button px-3 py-2 transition-colors ease-(--motion-ease-smooth-out) hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg focus-visible:outline-none"
+          key={style}
+          onClick={() => onChange(style)}
+          type="button"
+        >
+          <span
+            aria-hidden
+            className={cn(
+              'relative block h-11 w-16 overflow-hidden rounded-md border border-line-strong bg-page transition-transform ease-(--motion-ease-smooth-out) group-hover:scale-105',
+              isSelected &&
+                'ring-2 ring-action ring-offset-2 ring-offset-surface'
+            )}
+          >
+            <span
+              className={cn(
+                'absolute top-2.5 left-2.5 size-full border-fg-muted border-t-2 border-l-2 bg-surface',
+                panel
+              )}
+            />
+            <span
+              className={cn(
+                'absolute top-6 left-5.5 h-2.5 w-8 bg-fg-muted',
+                button
+              )}
+            />
+          </span>
+          <span
+            className={cn(
+              't-muted font-medium',
+              isSelected ? 'text-fg' : 'text-fg-muted'
+            )}
+          >
+            {STYLE_LABELS[style]()}
           </span>
         </button>
       );
@@ -110,6 +170,13 @@ const FourColorIcon = ({
   </div>
 );
 
+/** Each style's name, in the drawer and in Settings. */
+export const STYLE_LABELS: Record<Style, () => string> = {
+  capy: m.theme_style_capy,
+  fisheye: m.theme_style_fisheye,
+  notion: m.theme_style_notion,
+};
+
 /** The four-dot swatch that stands for a style, in the drawer and in Settings. */
 export const StyleIcon = ({
   style,
@@ -120,14 +187,15 @@ export const StyleIcon = ({
   className?: string;
   dotClassName?: string;
 }) =>
-  style === 'classroom' ? (
+  style === 'capy' || style === 'fisheye' ? (
+    // Same colours; capy's square-ish dots echo its smaller radii.
     <FourColorIcon
       background="var(--surface-page)"
       colorFour="#8ec9f9"
       colorOne="#8c7bd9"
       colorThree="#fd7287"
       colorTwo="#7bd9ab"
-      innerClassname={dotClassName}
+      innerClassname={cn(style === 'capy' && 'rounded-[2px]', dotClassName)}
       outerClassname={className}
     />
   ) : (
@@ -157,7 +225,7 @@ export function ThemeDrawer({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = openProp ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
-  const { theme, style, setTheme } = useTheme();
+  const { theme, style, setStyle, setTheme } = useTheme();
   // Phones get a full-screen sheet laid out like a phone dialog (close on the
   // left of the title); wider screens slide it in from the right.
   const phone = useMediaQuery('(max-width: 639px)');
@@ -214,11 +282,14 @@ export function ThemeDrawer({
             )}
             <div className="mt-8 flex flex-col gap-6 px-4 max-sm:mt-2">
               <div className="flex flex-col gap-8">
-                {/* TODO: bring back the Style choice (a ButtonCard with its
-                    StyleIcon per STYLES entry, setStyle) once the Notion style
-                    is finished. */}
+                {/* Notion stays out of the drawer until it is finished;
+                    Settings still lists it. */}
                 <div className="flex flex-col gap-3">
                   <InputTitle>{m.settings_theme()}</InputTitle>
+                  <StyleChooser onChange={setStyle} selected={style} />
+                </div>
+                <div className="flex flex-col gap-3">
+                  <InputTitle>{m.settings_mode()}</InputTitle>
                   <div className="flex w-full">
                     <ThemeChooser
                       onChange={setTheme}

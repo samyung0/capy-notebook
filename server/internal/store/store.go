@@ -49,16 +49,6 @@ var ErrModelUnavailable = errors.New("model unavailable")
 // ErrModelRefRequired is a Settings write that tried to clear a preference.
 var ErrModelRefRequired = errors.New("model reference required")
 
-// ErrInvalidLLMKey means a BYOK credential was rejected by the provider.
-var ErrInvalidLLMKey = errors.New("invalid llm credential")
-
-// ErrLLMCredentialsUnavailable means the gateway has no LLM_CREDENTIALS_KEY,
-// so it cannot store or read user-supplied provider keys.
-var ErrLLMCredentialsUnavailable = errors.New("llm credentials unavailable")
-
-// ErrLLMKeyFailed means a BYOK call failed without a clear 401/403.
-var ErrLLMKeyFailed = errors.New("llm credential failed")
-
 // ErrConflict reports a failed optimistic revision comparison.
 var ErrConflict = errors.New("revision conflict")
 
@@ -137,15 +127,10 @@ type Store struct {
 	markdownURL, markdownSecret string
 	collaborationSecret         string
 	collaborationHTTP           *http.Client
-	credKey                     []byte
 	shareLinkSecret             []byte
 	planLimits                  planlimits.Catalog
 	planLimitsMu                sync.Mutex
 }
-
-// SetLLMCredentialKey installs the AES-256-GCM key used for user provider
-// secrets. Empty leaves BYOK write/read disabled.
-func (s *Store) SetLLMCredentialKey(key []byte) { s.credKey = key }
 
 // Pool exposes the connection pool so the model registry can share it.
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }

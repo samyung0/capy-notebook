@@ -19,6 +19,7 @@ function dock(voice: Partial<VoiceInput>, text = '') {
       sendDisabled={!text}
       text={text}
       voice={{
+        analyser: null,
         elapsedMs: 0,
         error: null,
         phase: 'idle',

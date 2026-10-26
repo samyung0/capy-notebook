@@ -41,6 +41,8 @@ export function GenerateFilePanel({
   onGeneratingChange?: (mode: GenerateMode | null) => void;
 }) {
   const [mode, setMode] = useState<GenerateMode>('quiz');
+  // null until the user changes Sources: the whole workspace, whatever loads.
+  const [picked, setPicked] = useState<ReadonlySet<string> | null>(null);
   const { data: workspace } = useWorkspace(workspaceId);
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
@@ -94,9 +96,12 @@ export function GenerateFilePanel({
         existingTitles={(materials ?? []).map((mt) => mt.title)}
         files={files ?? []}
         key={mode}
+        materials={materials ?? []}
         mode={mode}
         onGenerate={run}
+        onPickedChange={setPicked}
         pending={isPending}
+        picked={picked}
         workspaceName={workspace?.name ?? ''}
       />
     </div>

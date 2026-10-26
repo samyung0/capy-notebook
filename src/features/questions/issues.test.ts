@@ -148,6 +148,24 @@ it('fills short table rows and chart series, and drops blank descriptions', () =
   expect(messages(filled)).toEqual([]);
 });
 
+it('asks for the file of an image not uploaded yet', () => {
+  const [question] = exampleQuestions;
+  const image: QuestionBlock = {
+    description: '',
+    height: 1,
+    image: { url: '' },
+    type: 'image',
+    width: 1,
+  };
+  const withImage = { ...question, stem: [...question.stem, image] };
+  expect(questionIssues(withImage)).toEqual([
+    {
+      message: m.question_issue_image(),
+      row: { kind: 'block', location: { index: question.stem.length } },
+    },
+  ]);
+});
+
 it('caps an open part past the marks limit and names the mismatch', () => {
   const question = open();
   const markscheme = [
@@ -341,4 +359,18 @@ it('names what a merge of two editors left in a note pie, chart or plot', () => 
   expect(
     issues({ ...plot, series: [{ name: 'S', points: [[0, 1]] }] })
   ).toEqual([m.question_issue_plot_points()]);
+});
+
+it('asks for a row in a chart without one', () => {
+  const [question] = exampleQuestions;
+  const chart: QuestionBlock = {
+    kind: 'bar',
+    labels: [],
+    series: [{ name: 'Number', values: [] }],
+    title: '',
+    type: 'chart',
+  };
+  expect(messages({ ...question, stem: [chart] })).toEqual([
+    m.question_issue_chart_rows(),
+  ]);
 });

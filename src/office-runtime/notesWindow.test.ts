@@ -50,7 +50,7 @@ afterEach(() => {
 describe('PPTX presenter window, runtime side', () => {
   it('takes the window Capy opened only for the token it expects, while it expects one', () => {
     const frame = fakeWindow();
-    frame.document.documentElement.dataset.style = 'classroom';
+    frame.document.documentElement.dataset.style = 'capy';
     frame.document.documentElement.lang = 'zh';
     vi.stubGlobal('window', frame);
     const ask = vi.fn();
@@ -65,7 +65,7 @@ describe('PPTX presenter window, runtime side', () => {
     expect(attach('t1', popup)).toBe(true);
     expect(presenter.notes.get()).toBe(popup);
     // Capy's style (its font) and language reach the window.
-    expect(popup.document.documentElement.dataset.style).toBe('classroom');
+    expect(popup.document.documentElement.dataset.style).toBe('capy');
     expect(popup.document.documentElement.lang).toBe('zh');
     // A reload of the same window is not taken again.
     expect(attach('t1', popup)).toBe(false);

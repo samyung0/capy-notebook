@@ -8,7 +8,10 @@ test('Indexing tab lists file changes, cancels queued work and processes waiting
   await page.goto('/workspaces/ws_bio');
   // The rail's gear (its aria-label); the empty viewer's quick action shares
   // the name as text and appears once the recent files load.
-  await page.getByLabel(m.workspace_settings(), { exact: true }).click();
+  await page
+    .getByLabel(m.workspace_settings(), { exact: true })
+    .first()
+    .click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
@@ -66,7 +69,10 @@ test('Indexing tab lists note changes and indexes a waiting note now', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio');
-  await page.getByLabel(m.workspace_settings(), { exact: true }).click();
+  await page
+    .getByLabel(m.workspace_settings(), { exact: true })
+    .first()
+    .click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
@@ -114,7 +120,10 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 
   // Listed with the other failed files; automatic processing skips them.
-  await page.getByLabel(m.workspace_settings(), { exact: true }).click();
+  await page
+    .getByLabel(m.workspace_settings(), { exact: true })
+    .first()
+    .click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
@@ -144,7 +153,10 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
     page.getByText(m.files_process_started_title(), { exact: true })
   ).toBeVisible();
   // No longer failed: gone from the Indexing tab's list.
-  await page.getByLabel(m.workspace_settings(), { exact: true }).click();
+  await page
+    .getByLabel(m.workspace_settings(), { exact: true })
+    .first()
+    .click();
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();

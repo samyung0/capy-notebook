@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MaterialListItem, SourceFile, Workspace } from '@/api/types';
-import { mergeRecentItems } from './recentItems';
+import { fromRecent, mergeRecentItems } from './recentItems';
 
 const workspace = {
   canClone: true,
@@ -54,7 +54,8 @@ describe('mergeRecentItems', () => {
         file('f_new', '2026-03-01T00:00:00.000Z'),
       ],
       [material('m_mid', '2026-02-01T00:00:00.000Z')],
-      [workspace]
+      [workspace],
+      10
     );
     expect(items.map((item) => item.id)).toEqual(['f_new', 'm_mid', 'f_old']);
   });
@@ -86,7 +87,8 @@ describe('mergeRecentItems', () => {
         material('m_own', '2026-03-01T00:00:00.000Z'),
         material('m_solo', '2026-02-01T00:00:00.000Z', ''),
       ],
-      [workspace, viewer]
+      [workspace, viewer],
+      10
     );
     expect(items.map((item) => [item.id, item.canEdit])).toEqual([
       ['f_shared', false],
@@ -122,7 +124,8 @@ describe('mergeRecentItems', () => {
         file('f_public', '2026-02-01T00:00:00.000Z', 'ws_3'),
       ],
       [material('m_solo', '2026-01-01T00:00:00.000Z', '')],
-      [workspace, linkViewer]
+      [workspace, linkViewer],
+      10
     );
     expect(items.map((item) => [item.id, item.canClone])).toEqual([
       ['f_ready', true],
@@ -131,6 +134,28 @@ describe('mergeRecentItems', () => {
       ['f_failed', false],
       ['f_public', false],
       ['m_solo', true],
+    ]);
+  });
+});
+
+describe('fromRecent', () => {
+  it('keeps the server open order with each open time', () => {
+    const items = fromRecent(
+      [
+        {
+          file: file('f_1', '2026-04-01T00:00:00.000Z'),
+          openedAt: '2026-06-02T00:00:00.000Z',
+        },
+        {
+          material: material('m_1', '2026-05-01T00:00:00.000Z'),
+          openedAt: '2026-06-01T00:00:00.000Z',
+        },
+      ],
+      [workspace]
+    );
+    expect(items.map((item) => [item.id, item.openedAt])).toEqual([
+      ['f_1', '2026-06-02T00:00:00.000Z'],
+      ['m_1', '2026-06-01T00:00:00.000Z'],
     ]);
   });
 });

@@ -46,12 +46,12 @@ func TestPostRawSuccess(t *testing.T) {
 }
 
 func TestErrorDecode(t *testing.T) {
-	direct := &Error{Body: []byte(`{"code":"invalid_key","message":"nope"}`)}
-	if got := direct.Decode(); got.Code != "invalid_key" || got.Message != "nope" {
+	direct := &Error{Body: []byte(`{"code":"provider_busy","message":"nope"}`)}
+	if got := direct.Decode(); got.Code != "provider_busy" || got.Message != "nope" {
 		t.Fatalf("direct: %#v", got)
 	}
-	wrapped := &Error{Body: []byte(`{"detail":{"code":"key_failed","message":"check"}}`)}
-	if got := wrapped.Decode(); got.Code != "key_failed" || got.Message != "check" {
+	wrapped := &Error{Body: []byte(`{"detail":{"code":"context_too_large","message":"check"}}`)}
+	if got := wrapped.Decode(); got.Code != "context_too_large" || got.Message != "check" {
 		t.Fatalf("wrapped: %#v", got)
 	}
 }

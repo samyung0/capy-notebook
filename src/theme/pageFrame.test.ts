@@ -16,10 +16,12 @@ describe('sanitizePageFrame', () => {
     const frame = {
       colours: 'custom',
       dots: [{ x: 0.2, y: 0.4 }],
+      frosted: ['left', 'right'],
       pattern: 'mesh',
       strength: 0.5,
     };
     expect(sanitizePageFrame(frame)).toEqual(frame);
+    expect(sanitizePageFrame({ ...frame, frosted: [] }).frosted).toEqual([]);
   });
 
   it('replaces each bad field with the default and caps strength', () => {
@@ -75,7 +77,9 @@ describe('shuffleFrame', () => {
 
 describe('pageFrameStyle', () => {
   it('draws nothing for None', () => {
-    expect(pageFrameStyle(DEFAULT_PAGE_FRAME)).toBeNull();
+    expect(
+      pageFrameStyle({ ...DEFAULT_PAGE_FRAME, pattern: 'none' })
+    ).toBeNull();
   });
 
   it('draws the pattern from the registered colour properties', () => {

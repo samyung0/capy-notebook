@@ -40,6 +40,7 @@ export function LiveFlashcards({
   onStatusChange,
   showTitle,
   showUndo,
+  compact,
   enabled = true,
   inside,
   wake,
@@ -54,6 +55,8 @@ export function LiveFlashcards({
   onStatusChange?: (status: NoteEditorStatus | null) => void;
   showTitle?: boolean;
   showUndo?: boolean;
+  /** Small front-only cards in the editor, as a note's block shows them. */
+  compact?: boolean;
   /** Joined only while wanted (a note's embed while on screen). */
   enabled?: boolean;
 }) {
@@ -128,6 +131,7 @@ export function LiveFlashcards({
         <CollaborationHold>
           <FlashcardsEditor
             action={action}
+            compact={compact}
             onEmpty={onEmpty}
             room={room}
             setId={setId}

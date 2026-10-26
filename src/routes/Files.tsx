@@ -21,6 +21,7 @@ import {
   ItemList,
   ItemPick,
   ItemSkeletonGrid,
+  itemMenuIcon,
 } from '@/components/app/ItemCard';
 import { ListEnd } from '@/components/app/ListEnd';
 import {
@@ -282,9 +283,10 @@ function ActiveFiles({
         }
         sortMenu={{ ...sorting, hiddenFromMd: view === 'list', sorts }}
         view={view}
+        wide
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)} wide>
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -382,7 +384,7 @@ const FileItem = memo(function FileItem({
                 onClick: () => onDelete([file]),
               },
             ]}
-            triggerIcon="moreHorizontal"
+            triggerIcon={itemMenuIcon(view)}
           />
         ) : (
           <ContentActions
@@ -391,7 +393,7 @@ const FileItem = memo(function FileItem({
             content={toFileActionTarget(file)}
             display="menu"
             menuAlign="end"
-            menuTriggerIcon="moreHorizontal"
+            menuTriggerIcon={itemMenuIcon(view)}
             renameFieldLabel={m.files_file_name()}
             renameTitle={m.files_rename()}
             showMove={false}
@@ -464,7 +466,7 @@ const TrashCard = memo(function TrashCard({
               onClick: () => onPurge(item),
             },
           ]}
-          triggerIcon="moreHorizontal"
+          triggerIcon={itemMenuIcon(view)}
         />
       }
       details={formatFileSize(item.sizeBytes)}
@@ -569,7 +571,7 @@ function TrashTab({
   }
   return (
     <>
-      <div className="page-px -mb-3 flex items-center">
+      <div className="page-px-wide -mb-3 flex items-center">
         {selection.selecting ? (
           <SelectionBar
             allSelected={
@@ -606,7 +608,8 @@ function TrashTab({
             />
           </SelectionBar>
         ) : (
-          <div className="ml-auto flex min-h-10 items-center gap-1 sm:min-h-11.5">
+          // -mr-1.5: the view toggle's icon on the gutter, as in ListToolbar.
+          <div className="-mr-1.5 ml-auto flex min-h-10 items-center gap-1 sm:min-h-11.5">
             <Button
               className="px-1.5"
               disabled={
@@ -624,7 +627,7 @@ function TrashTab({
         )}
       </div>
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)} wide>
         <div className="flex flex-col gap-3">
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}

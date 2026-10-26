@@ -1,0 +1,14 @@
+== users-1000-1024-1321: FAIL p95 9303 ms
+   174 req/s (0.174 per user), p50 7 p95 9303 p99 10001 max 10019 ms, errors 4.71%, streams {'ended': 0, 'failed': 0, 'open_at_end': 317, 'opened': 2098, 'refused': 0}
+   server   cpu mean 0.25 p95 0.45 cores, memory peak 440 MiB
+   db       cpu mean 0.39 p95 0.98 cores, memory peak 727 MiB
+   redis    cpu mean 0.03 p95 0.06 cores, memory peak 4 MiB
+   loadgen  cpu mean 0.08 p95 0.18 cores, memory peak 109 MiB
+   cores cpu0 31%, cpu1 48%, cpu2 17%, cpu3 17%
+   postgres backends (mean) active/- 0.7, active/IO 0.0, idle/- 0.0, idle/Client 8.3
+   pool waits: 49489 acquires waited 59613.2 s in all, 17 windows with waits, 7 with every connection taken at the line
+   gateway warnings and errors: 2829
+     {"time":"2026-10-24T13:21:57.855087077Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"1632e2094ad582c3735c65e6cbf963f6","method":"GET","path":"/api/flashcards/mat_ab46371c35","status":500,"duration_ms":10001,"bytes":124,"ip":"10.0.2.2","client_aborted":true}
+     {"time":"2026-10-24T13:22:00.189366356Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"f85f69131ebd9901daa837667387e0af","method":"GET","path":"/api/workspaces/ws_0480f32380/study","status":500,"duration_ms":10000,"bytes":124,"ip":"10.0.2.2","client_aborted":true}
+     {"time":"2026-10-24T13:22:01.749988586Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"5bc369690136fc37d451b13acc9645a3","method":"GET","path":"/api/learning/progress","status":500,"duration_ms":9998,"bytes":124,"ip":"10.0.2.2","client_aborted":true}
+   slowest routes (p95): GET /api/bank/progress 10006 ms, GET /api/workspaces 10002 ms, GET /api/thinking 10001 ms, GET /api/files 10001 ms, GET /api/materials 10001 ms

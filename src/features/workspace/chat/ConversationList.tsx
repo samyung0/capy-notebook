@@ -6,14 +6,13 @@ import {
   useUpdateConversation,
 } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
-import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
-import { Icon } from '@/components/ui/Icon';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { PanelNewRow } from '../PanelNewRow';
 import { matchesSearch, PanelSearch } from '../PanelSearch';
 
 /**
@@ -126,20 +125,7 @@ export function ConversationList({
     <div className="flex min-h-0 flex-1 flex-col">
       <PanelSearch label={m.chat_search()} onChange={setQuery} value={query} />
       {onNew && (
-        // A nav row like the app sidebar's: icon, label, a hover fill only.
-        <div className="shrink-0 px-2.5 pt-1">
-          <button
-            className={cn(
-              BASE_BUTTON_STYLE,
-              'flex h-fit w-full justify-start gap-3 px-2 py-1.5 font-medium text-fg leading-(--body-line-height) hover:bg-surface-hover-bg active:-rotate-1'
-            )}
-            onClick={onNew}
-            type="button"
-          >
-            <Icon className="shrink-0" name="newChat" size={19} />
-            <span className="translate-y-px font-semibold">{m.chat_new()}</span>
-          </button>
-        </div>
+        <PanelNewRow icon="newChat" label={m.chat_new()} onClick={onNew} />
       )}
       <div
         className={cn(

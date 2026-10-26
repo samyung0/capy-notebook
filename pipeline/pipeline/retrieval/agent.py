@@ -543,9 +543,6 @@ async def _run_turn(
     except elitellm.ProviderBusy as exc:
         yield busy_error(exc)
         return
-    except models.UserKeyError as exc:
-        yield _with_usage(dict(exc.as_event()))
-        return
     except compact.ContextTooLarge as exc:
         yield _with_usage(events.error(str(exc), "context_too_large"))
         return
@@ -828,11 +825,6 @@ async def _run_turn(
         except pending.SourceChanged as exc:
             if not _client_gone(client):
                 yield _with_usage(events.error(str(exc), exc.code))
-            budget.stop_reason = STOP_ERROR
-            return
-        except models.UserKeyError as exc:
-            if not _client_gone(client):
-                yield _with_usage(dict(exc.as_event()))
             budget.stop_reason = STOP_ERROR
             return
         except compact.ContextTooLarge as exc:

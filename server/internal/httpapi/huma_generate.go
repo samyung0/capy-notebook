@@ -58,7 +58,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	if err != nil {
 		return nil, hErr(err)
 	}
-	charge, err := a.beginProviderSession(ctx, actor, wsID, store.SurfaceGenerate, llm.PaidBy, llm.Rates, embed.Rates, llm.Thinking)
+	charge, err := a.beginProviderSession(ctx, actor, wsID, store.SurfaceGenerate, llm.Rates, embed.Rates, llm.Thinking)
 	if err != nil {
 		return nil, hErr(err)
 	}

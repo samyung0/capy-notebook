@@ -1168,6 +1168,31 @@ state. Closing the file, opening another one or reloading the page starts at
 the format's default (100%, PPTX fitted to the window, DOCX fitted to the pane
 below md); the scroll position is not carried.
 
+DOCX View in a frame narrower than 768 px (a phone, or a centre panel squeezed
+by the side panels) opens a reading layout instead of pages (Epo 2026-10-26,
+mock 3oTJBkXfKvxcF161vu3CrT option B): `DocxViewer.tsx` follows the frame's
+width (settled 200 ms after a resize) and lays the document out again in a
+fresh viewer worker with `openDocumentViewer(bytes, { reading: { width,
+padding: 16 } })`. The fork's `viewer.ts` rewrites the layout request: each
+section one column the frame's width with 16 px side margins, no top or bottom
+margin, 2400 px pages, no headers, footers, page borders, line numbers or
+vertical centring, `options.continuousFlow` and `renderEnv.reading` (the
+document's body size, which the view engine reports as `bodyFontSize`, read at
+12 pt, the column's content width). Lowering then eases sizes above the body by
+the square root of their ratio (a 35 pt title in a 12 pt body reads at about
+27 px), keeps smaller ones at least 7/8 of the reading size, halves indents and
+tab stops, drops section columns, fits tables wider than the column to it
+(their grid scaled, not scrolled: a canvas page cannot scroll part of itself)
+and pictures to its width, and puts floating pictures in line (one in front of
+or behind the text stays). `continuousFlow` makes page breaks, page break
+before and new-page section breaks start no page, and ends each page at its
+flowed content unless it holds footnotes, which sit at its foot. The viewer's
+`flush` mode stacks the pages with no gap, padding or shadow on a white pane
+(`.docx-runtime-viewer[data-reading]`, 16 px above the first line and below
+the last), at 100% with no pinch. View › Page layout (shown while the frame is
+narrow, remembered per browser as `docxPageLayout`) returns to pages; print
+always lays out pages. Edit keeps pages.
+
 Below md (768 px, the viewport, sent as `set-appearance`'s `compact`) a DOCX
 opens fitted: the runtime's `load` turns a missing `zoom` into `'fit'`, and
 `DocxDisplayListViewer` and `DocxEditor` (`initialZoom: 'fit'`) scale the
@@ -1554,7 +1579,7 @@ while editing is paused; PNG saves the part on screen drawn at the same scale at
 every zoom.
 
 Below lg, while a DOCX, XLSX or PPTX file is open, the workspace's chat stays
-a round button at the bottom right, above the sheet tabs and the slide pager,
+a round button at the bottom right, above the sheet tabs and the slide strip,
 at every width; it opens the same one-line field as other files
 (`ChatDock`, `WorkspaceOpen`).
 
@@ -1688,9 +1713,12 @@ fork's own colours); slides keep their own colours. The viewer's strip ends in
 a pager (previous, "Slide x of y", next). View mode has no count row, so the
 strip and the notes start right under the file header; edit mode adds the
 editor's flat toolbar row (`singleRowToolbar`, 40px, 36px in a frame under
-640px) above the same layout. In
-a frame under 640px (phones) the strip is a row of 96px thumbnails under the
-slide in both modes, the viewer's pager under it.
+640px) above the same layout. Below desktop (Capy's window under 1024px,
+the `narrow` flag in the frame's style message, so tablets and phones) or in a
+frame under 640px, the strip is a row of 96px thumbnails under the slide in
+both modes, with no pager: the row is the navigation. The editor takes the
+flag as pptx-react's `stripBelow` prop; the viewer as its `pptx-viewer-narrow`
+class.
 
 The PPTX toolbar row follows Google Slides and Capy's DOCX row: new slide
 with a layout dropdown, undo and redo, a zoom dropdown, then select, text box,
@@ -1773,8 +1801,9 @@ centred by Arrange.
 
 Both modes hide the speaker notes until View › Show speaker notes (the
 `view.speakerNotes` id, a checkbox item) or the Notes button at the bottom
-right of the slide area shows them; the two flip one state. In edit mode that
-is pptx-react's (`pptx-notes-toggle`, icon only in the narrow layout); the
+right of the slide area (bottom left, over the first thumbnail, when the strip
+is under the slide) shows them; the two flip one state. In edit mode that
+is pptx-react's (`pptx-notes-toggle`, labelled Notes in both layouts); the
 viewer draws the same button in `pptx-runtime.css`. The choice is one per
 person for every PPTX file and both modes, kept in the runtime origin's
 `localStorage` under `capy.pptx.speakerNotes` (`viewToggles.ts`; the
@@ -1827,9 +1856,8 @@ reports nothing. `useOfficeRuntime` passes it, clamped to the frame's height
 so a hostile document cannot push the button off the page, to `WorkspaceOpen`
 through `OfficeInsetContext`, which writes it as `--office-inset` on the
 viewer's box (no re-render while a resize moves it) and back to 0 when the
-file closes. The runtime marks its root `data-narrow` below lg, and
-`--pptx-notes-toggle-right` moves the Notes button left of the button's
-column.
+file closes. The chat button floats over the frame: nothing in the frame
+keeps room for it.
 
 PPTX's header menus follow Google Slides: File (Save, which Capy performs as
 `capy.save`, Download ▸ PowerPoint or PNG of the current slide, Print), Edit

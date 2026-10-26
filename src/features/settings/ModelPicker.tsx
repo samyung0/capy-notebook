@@ -1,6 +1,5 @@
 import { useModels, useSetModelPrefs } from '@/api/hooks';
 import type { ModelOption, ModelSlot, SetModelPrefsReq } from '@/api/types';
-import { Icon } from '@/components/ui/Icon';
 import {
   Select,
   SelectContent,
@@ -15,22 +14,8 @@ import {
   optionRef,
   parseModelRef,
   sameModel,
-  sortModelOptions,
 } from './llmOptions';
 import { ReasoningControls } from './ReasoningControls';
-
-export function providerLabel(slug: string): string {
-  switch (slug) {
-    case 'anthropic':
-      return m.settings_llm_key_anthropic();
-    case 'deepseek':
-      return m.settings_llm_key_deepseek();
-    case 'openai':
-      return m.settings_llm_key_openai();
-    default:
-      return slug;
-  }
-}
 
 export function ModelOptionLabel({ option }: { option: ModelOption }) {
   return (
@@ -39,9 +24,6 @@ export function ModelOptionLabel({ option }: { option: ModelOption }) {
         {option.modelName}
         {option.isDefault ? ` · ${m.settings_llm_default()}` : ''}
       </span>
-      {option.available ? null : (
-        <Icon className="size-3.5 shrink-0 text-fg-muted" name="lock" />
-      )}
     </span>
   );
 }
@@ -70,7 +52,7 @@ export function ModelPicker({
     errorBoundary: false,
   });
   const { mutate } = useSetModelPrefs();
-  const models = sortModelOptions(data?.models ?? []);
+  const models = data?.models ?? [];
   const selected = models.find((option) =>
     sameModel(
       optionRef(option),
@@ -105,15 +87,7 @@ export function ModelPicker({
           <SelectContent>
             {models.map((option) => (
               <SelectItem
-                disabled={!option.available}
                 key={modelRefValue(optionRef(option))}
-                title={
-                  option.available
-                    ? undefined
-                    : m.settings_llm_locked({
-                        provider: providerLabel(option.providerSlug),
-                      })
-                }
                 value={modelRefValue(optionRef(option))}
               >
                 <ModelOptionLabel option={option} />

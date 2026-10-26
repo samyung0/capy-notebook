@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { qk } from '@/api/client';
 import { UpdateMeBody, updateMeBodyNameMax } from '@/api/gen/validators';
 import { useMe, useUpdateMe } from '@/api/hooks';
+import { useThemeDrawer } from '@/components/app/themeDrawerSearch';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -13,6 +14,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { useUser } from '@/features/auth/clerkHooks';
+import { startGettingStarted } from '@/features/guide/gettingStarted';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -23,7 +25,8 @@ import { useProfilePhoto } from './useProfilePhoto';
 
 /** First-run profile dialog. Opens once per Clerk account, keyed on
  * `unsafeMetadata.onboardedAt`; Confirm and Skip both set it. Photos go
- * to Clerk; names and curated icon selections stay in Capy. */
+ * to Clerk; names and curated icon selections stay in Capy. Customize theme
+ * saves as Confirm does, then opens the Theme drawer; a failed save stays. */
 export function OnboardingDialog() {
   const { isLoaded, user } = useUser();
   const { data: me } = useMe({ errorBoundary: false });
@@ -31,7 +34,10 @@ export function OnboardingDialog() {
   const { mutateAsync: updateMe } = useUpdateMe({ errorToast: false });
   const [dismissed, setDismissed] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Which button is saving: it shows the spinner, every control waits.
+  const [saving, setSaving] = useState<'confirm' | 'theme' | null>(null);
+  const busy = saving !== null;
+  const themeDrawer = useThemeDrawer();
   const photo = useProfilePhoto();
   const { file } = photo;
 
@@ -71,10 +77,13 @@ export function OnboardingDialog() {
     !user.unsafeMetadata.onboardedAt;
   if (!open) return null;
 
-  const markOnboarded = () =>
-    user.updateMetadata({
+  // The Get started list lives only in the browser that onboarded.
+  const markOnboarded = () => {
+    startGettingStarted(me.id);
+    return user.updateMetadata({
       unsafeMetadata: { onboardedAt: new Date().toISOString() },
     });
+  };
 
   const skip = async () => {
     setDismissed(true);
@@ -85,30 +94,32 @@ export function OnboardingDialog() {
     }
   };
 
-  const confirm = handleSubmit(async ({ name, avatarIconId }) => {
-    setBusy(true);
-    setFormError(null);
-    try {
-      if (file) await user.setProfileImage({ file });
-      if (name !== me.name || file || avatarIconId !== me.avatarIconId) {
-        await updateMe({ avatarIconId: file ? '' : avatarIconId, name });
+  const save = (then: 'confirm' | 'theme') =>
+    handleSubmit(async ({ name, avatarIconId }) => {
+      setSaving(then);
+      setFormError(null);
+      try {
+        if (file) await user.setProfileImage({ file });
+        if (name !== me.name || file || avatarIconId !== me.avatarIconId) {
+          await updateMe({ avatarIconId: file ? '' : avatarIconId, name });
+        }
+        await markOnboarded();
+        // Refresh profile consumers after both services have saved successfully.
+        await qc.invalidateQueries({ queryKey: qk.me });
+        setDismissed(true);
+        if (then === 'theme') themeDrawer.setOpen(true);
+      } catch (error) {
+        // Clerk's own messages are user-facing; our API's never are.
+        setFormError(
+          errorCopy(
+            error,
+            clerkMessage(error as { message: string; longMessage?: string })
+          )
+        );
+      } finally {
+        setSaving(null);
       }
-      await markOnboarded();
-      // Refresh profile consumers after both services have saved successfully.
-      await qc.invalidateQueries({ queryKey: qk.me });
-      setDismissed(true);
-    } catch (error) {
-      // Clerk's own messages are user-facing; our API's never are.
-      setFormError(
-        errorCopy(
-          error,
-          clerkMessage(error as { message: string; longMessage?: string })
-        )
-      );
-    } finally {
-      setBusy(false);
-    }
-  });
+    });
 
   return (
     <SimpleDialog
@@ -119,21 +130,35 @@ export function OnboardingDialog() {
           type="submit"
           variant="accent"
         >
-          {busy ? <Spinner /> : m.action_confirm()}
+          {saving === 'confirm' ? <Spinner /> : m.action_confirm()}
         </Button>
       }
       footer={
-        // Phones skip from the header's close.
-        <Button
-          className="max-sm:hidden"
-          disabled={busy}
-          onClick={() => void skip()}
-          size="lg"
-          type="button"
-          variant="ghost-hover"
-        >
-          {m.onboarding_skip()}
-        </Button>
+        <>
+          {/* Phones skip from the header's close. */}
+          <Button
+            className="max-sm:hidden"
+            disabled={busy}
+            onClick={() => void skip()}
+            size="lg"
+            type="button"
+            variant="ghost-hover"
+          >
+            {m.onboarding_skip()}
+          </Button>
+          {/* Alone in the phone footer: centred under the form. */}
+          <Button
+            className="max-sm:mx-auto"
+            disabled={busy || !isValid}
+            iconLeft={saving === 'theme' ? undefined : 'palette'}
+            onClick={(event) => void save('theme')(event)}
+            size="lg"
+            type="button"
+            variant="outline"
+          >
+            {saving === 'theme' ? <Spinner /> : m.onboarding_customize_theme()}
+          </Button>
+        </>
       }
       onClose={() => {
         if (!busy) void skip();
@@ -141,7 +166,7 @@ export function OnboardingDialog() {
       onCloseClick={() => void skip()}
       onEscapeKeyDown={(event) => busy && event.preventDefault()}
       onInteractOutside={(event) => busy && event.preventDefault()}
-      onSubmit={(event) => void confirm(event)}
+      onSubmit={(event) => void save('confirm')(event)}
       open={open}
       pending={busy}
       showCloseButton={false}

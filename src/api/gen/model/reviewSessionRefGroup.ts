@@ -12,4 +12,5 @@ export const ReviewSessionRefGroup = {
   chapter: 'chapter',
   others: 'others',
   workspace: 'workspace',
+  plan: 'plan',
 } as const;

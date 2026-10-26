@@ -26,7 +26,6 @@ type (
 	TagValue             string
 	Email                string
 	UserName             string
-	LLMAPIKey            string
 	CommentText          string
 )
 
@@ -76,9 +75,6 @@ func (Email) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 }
 func (UserName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.UserName)
-}
-func (LLMAPIKey) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
-	return withMax(s, fieldlimits.LLMAPIKey)
 }
 func (CommentText) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.Comment)

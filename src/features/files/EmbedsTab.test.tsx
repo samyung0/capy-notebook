@@ -49,6 +49,8 @@ vi.mock('@/api/hooks', async () => {
       embeds.access.push(access);
       return { data: { pages: [{ items: embeds.items }] }, isLoading: false };
     },
+    // Only the workspace icons read it.
+    useWorkspaces: () => ({ data: [] }),
   };
 });
 vi.mock('@tanstack/react-router', () => ({
@@ -144,6 +146,7 @@ const item = (
   lostAccess,
   materialId: lostAccess ? undefined : 'mat_note',
   materialTitle,
+  materialType: 'note',
   name,
   purpose: name.endsWith('.mp3') ? 'audio' : 'image',
   sizeBytes: 2048,

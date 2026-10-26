@@ -12,7 +12,6 @@ import { Card } from '@/components/ui/Card';
 import { checkboxVariants } from '@/components/ui/Checkbox';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
 import {
   Popover,
   PopoverContent,
@@ -25,21 +24,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { useStudyStates } from '@/features/study/studyItems';
 import { readingOrder } from '@/features/workspace/workspaceContent';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 
+/** A row to tick: a whole workspace, a chapter, Others or one file, each
+ * standing for its tracked files. */
 type Option = {
-  input: PlanStepInput;
+  key: string;
   label: string;
   icon?: ReturnType<typeof fileIconName>;
+  inputs: PlanStepInput[];
 };
 
-/** The plan's one + (human/study-progress.md 2026-10-22): pick a workspace,
- * then tick its whole workspace, chapters, Others or single files; steps
- * already in the plan show ticked and disabled. New steps go to the end. */
+/** The plan's Add steps, an accent button left of the Study page's Filter
+ * (human/study-progress.md 2026-10-22, 2026-10-25): pick a workspace,
+ * then tick its whole workspace, chapters, Others or single files. A tick
+ * picks the row's tracked files, so the workspace ticks every chapter and a
+ * row with only some of its files picked (or in the plan) shows a dash; a row
+ * whose files are all in the plan shows ticked and disabled. The page places
+ * the new steps. */
 export function AddStepsPopover({
   defaultWorkspaceId,
   steps,
@@ -53,12 +60,15 @@ export function AddStepsPopover({
   return (
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <IconButton
-          icon="plus"
-          label={m.plan_add_steps()}
+        {/* Accent text like Workspaces' New workspace, the hover tint only. */}
+        <Button
+          className="h-fit px-2 py-1.5 font-bold text-link"
+          iconLeft="plus"
           size="md"
-          variant="outline"
-        />
+          variant="ghost-hover"
+        >
+          {m.plan_add_steps()}
+        </Button>
       </PopoverTrigger>
       <PopoverContent
         align="end"
@@ -96,68 +106,99 @@ function AddSteps({
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
-  const [picked, setPicked] = useState<Map<string, PlanStepInput>>(
-    () => new Map()
-  );
+  const { states } = useStudyStates(workspaceId);
+  // Ticked files by id: every row reads its tick from them, so the whole
+  // workspace, its chapters and single files stay in step.
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const [singles, setSingles] = useState(false);
   const held = new Set(steps.map(stepKey));
   const workspace = workspaces?.find((ws) => ws.id === workspaceId);
 
+  // Steps are files: a chapter (or Others, or the workspace) adds its tracked
+  // files in reading order; the plan does not follow it afterwards.
+  const tracked = readingOrder(chapters, files, materials).filter(
+    (it) => states.get(it.id) !== 'removed'
+  );
+  const inputOf = (it: (typeof tracked)[number]): PlanStepInput => ({
+    kind: it.type,
+    targetId: it.id,
+    workspaceId,
+  });
   const options: Option[] = [
     {
-      input: { kind: 'workspace', workspaceId },
+      inputs: tracked.map(inputOf),
+      key: 'workspace',
       label: m.plan_whole_workspace(),
     },
     ...[...(chapters ?? [])]
       .sort((a, b) => a.order - b.order)
       .map((ch) => ({
-        input: { kind: 'chapter' as const, targetId: ch.id, workspaceId },
+        inputs: tracked
+          .filter((it) => it.data.chapterId === ch.id)
+          .map(inputOf),
+        key: `chapter:${ch.id}`,
         label: ch.name,
       })),
-    { input: { kind: 'unfiled', workspaceId }, label: m.study_others() },
-  ];
-  const singleOptions: Option[] = readingOrder(chapters, files, materials).map(
-    (it) => ({
-      icon:
-        it.type === 'file'
-          ? fileIconName(it.data)
-          : materialIconName(it.data.type),
-      input: { kind: it.type, targetId: it.id, workspaceId },
-      label: it.type === 'file' ? it.data.name : it.data.title,
-    })
-  );
-  const toggle = (input: PlanStepInput) =>
-    setPicked((prev) => {
-      const next = new Map(prev);
-      const key = stepKey(input);
-      if (!next.delete(key)) next.set(key, input);
-      return next;
-    });
+    {
+      inputs: tracked.filter((it) => !it.data.chapterId).map(inputOf),
+      key: 'others',
+      label: m.study_others(),
+    },
+  ].filter((option) => option.inputs.length > 0);
+  const singleOptions: Option[] = tracked.map((it) => ({
+    icon:
+      it.type === 'file'
+        ? fileIconName(it.data)
+        : materialIconName(it.data.type),
+    inputs: [inputOf(it)],
+    key: `item:${it.id}`,
+    label: it.type === 'file' ? it.data.name : it.data.title,
+  }));
+  // The ticked files not in the plan yet, in reading order.
+  const toAdd = tracked
+    .map(inputOf)
+    .filter((input) => picked.has(input.targetId) && !held.has(stepKey(input)));
   const row = (option: Option) => {
-    const key = stepKey(option.input);
-    const inPlan = held.has(key);
+    // Files already in the plan count as ticked and stay put.
+    const free = option.inputs
+      .filter((input) => !held.has(stepKey(input)))
+      .map((input) => input.targetId);
+    const inPlan = free.length === 0;
+    const ticked = free.filter((id) => picked.has(id)).length;
+    const all = ticked === free.length;
+    // Some of its files ticked or in the plan, not all: a dash.
+    const mixed = !all && ticked + option.inputs.length - free.length > 0;
+    const toggle = () =>
+      setPicked((prev) => {
+        const next = new Set(prev);
+        for (const id of free) {
+          if (all) next.delete(id);
+          else next.add(id);
+        }
+        return next;
+      });
     return (
       <button
-        aria-checked={inPlan || picked.has(key)}
+        aria-checked={all ? true : mixed ? 'mixed' : false}
         className={cn(
           'flex w-full items-center gap-2.5 rounded-button px-1.5 py-1.5 text-left',
           inPlan ? 'text-fg-muted' : 'hover:bg-surface-hover-bg'
         )}
         disabled={inPlan}
-        key={key}
-        onClick={() => toggle(option.input)}
+        key={option.key}
+        onClick={toggle}
         role="checkbox"
         type="button"
       >
         <span
           className={cn(
-            checkboxVariants({ checked: inPlan || picked.has(key) }),
+            checkboxVariants({ checked: all || mixed }),
             'size-5 shrink-0',
             inPlan && 'opacity-50'
           )}
         >
-          {(inPlan || picked.has(key)) && (
-            <Icon name="check" size={14} strokeWidth={2.4} />
+          {(all || mixed) && (
+            <Icon name={all ? 'check' : 'minus'} size={14} strokeWidth={2.4} />
           )}
         </span>
         {option.icon && (
@@ -183,7 +224,7 @@ function AddSteps({
       <Select
         onValueChange={(id) => {
           setWorkspaceId(id);
-          setPicked(new Map());
+          setPicked(new Set());
           setSingles(false);
         }}
         value={workspaceId}
@@ -194,7 +235,7 @@ function AddSteps({
               {workspace && (
                 <img
                   alt=""
-                  className="size-4 shrink-0 rounded-[4px]"
+                  className="size-5 shrink-0 rounded-[4px]"
                   src={iconUrl(workspace.iconId)}
                 />
               )}
@@ -205,7 +246,14 @@ function AddSteps({
         <SelectContent>
           {(workspaces ?? []).map((ws) => (
             <SelectItem key={ws.id} value={ws.id}>
-              {ws.name}
+              <span className="flex min-w-0 items-center gap-2">
+                <img
+                  alt=""
+                  className="size-5 shrink-0 rounded-[4px]"
+                  src={iconUrl(ws.iconId)}
+                />
+                <span className="truncate">{ws.name}</span>
+              </span>
             </SelectItem>
           ))}
         </SelectContent>
@@ -227,11 +275,11 @@ function AddSteps({
           {m.action_cancel()}
         </Button>
         <Button
-          disabled={picked.size === 0}
-          onClick={() => onAdd([...picked.values()])}
+          disabled={toAdd.length === 0}
+          onClick={() => onAdd(toAdd)}
           rounded="large"
         >
-          {m.plan_add_n_steps({ count: picked.size })}
+          {m.plan_add_n_steps({ count: toAdd.length })}
         </Button>
       </div>
     </Card>

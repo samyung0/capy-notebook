@@ -36,7 +36,7 @@ export function HoverActions({
       <Menu
         align={align}
         iconContainerClassName={cn(
-          'p-1.5 hover:bg-transparent active:scale-[0.8] [[data-style=classroom][data-theme=frappe]_&]:hover:bg-overlay-hover [[data-style=classroom][data-theme=mocha]_&]:hover:bg-overlay-hover',
+          'p-1.5 hover:bg-transparent active:scale-[0.8] [:is([data-style=capy],[data-style=fisheye])[data-theme=frappe]_&]:hover:bg-overlay-hover [:is([data-style=capy],[data-style=fisheye])[data-theme=mocha]_&]:hover:bg-overlay-hover',
           iconContainerClassName
         )}
         items={items}

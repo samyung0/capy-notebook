@@ -35,6 +35,7 @@ const (
 	classIncident
 	classThumbnail
 	classVoice
+	classReview
 	classBankComment
 )
 
@@ -45,9 +46,9 @@ var aiSuffixes = []string{
 	"/chat/stream",
 	"/ai/command",
 	"/generate",
-	// Server grading, which sends open answers to Jev: a review or bank check
-	// (quiz attempts are matched in classify; the signed-out grade is under
-	// /api/public/), and the author's computation check.
+	// Server grading, which sends open answers to Jev: a quiz, review or bank
+	// check, one question each (the signed-out grade is under /api/public/),
+	// and the author's computation check.
 	"/check",
 	"/computation-check",
 }
@@ -66,6 +67,8 @@ var importSuffixes = []string{
 // which lines a ticket past it up instead of answering 429 (Q282,
 // ratelimit.Limiter.TakeUpload).
 var uploadSuffixes = []string{
+	// A blank Office file the Create tab stores, bytes and all.
+	"/files/blank",
 	// A file removed before it was sent, counted into its batch.
 	"/removed",
 }
@@ -116,6 +119,11 @@ func classify(method, path string) class {
 	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/voice-transcriptions") {
 		return classVoice
 	}
+	// A new review session reads the whole review pool, every quiz and set
+	// parsed; continuing one reads only its own items.
+	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/review") {
+		return classReview
+	}
 	if method == http.MethodPost && strings.HasPrefix(path, "/api/bank/questions/") && strings.HasSuffix(path, "/comments") {
 		return classBankComment
 	}
@@ -123,10 +131,6 @@ func classify(method, path string) class {
 		if strings.HasSuffix(path, suffix) {
 			return classEditor
 		}
-	}
-	// POST /api/quizzes/{id}/attempts, but not the GET /api/attempts list.
-	if strings.HasPrefix(path, "/api/quizzes/") && strings.HasSuffix(path, "/attempts") {
-		return classAI
 	}
 	for _, suffix := range aiSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -331,6 +335,8 @@ func (l *Limiter) classBuckets(routeClass class, subject string) []bucket {
 		// Each recording is a paid transcription, so it refuses like the AI
 		// class while Redis cannot count it.
 		return []bucket{{key: "voice:" + subject, rule: l.cfg.Voice, code: "ai_rate_limited", failClosed: true}}
+	case classReview:
+		return []bucket{{key: "review:" + subject, rule: l.cfg.Review, code: "rate_limited"}}
 	case classBankComment:
 		return []bucket{{key: "bank-comment:" + subject, rule: l.cfg.BankComment, code: "rate_limited"}}
 	}

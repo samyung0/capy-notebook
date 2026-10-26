@@ -274,6 +274,38 @@ async def test_figures_are_this_turns_bbox_captures_and_credit_their_book(
     assert [(b["id"], b["excerptIds"]) for b in books] == [("b_circles", ["exc_1"])]
 
 
+def test_an_office_picture_is_a_figure_as_it_is():
+    """An Office picture inspect_office_document attached is a deck figure
+    whole (Q278); a whole-page capture still is not."""
+    jpeg = b"\xff\xd8 picture"
+    whole = [0, 0, 1000, 1000]
+    captures = [
+        capture.record(
+            call_id="cap",
+            file_id="f_1",
+            page=3,
+            box=whole,
+            jpeg=jpeg,
+            size=(40, 30),
+            started=0,
+        ),
+        capture.record(
+            call_id=capture.picture_id("c", 1),
+            file_id="f_2",
+            page=None,
+            box=whole,
+            jpeg=jpeg,
+            size=(40, 30),
+            started=0,
+        )
+        | {"picture": "slide:0:256:shape:2"},
+    ]
+    images = {r["callId"]: ("label", capture.data_url(jpeg)) for r in captures}
+    problems, figures, _ = deck.turn_figures(captures, images)
+    assert "capture 1 is a whole page" in problems[1] and problems[2] == ""
+    assert figures == {2: jpeg}
+
+
 def test_the_image_pins_the_commit_and_hashes_the_dependencies_the_module_names():
     """(security regression: CI hardening, ppt-master's virtualenv unpinned)"""
     pipeline = Path(__file__).resolve().parents[1]

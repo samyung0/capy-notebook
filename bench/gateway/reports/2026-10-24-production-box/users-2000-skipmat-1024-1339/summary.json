@@ -1,0 +1,971 @@
+{
+  "users": 2000,
+  "measured_seconds": 120,
+  "overall": {
+    "label": "overall",
+    "count": 39582,
+    "per_second": 329.85,
+    "p50_ms": 6.788988,
+    "p95_ms": 49.126793,
+    "p99_ms": 129.30688,
+    "max_ms": 304.30988,
+    "error_rate": 0
+  },
+  "labels": [
+    {
+      "label": "GET /api/learning/progress",
+      "count": 5369,
+      "per_second": 44.74166666666667,
+      "p50_ms": 9.401101,
+      "p95_ms": 50.989773,
+      "p99_ms": 128.17381,
+      "max_ms": 185.71489,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/review/ratings",
+      "count": 4545,
+      "per_second": 37.875,
+      "p50_ms": 8.868474,
+      "p95_ms": 31.770126,
+      "p99_ms": 90.649414,
+      "max_ms": 152.89069,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/materials",
+      "count": 2808,
+      "per_second": 23.4,
+      "p50_ms": 4.111752,
+      "p95_ms": 38.329456,
+      "p99_ms": 61.67055,
+      "max_ms": 85.834435,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/chapters",
+      "count": 2147,
+      "per_second": 17.891666666666666,
+      "p50_ms": 4.594958,
+      "p95_ms": 42.951103,
+      "p99_ms": 64.52933,
+      "max_ms": 86.280136,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/notifications/unread-count",
+      "count": 2106,
+      "per_second": 17.55,
+      "p50_ms": 3.121868,
+      "p95_ms": 30.776808,
+      "p99_ms": 40.81823,
+      "max_ms": 72.36865,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/files",
+      "count": 1918,
+      "per_second": 15.983333333333333,
+      "p50_ms": 5.438409,
+      "p95_ms": 60.19092,
+      "p99_ms": 85.895424,
+      "max_ms": 103.87584,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/materials/{id}/collaboration-token",
+      "count": 1733,
+      "per_second": 14.441666666666666,
+      "p50_ms": 7.094811,
+      "p95_ms": 82.25218,
+      "p99_ms": 213.20923,
+      "max_ms": 267.51044,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/me",
+      "count": 1563,
+      "per_second": 13.025,
+      "p50_ms": 4.956004,
+      "p95_ms": 90.14666,
+      "p99_ms": 131.36446,
+      "max_ms": 160.192,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/stream (open)",
+      "count": 1509,
+      "per_second": 12.575,
+      "p50_ms": 4.032243,
+      "p95_ms": 25.396276,
+      "p99_ms": 39.837563,
+      "max_ms": 72.811264,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials/{id}",
+      "count": 1488,
+      "per_second": 12.4,
+      "p50_ms": 6.984265,
+      "p95_ms": 72.70103,
+      "p99_ms": 224.36958,
+      "max_ms": 265.86627,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials/{id}/discussions",
+      "count": 1468,
+      "per_second": 12.233333333333333,
+      "p50_ms": 3.077986,
+      "p95_ms": 21.561724,
+      "p99_ms": 47.88604,
+      "max_ms": 73.264915,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/materials/{id}/collaboration-token (read)",
+      "count": 1416,
+      "per_second": 11.8,
+      "p50_ms": 6.157646,
+      "p95_ms": 74.57467,
+      "p99_ms": 187.02383,
+      "max_ms": 256.5073,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/quizzes/{id}",
+      "count": 1321,
+      "per_second": 11.008333333333333,
+      "p50_ms": 7.789983,
+      "p95_ms": 95.00125,
+      "p99_ms": 228.40306,
+      "max_ms": 304.30988,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/flashcards/{id}",
+      "count": 1162,
+      "per_second": 9.683333333333334,
+      "p50_ms": 8.980855,
+      "p95_ms": 117.19801,
+      "p99_ms": 231.04684,
+      "max_ms": 304.19354,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/flashcards/{id}/cards",
+      "count": 1161,
+      "per_second": 9.675,
+      "p50_ms": 3.534081,
+      "p95_ms": 26.54027,
+      "p99_ms": 49.53699,
+      "max_ms": 83.737236,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/study",
+      "count": 1153,
+      "per_second": 9.608333333333333,
+      "p50_ms": 9.307667,
+      "p95_ms": 120.33412,
+      "p99_ms": 181.859,
+      "max_ms": 214.6404,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}",
+      "count": 910,
+      "per_second": 7.583333333333333,
+      "p50_ms": 9.492143,
+      "p95_ms": 114.182396,
+      "p99_ms": 167.5304,
+      "max_ms": 173.91418,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/quizzes/{id}/attempts",
+      "count": 625,
+      "per_second": 5.208333333333333,
+      "p50_ms": 15.818544,
+      "p95_ms": 42.29352,
+      "p99_ms": 89.46971,
+      "max_ms": 173.46521,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/attempts",
+      "count": 581,
+      "per_second": 4.841666666666667,
+      "p50_ms": 3.638186,
+      "p95_ms": 21.849043,
+      "p99_ms": 39.987152,
+      "max_ms": 61.330654,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/recent",
+      "count": 522,
+      "per_second": 4.35,
+      "p50_ms": 5.629026,
+      "p95_ms": 63.309803,
+      "p99_ms": 79.59913,
+      "max_ms": 101.75599,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/conversations",
+      "count": 517,
+      "per_second": 4.308333333333334,
+      "p50_ms": 6.281456,
+      "p95_ms": 51.59686,
+      "p99_ms": 73.66944,
+      "max_ms": 85.41508,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/notifications",
+      "count": 409,
+      "per_second": 3.408333333333333,
+      "p50_ms": 2.324674,
+      "p95_ms": 22.153233,
+      "p99_ms": 35.519623,
+      "max_ms": 47.830746,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/notifications/read",
+      "count": 405,
+      "per_second": 3.375,
+      "p50_ms": 2.13008,
+      "p95_ms": 13.124347,
+      "p99_ms": 35.717342,
+      "max_ms": 68.686386,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/members",
+      "count": 355,
+      "per_second": 2.9583333333333335,
+      "p50_ms": 3.901078,
+      "p95_ms": 45.071125,
+      "p99_ms": 61.69042,
+      "max_ms": 73.36574,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/review/overview",
+      "count": 291,
+      "per_second": 2.425,
+      "p50_ms": 19.149115,
+      "p95_ms": 122.60217,
+      "p99_ms": 223.15671,
+      "max_ms": 250.38037,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/learning/plans",
+      "count": 290,
+      "per_second": 2.4166666666666665,
+      "p50_ms": 4.645764,
+      "p95_ms": 22.596212,
+      "p99_ms": 39.444866,
+      "max_ms": 59.70995,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/study/plans",
+      "count": 273,
+      "per_second": 2.275,
+      "p50_ms": 3.099326,
+      "p95_ms": 27.50615,
+      "p99_ms": 57.730602,
+      "max_ms": 85.41152,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/study/attempts",
+      "count": 273,
+      "per_second": 2.275,
+      "p50_ms": 4.364997,
+      "p95_ms": 44.46399,
+      "p99_ms": 80.14079,
+      "max_ms": 117.843636,
+      "error_rate": 0
+    },
+    {
+      "label": "PATCH /api/materials/{id}/metadata",
+      "count": 270,
+      "per_second": 2.25,
+      "p50_ms": 10.512965,
+      "p95_ms": 72.08992,
+      "p99_ms": 119.20002,
+      "max_ms": 144.07993,
+      "error_rate": 0
+    },
+    {
+      "label": "POST /api/workspaces/{id}/materials",
+      "count": 232,
+      "per_second": 1.9333333333333333,
+      "p50_ms": 16.925888,
+      "p95_ms": 82.98676,
+      "p99_ms": 158.14906,
+      "max_ms": 170.75517,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces",
+      "count": 191,
+      "per_second": 1.5916666666666666,
+      "p50_ms": 31.633242,
+      "p95_ms": 75.378334,
+      "p99_ms": 101.44594,
+      "max_ms": 103.82868,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/bank/progress",
+      "count": 191,
+      "per_second": 1.5916666666666666,
+      "p50_ms": 24.14863,
+      "p95_ms": 57.603584,
+      "p99_ms": 83.10485,
+      "max_ms": 89.013855,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/thinking",
+      "count": 190,
+      "per_second": 1.5833333333333333,
+      "p50_ms": 16.882856,
+      "p95_ms": 38.03279,
+      "p99_ms": 53.70085,
+      "max_ms": 66.75148,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files",
+      "count": 190,
+      "per_second": 1.5833333333333333,
+      "p50_ms": 17.266294,
+      "p95_ms": 39.412495,
+      "p99_ms": 51.95374,
+      "max_ms": 71.19555,
+      "error_rate": 0
+    }
+  ],
+  "streams": {
+    "ended": 0,
+    "failed": 0,
+    "open_at_end": 25,
+    "opened": 5054,
+    "refused": 0
+  },
+  "timeline": [
+    {
+      "t": 1792849205,
+      "requests": 426,
+      "errors": 0
+    },
+    {
+      "t": 1792849206,
+      "requests": 1026,
+      "errors": 0
+    },
+    {
+      "t": 1792849207,
+      "requests": 1165,
+      "errors": 0
+    },
+    {
+      "t": 1792849208,
+      "requests": 1025,
+      "errors": 0
+    },
+    {
+      "t": 1792849209,
+      "requests": 1091,
+      "errors": 0
+    },
+    {
+      "t": 1792849210,
+      "requests": 972,
+      "errors": 0
+    },
+    {
+      "t": 1792849211,
+      "requests": 709,
+      "errors": 0
+    },
+    {
+      "t": 1792849212,
+      "requests": 699,
+      "errors": 0
+    },
+    {
+      "t": 1792849213,
+      "requests": 514,
+      "errors": 0
+    },
+    {
+      "t": 1792849214,
+      "requests": 645,
+      "errors": 0
+    },
+    {
+      "t": 1792849215,
+      "requests": 608,
+      "errors": 0
+    },
+    {
+      "t": 1792849216,
+      "requests": 514,
+      "errors": 0
+    },
+    {
+      "t": 1792849217,
+      "requests": 517,
+      "errors": 0
+    },
+    {
+      "t": 1792849218,
+      "requests": 671,
+      "errors": 0
+    },
+    {
+      "t": 1792849219,
+      "requests": 536,
+      "errors": 0
+    },
+    {
+      "t": 1792849220,
+      "requests": 429,
+      "errors": 0
+    },
+    {
+      "t": 1792849221,
+      "requests": 473,
+      "errors": 0
+    },
+    {
+      "t": 1792849222,
+      "requests": 483,
+      "errors": 0
+    },
+    {
+      "t": 1792849223,
+      "requests": 413,
+      "errors": 0
+    },
+    {
+      "t": 1792849224,
+      "requests": 394,
+      "errors": 0
+    },
+    {
+      "t": 1792849225,
+      "requests": 430,
+      "errors": 0
+    },
+    {
+      "t": 1792849226,
+      "requests": 408,
+      "errors": 0
+    },
+    {
+      "t": 1792849227,
+      "requests": 305,
+      "errors": 0
+    },
+    {
+      "t": 1792849228,
+      "requests": 427,
+      "errors": 0
+    },
+    {
+      "t": 1792849229,
+      "requests": 489,
+      "errors": 0
+    },
+    {
+      "t": 1792849230,
+      "requests": 370,
+      "errors": 0
+    },
+    {
+      "t": 1792849231,
+      "requests": 346,
+      "errors": 0
+    },
+    {
+      "t": 1792849232,
+      "requests": 343,
+      "errors": 0
+    },
+    {
+      "t": 1792849233,
+      "requests": 260,
+      "errors": 0
+    },
+    {
+      "t": 1792849234,
+      "requests": 360,
+      "errors": 0
+    },
+    {
+      "t": 1792849235,
+      "requests": 366,
+      "errors": 0
+    },
+    {
+      "t": 1792849236,
+      "requests": 260,
+      "errors": 0
+    },
+    {
+      "t": 1792849237,
+      "requests": 353,
+      "errors": 0
+    },
+    {
+      "t": 1792849238,
+      "requests": 334,
+      "errors": 0
+    },
+    {
+      "t": 1792849239,
+      "requests": 304,
+      "errors": 0
+    },
+    {
+      "t": 1792849240,
+      "requests": 338,
+      "errors": 0
+    },
+    {
+      "t": 1792849241,
+      "requests": 232,
+      "errors": 0
+    },
+    {
+      "t": 1792849242,
+      "requests": 238,
+      "errors": 0
+    },
+    {
+      "t": 1792849243,
+      "requests": 322,
+      "errors": 0
+    },
+    {
+      "t": 1792849244,
+      "requests": 268,
+      "errors": 0
+    },
+    {
+      "t": 1792849245,
+      "requests": 233,
+      "errors": 0
+    },
+    {
+      "t": 1792849246,
+      "requests": 243,
+      "errors": 0
+    },
+    {
+      "t": 1792849247,
+      "requests": 265,
+      "errors": 0
+    },
+    {
+      "t": 1792849248,
+      "requests": 282,
+      "errors": 0
+    },
+    {
+      "t": 1792849249,
+      "requests": 292,
+      "errors": 0
+    },
+    {
+      "t": 1792849250,
+      "requests": 263,
+      "errors": 0
+    },
+    {
+      "t": 1792849251,
+      "requests": 294,
+      "errors": 0
+    },
+    {
+      "t": 1792849252,
+      "requests": 249,
+      "errors": 0
+    },
+    {
+      "t": 1792849253,
+      "requests": 306,
+      "errors": 0
+    },
+    {
+      "t": 1792849254,
+      "requests": 323,
+      "errors": 0
+    },
+    {
+      "t": 1792849255,
+      "requests": 277,
+      "errors": 0
+    },
+    {
+      "t": 1792849256,
+      "requests": 245,
+      "errors": 0
+    },
+    {
+      "t": 1792849257,
+      "requests": 265,
+      "errors": 0
+    },
+    {
+      "t": 1792849258,
+      "requests": 174,
+      "errors": 0
+    },
+    {
+      "t": 1792849259,
+      "requests": 246,
+      "errors": 0
+    },
+    {
+      "t": 1792849260,
+      "requests": 294,
+      "errors": 0
+    },
+    {
+      "t": 1792849261,
+      "requests": 337,
+      "errors": 0
+    },
+    {
+      "t": 1792849262,
+      "requests": 259,
+      "errors": 0
+    },
+    {
+      "t": 1792849263,
+      "requests": 259,
+      "errors": 0
+    },
+    {
+      "t": 1792849264,
+      "requests": 242,
+      "errors": 0
+    },
+    {
+      "t": 1792849265,
+      "requests": 274,
+      "errors": 0
+    },
+    {
+      "t": 1792849266,
+      "requests": 256,
+      "errors": 0
+    },
+    {
+      "t": 1792849267,
+      "requests": 235,
+      "errors": 0
+    },
+    {
+      "t": 1792849268,
+      "requests": 187,
+      "errors": 0
+    },
+    {
+      "t": 1792849269,
+      "requests": 247,
+      "errors": 0
+    },
+    {
+      "t": 1792849270,
+      "requests": 238,
+      "errors": 0
+    },
+    {
+      "t": 1792849271,
+      "requests": 253,
+      "errors": 0
+    },
+    {
+      "t": 1792849272,
+      "requests": 262,
+      "errors": 0
+    },
+    {
+      "t": 1792849273,
+      "requests": 280,
+      "errors": 0
+    },
+    {
+      "t": 1792849274,
+      "requests": 275,
+      "errors": 0
+    },
+    {
+      "t": 1792849275,
+      "requests": 221,
+      "errors": 0
+    },
+    {
+      "t": 1792849276,
+      "requests": 275,
+      "errors": 0
+    },
+    {
+      "t": 1792849277,
+      "requests": 255,
+      "errors": 0
+    },
+    {
+      "t": 1792849278,
+      "requests": 289,
+      "errors": 0
+    },
+    {
+      "t": 1792849279,
+      "requests": 254,
+      "errors": 0
+    },
+    {
+      "t": 1792849280,
+      "requests": 211,
+      "errors": 0
+    },
+    {
+      "t": 1792849281,
+      "requests": 274,
+      "errors": 0
+    },
+    {
+      "t": 1792849282,
+      "requests": 235,
+      "errors": 0
+    },
+    {
+      "t": 1792849283,
+      "requests": 196,
+      "errors": 0
+    },
+    {
+      "t": 1792849284,
+      "requests": 180,
+      "errors": 0
+    },
+    {
+      "t": 1792849285,
+      "requests": 233,
+      "errors": 0
+    },
+    {
+      "t": 1792849286,
+      "requests": 235,
+      "errors": 0
+    },
+    {
+      "t": 1792849287,
+      "requests": 244,
+      "errors": 0
+    },
+    {
+      "t": 1792849288,
+      "requests": 252,
+      "errors": 0
+    },
+    {
+      "t": 1792849289,
+      "requests": 206,
+      "errors": 0
+    },
+    {
+      "t": 1792849290,
+      "requests": 214,
+      "errors": 0
+    },
+    {
+      "t": 1792849291,
+      "requests": 263,
+      "errors": 0
+    },
+    {
+      "t": 1792849292,
+      "requests": 235,
+      "errors": 0
+    },
+    {
+      "t": 1792849293,
+      "requests": 195,
+      "errors": 0
+    },
+    {
+      "t": 1792849294,
+      "requests": 198,
+      "errors": 0
+    },
+    {
+      "t": 1792849295,
+      "requests": 221,
+      "errors": 0
+    },
+    {
+      "t": 1792849296,
+      "requests": 242,
+      "errors": 0
+    },
+    {
+      "t": 1792849297,
+      "requests": 210,
+      "errors": 0
+    },
+    {
+      "t": 1792849298,
+      "requests": 214,
+      "errors": 0
+    },
+    {
+      "t": 1792849299,
+      "requests": 219,
+      "errors": 0
+    },
+    {
+      "t": 1792849300,
+      "requests": 190,
+      "errors": 0
+    },
+    {
+      "t": 1792849301,
+      "requests": 219,
+      "errors": 0
+    },
+    {
+      "t": 1792849302,
+      "requests": 242,
+      "errors": 0
+    },
+    {
+      "t": 1792849303,
+      "requests": 233,
+      "errors": 0
+    },
+    {
+      "t": 1792849304,
+      "requests": 205,
+      "errors": 0
+    },
+    {
+      "t": 1792849305,
+      "requests": 219,
+      "errors": 0
+    },
+    {
+      "t": 1792849306,
+      "requests": 264,
+      "errors": 0
+    },
+    {
+      "t": 1792849307,
+      "requests": 243,
+      "errors": 0
+    },
+    {
+      "t": 1792849308,
+      "requests": 243,
+      "errors": 0
+    },
+    {
+      "t": 1792849309,
+      "requests": 216,
+      "errors": 0
+    },
+    {
+      "t": 1792849310,
+      "requests": 236,
+      "errors": 0
+    },
+    {
+      "t": 1792849311,
+      "requests": 249,
+      "errors": 0
+    },
+    {
+      "t": 1792849312,
+      "requests": 252,
+      "errors": 0
+    },
+    {
+      "t": 1792849313,
+      "requests": 205,
+      "errors": 0
+    },
+    {
+      "t": 1792849314,
+      "requests": 261,
+      "errors": 0
+    },
+    {
+      "t": 1792849315,
+      "requests": 275,
+      "errors": 0
+    },
+    {
+      "t": 1792849316,
+      "requests": 192,
+      "errors": 0
+    },
+    {
+      "t": 1792849317,
+      "requests": 225,
+      "errors": 0
+    },
+    {
+      "t": 1792849318,
+      "requests": 219,
+      "errors": 0
+    },
+    {
+      "t": 1792849319,
+      "requests": 311,
+      "errors": 0
+    },
+    {
+      "t": 1792849320,
+      "requests": 181,
+      "errors": 0
+    },
+    {
+      "t": 1792849321,
+      "requests": 224,
+      "errors": 0
+    },
+    {
+      "t": 1792849322,
+      "requests": 179,
+      "errors": 0
+    },
+    {
+      "t": 1792849323,
+      "requests": 275,
+      "errors": 0
+    },
+    {
+      "t": 1792849324,
+      "requests": 243,
+      "errors": 0
+    },
+    {
+      "t": 1792849325,
+      "requests": 92,
+      "errors": 0
+    }
+  ],
+  "pass": true
+}

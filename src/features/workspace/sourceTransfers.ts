@@ -466,6 +466,8 @@ export function startSourceTransfer(start: StartTransfer) {
         patchTransfer(key, { fileId, name: stored, stage: 'added' });
         picturesRemovedToast(stored, removedPictures);
         void queryClient.invalidateQueries({ queryKey: qk.files(workspaceId) });
+        // The upload counts as opening it (Recent).
+        void queryClient.invalidateQueries({ queryKey: qk.recent });
       },
       (error: unknown) => {
         if (error instanceof SourceImportPollingTimeoutError) {

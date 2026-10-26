@@ -163,15 +163,13 @@ async def test_openrouter_stream_failures_are_provider_errors(
 
     monkeypatch.setattr(elitellm_client, "_stream_sse", fake_stream_sse)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
-    bind_request_llm(paid_by="platform", thinking="high")
+    bind_request_llm(thinking="high")
     spec = retrieval_models.ModelConfig(
         version=1,
         provider_name="Z.ai",
         model_name="GLM-5.3-Flash",
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=("low", "high", "max"),
         default_thinking="high",
         slots=("chat",),
@@ -244,15 +242,13 @@ async def test_anthropic_stream_preserves_tool_call_thinking_and_usage(
 
     monkeypatch.setattr(elitellm_client, "_stream_sse", fake_stream_sse)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    bind_request_llm(paid_by="platform", thinking="high")
+    bind_request_llm(thinking="high")
     spec = retrieval_models.ModelConfig(
         version=1,
         provider_name="Anthropic",
         model_name="Claude",
         provider_slug="anthropic",
         model_slug="claude-opus-5",
-        platform_enabled=True,
-        byok_enabled=True,
         thinking_levels=("low", "mid", "high", "max"),
         default_thinking="high",
         slots=("chat",),
@@ -605,24 +601,6 @@ async def test_after_byte_failure_does_not_retry_even_without_client_sse(
     # It sent no usage, so it closes unbilled.
     assert abandoned["n"] == 1
     assert settled["n"] == 0
-
-
-@pytest.mark.asyncio
-async def test_invalid_user_key_does_not_retry(monkeypatch):
-    err = RuntimeError("unauthorized")
-    err.status_code = 401
-    api = _ChatAPI([], errors=[err, RuntimeError("should not run")])
-    _patch_stream_client(monkeypatch, api)
-    retrieval_models.registry.bind_request_llm(paid_by="user", user_api_key="sk")
-    try:
-        with pytest.raises(retrieval_models.UserKeyError) as caught:
-            await retrieval_models.stream_agent_response(
-                [{"role": "user", "content": "q"}], model=_chat_spec()
-            )
-        assert caught.value.code == retrieval_models.INVALID_KEY
-        assert api.creates == 1
-    finally:
-        retrieval_models.registry.bind_request_llm()
 
 
 @pytest.mark.asyncio

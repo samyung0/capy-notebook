@@ -36,7 +36,7 @@ clone or charged to storage.
 | --- | --- |
 | `workspace_study (user_id, workspace_id, enabled)` | Hide study progress for one workspace (`enabled` false hides); no row shows progress (`StudyEnabled`). Migration `0108_study_plans.sql` dropped the old global default `users.study_progress`. |
 | `study_plans (id, user_id, workspace_id, name, created_at, updated_at)` | Migration `0108_study_plans.sql`. A user's private plan kept in a parent workspace (`workspace_id`, cascade); name at most 60 characters; at most 10 per user and workspace. |
-| `study_plan_steps (plan_id, position, kind, workspace_id, chapter_id \| file_id \| material_id)` | A plan's steps in order: `kind` is `workspace`, `unfiled` (Others), `chapter`, `file` or `material`, with the matching target set; cascades with its plan, workspace and target; unique per plan and target; at most 50 per plan. |
+| `study_plan_steps (plan_id, position, kind, workspace_id, file_id \| material_id)` | A plan's steps in order: `kind` is `file` or `material`, with the matching target set (migration `0119_plan_reviews_file_steps.sql` dropped the chapter, Others and whole-workspace steps); cascades with its plan, workspace and target; unique per plan and target; at most 200 per plan, in at most 20 groups. |
 | `study_progress (user_id, workspace_id, file_id \| material_id, state, updated_at)` | One row per touched file or material, exactly one of the two ids set; `state` is `started`, `done` or `removed`. No row means untouched. Unique per (user, file) and (user, material). |
 | `review_states (user_id, material_id, item_id, item_hash, stability, difficulty, reps, lapses, fsrs_state, last_review)` | FSRS state per quiz question or card. The key includes `material_id`, so a cloned quiz that keeps its question ids stays separate. |
 | `review_log (user_id, material_id, item_id, rating, reviewed_at)` | Append-only, rating 1–4 for every rating and every rated attempt question. Suggestions read each item's last 8 (`review_log_item_idx`); kept for offline merge and parameter fitting later too. |
@@ -123,7 +123,7 @@ workspace; writes need read access plus an account that can sign in
 | `PUT /api/workspaces/{id}/study/enabled` | Upserts `workspace_study`: `false` is Hide study progress, `true` shows it. |
 | `GET /api/workspaces/{id}/study/plans` | `StudyPlans`: the user's plans kept in the workspace, then their plans elsewhere with a step in it, and every readable workspace a parent or step names once, with its chapters, tracked items (the Learning map's shape) and `hidden`. A step in a workspace the user can no longer read comes back `locked` with no title; a plan whose parent the user can no longer read is left out. |
 | `POST /api/workspaces/{id}/study/plans` | `{name}`: an empty plan kept in the workspace, for any reader; the eleventh in one workspace is 409. |
-| `PATCH /api/study/plans/{id}` | `{name?, steps?}`: renames and/or replaces the steps in order. A new step must be in a workspace the user can read and point at an untrashed target there; a step the plan already holds passes as it is (so a locked one survives a reorder); a repeat or a 51st step is 422; another user's plan is 404. |
+| `PATCH /api/study/plans/{id}` | `{name?, steps?}`: renames and/or replaces the steps in order. A new step must be in a workspace the user can read and point at an untrashed target there; a step the plan already holds passes as it is (so a locked one survives a reorder); a repeat, a 201st step or a 21st group (`ErrStudyPlanSize`) is 422; another user's plan is 404. |
 | `DELETE /api/study/plans/{id}` | Deletes one of the user's plans. |
 | `GET /api/learning/plans` | Every plan of the user, newest first, in the same shape. |
 | `PUT /api/workspaces/{id}/study/items` | `{fileId \| materialId, state?}`: `done` (Mark as read), `removed` (Stop tracking), omitted deletes the row (Mark as unread, Start tracking). The target must be an untrashed file or untrashed, non-embedded material of the workspace, else 404; both or neither id is 422. |
@@ -144,22 +144,34 @@ result body resetting the session's list.
 | `GET /api/review/overview` | Learning's Review tab, below. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts with Jev), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
-| `GET /api/learning/progress?lead=&all=` | Learning's Progress tab, below; `all` adds workspaces hiding study progress, marked `hidden`. |
-| `POST /api/quizzes/{id}/attempts` | `{answers, startedAt?}`, graded on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)); its side effect is below. |
+| `GET /api/learning/progress?lead=&all=` | Learning's Progress tab, below; `all` adds workspaces hiding study progress, marked `hidden`; `hiddenCount` counts them either way. |
+| `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
 | `POST /api/internal/study-progress` | The chat agent's `read_study_progress`, below. |
 
 Side effects, in the same transaction as the write:
 
-- An attempt on a workspace quiz that is not embedded rates every question of
-  the snapshot the server graded that is still in the document and sets the
-  quiz `done`. Attempts on standalone quizzes record no review state. An
-  embedded quiz's attempt is graded and returned without an id and stores
-  nothing (`CreateAttempt`): no Past attempts entry, and the result lives only
-  on the page.
+- A quiz check (`CheckQuizQuestion`, under the account lock and the rating
+  lock) inserts or updates the attempt: its `questions` are the checked
+  questions graded, in the quiz's order (questions since removed last),
+  `answers` theirs, `correct` their awarded marks and `total` the quiz's
+  marks, a checked question counting with the marks it was checked against
+  (so an edit to its marks, or its removal, never takes the score past the
+  total) and an unchecked one with its marks now, scoring 0. A check the
+  attempt already holds is refused (409) before grading
+  (`QuizQuestionChecked`), so a repeat costs no Jev call, and again under the
+  locks. An attempt is never closed:
+  one left partway counts as an attempt with what it checked (Epo
+  2026-10-25), and `taken_at` is its latest check. On a workspace quiz that is
+  not embedded the check also rates the question if it is still in the
+  document, has marks and was not left wholly blank, and sets the quiz `done`.
+  Attempts on standalone quizzes record no review state. An embedded quiz's
+  check is graded and returned in an attempt without an id and stores
+  nothing: no Past attempts entry, and the try lives only on the page.
 - A rating writes `review_states` and `review_log`. For a workspace material
-  that is not embedded it also sets progress: a question makes its quiz
-  `done`; a card makes its set `started`, or `done` once every current card has
-  a state matching its hash. Ratings of one user on one material take an
+  that is not embedded it also sets progress: a question or card makes its
+  quiz or set `started`, or `done` once every current item has a state
+  matching its hash (2026-10-25: a review that brings a new item must not
+  mark an untouched quiz read; a quiz attempt's check marks it done itself). Ratings of one user on one material take an
   advisory lock, so a set's last cards rated at once still see each other and
   mark it done. Standalone ratings write state that nothing reads.
 - A `done` row stays done; later cards do not reopen a set. Practising a
@@ -177,9 +189,9 @@ not know which); the review session refreshes once at the end instead.
 
 ## The review pool
 
-`reviewPool` is every rated item whose hash still matches, across the
-workspace's quizzes and sets that have a `study_progress` row other than
-`removed` and are neither trashed nor embedded, sorted by retrievability
+`reviewPool` is every rated (practised) item whose hash still matches, across the
+workspace's quizzes and sets that are not `removed` (Mark as unread, which
+drops the progress row, keeps them), trashed or embedded, sorted by retrievability
 ascending (ties keep material position, then document order). Unrated items
 never enter it. It feeds `reviewable`, Quick review, the session and
 Learning's count. It reads only materials the user has rated, states included,
@@ -233,9 +245,21 @@ miss, items missed twice or more, probably forgotten items (the sum of
 A session takes the group's items by score up to the session size, items at
 R at most 0.9 only for a suggestion, then interleaves the modes so a run of
 missed items is broken up. A manual review (the workspace list, the Study page's Whole
-workspace) takes the whole workspace with no recall cutoff: every item is
-eligible, the score only decides which are picked first. The focus
-preference ranks it as it ranks suggestions.
+workspace, a plan review) takes the whole workspace (or plan) with no recall
+cutoff, and mixes in new items (human/study-progress.md 2026-10-25):
+`newPool` is every item of the scope's tracked, untrashed, top-level quizzes
+and sets that the user never rated or whose content changed since its rating,
+in reading order (chapters in order, then unfiled; by position, newest first on
+ties). A plan review reads it only for the plan's own quizzes and sets and puts
+the new items in the plan's step order. `withNew` gives the new items 60% of the session size
+(`newShare`) and the practised ones 40% as `pickItems` ranks them; a side that
+runs short leaves its places to the other, and the two are spread through the
+session in their shares. Suggestions, Quick review and every count stay on
+practised items: only a new manual session reads `newPool`, which parses every
+quiz and set in scope (through the cache, documents loaded only on a miss).
+Starting a session has its own rate limit, 60 an hour with a burst of 10
+(`Review` in `ratelimit`); continuing one reads only its own items. The focus
+preference ranks the practised side as it ranks suggestions.
 
 Preferences live in `users.study_preferences` with the chat's: `reviewSize`
 10, 20 (default), 30 or 50; `reviewItems` both (default), quiz or flashcards,
@@ -250,17 +274,15 @@ pane while nothing is open and the URL has `study=true`
 (`parseWorkspaceOpenSearch`; human/study-progress.md 2026-10-22: the old side
 panel Study tab moved here). There is no Study panel view: the page opens from
 the Study row under the workspace picker at the top of the Files panel
-(highlighted while the page or a plan shows), the landing's Study row and the
+(highlighted while the page shows), the landing's Study row and the
 Study item of the workspace menus (the left panel foot's, the Files dropdown's
 and, below lg, the header ⋮). A workspace URL without params opens on the
 landing. An item opened from the page stays one Back away; a whole-workspace
-review returns to it. Top to bottom:
+review returns to it (a plan's review with the plan picked). The page pads by the centre pane's
+own width (`TabContent pane`: page-px-wide's 16/24/40/64px steps at the
+pane's 40/64/80rem). Top to bottom:
 
-- The title Study and a ⋮ with Hide study progress (or Show study progress)
-  and Reset progress (confirm dialog: clears progress rows and review states
-  in the workspace; attempts and the log stay). Neither is in Workspace
-  settings any more, which only managers open (Others shows with Clone,
-  Danger for owners).
+- The title Study.
 - The workspace's railway map (`WorkspaceRailMap`, Learning's lead map call:
   chapters in order, tracked items in reading order, the cover's ink), while
   anything is tracked.
@@ -269,14 +291,6 @@ review returns to it. Top to bottom:
   `contentFor`: chapters by `order`, each chapter's files and materials by
   position, files first on ties, then newest, then unfiled items) that is
   neither `done` nor `removed`, with an accent Continue link.
-- The whole workspace's review (`WorkspaceReview` in `quickActions.tsx`):
-  the workspace icon, "Whole workspace" and Review, which starts a
-  whole-workspace session (no mode, recorded with its first answer like any
-  session). When `unfinished` is set the link reads Continue review and
-  reopens that session, with "Progress: answered of total · when" (its last
-  answer) muted under the title. Review is disabled with nothing reviewable
-  and nothing to continue. Suggested reviews live on Learning's Review tab
-  only (Epo, 2026-10-18).
 - **Quick review**: `quickReview` (`quickReview` in `study.go`) ranks the
   pool's cards and quick questions as a suggested review does
   (`scoreItems`, so the focus and item preferences apply) among those at or
@@ -284,45 +298,96 @@ review returns to it. Top to bottom:
   and takes the top four. A quick question (`quickQuestion`) has a single
   part answered by choice, true/false, a short answer or gaps; open,
   matching, ordering and multi-part questions are left to review sessions
-  (they run 350 to 1000px tall at phone width). A question shows with the
-  review session's runner and Check (`POST /api/review/check` without a
-  session, keys hidden by `questions.LearnerView` in the handler), then its
-  checked result read only until Next; Next past the last checked question
-  ends the round. A card shows on
-  the shared card in its `panel` size (at most 360px wide, 160 to 190px
-  tall, subtitle-size front text, denser rating tiles; smaller than a note
-  embed's compact card) with the set's name under it, flips
-  and takes the four ratings. The round is a snapshot kept while
-  ratings refresh the summary (rated items leave the list); once its last
-  item is done the section leaves with the smoky dissolve
-  (`motion-smoke-out`: rise 8px, swell to 1.04, blur 8px, fade over 500ms,
-  then the row closes over 350ms; reduced motion removes it at once) and
-  stays gone until the workspace is opened again.
-- **Plans** (`plans/PlansSection.tsx`, below).
+  (they run 350 to 1000px tall at phone width). The items sit in a row of
+  small cards (`quickActions.tsx`; 176px wide on phones, 200px from `sm`,
+  118px tall, 14px radius) in the shared `CardSlider`
+  (`src/components/app/CardSlider.tsx`, also the Dashboard's recent
+  workspaces: right-edge fade, contained so it never widens the pane): the
+  card's front or the question's prompt cut at three lines, then "<set or
+  quiz> · 1 card/1 question". A click zooms that card into a centred dialog
+  (`ZoomCard.tsx`, Epo's pick B of the 2026-10-25 mock): the finished card
+  scales up from the slot's box over 350ms (smooth-out) while a copy of the
+  slot's face, counter-scaled to the slot's size, fades out over it; closing
+  (×, Esc, the backdrop) runs it back into the slot over 250ms, or fades with
+  a small scale when the slot is off screen or motion is reduced. The dialog
+  (576px wide) names the set or quiz with "n of 4". A card is the mock's
+  own card (`QuickFlashcard`): a grey face, 200px tall (220 on phones),
+  turning over in 3D over 520ms, with the four ratings rising in under it;
+  a question uses the review session's runner and Check without its marks
+  (`POST /api/review/check` without a session, keys hidden by
+  `questions.LearnerView` in the handler), then its checked result until
+  Next. Rating a card or Next slides the next unanswered item into the
+  dialog (`motion-quick-swap-in`); after the last one the dialog
+  closes into its slot. An item counts as answered once its rating or Check
+  is sent (the server records it even if the dialog closes first) and leaves
+  the row when its card closes. A batch lasts four hours in this browser
+  (`PREF_KEYS.quickReview`, per workspace: the items as served, when it
+  began, the keys answered), so reopening the workspace shows the same
+  batch without what was answered; after four hours the next open starts
+  one from the served list. Once its last item is done the section leaves
+  with the smoky dissolve (`motion-smoke-out`: rise 8px, swell to 1.04,
+  blur 8px, fade over 500ms, then the row closes over 350ms; reduced motion
+  removes it at once) and stays gone until the batch runs out.
+- **Quick actions**, under Quick review (title over a divider, sections 32px
+  apart like Plans and Chapters): the whole workspace's review
+  (`WorkspaceReview` in `quickActions.tsx`) as one row that opens it:
+  "Continue workspace review" reopens the latest unfinished session, with
+  "Progress: answered of total · when" (its last answer) muted under it;
+  otherwise "Start workspace review" starts a whole-workspace session (no
+  mode, recorded with its first answer like any session). The row (20px
+  workspace icon, semibold label lined up with the chapter names) always
+  opens the review page, which says when there is nothing to review. Suggested
+  reviews live on Learning's Review tab only (Epo, 2026-10-18).
 - **Chapters**: every file and material by chapter in reading order (Others
-  last), each chapter with "done of tracked done"; a row is the item's icon
-  and name, one muted line ("Read <date>" from the row's `updatedAt`, "Not
-  read", "Not tracked", or "N attempts · N questions/cards · last <date>",
-  "Not attempted"/"Not studied" before any), the latest score, a toggle for
-  the last three results (Attempt n, date · minutes, score, See result) then
-  "See all results" (All results filtered by the workspace and the item's
-  kind, once there is a result), `StudyMark`, and a ⋮ with Mark as read and
-  Stop tracking on hover. A row click opens the file, or a quiz's or set's
-  latest result; one never attempted opens itself. The Filter is the Files
-  page's `FilterPopover` with a Kind section only (kinds the workspace holds,
-  files first); Show is a dropdown (All items, Not read, Read, Not tracked).
+  last). Each chapter is an accordion row (`motion-accordion`, 250ms): a
+  mark (a check once every tracked item is done, else a ring filled by the
+  share done, dashed while nothing is), the name, "done of tracked done" and
+  a turning chevron. The next item's chapter starts open; the others open by
+  hand. Chapter rows and item rows share one end column (36px wide from
+  md): a chapter's chevron, giving way on hover to a plan step's ⋮, sits
+  where an item's read mark does. Inside, indented so its icon sits under
+  the chapter's name (dividers stay full width), a square row is the item's
+  icon, its name and on the same line a muted meta that gives way first
+  ("Read <date>" from the row's `updatedAt`, "Not read", "Not tracked", or
+  "N attempts · N questions/cards · last <date>", "Not attempted"/"Not
+  studied" before any), the latest score, a toggle for the last three
+  results (Attempt n, date · minutes, score, See result) then "See all
+  results" (All results filtered by the workspace and the item's kind, once
+  there is a result), then `StudyMark` in the ⋮'s place: from md the mark
+  gives way to the ⋮ (Mark as read, Stop tracking) on hover, focus or an
+  open menu; phones show both. A row click opens the file, or a quiz's or
+  set's latest result; one never attempted opens itself. The Filter is the
+  Files page's `FilterPopover`: Kind (kinds the workspace holds, files
+  first) and Show (Not read, Read, Not tracked; one at most, none is all
+  items). A running filter opens every
+  chapter it shows and the filter's Reset closes them all. The
+  page ends with 40vh of room so the last chapters can scroll up before
+  opening.
+- Rename plan (outline button, a plan only), then Reset study progress and
+  Delete plan (a plan only), the destructive ones last; every control takes
+  one 96px column so the labels line up; as Settings-style rows under the
+  chapters (`SettingRow`: title and hint, then on the right a md
+  large-radius button, Reset borderless red (danger-light); Reset's confirm
+  dialog clears progress rows and review states in the workspace; attempts
+  and the log stay). The 40vh of room sits under these buttons.
+- Hide study progress is a switch in Workspace settings → Study (on while
+  progress is hidden), since it covers every plan in the workspace. Everyone
+  signed in with access opens Workspace settings: owner and editor members
+  on General, everyone else (viewers, share-role visitors) on Study, their only tab beside Others when they may clone. While progress is
+  hidden the Study page says so, with an underlined Workspace settings link
+  that opens the Study tab (`settings=study`).
 
 With study progress hidden (`workspace_study.enabled` false) recording goes
-on as before, and the page keeps only a "Study progress is hidden here" line
-with Show, the Plans rows without counts or next items, and the chapter rows
-as plain names opening their items (no marks, results, ⋮ or Show dropdown):
-no map, Continue, Review or Quick review.
+on as before, and the page keeps only the plan select (a closed eye in
+place of its icon) and the bottom rows: no map, Continue, Quick review,
+Quick actions or chapters.
 
 Data: `GET /api/workspaces/{id}/study`, the tree's chapters, files and
 materials, `GET /api/workspaces/{id}/study/attempts` (`qk.studyAttempts`) and
 `GET /api/workspaces/{id}/study/plans` (`qk.studyPlans`), all refreshed by
-`invalidateStudy`, which also refreshes every workspace's plans, since a plan
-counts steps in other workspaces.
+`invalidateStudy`, which also refreshes every workspace's plans and plan
+summaries (`qk.planStudy`), since a plan counts steps and draws review items
+in other workspaces.
 
 ### Marks and menus
 
@@ -343,39 +408,86 @@ read toggle and the tracking menu items hide while study progress is hidden.
 `src/features/study/plans/` (human/study-progress.md 2026-10-22). A plan is
 the user's own ordered steps, kept in a parent workspace and able to reach
 into any workspace they can read; the workspace's own chapter order is its
-default plan, which Continue, Review and suggestions keep using. Progress is
+default plan, "Default Plan" on the Study page. Progress is
 the one shared `study_progress`: `planProgress` counts each step in the
-browser from the response's tracked items (a whole workspace, its unfiled
-items, one chapter, or one file or material), a step is done when its
-tracked items are, the current step is the first not done and its next item
-the first not done in reading order; locked steps count for nothing.
+browser from the response's tracked items, one file or material per step
+(human/study-progress.md 2026-10-25): a step is done when its item is, the
+current step is the first not done; locked steps count for nothing. A
+**group** is a run of consecutive steps in the same workspace and chapter
+(Others for unfiled items), worked out where it is shown and by the server
+for the cap (`planGroups`, counted as the page shows them: an untracked or
+trashed step joins the run around it, steps in a workspace the user can no
+longer open group by workspace); nothing stores it. Adding a chapter adds its files, so a file
+added to the chapter later is not in the plan.
 
-- **Plans section** on the Study page: plans kept here (list icon, name, "N of
-  M steps · Next: <item>", accent Continue opening that item wherever it is,
-  hover ⋮ Rename plan / Delete plan), then plans elsewhere with a step here
-  ("Also in · from <workspace>" with that workspace's icon and Open, which
-  goes to the plan in its workspace). New plan (bordered) names it with the
-  shared `NameFormDialog` and opens it; with no plans one line says what a
-  plan is.
-- **Plan page** (`PlanPage.tsx`, `plan=<id>` in the parent workspace's URL):
-  a Study back link, the name, "In <workspace> · N of M steps", the + (one
-  add popover, `AddStepsPopover.tsx`: a workspace dropdown, then Whole
-  workspace, its chapters, Others and, behind Single files, every file and
-  material; steps already in the plan show ticked and disabled; picked ones
-  go to the end) and the plan ⋮, an accent "Continue: <item>", then one row
-  per step: number, workspace icon (a lock when unreadable), name, the
-  workspace and, on the current step (tinted), "Next: <item>", "done of
-  total" and the done mark (both left out where that workspace hides study
-  progress). Rows reorder by whole-row drag with the accent drop line; a row
-  ⋮ has Open, Move to top and Remove from plan. Each change sends the whole
-  step order (`useUpdateStudyPlan`, optimistic for held steps).
+- **The Study page shows one plan** (`PlanSelect.tsx`, a md select at the
+  title's right; `plan=<id>` in the parent workspace's URL, 2026-10-25):
+  "Default Plan" (the chapter order), the plans kept here, an "Also in"
+  group (plans kept elsewhere with a step here, opening in their own
+  workspace's Study page) and New plan (the shared `NameFormDialog`, then
+  the new plan opens). The picked plan leads the whole page: the railway map
+  draws its groups as stations (seeded `plan:<id>`, each tracked item once),
+  Continue opens its next item wherever it is, Quick review and the review
+  row read `GET /api/workspaces/{id}/study?planId=` (only Enabled and the
+  review parts; the marks come from the workspace's own summary; the plan's pool across
+  its workspaces, only what its steps hold, batched apart in the browser as
+  `plan-<id>`), and the list shows its groups (`studyRows.tsx`) as accordion
+  rows named by the chapter (or Others) with the step files indented inside;
+  a group from another workspace names that workspace muted after its name;
+  locked steps group as "A workspace you can no longer open". Groups carry a
+  ⋮ with Remove from plan (all its files); a plan never reorders, as
+  Default Plan does not; each file
+  row's ⋮ ends with its own Remove from plan. Both ask for a second click
+  (`confirmLabel` on the shared Menu: "Click to confirm" in the same width,
+  reset when the menu closes). Add files (accent, left of the Filter; the UI
+  never says "steps";
+  `AddStepsPopover.tsx`: a workspace dropdown, then Whole workspace, its
+  chapters, Others and, behind Single files, every tracked file and
+  material, each workspace with its icon; a tick picks the row's tracked
+  files, so Whole workspace ticks every chapter and file and a row with only
+  some of its files picked (or in the plan) shows a dash; a row whose files
+  are all in the plan is ticked and disabled, and the picked
+  files not yet held each go after the last file of their chapter in the
+  plan, else to the end). Rename plan and Delete plan are
+  Settings-style rows at the bottom; Delete plan opens Default Plan first,
+  then deletes. A plan lists tracked items only, so an untracked item leaves
+  it and its Show has no Not tracked; a file step whose file is untracked
+  goes too. The map's stations come from every step, never the filtered
+  list. A skeleton shows until the plan's data loads; a failed read of the
+  plans or the plan leaves the page to the error state alone. The plans and
+  the plan's summary persist in IndexedDB like the workspace's summary. Each change sends the whole step order (`useUpdateStudyPlan`,
+  optimistic for held steps).
+- **Plan review sessions** (migration 0118): group `plan` with `plan_id`
+  and `plan_name` (kept once the plan is deleted); `workspace_id` is the
+  plan's parent, the access check. `GET /api/workspaces/{id}/review?group=plan&planId=`
+  picks the plan's items as a whole-workspace review does. The first answer
+  records the session against the plan's scope (the handler loads it: the
+  user's plan, kept in the session's workspace, the item's material one of
+  its steps); later answers are checked against the recorded
+  row instead (same owner, group and workspace, the named plan its own, the
+  item readable), so the session keeps going once the plan loses a step or
+  is deleted. Resume reads items from any workspace the user still reads. Past reviews, Continue review and results name the plan where a
+  chapter session names its chapter.
 - **Learning**: "Your plans" on the Progress tab, below.
 
 ### Flashcard results
 
 A study run on the app page mints an attempt (`StudyAttempt` in
-`StudyBody.tsx`: a uuid and start time, renewed by Study again) and sends it
-with every rating; the server records it for workspace sets only. When the
+`StudyBody.tsx`: a uuid and start time, renewed by Study again or Reset) and
+sends it with every rating; the server records it for workspace sets only.
+The run resumes after a reload or a later visit (Epo 2026-10-25): the app and
+share pages keep it in localStorage (`capy.flashcardRun.<owner>.<setId>`,
+the owner the signed-in user's id on the app page, so another account on the
+browser starts its own run, and `share` on share pages; `useKeptFlashcardRun`
+in `flashcardRun.ts`: the attempt id, start, latest
+rating and each card's ratings, faces read from the set again, so a card
+deleted since leaves the run; share pages read it after hydration), and
+`resumeSteps` puts the rated cards behind (read only) and ahead the unrated
+cards in set order, then those last rated Again; skips are not kept. Note
+embeds keep nothing. While studying, once the run has a rating, an outline md
+Reset at the far right of the title (`ResetButton`, also on quiz pages once a
+question is checked) starts a new run and forgets the kept one; the run so far
+stays an attempt. A result shows Study again (Redo quiz) instead. When the
 run ends, the page shows `FlashcardResult` (`src/features/flashcards/FlashcardResult.tsx`)
 in the quiz result's layout (TabContent, left aligned) from the page's own
 ratings, so embeds and share pages show it too. The score of first ratings
@@ -394,7 +506,8 @@ orders them by Flashcard order, Hardest (first rating, then last) or
 Easiest. Study again sits where a quiz result's Redo quiz does. A recorded
 attempt's page, `/flashcards/attempts/$attemptId`, is `AttemptResult` with
 the same body and Study again in place of Redo quiz. Quiz results show
-minutes too: `AttemptBody` passes when the try began to `grade`; the score
+minutes too: each check sends when the try began, and the minutes run to the
+latest check; the score
 row reads "18.5 / 26 marks" with the minutes beside it under a clock
 (`ResultScore`; only the Question bank's topic summary shows a percentage
 there), and `attemptMeta` writes "date · workspace" in the stat line's type
@@ -411,7 +524,7 @@ session is the batch fetched when it began, so it does not reshuffle as
 ratings land; the browser mints its id and every answer carries it with the
 served items, so the first answer records the session. Items come one at a time
 with small Previous and Next buttons (`StepNav`), the stepper shared with
-flashcard study and Quick review (`src/features/study/steps.ts`). Next skips an
+flashcard study (`src/features/study/steps.ts`). Next skips an
 item without rating it: it waits at the end of the session, and a second skip
 leaves it behind so the session still reaches its end. A skip records nothing,
 neither rating nor `review_log` row, so a skipped item keeps fading and
@@ -446,9 +559,8 @@ card in document order; Again sends a card to the end. It uses the quiz pages'
 frame (header with back, breadcrumb and title) and never edits cards. The same
 `StudyBody` (`src/features/flashcards/StudyBody.tsx`) serves the page, note
 embeds and the shared page, drawing the card with `CardStack`
-(`src/features/flashcards/CardStack.tsx`, also the review session's and Quick
-review's card; note embeds use its shorter compact size and Quick review the
-smaller panel size):
+(`src/features/flashcards/CardStack.tsx`, also the review session's card;
+note embeds use its shorter compact size):
 "Card 1 of 6" centred above the card, which flips
 on a click (the text swaps in place, old face up and out, new face in from
 below, the ratings rising in one after another) and carries the text rating buttons
@@ -457,8 +569,7 @@ below, the ratings rising in one after another) and carries the text rating butt
 centres the answer under it, the image staying on the front; small Previous and Next
 (`StepNav`) sit under it at the right. Next skips without rating (the card goes
 to the session's end), Previous shows the cards before it: a rated one read
-only with its rating ringed, a skipped one still to rate. Quick review steps
-the same way through its round. Moving on
+only with its rating ringed, a skipped one still to rate. Moving on
 swipes the top card off to the top left over the next one (no motion under
 reduced motion). Signed in, each rating
 posts to `/api/review/ratings`; a shared link opened signed out renders the same
@@ -487,10 +598,23 @@ as on workspace cards).
   "N items", and Start, which opens the session straight away. Study
   preferences links to Settings → Study.
 - **Continue review**: unfinished sessions, newest answer first, with
-  "answered of total · when" and Continue.
-- **All workspaces**: name, last review or "Not reviewed yet" / "Nothing
-  practised yet", "N items" a manual review draws from (hidden on phones), and
-  Review, or Review again once any session exists there.
+  "answered of total · when"; the row continues it.
+- **Your plans** (the overview's `plans`: the user's plans whose parent
+  workspace they can read and show study progress in, newest first; each
+  plan's count filters the workspace pools the overview already read, a
+  workspace it has not read is read once): the
+  parent's icon, the plan's name with its workspace muted after it, last
+  review of the plan's sessions; the row starts a plan review.
+- **Default plans**: each workspace's name and last review or "Not reviewed
+  yet" / "Nothing practised yet" / "No quizzes or flashcards yet", with no
+  count; the row starts a whole-workspace review.
+
+Those rows hover as a whole (no radius) and open on a click, with no
+Continue or Review link. `canReview` (practised items, or any tracked quiz or
+set in scope of a kind the "review items" preference takes; for a plan only
+its quiz and set steps; a cheap EXISTS) decides: a row without it still opens and
+raises an info toast, "Nothing to review yet", asking for a quiz or flashcards
+first. Suggestions keep their Start.
 - **Past reviews**: the table below.
 
 ### Past reviews
@@ -498,16 +622,18 @@ as on workspace cards).
 `src/features/study/PastReviews.tsx`, the Review tab's last section, its
 filter beside the heading: finished sessions in Billing's plain table
 (`BillingTable`, no border, scrolls sideways) at every width (Date,
-Workspace, Chapter, Quiz, Flashcards, Time, Status, ⋮ with See result and
-Review again; Time and Status from xl; a click anywhere on a row opens the
-result),
+Workspace, Study Plan, Chapter, Quiz, Flashcards, Time, Status; Time and Status
+from xl; no row menu: a click anywhere on a row opens the result, which has
+its own Review again),
 sorted from its column headers (`SortHeader`, no sort menu: date, workspace,
-chapter, quiz score, flashcard score, time spent, status; text columns start
-A to Z, the rest newest or largest first, a second click flips) and the list
-pages' filter (workspace, has quiz questions or flashcards), both kept in the
-URL (`parsePastReviewsSearch`). Chapter sorts chapter sessions by name with
-Others and whole-workspace sessions last; status puts completed before
-stopped. Quiz is marks of the questions answered, Flashcards
+plan, chapter, quiz score, flashcard score, time spent, status; text columns
+start A to Z, the rest newest or largest first, a second click flips) and the
+list pages' filter (workspace, has quiz questions or flashcards), both kept in
+the URL (`parsePastReviewsSearch`). Study Plan is a plan session's plan, else
+"Default Plan", and sorts plan sessions by name with the others last; Chapter
+is a chapter session's chapter or Others (empty for whole-workspace and plan
+sessions) and sorts chapter sessions by name with the rest last; status puts
+completed before stopped. Quiz is marks of the questions answered, Flashcards
 cards rated Good or Easy. A session ended early shows "Stopped after
 N of M" under Status. Scores are plain "x / y" text. Thirty
 rows a page. All results lays out as Files' list does: toolbar right under
@@ -578,17 +704,27 @@ agree.
 - **Continue your study**: the heading with an accent "Continue: <item>" link at
   its right (the Study page's next item: first in reading order not done), the
   map, then the workspace's icon and name and "done of total done".
-- **Your plans** (`GET /api/learning/plans`): every plan as the Study page's
-  plan row with its parent workspace's icon and Continue; a row opens the
-  plan in its workspace. Hiding a workspace leaves its plans listed.
-- **Other workspaces**: rows with icon, name, "Studied <when>", the small
-  trail (done of total), "done of total", Continue, which opens the
-  workspace, and a ⋮ with Hide study progress (the Study page's switch). Show
-  all (bordered, at the heading's right; Hide hidden once pressed) refetches
-  with `all`: hidden rows show at half opacity with "Hidden" and a Show button
-  that turns study progress back on.
-- **Finished**: rows with icon, name, "Finished <when>", "total of total",
-  Open and the same ⋮ or Show.
+Every row below hovers as a whole (no radius) and opens what it names; a
+list's "Show hidden (count)" at its heading's right is a borderless
+(ghost-hover) button shown while something hides, Hide hidden once pressed.
+
+- **Your plans** (`GET /api/learning/plans`): every plan in progress as a
+  row with its parent workspace's icon, "done of total files" and the next
+  item; a row opens the plan in its workspace. A finished plan (every tracked
+  item done; `planFinishedAt`, its items' latest `doneAt`) moves to Finished. A plan whose parent workspace hides study
+  progress leaves the list until its Show hidden (counted in the browser),
+  then shows at half opacity with "Hidden".
+- **Default plans**: the other workspaces' rows with icon, name, "Studied
+  <when>", "done of total" and a ⋮ with Hide study progress (the Study
+  page's switch); a row opens the workspace. Its count is the response's
+  `hiddenCount` (every readable workspace with progress hiding it, past the
+  list caps too); Show hidden refetches with `all`: hidden rows show at half
+  opacity with "Hidden" and a Show button that turns study progress back on.
+- **Finished**: finished workspaces and plans together, latest first: the
+  workspace's icon and name, "Finished <when>", the plan finished on the
+  right ("Default Plan" for a workspace, else the plan's name) and the
+  workspace's ⋮ or Show (none on a plan). Hidden finished plans follow Your
+  plans' Show hidden.
 
 The map leads with a finished workspace when the URL's `finished` names it
 (the finish toast's Go check, sent on as `lead`) or nothing is in progress; it
@@ -661,7 +797,7 @@ tab use the same colour.
 | File or material trashed | Rows stay; every read skips trashed items and marking one is 404; restore brings them back. |
 | File or material purged | `study_progress`, `review_states` and `review_log` cascade. |
 | Item removed from a document | Its `review_states` row is ignored until the item returns. |
-| Question prompt or card face edited | That item's state resets on its next rating; until then it is out of review. |
+| Question prompt or card face edited | That item's state resets on its next rating; until then it is out of the practised pool and comes back in a manual review as a new item. |
 | Workspace deleted | All four workspace-scoped tables go by cascade, and so do the plans kept there and every step in it. |
 | Chapter, file or material purged | Plan steps pointing at it go (cascade); a trashed one stays as a step with nothing tracked. |
 | Member or link access lost | Rows stay, unreadable without access; Learning skips the workspace. |
@@ -762,7 +898,8 @@ Sources: [migration](../server/migrations/0051_study_progress.sql),
 [plans migration](../server/migrations/0108_study_plans.sql),
 [plans store](../server/internal/store/study_plans.go),
 [Study page](../src/features/study/StudyPage.tsx),
-[plans](../src/features/study/plans/PlansSection.tsx),
+[plans](../src/features/study/plans/PlanSelect.tsx),
+[plan review migration](../server/migrations/0119_plan_reviews_file_steps.sql),
 [marks and menus](../src/features/study/studyItems.tsx),
 [review session](../src/routes/ReviewSession.tsx),
 [Learning](../src/routes/Learning.tsx) and

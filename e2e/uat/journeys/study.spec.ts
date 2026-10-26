@@ -207,10 +207,10 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   assert.equal(
     await clicked(
       page,
-      `/api/quizzes/${finishedQuiz}/attempts`,
-      m.quiz_submit()
+      `/api/quizzes/${finishedQuiz}/check`,
+      m.question_ui_check()
     ),
-    201
+    200
   );
   await expect(page.getByRole('button', { name: m.quiz_redo() })).toBeVisible();
   await page.goto(`${run.env.appUrl}/flashcards/${set}`);
@@ -234,10 +234,15 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   await continueButton.click();
   await expect(page).toHaveURL(new RegExp(`[?&]material=${nextQuiz}(&|$)`));
 
-  // A review session from the Study tab over the card and the question.
+  // A workspace review from the Study tab. A manual session gives 60% of its
+  // places (12 of a new account's 20) to never-rated items and the rest to
+  // practised ones, each side filling what the other leaves
+  // (store.withNew): here the quiz not yet taken's one question, served
+  // first, then the card and the question already practised.
+  const reviewTotal = 3;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
   await page
-    .getByRole('button', { exact: true, name: m.study_review_button() })
+    .getByRole('link', { name: m.study_start_workspace_review() })
     .click();
   await expect(page).toHaveURL(
     new RegExp(`/learning/review/${workspaceId}\\?.*from=workspace`)
@@ -245,7 +250,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   await expect(
     page.getByRole('progressbar', {
       exact: true,
-      name: m.flashcards_card_position({ position: 1, total: 2 }),
+      name: m.flashcards_card_position({ position: 1, total: reviewTotal }),
     })
   ).toBeVisible();
   const showAnswer = page.getByRole('button', {
@@ -255,11 +260,11 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     exact: true,
     name: m.review_check(),
   });
-  for (let position = 1; position <= 2; position++) {
+  for (let position = 1; position <= reviewTotal; position++) {
     await expect(
       page.getByRole('progressbar', {
         exact: true,
-        name: m.flashcards_card_position({ position, total: 2 }),
+        name: m.flashcards_card_position({ position, total: reviewTotal }),
       })
     ).toBeVisible();
     await expect(showAnswer.or(check)).toBeVisible();
@@ -283,10 +288,10 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
       .getByRole('button', { exact: true, name: m.action_next() })
       .click();
   }
-  // The result: the question right, the card rated Good.
+  // The result: both questions right, the card rated Good.
   const rows = page.getByRole('button', { expanded: false });
   await expect(rows.filter({ hasText: m.review_result_right() })).toHaveCount(
-    1
+    2
   );
   await expect(page.getByText(m.srs_good(), { exact: true })).toHaveCount(1);
 
@@ -301,6 +306,8 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     [file]: 'done',
     [finishedQuiz]: 'done',
     [set]: 'done',
+    // Its one question rated in the review.
+    [nextQuiz]: 'done',
   });
   // Studying the set recorded a flashcard attempt: its one card rated Good.
   const attempts = await run.query(
@@ -319,14 +326,15 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
       [set, 'flashcards', 1, 1],
     ]
   );
-  // Rated once while studying, once in the review.
+  // Rated once while studying, once in the review; the quiz not yet taken
+  // only in the review.
   const states = await run.query(
     'SELECT material_id,reps FROM review_states WHERE user_id=%s AND material_id=ANY(%s::text[])',
     [run.owner.id, materials]
   );
   assert.deepEqual(
     Object.fromEntries(states.map((r) => [r.material_id, Number(r.reps)])),
-    { [finishedQuiz]: 2, [set]: 2 }
+    { [finishedQuiz]: 2, [nextQuiz]: 1, [set]: 2 }
   );
   await run.attach(`${workspaceId}-study`, { attempts, progress, states });
   await noProviderCalls(run, workspaceId);
@@ -340,8 +348,12 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     .getByRole('textbox', { exact: true, name: m.question_ui_your_answer() })
     .fill('The plants keep the carbon in their roots and in the wet soil.');
   assert.equal(
-    await clicked(page, `/api/quizzes/${openQuiz}/attempts`, m.quiz_submit()),
-    201
+    await clicked(
+      page,
+      `/api/quizzes/${openQuiz}/check`,
+      m.question_ui_check()
+    ),
+    200
   );
   await expect(page.getByRole('button', { name: m.quiz_redo() })).toBeVisible();
   const graded = await run.query<{ questions: { parts: object[] }[] }>(

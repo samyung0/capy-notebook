@@ -4,9 +4,11 @@ import { useRef, useState } from 'react';
 import { qk } from '@/api/client';
 import {
   useDeleteWorkspace,
+  useSetWorkspaceStudyEnabled,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
+  useWorkspaceStudy,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
@@ -15,9 +17,12 @@ import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
+import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
+import { canManageWorkspaceSettings } from './access';
 import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
 import { ShareDialog } from './ShareDialog';
@@ -30,7 +35,7 @@ export function WorkspaceSettingsDialog({
   workspace,
   open,
   onClose,
-  initialTab = 'general',
+  initialTab,
   tab: controlledTab,
   onTabChange,
 }: {
@@ -41,18 +46,23 @@ export function WorkspaceSettingsDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  // Only managers open settings; Others and Danger show when they hold a row.
+  // Everyone with access has Study; the workspace's own tabs are for owner
+  // and editor members;
+  // Others and Danger show when they hold a row.
+  const manage = canManageWorkspaceSettings(workspace);
   const others = workspace.canClone;
   const danger = workspace.capabilities.canManageMembers;
   const allowed = (value: SettingsTab) =>
-    (value !== 'others' || others) && (value !== 'danger' || danger);
+    value === 'study' ||
+    (value === 'others' ? others : value === 'danger' ? danger : manage);
+  const first: SettingsTab = manage ? 'general' : 'study';
   const [ownTab, setOwnTab] = useState<SettingsTab>(
-    allowed(initialTab) ? initialTab : 'general'
+    initialTab && allowed(initialTab) ? initialTab : first
   );
   const requested = controlledTab ?? ownTab;
   // While it fades out the URL has no tab: keep showing the last one.
-  const lastTab = useRef<SettingsTab>('general');
-  if (open) lastTab.current = allowed(requested) ? requested : 'general';
+  const lastTab = useRef<SettingsTab>(first);
+  if (open) lastTab.current = allowed(requested) ? requested : first;
   const tab = lastTab.current;
   const setTab = (value: SettingsTab) =>
     onTabChange ? onTabChange(value) : setOwnTab(value);
@@ -70,7 +80,9 @@ export function WorkspaceSettingsDialog({
     isError,
     error,
     refetch,
-  } = useWorkspaceStats(open ? workspace.id : '', { errorBoundary: false });
+  } = useWorkspaceStats(open && manage ? workspace.id : '', {
+    errorBoundary: false,
+  });
   const statsError = isError ? (
     <InlineErrorState
       className="py-6"
@@ -79,37 +91,45 @@ export function WorkspaceSettingsDialog({
       onRetry={() => void refetch()}
     />
   ) : null;
-  return (
-    <SimpleDialog
-      cardClassName="h-full"
-      className="flex h-[88dvh] flex-col gap-0"
-      onClose={onClose}
-      open={open}
-      title={m.workspace_settings()}
-    >
-      <Tabs
-        className="dialog-tabs-bleed w-auto whitespace-nowrap sm:mt-2.5"
-        onChange={(value) => setTab(value as SettingsTab)}
-        tabs={[
+  const tabs = [
+    ...(manage
+      ? [
           { label: m.workspace_general(), value: 'general' },
           { label: m.workspace_sharing(), value: 'sharing' },
           { label: m.workspace_indexing(), value: 'indexing' },
           { label: m.workspace_stats_title(), value: 'statistics' },
-          ...(others
-            ? [{ label: m.workspace_tab_others(), value: 'others' }]
-            : []),
-          ...(danger
-            ? [
-                {
-                  label: m.workspace_tab_danger(),
-                  tone: 'danger' as const,
-                  value: 'danger',
-                },
-              ]
-            : []),
-        ]}
-        value={tab}
-      />
+        ]
+      : []),
+    { label: m.workspace_tab_study(), value: 'study' },
+    ...(others ? [{ label: m.workspace_tab_others(), value: 'others' }] : []),
+    ...(danger
+      ? [
+          {
+            label: m.workspace_tab_danger(),
+            tone: 'danger' as const,
+            value: 'danger',
+          },
+        ]
+      : []),
+  ];
+  return (
+    // A manager's tabs share one tall frame, so switching never resizes it;
+    // anyone else's few rows fit their content, without a lone tab.
+    <SimpleDialog
+      cardClassName={cn(manage && 'h-full')}
+      className={cn('flex flex-col gap-0', manage && 'h-[88dvh]')}
+      onClose={onClose}
+      open={open}
+      title={m.workspace_settings()}
+    >
+      {tabs.length > 1 && (
+        <Tabs
+          className="dialog-tabs-bleed w-auto whitespace-nowrap sm:mt-2.5"
+          onChange={(value) => setTab(value as SettingsTab)}
+          tabs={tabs}
+          value={tab}
+        />
+      )}
       {/* No bottom padding: the dialog's own sits under the General footer. */}
       <div className="mt-1 flex-1 pt-5">
         {tab === 'general' && (
@@ -180,6 +200,7 @@ export function WorkspaceSettingsDialog({
         {tab === 'indexing' && (
           <IndexingTab error={statsError} stats={stats} workspace={workspace} />
         )}
+        {tab === 'study' && <StudyTab workspaceId={workspace.id} />}
         {tab === 'others' && (
           <div className="flex flex-col gap-6">
             <SettingRow
@@ -241,5 +262,32 @@ export function WorkspaceSettingsDialog({
         title={m.workspace_delete_confirm_title({ name: workspace.name })}
       />
     </SimpleDialog>
+  );
+}
+
+/** The member's own study switches for this workspace, whichever plan the
+ * Study page shows. */
+function StudyTab({ workspaceId }: { workspaceId: string }) {
+  const { data: study } = useWorkspaceStudy(workspaceId);
+  const { isPending, mutate: setShown } =
+    useSetWorkspaceStudyEnabled(workspaceId);
+  return (
+    <div className="flex flex-col gap-6">
+      <SettingRow
+        hint={m.study_hide_progress_hint()}
+        title={m.study_hide_progress()}
+      >
+        {study ? (
+          <Switch
+            aria-label={m.study_hide_progress()}
+            checked={!study.enabled}
+            disabled={isPending}
+            onCheckedChange={(on) => setShown(!on)}
+          />
+        ) : (
+          <Skeleton className="h-6 w-10 rounded-full" />
+        )}
+      </SettingRow>
+    </div>
   );
 }

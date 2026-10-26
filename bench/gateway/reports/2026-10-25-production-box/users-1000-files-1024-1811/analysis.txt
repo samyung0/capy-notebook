@@ -1,0 +1,12 @@
+== users-1000-files-1024-1811: PASS
+   157 req/s (0.157 per user), p50 5 p95 15 p99 24 max 54 ms, errors 0.00%, streams {'ended': 0, 'failed': 0, 'open_at_end': 805, 'opened': 2780, 'refused': 0}
+   server   cpu mean 0.28 p95 0.43 cores, memory peak 149 MiB
+   db       cpu mean 0.30 p95 0.46 cores, memory peak 316 MiB
+   redis    cpu mean 0.03 p95 0.06 cores, memory peak 6 MiB
+   loadgen  cpu mean 0.08 p95 0.14 cores, memory peak 96 MiB
+   cores cpu0 35%, cpu1 41%, cpu2 34%, cpu3 32%
+   postgres backends (mean) active/Client 0.0, active/IO 0.0, active/LWLock 0.0, idle/- 0.0, idle/Client 8.8, idle in transaction/- 0.0, idle in transaction/Client 0.1
+   pool waits: 15867 acquires waited 16.0 s in all, 18 windows with waits, 2 with every connection taken at the line
+   gateway warnings and errors: 0
+   seconds with p95 over 500 ms: 0 of 121
+   slowest routes (p95): GET /api/files sort=added p5 47 ms, GET /api/files sort=added p3 45 ms, GET /api/files sort=added p6+ 44 ms, GET /api/files sort=added p4 43 ms, GET /api/files sort=added p2 42 ms

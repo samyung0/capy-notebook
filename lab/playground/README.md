@@ -65,9 +65,10 @@ URL does the server fall back to the deployed one moved onto port 15433. Every
 target reads the same live library; books carry their own versions.
 
 Lab source PDFs come from `bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs`.
-UAT PDFs are downloaded from the UAT bucket on first capture into `local/pdfs/uat`
-(Office sources use their LibreOffice preview PDF, the coordinate space the chunk
-regions refer to).
+UAT PDFs are downloaded from the UAT bucket on first capture into `local/pdfs/uat`.
+`capture_page` refuses Office sources as production does (Q283); the page view
+(`/api/page`) still shows their LibreOffice preview PDF, the coordinate space the
+chunk regions refer to.
 
 The lab dump predates the trash columns; `ALTER TABLE files ADD COLUMN trashed_at
 timestamptz` was applied to the live lab database on 2026-09-12 so the current
@@ -391,6 +392,14 @@ database or bucket write.
 Unlike production, an engine failure other than a refusal is shown as the
 engine's own text instead of an unknown outcome, and a created file's name is
 not shortened to the app's file-name limit.
+
+Pictures and charts (Q240 phase B): `inspect_office_document`'s `ids` go to
+the engine as the gateway sends them (`office._office_ids`, Go's repairs and
+refusals). `scripts/office_pictures.py` runs Q&A and wrong-argument turns on
+the rich-content fixtures (`e2e/fixtures/files/rich-content`), served as a
+fixture workspace without any database row: `run` on the UAT host only, since
+it calls providers, and `check`, which reads every fixture and its pictures
+and charts by id through the tools with no model, anywhere.
 
 ### Acceptance (todo-learning.md, 1.9)
 

@@ -248,8 +248,8 @@ func (s *ReadStore) overview(ctx context.Context) (Overview, error) {
 		SELECT
 			(SELECT count(*) FROM users
 			 WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),
-			(SELECT count(*) FROM workspaces
-			 WHERE last_accessed_at >= now() - interval '7 days'),
+			(SELECT count(DISTINCT workspace_id) FROM workspace_visits
+			 WHERE opened_at >= now() - interval '7 days'),
 			(SELECT count(*) FROM jobs WHERE status = 'pending'),
 			(SELECT count(*) FROM jobs WHERE status = 'running'),
 			(SELECT count(*) FROM jobs
@@ -1058,10 +1058,11 @@ func (s *ReadStore) User(ctx context.Context, userID string) (UserDetail, error)
 	}
 	rows.Close()
 	rows, err = s.db.Query(ctx, `
-		SELECT w.id, w.name, count(f.id), w.last_accessed_at
+		SELECT w.id, w.name, count(f.id),
+		       (SELECT max(v.opened_at) FROM workspace_visits v WHERE v.workspace_id = w.id) AS last_activity
 		FROM workspaces w LEFT JOIN files f ON f.workspace_id = w.id AND f.trashed_at IS NULL
 		WHERE w.user_id = $1
-		GROUP BY w.id ORDER BY w.last_accessed_at DESC
+		GROUP BY w.id ORDER BY last_activity DESC NULLS LAST, w.id
 		LIMIT $2`, userID, userWorkspaceLimit)
 	if err != nil {
 		return out, err

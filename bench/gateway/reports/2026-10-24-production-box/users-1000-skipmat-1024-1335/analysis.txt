@@ -1,0 +1,11 @@
+== users-1000-skipmat-1024-1335: PASS
+   155 req/s (0.155 per user), p50 5 p95 16 p99 26 max 105 ms, errors 0.00%, streams {'ended': 0, 'failed': 0, 'open_at_end': 684, 'opened': 2534, 'refused': 0}
+   server   cpu mean 0.28 p95 0.41 cores, memory peak 150 MiB
+   db       cpu mean 0.35 p95 0.51 cores, memory peak 735 MiB
+   redis    cpu mean 0.03 p95 0.05 cores, memory peak 5 MiB
+   loadgen  cpu mean 0.08 p95 0.17 cores, memory peak 94 MiB
+   cores cpu0 33%, cpu1 44%, cpu2 18%, cpu3 16%
+   postgres backends (mean) active/- 0.0, active/IO 0.0, idle/- 0.0, idle/Client 8.9, idle in transaction/Client 0.1
+   pool waits: 13394 acquires waited 12.8 s in all, 17 windows with waits, 1 with every connection taken at the line
+   gateway warnings and errors: 0
+   slowest routes (p95): GET /api/review/overview 31 ms, POST /api/workspaces/{id}/materials 31 ms, POST /api/quizzes/{id}/attempts 28 ms, GET /api/workspaces 22 ms, GET /api/learning/progress 20 ms

@@ -92,9 +92,6 @@ class Config:
     # one place. Unset disables those tools instead of bypassing the checks.
     gateway_url: str = _env("GATEWAY_URL", "")
     pipeline_secret: str = secret("PIPELINE_SECRET")
-    # Same 32-byte value as the Go gateway. Retrieval decrypts user keys here
-    # so the plaintext never crosses the gateway hop.
-    llm_credentials_key: str = _env("LLM_CREDENTIALS_KEY", "")
 
     # ---- worker -----------------------------------------------------------
     poll_interval: float = float(_env("CAPY_POLL_INTERVAL", "2.0"))
@@ -431,7 +428,8 @@ if cfg.turn_slots <= 0:
 
 def require_parse_timeouts() -> None:
     """The parser request ends before its job's wall-clock limit. Checked by the
-    job worker, which runs parse jobs; retrieval reads PARSER_TIMEOUT only for
-    page captures, so a parse setting never stops it starting."""
+    job worker, which runs parse jobs; retrieval never reads PARSER_TIMEOUT
+    (Office files have no page capture, Q283), so a parse setting never stops
+    it starting."""
     if not cfg.parser_timeout < cfg.parse_job_timeout:
         raise ValueError("PARSER_TIMEOUT must be below CAPY_PARSE_JOB_TIMEOUT")

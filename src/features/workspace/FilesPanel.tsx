@@ -34,6 +34,9 @@ import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
+import type { AddSourceMode } from './AddSourceDialog';
+import { addSourceMenuItems } from './addSourceMenuItems';
+import { PanelNewRow } from './PanelNewRow';
 import { matchesSearch, PanelSearch } from './PanelSearch';
 import type { TabAction } from './PanelTabRow';
 import {
@@ -72,6 +75,8 @@ export function FilesPanel({
   generating,
   beforeReplace,
   onRenameChapter,
+  onAddSource,
+  onAddChapter,
   renderTabRow,
   header,
   footer,
@@ -88,6 +93,10 @@ export function FilesPanel({
   /** Office edit guard: returning false keeps the current viewer. */
   beforeReplace: () => boolean;
   onRenameChapter: (chapter: Chapter) => void;
+  /** The New file or chapter row under the search; left out where adding is
+   * not allowed. */
+  onAddSource?: (mode: AddSourceMode) => void;
+  onAddChapter?: () => void;
   renderTabRow: (actions: TabAction[]) => ReactNode;
   /** The tree's first row, scrolling with it, e.g. the workspace switcher. */
   header?: ReactNode;
@@ -473,6 +482,15 @@ export function FilesPanel({
           value={query}
         />
       )}
+      {onAddSource && (
+        <div className="contents" data-workspace-add-menu>
+          <PanelNewRow
+            icon="plus"
+            label={m.action_new_file_or_chapter()}
+            menu={addSourceMenuItems(onAddSource, onAddChapter)}
+          />
+        </div>
+      )}
       <div
         {...dropZone('unfiled-files', null)}
         className="scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pb-(--scroll-fade-bottom-padding) [--scroll-fade-bottom-padding:--spacing(2)]"
@@ -525,7 +543,7 @@ export function FilesPanel({
                     >
                       <button
                         aria-expanded={expanded}
-                        className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left"
+                        className="flex min-w-0 flex-1 items-center gap-2 px-1.5 text-left"
                         onClick={() =>
                           setOpenChapters({
                             ...openChapters,
@@ -535,11 +553,6 @@ export function FilesPanel({
                         type="button"
                       >
                         <Icon
-                          className="shrink-0 text-fg-muted"
-                          name={expanded ? 'chevronDown' : 'chevronRight'}
-                          size={13}
-                        />
-                        <Icon
                           className="shrink-0 text-fg-secondary"
                           name="chapter"
                           size={15}
@@ -547,6 +560,11 @@ export function FilesPanel({
                         <span className="line-clamp-1 translate-y-px truncate font-semibold">
                           {ch.name}
                         </span>
+                        {/* Drawn like the workspace picker's chevron above. */}
+                        <Icon
+                          className="shrink-0 -translate-y-px text-fg-muted"
+                          name={expanded ? 'chevronDown' : 'chevronRight'}
+                        />
                         {!expanded && (
                           <span className="ml-auto pr-1 font-semibold text-fg-muted text-xs">
                             {contentFor(ch.id).length}
@@ -585,7 +603,7 @@ export function FilesPanel({
                       )}
                     </div>
                     {expanded && (
-                      <div className="flex flex-col pl-7">
+                      <div className="flex flex-col pl-3">
                         {shownFor(ch).map((item) =>
                           renderContentItem(item, ch.id)
                         )}

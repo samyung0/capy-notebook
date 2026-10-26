@@ -47,7 +47,7 @@ func TestAnonymousGradingCountsIPv6By56(t *testing.T) {
 	})
 	grade := func(ip string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/public/quizzes/"+token+"/grade",
-			strings.NewReader(`{"answers":{"open-a":"Because."},"turnstileToken":"turnstile-ok"}`))
+			strings.NewReader(`{"questionId":"q1","answers":{"open-a":"Because."},"turnstileToken":"turnstile-ok"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("CF-Connecting-IP", ip)
 		rec := httptest.NewRecorder()
@@ -72,8 +72,8 @@ func TestAnonymousGradingCountsIPv6By56(t *testing.T) {
 
 // TestSignedInGradingStopsAtTheDailyPartCap (security regression: rate-limit
 // audit M7). A signed-in learner's open parts are counted before Jev; past
-// the day's cap an attempt with open answers and a computation check are
-// refused unsent, and an attempt with closed answers only is still graded.
+// the day's cap a check with open answers and a computation check are
+// refused unsent, and a check with closed answers only is still graded.
 func TestSignedInGradingStopsAtTheDailyPartCap(t *testing.T) {
 	h, st, calls := openGradingAPI(t, "full")
 	ctx := context.Background()
@@ -81,9 +81,9 @@ func TestSignedInGradingStopsAtTheDailyPartCap(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM grading_usage WHERE user_id='u_owner'`)
 	})
-	open := map[string]any{"answers": map[string]any{"open-a": "Because.", "closed-b": true}}
-	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner", open); rec.Code != http.StatusCreated {
-		t.Fatalf("attempt → %d %s", rec.Code, rec.Body.String())
+	open := map[string]any{"questionId": "q1", "answers": map[string]any{"open-a": "Because.", "closed-b": true}}
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", open); rec.Code != http.StatusOK {
+		t.Fatalf("check → %d %s", rec.Code, rec.Body.String())
 	}
 	var parts int
 	if err := st.Pool().QueryRow(ctx, `SELECT parts FROM grading_usage
@@ -95,9 +95,9 @@ func TestSignedInGradingStopsAtTheDailyPartCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := calls.Load()
-	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner", open)
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", open)
 	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "grading_limit") || calls.Load() != before {
-		t.Fatalf("attempt past the cap → %d %s (Jev calls %d → %d)", rec.Code, rec.Body.String(), before, calls.Load())
+		t.Fatalf("check past the cap → %d %s (Jev calls %d → %d)", rec.Code, rec.Body.String(), before, calls.Load())
 	}
 	check := doReq(t, h, http.MethodPost, "/api/questions/computation-check", "u_owner", map[string]any{
 		"partId": "open-a",
@@ -111,8 +111,8 @@ func TestSignedInGradingStopsAtTheDailyPartCap(t *testing.T) {
 	if check.Code != http.StatusTooManyRequests || calls.Load() != before {
 		t.Fatalf("computation check past the cap → %d %s", check.Code, check.Body.String())
 	}
-	closed := map[string]any{"answers": map[string]any{"closed-b": true}}
-	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner", closed); rec.Code != http.StatusCreated {
-		t.Fatalf("closed-only attempt past the cap → %d", rec.Code)
+	closed := map[string]any{"questionId": "q1", "answers": map[string]any{"closed-b": true}}
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner", closed); rec.Code != http.StatusOK {
+		t.Fatalf("closed-only check past the cap → %d", rec.Code)
 	}
 }

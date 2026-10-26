@@ -325,6 +325,20 @@
     var(--motion-ease-spring);
 }
 
+/* Quick review's dialog moving to its next item (the page-slide tokens):
+   the new item slides in from the right, unblurring. */
+@keyframes motion-quick-swap-in {
+  from {
+    opacity: 0;
+    translate: var(--motion-distance-base) 0;
+    filter: blur(var(--motion-blur-small));
+  }
+}
+@utility motion-quick-swap-in {
+  animation: motion-quick-swap-in var(--motion-duration-fast)
+    var(--motion-ease-smooth-out);
+}
+
 /* Flipping a flashcard swaps its text in place (the text-swap tokens): the
    old face leaves upward as the new one enters from below, and the ratings
    rise in one after another (`--motion-stagger-index` per tile). */
@@ -484,6 +498,16 @@
     filter: blur(2px);
     transform: translateX(40px) scale(0.97);
   }
+
+  /* Over a centre panel frosted over the page frame (ChatDock's data-frost),
+     the open field is frosted glass over the file instead of an opaque bar. */
+  html[data-page-frame] &[data-open="true"][data-frost] {
+    background-color: rgb(255 255 255 / 0.6);
+    backdrop-filter: blur(16px);
+  }
+  html.dark[data-page-frame] &[data-open="true"][data-frost] {
+    background-color: rgb(17 17 27 / 0.55);
+  }
 }
 /* The dock growing into the chat page, and back. */
 ::view-transition-group(chat-dock) {
@@ -518,6 +542,9 @@
 }
 /* The accordion's chevron turning (the exam strip's flips with scale-y). */
 @utility motion-accordion-chevron {
-  transition: transform var(--motion-duration-fast)
-    var(--motion-ease-smooth-out);
+  /* Tailwind's rotate-* set the rotate property, not transform. */
+  transition-timing-function: var(--motion-ease-smooth-out);
+  transition-duration: var(--motion-duration-fast);
+  /* Tailwind's rotate-* set the rotate property, not transform. */
+  transition-property: rotate, transform;
 }

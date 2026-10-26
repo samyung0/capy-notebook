@@ -6,6 +6,7 @@
  */
 
 export interface ReviewWorkspace {
+  canReview: boolean;
   iconId: string;
   lastReviewedAt?: string;
   name: string;

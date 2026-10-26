@@ -77,18 +77,6 @@ export function isProviderBusyError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'provider_busy';
 }
 
-export function isInvalidLLMKeyError(err: unknown): err is ApiError {
-  return isApiError(err) && err.code === 'invalid_llm_key';
-}
-
-export function isLLMKeyFailedError(err: unknown): err is ApiError {
-  return isApiError(err) && err.code === 'llm_key_failed';
-}
-
-export function isLLMKeyError(err: unknown): err is ApiError {
-  return isInvalidLLMKeyError(err) || isLLMKeyFailedError(err);
-}
-
 /** The stored document exists but the server could not decode it. Distinct from
  * a missing material, which the UI reports as deleted. */
 export function isMaterialContentUnreadable(err: unknown): err is ApiError {
@@ -389,7 +377,12 @@ export const qk = {
   ownedMaterialsRoot: ['materials', 'owned'] as const,
   pastReviews: (params?: unknown) =>
     ['review', 'past', params ?? null] as const,
+  /** A plan's review parts on its workspace's Study page. */
+  planStudy: (wsId: string, planId: string) =>
+    ['workspace', wsId, 'study', 'plan', planId] as const,
   quiz: (id: string) => ['quiz', id] as const,
+  /** GET /recent: Recent Files and the quick open share it. */
+  recent: ['recent'] as const,
   reviewOverview: ['review', 'overview'] as const,
   reviewResult: (id: string) => ['review', 'result', id] as const,
   /** Everything under Learning's Review tab, past reviews included. */

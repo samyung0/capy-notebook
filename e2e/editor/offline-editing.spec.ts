@@ -193,6 +193,11 @@ test('offline edits outlive a reload and save once the room is back', async ({
   // edits come back from this device, not from the room.
   await setReachable(page, false);
   await setOnline(page, true);
+  await expect(
+    page
+      .locator('[data-sonner-toast]')
+      .filter({ hasText: m.connection_online_title() })
+  ).toBeVisible();
   await page.reload();
   await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
     timeout: 30_000,
