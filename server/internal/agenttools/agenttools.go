@@ -138,7 +138,12 @@ import (
 // (no mindmap or diagram) and the note format names no mermaid fence; a
 // Mermaid block a learner added still rewrites through replace_block (Epo
 // 2026-10-25).
-const ContractVersion = 41
+// v42: inspect_office_document takes ids, the pictures and charts its reads
+// list, returning each picture as an image and each chart's every point, and
+// its reads list pictures, charts, equations and drawn shapes; capture_page
+// shows PDF pages and images only, Office files having no page view (Epo
+// 2026-10-24, Q278, Q283, Q284).
+const ContractVersion = 42
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -879,8 +884,9 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "capture_page",
 			Retention: RetainNone,
-			Description: "Render a source page a shown passage cites, or a region of it, as an " +
-				"image you read directly. An uploaded image is page 1.",
+			Description: "Render a PDF page a shown passage cites, or a region of it, as an " +
+				"image you read directly. An uploaded image is page 1. Word, Excel and PowerPoint " +
+				"files have no pages here: inspect_office_document reads them, pictures included.",
 			InputSchema: obj(map[string]any{
 				"file_id": str(""),
 				"page":    map[string]any{"type": "integer", "minimum": 1},
@@ -1211,7 +1217,9 @@ func Definitions() []Definition {
 				"PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, " +
 				"first line), the first page also listing the deck's layouts; with slide, count of that " +
 				"slide's shapes and paragraphs from start, each shape followed by its paragraphs with their " +
-				"target ids, the first page also giving the slide's speaker notes.",
+				"target ids, the first page also giving the slide's speaker notes. Reads also list pictures, " +
+				"charts with their first points, equations and drawn shapes' text. The cheap read: " +
+				"with ids, the pictures come back as images and the charts with every point.",
 			InputSchema: obj(map[string]any{
 				"file_id": str(""),
 				"sheet":   str("XLSX: the sheet's id or name."),
@@ -1219,6 +1227,10 @@ func Definitions() []Definition {
 				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first shape or paragraph; counting from 0."},
 				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX: paragraphs to read; PPTX: slides, or with slide shapes and paragraphs."},
 				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number, from 1."},
+				"ids": map[string]any{
+					"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "maxItems": OfficeIDsPerCall,
+					"description": "Any format: pictures' and charts' ids from an earlier read, copied whole; a picture comes back as an image, a chart with every point. The other arguments are then ignored.",
+				},
 			}, "file_id"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead},

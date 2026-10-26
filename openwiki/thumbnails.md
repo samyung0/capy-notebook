@@ -154,8 +154,9 @@ page render adds 3.4-37 ms to a PDF parse (a 27 MB textbook 21.5 ms) and
 1.7-20 ms to an Office parse (the `thumbnail` phase of a real parse: 2-23 ms;
 the LibreOffice conversion it reuses takes 2.2-28 s); the ingest's PNG to WebP
 step takes 4-28 ms and a 12 MP JPEG photo 132 ms. A second conversion through
-`/capture_page`, the first version of this, took 3.2-8 s per small Office
-document and 28.5 s for a 24 MB deck.
+the parser's former `/capture_page` route (removed with Office page captures,
+Q283), the first version of this, took 3.2-8 s per small Office document and
+28.5 s for a 24 MB deck.
 
 ## Material previews
 

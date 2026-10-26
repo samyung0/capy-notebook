@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import itertools
 import json
@@ -20,6 +21,7 @@ from pipeline.retrieval import (
     accounting,
     agent,
     contract,
+    deck,
     pending,
     scripted,
     search,
@@ -3653,6 +3655,9 @@ def _image_turn(monkeypatch, steps: list[list[str]]):
     async def _render_file(*_args):
         return full
 
+    async def _no_office(*_args):
+        return False
+
     async def _resolve(**_kwargs):
         return jpeg.getvalue()
 
@@ -3682,6 +3687,7 @@ def _image_turn(monkeypatch, steps: list[list[str]]):
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
     monkeypatch.setattr(agent.capture, "render_file", _render_file)
+    monkeypatch.setattr(agent.capture, "office_file", _no_office)
     monkeypatch.setattr(agent.capture, "image_jpeg", lambda *_args: full)
     monkeypatch.setattr(agent.tools.pending, "resolve", _resolve)
     monkeypatch.setattr(agent.compact, "compact_messages", _compact)
@@ -5690,6 +5696,8 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                 "[id] kind (placeholder): its first line of text (… when longer); read "
                 "one slide by its number for all its shapes and its paragraphs:"
             ),
+            # A read holding a picture or chart says how they show (Q240).
+            tools.OFFICE_OBJECTS_HEAD.strip() + ":",
             source_block(
                 "layouts as [id] name: [ppt/slideLayouts/slideLayout1.xml] Title Slide, "
                 "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
@@ -5728,6 +5736,300 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             "(next start = 5 of 6 shapes and paragraphs)",
         ]
     )
+
+
+_PHOTO = {
+    "id": "slide:0:256:shape:1",
+    "kind": "picture",
+    "alt": "A red square",
+    "pixels": [64, 32],
+    "viewable": True,
+    "crop": {"left": 0.1, "top": 0.0, "right": 0.0, "bottom": 0.0},
+}
+_LOGO = {
+    "id": "slide:0:256:shape:2",
+    "kind": "picture",
+    "alt": "Company logo",
+    "viewable": False,
+    "reason": "an EMF or WMF drawing",
+}
+_CHART = {
+    "id": "slide:0:256:shape:3",
+    "kind": "chart",
+    "chartType": "column",
+    "title": "Monthly sales",
+    "series": [
+        {
+            "name": "Revenue",
+            "refs": {"values": "Sheet1!$B$2:$B$21"},
+            "count": 20,
+            "points": [[0, "M0", 0], [2, "M2", "#N/A"]],
+            "more": 18,
+        }
+    ],
+}
+
+
+async def test_office_reads_list_pictures_charts_equations_and_drawings(monkeypatch):
+    """A read shows each picture's alt text and size or why it is not
+    viewable, each chart's type, title and series' first points, and an
+    equation's or drawn shape's text, explaining them once in its head
+    (Epo 2026-10-24, Q240, Q280, Q284)."""
+    bodies = iter(
+        [
+            {
+                "format": "docx",
+                "title": "plan.docx",
+                "scoped": {
+                    "paragraphs": [
+                        {
+                            "id": "body:paragraph:1A",
+                            "locked": "holds a picture",
+                            "text": "",
+                            "objects": [
+                                {**_PHOTO, "id": "body:picture:1.4"},
+                                {"kind": "equation", "text": "x=2"},
+                                {"kind": "drawing", "text": "Arrow label"},
+                            ],
+                            "moreObjects": 2,
+                        }
+                    ],
+                    "total": 1,
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slide": {"id": "slide:0:256", "number": 1},
+                    "slides": 1,
+                    "shapes": [
+                        {**_PHOTO, "name": "Photo", "box": [0, 0, 100, 50]},
+                        {**_LOGO, "name": "Logo", "box": [0, 60, 100, 50]},
+                        {**_CHART, "name": "Chart", "box": [0, 120, 400, 300]},
+                    ],
+                    "paragraphs": [],
+                    "total": 3,
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slides": [
+                        {
+                            "id": "slide:0:256",
+                            "number": 1,
+                            "layout": "Blank",
+                            "shapes": [
+                                {**_LOGO},
+                                {
+                                    "id": _CHART["id"],
+                                    "kind": "chart",
+                                    "chartType": "column",
+                                    "title": "Monthly sales",
+                                },
+                            ],
+                        }
+                    ],
+                    "total": 1,
+                },
+            },
+            {
+                "format": "xlsx",
+                "title": "book.xlsx",
+                "scoped": {
+                    "sheets": [
+                        {
+                            "id": "0",
+                            "name": "Sales",
+                            "usedRange": "A1:B21",
+                            "objects": [
+                                {
+                                    **_PHOTO,
+                                    "id": "xl/drawings/drawing1.xml#0:0",
+                                    "cell": "D2",
+                                },
+                                {"kind": "drawing", "text": "Check Q2", "cell": "I11"},
+                            ],
+                            "notice": "Skipped xl/drawings/drawing2.xml: it does not read.",
+                        }
+                    ]
+                },
+            },
+        ]
+    )
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(next(bodies)))
+
+    async def read(**args):
+        return (
+            await tools.run(
+                "inspect_office_document",
+                {"file_id": "f_1", **args, "_tool_call_id": "c"},
+                ctx,
+            )
+        ).text()
+
+    photo = 'alt "A red square", 64 x 32 px, cropped'
+    logo = 'alt "Company logo", not viewable: an EMF or WMF drawing'
+    docx = await read()
+    assert tools.OFFICE_OBJECTS_HEAD.strip() + ":" in docx
+    assert (
+        source_block(
+            "[body:paragraph:1A] (locked: holds a picture) \n"
+            f"  [body:picture:1.4] picture {photo}\n"
+            "  equation: x=2\n"
+            "  drawing: Arrow label\n"
+            "  … and 2 more objects"
+        )
+        in docx
+    )
+    slide = await read(slide=1)
+    assert tools.OFFICE_OBJECTS_HEAD.strip() + ":" in slide
+    assert (
+        f'[slide:0:256:shape:1] picture "Photo" at 0, 0 size 100 x 50; {photo}\n'
+        f'[slide:0:256:shape:2] picture "Logo" at 0, 60 size 100 x 50; {logo}\n'
+        '[slide:0:256:shape:3] chart "Chart" at 0, 120 size 400 x 300; column '
+        '"Monthly sales"\n'
+        '  series "Revenue" (values Sheet1!$B$2:$B$21), 20 points: '
+        '[[0,"M0",0],[2,"M2","#N/A"]] … 18 more'
+    ) in slide
+    listed = await read()
+    assert (
+        f"  [slide:0:256:shape:2] picture {logo}\n"
+        '  [slide:0:256:shape:3] chart column "Monthly sales"'
+    ) in listed
+    sheets = await read()
+    assert "each followed by its pictures, charts and drawn shapes" in sheets
+    assert (
+        source_block(
+            "[0] Sales A1:B21\n"
+            f"  [xl/drawings/drawing1.xml#0:0] picture at D2 {photo}\n"
+            "  drawing at I11: Check Q2\n"
+            "  Skipped xl/drawings/drawing2.xml: it does not read."
+        )
+        in sheets
+    )
+
+
+def _png64(width: int, height: int) -> str:
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (255, 0, 0)).save(buffer, "PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+def _ids_ctx(monkeypatch, items, notice=None):
+    sent: list[dict] = []
+    scoped = {"items": items} | ({"notice": notice} if notice else {})
+
+    def _post(url, **kwargs):
+        sent.append(json.loads(kwargs["data"]))
+        return _JsonResp({"format": "pptx", "title": "deck.pptx", "scoped": scoped})
+
+    return _office_ctx(monkeypatch, post=_post), sent
+
+
+async def test_office_ids_attach_each_picture_and_give_charts_every_point(
+    monkeypatch,
+):
+    """A by-id read (Q278, Q284): each viewable picture its own image on the
+    next request, counted toward the message's images, kept by the image
+    budget and usable as a deck figure by the capture number its line names;
+    a not-viewable one its alt text and why; a chart every point; the notice
+    before the fenced items."""
+    ids = [_PHOTO["id"], "slide:0:256:shape:4", _LOGO["id"], _CHART["id"]]
+    items = [
+        {**_PHOTO, "mimeType": "image/png", "data": _png64(64, 32)},
+        {**_PHOTO, "id": ids[1], "crop": None, "data": _png64(10, 10)},
+        _LOGO,
+        {**_CHART, "series": [{**_CHART["series"][0], "more": None, "cut": 3}]},
+    ]
+    ctx, sent = _ids_ctx(monkeypatch, items, notice="Not found: slide:9 is gone.")
+    result = await tools.run(
+        "inspect_office_document",
+        {"file_id": "f_1", "ids": ids, "_tool_call_id": "c"},
+        ctx,
+    )
+    assert sent[0]["office"] == {"ids": ids}
+    text = result.text()
+    assert text.index("Not found: slide:9 is gone.") < text.index("<source>")
+    assert (
+        f'[{ids[0]}] picture alt "A red square", 64 x 32 px, cropped; attached as capture 1'
+        in text
+    )
+    assert (
+        f'[{ids[1]}] picture alt "A red square", 64 x 32 px; attached as capture 2'
+        in text
+    )
+    assert (
+        f'[{ids[2]}] picture alt "Company logo", not viewable: an EMF or WMF drawing\n'
+        in text
+    )
+    assert '[[0,"M0",0],[2,"M2","#N/A"]] … 3 not sent' in text
+    assert list(ctx.pending_images) == ["c#1", "c#2"]
+    assert ctx.budget_images == {"c#1", "c#2"} and ctx.images_taken == 2
+    first, second = ctx.captures
+    assert (first["picture"], first["page"], first["bbox"]) == (
+        ids[0],
+        None,
+        [100, 0, 1000, 1000],
+    )
+    assert second["pixels"] == [10, 10]
+    assert (
+        ctx.pending_images["c#1"][0]
+        == f"inspect_office_document result 1: deck.pptx picture {ids[0]}"
+    )
+    problems, figures, _ = deck.turn_figures(ctx.captures, ctx.pending_images)
+    assert problems == {1: "", 2: ""} and set(figures) == {1, 2}
+
+
+async def test_a_picture_the_engine_calls_not_viewable_is_never_decoded(monkeypatch):
+    """Security regression (Q280, Q381): the AI process decodes only what the
+    engine marks viewable, so bytes on a not-viewable item never reach Pillow."""
+
+    def decode(*_args):
+        raise AssertionError("decoded a picture the engine calls not viewable")
+
+    monkeypatch.setattr(tools.capture, "picture_jpeg", decode)
+    ctx, _ = _ids_ctx(monkeypatch, [{**_LOGO, "data": _png64(4, 4)}])
+    result = await tools.run(
+        "inspect_office_document",
+        {"file_id": "f_1", "ids": [_LOGO["id"]], "_tool_call_id": "c"},
+        ctx,
+    )
+    assert "not viewable: an EMF or WMF drawing" in result.text()
+    assert not ctx.pending_images and not ctx.captures and ctx.images_taken == 0
+
+
+async def test_office_pictures_past_the_message_image_limit_are_not_attached(
+    monkeypatch,
+):
+    """Pictures share the message's 16 images with page captures: the one
+    that fills them is attached and the result says the limit is reached; the
+    next is named as not attached."""
+    items = [
+        {**_PHOTO, "data": _png64(8, 8)},
+        {**_PHOTO, "id": "slide:0:256:shape:9", "data": _png64(8, 8)},
+    ]
+    ctx, _ = _ids_ctx(monkeypatch, items)
+    ctx.images_taken = tools.MAX_IMAGES - 1
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "ids": [i["id"] for i in items], "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert "; attached as capture 1" in text
+    assert "[slide:0:256:shape:9] picture" in text
+    assert "not attached: this message's image limit is reached" in text
+    assert text.endswith(tools.PICTURE_LIMIT)
+    assert list(ctx.pending_images) == ["c#1"]
+    assert ctx.images_taken == tools.MAX_IMAGES
 
 
 async def test_a_long_pptx_read_shows_the_slides_that_fit_and_where_to_go_on(

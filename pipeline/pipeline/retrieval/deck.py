@@ -241,13 +241,14 @@ def turn_figures(
     """This turn's captures as figures, keyed by capture number as the model
     names them: why each cannot be a figure (empty when it can), the JPEGs,
     and the library excerpt each came from. A whole page is refused: a slide
-    shrinks it unreadable."""
+    shrinks it unreadable. An Office picture inspect_office_document attached
+    is a figure as it is (Q278)."""
     problems: dict[int, str] = {}
     figures: dict[int, bytes] = {}
     excerpts: dict[int, str] = {}
     for n, cap in enumerate(captures, 1):
         bbox = cap.get("bbox")
-        if not bbox or list(bbox) == WHOLE_PAGE:
+        if not cap.get("picture") and (not bbox or list(bbox) == WHOLE_PAGE):
             problems[n] = (
                 f"capture {n} is a whole page; capture it again with a bbox "
                 "around the figure"

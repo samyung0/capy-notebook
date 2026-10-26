@@ -2,12 +2,14 @@
 
 The pixels have to be inside the provider request the agent builds mid-turn,
 so the retrieval host keeps a size-bounded copy of each source PDF (keyed by
-the stored object's path) and renders with PyMuPDF. Office sources convert
-temporarily through the parser queue; an uploaded image is its own one page,
-oriented and flattened with Pillow as captioning does (first frame only); text
-and store-only sources have no page model and refuse. The JPEG rides in a user
-message placed after the tool results of its step, because chat-completions
-tool messages carry text only.
+the stored object's path) and renders with PyMuPDF. An uploaded image is its
+own one page, oriented and flattened with Pillow as captioning does (first
+frame only). Word, Excel and PowerPoint files have no page view (Epo
+2026-10-24, Q283): inspect_office_document reads them, and their pictures come
+back through it as images ``picture_jpeg`` shrinks. Text and store-only
+sources have no page model and refuse. The JPEG rides in a user message placed
+after the tool results of its step, because chat-completions tool messages
+carry text only.
 Images live on the turn's ``ToolContext`` and are never persisted.
 
 ``capture_knowledge_page`` renders a library book the same way, from the
@@ -19,7 +21,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
-import json
 import logging
 import math
 import os
@@ -28,19 +29,22 @@ import time
 import warnings
 from pathlib import Path
 from typing import IO, Any
-from urllib.parse import urlsplit, urlunsplit
-
-import requests
 
 from ..config import cfg
 from ..elitellm.client import RawJson
+from ..generated.limits import IMAGE_MAX_SIDE
 from ..store import blobstore
 from . import accounting, limits, store
 
 log = logging.getLogger("capy.retrieval.capture")
 
 JPEG_QUALITY = 80
-OFFICE_BUSY = "the Office converter is busy; try this capture again later"
+OFFICE_NO_PAGES = (
+    "a Word, Excel or PowerPoint file has no page view: inspect_office_document "
+    "reads its text, tables, equations and charts, and its pictures by their ids"
+)
+# The stored kinds of Word, Excel and PowerPoint files.
+OFFICE_KINDS = ("doc", "sheet", "slides")
 
 
 class CaptureUnavailable(Exception):
@@ -149,83 +153,6 @@ async def render_knowledge(
     return await limits.render_thread(render, pdf, page, bbox, max_edge)
 
 
-def _office_capture(
-    row: dict, page: int, bbox: list[float] | None, max_edge: int
-) -> tuple[bytes, list[float], tuple[int, int]]:
-    if not cfg.parser_url:
-        raise CaptureUnavailable(
-            "the Office converter is unavailable", "unavailable_target"
-        )
-    endpoint = urlsplit(cfg.parser_url)
-    url = urlunsplit((endpoint.scheme, endpoint.netloc, "/capture_page", "", ""))
-    headers = (
-        {"Authorization": f"Bearer {cfg.parser_token}"} if cfg.parser_token else {}
-    )
-    try:
-        with tempfile.TemporaryDirectory(prefix="capy-office-capture-") as directory:
-            source = Path(directory) / "source"
-            downloaded = blobstore.download_file(
-                str(row["blob_path"]), str(source), int(row["size_bytes"])
-            )
-            if (
-                downloaded is None
-                or downloaded[0] != int(row["size_bytes"])
-                or (row.get("source_sha256") and downloaded[1] != row["source_sha256"])
-            ):
-                raise CaptureUnavailable(
-                    "the source bytes are unavailable", "unavailable_target"
-                )
-            with (
-                source.open("rb") as handle,
-                requests.post(
-                    url,
-                    headers=headers,
-                    files={
-                        "file": (str(row["name"]), handle, "application/octet-stream")
-                    },
-                    data={
-                        "filename": row["name"],
-                        "page": str(page),
-                        "bbox": json.dumps(bbox),
-                        "max_edge": str(max_edge),
-                    },
-                    timeout=cfg.parser_timeout,
-                    stream=True,
-                ) as response,
-            ):
-                response.raise_for_status()
-                body = bytearray()
-                for chunk in response.iter_content(64 << 10):
-                    body.extend(chunk)
-                    if len(body) > 8 << 20:
-                        raise CaptureUnavailable("the capture exceeds its byte limit")
-                result = json.loads(body)
-        jpeg = base64.b64decode(result["jpeg"], validate=True)
-        box, size = result["box"], result["size"]
-        if (
-            not jpeg.startswith(b"\xff\xd8")
-            or not isinstance(box, list)
-            or len(box) != 4
-            or any(
-                type(v) not in (int, float)
-                or not math.isfinite(v)
-                or not 0 <= v <= 1000
-                for v in box
-            )
-            or box[0] >= box[2]
-            or box[1] >= box[3]
-            or not isinstance(size, list)
-            or len(size) != 2
-            or not all(type(v) is int and 0 < v <= max_edge + 1 for v in size)
-        ):
-            raise ValueError("invalid capture dimensions")
-        return jpeg, box, (size[0], size[1])
-    except (requests.RequestException, OSError, ValueError, KeyError, TypeError) as exc:
-        raise CaptureUnavailable(
-            "the temporary Office capture could not be rendered", "unavailable_target"
-        ) from exc
-
-
 def _image_capture(
     row: dict, page: int, bbox: list[float] | None, max_edge: int
 ) -> tuple[bytes, list[float], tuple[int, int]]:
@@ -291,10 +218,14 @@ def _thumbnail_size(width: int, height: int, edge: int) -> tuple[int, int]:
 
 
 def image_jpeg(
-    source: Path | IO[bytes], bbox: list[float] | None, max_edge: int
+    source: Path | IO[bytes],
+    bbox: list[float] | None,
+    max_edge: int,
+    max_side: int | None = None,
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     """An image oriented and flattened like captioning does, cropped to the
-    box and shrunk to ``max_edge``."""
+    box and shrunk to ``max_edge``. With ``max_side``, an image whose header
+    names a longer side is refused before any pixel is decoded."""
     if bbox:
         x0, y0, x1, y1 = bbox
         if not (x0 < x1 and y0 < y1):
@@ -309,6 +240,11 @@ def image_jpeg(
             with Image.open(source) as opened:
                 # ponytail: first frame only; later GIF frames are not captured
                 size = opened.size
+                if max_side is not None and max(size) > max_side:
+                    raise CaptureUnavailable(
+                        f"this picture is {size[0]} by {size[1]} pixels, over "
+                        f"the {max_side} pixels a side the app takes"
+                    )
                 frame = _decoded(opened, bbox, max_edge)
                 # Pillow turns a TIFF upright as it loads; exif_transpose the rest.
                 orientation = frame.getexif().get(ExifTags.Base.Orientation)
@@ -339,6 +275,46 @@ def image_jpeg(
     return buffer.getvalue(), [float(v) for v in bbox], flat.size
 
 
+def crop_box(crop: object) -> list[float]:
+    """An Office picture's crop as the box it leaves on the 0-1000 grid
+    (review r1 L1): a side that is missing or not a finite number reads as 0,
+    and a negative one (a frame padding the picture) also as 0, since only
+    the picture's own pixels are sent; each side is at most 1, and a pair of
+    sides that would leave nothing (left plus right, or top plus bottom, 1 or
+    more) leaves that axis whole. The box never leaves the image or turns
+    empty, whatever the file says."""
+    sides = []
+    for key in ("left", "top", "right", "bottom"):
+        value = crop.get(key) if isinstance(crop, dict) else None
+        finite = type(value) in (int, float) and math.isfinite(value)
+        sides.append(min(1.0, max(0.0, float(value))) if finite else 0.0)
+    left, top, right, bottom = sides
+    if left + right >= 1:
+        left = right = 0.0
+    if top + bottom >= 1:
+        top = bottom = 0.0
+    return [left * 1000, top * 1000, (1 - right) * 1000, (1 - bottom) * 1000]
+
+
+def picture_jpeg(
+    data: bytes, crop: object, max_edge: int
+) -> tuple[bytes, list[float], tuple[int, int]]:
+    """An Office picture's stored bytes (inspect_office_document's by-id read)
+    as the JPEG the model reads: its crop applied (``crop_box``), decoded at
+    the reduced size (Q239, Q279), and refused before decoding when Pillow
+    finds a side past the app's image limit (``IMAGE_MAX_SIDE``, the upload
+    check's and the engine's; review r1 L3): the engine lists pictures from
+    their headers alone, so a file whose header it misreads still reaches
+    here."""
+    return image_jpeg(io.BytesIO(data), crop_box(crop), max_edge, IMAGE_MAX_SIDE)
+
+
+async def office_file(workspace_id: str, file_id: str) -> bool:
+    """Whether the file is a Word, Excel or PowerPoint file (no page view)."""
+    row = await store.file_page_source(workspace_id, file_id)
+    return row is not None and row.get("kind") in OFFICE_KINDS
+
+
 async def render_file(
     workspace_id: str, file_id: str, page: int, bbox: list[float] | None, max_edge: int
 ) -> tuple[bytes, list[float], tuple[int, int]]:
@@ -351,32 +327,8 @@ async def render_file(
                 "the source has no stored bytes", "unavailable_target"
             )
         return await limits.render_thread(_image_capture, row, page, bbox, max_edge)
-    office_format = {"doc": "docx", "sheet": "xlsx", "slides": "pptx"}.get(
-        row.get("kind")
-    )
-    if (
-        office_format
-        and row.get("ever_parsed_successfully")
-        and row.get("parse_mode") != "none"
-    ):
-        if not row.get("blob_path"):
-            raise CaptureUnavailable(
-                "the source has no stored bytes", "unavailable_target"
-            )
-        # The parser's queue is ingest's too: past the process's Office
-        # capture slots the call answers busy instead of queueing there.
-        if not limits.OFFICE_CAPTURE_SLOTS.take():
-            raise CaptureUnavailable(OFFICE_BUSY, "unavailable_target")
-        try:
-            return await limits.render_thread(
-                _office_capture,
-                {**row, "name": f"source.{office_format}"},
-                page,
-                bbox,
-                max_edge,
-            )
-        finally:
-            limits.OFFICE_CAPTURE_SLOTS.release()
+    if row.get("kind") in OFFICE_KINDS:
+        raise CaptureUnavailable(OFFICE_NO_PAGES)
     pdf = await pdf_path(workspace_id, file_id)
     return await limits.render_thread(render, pdf, page, bbox, max_edge)
 
@@ -471,14 +423,19 @@ def inject_images(
     image budget dropped is no longer in ``images``: nothing takes its place,
     and its tool result keeps its ordinary text (Q349, Q370).
 
-    ``tokens`` (call id -> the capture's pixel estimate) keeps each built
+    ``images`` is keyed by image id: a capture's is its tool call id, and the
+    pictures one inspect_office_document call attaches are ``<call id>#<n>``
+    (``picture_id``), so they follow that call's result in order.
+
+    ``tokens`` (image id -> the capture's pixel estimate) keeps each built
     message's estimate on it, so a request built for every model call does not
     decode its images again to measure them (Q238).
     """
     if not images:
         return messages
     live = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
-    folded = [call_id for call_id in images if call_id not in live]
+    calls = {image_id: _call_of(image_id, live) for image_id in images}
+    folded = [image_id for image_id, call in calls.items() if call not in live]
     out: list[dict[str, Any]] = []
     pending: list[str] = []
     for i, message in enumerate(messages):
@@ -493,8 +450,12 @@ def inject_images(
                     provider_slug,
                 )
             )
-        if message.get("role") == "tool" and message.get("tool_call_id") in images:
-            pending.append(message["tool_call_id"])
+        if message.get("role") == "tool":
+            pending += [
+                image_id
+                for image_id, call in calls.items()
+                if call == message.get("tool_call_id")
+            ]
         following = messages[i + 1] if i + 1 < len(messages) else None
         if pending and (following is None or following.get("role") != "tool"):
             out.append(
@@ -504,6 +465,19 @@ def inject_images(
             )
             pending = []
     return out
+
+
+def picture_id(call_id: str, n: int) -> str:
+    """The image id of the ``n``-th picture (from 1) one call attaches."""
+    return f"{call_id}#{n}"
+
+
+def _call_of(image_id: str, live: set[Any]) -> str:
+    """The tool call an image belongs to: a capture's id is its call's; a
+    picture's drops its ``#<n>``, so a call id holding ``#`` still matches."""
+    if image_id in live or "#" not in image_id:
+        return image_id
+    return image_id.rpartition("#")[0]
 
 
 def _images_message(
@@ -598,12 +572,14 @@ def record(
     *,
     call_id: str,
     file_id: str,
-    page: int,
+    page: int | None,
     box: list[float],
     jpeg: bytes,
     size: tuple[int, int],
     started: float,
 ) -> dict[str, Any]:
+    """One attached image's record; ``call_id`` is its image id (an Office
+    picture's carries ``picture`` and no page)."""
     width, height = size
     return {
         "callId": call_id,

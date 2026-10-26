@@ -148,11 +148,10 @@ current file rematches that snippet or abstains if it changed or became ambiguou
 Backend evidence and matching results do not prove an overlay was painted;
 existing browser painting probes remain separate diagnostics.
 
-For the server-side `capture_page` tool, Office requests use the exact published
-source hash/size, temporary conversion and a JPEG response. Test valid page/crop,
-source mismatch and conversion failure without requiring a stored preview, a new
-parse receipt, or byte-identical regenerated PDFs. Native PDF capture remains a
-separate path. The existing
+The server-side `capture_page` tool refuses Office files, which have no page
+view (Q283); their pictures come back through `inspect_office_document`'s
+`ids`, which `lab/playground/scripts/office_pictures.py` exercises on the
+rich-content fixtures. Native PDF capture is the only page path. The existing
 [`native citation cases`](../../../bench/parsers/fixtures/native-citations/cases.json)
 provide useful scenario text; benchmark outputs are not committed UAT input files.
 

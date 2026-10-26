@@ -25,6 +25,14 @@ _IMPORTS = {
     ".xls": (_OLE, "MS Excel 97"),
     ".ppt": (_OLE, "MS PowerPoint 97"),
 }
+# A PowerPoint file's PDF keeps its hidden slides, so page N of the parse and
+# of the citation preview is slide N as the agent's reads number them (Epo
+# 2026-10-24, Q276; files parsed before keep their pages). LibreOffice 7.4
+# takes the export filter's options as JSON after its name.
+_HIDDEN_SLIDES = (
+    'pdf:impress_pdf_Export:{"ExportHiddenSlides":{"type":"boolean","value":"true"}}'
+)
+_PDF_EXPORT = {".pptx": _HIDDEN_SLIDES, ".ppt": _HIDDEN_SLIDES}
 OFFICE_PREVIEW_MAX_BYTES = int(
     os.environ.get("CAPY_OFFICE_PREVIEW_MAX_BYTES", str(128 << 20))
 )
@@ -154,7 +162,7 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
             "--nofirststartwizard",
             f"--infilter={import_filter}",
             "--convert-to",
-            "pdf",
+            _PDF_EXPORT.get(suffix, "pdf"),
             "--outdir",
             str(tmp),
             str(source),
