@@ -243,6 +243,75 @@ export function gapNumbers(blocks: QuestionBlock[]): number[] {
   );
 }
 
+/** Blank `number` as a gaps part's text writes it. */
+export const gapText = (number: number) => `(${number}) ______`;
+
+/** The blocks with their blanks numbered 1 to n in reading order. */
+export function renumberGaps(blocks: QuestionBlock[]): QuestionBlock[] {
+  let number = 0;
+  return blocks.map((block) =>
+    block.type === 'text'
+      ? {
+          ...block,
+          text: block.text.replace(GAP_MARKER, () => gapText(++number)),
+        }
+      : block
+  );
+}
+
+/** A gaps part with text block `index` set to `text`, whose blanks take
+ * `lists` as their accepted answers, in order: the part's later blanks are
+ * renumbered and its other lists stay with their blanks. */
+export function withGapsText(
+  part: QuestionPart,
+  index: number,
+  text: string,
+  lists: string[][]
+): QuestionPart {
+  const block = part.blocks[index];
+  if (part.answer.type !== 'gaps' || block?.type !== 'text') return part;
+  const start = gapNumbers(part.blocks.slice(0, index)).length;
+  const count = gapNumbers([block]).length;
+  const accepted = part.answer.accepted;
+  return {
+    ...part,
+    answer: {
+      ...part.answer,
+      accepted: [
+        ...accepted.slice(0, start),
+        ...lists,
+        ...accepted.slice(start + count),
+      ],
+    },
+    blocks: renumberGaps(
+      part.blocks.map((item, i) => (i === index ? { ...block, text } : item))
+    ),
+  };
+}
+
+/** A gaps part without its block `index`: the blanks after it renumbered
+ * and its own blanks' accepted answers gone with it. */
+export function withoutGapsBlock(
+  part: QuestionPart,
+  index: number
+): QuestionPart {
+  const block = part.blocks[index];
+  const blocks = renumberGaps(part.blocks.filter((_, i) => i !== index));
+  if (part.answer.type !== 'gaps' || !block) return { ...part, blocks };
+  const start = gapNumbers(part.blocks.slice(0, index)).length;
+  const count = gapNumbers([block]).length;
+  return {
+    ...part,
+    answer: {
+      ...part.answer,
+      accepted: part.answer.accepted.filter(
+        (_, i) => i < start || i >= start + count
+      ),
+    },
+    blocks,
+  };
+}
+
 /** Authored parts carry a worked solution; learner parts never do. */
 export function isAuthoredPart(
   part: QuestionPart | LearnerPart

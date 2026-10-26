@@ -306,8 +306,10 @@ export function MathField({
         // Its controls in a toolbar: the field, a touch taller than a tight
         // line, still leaves the line's height alone.
         onControlsReady && !displayMode && '-my-1',
+        // Centred in its height, as the formula's button centres it, so
+        // opening it does not move the formula.
         displayMode
-          ? 'block min-h-14 text-center [&_math-field::part(container)]:px-6 [&_math-field::part(container)]:py-4 [&_math-field::part(content)]:justify-center [&_math-field]:block'
+          ? 'flex min-h-14 flex-col justify-center text-center [&_math-field::part(container)]:px-6 [&_math-field::part(container)]:py-4 [&_math-field::part(content)]:justify-center [&_math-field]:block'
           : '[&_math-field::part(container)]:p-0'
       )}
       contentEditable={false}

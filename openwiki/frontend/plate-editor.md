@@ -2681,7 +2681,7 @@ figure).
 block editors write through `writeQuestion`
 (`src/features/quizzes/liveQuiz.ts`: the fewest changes, lists by their common
 head and tail, a move as a new order key), a chart or graph stays staged until
-the block's Done (one value per block, D8), and the footer holds Undo, Redo and
+the block's Back (one value per block, D8), and the footer holds Undo, Redo and
 the live state; there is no Save or Cancel and the dialog closes with its X or
 Esc. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of

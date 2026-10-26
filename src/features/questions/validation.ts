@@ -718,9 +718,11 @@ export function ruleIssues(
       // BANK_ASSETS_URL (VITE_BANK_ASSETS_URL, scripts/env/config.py). Outside
       // Vite (the site worker bundles this module) import.meta.env is
       // undefined.
+      // An empty link (an image not uploaded yet) fails the schema instead.
       if (
         'url' in block.image
-          ? !hostedAsset(
+          ? block.image.url !== '' &&
+            !hostedAsset(
               block.image.url,
               policy.bank
                 ? policy.bankAssetsUrl
