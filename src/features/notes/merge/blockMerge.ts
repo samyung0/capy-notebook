@@ -18,9 +18,9 @@ import type { MaterialElement } from '@/features/materials/document';
  *   has (`stableElementIds`); a block without one is left as `theirs` has
  *   it, never duplicated.
  *
- * Pure: the merge view reuses it, and the bind merge runs it in a worker
- * (`mergeCopies`). Applying the steps (applyBlocks.ts) reads the editor's
- * blocks again by id.
+ * Pure: the merge view reuses it, and the bind merge runs it on the main
+ * thread (`mergeCopies`, Q408). Applying the steps (applyBlocks.ts) reads
+ * the editor's blocks again by id.
  */
 
 export type MergeStep =
@@ -229,8 +229,7 @@ export interface CopyPair {
   mine: MaterialElement[];
 }
 
-/** The steps and conflicts of merging `pairs` in order into `theirs`. Runs
- * in the merge worker (mergeWorker.ts, Q397), off the main thread. */
+/** The steps and conflicts of merging `pairs` in order into `theirs`. */
 export function mergeCopies(pairs: CopyPair[], theirs: MaterialElement[]) {
   let current = theirs;
   const steps: MergeStep[] = [];

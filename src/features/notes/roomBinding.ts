@@ -10,10 +10,7 @@ import { blockPoint, pointIn } from './roomSwap';
 
 const synced = new WeakSet<object>();
 const waiting = new WeakSet<object>();
-const bound = new WeakMap<
-  object,
-  (unbound: unknown[]) => Promise<unknown> | undefined
->();
+const bound = new WeakMap<object, (unbound: unknown[]) => void>();
 
 /**
  * Binds the note editor to its room's document (`YjsEditor.connect`) only
@@ -27,12 +24,11 @@ const bound = new WeakMap<
  * Binding replaces the editor's whole tree. What the tree held before (the
  * saved copy, edited when the join failed, Q229) goes to the editor's
  * `whenBound` handler right after, which merges the copy's edits into the
- * room's tree as ordinary edits, once its diff is back from a worker. A
- * selection made before it is then kept by block id where its block and
- * text still exist, as a room swap restores one, else dropped: left on the
- * old paths it pointed into nodes the room's tree lacks; once the merge
- * applied, it is placed again unless the selection moved meanwhile.
- * Goes right after YjsPlugin.
+ * room's tree as ordinary edits in the same task (Q408). A selection made
+ * before it is then kept by block id where its block and text still exist,
+ * as a room swap restores one, else dropped: left on the old paths it
+ * pointed into nodes the room's tree lacks. Placed after the merge, it
+ * lands in the merged text. Goes right after YjsPlugin.
  */
 export const roomBindingPlugin = createSlatePlugin({
   extendEditor: ({ editor }) => {
@@ -53,17 +49,10 @@ export const roomBindingPlugin = createSlatePlugin({
       const unbound = editor.children;
       editor.selection = null;
       connect();
-      const merging = bound.get(editor)?.(unbound);
-      const restore = () => {
-        const anchor = kept?.anchor && pointIn(plate, kept.anchor);
-        const focus = kept?.focus && pointIn(plate, kept.focus);
-        if (anchor && focus) plate.tf.select({ anchor, focus });
-      };
-      restore();
-      const placed = editor.selection;
-      void merging?.then(() => {
-        if (editor.selection === placed) restore();
-      });
+      bound.get(editor)?.(unbound);
+      const anchor = kept?.anchor && pointIn(plate, kept.anchor);
+      const focus = kept?.focus && pointIn(plate, kept.focus);
+      if (anchor && focus) plate.tf.select({ anchor, focus });
     };
     // Until the bind, Undo and Redo walk Slate's own history of the saved
     // copy (Q397): the Yjs history works on the bound document only.
@@ -113,11 +102,10 @@ export function bindSyncedRoom(editor: object) {
 }
 
 /** `handler` runs once the editor is bound, with the tree binding replaced
- * (Q229: the copy's edits merge then; the caret is placed again once its
- * promise settles). */
+ * (Q229: the copy's edits merge then, before the caret is placed). */
 export function whenBound(
   editor: object,
-  handler: (unbound: unknown[]) => Promise<unknown> | undefined
+  handler: (unbound: unknown[]) => void
 ) {
   bound.set(editor, handler);
 }

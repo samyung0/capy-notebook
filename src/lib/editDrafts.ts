@@ -63,6 +63,9 @@ export interface EditDraft {
    * it (it needs the room's state, a piece is over the service's cap, or it
    * is of another lineage or Office base), so no sweep sends it again. */
   held?: true;
+  /** The service held it as typing into a block the room deleted
+   * (`hidden`, Q237): its pieces say so (Q410). */
+  hidden?: true;
   /** `${session}:state`, or `${session}:${seq}` for an update (or a run
    * ending at `seq`), or `${session}:copy`. */
   id: string;
@@ -309,7 +312,7 @@ export async function dropLostDrafts(
 function markDrafts(
   key: string,
   ids: string[],
-  flag: 'accepted' | 'held' | 'refused' | 'reported'
+  flag: 'accepted' | 'held' | 'hidden' | 'refused' | 'reported'
 ): Promise<void> {
   if (!(stored(key) && ids.length)) return Promise.resolve();
   return call({ flag, ids, key, op: 'mark' });
@@ -352,7 +355,8 @@ function expiredSessions(
  * Split a document's rows against the room it opens: `current` merges into
  * the live document; `recovery` is one group (refused rows, one other
  * lineage, or one session's rows past the 7-day expiry) to show read-only
- * first, `refused` and `expired` saying which. Further groups wait for the
+ * first, `refused` and `expired` saying which (`hidden`: refused rows the
+ * service held as typing into a deleted block). Further groups wait for the
  * next open. `same` compares lineages (text sources ignore the base). Only
  * Yjs rows are split; a note's copy and piece rows go to their own readers.
  * A note turns every recovery group into the merge view's pieces (Q251);
@@ -415,6 +419,7 @@ export async function draftGroups(
       (row) => !(old(row) || refused(row)) && same(row.lineage, lineage)
     ),
     expired: stale,
+    hidden: !stale && recovery.some((row) => row.hidden),
     recovery,
     refused: !stale && !!first && refused(first),
   };
@@ -969,7 +974,7 @@ function roomToken(
  * - `refused`: over a limit or not an update a writer may send;
  * - `waits`: only the editor can send it (a piece over the service's cap, a
  *   base the room lacks, another lineage or Office base), at the file's next
- *   open;
+ *   open; `hidden` too, its rows marked as typing into a deleted block;
  * - `later`: the service answered something else (busy, failing, lost
  *   access): tried again at the next page load;
  * - `retry`: no answer (offline), the rows changed, or the user is in a
@@ -977,7 +982,14 @@ function roomToken(
  * - `outdated`: the service refuses this build's client protocol (Capy was
  *   updated): nothing more goes until the page reloads, and no row changes.
  */
-type Sent = 'sent' | 'refused' | 'waits' | 'later' | 'retry' | 'outdated';
+type Sent =
+  | 'sent'
+  | 'refused'
+  | 'waits'
+  | 'hidden'
+  | 'later'
+  | 'retry'
+  | 'outdated';
 
 // Set once a send was refused as outdated: sweeps stop for the page load.
 let outdated = false;
@@ -1120,9 +1132,10 @@ async function sendPiece(
     case 'limit':
     case 'malformed':
       return 'refused';
-    // `hidden`: typing into a block the room deleted, which only the
-    // editor's join can show (Q237).
+    // Typing into a block the room deleted, which only the editor's join
+    // can show (Q237).
     case 'hidden':
+      return 'hidden';
     case 'lineage':
     case 'too_large':
     case 'unassigned':
@@ -1223,15 +1236,13 @@ async function sendGroups(
     }
     answers.push(sent);
     if (sent === 'sent') await deleteDrafts(refs);
-    else if (sent === 'refused' || sent === 'waits') {
+    else if (sent === 'refused' || sent === 'waits' || sent === 'hidden') {
+      const ids = refs.map((row) => row.id);
       const draws =
         sent === 'refused' &&
         (await call<boolean | null>({ op: 'draws', rows: refs }));
-      await markDrafts(
-        key,
-        refs.map((row) => row.id),
-        draws ? 'refused' : 'held'
-      );
+      await markDrafts(key, ids, draws ? 'refused' : 'held');
+      if (sent === 'hidden') await markDrafts(key, ids, 'hidden');
     }
   }
   return answers;
@@ -1311,7 +1322,7 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
               )
             : [];
         kept ||= !!answers?.some(
-          (sent) => sent === 'refused' || sent === 'waits'
+          (sent) => sent === 'refused' || sent === 'waits' || sent === 'hidden'
         );
         again =
           !stopped &&

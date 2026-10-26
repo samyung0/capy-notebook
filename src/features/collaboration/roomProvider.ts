@@ -52,9 +52,9 @@ export interface RoomProviderConfig {
    * ended with its channel, closed or parked unsynced (false). */
   onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
-  /** The server's step 1 (its state vector), before this client replies and
-   * before the room's step 2: what the client holds past it, the room has
-   * never seen (hidden typing, Q237). */
+  /** A join's step 1 (the server's state vector), before this client
+   * replies and before the room's step 2: what the client holds past it, the
+   * room has never seen (hidden typing, Q237). Not a step 1 once synced. */
   onStep1?: (stateVector: Uint8Array) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;
@@ -767,7 +767,10 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private sync(payload: Uint8Array) {
     const { body, kind } = readSync(payload);
     if (kind === SyncKind.Step1) {
-      this.config.onStep1?.(body);
+      // A join's step 1 only (Q409): the room's step 1 to an update it could
+      // not place, mid-session, would arm the hidden-typing watch with no
+      // sync to end it.
+      if (!this.isSynced) this.config.onStep1?.(body);
       // The server asks for everything it lacks: this reply carries this
       // client's offline or restored edits, and an unplaced update's resend.
       this.sendUpdate(

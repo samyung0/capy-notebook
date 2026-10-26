@@ -213,6 +213,29 @@ test('a choice on a block that just changed applies nothing and says so', async 
   await expect(editor).toContainText('Mine, from before.');
 });
 
+// Merge view review r1 V-L10 (Q410): Copy works or says it did not; a
+// clipboard the browser refuses shows the error toast.
+test('a Copy the clipboard refuses shows the error toast', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openNote(page);
+  await storePieces(page);
+  await page.reload();
+  await expect(strip(page)).toBeVisible({ timeout: 30_000 });
+  await review(page);
+  const row = piece(page, INTRO);
+  await row.getByRole('button').first().click();
+  await page.evaluate(() => {
+    navigator.clipboard.write = () =>
+      Promise.reject(new DOMException('Denied', 'NotAllowedError'));
+  });
+  await row.getByRole('button', { name: m.merge_copy() }).click();
+  await expect(
+    page.locator('[data-sonner-toast]').filter({
+      hasText: m.error_generic_title(),
+    })
+  ).toBeVisible();
+});
+
 // Q237: typing the room never saw, in a block a co-editor deleted while the
 // tab was offline, never shows; the reconnect's sync finds it and the merge
 // view offers it back.

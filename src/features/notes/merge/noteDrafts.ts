@@ -17,6 +17,7 @@ import {
   type NoteCopies,
   type NoteCopy,
   noteCopies,
+  takeCopy,
 } from './copyDraft';
 import { storedPieces } from './pieceRows';
 import type { MergePiece, PieceSource } from './types';
@@ -30,7 +31,8 @@ export type PieceInput =
 
 export interface NoteDrafts {
   /** The note's saved copy edited before its room joined (Q229): the
-   * editor shows the newest and merges them at the first sync. */
+   * editor shows the newest, whose lock it takes over, and merges them at
+   * the first sync. */
   copies: NoteCopies;
   /** Rows of the current lineage the editor applies: its accepted
    * sessions' (Q326). */
@@ -55,7 +57,9 @@ export interface NoteDrafts {
  * and every group that becomes pieces. A group or a row nothing can draw or
  * read is dropped with a toast. A group of another lineage or of held rows
  * is reported once (reportRecoveryGroup); a dropped group once per page
- * load. Pieces entering the merge view are no incident (Q261).
+ * load. Pieces entering the merge view are no incident (Q261). Expiry comes
+ * first (Q412): an expired session's rows and copies become pieces, never
+ * applied, sent or merged.
  */
 export function useNoteDrafts(
   materialId: string,
@@ -67,6 +71,9 @@ export function useNoteDrafts(
   useEffect(() => {
     if (!(key && room)) return;
     let active = true;
+    // The adopted copy's lock, until its editor takes it over (or this read
+    // is dropped).
+    let release = () => {};
     const report = editIncidentReporter('material', materialId);
     void (async () => {
       let rows = await readDrafts(key).catch((error) => {
@@ -74,7 +81,24 @@ export function useNoteDrafts(
         return [] as EditDraft[];
       });
       const pieces = storedPieces(rows);
-      const copy = noteCopies(rows, await heldCopies().catch(() => null));
+      const held = await heldCopies().catch(() => null);
+      let copy = noteCopies(rows, held);
+      // Adopted only once its lock is taken (Q410): a row another tab
+      // took meanwhile is that tab's.
+      while (held && copy.copies.adopted && active) {
+        const { session } = copy.copies.adopted.row;
+        const taken = await takeCopy(session);
+        if (taken) {
+          release = taken;
+          break;
+        }
+        held.add(session);
+        copy = noteCopies(rows, held);
+      }
+      if (!active) {
+        release();
+        return;
+      }
       const unreadable = [...pieces.unreadable, ...copy.unreadable];
       if (unreadable.length) {
         // Lost work (review r1 L4): reported once, as a group nothing could
@@ -91,15 +115,16 @@ export function useNoteDrafts(
         source: 'expired',
       }));
       for (;;) {
-        const { current, expired, recovery, refused } = await draftGroups(
-          rows,
-          room
-        );
+        const { current, expired, hidden, recovery, refused } =
+          await draftGroups(rows, room);
         if (!recovery.length) {
-          if (!active) return;
+          if (!active) {
+            release();
+            return;
+          }
           const { apply, send } = splitOpenDrafts(current);
           setDrafts({
-            copies: copy.copies,
+            copies: { ...copy.copies, release },
             current: apply,
             for: `${room}:${generation}`,
             pending: send,
@@ -114,7 +139,14 @@ export function useNoteDrafts(
           sources.push({
             doc,
             rows: recovery,
-            source: expired ? 'expired' : refused ? 'refused' : 'changed',
+            // Held by the service as typing into a deleted block (Q410).
+            source: expired
+              ? 'expired'
+              : hidden
+                ? 'hidden'
+                : refused
+                  ? 'refused'
+                  : 'changed',
           });
         } else {
           toastDraftsLost();
@@ -128,6 +160,7 @@ export function useNoteDrafts(
     })();
     return () => {
       active = false;
+      release();
     };
   }, [materialId, key, room, generation]);
   return drafts;

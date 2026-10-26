@@ -266,7 +266,7 @@ function CollaborativeNoteEditor({
           title: m.editor_too_large_title(),
           variant: 'error',
         });
-      // Kept edits open read-only for copying after the remount.
+      // Kept edits come back as the merge view's pieces after the remount.
       if (edits === 'lost') toastSaveUndone();
       setSaveDelayed(false);
       setOffline(null);

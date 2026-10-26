@@ -6,6 +6,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from 'react';
+import { showErrorToast } from '@/api/queryClient';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
@@ -87,8 +88,8 @@ export default function NoteMergeView({
   underStrip,
 }: {
   onClose: () => void;
-  /** The piece open in the list (kept by NoteEditor). */
-  onOpen: (block: string | null) => void;
+  /** The piece (its key) open in the list (kept by NoteEditor). */
+  onOpen: (piece: string | null) => void;
   /** Scrolls the note to a piece's block, else the block before it. */
   onShow: (block: string, after: string | null) => void;
   open: string | null;
@@ -139,14 +140,13 @@ export default function NoteMergeView({
         {pieces.map((view) => (
           <PieceRow
             canApply={canApply}
-            expanded={open === view.piece.block}
-            key={view.piece.block}
+            expanded={open === view.key}
+            key={view.key}
             onToggle={() => {
-              const block = view.piece.block;
-              onOpen(open === block ? null : block);
-              onShow(block, view.piece.after);
+              onOpen(open === view.key ? null : view.key);
+              onShow(view.piece.block, view.piece.after);
             }}
-            stale={stale === view.piece.block}
+            stale={stale === view.key}
             store={store}
             view={view}
           />
@@ -171,7 +171,7 @@ function PieceRow({
   store: MergeStore;
   view: PieceView;
 }) {
-  const { current, piece, status } = view;
+  const { current, key, piece, status } = view;
   // Text only while collapsed: static renders happen on expand.
   const excerpt = useMemo(
     () => NodeApi.string((piece.mine ?? current ?? EMPTY) as never),
@@ -182,9 +182,11 @@ function PieceRow({
   const choices =
     piece.plain && status !== 'resolved' ? PLAIN : CHOICES[status];
   const act = (action: Action) => {
-    if (action === 'keep') store.dismiss(piece.block);
-    else if (action === 'copy') void copyBlock(excerpt, yours.current);
-    else store.apply(piece.block, action, current);
+    if (action === 'keep') store.dismiss(key);
+    else if (action === 'copy')
+      // Q410: a refused clipboard (no permission, no focus) says so.
+      copyBlock(excerpt, yours.current).catch(showErrorToast);
+    else store.apply(key, action, current);
   };
   return (
     <li

@@ -6,12 +6,11 @@ import type {
   MaterialValue,
 } from '@/features/materials/document';
 import {
-  type BlockConflict,
   type CopyPair,
   type MergeStep,
+  mergeCopies,
   sameBlock,
 } from './blockMerge';
-import type { Diffed } from './mergeOffThread';
 
 /**
  * Runs `edit` on the bound note editor as one local Yjs transaction under
@@ -199,54 +198,16 @@ export function applyMergeSteps(editor: PlateEditor, steps: MergeStep[]) {
 }
 
 /**
- * A bind merge's steps, diffed off the main thread against `shown` (the
- * editor's top-level blocks then), applied as one Undo step. A step on a
- * block that changed since (the room's or the user's edit during the diff;
- * Slate replaces a changed block's object) becomes a conflict instead, as a
- * block both sides changed. Returns every conflict.
+ * The bind merge (Q229, Q408): the copies diffed against the editor's blocks
+ * as bound and applied as one Undo step, in the same task, so nothing can
+ * change a block between the diff and its step. Returns the conflicts, and
+ * whether a step applied.
  */
-export function applyDiffed(
-  editor: PlateEditor,
-  shown: MaterialValue,
-  { conflicts, steps }: { conflicts: BlockConflict[]; steps: MergeStep[] }
-) {
-  const before = new Map(shown.map((block) => [block.id, block]));
-  const now = new Map(
-    (editor.children as MaterialValue).map((block) => [block.id, block])
+export function mergeAtBind(editor: PlateEditor, pairs: CopyPair[]) {
+  const { conflicts, steps } = mergeCopies(
+    pairs,
+    editor.children as MaterialValue
   );
-  const all = [...conflicts];
-  const kept: MergeStep[] = [];
-  for (const step of steps) {
-    if (step.kind !== 'insert' && before.get(step.id) !== now.get(step.id)) {
-      if (step.kind !== 'move')
-        all.push({
-          after: null,
-          base: before.get(step.id) ?? null,
-          id: step.id,
-          mine: step.kind === 'set' ? step.block : null,
-          theirs: now.get(step.id) ?? null,
-        });
-      continue;
-    }
-    kept.push(step);
-  }
-  if (kept.length) asOneStep(editor, () => applyMergeSteps(editor, kept));
-  return { applied: kept.length > 0, conflicts: all };
-}
-
-/**
- * The bind merge (Q229, Q397): the copies diffed by `diff` (the worker in
- * the editor) against the editor's blocks as bound, then applied as one
- * step (`applyDiffed`). Null when the editor was unbound meanwhile: nothing
- * applied, the copies' rows stay for the next open.
- */
-export async function mergeAtBind(
-  editor: PlateEditor,
-  pairs: CopyPair[],
-  diff: (pairs: CopyPair[], theirs: MaterialValue) => Promise<Diffed>
-) {
-  const shown = editor.children as MaterialValue;
-  const diffed = await diff(pairs, shown);
-  if (!YjsEditor.connected(editor as unknown as YjsEditor)) return null;
-  return applyDiffed(editor, shown, diffed);
+  if (steps.length) asOneStep(editor, () => applyMergeSteps(editor, steps));
+  return { applied: steps.length > 0, conflicts };
 }

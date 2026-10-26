@@ -220,6 +220,24 @@ it("hands the server's step 1 vector over before replying to it", async () => {
   expect(
     socket.take(MessageKind.Sync).map((sent) => readSync(sent.payload).kind)
   ).toEqual([SyncKind.Step1, SyncKind.Step2]);
+  // Merge view review r1 V-M5 (Q409): once synced, a step 1 (the room's
+  // answer to an update it could not place) is answered but arms nothing.
+  socket.deliver(
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(server))
+    ),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  expect(seen).toHaveLength(1);
+  expect(
+    socket.take(MessageKind.Sync).map((sent) => readSync(sent.payload).kind)
+  ).toEqual([SyncKind.Step2]);
 });
 
 it('joins with its token, syncs both ways and counts unacknowledged updates', async () => {

@@ -11,13 +11,7 @@ import * as Y from 'yjs';
 import type { MaterialValue } from '@/features/materials/document';
 import { bindSyncedRoom, roomBindingPlugin, whenBound } from '../roomBinding';
 import { stableElementIdsPlugin } from '../stableElementIds';
-import {
-  applyDiffed,
-  mergeAtBind,
-  replaceBlock,
-  textChange,
-} from './applyBlocks';
-import { mergeBlocks, mergeCopies } from './blockMerge';
+import { mergeAtBind, replaceBlock, textChange } from './applyBlocks';
 
 /* Q229: a note painted from its saved copy before its room joined stays
  * editable; at the room's first sync the editor binds (roomBinding.ts) and
@@ -31,10 +25,9 @@ const block = (id: string, text: string, extra = {}) => ({
 });
 const PROJECTION = [block('a', 'Title'), block('b', 'Body'), block('c', 'End')];
 
-/** The note editor before its room synced, holding the projection, with the
- * copy merge NoteEditorCore registers (its diff run in place of the
- * worker). */
-function copyEditor() {
+/** The note editor before its room synced, holding `value` (the
+ * projection), with the copy merge NoteEditorCore registers. */
+function copyEditor(value: MaterialValue = PROJECTION as MaterialValue) {
   const ydoc = new Y.Doc();
   const editor = createPlateEditor({
     nodeId: false,
@@ -43,20 +36,16 @@ function copyEditor() {
       roomBindingPlugin,
       stableElementIdsPlugin,
     ],
-    value: structuredClone(PROJECTION) as never,
+    value: structuredClone(value) as never,
   });
   const root = ydoc.get('content', Y.XmlText);
   const updates: unknown[] = [];
   ydoc.on('update', (_update: Uint8Array, origin: unknown) =>
     updates.push(origin)
   );
-  whenBound(editor, (unbound) =>
-    mergeAtBind(
-      editor,
-      [{ base: PROJECTION as MaterialValue, mine: unbound as MaterialValue }],
-      async (pairs, theirs) => mergeCopies(pairs, theirs)
-    )
-  );
+  whenBound(editor, (unbound) => {
+    mergeAtBind(editor, [{ base: value, mine: unbound as MaterialValue }]);
+  });
   const sync = (value: unknown[]) => {
     const room = new Y.Doc();
     room
@@ -73,10 +62,8 @@ function copyEditor() {
   return { editor, roomBlocks, root, sync, updates, ydoc };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 describe('the copy merge at the bind', () => {
-  it("merges the copy's edits into the room's document as the session's own updates, keeping the caret", async () => {
+  it("merges the copy's edits into the room's document as the session's own updates, keeping the caret", () => {
     const { editor, roomBlocks, sync, updates } = copyEditor();
     // Typed into the copy: the body edited, a new block after it.
     editor.tf.select({ offset: 4, path: [1, 0] });
@@ -85,7 +72,6 @@ describe('the copy merge at the bind', () => {
     editor.tf.select({ offset: 10, path: [1, 0] });
     // Meanwhile the room changed the title.
     sync([block('a', 'Title room'), block('b', 'Body'), block('c', 'End')]);
-    await settle();
     expect(roomBlocks()).toEqual([
       block('a', 'Title room'),
       block('b', 'Body typed'),
@@ -109,6 +95,27 @@ describe('the copy merge at the bind', () => {
     ]);
   });
 
+  // Merge view review r1 Q-M1 (Q408): the merge applies in the bind's own
+  // task, so nothing (a keystroke, a merge view choice) can run between the
+  // room's tree and the merged one, and the caret, placed after the merge,
+  // lands in the merged text even where the merge shifted it.
+  it('places the caret inside text the merge shifted, with the merge done when the bind returns', () => {
+    const { editor, roomBlocks, sync } = copyEditor([
+      block('a', 'Hello world'),
+    ]);
+    editor.tf.insertText('big ', { at: { offset: 6, path: [0, 0] } });
+    editor.tf.select({ offset: 10, path: [0, 0] });
+    sync([block('a', 'Hello world')]);
+    // No await: the bind returned with the merge applied.
+    expect(roomBlocks()).toEqual([block('a', 'Hello big world')]);
+    expect(editor.selection).toEqual({
+      anchor: { offset: 10, path: [0, 0] },
+      focus: { offset: 10, path: [0, 0] },
+    });
+    editor.tf.insertText('X');
+    expect(roomBlocks()).toEqual([block('a', 'Hello big Xworld')]);
+  });
+
   // Review r1 L3: the Yjs history works on the bound document only; before
   // the bind Undo and Redo walk the copy's own.
   it('undoes and redoes edits in the copy before the bind', () => {
@@ -120,59 +127,22 @@ describe('the copy merge at the bind', () => {
     expect(editor.children[1]).toEqual(block('b', 'Body typed'));
   });
 
-  it('leaves the room’s document alone when the copy was not edited', async () => {
+  it('leaves the room’s document alone when the copy was not edited', () => {
     const { roomBlocks, sync, updates } = copyEditor();
     const room = [block('a', 'Title room'), block('b', 'Body')];
     sync(room);
-    await settle();
     expect(roomBlocks()).toEqual(room);
     expect(updates.filter((origin) => origin !== 'room')).toEqual([]);
-  });
-});
-
-describe('applyDiffed', () => {
-  // Review r1 L1: the diff runs in a worker, so the room or the user may
-  // change a block before its steps apply; that block is left as it is now
-  // and becomes a conflict, the rest applies as one Undo step.
-  it('applies the steps but makes a block changed during the diff a conflict', async () => {
-    const { editor, root, roomBlocks, sync } = copyEditor();
-    sync(PROJECTION);
-    await settle();
-    const shown = editor.children as MaterialValue;
-    const diffed = mergeBlocks(
-      PROJECTION as MaterialValue,
-      [block('a', 'Title mine'), block('b', 'Body mine'), block('c', 'End')],
-      shown
-    );
-    const body = root.toDelta()[1].insert as Y.XmlText;
-    Y.transact(root.doc as Y.Doc, () => body.insert(4, ' room'), 'room');
-    const { applied, conflicts } = applyDiffed(editor, shown, diffed);
-    expect(applied).toBe(true);
-    expect(roomBlocks()).toEqual([
-      block('a', 'Title mine'),
-      block('b', 'Body room'),
-      block('c', 'End'),
-    ]);
-    expect(conflicts).toMatchObject([
-      {
-        id: 'b',
-        mine: block('b', 'Body mine'),
-        theirs: block('b', 'Body room'),
-      },
-    ]);
-    (editor as unknown as YHistoryEditor).undo();
-    expect(roomBlocks()[0]).toEqual(block('a', 'Title'));
   });
 });
 
 describe('replaceBlock', () => {
   // Review r1 M3: only the changed run of text is rewritten, so a comment's
   // anchor (a Yjs relative position) on a word in the block holds.
-  it("rewrites only a block's changed text, keeping anchors in it", async () => {
+  it("rewrites only a block's changed text, keeping anchors in it", () => {
     const { editor, root, roomBlocks, sync, ydoc } = copyEditor();
     const said = 'The mitochondria is the powerhouse';
     sync([block('a', said)]);
-    await settle();
     const text = root.toDelta()[0].insert as Y.XmlText;
     const at = said.indexOf('powerhouse');
     const anchor = Y.createRelativePositionFromTypeIndex(text, at);
@@ -182,7 +152,7 @@ describe('replaceBlock', () => {
     expect(found?.index).toBe(at);
   });
 
-  it('keeps marked runs it does not change', async () => {
+  it('keeps marked runs it does not change', () => {
     const { editor, roomBlocks, sync } = copyEditor();
     const marked = (tail: string) => ({
       children: [{ bold: true, text: 'Bold' }, { text: tail }],
@@ -190,7 +160,6 @@ describe('replaceBlock', () => {
       type: 'p',
     });
     sync([marked(' plain')]);
-    await settle();
     replaceBlock(editor, 0, marked(' plain edited') as never);
     expect(roomBlocks()[0]).toEqual(marked(' plain edited'));
   });
@@ -208,20 +177,18 @@ describe('replaceBlock', () => {
     });
   });
 
-  it('keeps a block of the same type in place, setting and unsetting its attributes', async () => {
+  it('keeps a block of the same type in place, setting and unsetting its attributes', () => {
     const { editor, root, roomBlocks, sync } = copyEditor();
     sync([block('a', 'Title', { align: 'center' }), block('b', 'Body')]);
-    await settle();
     const element = root.toDelta()[0].insert as Y.XmlText;
     replaceBlock(editor, 0, block('a', 'Title new', { indent: 1 }) as never);
     expect(roomBlocks()[0]).toEqual(block('a', 'Title new', { indent: 1 }));
     expect(root.toDelta()[0].insert).toBe(element);
   });
 
-  it('replaces a block of another type at the same index, keeping its id', async () => {
+  it('replaces a block of another type at the same index, keeping its id', () => {
     const { editor, roomBlocks, sync } = copyEditor();
     sync([block('a', 'Title'), block('b', 'Body')]);
-    await settle();
     replaceBlock(editor, 0, {
       children: [{ text: 'Heading' }],
       id: 'a',

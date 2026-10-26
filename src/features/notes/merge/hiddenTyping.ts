@@ -17,15 +17,19 @@ import type { MergePiece } from './types';
  * - after each room transaction (Yjs emits it before collecting deleted
  *   content), a candidate the transaction deleted hides its block; text of
  *   rows that were pending until this sync (restored without a state row)
- *   deleted as it integrated survives only as text (`plain` pieces).
+ *   deleted as it integrated survives only as text (`plain` pieces), for the
+ *   clients this tab's stored rows carry only (`drafted`, Q410: a peer's
+ *   text typed and deleted within one forwarded update is not the user's).
  * `synced` returns the pieces (`hidden`) and detaches. Text the room had
  * already seen and then deleted is never reported.
  */
 export function watchHiddenTyping(
   doc: Y.Doc,
-  isRoom: (origin: unknown) => boolean
+  isRoom: (origin: unknown) => boolean,
+  drafted: () => ReadonlySet<number>
 ) {
   const root = rootOf(doc);
+  let own: ReadonlySet<number> | null = null;
   let server = new Map<number, number>();
   let attached = false;
   // Typed items past the vector and their top-level block's id.
@@ -73,6 +77,8 @@ export function watchHiddenTyping(
     // Pending structs integrated in this transaction, already deleted.
     const texts = new Map<Y.AbstractType<unknown>, Set<Y.Item>>();
     transaction.deleteSet.clients.forEach((ranges, client) => {
+      own ??= drafted();
+      if (!own.has(client)) return;
       const since = Math.max(
         known(client),
         transaction.beforeState.get(client) ?? 0
@@ -162,6 +168,21 @@ export function watchHiddenTyping(
 }
 
 export type HiddenTyping = ReturnType<typeof watchHiddenTyping>;
+
+/** The client ids of stored update rows: whose typing a join may find
+ * pending (a state row holds every client, so it names none). */
+export function draftClients(
+  rows: readonly { data: Uint8Array; kind: string }[]
+) {
+  const clients = new Set<number>();
+  for (const row of rows)
+    if (row.kind === 'update')
+      for (const client of Y.decodeStateVector(
+        Y.encodeStateVectorFromUpdate(row.data)
+      ).keys())
+        clients.add(client);
+  return clients;
+}
 
 /** Typed content (Q259): text, an embed or an inserted element, never an
  * attribute or a format. */

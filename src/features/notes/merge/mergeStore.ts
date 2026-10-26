@@ -3,7 +3,8 @@ import type { MaterialElement } from '@/features/materials/document';
 import type { DraftRef } from '@/lib/draftStore';
 import { deleteDrafts, type EditDraft, putDrafts } from '@/lib/editDrafts';
 import { applyChoice } from './applyPiece';
-import { pieceId, pieceRow } from './pieceRows';
+import { sameBlock } from './blockMerge';
+import { nextPieceSeq, pieceKey, pieceRow } from './pieceRows';
 import { pieceStatus } from './pieces';
 import type { MergePiece, PieceChoice, PieceStatus } from './types';
 
@@ -11,6 +12,8 @@ import type { MergePiece, PieceChoice, PieceStatus } from './types';
 export interface PieceView {
   /** The note's block now (theirs), read live; undefined when gone. */
   current: MaterialElement | undefined;
+  /** The piece among the note's: its block and content (`pieceKey`). */
+  key: string;
   piece: MergePiece;
   status: PieceStatus;
 }
@@ -20,8 +23,8 @@ export interface MergeSnapshot {
   canApply: boolean;
   /** In document order. */
   pieces: PieceView[];
-  /** A piece whose block changed under the user's choice (first applied
-   * wins): nothing was applied, and it shows the fresh block. */
+  /** A piece (its key) whose block changed under the user's choice (first
+   * applied wins): nothing was applied, and it shows the fresh block. */
   stale: string | null;
   /** Pieces not resolved yet: the strip shows while there are any. */
   unresolved: number;
@@ -29,9 +32,12 @@ export interface MergeSnapshot {
 
 interface Entry {
   current: MaterialElement | undefined;
+  /** Its row's id. */
+  id: string;
   /** The block's top-level index last seen, and the inserted copy's. */
   index: number;
   inserted: number;
+  key: string;
   piece: MergePiece;
   seq: number;
   /** Unset until first read. */
@@ -39,6 +45,9 @@ interface Entry {
 }
 
 const warn = (error: unknown) => console.warn('Draft storage failed:', error);
+/** Two pieces of one block holding the same version. */
+const sameAs = (a: MergePiece, b: MergePiece) =>
+  a.block === b.block && sameBlock(a.mine, b.mine);
 const nextFrame =
   globalThis.requestAnimationFrame?.bind(globalThis) ??
   ((run: () => void) => setTimeout(run, 16) as unknown as number);
@@ -53,7 +62,8 @@ const cancelFrame =
  * cached index first, and a block object it saw before (Slate nodes are
  * immutable) costs no comparison. A resolved piece stays listed (Applied)
  * until the view closes or the mount ends, so Undo brings it back; its row
- * goes then.
+ * goes then. Pieces are kept by block and content (Q409): a block may have
+ * several, and one equal to a listed piece of its block is not added.
  */
 export function createMergeStore({
   editor,
@@ -128,6 +138,7 @@ export function createMergeStore({
       canApply,
       pieces: ordered.map(({ entry }) => ({
         current: entry.current,
+        key: entry.key,
         piece: entry.piece,
         status: entry.status ?? 'conflict',
       })),
@@ -145,35 +156,44 @@ export function createMergeStore({
     if (changed) publish();
   };
 
-  const keep = (piece: MergePiece, seq: number) => {
+  const keep = (piece: MergePiece, id: string, seq: number) => {
     const entry: Entry = {
       current: undefined,
+      id,
       index: -1,
       inserted: -1,
+      key: pieceKey(piece),
       piece,
       seq,
     };
-    entries.set(piece.block, entry);
+    entries.set(entry.key, entry);
     read(entry);
   };
 
-  /** The pieces' rows written: one per block, the newer replacing. */
+  /** The pieces' rows written, each replacing its own key's. */
   const write = (pieces: MergePiece[]) => {
     const rows = pieces.map((piece) => {
-      const seq = (entries.get(piece.block)?.seq ?? 0) + 1;
-      keep(piece, seq);
-      return pieceRow(key, lineage, piece, seq);
+      const row = pieceRow(key, lineage, piece, nextPieceSeq());
+      keep(piece, row.id, row.seq);
+      return row;
     });
     return rows.length ? putDrafts(rows) : Promise.resolve();
   };
 
-  const forget = (blocks: string[]) => {
+  /** A listed piece of its block holds the same version. */
+  const listed = (piece: MergePiece) => {
+    for (const entry of entries.values())
+      if (sameAs(entry.piece, piece)) return true;
+    return false;
+  };
+
+  const forget = (keys: string[]) => {
     const refs: DraftRef[] = [];
-    for (const block of blocks) {
-      const entry = entries.get(block);
+    for (const each of keys) {
+      const entry = entries.get(each);
       if (!entry) continue;
-      entries.delete(block);
-      refs.push({ id: pieceId(key, block), key, seq: entry.seq });
+      entries.delete(each);
+      refs.push({ id: entry.id, key, seq: entry.seq });
     }
     if (refs.length) void deleteDrafts(refs).catch(warn);
     if (stale && !entries.has(stale)) stale = null;
@@ -182,34 +202,39 @@ export function createMergeStore({
     forget(
       [...entries.values()]
         .filter((entry) => entry.status === 'resolved')
-        .map((entry) => entry.piece.block)
+        .map((entry) => entry.key)
     );
 
-  for (const { piece, row } of stored) keep(piece, row.seq);
+  for (const { piece, row } of stored) keep(piece, row.id, row.seq);
   publish();
 
   return {
     /** New pieces (a conversion after the first sync, a merge's
-     * conflicts): stored and listed. */
-    /** Resolves once the pieces are stored (the rows they came from go
-     * only then, Q397); rejects when the write failed. */
+     * conflicts): stored and listed, except one a listed piece of its block
+     * holds already (Q409). Resolves once they are stored (the rows they
+     * came from go only then, Q397); rejects when the write failed. */
     add(pieces: MergePiece[]) {
-      if (!pieces.length) return Promise.resolve();
-      const stored = write(pieces);
+      const fresh: MergePiece[] = [];
+      for (const piece of pieces)
+        if (!(listed(piece) || fresh.some((other) => sameAs(other, piece))))
+          fresh.push(piece);
+      if (!fresh.length) return Promise.resolve();
+      const stored = write(fresh);
       publish();
       return stored;
     },
-    /** The user's choice on a piece, against the block they were shown. */
+    /** The user's choice on a piece (its key), against the block they were
+     * shown. */
     apply(
-      block: string,
+      piece: string,
       choice: PieceChoice,
       shown: MaterialElement | undefined
     ) {
-      const entry = entries.get(block);
+      const entry = entries.get(piece);
       if (!(entry && canApply)) return;
       try {
         const done = applyChoice(editor, entry.piece, choice, shown);
-        stale = done.result === 'stale' ? block : null;
+        stale = done.result === 'stale' ? piece : null;
         if (done.result === 'applied' && done.insertedAs)
           void write([{ ...entry.piece, insertedAs: done.insertedAs }]).catch(
             warn
@@ -230,9 +255,10 @@ export function createMergeStore({
       forgetResolved();
       publish();
     },
-    /** Kept current or discarded: the piece goes for good (Q253). */
-    dismiss(block: string) {
-      forget([block]);
+    /** Kept current or discarded: the piece (its key) goes for good
+     * (Q253). */
+    dismiss(piece: string) {
+      forget([piece]);
       publish();
     },
     /** The strip's Discard: every remaining piece (Q252). */

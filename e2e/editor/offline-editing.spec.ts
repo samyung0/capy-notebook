@@ -298,6 +298,101 @@ test('a block both the copy and the room changed waits in the merge view while t
   await expect.poll(() => draftKinds(page)).toEqual(['piece']);
 });
 
+/** Opens the scenario note with the service down: past the join's 30 s it
+ * shows its saved copy, editable (Q229). */
+async function openCopy(page: Page) {
+  await page.goto('/workspaces/ws_scenarios');
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  await setReachable(page, false);
+  await page.goto(note);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'error',
+    { timeout: 60_000 }
+  );
+  const editor = page
+    .locator('[data-note-mount="live"] [contenteditable]')
+    .first();
+  await expect(editor).toContainText(seed);
+  return editor;
+}
+
+// Merge view review r1 Q-M3 (Q409): a room swap before the first bind (the
+// room moved while the service was away) pauses the editor, which stores
+// its copy and lets go of it: the next mount shows it and merges it into
+// the next room at its sync.
+test('a copy edited before the join survives a room swap and merges into the next room', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openCopy(page);
+  await type(page, ' Typed before the swap.');
+  await expect.poll(() => draftKinds(page)).toEqual(['copy']);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { moveMockMaterialRoom } = await import(path);
+    moveMockMaterialRoom('mock-scenario-note');
+  });
+  await setReachable(page, true);
+  const live = page.locator('[data-note-mount="live"] [contenteditable]');
+  await expect(page.locator('[data-note-mount]')).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await expect(live.first()).toContainText('Typed before the swap.');
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  await expect.poll(() => draftKinds(page)).toEqual([]);
+  await page.reload();
+  await expect(live.first()).toContainText('Typed before the swap.', {
+    timeout: 30_000,
+  });
+});
+
+// Merge view review r1 Q-L4 and Q-L5 (Q410): a copy pasted past the offline
+// bound stops the editor under the offline-limit strip; the typing just
+// before the paste was written first, so the join merges it alone.
+test('a copy pasted past the offline bound locks the editor and merges the typing before it', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const editor = await openCopy(page);
+  await type(page, ' Typed before the paste.');
+  // As Chromium pastes HTML: a beforeinput carrying the data.
+  await editor.evaluate((element) => {
+    const transfer = new DataTransfer();
+    const big = 'x'.repeat(2.2 * 1024 * 1024);
+    transfer.setData('text/html', `<p>Pasted.</p><p>${big}</p>`);
+    element.dispatchEvent(
+      new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer,
+        inputType: 'insertFromPaste',
+      })
+    );
+  });
+  await expect(
+    page.locator('[data-testid="save-banner"][data-kind="offline-limit"]')
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  await expect(page.locator('[data-note-toolbar]').first()).toHaveAttribute(
+    'inert'
+  );
+  await setReachable(page, true);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await expect(editor).toContainText('Typed before the paste.');
+  await expect(editor).not.toContainText('Pasted.');
+  await expect.poll(() => draftKinds(page)).toEqual([]);
+});
+
 // Q327, Q328, Q360: a closed session's never-accepted steps go through the
 // draft send while the note opens view-only; not delivered 30 s on, the
 // synced note takes them itself and edits on, syncing, with nothing of them

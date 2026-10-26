@@ -18,6 +18,7 @@ import { DRAFT_EXPIRY_MS, type EditDraft } from '@/lib/editDrafts';
 import {
   COPY_WRITE_MS,
   deleteOnceStored,
+  holdCopy,
   noteCopies,
   recordCopy,
 } from './copyDraft';
@@ -104,6 +105,41 @@ describe('noteCopies', () => {
   });
 });
 
+// Merge view review r1 Q-L4: the tab's copy lock is named by its session
+// and held until the release.
+describe('holdCopy', () => {
+  it('holds capy-copy:<session> until released', async () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, 'locks');
+    const asked: string[] = [];
+    let held: Promise<unknown> = Promise.resolve();
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: (name: string, callback: () => Promise<unknown>) => {
+          asked.push(name);
+          held = callback();
+          return held;
+        },
+      },
+    });
+    try {
+      const release = holdCopy('s1');
+      expect(asked).toEqual(['capy-copy:s1']);
+      let released = false;
+      void held.then(() => {
+        released = true;
+      });
+      await Promise.resolve();
+      expect(released).toBe(false);
+      release();
+      await vi.waitFor(() => expect(released).toBe(true));
+    } finally {
+      if (original) Object.defineProperty(navigator, 'locks', original);
+      else Reflect.deleteProperty(navigator, 'locks');
+    }
+  });
+});
+
 describe('recordCopy', () => {
   it('writes the edited copy at most once a second, at once on flush, and stops with the row it wrote', async () => {
     vi.useFakeTimers();
@@ -169,6 +205,28 @@ describe('recordCopy', () => {
     expect(stored.puts).toHaveLength(1);
     expect(recorder.over).toBe(true);
     expect(recorder.kept).toEqual([p('a', 'A short')]);
+  });
+
+  // Merge view review r1 Q-L5 (Q410): a paste past the bound drops only the
+  // paste; the typing just before it was written first.
+  it('writes the typing before an insert, so the bound drops only the insert', () => {
+    vi.useFakeTimers();
+    const onLimit = vi.fn();
+    const recorder = recordCopy({
+      adopted: null,
+      base: [p('a', 'A')],
+      key: KEY,
+      limitBytes: 64,
+      lineage: ROOM,
+      onLimit,
+      revision: 3,
+    });
+    recorder.edited([p('a', 'A typed')]);
+    recorder.edited([p('a', 'A typed'), p('b', 'x'.repeat(100))], true);
+    vi.advanceTimersByTime(COPY_WRITE_MS);
+    expect(onLimit).toHaveBeenCalledOnce();
+    expect(stored.puts).toHaveLength(1);
+    expect(recorder.kept).toEqual([p('a', 'A typed')]);
   });
 
   it('goes on with the copy it reopened: same row, a higher seq', () => {

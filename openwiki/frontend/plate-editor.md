@@ -2177,12 +2177,16 @@ room joins (`src/features/notes/merge/`):
   draft store: JSON holding the tree the copy started from (`base`, the
   projection, with its `revision`), and the edited tree (`mine`). No Yjs
   reader takes a copy row (`yjsRow`: `draftGroups`, the sweep), the 7-day
-  expiry applies to it from when it was written, the load sweep's
-  lost-document delete takes it, and a read-only room or lost access
-  discards it with the other unsaved edits. A copy keeps the offline bound
-  drafts keep (Epo 2026-10-26, Q397): one grown more than 2 MiB over its
-  base is not written further, the editor stops under the `offline-limit`
-  strip, and the bind merges the copy as last written. An unreadable copy
+  expiry applies to it from when it was written and is checked first,
+  whichever tab holds it (Q412), the load sweep's lost-document delete takes
+  it, and a read-only room or lost access discards it with the other unsaved
+  edits. A copy keeps the offline bound drafts keep (Epo 2026-10-26, Q397):
+  one grown more than 2 MiB over its base is not written further, the editor
+  stops under the `offline-limit` strip, and the bind merges the copy as
+  last written. An edit that inserts nodes (a paste) writes the typing
+  before it first, so the bound drops only that edit (Q410). A paused editor
+  (a room swap before its bind) writes its copy, stops recording and lets go
+  of its lock, so the next mount adopts it (Q409). An unreadable copy
   row is dropped with the drafts-lost notice and reported
   (`draft_unrestorable`, `unreadable`). Copy rows record the room they were
   made in but merge into whichever room the note joins: the merge compares
@@ -2194,8 +2198,12 @@ room joins (`src/features/notes/merge/`):
   deleted, and merges when its own tab joins (or at the next open once that
   tab closed). A reopened note shows the newest copy no tab holds and goes
   on with that row (same id, a higher `seq`); older ones (closed tabs')
-  merge first. Without Web Locks no copy is adopted: each merges as an older
-  one.
+  merge first. The newest copy's lock is taken as it is read, only if free
+  (`takeCopy`, `ifAvailable`, Q410), and the editor asks for its own before
+  that one goes, so two tabs opening together never adopt one row; a row
+  another tab took meanwhile is left to it. Without Web Locks no copy is
+  adopted and each merges as an older one, another open tab's too: that
+  tab's later typing then shows as conflict pieces at its own bind (Q410).
 - **Undo before the bind** (Q397). The Yjs history works on the bound
   document only, so until the bind Undo and Redo walk Slate's own history of
   the copy (`roomBindingPlugin`).
@@ -2205,12 +2213,16 @@ room joins (`src/features/notes/merge/`):
   nested in it, and blocks compare without the ids of elements inside them
   (`sameBlock`, Q397: the room holds table rows and cells, columns, toggles
   and Mermaid captions without ids that normalization gives the copy). A
-  block without an id is left as the room has it. The diff runs in a worker
-  (`mergeOffThread`, Q397); its steps are then applied to the bound editor
-  as ordinary Slate edits (`mergeAtBind`, `applyDiffed`), one local
-  transaction and one Undo step under the session's id (`asOneStep`), so
-  they sync and save as any edit and the editor asks for a receipt at once
-  (only when a step applied). A block only the copy changed (edited,
+  block without an id is left as the room has it. The diff and its steps
+  run in the bind's own task on the main thread (`mergeAtBind`, Q408): the
+  steps are ordinary Slate edits of the bound editor, one local transaction
+  and one Undo step under the session's id (`asOneStep`), so they sync as
+  any edit and save through the normal checkpoint (Q410; the bind schedules
+  it too when a step applied, since a bind before the mount's first paint,
+  a swap's hidden build, reports no value change). Nothing (typing, a merge
+  view choice) can run between the room's tree and the merged one, and the
+  caret, placed by block id after the merge, lands in the merged text. A
+  block only the copy changed (edited,
   inserted, deleted, moved) is applied: of the same type the block keeps its
   element and only the changed run of each text is rewritten when the
   children keep their shape (`replaceBlock`, Q397), so comment anchors and
@@ -2223,25 +2235,26 @@ room joins (`src/features/notes/merge/`):
   of the merge view (`conflict`, carrying its base; one the copy deleted is
   a piece with no version of the user's). The pieces are stored before the
   copies' rows are deleted (`deleteOnceStored`, Q397): a failed write keeps
-  the copies for the next open and shows the drafts-lost notice. A block the
-  room or the user changed while the worker diffed (its object differs from
-  the one diffed) is not overwritten but becomes a conflict too. A copy past
+  the copies for the next open and shows the drafts-lost notice. A copy past
   the 7-day expiry is never merged: each block it changed becomes a piece
   (`expired`). Within a tab the first applied wins; two tabs whose binds
   race over the network can both apply, and Yjs keeps both texts (accepted,
-  as the merge view's plan does). The caret is placed again by block id once
-  the merge applied, unless it moved meanwhile. A merge that throws is
-  reported to Sentry (`note-copy-merge`) and the rows stay for the next
-  open, with the last second of typing (`stop` writes what is pending).
-- **Cost** (measured 2026-10-26 on the developer PC, Chromium at CPU x4, Vite
-  dev build, the 2.0 MB load-test note of 3,652 blocks). 154 steps (125
-  edited blocks, 30 inserts): the main thread was held 0.69-1.05 s before
-  (diff 41-54 ms, apply 654-992 ms), 0.30-0.37 s after (the worker's message
-  clone 54-61 ms, which costs about what the diff did, and the apply
-  299-375 ms). 1,116 steps (817 edited, 300 inserts): 9.2-11.4 s before,
-  3.1-3.4 s after. A typical session (under 50 blocks) stays well under
-  100 ms; a long offline rework of a near-limit note still holds the tab for
-  seconds on a slow phone.
+  as the merge view's plan does). A merge that throws is reported to Sentry
+  (`note-copy-merge`) and the rows stay for the next open, with the last
+  second of typing (`stop` writes what is pending).
+- **Cost** (measured 2026-10-26 and 2026-10-27 on the developer PC, Chromium
+  at CPU x4, Vite dev build, the 2.0 MB load-test note of 3,652 blocks,
+  bound headless with no render). The diff takes 41-56 ms on the main
+  thread; a worker's message clone cost the same, so the merge has none
+  (Q408). 154 steps (125 edited blocks, 30 inserts): the apply 299-375 ms
+  with only changed text rewritten (654-992 ms when children were replaced
+  whole). 1,116 steps (817 edited, 300 inserts): 3.1-3.4 s (9.2-11.4 s
+  before). A whole-note replace (select all, paste a different near-limit
+  note; 7,303 steps: 3,651 removes, 3,652 inserts): 68.8 s median of three
+  (65.3-74.0 s), the diff 0.18-0.64 s of it, nearly all the rest Slate's
+  per-operation apply and the Yjs flush. There is no time or step cap
+  (Q411); the replace is on the perf track. A typical session (under 50
+  blocks) stays well under 100 ms.
 
 ### The merge view
 
@@ -2260,10 +2273,15 @@ Items, Office and text files keep copy-only recovery.
   `resolved` (the current block equals `mine`, both deleted, or the copy it
   inserted is in the note).
 - **Stored** as `piece` rows of the draft store (`pieceRows.ts`): JSON kept as
-  bytes, one row per block per document (`piece:<key>:<block>`, the newer
-  replacing the older with a higher `seq`), never sent by the sweep
-  (`yjsRow`), kept through sign-out, deleted with the document's rows when
-  the account loses it. Pieces never expire (Q254).
+  bytes, one row per block and content per document
+  (`piece:<key>:<block>:<hash of mine>`, Q409): a block may have several
+  pieces, a piece never replaces a different one of its block, and one equal
+  to a listed piece of its block (`sameBlock`) is not added, so a repeat
+  conversion never duplicates. A rewrite (Insert's mark) keeps the row's id
+  with a new `seq` from the time and a per-tab counter, unique across tabs,
+  so another tab's exact delete never removes it (Q410). Rows are never sent
+  by the sweep (`yjsRow`), kept through sign-out, deleted with the
+  document's rows when the account loses it. Pieces never expire (Q254).
 - **What becomes pieces.** At the room's first sync and after its paint
   (`convertSources`), each refused, other-lineage, expired or undelivered
   (Q360) Yjs group read at open (`useNoteDrafts` in `noteDrafts.ts`) is drawn
@@ -2272,17 +2290,20 @@ Items, Office and text files keep copy-only recovery.
   room's does not, past the room's state vector (typing, inserted elements,
   attributes), or deletes something the room still shows (`changedBlocks`);
   of those, blocks whose version equals the current one are left out, so a
-  move alone makes none. The pieces are written, then the group's rows
-  deleted (the drafts worker keeps the order; a repeat converts to the same
-  rows). An expired saved copy becomes a piece per block it changed
+  move alone makes none. A group the service held as hidden typing (its
+  rows marked `hidden`, below) is a `hidden` source. The pieces are written,
+  then the group's rows deleted (the drafts worker keeps the order; a repeat
+  converts to no new rows). An expired saved copy becomes a piece per block it changed
   (`piecesFromCopy`), and a copy's conflicting blocks at the bind become
   pieces at once. A conversion that throws is reported to Sentry
   (`merge-view`) and its rows stay for the next open.
 - **The strip and the sheet** (Q252). While unresolved pieces exist the save
   banner shows `review` ("Some of your edits couldn't sync into this note."),
   with Review and Discard in the close button's place; it cannot be closed
-  and comes last (outdated, offline, delayed, review). Discard drops every
-  piece after a confirmation. Review opens `NoteMergeView` (lazy-loaded),
+  and comes last (outdated, offline, delayed, review): while the offline
+  strip shows, Review is out of reach, so Copy and Discard work offline only
+  in a sheet opened before. Discard drops every piece after a
+  confirmation. Review opens `NoteMergeView` (lazy-loaded),
   non-modal over the note: the bottom 60% on phones, a 400 px right sheet
   from md (below the strip, so its actions stay in reach), never docked,
   since re-flowing a large note costs seconds. Rows list the pieces in
@@ -2317,23 +2338,30 @@ Items, Office and text files keep copy-only recovery.
   room's deletion takes it too. After a JOIN the server sends its step 1
   (its state vector) before its step 2, and `RoomProvider` hands that vector
   over (`onStep1`) before it replies, so whatever the tab holds past it is
-  what the room never saw. With nothing past it the watch stays idle;
-  otherwise, until the sync, each room transaction first marks the typed
+  what the room never saw. Only a join's step 1 arms the watch: one once
+  synced (the room's answer to an update it could not place) does not
+  (Q409). With nothing past it the watch stays idle; otherwise, until the
+  sync, each room transaction first marks the typed
   content past the vector (text, embeds, inserted elements; not attributes
   or formats, Q259) shown inside a top-level block the room already holds
   and draws that block once, and afterwards (Yjs emits it before collecting
   deleted content) a marked item the transaction deleted makes its drawn
   block a `hidden` piece. Rows that were pending until the sync (restored
   without a state row) and integrate into a deleted block keep only their
-  text: a `plain` piece, a paragraph that can be inserted or copied, never
-  applied over the block. This covers restored rows at mount, an offline
-  episode, a socket blip and typing between the two steps; a new block can
+  text: a `plain` piece per parent, a paragraph that can be inserted or
+  copied, never applied over the block; only clients this mount's stored
+  update rows carry count (Q410), so a peer's text typed and deleted within
+  one update the room forwards is none. This covers restored rows at mount,
+  an offline episode, a socket blip and typing between the two steps; a new
+  block can
   never be hidden, and text the room had seen and then deleted is never a
   piece. A draft send cannot see this (it holds no room state), so the
   service refuses a note's draft whose typing would land in a deleted
   holder, or next to a unit the room collected with its deleted container
-  (`ydoc::inspect`'s `hidden_units`), as `hidden` (409); the sweep holds the
-  group for the editor's next open, whose join finds it. Live typing over a
+  (`ydoc::inspect`'s `hidden_units`), as `hidden` (409); the send (a sweep's
+  or the editor's own) holds the group for the editor's next open and marks
+  its rows `hidden`: applied there, the join finds the typing; drawn on its
+  own, the group becomes `hidden` pieces (Q410). Live typing over a
   socket into a block someone just deleted is ordinary collaboration and
   admitted. Hidden typing is never an incident (Q261).
 - **Lifecycle.** The live mount's store is the sheet's, and a paused one's

@@ -1706,6 +1706,15 @@ describe('the draft sweep sending', () => {
     const later = await nextPageLoad();
     await later.sweepDrafts('u_waits', tokens(ROOM));
     expect(requests).toHaveLength(5);
+    // Review r1 V-N4 (Q410): the `hidden` group's rows say why, so the
+    // editor's next open labels its pieces typed where someone deleted.
+    const hidden = await readDrafts(keys[4]);
+    expect(hidden.every((row) => row.hidden)).toBe(true);
+    expect((await readDrafts(keys[3])).some((row) => row.hidden)).toBe(false);
+    expect(await later.draftGroups(hidden, ROOM)).toMatchObject({
+      hidden: true,
+      refused: true,
+    });
   });
 
   it('sends a group larger than a piece as pieces of at most 2 MiB, in order, and its rows go once the last is stored', async () => {

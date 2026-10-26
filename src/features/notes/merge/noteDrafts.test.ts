@@ -39,8 +39,12 @@ vi.mock('react', async (load) => ({
 }));
 const stored = vi.hoisted(() => ({
   held: [] as { name: string }[],
+  // Locks this tab holds now, and those another tab takes between this
+  // tab's query and its request.
+  locks: new Set<string>(),
   reports: [] as unknown[][],
   rows: [] as unknown[],
+  taken: [] as string[],
 }));
 vi.mock('@/lib/editIncidents', async (load) => ({
   ...(await load<typeof import('@/lib/editIncidents')>()),
@@ -67,12 +71,22 @@ import { pieceRow } from './pieceRows';
 
 const ROOM = 'material:m_1:schema:1';
 
-// Web Locks as the browser has them: the copy sessions open tabs record.
+// Web Locks as the browser has them: the copy sessions open tabs record,
+// and a request `ifAvailable` that another tab's lock refuses.
 Object.defineProperty(navigator, 'locks', {
   configurable: true,
   value: {
     query: async () => ({ held: stored.held }),
-    request: async () => undefined,
+    request: async (
+      name: string,
+      _options: unknown,
+      callback: (lock: { name: string } | null) => unknown
+    ) => {
+      if (stored.taken.includes(name)) return callback(null);
+      stored.locks.add(name);
+      await callback({ name });
+      stored.locks.delete(name);
+    },
   },
 });
 
@@ -96,7 +110,9 @@ const render = () => {
 beforeEach(() => {
   hooks.reset();
   stored.held = [];
+  stored.locks.clear();
   stored.reports = [];
+  stored.taken = [];
 });
 
 // Q326: an opening note applies its accepted sessions' rows and leaves a
@@ -153,8 +169,16 @@ it('makes every refused and other-lineage group a source, applying the current r
     lineage: 'material:m_1:schema:0',
     session: 'm',
   });
+  // Review r1 V-N4 (Q410): rows the service held as typing into a deleted
+  // block (refused here by drawing on their own) say so.
+  const hidden = state('h:state', {
+    hidden: true,
+    lineage: 'material:m_1:schema:2',
+    refused: true,
+    session: 'h',
+  });
   const live = draft('l:1', { accepted: true, session: 'l' });
-  stored.rows = [refused, moved, live];
+  stored.rows = [refused, moved, hidden, live];
   render();
   await vi.waitFor(() => expect(render()).not.toBeNull());
   const drafts = render();
@@ -164,6 +188,7 @@ it('makes every refused and other-lineage group a source, applying the current r
   ).toEqual([
     ['r:state', 'refused'],
     ['m:state', 'changed'],
+    ['h:state', 'hidden'],
   ]);
 });
 
@@ -224,4 +249,45 @@ it("leaves another open tab's copy alone and reports an unreadable one", async (
   expect(stored.reports).toEqual([
     ['draft_unrestorable', 'unreadable', broken.data.byteLength],
   ]);
+});
+
+// Merge view review r1 Q-L1 (Q410): a copy is adopted only once its lock is
+// taken, if free, and that lock stays held until the editor takes over. A
+// row another tab took after the query is that tab's: the next newest is
+// adopted, and the taken one is neither shown nor merged here.
+it('adopts a copy only with its lock, held until the editor takes it over', async () => {
+  const copy = { base: [p('a', 'A')], mine: [p('a', 'A typed')], revision: 1 };
+  const older = copyRow('older', copy, { savedAt: Date.now() - 2000 });
+  const newer = copyRow('newer', copy, { savedAt: Date.now() - 1000 });
+  stored.rows = [older, newer];
+  stored.taken = ['capy-copy:newer'];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  const drafts = render();
+  expect(drafts?.copies).toMatchObject({
+    adopted: { row: older },
+    others: [],
+  });
+  expect([...stored.locks]).toEqual(['capy-copy:older']);
+  drafts?.copies.release();
+  await vi.waitFor(() => expect(stored.locks.size).toBe(0));
+});
+
+// Q412, Q413: expiry comes first. An expired copy becomes pieces, even one
+// an open tab still holds, and never merges; only the fresh copy of another
+// closed tab is adopted, to merge at the bind.
+it('makes an expired copy pieces and merges only the fresh copy of another closed tab', async () => {
+  const copy = { base: [p('a', 'A')], mine: [p('a', 'A typed')], revision: 1 };
+  const expired = copyRow('old', copy, {
+    savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
+  });
+  const fresh = copyRow('fresh', copy, {});
+  stored.rows = [expired, fresh];
+  stored.held = [{ name: 'capy-copy:old' }];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()).toMatchObject({
+    copies: { adopted: { row: fresh }, others: [] },
+    sources: [{ copy, rows: [expired], source: 'expired' }],
+  });
 });

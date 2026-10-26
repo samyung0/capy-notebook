@@ -14,11 +14,12 @@ import {
  * `revision`) and the edited value (`mine`). The editor merges it block by
  * block at the room's first sync (blockMerge.ts); a reopened note shows the
  * newest one's edited value and goes on with its row. Each tab owns the row
- * it records (a Web Lock named by its session, review r1 M1): another tab
- * never adopts, merges or deletes it. Blocks both sides changed become the
- * merge view's pieces. Copy rows expire 7 days after they were written, as
- * other drafts do, and then become pieces whole, never merged; no sweep
- * sends them.
+ * it records (a Web Lock named by its session, review r1 M1), taken at the
+ * adoption only if free (Q410): another tab never adopts, merges or deletes
+ * it. Blocks both sides changed become the merge view's pieces. Copy rows
+ * expire 7 days after they were written, as other drafts do, and then
+ * become pieces whole, never merged, whichever tab wrote them (Q412); no
+ * sweep sends them.
  */
 export interface NoteCopy {
   base: MaterialValue;
@@ -33,13 +34,20 @@ export interface StoredCopy {
 
 /** A note's live copy rows no open tab records: the newest, which its
  * editor shows and goes on with (`adopted`), and older ones (closed tabs'),
- * merged before it. */
+ * merged before it. `release` lets go of the adopted row's lock, which the
+ * editor takes over. */
 export interface NoteCopies {
   adopted: StoredCopy | null;
   others: StoredCopy[];
+  release: () => void;
 }
 
-export const NO_COPIES: NoteCopies = { adopted: null, others: [] };
+const nothing = () => {};
+export const NO_COPIES: NoteCopies = {
+  adopted: null,
+  others: [],
+  release: nothing,
+};
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
@@ -70,6 +78,23 @@ export function holdCopy(session: string) {
   return () => release();
 }
 
+/** Takes the lock of the copy session `session` only if no tab holds it
+ * (Q410), so two tabs opening together never adopt the same row; resolves
+ * its release, or null when another tab holds it. */
+export function takeCopy(session: string) {
+  return new Promise<(() => void) | null>((answer) => {
+    navigator.locks
+      .request(`${LOCK}${session}`, { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          answer(null);
+          return;
+        }
+        return new Promise<void>((release) => answer(() => release()));
+      })
+      .catch(() => answer(null));
+  });
+}
+
 /** The copy sessions open tabs record now; null without Web Locks, when
  * none can be told apart. */
 export async function heldCopies(): Promise<Set<string> | null> {
@@ -83,10 +108,11 @@ export async function heldCopies(): Promise<Set<string> | null> {
 }
 
 /**
- * Splits a note's copy rows, leaving out those an open tab records (`held`):
- * the live ones (`copies`), those past the 7-day expiry (`expired`, which
- * become pieces) and rows that cannot be read (`unreadable`). Without Web
- * Locks (`held` null) no row is adopted: each one merges as an older copy.
+ * Splits a note's copy rows: those past the 7-day expiry first, whichever
+ * tab holds them (`expired`, which become pieces, Q412), then, leaving out
+ * those an open tab records (`held`), the live ones (`copies`) and rows that
+ * cannot be read (`unreadable`). Without Web Locks (`held` null) no row is
+ * adopted: each one merges as an older copy.
  */
 export function noteCopies(
   rows: EditDraft[],
@@ -97,16 +123,21 @@ export function noteCopies(
   const expired: StoredCopy[] = [];
   const unreadable: EditDraft[] = [];
   for (const row of rows) {
-    if (row.kind !== 'copy' || held?.has(row.session)) continue;
+    if (row.kind !== 'copy') continue;
+    const old = now - row.savedAt > DRAFT_EXPIRY_MS;
+    if (!old && held?.has(row.session)) continue;
     const copy = parse(row) as NoteCopy | null;
     if (!copy) unreadable.push(row);
-    else if (now - row.savedAt > DRAFT_EXPIRY_MS) expired.push({ copy, row });
+    else if (old) expired.push({ copy, row });
     else live.push({ copy, row });
   }
   live.sort((a, b) => a.row.savedAt - b.row.savedAt);
   const adopted = held ? (live.pop() ?? null) : null;
   return {
-    copies: adopted || live.length ? { adopted, others: live } : NO_COPIES,
+    copies:
+      adopted || live.length
+        ? { adopted, others: live, release: nothing }
+        : NO_COPIES,
     expired,
     unreadable,
   };
@@ -122,7 +153,9 @@ export const COPY_WRITE_MS = 1000;
  * with the adopted row (same id, a higher `seq`), so a reopened copy has
  * one row. A copy grown past `limitBytes` over its base (the offline bound
  * drafts keep, review r1 L2) is not written: `onLimit` locks the editor, and
- * `kept` is the last value written (null when none was).
+ * `kept` is the last value written (null when none was). An edit that
+ * inserts nodes (a paste) writes the typing before it first (Q410), so the
+ * bound drops only that edit.
  */
 export function recordCopy({
   adopted,
@@ -190,8 +223,9 @@ export function recordCopy({
     ]).catch((error) => console.warn('Draft storage failed:', error));
   };
   return {
-    edited(value: MaterialValue) {
+    edited(value: MaterialValue, inserted = false) {
       if (stopped) return;
+      if (inserted) flush();
       latest = value;
       timer ??= setTimeout(flush, COPY_WRITE_MS);
     },

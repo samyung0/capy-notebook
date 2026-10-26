@@ -119,8 +119,7 @@ import {
   type NoteCopies,
   recordCopy,
 } from './merge/copyDraft';
-import { watchHiddenTyping } from './merge/hiddenTyping';
-import { mergeOffThread } from './merge/mergeOffThread';
+import { draftClients, watchHiddenTyping } from './merge/hiddenTyping';
 import { createMergeStore, type MergeStore } from './merge/mergeStore';
 import type { NoteDrafts } from './merge/noteDrafts';
 import {
@@ -563,8 +562,8 @@ export function NoteEditorCore({
   /** The room refused this editor's copy for good (a limit, an invalid
    * document, or an update from a writer who lost access): the caller
    * remounts onto the last saved version. Unsaved edits are `kept` as a
-   * refused draft (the remount shows them for copying), or `lost` when this
-   * device could not store them. */
+   * refused draft (the remount shows them in the merge view, Q251), or
+   * `lost` when this device could not store them. */
   onDocumentRejected?: (
     code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked',
     edits: 'none' | 'kept' | 'lost'
@@ -595,16 +594,22 @@ export function NoteEditorCore({
     [collaborationToken.room]
   );
   // Typing the room never saw that a join's step 2 hides in a deleted block
-  // (Q237): armed by the room's step 1, read at each sync.
+  // (Q237): armed by the room's step 1, read at each sync. Text alone counts
+  // only from the clients of this mount's stored rows (Q410).
+  const [drafted] = useState(() => [...restored, ...pending]);
   const hiddenTyping = useMemo(
     () =>
-      watchHiddenTyping(ydoc, (origin) => {
-        const provider = roomProvider(editorRef.current);
-        return (
-          !!provider && (origin === provider || origin === provider.provider)
-        );
-      }),
-    [ydoc]
+      watchHiddenTyping(
+        ydoc,
+        (origin) => {
+          const provider = roomProvider(editorRef.current);
+          return (
+            !!provider && (origin === provider || origin === provider.provider)
+          );
+        },
+        () => draftClients(drafted)
+      ),
+    [drafted, ydoc]
   );
   useEffect(() => () => hiddenTyping.dispose(), [hiddenTyping]);
   const checkpointTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -873,8 +878,8 @@ export function NoteEditorCore({
   );
 
   // The room refused this editor's copy for good. Unsaved edits are kept as
-  // one refused draft: the remount shows them read-only for copying, never
-  // merged back.
+  // one refused draft: the remount turns them into the merge view's pieces
+  // (Q251), never merged back.
   const rejectDocument = useCallback(
     (
       code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked'
@@ -1393,12 +1398,10 @@ export function NoteEditorCore({
   // Bound at the room's first sync (roomBinding.ts): what was typed into the
   // saved copy merges into the room's document block by block (Q229), older
   // copies first, as one Undo step of ordinary edits under this session's
-  // id. The diff runs in a worker (Q397); a block changed before its steps
-  // apply is left as it is now. Blocks both sides changed become pieces, and
-  // the copies' rows go only once those are stored.
-  const bound = useRef(
-    (_unbound: MaterialValue): Promise<unknown> | undefined => undefined
-  );
+  // id, in the bind's own task (Q408), so they sync as any edit and save
+  // through the normal checkpoint (Q410). Blocks both sides changed become
+  // pieces, and the copies' rows go only once those are stored.
+  const bound = useRef((_unbound: MaterialValue) => {});
   bound.current = (unbound) => {
     store.changed();
     canApplyNow.current();
@@ -1414,32 +1417,33 @@ export function NoteEditorCore({
     if (mine && (copyEdited.current || copies.adopted))
       pairs.push({ base: copies.adopted?.copy.base ?? projection, mine });
     if (!pairs.length) return;
-    return mergeAtBind(editor, pairs, mergeOffThread).then(
-      async (merged) => {
-        // Unbound meanwhile: the rows stay for the next open's merge.
-        if (!merged) return;
-        // Unsaved like restored drafts: a bind before the first paint
-        // changes the value with no value change reported.
-        if (merged.applied) {
-          unsavedChanges.current = true;
-          saveNow.current();
-        }
-        await deleteOnceStored(
-          store.add(piecesFromConflicts(merged.conflicts, 'conflict')),
-          copyRows(own),
-          toastDraftsLost
-        );
-      },
-      (error) => {
-        // The rows stay for the next open's merge.
-        captureException(error, { tags: { component: 'note-copy-merge' } });
-      }
+    let merged: ReturnType<typeof mergeAtBind>;
+    try {
+      merged = mergeAtBind(editor, pairs);
+    } catch (error) {
+      // The rows stay for the next open's merge.
+      captureException(error, { tags: { component: 'note-copy-merge' } });
+      return;
+    }
+    // A bind before the mount's first paint (a swap's hidden build) reports
+    // no value change.
+    if (merged.applied) scheduleCheckpoint();
+    void deleteOnceStored(
+      store.add(piecesFromConflicts(merged.conflicts, 'conflict')),
+      copyRows(own),
+      toastDraftsLost
     );
   };
+  // Lets go of the copy's lock (a pause hands the row to the next mount).
+  const releaseCopy = useRef(() => {});
   useEffect(() => {
     whenBound(editor, (unbound) => bound.current(unbound as MaterialValue));
-    // This tab owns its copy row while mounted (review r1 M1).
+    // This tab owns its copy row while mounted (review r1 M1): its own lock,
+    // asked for before the adoption's lock goes (Q410), so no other tab
+    // takes the row between them.
     const release = holdCopy(copy.session);
+    copies.release();
+    releaseCopy.current = release;
     // A copy edited and not written yet goes as the page or the editor goes.
     const flush = () => copy.flush();
     window.addEventListener('pagehide', flush);
@@ -1448,7 +1452,7 @@ export function NoteEditorCore({
       flush();
       release();
     };
-  }, [copy, editor]);
+  }, [copies, copy, editor]);
 
   useEffect(() => {
     const current = roomReconnector({
@@ -1599,13 +1603,17 @@ export function NoteEditorCore({
   // document before the next room's drafts are read (a child's effects run
   // before NoteEditor's), and no reconnect. There is no way back: a paused
   // editor never goes live again, the next mount does (review I4).
+  // A paused editor never binds, so its copy is the next mount's: written,
+  // no longer recorded, and its lock let go for that mount to adopt it
+  // (Q409).
   useEffect(() => {
     if (phase !== 'paused') return;
     stale.current = true;
     if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
     reconnector.current?.dispose();
     void recorder.current?.dispose();
-    copy.flush();
+    copy.stop();
+    releaseCopy.current();
     roomProvider(editor)?.disconnect();
   }, [copy, editor, phase]);
   // Edits stop at the model first, so a composition the pause ends adds
@@ -1724,7 +1732,10 @@ export function NoteEditorCore({
         current.operations.some((op) => op.type !== 'set_selection')
       ) {
         copyEdited.current = true;
-        copy.edited(current.children as MaterialValue);
+        copy.edited(
+          current.children as MaterialValue,
+          current.operations.some((op) => op.type === 'insert_node')
+        );
       }
       scheduleCheckpoint();
       const { operations } = current;
