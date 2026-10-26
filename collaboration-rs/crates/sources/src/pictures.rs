@@ -314,6 +314,17 @@ mod tests {
         }
     }
 
+    /// The engine lists a stored picture past this side not viewable
+    /// (limits.json `inspectIds.pictureSide`, review r2 N5 of Q240 phase A).
+    #[test]
+    fn the_engine_lists_pictures_past_the_same_side() {
+        let limits: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../vendor/betteroffice/crates/office-service/limits.json"
+        ))
+        .unwrap();
+        assert_eq!(limits["inspectIds"]["pictureSide"], MAX_SIDE);
+    }
+
     #[test]
     fn a_docx_picture_past_the_long_side_or_the_cap_is_refused() {
         let room = Doc::new();

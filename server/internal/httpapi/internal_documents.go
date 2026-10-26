@@ -190,14 +190,21 @@ const (
 	officeIDBytes    = 256
 )
 
-// officeIDsRefusal says why a by-id read's ids are refused, "" when they pass.
+// officeIDsRefusal says why a by-id read's ids are refused, "" when they
+// pass: an id past its bytes, or more ids than a call reads, counted as the
+// engine repairs them (trimmed of spaces, quotes and brackets, blanks and
+// repeats dropped, Q277; review r2 N2).
 func officeIDsRefusal(ids []string) string {
-	if len(ids) > officeIDsPerCall {
-		return fmt.Sprintf("ids names at most %d pictures and charts a call; read the rest in another call.", officeIDsPerCall)
-	}
+	distinct := map[string]bool{}
 	for _, id := range ids {
 		if len(id) > officeIDBytes {
-			return fmt.Sprintf("An id is at most %d characters; copy each id whole from an earlier inspect_office_document read.", officeIDBytes)
+			return fmt.Sprintf("An id is at most %d bytes; copy each id whole from an earlier inspect_office_document read.", officeIDBytes)
+		}
+		if id = strings.TrimSpace(strings.Trim(strings.TrimSpace(id), "[]\"'`")); id != "" {
+			distinct[id] = true
+		}
+		if len(distinct) > officeIDsPerCall {
+			return fmt.Sprintf("ids names at most %d pictures and charts a call; read the rest in another call.", officeIDsPerCall)
 		}
 	}
 	return ""

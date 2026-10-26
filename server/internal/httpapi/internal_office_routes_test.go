@@ -19,6 +19,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -127,16 +128,21 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 
 	// Security regression (Epo 2026-10-26, Q381; review r1 L4): more ids
 	// than a call takes, or an id past its bytes, is refused before the
-	// authority is called.
+	// authority is called; ids are counted as the engine repairs them, so a
+	// repeat, a quoted copy or a blank does not count (review r2 N2).
 	long := strings.Repeat("x", httpapi.OfficeIDBytes+1)
-	for _, ids := range [][]string{{"a", "b", "c", "d", "e"}, {"a", long}} {
+	for _, ids := range [][]string{{"a", "b", "c", "d", "e"}, {"a", long}, {"a", "b", "c", "d", " [`e`] "}} {
 		rec = inspect(xlsx, map[string]any{"ids": ids})
 		if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "invalid_input" {
-			t.Fatalf("ids %d = %d %s", len(ids), rec.Code, rec.Body.String())
+			t.Fatalf("ids %q = %d %s", ids, rec.Code, rec.Body.String())
 		}
 	}
 	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 5 {
 		t.Fatalf("refused ids reached the authority: %v", sent)
+	}
+	rec = inspect(xlsx, map[string]any{"ids": []string{"a", "a", `"b"`, "c", " ", "[d]"}})
+	if rec.Code != http.StatusOK || len(authority.sent("/internal/documents/inspect")) != 6 {
+		t.Fatalf("repeated, quoted and blank ids = %d %s", rec.Code, rec.Body.String())
 	}
 
 	rec = inspect(xlsx, nil)
@@ -383,7 +389,9 @@ func TestOfficeRetryWaitsForTheRunningAttempt(t *testing.T) {
 	}
 }
 
-// The ids a by-id read takes in Go are the engine's per-call limit.
+// The ids a by-id read takes in Go are the engine's per-call limit, and the
+// side past which the engine lists a picture not viewable is the upload
+// check's (review r2 N5).
 func TestOfficeIDsPerCallIsTheEngines(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", agenttools.OfficeLimitsPath))
 	if err != nil {
@@ -391,10 +399,14 @@ func TestOfficeIDsPerCallIsTheEngines(t *testing.T) {
 	}
 	var limits struct {
 		InspectIDs struct {
-			PerCall int `json:"perCall"`
+			PerCall     int `json:"perCall"`
+			PictureSide int `json:"pictureSide"`
 		} `json:"inspectIds"`
 	}
 	if err := json.Unmarshal(data, &limits); err != nil || limits.InspectIDs.PerCall != httpapi.OfficeIDsPerCall {
 		t.Fatalf("limits.json inspectIds.perCall = %d (%v), Go takes %d", limits.InspectIDs.PerCall, err, httpapi.OfficeIDsPerCall)
+	}
+	if limits.InspectIDs.PictureSide != imagecheck.MaxSide {
+		t.Fatalf("limits.json inspectIds.pictureSide = %d, the upload check takes %d", limits.InspectIDs.PictureSide, imagecheck.MaxSide)
 	}
 }

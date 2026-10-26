@@ -4754,7 +4754,7 @@ retried create gives the same bytes. The engine has every XLSX command above
 (`crates/office-service/src/pptx/agent.rs`).
 
 Pictures and charts (Epo 2026-10-24, Q240, Q275 to Q280, Q283, Q284;
-2026-10-26, Q381; phase A, the engine, gateway and lane: the tool's
+2026-10-26, Q381, Q384; phase A, the engine, gateway and lane: the tool's
 argument, its renderers and the pictures' images come with phase B, so the
 tool shows none of this yet). The engine's reads list them: a DOCX page puts
 a paragraph's in `objects` (a picture, a chart, `{kind: "equation", text}`,
@@ -4767,16 +4767,25 @@ part the sheet list cannot read is skipped and named in that sheet's
 `notice`, the rest of the list read, as the workbook skips its charts
 (review r1 M1). A read reads each chart part and each picture header once
 however many objects name it (`objects::Parts`; review r1 M3); a DOCX
-picture's header is decoded from the first 256 KiB of its data URL and its
-bytes only when a by-id read sends them. A picture shows `id`, `alt` (1,000
+picture's header is decoded from the first 1 MiB of its data URL (as much
+as Go's upload check reads) and its bytes only when a by-id read sends them. A picture shows `id`, `alt` (1,000
 characters), `pixels` from its header (`[width, height]`; nothing is
 decoded, Q279), `crop` as fractions of the image each side leaves out (a
 side that is no finite number reads as 0), and `viewable`, or `viewable:
 false` with a `reason`: an EMF or WMF drawing, an SVG without the PNG Office
 stores beside it (an SVG with it is read as that PNG), linked to a file
-outside this one, damaged or unknown data, over 2,400 pixels on its long
-side (the upload check's limit, Q286, so a picture stored before that check
-never reaches the AI process's decode; Q381), too large to send. A PPTX
+outside this one, damaged or unknown data (a media part that does not read,
+such as a wrong checksum, included; review r2 N4), its size cannot be read
+(a header naming no size, such as a TIFF's), over 2,400 pixels on its long
+side (limits.json `inspectIds.pictureSide`, the upload check's limit, Q286,
+which Go's limits test and the sources crate's `pictures` tests keep equal;
+a GIF sized by the larger of its logical screen and its first frame), too
+large to send (a media part read no further than the answer's bytes). The
+size rules follow the upload check (Q381, Q384), so a picture stored before
+that check whose header names a size past it, or none, is not sent; the
+header is all the engine reads, so a file whose header understates its
+pixels still reaches the AI process, whose pixel guard comes with phase B. A
+PPTX
 picture takes its file picture's alt text and crop only while it shows that
 picture's media (a picture added in the editor has none; review r1 L5). A
 chart shows `chartType` (`column`, `bar`, `line`, `pie` …, a combination
@@ -4792,9 +4801,14 @@ workbook). An XLSX chart's `refs` and `cell` are the workbook's current ones
 own when the workbook does not hold the chart), and its points and series
 name are read from the cells those references name now
 (`xlsx_parse::chart_reference_area`, `with_chart_refs`), `count` being the
-cells its values reference names; a reference that does not read (a union,
-a defined name, another book, a two-dimensional range) shows no points and
-a `reason` instead of the file's cached ones (Q381). An XLSX picture's or
+cells its values reference names and `more` the points past those shown
+plus the positions past the cells read; a reference that does not read (a union, a defined name, another
+book, a two-dimensional range such as a multi-level category axis) shows
+nothing of its part instead of the file's cached one (Q381): without its
+values the series shows no points and a `reason`; without its name or
+categories it keeps its values, that part empty and the `reason` on the
+series (Q384). A frame's chart is read once per sheet a call. An XLSX
+picture's or
 drawn shape's `cell` is its anchor moved along the rows and columns edited
 since, as a save moves it (`Workbook::source_axes`). Ids: a PPTX picture's
 or chart's shape id; DOCX `<story>:picture:<client>.<clock>` and
@@ -4809,8 +4823,9 @@ answer, `postCollaboration`, less 4 KiB for the inspection around it). The
 answer is `items` in the order asked, a picture's with its `mimeType` and
 `data` (its stored bytes, base64) besides its read fields, a not-viewable
 picture's with its alt text and `reason`, a chart's with every point, and a
-`notice` naming the ids not found and why, the ids past the per-call count,
-the pictures past the answer's bytes ("a read carries at most 6 MB of
+`notice` naming the ids not found and why, the ids past the per-call count
+(which Go refuses first, so only another caller meets it), the pictures past
+the answer's bytes ("a read carries at most 6 MB of
 pictures; read them in another call"), and the points (`cut` on a series)
 and series (`seriesCut`) that did not fit, measured as JSON writes them
 (review r1 L4). Ids are trimmed of spaces, quotes and the brackets a read
@@ -4820,7 +4835,8 @@ is named in the notice (`Not found: <id> is no longer in the deck`, `… is a
 malformed picture or chart id; picture and chart ids read like …`; Q381);
 only a call naming no id at all is refused (`invalid_input`). An XLSX by-id
 read takes pictures from the package's drawing, relationship and media parts
-alone (`xlsx_drawing::by_ids`, `ooxml_opc::read_part`) without opening the
+alone (`xlsx_drawing::by_ids`, `ooxml_opc::Package`: the package opened once
+a call and its part names indexed once, review r2 L3) without opening the
 workbook (2 to 9 s on large books), its items carrying no `cell` (the sheet
 list has it); a call naming a chart opens the workbook over the state, since
 a chart's points are its cells. Of the state the package path reads only the
@@ -4830,8 +4846,10 @@ no longer lists it. DOCX and PPTX by-id reads open the session over the base
 and that state as their reads do, so a picture added or removed in the
 editor answers as the read lists it. Go passes `office.ids` alone to the
 inspect route (`internal_documents.go`), after refusing more ids than the
-engine's per-call limit or an id over 256 bytes (`officeIDsRefusal`, 422
-`invalid_input`, before the authority is called; Q381). There a by-id read is
+engine's per-call limit, counted as the engine repairs them (trimmed,
+blanks and repeats dropped; review r2 N2), or an id over 256 bytes
+(`officeIDsRefusal`, 422 `invalid_input`, before the authority is called;
+Q381). There a by-id read is
 busy (an `unavailable_target` refusal, 409, the agent reads to ask again;
 not a 503) when its room's background engine process already holds 4 queued
 calls (`IDS_READ_QUEUE`, `EnginePool::admit`, counted per process, checked
