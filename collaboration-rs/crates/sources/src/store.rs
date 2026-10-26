@@ -115,6 +115,9 @@ pub struct Loaded {
     pub bytes: u64,
     /// The room's state cap ([`crate::state_cap`]).
     pub state_cap: u64,
+    /// The largest plan image cap (`plan_limits.image_max_bytes`), the byte
+    /// limit of a picture a Word or PowerPoint edit adds ([crate::pictures]).
+    pub image_cap: u64,
     /// An Office room's seed state vector: deleting what it holds frees
     /// nothing in the stored change (`ydoc::apply_freeing`).
     pub seed: Option<StateVector>,
@@ -187,6 +190,9 @@ pub(crate) struct Stored {
     /// The largest plan source file (`plan_limits`), which publication's
     /// export may not exceed.
     pub(crate) export_cap: u64,
+    /// The largest plan image cap (`plan_limits`), the picture limit on Word
+    /// and PowerPoint edits.
+    pub(crate) image_cap: u64,
 }
 
 /// A rebase onto new bytes; none (no save after the capture) leaves the
@@ -551,7 +557,7 @@ impl Sources {
             .map_err(db_error)?;
         let row = txn
             .query_opt(
-                "SELECT d.state,d.state_seed_sha256,d.checkpoint,d.epoch,d.base_revision,(SELECT max(source_file_max_bytes) FROM plan_limits) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
+                "SELECT d.state,d.state_seed_sha256,d.checkpoint,d.epoch,d.base_revision,(SELECT max(source_file_max_bytes) FROM plan_limits),(SELECT max(image_max_bytes) FROM plan_limits) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
                 &[&file_id],
             )
             .await
@@ -575,6 +581,10 @@ impl Sources {
             export_cap: row
                 .get::<_, Option<i64>>(5)
                 .ok_or_else(|| SourceError::Other("plan_limits has no source file cap".into()))?
+                as u64,
+            image_cap: row
+                .get::<_, Option<i64>>(6)
+                .ok_or_else(|| SourceError::Other("plan_limits has no image cap".into()))?
                 as u64,
             rows: rows
                 .into_iter()
@@ -709,6 +719,7 @@ impl Sources {
             checkpoint: stored.checkpoint,
             bytes: layers.iter().map(|layer| layer.len() as u64).sum(),
             state_cap,
+            image_cap: stored.image_cap,
             seed: office(session.format).map(|_| seeded),
             base_bytes: stored.state.as_ref().map_or(0, |state| state.len() as u64),
             rows: stored.rows.len() as u64,
@@ -1267,9 +1278,10 @@ impl Sources {
             state_seed_sha256: row.get(2),
             checkpoint: row.get::<_, i64>(3) as u64,
             epoch: epoch as u64,
-            // A fold checks neither.
+            // A fold checks none of these.
             base_revision: 0,
             export_cap: 0,
+            image_cap: 0,
             rows: rows
                 .into_iter()
                 .map(|row| (row.get::<_, i64>(0) as u64, row.get(1)))
@@ -1409,6 +1421,17 @@ impl Sources {
             .map(|query| crate::edit::parse(query, "office query"))
             .transpose()?;
         let session = self.gateway.session(file_id, actor).await?;
+        // The by-id read is busy before any download when its room's
+        // engine already holds a queue (the Editor's lane calls).
+        if query.as_ref().is_some_and(|query| query.ids.is_some()) {
+            self.engines
+                .admit(
+                    crate::engine::Lane::Background,
+                    &session.room,
+                    crate::engine::office::calls::IDS_READ_QUEUE,
+                )
+                .map_err(crate::edit::office_error)?;
+        }
         let job = Job::default();
         let (base, sha) = self.bound_base(&session, Reader::Job(&job)).await?;
         let mut layers = self.durable_layers(&session, &base, &sha, &job).await?;

@@ -185,7 +185,7 @@ func TestWorkspaceIconPersistsAndClonesWithMemberPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for actor, role := range map[string]WorkspaceRole{owner: RoleOwner, editor: RoleEditor, visitor: ""} {
-		public, err := s.ListPublicWorkspaces(ctx, actor)
+		public, _, err := s.ListPublicWorkspaces(ctx, actor, "")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -165,9 +165,7 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("member growth = %d body=%s, want created on the member's own quota", rec.Code, rec.Body.String())
 	}
-	comment := map[string]any{"anchorVersion": 1, "contentRich": []any{map[string]any{
-		"type": "p", "children": []any{map[string]any{"text": "x"}},
-	}}}
+	comment := map[string]any{"anchorVersion": 1, "text": "x"}
 	for _, side := range []struct {
 		h     http.Handler
 		actor string
@@ -257,9 +255,7 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 // deleting, narrowing and chat stay open.
 func TestFrozenOwnersItemsAreReadOnly(t *testing.T) {
 	f := overQuotaFixture(t, 20)
-	comment := map[string]any{"anchorVersion": 1, "contentRich": []any{map[string]any{
-		"type": "p", "children": []any{map[string]any{"text": "x"}},
-	}}}
+	comment := map[string]any{"anchorVersion": 1, "text": "x"}
 
 	for _, side := range []struct {
 		h       http.Handler
@@ -555,6 +551,8 @@ func chatKeepsReadAndDeleteTools(t *testing.T, lapsedDays int) {
 		}
 		want = append(want, string(op))
 	}
+	// The shared library is read with every chat.
+	want = append(want, string(agenttools.OpLibraryRead))
 	if got := chat(owner); !slices.Equal(got, want) {
 		t.Fatalf("over-quota owner's chat operations = %v, want %v", got, want)
 	}

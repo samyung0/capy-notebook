@@ -143,8 +143,3 @@ INSERT INTO notifications (id, user_id, kind, data, at, read_at) VALUES
   ('nt_2', 'u_1', 'system', '{"code":"model_deprecated","fromName":"Previous model","toName":"GLM-5.3 Flash"}', now()-interval '5 hour', NULL),
   ('nt_3', 'u_1', 'system', '{"code":"pending_edits_too_large","fileId":"f_1","fileName":"Lecture notes"}', now()-interval '1 day', now()-interval '1 day')
 ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO canvases (id, user_id, name, updated_at) VALUES
-  ('cv_1', 'u_1', 'Bio mind map',     now()-interval '4 hour'),
-  ('cv_2', 'u_1', 'Essay brainstorm', now()-interval '2 day')
-ON CONFLICT (id) DO NOTHING;

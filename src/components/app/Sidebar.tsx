@@ -76,15 +76,6 @@ function tools(): NavItem[] {
     ...(features.tasks
       ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
       : []),
-    ...(features.thinking
-      ? [
-          {
-            icon: 'notes' as IconName,
-            label: m.nav_thinking(),
-            to: '/thinking',
-          },
-        ]
-      : []),
   ];
 }
 

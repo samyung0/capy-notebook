@@ -1,6 +1,7 @@
 import { isApiError } from '@/api/client';
 import type {
   ActivityBlock,
+  ChatWaitingPhase,
   ResourceEffect,
   ResourceEffectOperation,
 } from '@/api/types';
@@ -23,7 +24,14 @@ export type StepState = 'running' | 'done' | 'failed' | 'unknown' | 'stopped';
 
 export type TraceRow =
   | { type: 'narration'; id: string; text: string }
-  | { type: 'thinking'; id: string; running: boolean; seconds?: number }
+  | {
+      type: 'thinking';
+      id: string;
+      running: boolean;
+      seconds?: number;
+      /** The live row of a turn waiting for the limiter or an AI slot. */
+      waiting?: ChatWaitingPhase;
+    }
   | { type: 'step'; id: string; tool: ToolBlock; state: StepState }
   /** Two or more finished calls of one tool in a row. */
   | { type: 'group'; id: string; name: string; tools: ToolBlock[] }
@@ -71,6 +79,7 @@ const ICONS: Record<string, ActivityIconKind> = {
   resolve_source_change: 'edit',
   restore_file: 'restore',
   search_knowledge: 'search',
+  search_web: 'search',
   search_workspace: 'search',
   trash_file: 'trash',
   write_slide: 'edit',
@@ -199,6 +208,13 @@ const COPY: Record<string, Copy> = {
     group: (count) => m.chat_step_search_library_group({ count }),
     run: (label) => m.chat_step_search_library_run({ label }),
   },
+  // Draft copy for Epo's review (2026-10-24).
+  search_web: {
+    done: (label) => m.chat_step_search_web_done({ label }),
+    fail: () => m.chat_step_search_web_fail(),
+    group: (count) => m.chat_step_search_web_group({ count }),
+    run: (label) => m.chat_step_search_web_run({ label }),
+  },
   search_workspace: {
     done: (label) => m.chat_step_search_sources_done({ label }),
     fail: () => m.chat_step_search_sources_fail(),
@@ -228,7 +244,11 @@ const OTHER: Copy = {
   run: () => m.chat_step_other_run(),
 };
 
-const SEARCHES = new Set(['search_workspace', 'search_knowledge']);
+const SEARCHES = new Set([
+  'search_workspace',
+  'search_knowledge',
+  'search_web',
+]);
 
 /** A tool's copy; an edit that created its file (edit_office_document's
  * create) reads as create_material's does. */
@@ -275,6 +295,37 @@ export function stepTitle(
   }
 }
 
+/** The commands a finished call left unapplied: an Office edit the engine
+ * cut at a per-call limit that no later edit of its file in the turn
+ * followed (Epo 2026-10-23, Q171). */
+function notApplied(tool: ToolBlock): number {
+  return tool.outcome && tool.applied !== undefined && tool.total !== undefined
+    ? tool.total - tool.applied
+    : 0;
+}
+
+/** A running call's progress after its sentence: "30 of 32". */
+export function stepProgress(
+  tool: ToolBlock,
+  state: StepState
+): string | undefined {
+  if (
+    state === 'running' &&
+    tool.applied !== undefined &&
+    tool.total !== undefined
+  )
+    return m.chat_step_progress({ applied: tool.applied, total: tool.total });
+}
+
+/** A finished call's warning icon text: "2 commands not applied". */
+export function unappliedWarning(tool: ToolBlock): string | undefined {
+  const left = notApplied(tool);
+  if (left <= 0) return;
+  return left === 1
+    ? m.chat_step_not_applied_one()
+    : m.chat_step_not_applied({ count: left });
+}
+
 export function groupTitle(name: string, count: number): string {
   return (COPY[name] ?? OTHER).group(count);
 }
@@ -314,6 +365,8 @@ export interface TraceInput {
   stopped: boolean;
   /** The model is between steps (after the Thinking delay). */
   thinking: boolean;
+  /** The turn is waiting for the limiter or an AI slot. */
+  waiting?: ChatWaitingPhase;
 }
 
 /** Turns a message's activity into trace rows: thinking gaps from the step
@@ -324,6 +377,7 @@ export function buildTrace({
   live,
   stopped,
   thinking,
+  waiting,
   receipts = true,
 }: TraceInput): TraceRow[] {
   const tools = activity.filter(
@@ -362,7 +416,13 @@ export function buildTrace({
     first = false;
     since = time(tool.endedAt ?? tool.startedAt);
 
-    const state = stepState(tool, tool === lastOpen, stopped);
+    // A call reporting progress runs until its outcome, even while a later
+    // one runs: a cut Office edit waits for the next edit of its file.
+    const state = stepState(
+      tool,
+      tool === lastOpen || (live && tool.total !== undefined),
+      stopped
+    );
     const effects = tool.effects ?? [];
     if (receipts && effects.length) {
       if (effects.some((effect) => isCreated(tool, effect))) {
@@ -379,6 +439,7 @@ export function buildTrace({
       }
       if (
         state === 'done' &&
+        !notApplied(tool) &&
         effects.every((effect) => created.has(effect.resource.id))
       )
         continue;
@@ -400,7 +461,11 @@ export function buildTrace({
     }
     rows.push({ id: tool.id, state, tool, type: 'step' });
   }
-  if (thinking) rows.push({ id: 'thinking', running: true, type: 'thinking' });
+  if (waiting) {
+    rows.push({ id: 'waiting', running: true, type: 'thinking', waiting });
+  } else if (thinking) {
+    rows.push({ id: 'thinking', running: true, type: 'thinking' });
+  }
   return groupSteps(rows);
 }
 

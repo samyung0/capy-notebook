@@ -59,13 +59,15 @@ type documentRequest struct {
 // OfficeQuery scopes an Office read: for XLSX no range lists the sheets, a
 // sheet and a range read those cells; for DOCX a page of count paragraphs
 // from start; for PPTX no slide is a page of count slides from start, a
-// slide (its number) that slide's shapes and a page of its paragraphs.
+// slide (its number) that slide's shapes and a page of its paragraphs. IDs
+// (any format) reads those pictures and charts instead.
 type OfficeQuery struct {
-	Sheet string `json:"sheet,omitempty"`
-	Range string `json:"range,omitempty"`
-	Start int    `json:"start,omitempty"`
-	Count int    `json:"count,omitempty"`
-	Slide int    `json:"slide,omitempty"`
+	Sheet string   `json:"sheet,omitempty"`
+	Range string   `json:"range,omitempty"`
+	Start int      `json:"start,omitempty"`
+	Count int      `json:"count,omitempty"`
+	Slide int      `json:"slide,omitempty"`
+	IDs   []string `json:"ids,omitempty"`
 }
 
 // MaterialInspection is the authority's editable view of a material.
@@ -160,9 +162,9 @@ func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path str
 }
 
 // authorityFailure is an authority answer that is neither a success nor a
-// refusal the agent acts on. A room being reset or compacted (503
-// unavailable_target) refused the edit before anything applied, so it is an
-// expected outcome: the authority logs it and the gateway does not report it.
+// refusal the agent acts on. A room being reset (503 unavailable_target)
+// refused the edit before anything applied, so it is an expected outcome:
+// the authority logs it and the gateway does not report it.
 func authorityFailure(response *http.Response, code, message string) error {
 	err := obs.WithEventID(fmt.Errorf("%w: %s", ErrAuthorityUnavailable, message), response.Header.Get(obs.ErrorEventHeader))
 	if response.StatusCode == http.StatusServiceUnavailable && code == string(agenttools.ErrUnavailableTarget) {

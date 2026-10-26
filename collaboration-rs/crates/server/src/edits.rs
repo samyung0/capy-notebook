@@ -10,6 +10,7 @@
 //! (`ydoc::undo`, Epo 2026-10-20); an edit made with no room loaded has no
 //! Undo.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use notes::edit::{DocumentCommand, EditError, EditOutcome};
@@ -418,6 +419,23 @@ async fn live_state(app: &Shared, room: &str) -> Option<Vec<u8>> {
     tokio::time::timeout(SNAPSHOT_WAIT, answer).await.ok()?.ok()
 }
 
+/// The client ids bound to a loaded room's live channels (r2 N7): a
+/// session's id is unrecorded until its first write, and a scratch id avoids
+/// it too. An unloaded room has none.
+async fn live_ids(app: &Shared, room: &str) -> HashSet<u64> {
+    let Some(handle) = app.rooms.get(room) else {
+        return HashSet::new();
+    };
+    let (reply, answer) = oneshot::channel();
+    if handle.tx.send(RoomCmd::LiveIds(reply)).await.is_err() {
+        return HashSet::new();
+    }
+    match tokio::time::timeout(SNAPSHOT_WAIT, answer).await {
+        Ok(Ok(live)) => live,
+        _ => HashSet::new(),
+    }
+}
+
 /// One document a server edit changed: its row, the cover it makes, what
 /// its live room lacks of it, and the edit's own items when that room was
 /// loaded (its Undo).
@@ -482,13 +500,18 @@ struct Scratch {
 }
 
 impl Scratch {
-    fn new(base: &[u8], rows: &[Vec<u8>], live: Option<&[u8]>) -> Result<Scratch, String> {
+    fn new(
+        base: &[u8],
+        rows: &[Vec<u8>],
+        live: Option<&[u8]>,
+        assigned: &HashSet<u64>,
+    ) -> Result<Scratch, String> {
         let stored = ydoc::scratch_doc();
         ydoc::replay(&stored, base, rows).map_err(|error| error.to_string())?;
         let held = stored.transact().state_vector();
         let doc = loop {
             let doc = ydoc::scratch_doc();
-            if held.get(&doc.client_id()) == 0 {
+            if held.get(&doc.client_id()) == 0 && !assigned.contains(&doc.client_id().get()) {
                 break doc;
             }
         };
@@ -548,6 +571,21 @@ impl Scratch {
 }
 
 /// A quiz's keys document base and log, under the caller's snapshot.
+/// The client ids assigned to users in a material's documents (Q213): a
+/// server edit's scratch id avoids them (Q226).
+async fn assigned_ids(
+    tx: &deadpool_postgres::Transaction<'_>,
+    material_id: &str,
+) -> Result<HashSet<u64>, DocumentError> {
+    let rows = tx
+        .query(
+            "SELECT client_id FROM material_yjs_client_ids WHERE material_id=$1",
+            &[&material_id],
+        )
+        .await?;
+    Ok(rows.iter().map(|row| row.get::<_, i64>(0) as u64).collect())
+}
+
 async fn quiz_keys(
     tx: &deadpool_postgres::Transaction<'_>,
     material_id: &str,
@@ -658,12 +696,18 @@ fn compute(
     kind: String,
     commands: Vec<DocumentCommand>,
     quiz: Option<QuizInput>,
+    assigned: &HashSet<u64>,
 ) -> Result<Computed, DocumentError> {
     let unknown = |error: String| DocumentError::Unknown(error);
-    let scratch = Scratch::new(&base, &rows, live.as_deref()).map_err(unknown)?;
+    let scratch = Scratch::new(&base, &rows, live.as_deref(), assigned).map_err(unknown)?;
     if let Some(quiz) = quiz {
-        let keys =
-            Scratch::new(&quiz.keys.0, &quiz.keys.1, quiz.live_keys.as_deref()).map_err(unknown)?;
+        let keys = Scratch::new(
+            &quiz.keys.0,
+            &quiz.keys.1,
+            quiz.live_keys.as_deref(),
+            assigned,
+        )
+        .map_err(unknown)?;
         let cost = undo_cost(
             &commands,
             &[
@@ -833,7 +877,7 @@ pub async fn edit_material(
         return Ok(receipt);
     }
     access::lock_material(&tx, &material_id).await?;
-    access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor)).await?;
+    access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor), &[]).await?;
     access::assert_access(&tx, &material_id, &actor, crate::auth::Access::Write).await?;
     let select = "SELECT d.state, d.room_schema, d.stored_version, m.kind
                   FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
@@ -882,10 +926,14 @@ pub async fn edit_material(
     } else {
         None
     };
-    let computed =
-        tokio::task::spawn_blocking(move || compute(base, rows, live, kind, commands, quiz))
-            .await
-            .map_err(|error| DocumentError::Unknown(error.to_string()))??;
+    let mut assigned = assigned_ids(&tx, &material_id).await?;
+    assigned.extend(live_ids(app, &room).await);
+    assigned.extend(live_ids(app, &keys_room).await);
+    let computed = tokio::task::spawn_blocking(move || {
+        compute(base, rows, live, kind, commands, quiz, &assigned)
+    })
+    .await
+    .map_err(|error| DocumentError::Unknown(error.to_string()))??;
     if over_update_cap(&computed.writes) {
         return Err(DocumentError::Quota(UPDATE_TOO_LARGE.into()));
     }
@@ -1052,6 +1100,7 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         &tx,
         &material_id,
         std::slice::from_ref(&command.actor_user_id),
+        &[],
     )
     .await
     .map_err(|error| error.to_string())?;
@@ -1121,8 +1170,13 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     } else {
         None
     };
+    let mut assigned = assigned_ids(&tx, &material_id)
+        .await
+        .map_err(|error| error.message().to_owned())?;
+    assigned.extend(live_ids(app, &room).await);
+    assigned.extend(live_ids(app, &keys_room).await);
     let computed = tokio::task::spawn_blocking(move || -> Result<Option<Computed>, String> {
-        replace_on(base, rows, live, kind, &command, quiz)
+        replace_on(base, rows, live, kind, &command, quiz, &assigned)
     })
     .await
     .map_err(|error| error.to_string())??;
@@ -1216,7 +1270,15 @@ async fn send_writes(
 /// The Undo ref of an agent edit every room it wrote took: stored on the
 /// receipt, then shown on it (a receipt whose ref did not store has none).
 async fn offer_undo(app: &Shared, operation_id: &str, receipt: &mut Value) {
-    let undo = json!({ "operationId": operation_id, "status": "available" });
+    // Offered until 24 h after the edit (Q385): the chat hides it then.
+    let Some(until) = app.agent_steps.until(operation_id) else {
+        return;
+    };
+    let undo = json!({
+        "operationId": operation_id,
+        "status": "available",
+        "expiresAt": observe::iso(until),
+    });
     let Ok(client) = app.db.get().await else {
         return;
     };
@@ -1241,10 +1303,16 @@ fn replace_on(
     kind: String,
     command: &notes::commands::ReplaceBlock,
     quiz: Option<QuizInput>,
+    assigned: &HashSet<u64>,
 ) -> Result<Option<Computed>, String> {
-    let scratch = Scratch::new(&base, &rows, live.as_deref())?;
+    let scratch = Scratch::new(&base, &rows, live.as_deref(), assigned)?;
     if let Some(quiz) = quiz {
-        let keys = Scratch::new(&quiz.keys.0, &quiz.keys.1, quiz.live_keys.as_deref())?;
+        let keys = Scratch::new(
+            &quiz.keys.0,
+            &quiz.keys.1,
+            quiz.live_keys.as_deref(),
+            assigned,
+        )?;
         let questions = items::quiz::block_questions(&command.replacement_block)?;
         let computed = compute_quiz(&scratch, &keys, |content, keys| {
             items::quiz::set_questions(content, keys, &questions)
@@ -1445,6 +1513,15 @@ async fn ask_room(
 async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     let request: UndoRequest = serde_json::from_slice(body)
         .map_err(|_| DocumentError::Invalid("invalid undo request".into()))?;
+    // A step ends as a whole once any of its rooms' 24 h passed (Q389): a
+    // quiz's rooms stamp it apart, and neither reverts alone.
+    let ended = app
+        .agent_steps
+        .until(&request.undo_of)
+        .is_some_and(|until| until <= std::time::SystemTime::now());
+    if ended {
+        return Err(undo_unavailable("this edit can no longer be undone"));
+    }
     let mut rooms = app.agent_steps.rooms(&request.undo_of);
     if rooms.is_empty() {
         // Reverted already: a request repeated after a lost answer gets the
@@ -1503,7 +1580,9 @@ async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     }
     let holding = app.agent_steps.rooms(&kept);
     let reversible = reverted.iter().all(|room| holding.contains(room));
-    Ok(json!({ "operationId": kept, "reversible": reversible }))
+    // Its reverse is offered as long as the edit's step was (Q385).
+    let expires = app.agent_steps.until(&kept).map(observe::iso);
+    Ok(json!({ "operationId": kept, "reversible": reversible, "expiresAt": expires }))
 }
 
 /// Reverts each room's revert again (its step under `step` once more), in
@@ -1610,6 +1689,8 @@ pub async fn document(app: &Shared, path: &str, body: &[u8]) -> Result<Value, Do
 mod tests {
     #![allow(clippy::unwrap_used)]
 
+    use std::collections::HashSet;
+
     use serde_json::json;
 
     use super::{DocumentError, Model, Scratch, Write, compute, compute_quiz, over_update_cap};
@@ -1675,6 +1756,7 @@ mod tests {
             "note".into(),
             vec![insert],
             None,
+            &HashSet::new(),
         )
         .err();
         assert!(
@@ -1707,6 +1789,7 @@ mod tests {
                     expected_text: expected,
                 }],
                 None,
+                &HashSet::new(),
             )
         };
         let computed = remove(
@@ -1750,8 +1833,8 @@ mod tests {
                 },
             }] })];
             let (content, keys) = items::quiz::states_from_value(&value, 0);
-            let content = Scratch::new(&content, &[], None).unwrap();
-            let keys = Scratch::new(&keys, &[], None).unwrap();
+            let content = Scratch::new(&content, &[], None, &HashSet::new()).unwrap();
+            let keys = Scratch::new(&keys, &[], None, &HashSet::new()).unwrap();
             compute_quiz(&content, &keys, |_, _| {
                 Ok(notes::edit::EditOutcome::default())
             })
@@ -1783,8 +1866,8 @@ mod tests {
         let value =
             [json!({ "type": "quiz", "id": "quiz", "children": [question("q1"), question("q2")] })];
         let (content, keys) = items::quiz::states_from_value(&value, 0);
-        let content = Scratch::new(&content, &[], None).unwrap();
-        let keys = Scratch::new(&keys, &[], None).unwrap();
+        let content = Scratch::new(&content, &[], None, &HashSet::new()).unwrap();
+        let keys = Scratch::new(&keys, &[], None, &HashSet::new()).unwrap();
         let remove = notes::edit::DocumentCommand::RemoveChild {
             parent_type: "quiz".into(),
             node_id: "q2".into(),
@@ -1834,8 +1917,16 @@ mod tests {
             live_keys: Some(keys.to_vec()),
         });
         let live = Some(base.to_vec());
-        let computed =
-            compute(base.to_vec(), Vec::new(), live, kind.into(), commands, quiz).ok()?;
+        let computed = compute(
+            base.to_vec(),
+            Vec::new(),
+            live,
+            kind.into(),
+            commands,
+            quiz,
+            &HashSet::new(),
+        )
+        .ok()?;
         let cost = computed.undo_cost;
         let sent = computed
             .writes

@@ -301,6 +301,39 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
     )
 
 
+def test_minimax_runs_on_together_then_wafer_at_the_chat_pins_effort():
+    """Q224: MiniMax 3.1 Flash runs on Together, then Wafer (Epo 2026-10-25), and its
+    thinking levels map onto OpenRouter's efforts."""
+    spec = _spec(
+        provider_slug="openrouter",
+        model_slug="minimax/minimax-m3.1-flash",
+        byok_enabled=False,
+        thinking_levels=("low", "mid", "high"),
+        slots=("chat",),
+    )
+    body = openrouter_request(
+        spec,
+        [{"role": "user", "content": "q"}],
+        temperature=0.2,
+        tools=None,
+        response_format=None,
+        max_tokens=None,
+        thinking="mid",
+        stream=True,
+        tool_choice=None,
+    )
+    assert body["model"] == "minimax/minimax-m3.1-flash"
+    assert body["provider"] == {
+        "order": ["together", "wafer"],
+        "allow_fallbacks": False,
+    }
+    assert body["reasoning"] == {"effort": "medium"}
+    assert body["temperature"] == 0.2
+    for level in ("", "instant", "max"):
+        with pytest.raises(RegistryError, match="MiniMax supports only"):
+            openrouter_reasoning(spec, level)
+
+
 def test_an_openrouter_slug_without_a_provider_pin_is_refused():
     spec = _spec(provider_slug="openrouter", model_slug="deepseek/deepseek-v4.1-flash")
     with pytest.raises(RegistryError, match="deepseek/deepseek-v4.1-flash"):

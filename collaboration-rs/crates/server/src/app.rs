@@ -2,7 +2,7 @@
 //! counters for `collab_health` and `/metrics`.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -32,6 +32,10 @@ pub struct Outbox {
     /// The largest frame this socket's rooms handed it so far.
     largest: Arc<AtomicUsize>,
     overflow: Arc<tokio::sync::Notify>,
+    /// A frame was dropped: nothing more goes out on this socket, which
+    /// closes (review r1 M1), so no later frame (a `stored` notice) reaches
+    /// a reader that lacks the dropped one.
+    dropped: Arc<AtomicBool>,
 }
 
 /// The least a socket's outgoing queue holds before its reader counts as
@@ -47,6 +51,7 @@ impl Outbox {
                 queued: Arc::default(),
                 largest: Arc::default(),
                 overflow: Arc::default(),
+                dropped: Arc::default(),
             },
             rx,
         )
@@ -55,8 +60,12 @@ impl Outbox {
     /// Queues a frame, or flags a reader too slow: one whose backlog passed
     /// max(4 MiB, the largest frame its rooms can send, as seen so far)
     /// before this frame (Epo 2026-10-08). A frame itself always fits, so a
-    /// joiner's whole-state answer goes out.
+    /// joiner's whole-state answer goes out. Once one was dropped, every
+    /// later one is too.
     pub fn frame(&self, frame: Bytes) {
+        if self.dropped.load(Ordering::Relaxed) {
+            return;
+        }
         let largest = self
             .largest
             .fetch_max(frame.len(), Ordering::Relaxed)
@@ -64,6 +73,7 @@ impl Outbox {
         let backlog = self.queued.fetch_add(frame.len(), Ordering::Relaxed);
         if backlog > OUTBOX_FLOOR.max(largest) {
             self.queued.fetch_sub(frame.len(), Ordering::Relaxed);
+            self.dropped.store(true, Ordering::Relaxed);
             self.overflow.notify_one();
             return;
         }
@@ -241,7 +251,7 @@ pub struct Stats {
     pub awareness: AtomicU64,
     pub log_bytes: AtomicU64,
     /// Draft sends refused, by `drafts::Class` (its index in `Class::ALL`).
-    pub draft_refusals: [AtomicU64; 9],
+    pub draft_refusals: [AtomicU64; 10],
     /// JOINs and draft sends refused for their client protocol: material
     /// rooms, then source rooms (stale tabs left after a deploy).
     pub outdated_refusals: [AtomicU64; 2],
@@ -298,14 +308,17 @@ pub struct App {
 
 /// The agent edits (and their Undo and Redo steps) whose Yjs items a loaded
 /// room holds for the live Undo (`ydoc::undo`, Epo 2026-10-20): each step's
-/// id and the rooms holding its parts (a quiz: its content and keys rooms).
-/// A room's steps go when it unloads.
+/// id, the rooms holding its parts (a quiz: its content and keys rooms) and
+/// when it stops being offered, 24 h after its agent edit (Q385). A room's
+/// steps go when it unloads.
 #[derive(Default)]
 pub struct AgentSteps(Mutex<Steps>);
 
 #[derive(Default)]
 struct Steps {
     held: HashMap<String, Vec<String>>,
+    /// When each held step stops being offered.
+    until: HashMap<String, std::time::SystemTime>,
     /// Steps rooms reverted, by those rooms: they answer a request repeated
     /// after a lost answer (`Room::agent_undo`).
     reverted: HashMap<String, Vec<String>>,
@@ -325,14 +338,24 @@ impl AgentSteps {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// `room` holds a part of step `id`.
-    pub fn hold(&self, id: &str, room: &str) {
-        add(&mut self.steps().held, id, room);
+    /// `room` holds a part of step `id`, offered until `until` (the earliest
+    /// of its rooms').
+    pub fn hold(&self, id: &str, room: &str, until: std::time::SystemTime) {
+        let mut steps = self.steps();
+        add(&mut steps.held, id, room);
+        let at = steps.until.entry(id.to_owned()).or_insert(until);
+        *at = (*at).min(until);
     }
 
-    /// The rooms holding step `id` (none: no Undo).
+    /// The rooms holding step `id` (none: no Undo, or past its 24 h: its
+    /// rooms released it).
     pub fn rooms(&self, id: &str) -> Vec<String> {
         self.steps().held.get(id).cloned().unwrap_or_default()
+    }
+
+    /// When step `id` stops being offered.
+    pub fn until(&self, id: &str) -> Option<std::time::SystemTime> {
+        self.steps().until.get(id).copied()
     }
 
     /// The rooms that reverted step `id`.
@@ -341,7 +364,9 @@ impl AgentSteps {
     }
 
     pub fn forget(&self, id: &str) {
-        self.steps().held.remove(id);
+        let mut steps = self.steps();
+        steps.held.remove(id);
+        steps.until.remove(id);
     }
 
     /// `room` no longer holds a part of step `id`.
@@ -351,6 +376,7 @@ impl AgentSteps {
             rooms.retain(|held| held != room);
             if rooms.is_empty() {
                 steps.held.remove(id);
+                steps.until.remove(id);
             }
         }
     }
@@ -368,6 +394,8 @@ impl AgentSteps {
         for map in [&mut steps.held, &mut steps.reverted] {
             map.retain(|_, rooms| !rooms.iter().any(|held| held == room));
         }
+        let held = &steps.held;
+        steps.until.retain(|id, _| held.contains_key(id));
     }
 }
 
@@ -416,5 +444,26 @@ mod outbox_tests {
             draining.sent(1024 * 1024);
         }
         assert!(!overflowed(&draining));
+    }
+
+    /// Review r1 M1: once a frame was dropped, nothing later is queued,
+    /// even after the writer drained, so a `stored` notice never follows a
+    /// broadcast its reader missed. Fails if frames queue again.
+    #[test]
+    fn nothing_goes_out_after_a_dropped_frame() {
+        let (outbox, mut rx) = Outbox::new();
+        for _ in 0..4 {
+            outbox.frame(Bytes::from(vec![0; 1024 * 1024]));
+        }
+        outbox.frame(Bytes::from(vec![0; 1]));
+        outbox.frame(Bytes::from(vec![0; 1]));
+        assert!(overflowed(&outbox));
+        outbox.sent(4 * 1024 * 1024 + 1);
+        outbox.frame(Bytes::from(vec![0; 1]));
+        let mut queued = 0;
+        while rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, 5);
     }
 }

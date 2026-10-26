@@ -16,6 +16,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
+	"github.com/samyung0/capy-notebook/server/internal/integrations"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -41,6 +42,7 @@ type webhookStore interface {
 	GrantTopUp(ctx context.Context, userID, checkoutSessionID, paymentIntentID string, amountCents int64) (bool, []string, error)
 	MarkReloadVoid(ctx context.Context, invoiceID string) error
 	SavePaymentMethod(ctx context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error
+	GrantStarterCredits(ctx context.Context, userID, cardKey string) (bool, error)
 	MarkReloadPaid(ctx context.Context, purchaseID, invoiceID, paymentIntentID string) error
 	MarkReloadFailed(ctx context.Context, purchaseID, invoiceID string, nextAttempt time.Time, declineReason string) error
 	ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) (string, error)
@@ -49,6 +51,7 @@ type webhookStore interface {
 	RetryingReloadInvoices(ctx context.Context, userID string) ([]string, error)
 	ReloadRetryUnwanted(ctx context.Context, invoiceID string) (bool, error)
 	ArmReload(ctx context.Context, userID string) error
+	ForgetCreditCheckout(ctx context.Context, sessionID string) error
 }
 
 var errStripeSubscriptionNotReady = errors.New("stripe subscription mapping is not ready")
@@ -225,6 +228,8 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 	eventUserID := identity.UserID
 	if strings.HasPrefix(evt.Type, "user.") {
 		eventUserID = identity.ID
+		// A linked or unlinked account shows at once, not after the cache.
+		integrations.ForgetClerkUser(eventUserID)
 	}
 	claimUserID := eventUserID
 	if strings.HasPrefix(evt.Type, "user.") {
@@ -326,6 +331,15 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"message": "invalid signature"})
 		return
 	}
+	// Any event about a customer (an invoice created, finalized, paid,
+	// failed or voided, a Checkout completed) drops its cached invoice list,
+	// so the Invoices page shows the change at once; replays drop it too.
+	var about struct {
+		Customer *stripe.Customer `json:"customer"`
+	}
+	if json.Unmarshal(event.Data.Raw, &about) == nil && about.Customer != nil {
+		a.invoices.drop(about.Customer.ID)
+	}
 
 	claim, done, err := a.wh.ClaimWebhookEvent(
 		r.Context(), event.ID, "stripe", string(event.Type), "", event.Data.Raw,
@@ -424,6 +438,9 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 			if procErr == nil && subscription != nil {
 				procErr = a.wh.UpsertSubscription(r.Context(), billing.SubscriptionRecord(
 					subscription, userID, a.cfg.StripePricePro, event.Created))
+			}
+			if procErr == nil {
+				procErr = a.grantSubscriptionStarter(r.Context(), userID, sess.Subscription.ID)
 			}
 		}
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
@@ -615,6 +632,10 @@ func (a *api) creditCheckoutCompleted(
 	if err := a.wh.AssociateWebhookEvent(ctx, "stripe", eventID, claim, userID); err != nil {
 		return false, err
 	}
+	// A finished page is never handed out again.
+	if err := a.wh.ForgetCreditCheckout(ctx, sess.ID); err != nil {
+		return true, err
+	}
 	if kind == billing.KindReloadMethod {
 		if sess.SetupIntent == nil {
 			return true, nil
@@ -624,6 +645,9 @@ func (a *api) creditCheckoutCompleted(
 			return true, err
 		}
 		if err := a.wh.SavePaymentMethod(ctx, userID, pm, false); err != nil {
+			return true, err
+		}
+		if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
 			return true, err
 		}
 		// A new card ends Stripe's retries of the old one.
@@ -648,7 +672,24 @@ func (a *api) creditCheckoutCompleted(
 	if err := a.wh.SavePaymentMethod(ctx, userID, pm, true); err != nil {
 		return true, err
 	}
+	if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
+		return true, err
+	}
 	return true, a.voidReloadsAndPublish(ctx, userID, retrying)
+}
+
+// grantSubscriptionStarter gives the starter credits for the card a Pro
+// Checkout saved, when it is the account's first.
+func (a *api) grantSubscriptionStarter(ctx context.Context, userID, subscriptionID string) error {
+	pm, err := a.stripeSubscriptionMethod(subscriptionID)
+	if err != nil {
+		return err
+	}
+	granted, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey)
+	if granted {
+		a.publishBillingChanged(ctx, userID)
+	}
+	return err
 }
 
 // voidReloadsAndPublish ends the retries a top-up or new card replaces, then

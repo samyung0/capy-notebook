@@ -33,7 +33,6 @@ const stubs = Object.fromEntries(
     'Plot',
     'Curve',
     'RefLine',
-    'Mermaid',
     'HtmlEmbed',
     'AskUser',
   ].map((name) => [name, stub])

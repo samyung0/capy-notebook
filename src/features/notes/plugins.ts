@@ -103,7 +103,7 @@ import {
   type RenderNodeWrapper,
 } from 'platejs/react';
 import { createElement } from 'react';
-import { LIST_INDENT_MAX } from '@/features/materials/document';
+import { isStyleValue, LIST_INDENT_MAX } from '@/features/materials/document';
 import { m } from '@/i18n';
 import { editorAiEnabled } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
@@ -130,7 +130,11 @@ import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
 import { navigationFeedbackPlugin } from './navigationFeedback';
-import { FONT_SIZE_NODE_PROPS } from './nodeStyles';
+import {
+  FONT_SIZE_NODE_PROPS,
+  INDENT_NODE_PROPS,
+  STYLE_MARK_NODE_PROPS,
+} from './nodeStyles';
 import { pastedImagesPlugin } from './pastedImages';
 import {
   NoteParagraphPlugin,
@@ -207,7 +211,7 @@ function TodoListItem({
 
 const IndentListKit = [
   IndentPlugin.configure({
-    inject: { targetPlugins: listTargets },
+    inject: { nodeProps: INDENT_NODE_PROPS, targetPlugins: listTargets },
     options: { indentMax: LIST_INDENT_MAX, offset: 24 },
   }),
   ListPlugin.configure({
@@ -270,7 +274,9 @@ const IndentListKit = [
               className: 'relative m-0 ml-6 p-0',
               start: element.listStart,
               style: {
-                listStyleType: element.listStyleType,
+                listStyleType: isStyleValue(element.listStyleType)
+                  ? element.listStyleType
+                  : undefined,
                 marginLeft: element.indent
                   ? `${element.indent * 24}px`
                   : undefined,
@@ -610,10 +616,19 @@ export const MaterialKit: AnyPlugin[] = [
     options: { triggerPreviousCharPattern: /^$|^[\s"']$/ },
   }),
   MentionInputPlugin.withComponent(MentionInputElement),
-  FontColorPlugin,
-  FontBackgroundColorPlugin,
-  FontSizePlugin.configure({ inject: { nodeProps: FONT_SIZE_NODE_PROPS } }),
-  FontFamilyPlugin.configure({ inject: { targetPlugins: [KEYS.p] } }),
+  // Text marks: an element carrying one is refused, and none is drawn.
+  FontColorPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+  }),
+  FontBackgroundColorPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+  }),
+  FontSizePlugin.configure({
+    inject: { isLeaf: true, nodeProps: FONT_SIZE_NODE_PROPS },
+  }),
+  FontFamilyPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+  }),
   TextAlignPlugin.configure({
     inject: {
       nodeProps: {

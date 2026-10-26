@@ -68,10 +68,14 @@ vi.mock('@/api/client', async (load) => ({
 
 import {
   applyDrafts,
+  DRAFT_EXPIRY_MS,
   deleteDocumentDrafts,
   deleteDrafts,
   draftBytes,
   draftGroups,
+  draftSender,
+  draftSendTimeout,
+  dropExpiredGroup,
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
@@ -83,11 +87,18 @@ import {
   recoveryDocument,
   reportRecoveryGroup,
   sameSourceLineage,
+  splitOpenDrafts,
   sweepDrafts,
 } from './editDrafts';
 
 const ROOM = 'material:mat_1:schema:1';
 const REMOTE = Symbol('room');
+
+/** A room token offering `clientId` (`tag` tells two apart); only its
+ * payload is read in the browser. */
+function grant(clientId: number, tag = '') {
+  return `h.${btoa(JSON.stringify({ clientId, tag }))}.s`;
+}
 
 /** A room and one client synced to it, as the provider leaves them. */
 function syncedClient(text: string) {
@@ -105,7 +116,7 @@ function draft(id: string, overrides: Partial<EditDraft> = {}): EditDraft {
     key: 'u_1:material:mat_1',
     kind: 'update',
     lineage: ROOM,
-    savedAt: 0,
+    savedAt: Date.now(),
     seq: 1,
     session: id,
     ...overrides,
@@ -296,8 +307,10 @@ describe('the draft store', () => {
     ]);
     const report = vi.fn();
     const group = () =>
-      readDrafts(key).then((rows) => draftGroups(rows, ROOM).recovery);
-    reportRecoveryGroup(await group(), report);
+      readDrafts(key).then(
+        async (rows) => (await draftGroups(rows, ROOM)).recovery
+      );
+    reportRecoveryGroup(await group(), report, false);
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'other_epoch_draft',
       'reopen',
@@ -309,15 +322,24 @@ describe('the draft store', () => {
     expect(reopened.every((row) => row.reported)).toBe(true);
     reportRecoveryGroup(
       reopened.map((row) => ({ ...row, id: `${row.id}:next-load` })),
-      report
+      report,
+      false
     );
     expect(report).toHaveBeenCalledOnce();
     // A refused group was recorded by the service.
-    reportRecoveryGroup(
-      [draft('refused', { key, lineage: ROOM, refused: true })],
-      report
-    );
+    const refused = draft('refused', { key, lineage: ROOM, refused: true });
+    reportRecoveryGroup([refused], report, true);
     expect(report).toHaveBeenCalledOnce();
+    // Held rows shown copy-only beside it were never sent (Q360).
+    const held = draft('held', {
+      data: new Uint8Array(4),
+      held: true,
+      key,
+      lineage: ROOM,
+    });
+    reportRecoveryGroup([refused, held], report, true);
+    expect(report).toHaveBeenLastCalledWith('other_epoch_draft', 'held', 4);
+    expect(report).toHaveBeenCalledTimes(2);
   });
 
   it('fails a request whose database open is blocked instead of waiting for it', async () => {
@@ -554,19 +576,19 @@ describe('the drafts worker failing', () => {
 });
 
 describe('lineage', () => {
-  it('merges only the current lineage and shows one other group, refused rows first', () => {
+  it('merges only the current lineage and shows one other group, refused rows first', async () => {
     const rows = [
       draft('old-1', { lineage: 'material:mat_1:schema:1' }),
       draft('refused', { refused: true }),
       draft('old-2', { lineage: 'material:mat_1:schema:1' }),
-      draft('live', { lineage: 'material:mat_1:schema:2' }),
+      draft('live', { accepted: true, lineage: 'material:mat_1:schema:2' }),
     ];
-    const opened = draftGroups(rows, 'material:mat_1:schema:2');
+    const opened = await draftGroups(rows, 'material:mat_1:schema:2');
     expect(opened.current.map((row) => row.id)).toEqual(['live']);
     expect(opened.recovery.map((row) => row.id)).toEqual(['old-1', 'old-2']);
     // Once that group is gone, the refused row opens in recovery too: it is
     // never current even in its own lineage.
-    const later = draftGroups(
+    const later = await draftGroups(
       rows.filter((row) => !opened.recovery.includes(row)),
       ROOM
     );
@@ -574,23 +596,62 @@ describe('lineage', () => {
     expect(later.recovery.map((row) => row.id)).toEqual(['refused']);
   });
 
-  it('keeps same-epoch text drafts current across published base hashes', () => {
+  it('keeps same-epoch text drafts current across published base hashes', async () => {
     const text = sameSourceLineage('text');
     const rows = [
-      draft('old-hash', { lineage: 'source:t:epoch:2@old' }),
+      draft('old-hash', { accepted: true, lineage: 'source:t:epoch:2@old' }),
       draft('older-epoch', { lineage: 'source:t:epoch:1@old' }),
     ];
-    const opened = draftGroups(rows, 'source:t:epoch:2@new', text);
+    const opened = await draftGroups(rows, 'source:t:epoch:2@new', text);
     expect(opened.current.map((row) => row.id)).toEqual(['old-hash']);
     expect(opened.recovery.map((row) => row.id)).toEqual(['older-epoch']);
     // Office compares the base too.
     expect(
-      draftGroups(
-        rows,
-        'source:t:epoch:2@new',
-        sameSourceLineage('docx')
+      (
+        await draftGroups(
+          rows,
+          'source:t:epoch:2@new',
+          sameSourceLineage('docx')
+        )
       ).recovery.map((row) => row.id)
     ).toEqual(['old-hash']);
+  });
+
+  // Late merge M5 (Epo 2026-10-24), by session (review r1 L4): a session's
+  // rows expire 7 days after its last edit and open once copy-only, never as
+  // current rows, while another session's newer rows in the lineage stay
+  // current. Fails if the expiry groups a lineage or ignores old rows.
+  it('opens a session whose last edit is over 7 days old as an expired group', async () => {
+    const now = Date.now();
+    const old = now - DRAFT_EXPIRY_MS - 1;
+    const rows = [
+      draft('dead:1', { accepted: true, savedAt: old - 5, session: 'dead' }),
+      draft('live:1', { accepted: true, savedAt: now - 1000, session: 'live' }),
+      draft('dead:2', { accepted: true, savedAt: old, session: 'dead' }),
+    ];
+    const opened = await draftGroups(rows, ROOM, undefined, now);
+    expect(opened).toMatchObject({ expired: true, refused: false });
+    expect(opened.current.map((row) => row.id)).toEqual(['live:1']);
+    expect(opened.recovery.map((row) => row.id)).toEqual(['dead:1', 'dead:2']);
+    // One recent edit keeps its session's rows current.
+    const recent = draft('dead:3', {
+      accepted: true,
+      savedAt: now - 1000,
+      session: 'dead',
+    });
+    const kept = await draftGroups([rows[0], recent], ROOM, undefined, now);
+    expect(kept.expired).toBe(false);
+    expect(kept.current.map((row) => row.id)).toEqual(['dead:1', 'dead:3']);
+  });
+
+  it('drops an expired group it opened, reporting its bytes', async () => {
+    const key = 'u_expired:material:mat_1';
+    const rows = [draft('gone', { data: new Uint8Array([1, 2, 3]), key })];
+    await putDrafts(rows);
+    const report = vi.fn();
+    dropExpiredGroup(rows, report);
+    expect(report).toHaveBeenCalledWith('draft_unrestorable', 'expired', 3);
+    await vi.waitFor(async () => expect(await readDrafts(key)).toEqual([]));
   });
 
   it('cannot draw update rows whose base was never stored', () => {
@@ -629,7 +690,10 @@ function noteRecorder(
 describe('recording a note session', () => {
   it('keeps offline edits across a reload and syncs them into the same room', async () => {
     const key = 'u_1:material:reload';
-    const { client, recorder, room } = noteRecorder(key, 'shared ');
+    // The session's token goes with its rows (Q288).
+    const { client, recorder, room } = noteRecorder(key, 'shared ', {
+      token: () => grant(1),
+    });
     // A remote update is the room's own: never recorded.
     Y.applyUpdate(client, Y.encodeStateAsUpdate(room), REMOTE);
     expect(recorder.sequence).toBe(0);
@@ -642,7 +706,7 @@ describe('recording a note session', () => {
 
     // The tab reloads: a fresh client applies the rows, then syncs.
     const reopened = new Y.Doc();
-    const { current, recovery } = draftGroups(rows, ROOM);
+    const { current, recovery } = await draftGroups(rows, ROOM);
     expect(recovery).toEqual([]);
     applyDrafts(reopened, current, 'restore');
     Y.applyUpdate(
@@ -702,6 +766,60 @@ describe('recording a note session', () => {
     expect(reopened.getText('content').toString()).toBe(text.toString());
     await recorder.covered(recorder.sequence);
     expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it("keeps the session's last room token on its rows, and a merged run keeps each (Q288)", async () => {
+    const key = 'u_1:material:grants';
+    let token: string | undefined;
+    const { client } = noteRecorder(key, 'base ', { token: () => token });
+    const text = client.getText('content');
+    text.insert(text.length, 'a');
+    token = 'token-1';
+    for (let index = 0; index < 30; index++) text.insert(text.length, 'b');
+    token = 'token-2';
+    for (let index = 0; index < 33; index++) text.insert(text.length, 'c');
+    const rows = await readDrafts(key);
+    // The first 64 edits merged into one row holding both tokens.
+    expect(rows.find((row) => row.seq === 64)?.grants).toEqual([
+      'token-1',
+      'token-2',
+    ]);
+    expect(rows.find((row) => row.seq === 1)).toBeUndefined();
+  });
+
+  it('keeps the stored version the tab reported on each row, and a merged run its oldest (in-place collection)', async () => {
+    const key = 'u_1:material:versions';
+    let version = 4;
+    const { client } = noteRecorder(key, 'base ', { version: () => version });
+    const text = client.getText('content');
+    text.insert(text.length, 'a');
+    version = 7;
+    for (let index = 0; index < 64; index++) text.insert(text.length, 'b');
+    const rows = await readDrafts(key);
+    // The first 64 edits merged into one row: its oldest version.
+    expect(rows.find((row) => row.seq === 64)?.version).toBe(4);
+    expect(rows.find((row) => row.seq === 65)?.version).toBe(7);
+  });
+
+  it("marks a session's rows accepted at the first receipt covering one of its own edits, not an adopted row's (Q326)", async () => {
+    const key = 'u_1:material:accepted';
+    const adopted = draft('earlier:1', { data: new Uint8Array(), key });
+    const { client, recorder } = noteRecorder(key, 'base ', {
+      adopted: [adopted],
+    });
+    const text = client.getText('content');
+    text.insert(text.length, 'a');
+    text.insert(text.length, 'b');
+    // Edit 1 is the adopted rows: covering it says nothing of this session.
+    await recorder.covered(1);
+    expect((await readDrafts(key)).some((row) => row.accepted)).toBe(false);
+    await recorder.covered(2);
+    const left = await readDrafts(key);
+    expect(left.map((row) => row.seq)).toEqual([3]);
+    expect(left.every((row) => row.accepted)).toBe(true);
+    // Rows written from now on say so too.
+    text.insert(text.length, 'c');
+    expect((await readDrafts(key)).every((row) => row.accepted)).toBe(true);
   });
 
   it('restores online edits without a base once the room sync brings it', async () => {
@@ -778,6 +896,40 @@ describe('recording a note session', () => {
     expect(recorder.unsaved).toBe(true);
     await recorder.covered(recorder.sequence);
     expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it('reports adopted rows the room cannot place before a receipt deletes them (Q237, Q360)', async () => {
+    const key = 'u_1:material:unplaceable';
+    const { client: elsewhere } = syncedClient('base');
+    let update: Uint8Array = new Uint8Array();
+    elsewhere.on('update', (next: Uint8Array) => {
+      update = next;
+    });
+    elsewhere.getText('content').insert(4, ' typed');
+    const held = draft('earlier:1', { data: update, key, session: 'earlier' });
+    await putDrafts([held]);
+    // The room never had the base those steps grew from.
+    const { client } = syncedClient('other');
+    applyDrafts(client, [held], 'restore');
+    const report = vi.fn();
+    const lost = vi.fn();
+    const recorder = recordDrafts({
+      adopted: [held],
+      doc: client,
+      ignore: (origin) => origin === REMOTE,
+      key,
+      limitBytes: 1024 * 1024,
+      lineage: ROOM,
+      onLost: lost,
+      report,
+    });
+    await recorder.covered(recorder.sequence);
+    expect(await readDrafts(key)).toEqual([]);
+    expect(report.mock.calls).toEqual([
+      ['draft_unrestorable', 'base_missing', draftBytes([held])],
+    ]);
+    // The user hears it too (r6 N1).
+    expect(lost).toHaveBeenCalledOnce();
   });
 
   it('writes the whole document at unmount only when unsaved work outgrew it', async () => {
@@ -990,6 +1142,23 @@ describe('recording a note session', () => {
     ]);
   });
 
+  it('reports no offline episode for a draft send hold, even with the browser offline in it (Q360)', async () => {
+    const key = 'u_1:material:held-episode';
+    const report = vi.fn();
+    const { client, recorder } = noteRecorder(key, '', { report });
+    recorder.disconnected(true);
+    recorder.disconnected();
+    client.getText('content').insert(0, 'held');
+    await readDrafts(key);
+    recorder.connected();
+    // The next episode is an editing one again.
+    recorder.disconnected();
+    recorder.connected();
+    expect(report.mock.calls.map(([kind]) => kind)).toEqual([
+      'offline_episode',
+    ]);
+  });
+
   it('keeps a refused session as one whole refused document', async () => {
     const key = 'u_1:material:refused';
     const { client, recorder } = noteRecorder(key, 'kept ');
@@ -1001,7 +1170,7 @@ describe('recording a note session', () => {
     expect(rows.map((row) => [row.kind, row.refused])).toEqual([
       ['state', true],
     ]);
-    const { current, recovery } = draftGroups(rows, ROOM);
+    const { current, recovery } = await draftGroups(rows, ROOM);
     expect(current).toEqual([]);
     const shown = new Y.Doc();
     applyDrafts(shown, recovery, 'recovery');
@@ -1061,7 +1230,7 @@ describe('recording a source session', () => {
     expect(await readDraftBase(key, 'sha')).toEqual(new Uint8Array([7]));
     // The rows draw the document in another lineage too.
     expect(
-      recoveryDocument(draftGroups(rows, MOVED).recovery)
+      recoveryDocument((await draftGroups(rows, MOVED)).recovery)
         ?.getText('source')
         .toString()
     ).toBe('one two three four five');
@@ -1161,8 +1330,9 @@ describe('recording a source session', () => {
     );
     const report = vi.fn();
     reportRecoveryGroup(
-      draftGroups(await readDrafts(key), MOVED).recovery,
-      report
+      (await draftGroups(await readDrafts(key), MOVED)).recovery,
+      report,
+      false
     );
     expect(report).not.toHaveBeenCalled();
   });
@@ -1176,7 +1346,7 @@ describe('recording a source session', () => {
     );
     // The pause ended without a new epoch: the next open adopts the marked
     // rows as current, types, and closes before a receipt.
-    const adopted = draftGroups(await readDrafts(key), SOURCE).current;
+    const adopted = (await draftGroups(await readDrafts(key), SOURCE)).current;
     const doc = new Y.Doc();
     applyDrafts(doc, adopted, 'restore');
     const recorder = recordDrafts({
@@ -1192,14 +1362,14 @@ describe('recording a source session', () => {
     await recorder.dispose();
     // The file then moves on: the group holds the marked row and the new
     // update and state.
-    const group = draftGroups(await readDrafts(key), MOVED).recovery;
+    const group = (await draftGroups(await readDrafts(key), MOVED)).recovery;
     expect(group.map((row) => !!row.reported).sort()).toEqual([
       false,
       false,
       true,
     ]);
     const report = vi.fn();
-    reportRecoveryGroup(group, report);
+    reportRecoveryGroup(group, report, false);
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'other_epoch_draft',
       'reopen',
@@ -1378,6 +1548,33 @@ describe('the draft sweep sending', () => {
     ]);
   });
 
+  // Review r1 L4: an expired session's rows wait for the next open while a
+  // newer session's rows of the same lineage go. Fails if they go with them
+  // or keep them back.
+  it('sends no session whose last edit is over 7 days old, and keeps its rows for the next open', async () => {
+    const key = 'u_old:material:mat_1';
+    const old = new Y.Doc();
+    old.getText('content').insert(0, 'old');
+    await putDrafts([
+      draft('old:state', {
+        data: Y.encodeStateAsUpdate(old),
+        key,
+        kind: 'state',
+        savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
+        session: 'old',
+      }),
+    ]);
+    await leftRows(key);
+    requests.length = 0;
+    storeNext();
+    await sweepDrafts('u_old', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, requests[0].body);
+    expect(doc.getText('content').toString()).toBe('base typed');
+    expect((await readDrafts(key)).map((row) => row.id)).toEqual(['old:state']);
+  });
+
   it('skips a document an editor has open, and sends it once the editor closed', async () => {
     const key = 'u_open:material:mat_1';
     await leftRows(key);
@@ -1441,26 +1638,27 @@ describe('the draft sweep sending', () => {
     await later.sweepDrafts('u_refused', api);
     expect(requests).toHaveLength(2);
     expect(
-      later.draftGroups(await readDrafts(bare), ROOM).current
+      (await later.draftGroups(await readDrafts(bare), ROOM)).current
     ).toHaveLength(1);
   });
 
   it('leaves a group only the editor can send for its next open, without sending it again', async () => {
-    const keys = ['too_large', 'unheld', 'lineage'].map(
+    const keys = ['too_large', 'unheld', 'unassigned', 'lineage'].map(
       (_, index) => `u_waits:material:mat_${index}`
     );
     for (const key of keys) await leftRows(key);
     requests.length = 0;
     answer(413, 'too_large');
     answer(409, 'unheld');
+    answer(409, 'unassigned');
     answer(409, 'lineage');
     await sweepDrafts('u_waits', tokens(ROOM));
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(4);
     for (const key of keys)
       expect((await readDrafts(key)).every((row) => row.held)).toBe(true);
     const later = await nextPageLoad();
     await later.sweepDrafts('u_waits', tokens(ROOM));
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(4);
   });
 
   it('sends a group larger than a piece as pieces of at most 2 MiB, in order, and its rows go once the last is stored', async () => {
@@ -1632,14 +1830,16 @@ describe('the draft sweep sending', () => {
     expect((await readDrafts(key)).every((row) => row.held)).toBe(true);
     // The file moved on: the next open shows the group as another epoch's
     // draft, and it is reported (human/frontend/office-files.md 2026-10-05).
-    const group = draftGroups(
-      await readDrafts(key),
-      'source:f_1:epoch:2@sha_b',
-      sameSourceLineage('docx')
+    const group = (
+      await draftGroups(
+        await readDrafts(key),
+        'source:f_1:epoch:2@sha_b',
+        sameSourceLineage('docx')
+      )
     ).recovery;
     expect(group).toHaveLength(2);
     const report = vi.fn();
-    reportRecoveryGroup(group, report);
+    reportRecoveryGroup(group, report, false);
     expect(report).toHaveBeenCalledExactlyOnceWith(
       'other_epoch_draft',
       'reopen',
@@ -1697,6 +1897,239 @@ describe('the draft sweep sending', () => {
     await sweepDrafts('u_switch', api, { current: () => signedIn });
     expect(requests).toHaveLength(0);
     expect(await readDrafts(key)).toHaveLength(2);
+  });
+
+  it("splits an opening editor's rows: accepted ones apply, never-accepted ones with a token send, held or tokenless ones open copy-only when they draw, else apply (Q326, Q360)", async () => {
+    const doc = new Y.Doc();
+    doc.getText('content').insert(0, 'base');
+    const whole = Y.encodeStateAsUpdate(doc);
+    const before = Y.encodeStateVector(doc);
+    doc.getText('content').insert(4, ' typed');
+    const typed = Y.encodeStateAsUpdate(doc, before);
+    // The drafts worker decides what draws, from the stored rows (r5 N5).
+    const key = 'u_split:material:mat_1';
+    const accepted = draft('a:1', { accepted: true, held: true, key });
+    const sent = draft('b:1', { grants: [grant(7)], key });
+    const held = draft('c:1', {
+      data: whole,
+      grants: [grant(8)],
+      held: true,
+      key,
+    });
+    const bare = draft('d:1', { data: whole, key, kind: 'state' });
+    const needsBase = draft('e:1', { data: typed, held: true, key });
+    await putDrafts([accepted, sent, held, bare, needsBase]);
+    const drawn = await draftGroups([accepted, sent, held, bare], ROOM);
+    expect(drawn.recovery).toEqual([held, bare]);
+    expect(drawn.refused).toBe(true);
+    expect(splitOpenDrafts(drawn.current)).toEqual({
+      apply: [accepted],
+      send: [sent],
+    });
+    // Steps that need the room's document: the editor applies them.
+    const applied = await draftGroups([accepted, sent, needsBase], ROOM);
+    expect(applied.recovery).toEqual([]);
+    expect(splitOpenDrafts(applied.current)).toEqual({
+      apply: [accepted, needsBase],
+      send: [sent],
+    });
+    // The worker decides from what is stored: rows it cannot read stay
+    // current, never drawn on the main thread.
+    const unstored = draft('f:1', { data: whole, key, kind: 'state' });
+    expect((await draftGroups([unstored], ROOM)).current).toEqual([unstored]);
+  });
+
+  it("sends a closed offline tab's never-accepted rows with its stored token under the tab's id, until stored or held (Q319, Q326)", async () => {
+    const editor = {
+      access: 'write' as const,
+      room: ROOM,
+      token: 'editor-token',
+      url: 'wss://collab.test',
+    };
+    for (const [key, refusal] of [
+      ['u_open:material:mat_1', null],
+      ['u_open:material:mat_2', 'unassigned'],
+    ] as const) {
+      // The tab typed offline only, then closed.
+      const tab = grant(41, key);
+      const { client, recorder } = noteRecorder(key, 'base ', {
+        token: () => tab,
+      });
+      recorder.disconnected();
+      client.getText('content').insert(5, 'offline');
+      await recorder.dispose();
+      // An accepted session's row is the editor's to apply: never sent.
+      await putDrafts([draft(`accepted-${key}`, { accepted: true, key })]);
+      requests.length = 0;
+      if (refusal) answer(409, refusal);
+      else storeNext();
+      const sender = draftSender(key, async () => editor);
+      await sender.settled;
+      expect(sender.kept).toBe(!!refusal);
+      expect(requests).toHaveLength(1);
+      const [sent] = requests;
+      expect(sent.headers.get('authorization')).toBe('Bearer editor-token');
+      expect(sent.headers.get('x-capy-grants')).toBe(tab);
+      // The edits go as the tab wrote them, under its own client id.
+      expect(
+        Y.decodeUpdate(sent.body).structs.some(
+          (struct) => struct.id.client === client.clientID
+        )
+      ).toBe(true);
+      const left = (await readDrafts(key)).filter((row) => !row.accepted);
+      if (refusal) {
+        // Still refused under that id: held, so the next open shows it
+        // copy-only (Q360).
+        expect(left.length).toBeGreaterThan(0);
+        expect(left.every((row) => row.held)).toBe(true);
+        expect((await draftGroups(left, ROOM)).recovery).toEqual(left);
+      } else expect(left).toEqual([]);
+    }
+  });
+
+  const roomToken = async () => ({
+    access: 'write' as const,
+    room: ROOM,
+    token: 'room-token',
+    url: 'wss://collab.test',
+  });
+
+  // Q328: a send whose answer was lost goes again, at once when the browser
+  // is back online; the room takes the old steps again as a no-op (Q321).
+  it('sends again after a lost answer, at once when the browser came back online during the try, and settles on the next answer (Q360)', async () => {
+    const key = 'u_lost:material:mat_1';
+    await putDrafts(
+      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
+    );
+    requests.length = 0;
+    const calls = fetchDrafts.mock.calls.length;
+    let lose = () => {};
+    fetchDrafts.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          lose = () => reject(new TypeError('Failed to fetch'));
+        })
+    );
+    // The page's online event (this vitest has no window).
+    const page = new EventTarget();
+    Object.assign(globalThis, {
+      addEventListener: page.addEventListener.bind(page),
+      removeEventListener: page.removeEventListener.bind(page),
+    });
+    const sender = draftSender(key, roomToken);
+    await vi.waitFor(() =>
+      expect(fetchDrafts).toHaveBeenCalledTimes(calls + 1)
+    );
+    // Online while the lost try is out: the next goes as it ends.
+    page.dispatchEvent(new Event('online'));
+    storeNext();
+    lose();
+    await sender.settled;
+    Reflect.deleteProperty(globalThis, 'addEventListener');
+    Reflect.deleteProperty(globalThis, 'removeEventListener');
+    expect(requests).toHaveLength(1);
+    expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it('sends at once when asked during its backoff, a reconnect while steps are held (Q360)', async () => {
+    const key = 'u_now:material:mat_1';
+    await putDrafts(
+      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
+    );
+    requests.length = 0;
+    const calls = fetchDrafts.mock.calls.length;
+    fetchDrafts.mockImplementationOnce(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const sender = draftSender(key, roomToken);
+    await vi.waitFor(() =>
+      expect(fetchDrafts).toHaveBeenCalledTimes(calls + 1)
+    );
+    storeNext();
+    sender.now();
+    await sender.settled;
+    expect(requests).toHaveLength(1);
+  });
+
+  it('fails a send that takes past its time limit as a try (Q360)', async () => {
+    const key = 'u_slow:material:mat_1';
+    await putDrafts(
+      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
+    );
+    requests.length = 0;
+    const calls = fetchDrafts.mock.calls.length;
+    const limit = new AbortController();
+    const timeout = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockReturnValue(limit.signal);
+    fetchDrafts.mockImplementationOnce(
+      (_input, init) =>
+        new Promise((_, reject) =>
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('timed out', 'TimeoutError'))
+          )
+        )
+    );
+    const sender = draftSender(key, roomToken);
+    await vi.waitFor(() =>
+      expect(fetchDrafts).toHaveBeenCalledTimes(calls + 1)
+    );
+    const body = fetchDrafts.mock.calls.at(-1)?.[1]?.body as Uint8Array;
+    expect(timeout).toHaveBeenCalledWith(draftSendTimeout(body.byteLength));
+    storeNext();
+    limit.abort();
+    sender.now();
+    await sender.settled;
+    timeout.mockRestore();
+    expect(requests).toHaveLength(1);
+  });
+
+  it('gives a send 30 s plus its upload at 100 KB/s, at most 3 minutes (Q365)', () => {
+    expect(draftSendTimeout(0)).toBe(30_000);
+    // A 2 MiB piece: 30 s and 21 s for its bytes.
+    expect(draftSendTimeout(2 * 1024 * 1024)).toBe(50_972);
+    expect(draftSendTimeout(100 * 1024 * 1024)).toBe(180_000);
+  });
+
+  it("presents the group's stored room tokens, newest first, one per client id (Q288, Q322)", async () => {
+    const key = 'u_grants:material:mat_1';
+    const [state, update] = await leftRows(key);
+    const [older, a, newer, b] = [
+      grant(1, 'old'),
+      grant(2),
+      grant(1),
+      grant(3),
+    ];
+    await putDrafts([
+      { ...state, grants: [older, a], savedAt: Date.now() - 2 },
+      { ...update, grants: [newer, b], savedAt: Date.now() - 1 },
+    ]);
+    requests.length = 0;
+    storeNext();
+    await sweepDrafts('u_grants', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    // One session's refreshed tokens take one slot: its newest.
+    expect(requests[0].headers.get('x-capy-grants')).toBe(
+      [b, newer, a].join(',')
+    );
+  });
+
+  it("names the stored version the group's oldest row was made at, a row from before versions or before the first stored version as 1 (in-place collection, review r1 L8)", async () => {
+    for (const [key, versions, sent] of [
+      ['u_ver:material:mat_1', [9, 6], '6'],
+      ['u_ver:material:mat_2', [9, undefined], '1'],
+      ['u_ver:material:mat_3', [9, 0], '1'],
+    ] as const) {
+      const [state, update] = await leftRows(key);
+      await putDrafts([
+        { ...state, version: versions[0] },
+        { ...update, version: versions[1] },
+      ]);
+      requests.length = 0;
+      storeNext();
+      await sweepDrafts('u_ver', tokens(ROOM));
+      expect(requests[0].headers.get('x-capy-version')).toBe(sent);
+    }
   });
 
   it('sends the client protocol, and stops for the page load once refused as outdated, marking no row', async () => {

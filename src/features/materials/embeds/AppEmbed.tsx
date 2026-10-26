@@ -15,6 +15,10 @@ import {
   flashcardsElementToCards,
 } from '@/features/materials/document';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
+import {
+  RemovedAssetsContext,
+  useRemovedAssets,
+} from '@/features/materials/MediaAssetView';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import {
@@ -170,13 +174,18 @@ function QuizGate({
     quiz: NonNullable<ReturnType<typeof useQuiz>['data']>
   ) => React.ReactNode;
 }) {
-  const { data, isPending, isError } = useQuiz(materialId, {
+  const { data, isPending, isError, refetch } = useQuiz(materialId, {
     errorBoundary: false,
   });
+  const removed = useRemovedAssets(data?.removedAssetIds, refetch);
   if (waitingForOwn(ownerId, isError, data)) return <EmbedLoading />;
   if (isError) return <EmbedUnavailable />;
   if (isPending || !data) return <EmbedLoading />;
-  return <>{children(data)}</>;
+  return (
+    <RemovedAssetsContext.Provider value={removed}>
+      {children(data)}
+    </RemovedAssetsContext.Provider>
+  );
 }
 
 function SetGate({
@@ -188,13 +197,18 @@ function SetGate({
   ownerId?: string;
   children: (material: Material) => React.ReactNode;
 }) {
-  const { data, isPending, isError } = useMaterial(materialId, {
+  const { data, isPending, isError, refetch } = useMaterial(materialId, {
     errorBoundary: false,
   });
+  const removed = useRemovedAssets(data?.removedAssetIds, refetch);
   if (waitingForOwn(ownerId, isError, data)) return <EmbedLoading />;
   if (isError) return <EmbedUnavailable />;
   if (isPending || !data) return <EmbedLoading />;
-  return <>{children(data)}</>;
+  return (
+    <RemovedAssetsContext.Provider value={removed}>
+      {children(data)}
+    </RemovedAssetsContext.Provider>
+  );
 }
 
 function QuizView({
@@ -296,7 +310,7 @@ function EmbedQuizEditor({
       ) : rooms.ready && rooms.content && rooms.keys ? (
         <div className="grid gap-4">
           {rooms.offline && <SaveBanner state={rooms.offline} />}
-          {itemEditingStopped(rooms.offline) ? (
+          {itemEditingStopped(rooms) ? (
             <QuizQuestionList disabled questions={questions} showAnswerKey />
           ) : (
             <QuizForm

@@ -330,10 +330,10 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	var workspaces []map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &workspaces)
+	var page struct{ Items []map[string]any }
+	_ = json.Unmarshal(rec.Body.Bytes(), &page)
 	names := map[string]map[string]any{}
-	for _, ws := range workspaces {
+	for _, ws := range page.Items {
 		if n, ok := ws["name"].(string); ok {
 			names[n] = ws
 		}
@@ -354,9 +354,9 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	workspaces = nil
-	_ = json.Unmarshal(rec.Body.Bytes(), &workspaces)
-	for _, ws := range workspaces {
+	page.Items = nil
+	_ = json.Unmarshal(rec.Body.Bytes(), &page)
+	for _, ws := range page.Items {
 		if ws["name"] == "E2E Public Workspace" && (ws["canClone"] != true || ws["isOwner"] != true || ws["role"] != "owner") {
 			t.Fatalf("owner explore row = %#v", ws)
 		}
@@ -497,9 +497,9 @@ func TestShareHTTPMaterialEditorAssetUploads(t *testing.T) {
 	}
 }
 
-// An editor who does not pay for a note uploads an image into it, and the
-// note's payer is charged (Sam 2026-10-18/19).
-func TestEditorUploadsAnImageIntoAnotherPayersNote(t *testing.T) {
+// An editor who does not pay for a note uploads an image into it and pays for
+// the image itself (M16).
+func TestEditorPaysForTheImageItUploadsIntoAnotherPayersNote(t *testing.T) {
 	h, st, mem := openInternalHTTPWithBlob(t)
 	ctx := context.Background()
 	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", WorkspaceID: "ws_e2e_private",
@@ -518,7 +518,7 @@ func TestEditorUploadsAnImageIntoAnotherPayersNote(t *testing.T) {
 	}
 	ownerBefore, editorBefore := usage("u_owner"), usage("u_editor")
 
-	image := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{7}, 100)...)
+	image := testPNG(108)
 	rec := postUpload(t, h, "/api/materials/"+note.ID+"/editor-assets/uploads", "u_editor", map[string]any{
 		"name": "figure.png", "purpose": "image", "sizeBytes": len(image), "contentType": "image/png",
 	}, "image/png", image)
@@ -536,8 +536,8 @@ func TestEditorUploadsAnImageIntoAnotherPayersNote(t *testing.T) {
 	if got, _, ok := mem.Object(stored.ObjectPath); !ok || !bytes.Equal(got, image) {
 		t.Fatalf("stored object at %q holds %d bytes", stored.ObjectPath, len(got))
 	}
-	if owner, editor := usage("u_owner")-ownerBefore, usage("u_editor")-editorBefore; owner != int64(len(image)) || editor != 0 {
-		t.Fatalf("charged owner %d editor %d, want the image's %d bytes on the owner", owner, editor, len(image))
+	if owner, editor := usage("u_owner")-ownerBefore, usage("u_editor")-editorBefore; owner != 0 || editor != int64(len(image)) {
+		t.Fatalf("charged owner %d editor %d, want the image's %d bytes on the editor", owner, editor, len(image))
 	}
 }
 

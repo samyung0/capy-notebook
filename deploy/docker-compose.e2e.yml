@@ -103,6 +103,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-e2e-collaboration-secret}
       SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:?SHARE_LINK_SECRET is required}
+      # Cloudflare's published Turnstile test secret, which always passes.
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
       COLLABORATION_URL: ws://127.0.0.1:${E2E_COLLABORATION_PORT:-11234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Mounts the internal agent routes agent-writes.spec.ts calls in place of

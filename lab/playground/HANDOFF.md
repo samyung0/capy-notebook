@@ -9,7 +9,7 @@ config field are in `README.md`; the scenarios to run are its Acceptance table.
 - **Base system prompt** (`pipeline/prompts/chat.py`, about 460 tokens of
   rules): grounding, answer or build, and the budget every turn shares (4 tool
   calls per response, 8 responses without a ledger). Then the language,
-  follow-references and capture rules, the library rules with Library on, and
+  follow-references and capture rules, the all sources rules (both modes), and
   the OpenUI answer format (about 2k tokens, the largest part).
 - **Skills** (`pipeline/prompts/skills.py`), read with `read_skill` only when
   the work needs them:
@@ -63,8 +63,9 @@ unchanged, reasoning and tool-call arguments included (measured 2026-10-05).
   tools from the prompt under `"none"`, so that call had missed the cache. The
   playground recognizes a tools-off call by the turn context's final notice
   (`turn_context.tools_off`).
-- Still uncached: the second call of a turn often gets 0; a page capture
-  breaks the prefix once, because its image rides only into the next request.
+- Still uncached: the second call of a turn often gets 0. Captured images go
+  through production's turn state (2026-10-25): they ride to the answer, and
+  a drop past the image budget changes the request once (Q349).
 
 ## Measurements to compare against
 
@@ -144,7 +145,5 @@ they go before the answer format only while that text matches production.
 
 - Split the OpenUI answer format: core components in the base prompt, rich
   ones (fact lists, charts) in a skill. It changes how answers render.
-- Keep captured images for the rest of the turn (more context, fewer cache
-  misses)?
 - Whether the skill guard's refusal costs more than it saves: in live runs the
   model read the skills first and the guard never fired.

@@ -97,8 +97,10 @@ PROBE = textwrap.dedent(
 )
 
 
-def _probe(policy: capy_sandbox.Policy, outside: Path, inside: Path) -> dict:
-    completed = capy_sandbox.run(
+def _probe(
+    policy: capy_sandbox.Policy, outside: Path, inside: Path, run=capy_sandbox.run
+) -> dict:
+    completed = run(
         [sys.executable, "-c", PROBE, str(outside), str(inside)],
         policy,
         max_output=1 << 16,
@@ -171,6 +173,40 @@ def test_the_decode_helper_runs_with_only_its_python_path_and_its_limits(
     assert report["process_madvise"] == errno.EPERM
     assert report["fork"] == errno.EPERM
     assert report["setpgid"] == errno.EPERM
+    assert report["read_input"] == "ok"
+    assert report["read_outside"] == errno.EACCES
+
+
+@linux
+def test_the_audio_probe_runs_under_the_decode_helpers_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(security regression: audio probe) ffmpeg reads an uploaded recording
+    in the decoder sandbox: the worker's provider key stays out of its
+    environment, it opens no network socket and reads no file but its input."""
+    monkeypatch.setenv("ALIBABA_MODELSTUDIO_KEY", "worker-secret")
+    outside = tmp_path / "other-upload"
+    outside.write_bytes(b"another user's file")
+    source = tmp_path / "upload.m4a"
+    source.write_bytes(b"this job's file")
+    run = capy_sandbox.run
+    reports = []
+
+    def in_ffmpegs_place(argv, policy, **_kwargs):
+        # The probe runs under the policy ffmpeg was given.
+        reports.append(_probe(policy, outside, source, run=run))
+        progress = b"out_time_us=61000000\nprogress=end\n"
+        return subprocess.CompletedProcess(argv, 0, progress, b"")
+
+    monkeypatch.setattr(capy_sandbox, "run", in_ffmpegs_place)
+    monkeypatch.setattr(decode.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+
+    assert decode.audio_seconds(source) == 61.0
+    (report,) = reports
+    assert set(report["env"]) <= {"PYTHONPATH"}
+    assert report["no_new_privs"] == 1 and report["seccomp"] == 2
+    assert report["inet_socket"] == errno.EACCES
+    assert report["fork"] == errno.EPERM
     assert report["read_input"] == "ok"
     assert report["read_outside"] == errno.EACCES
 
@@ -290,10 +326,12 @@ def test_output_just_past_the_cap_is_refused_however_late_it_is_read(
 
     def late(descriptor: int, size: int) -> bytes:
         # Each reader thread's first read comes well after the child exited.
-        if threading.current_thread() is not threading.main_thread():
-            if threading.get_ident() not in readers:
-                readers.add(threading.get_ident())
-                time.sleep(1.5)
+        if (
+            threading.current_thread() is not threading.main_thread()
+            and threading.get_ident() not in readers
+        ):
+            readers.add(threading.get_ident())
+            time.sleep(1.5)
         return read(descriptor, size)
 
     monkeypatch.setattr(capy_sandbox.os, "read", late)
@@ -508,6 +546,22 @@ def test_both_images_carry_the_one_launcher() -> None:
     assert not list((ROOT / "parser").rglob("capy_sandbox.py"))
 
 
+def test_the_pipeline_image_carries_heif_dec_without_an_encoder() -> None:
+    """Q353: libheif's decode-only tool and its libde265 plugin (LGPL-3.0),
+    installed without recommends, so no x265 (GPL) encoder plugin comes."""
+    pipeline = (ROOT / "pipeline/Dockerfile").read_text(encoding="utf-8")
+    line = next(
+        line
+        for line in pipeline.splitlines()
+        if "install" in line and "libheif" in line
+    )
+    assert "--no-install-recommends" in line and "libheif-plugin-libde265" in line
+    # The build converts a HEIC with it (review r2 N8).
+    assert "RUN heif-dec -q 90 /tmp/smoke.heic /tmp/smoke.jpg" in pipeline
+    assert "COPY e2e/fixtures/files/images/photo.heic /tmp/smoke.heic" in pipeline
+    assert "x265" not in pipeline.replace("no x265", "")
+
+
 # The ingest outputs before the decodes moved into the helper (origin/main
 # df56b54a3, in-process MuPDF): chunks with their retained headings and
 # confidence, as JSON.
@@ -695,6 +749,8 @@ def test_a_decode_answer_past_its_cap_is_a_failed_decode(
         ("caption", b'{"jpeg": "not base64!"}'),
         ("thumbnail", b'{"webp": 7}'),
         ("page", b"[]"),
+        ("source_image", b'{"image": "AA==", "format": "webp"}'),
+        ("source_image", b'{"keep": true, "image": "AA=="}'),
     ],
 )
 def test_a_decode_answer_off_its_modes_shape_is_a_failed_decode(
@@ -715,6 +771,7 @@ def test_a_decode_answer_off_its_modes_shape_is_a_failed_decode(
         "caption": lambda: decode.caption_jpeg(source, max_edge=8, max_pixels=64),
         "thumbnail": lambda: decode.thumbnail_webp(source, "png", max_pixels=64),
         "page": lambda: decode.page_webp(b""),
+        "source_image": lambda: decode.source_image(b"", max_bytes=1, max_pixels=64),
     }
     with pytest.raises(decode.DecodeFailed):
         calls[call]()
@@ -737,6 +794,72 @@ def test_a_pixel_limit_carries_the_workers_own_message(
         with pytest.raises(decode.PixelLimit) as caught:
             decode.caption_jpeg(Path("image.png"), max_edge=8, max_pixels=64)
         assert str(caught.value) == message
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [b'{"image": "AA==", "format": "webp"}', b'{"keep": true, "image": "AA=="}', b"[]"],
+)
+def test_an_office_picture_answer_off_its_shape_removes_the_picture(
+    monkeypatch: pytest.MonkeyPatch, answer: bytes
+) -> None:
+    """(security regression: S2 decode answers; Q347) A picture whose helper
+    answers off the mode's shape, or fails, is removed like an unreadable one."""
+    monkeypatch.setattr(
+        decode.capy_sandbox,
+        "run",
+        lambda argv, _policy, **_kwargs: subprocess.CompletedProcess(
+            argv, 0, answer, b""
+        ),
+    )
+    assert decode.office_picture(b"", image_max_bytes=1, max_pixels=64) == "unreadable"
+
+
+def test_each_office_picture_and_heic_gets_its_own_ten_seconds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """(security regression: Q347, Q353) One picture's helper, and libheif's
+    tool, run with 10 s of CPU and a 20 s deadline, not the file's 120 s
+    (review r2 N4: a busy host does not remove a normal picture)."""
+    policies = []
+
+    def run(argv, policy, **_kwargs):
+        policies.append(policy)
+        if argv[-1].endswith("out.jpg"):
+            Path(argv[-1]).write_bytes(b"\xff\xd8\xff")
+        return subprocess.CompletedProcess(argv, 0, b'{"keep": true}', b"")
+
+    monkeypatch.setattr(decode.capy_sandbox, "run", run)
+    monkeypatch.setattr(decode.shutil, "which", lambda _name: "/usr/bin/heif-dec")
+    assert decode.office_picture(b"", image_max_bytes=1, max_pixels=64) == "keep"
+    assert decode.heic_jpeg(b"heic") == b"\xff\xd8\xff"
+    assert [(p.limits["CPU"], p.timeout_s) for p in policies] == [(10, 20), (10, 20)]
+    assert policies[1].limits["FSIZE"] > 0 and "/dev/null" in policies[1].write
+
+
+@linux
+def test_the_image_rules_run_in_the_helper() -> None:
+    """A picture of an imported Office file is compressed, and an image
+    source shrunk to 5 megapixels, inside the decode helper (Epo 2026-10-24)."""
+    images = ROOT / "e2e/fixtures/files/images"
+    picture, kind = decode.office_picture(
+        (images / "photo.jpg").read_bytes(),
+        image_max_bytes=2 << 20,
+        max_pixels=100_000_000,
+    )
+    assert kind == "jpeg" and picture[:3] == b"\xff\xd8\xff"
+    shrunk, kind = decode.source_image(
+        (images / "photo.jpg").read_bytes(), max_bytes=30 << 20, max_pixels=100_000_000
+    )
+    assert kind == "jpeg" and shrunk[:3] == b"\xff\xd8\xff"
+    assert (
+        decode.source_image(
+            (images / "photo.heic").read_bytes(),
+            max_bytes=30 << 20,
+            max_pixels=100_000_000,
+        )
+        == "unreadable"
+    )
 
 
 @linux

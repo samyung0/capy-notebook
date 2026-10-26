@@ -209,9 +209,10 @@ for (const [format, name] of [
     for (const part of inserted)
       expect(part.length).toBeLessThanOrEqual(FREE_IMAGE_MAX_BYTES);
     // Each picture's format, size and the alpha of a corner and the centre:
-    // the photo as JPEG at 2000 px; the transparent PNG still PNG with its
-    // clear border and translucent square, stepped down to 1400 px since it
-    // is over the cap at 2000; the small WebP re-encoded as JPEG.
+    // the photo as JPEG at 2,400 px (Q286); the transparent PNG still PNG
+    // with its clear border and translucent square, stepped down to 1400 px
+    // since it is over the cap at 2400 and 2000; the small WebP re-encoded as
+    // JPEG.
     const pictures = await page.evaluate(
       (parts) =>
         Promise.all(
@@ -235,7 +236,7 @@ for (const [format, name] of [
     );
     expect(pictures.sort()).toEqual([
       '89504e 1400x1400 0 160',
-      'ffd8ff 2000x1500 255 255',
+      'ffd8ff 2400x1800 255 255',
       'ffd8ff 600x400 255 255',
     ]);
   });

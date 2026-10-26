@@ -20,6 +20,10 @@ _OPENERS = (
     "<invoke ",
     "[tool_calls]",
 )
+# GLM's argument markup (AskUser<arg_key>question</arg_key><arg_value>...).
+# Checked on prose answers only, once the response ends: an answer program
+# streams, and the browser drops a statement it cannot parse.
+_ARG_MARKUP = ("<arg_key", "</arg_value")
 _JSON_KEYS = ('"tool_calls"', '"function_call"')
 _JSON_CALL = re.compile(r'"(?:tool_calls|function_call)"\s*:', re.IGNORECASE)
 
@@ -27,6 +31,11 @@ _JSON_CALL = re.compile(r'"(?:tool_calls|function_call)"\s*:', re.IGNORECASE)
 def contains_tool_protocol(text: str) -> bool:
     lower = text.lower()
     return any(marker in lower for marker in _OPENERS) or bool(_JSON_CALL.search(text))
+
+
+def contains_arg_markup(text: str) -> bool:
+    lower = text.lower()
+    return any(marker in lower for marker in _ARG_MARKUP)
 
 
 class ResponseGuard:

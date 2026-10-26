@@ -310,6 +310,14 @@ export const api = {
       body: body === undefined ? undefined : JSON.stringify(body),
       method: 'POST',
     }),
+  /** A raw body sent as its own type, such as a recorded clip. */
+  postBlob: <T>(path: string, body: Blob, options?: RequestOptions) =>
+    request<T>(path, {
+      ...options,
+      body,
+      headers: { 'Content-Type': body.type },
+      method: 'POST',
+    }),
   put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, {
       ...options,
@@ -333,13 +341,17 @@ export const qk = {
   attempts: (params?: unknown) => ['attempts', params ?? null] as const,
   attemptsRoot: ['attempts'] as const,
   billing: ['billing'] as const,
-  canvas: (id: string) => ['canvas', id] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
   chapters: (wsId: string) => ['workspace', wsId, 'chapters'] as const,
   conversations: (wsId: string) =>
     ['workspace', wsId, 'conversations'] as const,
   deletionPreflight: ['account', 'deletion'] as const,
+  /** The images and audio the caller pays for (the Embeds tab), all or one
+   * access filter. */
+  editorAssets: (access?: string) =>
+    ['editor-assets', access ?? 'all'] as const,
+  editorAssetsRoot: ['editor-assets'] as const,
   eventStream: ['event-stream'] as const,
   events: ['events'] as const,
   exploreFlashcardSets: ['explore', 'flashcardSets'] as const,
@@ -392,7 +404,6 @@ export const qk = {
   studyPlans: (wsId: string) => ['workspace', wsId, 'study', 'plans'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
-  thinking: ['thinking'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
   usageEvents: (params?: unknown) =>

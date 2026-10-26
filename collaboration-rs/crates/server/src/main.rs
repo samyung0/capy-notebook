@@ -9,6 +9,7 @@ mod access;
 mod app;
 mod auth;
 mod children;
+mod client_ids;
 mod config;
 mod drafts;
 mod edits;
@@ -26,6 +27,7 @@ mod pubsub;
 mod rate;
 mod room;
 mod seats;
+mod sessions;
 mod socket;
 mod source_rooms;
 

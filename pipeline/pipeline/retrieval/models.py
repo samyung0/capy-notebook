@@ -13,7 +13,7 @@ invisible and the user is silently not charged for it.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
+import functools
 import logging
 import math
 import random
@@ -28,7 +28,7 @@ from ..config import cfg
 from ..prompts.captioning import VLM_PAGE_PROMPT
 from ..prompts.retrieval import qwen3_query
 from ..registry import ModelConfig
-from . import accounting, capture
+from . import accounting, capture, limits
 from .stream import (
     AssembledResponse,
     ChatCompletionsAssembler,
@@ -94,6 +94,76 @@ class _StreamReceipt:
         self.seen = False
         # The last usage block, None until the provider sends one.
         self.usage: NormalizedUsage | None = None
+
+
+CALL_LIMIT_BUSY = "the AI process is at its model call limit"
+
+
+class CallNotStarted(Exception):
+    """A call whose client left (a Stop or a lost hop) before it started:
+    nothing was sent."""
+
+
+@asynccontextmanager
+async def call_slot():
+    """One model call's process slot (Epo 2026-10-24, inner-turn slots), held
+    for its request and response, retries included, and its settlement and
+    lease release (``_tracked_call``), under the request's slot policy
+    (``limits.bind_call_slots``). Past a full CALL_SLOTS the call waits in
+    arrival order up to the policy's wait, or answers provider_busy at once;
+    with no policy bound the call takes no slot. Once the client has left, no
+    call starts and no waiting status is sent (Q359)."""
+    policy = limits.call_slot_policy()
+    if policy is None:
+        yield
+        return
+    if policy.left is not None and policy.left.is_set():
+        raise CallNotStarted("the client left before the call started")
+    slots = limits.CALL_SLOTS
+    granted = None
+    if not slots.take():
+        if policy.wait_s <= 0:
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        waiter = slots.join()  # in the queue from its refusal on (Q359)
+        if not await slots.wait_for(waiter, policy.wait_s, policy.left, policy.on_wait):
+            if policy.left is not None and policy.left.is_set():
+                raise CallNotStarted("the client left while the call waited")
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        granted = policy.on_granted
+    # Both callbacks run where a failure still gives the slot back.
+    try:
+        if granted is not None:
+            granted()
+        yield
+    finally:
+        slots.release()
+
+
+def _slotted(call):
+    """``call`` (a coroutine function) runs holding its call slot."""
+
+    @functools.wraps(call)
+    async def slotted(*args, **kwargs):
+        async with call_slot():
+            return await call(*args, **kwargs)
+
+    return slotted
+
+
+def _slotted_stream(stream):
+    """``stream`` (an async generator function) yields holding its call slot."""
+
+    @functools.wraps(stream)
+    async def slotted(*args, **kwargs):
+        async with call_slot():
+            async for item in stream(*args, **kwargs):
+                yield item
+
+    return slotted
 
 
 @asynccontextmanager
@@ -504,6 +574,7 @@ async def complete(
     return elitellm.message_from_response(resp)
 
 
+@_slotted
 async def complete_response(
     messages: list[dict[str, Any]],
     *,
@@ -532,7 +603,6 @@ async def complete_response(
         model=spec,
         tools=tools,
         response_format=response_format,
-        reasoning=reasoning,
     )
     streamed = _interactive()
 
@@ -653,41 +723,42 @@ def provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def message_tokens(message: dict[str, Any]) -> int:
+    """One message's estimate, computed when it is first measured and kept on
+    the message (Epo 2026-10-24, Q238), so no model call walks the whole
+    context again. Attached page captures count by pixel size, not base64."""
+    kept = accounting.kept_tokens(message)
+    if kept is not None:
+        return kept
+    (text,), image_tokens = capture.split_images(provider_messages([message]))
+    return accounting.keep_tokens(
+        message, accounting.estimate_context_value(text) + image_tokens
+    )
+
+
 def measure_request_context(
     messages: list[dict[str, Any]],
     *,
     model: ModelConfig,
     tools: list[dict[str, Any]] | None = None,
     response_format: dict[str, Any] | None = None,
-    reasoning: bool | None = None,
 ) -> accounting.ContextComposition:
-    """Measure the same provider-shaped fields the outbound call will use.
-
-    Attached page captures are counted by pixel size, not by their base64.
-    """
+    """A request's estimate: its messages' kept estimates summed, plus its tool
+    schemas. Telemetry, the model input budget and compaction read it; exact
+    counts are not needed in real time (Q238)."""
     spec = _as_spec(model)
-    submitted, image_tokens = capture.split_images(provider_messages(messages))
-    input_items = (
-        messages_to_responses_input(submitted)
-        if elitellm.uses_responses(spec, tools=bool(tools), reasoning=reasoning)
-        else None
-    )
-    system, conversation, schemas = elitellm.context_components(
-        spec,
-        submitted,
-        tools=tools,
-        response_format=response_format,
-        reasoning=reasoning,
-        input_items=input_items,
-    )
-    measured = accounting.measure_components(
-        system,
-        conversation,
-        schemas,
-        window_tokens=spec.context_window_tokens,
-    )
-    return dataclasses.replace(
-        measured, conversation_tokens=measured.conversation_tokens + image_tokens
+    system = conversation = 0
+    for message in messages:
+        if message.get("role") == "system":
+            system += message_tokens(message)
+        else:
+            conversation += message_tokens(message)
+    schemas = [*(tools or []), *([response_format] if response_format else [])]
+    return accounting.ContextComposition(
+        system_tokens=system,
+        tool_tokens=accounting.estimate_context_value(schemas) if schemas else 0,
+        conversation_tokens=conversation,
+        window_tokens=max(0, int(spec.context_window_tokens)),
     )
 
 
@@ -751,6 +822,7 @@ def _responses_content(message: dict[str, Any]) -> Any:
     return parts
 
 
+@_slotted
 async def stream_agent_response(
     messages: list[dict[str, Any]],
     *,
@@ -889,6 +961,7 @@ async def _stream_via_adapter(
     return assembler.finish()
 
 
+@_slotted_stream
 async def stream_text(
     messages: list[dict[str, Any]],
     *,
@@ -901,11 +974,7 @@ async def stream_text(
     spec = _as_spec(model)
     thinking = elitellm.resolve_thinking(spec, reasoning)
     submitted_messages = provider_messages(messages)
-    context = measure_request_context(
-        messages,
-        model=spec,
-        reasoning=reasoning,
-    )
+    context = measure_request_context(messages, model=spec)
     policy = retry_policy()
     deadline = time.monotonic() + policy.budget_s
     for attempt in range(policy.attempts):
@@ -987,6 +1056,7 @@ async def stream_text(
 VLM_PAGE_MAX_TOKENS = 2_000
 
 
+@_slotted
 async def read_page(
     data_url: str, *, credit_micros: int, scripted: str | None = None
 ) -> str | None:
@@ -1010,7 +1080,7 @@ async def read_page(
             "content": [{"type": "image_url", "image_url": {"url": data_url}}],
         },
     ]
-    context = measure_request_context(messages, model=spec, reasoning=False)
+    context = measure_request_context(messages, model=spec)
 
     async def _one(deadline: float) -> str:
         async with _tracked_call(
@@ -1058,6 +1128,7 @@ async def read_page(
         return None
 
 
+@_slotted
 async def caption_image(data_url: str, prompt: str) -> str:
     """Describe a standalone image upload so it becomes searchable text.
 
@@ -1078,7 +1149,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
             "content": [{"type": "image_url", "image_url": {"url": data_url}}],
         },
     ]
-    context = measure_request_context(messages, model=spec, reasoning=False)
+    context = measure_request_context(messages, model=spec)
 
     async def _one(deadline: float) -> str:
         async with _tracked_call(

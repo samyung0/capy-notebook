@@ -4,7 +4,11 @@ import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { Material, Provenance } from '@/api/types';
-import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
+import {
+  isOutdatedBanner,
+  recoveryBanner,
+  SaveBanner,
+} from '@/components/banners/SaveBanner';
 import { Icon } from '@/components/ui/Icon';
 import { CharCount } from '@/components/ui/Input';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
@@ -137,7 +141,7 @@ export default function MermaidMaterialEditor({
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <SaveBanner
           onReload={() => void room.reload()}
-          state={snapshot.recovery.refused ? 'refused' : 'changed'}
+          state={recoveryBanner(snapshot.recovery)}
         />
         {recovered && (
           <ReadOnlyDiagram kind={kind} live={recovered} title={title} />
@@ -159,7 +163,7 @@ export default function MermaidMaterialEditor({
           history={room.history}
           live={live}
           provenance={provenance}
-          readOnly={itemEditingStopped(snapshot.offline)}
+          readOnly={itemEditingStopped(snapshot)}
           title={title}
         />
       </CollaborationHold>

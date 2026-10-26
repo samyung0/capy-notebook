@@ -165,6 +165,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusBadRequest, "invalid_request", err.Error(), false)
 		return
 	}
+	extendDeadlines(w, chatStreamDeadline)
 
 	ctx := r.Context()
 	userID := uid(r)

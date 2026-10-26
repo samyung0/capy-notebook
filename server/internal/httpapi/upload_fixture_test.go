@@ -3,8 +3,10 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -103,6 +105,8 @@ type deadlineRecorder struct{ *httptest.ResponseRecorder }
 
 func (deadlineRecorder) SetReadDeadline(time.Time) error { return nil }
 
+func (deadlineRecorder) SetWriteDeadline(time.Time) error { return nil }
+
 // ticketTurn is an upload ticket's answer.
 type ticketTurn struct {
 	TicketID string `json:"ticketId"`
@@ -156,6 +160,14 @@ func postUpload(t *testing.T, h http.Handler, path, userID string, meta map[stri
 	rec, _ = postForm(t, h, path+"?ticket="+turn.TicketID, userID,
 		metadataPart(t, meta), formPart{name: "file", contentType: partType, body: body})
 	return rec
+}
+
+// testPNG is a 1x1 PNG's signature and header padded to size bytes: what
+// the gateway's header check reads (imagecheck), with no pixels behind it.
+func testPNG(size int) []byte {
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00")
+	png = binary.BigEndian.AppendUint32(png, crc32.ChecksumIEEE(png[12:]))
+	return append(png, make([]byte, max(0, size-len(png)))...)
 }
 
 // sourceMeta is a source upload's metadata in a batch of its own.

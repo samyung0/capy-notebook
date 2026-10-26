@@ -164,7 +164,8 @@ statement: `createMaterialTx`, `UpdateMaterial`, `ProjectMaterialContent` (the
 Yjs projection) and the workspace and material clones (recomputed, since a
 clone drops media it could not copy). `materialdoc.Preview` derives it; it is
 answer-free and about 1 KB at most. `MaterialListItem` and trash rows return it
-as `preview`; the client types the union by hand. The workspace tree's
+as `preview`; the client types the union by hand. Explore's quiz list reads
+only its `questionCount`, never the quiz's content. The workspace tree's
 `MaterialRef` carries none (nothing there draws it, and the tree refetches
 often). The empty viewer's 2x2 grid reads `GET /api/workspaces/{id}/recent`
 instead: the four newest live files (by added time, thumbnails signed) and

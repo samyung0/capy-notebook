@@ -2,6 +2,8 @@ package bank
 
 import (
 	"context"
+	"encoding/binary"
+	"hash/crc32"
 	"io"
 	"strings"
 	"testing"
@@ -43,5 +45,24 @@ func TestPublicSVGIsStaticAndContentAddressed(t *testing.T) {
 	}
 	if _, _, err := ValidateAsset([]byte(strings.Repeat("x", AssetMaxBytes+1))); err == nil {
 		t.Fatal("accepted oversized asset")
+	}
+}
+
+// Security regression (Q348, review N2): a raster figure keeps the editors'
+// 2,400 px limit on each side, read from its header.
+func TestRasterFiguresKeepThePixelLimit(t *testing.T) {
+	png := func(width, height uint32) []byte {
+		ihdr := binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, width), height)
+		chunk := append([]byte("IHDR"), append(ihdr, 8, 2, 0, 0, 0)...)
+		out := binary.BigEndian.AppendUint32([]byte("\x89PNG\r\n\x1a\n"), 13)
+		return binary.BigEndian.AppendUint32(append(out, chunk...), crc32.ChecksumIEEE(chunk))
+	}
+	if _, ext, err := ValidateAsset(png(2400, 100)); err != nil || ext != ".png" {
+		t.Fatalf("a 2400 px figure: %s %v", ext, err)
+	}
+	for _, data := range [][]byte{png(2401, 100), png(100, 2401)} {
+		if _, _, err := ValidateAsset(data); err == nil {
+			t.Fatal("accepted a figure past 2,400 px")
+		}
 	}
 }

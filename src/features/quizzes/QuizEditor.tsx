@@ -64,7 +64,7 @@ export function QuizEditor({
     <div className="flex flex-col gap-7">
       {rooms.undo &&
         headerActions &&
-        !itemEditingStopped(rooms.offline) &&
+        !itemEditingStopped(rooms) &&
         createPortal(
           <UndoButtons header manager={rooms.undo} />,
           headerActions
@@ -76,7 +76,7 @@ export function QuizEditor({
       {rooms.recovery ? (
         <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
       ) : rooms.ready ? (
-        rooms.access !== 'write' || itemEditingStopped(rooms.offline) ? (
+        rooms.access !== 'write' || itemEditingStopped(rooms) ? (
           <div className="grid gap-6">
             {rooms.readOnlyCode === 'unsupported_block' && (
               <FileBanner message={m.editor_unsupported_block_strip()} />

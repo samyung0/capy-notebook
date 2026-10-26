@@ -897,6 +897,21 @@ pub fn apply(doc: &Doc, update: Update) -> Result<Vec<u8>, yrs::error::UpdateErr
     Ok(committed_update(txn))
 }
 
+/// [apply], and the deletions it made: items the document held undeleted
+/// that it deleted (a note session's held deletions, in-place collection).
+/// A resync's step 2 resends its whole delete set; what the document had
+/// deleted already is not among them.
+pub fn apply_deleting(
+    doc: &Doc,
+    update: Update,
+) -> Result<(Vec<u8>, IdSet), yrs::error::UpdateError> {
+    let mut txn = doc.transact_mut();
+    txn.apply_update(update)?;
+    txn.commit();
+    let deleted = txn.delete_set().clone();
+    Ok((committed_update(txn), deleted))
+}
+
 /// [apply], and the payload bytes the update's deletes gave back to the
 /// garbage collection (Epo 2026-10-19: a source room's estimate takes them
 /// off): a string's bytes, a binary's length, a value's strings and buffers.

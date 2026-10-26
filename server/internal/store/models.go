@@ -73,7 +73,7 @@ type StudyPreferences struct {
 	// MainFormat is the output file that explains each chapter (Capy Note or
 	// Powerpoint); the agent still makes other files when needed.
 	MainFormat   string `json:"mainFormat,omitempty" enum:"note,deck"`
-	WritingStyle string `json:"writingStyle,omitempty" enum:"brief,normal,verbose"`
+	WritingStyle string `json:"writingStyle,omitempty" enum:"brief,normal,verbose,story"`
 	// How much of each practice item a chapter gets (more 10, less 5).
 	Quiz       string `json:"quiz,omitempty" enum:"more,less,off"`
 	Flashcards string `json:"flashcards,omitempty" enum:"more,less,off"`
@@ -181,7 +181,7 @@ type File struct {
 	// chat and generate.
 	Indexed bool `json:"indexed"`
 	// IndexLimit names the ingest limit a ready, unindexed file's content is
-	// over (too many pages, pixels, CSV cells or text). The file
+	// over (too many pages, pixels, audio hours, CSV cells or text). The file
 	// opens and downloads as usual; only search and chat skip it.
 	IndexLimit *FileIndexLimit `json:"indexLimit,omitempty"`
 	// HasBytes says a source object exists. Bytes are read through the links
@@ -367,6 +367,10 @@ type FlashcardSet struct {
 	IsOwner        bool `json:"isOwner"`
 	CanEdit        bool `json:"canEdit"`
 	CanEditContent bool `json:"canEditContent"`
+	// RemovedAssetIDs are its card images that no longer exist: deleted by
+	// their uploader, or with the uploader's account (M16). Study shows each
+	// as removed instead of loading it.
+	RemovedAssetIDs []string `json:"removedAssetIds,omitempty"`
 }
 
 type Flashcard struct {
@@ -556,16 +560,17 @@ type Discussion struct {
 }
 
 type Comment struct {
-	ID              string          `json:"id"`
-	DiscussionID    string          `json:"discussionId"`
-	UserID          string          `json:"userId"`
-	AuthorName      string          `json:"authorName"`
-	AuthorAvatarURL string          `json:"authorAvatarUrl,omitempty"`
-	ContentRich     json.RawMessage `json:"contentRich"`
-	IsEdited        bool            `json:"isEdited"`
-	IsDeleted       bool            `json:"isDeleted"`
-	CreatedAt       time.Time       `json:"createdAt"`
-	UpdatedAt       time.Time       `json:"updatedAt"`
+	ID              string `json:"id"`
+	DiscussionID    string `json:"discussionId"`
+	UserID          string `json:"userId"`
+	AuthorName      string `json:"authorName"`
+	AuthorAvatarURL string `json:"authorAvatarUrl,omitempty"`
+	// Text is empty for a deleted comment.
+	Text      string    `json:"text"`
+	IsEdited  bool      `json:"isEdited"`
+	IsDeleted bool      `json:"isDeleted"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // MaterialRef is one row in the unified left-panel materials list, aggregating
@@ -641,13 +646,6 @@ type NotificationPrefs struct {
 	EmailBilling         bool `json:"emailBilling"`
 }
 
-type Canvas struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	UpdatedAt time.Time       `json:"updatedAt"`
-	Scene     json.RawMessage `json:"scene,omitempty"`
-}
-
 type SearchResult struct {
 	ID       string     `json:"id"`
 	Kind     SearchKind `json:"kind"`
@@ -670,10 +668,15 @@ type PublicWorkspace struct {
 	Clones int    `json:"clones"`
 }
 
+// PublicQuiz is a quiz on Explore, read from its stored preview.
 type PublicQuiz struct {
-	Quiz
-	Author string `json:"author"`
-	Clones int    `json:"clones"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	WorkspaceID string `json:"workspaceId"`
+	// QuestionCount is the stored preview's; absent while the quiz has none.
+	QuestionCount *int   `json:"questionCount,omitempty"`
+	Author        string `json:"author"`
+	Clones        int    `json:"clones"`
 	// CanClone: the caller may copy it (CanCloneFrom; a standalone item, anyone).
 	CanClone bool `json:"canClone"`
 }

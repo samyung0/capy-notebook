@@ -26,6 +26,7 @@ import {
 import { useMemo, useRef } from 'react';
 import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
 import { Popover, PopoverAnchor } from '@/components/ui/Popover';
+import { isTableSize } from '@/features/materials/document';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -57,10 +58,10 @@ function TableElementContent({ children, ...props }: PlateElementProps) {
   const colSizes = useTableColSizes();
   const resolvedColSizes = useMemo(() => {
     const columnCount = getTableColumnCount(props.element as TTableElement);
-    return Array.from(
-      { length: columnCount },
-      (_, index) => colSizes[index] || DEFAULT_COLUMN_WIDTH
-    );
+    return Array.from({ length: columnCount }, (_, index) => {
+      const size = colSizes[index];
+      return isTableSize(size) && size > 0 ? size : DEFAULT_COLUMN_WIDTH;
+    });
   }, [colSizes, props.element]);
   const tableWidth =
     resolvedColSizes.reduce((total, width) => total + width, 0) +
@@ -75,7 +76,7 @@ function TableElementContent({ children, ...props }: PlateElementProps) {
       className={TABLE_WRAP_CLASS}
       style={{
         ...props.style,
-        paddingLeft: marginLeft,
+        paddingLeft: isTableSize(marginLeft) ? marginLeft : undefined,
       }}
     >
       <table

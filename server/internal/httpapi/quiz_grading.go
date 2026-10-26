@@ -147,9 +147,31 @@ func (a *api) grade(ctx context.Context, plan gradePlan) ([]map[string]any, floa
 	return graded, correct, total, usage, nil
 }
 
-// gradeSignedIn grades for a signed-in learner and records Jev's usage,
-// uncharged. A failed usage write must not discard grades the learner waited for.
+// gradingLimitError is the refusal past the signed-in daily part cap.
+func gradingLimitError() error {
+	return limitError("grading_limit", "today's grading limit is reached; it resets at midnight UTC")
+}
+
+// reserveGrading counts parts against the signed-in user's daily cap before
+// any Jev call.
+func (a *api) reserveGrading(ctx context.Context, parts int) error {
+	if err := a.s.ReserveGrading(ctx, userID(ctx), parts); errors.Is(err, store.ErrGradingLimit) {
+		return gradingLimitError()
+	} else if err != nil {
+		return hErr(err)
+	}
+	return nil
+}
+
+// gradeSignedIn grades for a signed-in learner under the daily part cap and
+// records Jev's usage, uncharged. A failed usage write must not discard
+// grades the learner waited for.
 func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID string, metadata map[string]any) ([]map[string]any, float64, float64, error) {
+	if len(plan.open) > 0 {
+		if err := a.reserveGrading(ctx, len(plan.open)); err != nil {
+			return nil, 0, 0, err
+		}
+	}
 	graded, correct, total, usage, err := a.grade(ctx, plan)
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
@@ -201,11 +223,16 @@ type gradedQuizOutput struct {
 // for a quiz embedded in a shared note, POST
 // /api/public/notes/{token}/quizzes/{quizId}/grade, reached directly, not
 // through the site Worker. Nothing is stored; the daily caps key on the client
-// IP and count only the open parts Jev grades.
+// address (an IPv6 /56), and count only the open parts Jev
+// grades. A forged token is refused before the body is read.
 func (a *api) registerAnonymousGrading(api huma.API) {
 	clientIP := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		if _, ok := a.s.VerifyShareToken(ctx.Param("token")); !ok {
+			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "not found")
+			return
+		}
 		r, _ := humachi.Unwrap(ctx)
-		next(huma.WithValue(ctx, clientIPKey{}, obs.ClientIP(r)))
+		next(huma.WithValue(ctx, clientIPKey{}, obs.ClientAddress(r)))
 	}}
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousQuiz", Method: http.MethodPost, Path: "/api/public/quizzes/{token}/grade",
@@ -262,6 +289,11 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
+	// After the share-token check (the route's middleware) and before any
+	// grading; a forged link never reaches siteverify.
+	if err := a.checkCaptcha(ctx, body.TurnstileToken); err != nil {
+		return nil, err
+	}
 	var ipHash string
 	if len(plan.open) > 0 {
 		if a.jev == nil {
@@ -290,6 +322,66 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
 		}
+	}
+	return &gradedQuizOutput{Body: apimodel.GradedQuiz{Correct: correct, Total: total, Questions: graded}}, nil
+}
+
+/* ------------------------------------ signed-in check of a shared note quiz */
+
+type checkSharedNoteQuizInput struct {
+	Token  string `path:"token"`
+	QuizID string `path:"quizId"`
+	Body   apimodel.CheckSharedNoteQuizReq
+}
+
+// registerSharedNoteQuizCheck serves POST
+// /api/shared/notes/{token}/quizzes/{quizId}/check: a signed-in visitor's
+// check of a quiz embedded in a shared note, graded under the user's daily
+// grading parts with no captcha and recording nothing (Epo 2026-10-24,
+// Q311). It keeps the anonymous route's share-token checks: a forged token
+// is refused before the body is read, and only a quiz the shared note embeds
+// is graded.
+func (a *api) registerSharedNoteQuizCheck(api huma.API) {
+	verified := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		if _, ok := a.s.VerifyShareToken(ctx.Param("token")); !ok {
+			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "not found")
+			return
+		}
+		next(ctx)
+	}}
+	huma.Register(api, huma.Operation{
+		OperationID: "checkSharedNoteQuiz", Method: http.MethodPost, Path: "/api/shared/notes/{token}/quizzes/{quizId}/check",
+		Summary: "Grade a signed-in check of a quiz embedded in a shared note", Tags: []string{"Sharing"},
+		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
+	}, func(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuizOutput, error) {
+		out, err := a.checkSharedNoteQuiz(ctx, in)
+		return out, reportHandlerError(ctx, err)
+	})
+}
+
+func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuizOutput, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	id, err := a.sharedMaterialID(in.Token)
+	if err != nil {
+		return nil, err
+	}
+	stored, err := a.s.AnonymousNoteQuiz(ctx, id, in.QuizID)
+	if err != nil {
+		return nil, storedContentError(ctx, id, err)
+	}
+	qs, err := decodeStoredQuestions(stored)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	plan, err := planGrading(qs, in.Body.Answers)
+	if err != nil {
+		return nil, gradeRequestError(err)
+	}
+	graded, correct, total, err := a.gradeSignedIn(ctx, plan, "", map[string]any{"quizId": in.QuizID, "sharedNoteId": id})
+	if err != nil {
+		return nil, err
 	}
 	return &gradedQuizOutput{Body: apimodel.GradedQuiz{Correct: correct, Total: total, Questions: graded}}, nil
 }
@@ -333,6 +425,9 @@ func (a *api) checkQuestionComputation(ctx context.Context, in *computationCheck
 			continue
 		}
 		items, _ := questions.MarkItems(p)
+		if err := a.reserveGrading(ctx, 1); err != nil {
+			return nil, err
+		}
 		probability, usage, err := a.jev.RequiresComputation(ctx, questions.GradingText(in.Body.Question, i), items)
 		if err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})

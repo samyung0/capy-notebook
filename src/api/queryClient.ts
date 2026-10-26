@@ -34,12 +34,14 @@ export function isMissing(error: unknown): boolean {
 }
 
 function shouldRetry(failureCount: number, error: unknown): boolean {
+  // A rate-limited read is the user's to retry, not ours.
   if (
     isApiError(error) &&
     (error.status === 401 ||
       error.status === 403 ||
       error.status === 404 ||
-      error.status === 409)
+      error.status === 409 ||
+      error.status === 429)
   ) {
     return false;
   }

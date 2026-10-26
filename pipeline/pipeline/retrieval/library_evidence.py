@@ -54,7 +54,7 @@ class LibraryEvidence:
                 read = ExcerptRead(**item)
                 latest[read.key] = (i, read)
         out: dict[int, list[str]] = {}
-        scratch = tools.ToolContext(workspace_id=ctx.workspace_id, library=True)
+        scratch = tools.ToolContext(workspace_id=ctx.workspace_id)
         for i, turn in enumerate(history or []):
             for owner, read in latest.values():
                 if owner != i:

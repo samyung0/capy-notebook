@@ -297,6 +297,186 @@ describe('Universal Plate material documents', () => {
     expect(valid(chart, 300)).toBe(false);
   });
 
+  // As Go and the collaboration server: a column takes the widths the editor
+  // writes (its presets, and Plate's normalizer's floats) and nothing else.
+  it('takes only the widths the editor writes on columns (security)', () => {
+    const valid = (width: unknown) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          {
+            children: [
+              {
+                children: [{ children: [{ text: 'a' }], type: 'p' }],
+                type: 'column',
+                width,
+              },
+              {
+                children: [{ children: [{ text: 'b' }], type: 'p' }],
+                type: 'column',
+              },
+            ],
+            type: 'column_group',
+          },
+        ],
+      });
+    for (const width of [
+      undefined,
+      '50%',
+      '33.333%',
+      '33.334%',
+      '66.667%',
+      '49.9995%',
+      '33.333333333333336%',
+      '100%',
+      '0.5%',
+    ])
+      expect(valid(width), String(width)).toBe(true);
+    for (const width of [
+      '0%',
+      '101%',
+      '100.5%',
+      '050%',
+      '50.0%',
+      '50.%',
+      '.5%',
+      '5e1%',
+      '-5%',
+      '50',
+      '50px',
+      ' 50%',
+      '50%;color:red',
+      50,
+      null,
+    ])
+      expect(valid(width), String(width)).toBe(false);
+  });
+
+  // As Go and the collaboration server: a table's column sizes and left
+  // margin are what Plate's table resizing writes, px as numbers of 0 or more.
+  it('takes only the sizes Plate writes on tables (security)', () => {
+    const valid = (sizes: object) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          {
+            children: [
+              {
+                children: [
+                  {
+                    children: [{ children: [{ text: 'a' }], type: 'p' }],
+                    type: 'td',
+                  },
+                ],
+                type: 'tr',
+              },
+            ],
+            id: 't',
+            type: 'table',
+            ...sizes,
+          },
+        ],
+      });
+    for (const sizes of [
+      {},
+      { colSizes: [120, 0, 48.5, null] },
+      { colSizes: [] },
+      { marginLeft: 0 },
+      { marginLeft: 24 },
+    ])
+      expect(valid(sizes), JSON.stringify(sizes)).toBe(true);
+    for (const sizes of [
+      { colSizes: ['120'] },
+      { colSizes: ['120px;color:red'] },
+      { colSizes: [-1] },
+      { colSizes: '120' },
+      { colSizes: null },
+      { marginLeft: '24px' },
+      { marginLeft: -1 },
+      { marginLeft: null },
+    ])
+      expect(valid(sizes), JSON.stringify(sizes)).toBe(false);
+  });
+
+  // As Go and the collaboration server: an indent is a number, which Plate
+  // draws as a class and a margin.
+  it('refuses an indent that is not a number (security)', () => {
+    const valid = (indent: unknown) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [{ children: [{ text: 'a' }], indent, type: 'p' }],
+      });
+    for (const indent of [undefined, null, 1, 1.5, LIST_INDENT_MAX])
+      expect(valid(indent), String(indent)).toBe(true);
+    for (const indent of ['1', '1 fixed', true, LIST_INDENT_MAX + 1])
+      expect(valid(indent), String(indent)).toBe(false);
+  });
+
+  // As Go and the collaboration server: the editor writes the marks Plate
+  // draws as styles on text only, so an element carrying one is refused.
+  it('refuses text marks on elements (security)', () => {
+    const valid = (marks: object, leafMarks: object = {}) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          { children: [{ text: 'a', ...leafMarks }], type: 'p', ...marks },
+        ],
+      });
+    const marks = {
+      backgroundColor: '#fdebd0',
+      color: '#c0392b',
+      fontFamily: 'Georgia',
+      fontSize: '20px',
+    };
+    expect(valid({}, marks)).toBe(true);
+    for (const [key, value] of Object.entries(marks))
+      expect(valid({ [key]: value }), key).toBe(false);
+  });
+
+  // As Go and the collaboration server (Epo Q380): a text mark or a list's
+  // style holds any value a browser writes but no `;` or control character.
+  it('refuses a `;` or control character in a text mark or list style (security)', () => {
+    const leaf = (key: string, value: unknown) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [{ children: [{ [key]: value, text: 'a' }], type: 'p' }],
+      });
+    const list = (value: unknown) =>
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          {
+            children: [{ text: 'a' }],
+            indent: 1,
+            listStyleType: value,
+            type: 'p',
+          },
+        ],
+      });
+    const browserValues = {
+      backgroundColor: 'color-mix(in srgb, red 50%, blue)',
+      color: 'var(--accent)',
+      fontFamily: '"Times New Roman", serif',
+      fontSize: '1.2em',
+    };
+    for (const [key, value] of Object.entries(browserValues)) {
+      expect(leaf(key, value), key).toBe(true);
+      expect(leaf(key, null), key).toBe(true);
+      for (const bad of [
+        `${value};x:y`,
+        `${value}\u0000`,
+        `${value}\n`,
+        `${value}\u007f`,
+        ['red'],
+      ])
+        expect(leaf(key, bad), `${key} ${JSON.stringify(bad)}`).toBe(false);
+    }
+    for (const value of ['decimal', 'lower-alpha', '"▪ "', null])
+      expect(list(value), String(value)).toBe(true);
+    for (const value of ['decimal;x:y', 'decimal\u001f', 'decimal\u007f', 3])
+      expect(list(value), JSON.stringify(value)).toBe(false);
+  });
+
   // As Go and the collaboration server (Epo 2026-10-22): a Mermaid source
   // stops at MERMAID_SOURCE_MAX UTF-16 units, an astral character two.
   it('caps a Mermaid source at the catalog max', () => {

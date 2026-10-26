@@ -143,7 +143,13 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `secrets.required`. Changing it invalidates every shared link, including
    quiz and flashcard links, and resets the anonymous grading IP hashes.
    `JEV_TYPESAFE_API_KEY` (manifest secret, target `app`) is the typesafe.ai
-   key that grades open quiz parts; without it grading answers 503. Both app environments use exact Worker Routes in `wrangler.jsonc`,
+   key that grades open quiz parts; without it grading answers 503.
+   `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
+   (variable) also reach the app target for chat voice input, which the API
+   calls itself (the same Singapore workspace and key as uploaded audio,
+   below); without both, voice input answers 503 `voice_unavailable`, and
+   with only one, or a URL not ending in `/compatible-mode/v1`, the API
+   refuses to start. Both app environments use exact Worker Routes in `wrangler.jsonc`,
    with DNS pointing at their tunnel. Do not attach either app as a Worker
    Custom Domain; that would replace the tunnel destination. The apex and
    `www` remain reserved for the future public site, whose implementation is
@@ -233,8 +239,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    parent origins in GitHub. `workers/office` stages the runtime HTML and assets
    from the same build as the SPA, replaces inherited headers, and publishes
    before the SPA. UAT uses `uat-office.capynotebook.com` and allows
-   `https://app.uat.capynotebook.com,https://uat.capynotebook.com,https://local.uat.capynotebook.com`
-   during the hostname transition. Remove the old app parent only after §1.0.2.
+   `https://uat.capynotebook.com,https://local.uat.capynotebook.com`.
    Production uses the `office.capynotebook.com` custom domain configured in
    `wrangler.office.jsonc` and permits only `https://app.capynotebook.com`. The Worker
    handles runtime HTML with `no-store`, supplies the matching `frame-ancestors`
@@ -300,22 +305,22 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    depends on how the origin is reached — see the option you picked.
 
 > **Both the SPA and the API must be proxied.** Proxying only the SPA leaves
-> `api.capynotebook.com` publicly resolvable, which is where the rate limiting, the WAF,
-> and the origin's anonymity actually matter.
+> `api.capynotebook.com` publicly resolvable, which is where the WAF, the edge rate
+> limiting rule (§2) and the origin's anonymity actually matter.
 
 ### 1.0.1 UAT API routing without Workers
 
-The browser uses `https://app.uat.capynotebook.com/api/*`; the edge sends these
+The browser uses `https://uat.capynotebook.com/api/*`; the edge sends these
 requests directly to `capy-uat` and its tunnel to Go. Static assets and workspace
 summary renders keep using the existing `capy-notebook-uat` deployment.
 
 | Setting | UAT value |
 | --- | --- |
-| Proxied `app.uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
-| Worker Route | `app.uat.capynotebook.com/*` → `capy-notebook-uat` |
-| More-specific zone route | `app.uat.capynotebook.com/api/*` → **None**, no script |
-| More-specific Worker Route | `app.uat.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`; the old host has the same) |
-| Tunnel ingress | Host `app.uat.capynotebook.com`, path `^/api/`, service `http://127.0.0.1:8080` |
+| Proxied `uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
+| Worker Route | `uat.capynotebook.com/*` → `capy-notebook-uat` |
+| More-specific zone route | `uat.capynotebook.com/api/*` → **None**, no script |
+| More-specific Worker Route | `uat.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`) |
+| Tunnel ingress | Host `uat.capynotebook.com`, path `^/api/`, service `http://127.0.0.1:8080` |
 
 The ingress goes straight to the gateway's loopback port; Go never reads the
 Host header, so no `httpHostHeader` override is needed. Keep this ingress
@@ -337,7 +342,7 @@ transition both match the old and new UAT hosts as well as the production
 app host:
 
 ```text
-http.host in {"app.capynotebook.com" "app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
+http.host in {"app.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
 ```
 
 - **Cache Rule** `capy_app_api_bypass_cache`: bypass cache (`cache: false`).
@@ -371,7 +376,12 @@ and a browser sign-in were not started.
 
 ### 1.0.2 App hostname transition
 
-The approved UAT app is `https://app.uat.capynotebook.com`. Production is prepared
+The approved UAT app is `https://uat.capynotebook.com` (Q291, 2026-10-24). It
+is the UAT Clerk instance's primary domain and one level under the zone, so
+Universal SSL covers it. It replaces `app.uat.capynotebook.com`, which needed
+the advanced `*.uat` certificate (and had itself replaced `uat` in 2026-09).
+A sibling host such as `uat-app` does not work: Clerk accepts application URLs
+only on its primary domain and that domain's subdomains. Production is prepared
 for `https://app.capynotebook.com`, with `capynotebook.com` and `www` reserved for
 a separate public deployment. Astro with fully static output is the preliminary
 choice; building that site is deferred. See the [landing-site handoff](landing-site-handoff.md).
@@ -383,11 +393,11 @@ stays on the app Worker.
    DNS, routes, tunnel ingress and edge rules for rollback. Finish existing UAT
    journey cleanup before changing targets; saved run manifests bind to their
    original app URL and must not be rewritten to bypass cleanup checks.
-2. Confirm active TLS coverage for `app.uat` under `*.uat.capynotebook.com`.
-   Preserve this advanced certificate's renewal. Add the new DNS, ingress,
-   Worker route, scriptless API exclusion and edge rules from §1.0.1 while
-   retaining the old host. Exclude both UAT hosts from search indexing at the
-   edge; production's public summaries retain their existing visibility rules.
+2. Universal SSL covers `uat`; no UAT host needs an advanced certificate.
+   Add the new DNS, ingress, Worker route, scriptless API exclusion and edge
+   rules from §1.0.1 while retaining the old hosts. Exclude every UAT app
+   host from search indexing at the edge; production's public summaries retain
+   their existing visibility rules.
 3. Before sending users to the new app, add its origin to CORS, collaboration
    and Office parents. During overlap, configure the following values in the
    ignored `deploy/.env.uat` and sync the approved GitHub `uat` variables through
@@ -395,14 +405,14 @@ stays on the app Worker.
 
    | Setting | Transition value |
    | --- | --- |
-   | `APP_URL`, `DEPLOYMENT_APP_URL`, `UAT_APP_URL` | `https://app.uat.capynotebook.com` |
-   | `UAT_ALLOWED_HOSTS` | `app.uat.capynotebook.com,uat-api.capynotebook.com,uat-collab.capynotebook.com,uat-ops.capynotebook.com` |
-   | `CORS_ALLOWED_ORIGINS` | `https://app.uat.capynotebook.com,https://uat.capynotebook.com` |
-   | `COLLABORATION_ALLOWED_ORIGINS`, `OFFICE_ALLOWED_PARENT_ORIGINS` | `https://app.uat.capynotebook.com,https://uat.capynotebook.com,https://local.uat.capynotebook.com` |
+   | `APP_URL`, `DEPLOYMENT_APP_URL`, `UAT_APP_URL` | `https://uat.capynotebook.com` |
+   | `UAT_ALLOWED_HOSTS` | `uat.capynotebook.com,uat-api.capynotebook.com,uat-collab.capynotebook.com,uat-ops.capynotebook.com` |
+   | `CORS_ALLOWED_ORIGINS` | `https://uat.capynotebook.com` |
+   | `COLLABORATION_ALLOWED_ORIGINS`, `OFFICE_ALLOWED_PARENT_ORIGINS` | `https://uat.capynotebook.com,https://local.uat.capynotebook.com` |
 
    `VITE_APP_URL` and Worker `APP_ORIGIN` derive from `DEPLOYMENT_APP_URL`; rebuild
-   rather than editing generated assets. UAT B2 already permits `https://*.uat.capynotebook.com`.
-   Its checked-in CORS file explicitly includes both app origins during overlap.
+   rather than editing generated assets. UAT B2's checked-in CORS file
+   lists every app origin during overlap; apply it after changing them.
    Production B2, CORS, collaboration and Office parents use only the production
    app origin. The future public site has no app API or blob permissions.
 4. Keep UAT Clerk's primary domain, FAPI, account portal, keys and issuer. Update
@@ -412,7 +422,7 @@ stays on the app Worker.
    origin. Google and Microsoft sign-in callbacks remain on
    `https://clerk.uat.capynotebook.com/v1/oauth_callback`; retain the existing
    development callbacks too. The separate OneDrive FilePicker SPA registration
-   needs `https://app.uat.capynotebook.com/msal-redirect.html` before UAT cutover
+   needs `https://uat.capynotebook.com/msal-redirect.html` before UAT cutover
    and the production app equivalent before launch, keeping old entries during
    overlap. Add `local.uat` separately if local OneDrive use is wanted.
 5. Deploy backend/collaboration configuration and rebuild the SPA and Office
@@ -442,6 +452,14 @@ no files or browser-only drafts to recover. Cloudflare ruleset
 requests with HTTP 302 and preserves path/query. `/api` and `/api/*` are
 excluded; the old API routing and overlap origins remain. Disable this one rule
 to restore old-host page access without removing the API routes.
+
+The Q291 move (Epo, Q304–Q306, Q336) finished on 2026-10-25: the 2026-09
+redirect above was removed so `uat` serves the app again, a full uat-quality
+passed there, and `app.uat` was then retired without waiting out its 7-day 302
+(Epo: no one used it). Its DNS, routes, ingress, rules entries and origins are
+gone, `dev-sam.uat` is deleted, and the advanced `*.uat` certificate is
+cancelled. `inbox.uat` (MX only) and `local.uat` (no public DNS) stay; neither
+needs it.
 
 Rollback restores the saved canonical app values, Clerk return paths and page
 routing together, then rebuilds/redeploys so generated origins agree. DNS alone
@@ -644,7 +662,7 @@ Compose does not bind:
 | `uat-api` / `api` | `http://127.0.0.1:8080` |
 | `uat-collab` / `collab` | `http://127.0.0.1:1234` |
 | `uat-ops` / `ops` (Access, §2.1) | `http://127.0.0.1:8082` |
-| `app.uat` / `app`, path `^/api/` (§1.0.1) | `http://127.0.0.1:8080` |
+| `uat` / `app`, path `^/api/` (§1.0.1) | `http://127.0.0.1:8080` |
 | `uat-deploy` / `deploy` (Access, service token only) | `ssh://127.0.0.1:22` |
 | anything else | `http_status:404` |
 
@@ -705,10 +723,48 @@ and agent markdown's V8 (~0.8 GiB, its heap capped). Production has
 7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
 lean on swap; they bound a runaway call, not the expected footprint.
 
+The retrieval container has `mem_limit` and `cpus` (Epo 2026-10-24, rate-limit
+audit): production 3 GiB and 2 CPUs, UAT 1.5 GiB and 1 CPU, rendered by
+`scripts/env/config.py` as `RETRIEVAL_MEM_LIMIT` and `RETRIEVAL_CPUS`. Measured
+in the retrieval image: the idle service holds about 85 MiB; a 12-slide deck
+export runs about 4 s of CPU in ppt-master subprocesses of about 75 MiB; a
+page render adds about 25 MiB. An image capture decodes reduced only from a
+JPEG (Q239): at Pillow's pixel limit (89 megapixels) a JPEG capture adds about
+90 MiB, a PNG, GIF or TIFF 0.4 to 0.8 GiB and a WebP 1.3 GiB; a 12-megapixel
+photo about 55 MiB; at the 5-megapixel source limit (Q286) a capture adds at
+most about 130 MiB (a WebP). Two render threads (`retrieval/limits.py`) bound
+the decodes running at once. A chat turn holds its history and captures while
+it waits or runs tools (7.4 MiB with 16 page captures, 1.6 MiB near the
+context window, 0.1 MiB for a typical turn) and its model call adds the
+encoded request while it runs (about 21 MiB with 16 captures); 64 call slots
+bound the calls in flight and the turn slots the turns in progress: 96 in
+production and 48 on UAT (Epo 2026-10-24, Q338, Q343), rendered by
+`scripts/env/config.py` as `RETRIEVAL_TURN_SLOTS`, which compose passes as
+`CAPY_TURN_SLOTS`. Production's worst case, 96 turns with 16 captures each,
+64 of them in a call, beside two 5-megapixel captures, is about 2.4 GiB
+live; such a load peaked at 2.7 to 3.2 GiB in the measurement. Retrieval runs
+with the collaboration service's allocator settings below (Q343), which cut
+the idle level after 64 capture-heavy calls from 2.97 to 2.24 GiB. Captures
+check no pixel size of their own (Q342): until the 5-megapixel upload check is
+live, Pillow's 89-megapixel limit stands, where one WebP capture adds
+1.3 GiB. UAT's 1.5 GiB holds one worst-case capture beside the idle service,
+not beside many turns with captures. Docker lets a container with
+`mem_limit` and no `memswap_limit` use as much swap again, so the kill comes
+later than the RAM figure. A container over its limit is killed and restarted
+(`restart: unless-stopped`), failing only its own streams. Check after a
+deploy that changes them:
+
+```bash
+docker inspect -f '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}}' $(docker ps -qf name=retrieval)
+```
+
+It prints `3221225472 2000000000` in production and `1610612736 1000000000` on UAT.
+
 The collaboration service runs with `MALLOC_ARENA_MAX=2`,
 `MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
 (`docker-compose.prod.yml`, UAT and production; the engine processes
-inherit them, Epo 2026-10-17). Room loads replay on tokio's blocking
+inherit them, Epo 2026-10-17), and retrieval with the same three (both
+compose files, Q343). Room loads replay on tokio's blocking
 threads, each with its own glibc arena, and glibc raises its mmap
 threshold as large blocks are freed, so without them memory freed after
 peers leave stays in the process: 411-467 MiB kept, against ~90 MiB with
@@ -1087,26 +1143,30 @@ webhook remains `https://api.capynotebook.com/webhooks/clerk`; ops does not acce
 webhooks. Stripe remains `https://api.capynotebook.com/webhooks/stripe`. B2 CORS
 `allowedOrigins` is the SPA origin, not `api.` or `ops.`.
 
-Two-step verification is turned on and off on Clerk's hosted account page,
-not in Capy (Epo 2026-10-21). On the production instance, and the same on UAT
-(§12.3):
+Clerk's hosted Account Portal stays on (Clerk can switch off only the whole
+portal) and Capy links to none of its pages (Q377). On the production instance,
+and the same on UAT (§12.3):
 
-1. Under multi-factor authentication, turn on the authenticator application
-   (TOTP, set up by QR code) factor and leave SMS verification codes off.
-2. Leave Clerk's new-device check off, so sign-in has no device-trust step.
-3. Keep the Account Portal on with its user profile page. Settings → Account
-   links its Two-step verification row to the URL Clerk's SDK builds for that
-   page (`buildUserProfileUrl()`). With the user profile turned off Clerk
-   builds no URL, and the row disappears from Settings without any error.
+1. In the user profile settings, turn off "delete account", so an account is
+   deleted only through Capy's Settings with its 30-day grace; a Clerk-side
+   deletion purges at once (Q375). It is off in the UAT app; set it on the
+   production app at its setup.
+2. Leave multi-factor authentication off: two-step verification waits until
+   production launch is planned, since Clerk offers its factors only on a paid
+   plan, and then needs Clerk's page linked or an in-app setup (Q373).
+3. Leave Clerk's new-device check off, so sign-in has no device-trust step.
 
 ---
 
 ## 2. Cloudflare — rules
 
-The zone's WAF custom rules, cache rules and response header transform rules
-are code. One zone holds production and UAT, and
+The zone's WAF custom rules, rate limiting rules, cache rules and response
+header transform rules are code. One zone holds production and UAT, and
 [`deploy/cloudflare/rules.json`](../deploy/cloudflare/rules.json) lists every
-rule of those three phases for both environments.
+rule of those four phases for both environments. Applying the file to the
+live zone is a deploy step: a commit that changes it is live only once someone
+runs the apply below (then `--check`), with a ruleset-editing token for the
+zone at deploy time.
 `scripts/deploy/cloudflare_rules.py` applies the file or checks the zone
 against it:
 
@@ -1146,20 +1206,71 @@ for phase in http_request_firewall_custom http_ratelimit http_request_cache_sett
 done
 ```
 
-**No edge rate limiting rule yet.** The zone is on the Free plan, where a
-rate limiting rule may match only the path (no host), counts per IP over 10 s
-and blocks for 10 s, and the zone gets one rule. Production and UAT share the
-zone and their paths, so a production-only limit cannot be written; it needs
-the Pro plan (host in the expression, blocks up to an hour, two rules). Until
-then the gateway's limits are the only ones. When the rule is added it goes in
-the file's `http_ratelimit` phase and must leave `/webhooks/` out: Stripe and
-Clerk burst deliveries and retries from small sets of IPs, and rate limiting
-them can lose subscription or identity events.
+**Rate limiting rules** (Epo 2026-10-24, Q303, Q324). The zone is on
+Cloudflare Pro, which allows two rate limiting rules; the phase holds both,
+and `scripts/deploy/test_cloudflare_rules.py` refuses a third. Each counts
+per IP with the data centre (`cf.colo.id`).
 
-**WAF custom rule** (`capy_webhooks_skip_security`): requests under
-`/webhooks/` on the API hosts (`api`, `uat-api`) skip every security rule (the remaining custom rules, rate
-limiting, managed rules, Super Bot Fight Mode, and Zone Lockdown, User Agent
-Blocking, Browser Integrity Check, Hotlink Protection and Security Level).
+- `capy_public_api_rate_limit` covers `/api/public/` on every host of both
+  environments: 100 requests in 10 s from one address, then blocked for 10 s.
+  `/api/public/` is the costliest path a signed-out caller reaches (grading
+  calls Jev; a public note read is up to about 2 MiB). It stops floods before
+  the tunnel and Redis. It covers direct `/api/public/` calls only: the site
+  Worker's own reads of `/api/public/` reach the origin without passing the
+  zone's rate-limit phase (a same-zone subrequest, the Worker has no
+  `global_fetch_strictly_public`); the Worker signs the visitor's address
+  into each read and Go counts it per visitor and shared page, 300 a minute
+  (Q244; [observability-metering.md](observability-metering.md#6-rate-limiting)).
+- `capy_share_pages_rate_limit` covers the shared pages a visitor opens,
+  `/share/` and `/w/` on the app hosts of both environments (`app`,
+  `uat`): past 600 requests a minute from one address,
+  a Managed Challenge. On Pro a challenge action must set
+  `mitigation_timeout` 0, so the rule throttles (each request past the rate
+  is challenged) rather than holding a challenge for a set time. The rule
+  matches `/share/` and `/w/` only: `/p/` serves the pages' images and audio,
+  which cannot answer a challenge, so it stays bounded by the gateway's
+  per-visitor share-read class (Epo 2026-10-24, Q329).
+
+Everything else has no edge limit. A rule must leave `/webhooks/` out: Stripe
+and Clerk burst deliveries and retries from small sets of IPs, and rate
+limiting them can lose subscription or identity events. Super Bot Fight Mode
+and the managed WAF rulesets stay off until they are tested on chosen routes
+(Q324).
+
+**WAF custom rules.** `capy_block_internal_paths` blocks `/api/internal/` and
+`/internal/` on every public host of both environments (`api`, `uat-api`,
+`app`, `uat`, `collab`, `uat-collab`). Nothing legitimate reaches
+them through Cloudflare: retrieval and collaboration call the gateway on the
+Docker network, the ingest hosts over WireGuard (`GATEWAY_URL` on the private
+address), and the local lane over its private routes. A caller that needs an
+internal route through a public host is a configuration error to fix, not a
+rule to widen.
+
+`capy_webhooks_skip_security`: requests under `/webhooks/` on the API hosts
+(`api`, `uat-api`) from Stripe's or Svix's published webhook addresses skip
+every security rule (the remaining custom rules, rate limiting, managed rules,
+Super Bot Fight Mode, and Zone Lockdown, User Agent Blocking, Browser
+Integrity Check, Hotlink Protection and Security Level). Clerk delivers its
+webhooks through Svix, and its docs link Svix's whole list, so every region
+is listed. A webhook from any other address gets the zone's ordinary rules.
+The addresses come from:
+
+- Stripe: <https://stripe.com/files/ips/ips_webhooks.json> (`WEBHOOKS`)
+- Svix: <https://docs.svix.com/webhook-ips.json> (every region's list)
+
+**Refresh at each deploy.** Before applying the rules, run
+`python3 scripts/deploy/webhook_ranges.py`. It reads both published lists
+and compares their union with the rule's `ip.src in {...}` set: exit 0 in
+sync, 1 when they differ (each missing or extra address printed, then the
+whole published union), 2 when a list cannot be read (retry; do not apply on
+a guess). On a difference, replace the set at the end of the rule's
+expression with the printed union (addresses and CIDRs separated by
+spaces), run `python3 scripts/deploy/test_webhook_ranges.py` and
+`python3 scripts/deploy/test_cloudflare_rules.py` (update the fixture lists
+in the first to the new published lists), commit, and apply. Do the same
+when either provider announces a change. A provider address missing from the
+set shows up as challenged or blocked webhook deliveries in the provider's
+dashboard and in Security → Events.
 
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
@@ -1282,6 +1393,15 @@ gateway API to the ingest host, not only `/api/internal/`; the host is trusted
 infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
 gateway disables new imports with `503` instead of creating stranded
 reservations.
+
+Every pipeline process (retrieval, the ingest, parse and import workers) refuses
+to start with a `PIPELINE_SECRET` or `PARSER_TOKEN` set shorter than 32
+characters, and the parser with a shorter `PARSER_TOKEN`, unless `APP_ENV` is
+`development` or `e2e`; a missing `APP_ENV` is checked (`pipeline/config.py`
+`secret`, `parser/app.py`; Epo 2026-10-24, the gateway's own rule). UAT, the
+shared non-production parser and production all run with `APP_ENV=production`,
+so their values must be at least 32 characters (`openssl rand -hex 32`) before a
+release with this rule deploys; local development keeps `dev-pipeline-secret`.
 
 Retry scheduling lives on the `jobs` row (three attempts, 30 s doubling
 backoff, `CAPY_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
@@ -1412,7 +1532,12 @@ Two content security policies, both built once per SPA build by
     `form-action 'self'`, `object-src 'none'` and `base-uri 'none'`;
   - `frame-ancestors 'self'`: only the app may frame these pages, and
     nothing in it does today, so an outside site (an LMS, a blog) cannot
-    embed a shared quiz or note.
+    embed a shared quiz or note;
+  - on a shared quiz and a shared note only (the pages that grade signed-out
+    answers), `https://challenges.cloudflare.com` in `script-src` and
+    `frame-src` for Cloudflare Turnstile (`allowTurnstile` in
+    `workers/site/handler.ts`; Epo 2026-10-24, Q271). Flashcard, summary and
+    error pages do not get it.
 
   The SPA gets the same `script-src` report-only, inside its image header,
   plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
@@ -1473,6 +1598,41 @@ it; a new script or frame host on a public page goes into `scriptSources` or
 `capy-web` security report. The HTML embed frame, the Office runtime and Ops
 keep their own policies (§2.3, `workers/office/_headers`, the Ops application
 below).
+
+### 2.5 Turnstile widget (signed-out answer checks)
+
+Each signed-out answer check (a shared quiz's Submit, a quiz embedded in a
+shared note) carries a Cloudflare Turnstile token, and the API verifies it
+with siteverify before grading (Epo 2026-10-24, Q271; observability-metering
+§ anonymous grading). Dashboard work, by hand, once per environment:
+
+1. Cloudflare dashboard → Turnstile → Add widget. Mode **Managed**. Hostnames:
+   the environment's app hosts that serve share pages (UAT:
+   `uat.capynotebook.com` and `local.uat.capynotebook.com`; production: its
+   app hostname). One widget
+   per environment, so a leaked UAT key cannot pass production checks.
+2. GitHub environment (`uat`, `production`): variable
+   `VITE_TURNSTILE_SITE_KEY` (the widget's site key, built into the share
+   pages) and secret `TURNSTILE_SECRET_KEY` (its secret key, for the API).
+   `scripts/env/config.py` refuses a build without the site key and an app
+   render without the secret, and a production gateway does not boot without
+   the secret or with one of Cloudflare's published test secrets
+   (`validateTurnstileSecret`, Q308), or when `APP_URL`,
+   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` name no host to
+   check tokens against (`turnstileHosts`, Q350).
+3. Deploy, open a shared quiz signed out and submit: the check is graded. A
+   403 `captcha_failed` means the token did not verify (wrong key pair, or a
+   host siteverify names that is not among the gateway's `APP_URL`,
+   `CORS_ALLOWED_ORIGINS` and `COLLABORATION_ALLOWED_ORIGINS` hosts); a 503
+   `captcha_unavailable` means siteverify could not answer (the API refuses
+   rather than skipping the check).
+
+Local stacks and e2e use Cloudflare's published test keys, which always pass:
+site key `1x00000000000000000000AA`, secret
+`1x0000000000000000000000000000000AA` (`deploy/.env.example`, the Compose
+files, `playwright.config.ts`). The API still calls siteverify with the test
+secret, so a local signed-out check needs Cloudflare reachable; it checks no
+hostname there, since test tokens name none of the app hosts.
 
 ---
 
@@ -1892,8 +2052,27 @@ those services start.
    and `pnpm env:check` fail with "unknown configuration keys: ZAI_API_KEY":
    delete the line, and put the OpenRouter key in `OPENROUTER_API_KEY`. The
    `production` environment needs `OPENROUTER_API_KEY` before a production
-   deploy, since the renderer writes an empty key without it. Those calls
-   happen on this ingest host after it
+   deploy, since the renderer writes an empty key without it. Uploaded audio
+   needs `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
+   (variable, the workspace's `…/compatible-mode/v1` URL with no trailing
+   slash; the pipeline refuses to start with any other ending) from an Alibaba
+   Model Studio workspace in Singapore (`ap-southeast-1`), with the key
+   restricted to the `qwen-audio-3.1-asr-flash*` models. Both reach the
+   production worker and each environment's queue workers (manifest targets
+   `ingest-production`, `ingest-queue`) and the app host's API for chat voice
+   input (target `app`); set both or neither, and without them an audio
+   upload fails terminally and voice input answers 503. Production needs
+   both in its GitHub environment before a deploy whose API serves voice
+   input; local development reads them from `deploy/.env` like any app key.
+   The worker hands Alibaba a ten-minute signed GET link for the one source
+   object, so nothing else needs bucket access. Check the workspace's
+   Filetrans quota before launch: each environment runs at most 12 tasks
+   across its workers (a task holds its slot while its job re-pends between
+   polls), and Flash answered 429 from about 20 requests in flight (chat voice
+   input calls Flash from the app host, one request a recording, at most 60
+   an hour per user). Audio needs no worker or service of its own: the ingest
+   workers submit and poll in short claims. Filetrans calls happen on this
+   ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
    parser is OpenDataLoader 2.5.7 plus the refined repairs (`parser/odl/`);
@@ -2311,7 +2490,9 @@ content. Never point the ordinary app migrator at `bank`.
    the expected image content type, immutable cache headers and a Cloudflare
    cache hit after warming.
 4. Production comments require `BANK_COMMENT_EMAIL` and the existing email
-   backend, sender identity and `APP_URL`. Sending is direct and user-retryable.
+   backend, sender identity and `APP_URL`. Comments are stored and emailed as
+   one digest per recipient every 4 hours
+   ([question-bank.md](question-bank.md#comments)).
 5. Install the updated `library-db-backup.sh` only after the bank exists. Add
    the `BANK_PRIVATE_B2_*` entries from `deploy/library-db.env.example` to the
    host's mode-0600 `.env`. Use a bucket-scoped write-only backup key. The script
@@ -2400,7 +2581,8 @@ the host:
   at startup (`prctl(PR_SET_DUMPABLE, 0)`), so its children, which run as the
   same user, can neither trace it nor read its memory or environment. It holds
   `PARSER_TOKEN` in a constant, removes it from its environment at import,
-  before any child starts, and refuses to start, or a request, without one;
+  before any child starts, and refuses to start, or a request, without one
+  (or to start with one under 32 characters outside development and e2e);
   its children run under the decoder sandbox (§7.5). The
   playbook also sets `kernel.yama.ptrace_scope=1`
   (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own
@@ -2465,11 +2647,12 @@ child confines itself right after its `setsid`.
 | Parse child (persistent) | the API's, without `PARSER_TOKEN` | 2 GiB soft address space | none (600 s per document) | 256 | 512 MiB | `setsid` | reads its code, the system trees and Java's jars; writes its slot folder |
 | LibreOffice (`soffice.bin`) | `PATH`, `LANG`, `HOME` and `TMPDIR` (its job folder), `MALLOC_ARENA_MAX=2` | the parse child's, inherited | 180 s | 256 | 256 MiB | `setsid`, `setpgid`, new processes | reads the system trees; writes its job folder, its IPC pipe included |
 | Java (OpenDataLoader) | `PATH`, `HOME`, `LANG`, `MALLOC_ARENA_MAX=2`; `-XX:ActiveProcessorCount` from the container's CPU quota | 2 GiB data, address space lifted | 2,400 s behind the 600 s deadline | 256 | 512 MiB | `setsid`, `setpgid`, new processes | reads the system trees, its jars and its PDF; writes its output folder |
-| Ingest decode helper (`pipeline/ingest/decode.py`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
+| Ingest decode helper (`pipeline/ingest/decode.py`), and ffmpeg measuring an audio upload (`decode.audio_seconds`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB; ffmpeg's progress report at most 1 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
 
 Core dumps are off for all of them. The ingest worker never imports MuPDF or
 Pillow: PDF page text and heading evidence, image captions and card thumbnails
-all come from the helper. The helper has no network through seccomp; the
+all come from the helper, and an audio upload's length from ffmpeg under the
+helper's policy. The helper has no network through seccomp; the
 worker's uid gets no nftables rule, which would cut the worker's own traffic.
 The parser's uid-10001 rule (§7.4) stays as its outer layer. The sandboxed JVM
 reads neither `/sys` nor `/proc`, so the parser reads the container's CPU quota
@@ -2855,7 +3038,7 @@ web app.
 1. Authentication. Platform **Single-page application**. Redirect URIs are
    `{SPA origin}/msal-redirect.html`, for example
    `http://localhost:5173/msal-redirect.html`,
-   `https://app.uat.capynotebook.com/msal-redirect.html`, and
+   `https://uat.capynotebook.com/msal-redirect.html`, and
    `https://app.capynotebook.com/msal-redirect.html`. Leave **Implicit grant and hybrid
    flows** unchecked: `@azure/msal-browser` v5 uses auth code + PKCE, and the
    SPA platform already enables the CORS-enabled token endpoint.
@@ -2953,11 +3136,10 @@ authentication strategy.
 3. Create a separate private B2 bucket and bucket-scoped key. Apply
    `deploy/b2-cors.uat.json` and `deploy/b2-lifecycle.uat.json` (§4). Do not
    point UAT at the production bucket.
-4. Use `app.uat.capynotebook.com` for the app, keeping `uat-api`, `uat-collab`,
-   `uat-office` and `uat-ops` unchanged. The advanced certificate
-   covering `*.uat.capynotebook.com` is required for `app.uat`; Universal SSL's
-   `*.capynotebook.com` alone does not cover it. Verify certificate coverage and
-   managed renewal before routing traffic. Configure DNS, tunnel routing,
+4. Use `uat.capynotebook.com`, the Clerk primary domain, for the app, next to
+   `uat-api`, `uat-collab`, `uat-office` and `uat-ops`. Every proxied UAT host is
+   one level under the zone, so Universal SSL's `*.capynotebook.com` covers it; a
+   host under `*.uat.capynotebook.com` would need an advanced certificate. Configure DNS, tunnel routing,
    origin lockdown, cache bypass, WebSocket support, and `/api` using §§1–3.
    Review tooling uses exact hosts, never a wildcard. Existing deployments
    follow the transition steps in §1.0.2.
@@ -3024,7 +3206,7 @@ required by §1.3.
 In the Clerk dashboard:
 
 1. Activate the UAT application's Production instance with primary domain
-   `uat.capynotebook.com`. The browser app runs at `app.uat.capynotebook.com`;
+   `uat.capynotebook.com`. The browser app runs at that primary domain;
    keep FAPI `clerk.uat.capynotebook.com`, account portal
    `accounts.uat.capynotebook.com`, and their existing keys and DNS records.
 2. Enable the same sign-in methods, session lifetime, organization settings,
@@ -3041,9 +3223,9 @@ In the Clerk dashboard:
    `CLERK_SECRET_KEY`. The GitHub authenticated tests receive the same values
    as `CLERK_PUBLISHABLE_KEY` and the protected `CLERK_SECRET_KEY` environment
    secret. Never put the secret key in a repository variable or browser build.
-6. Set up two-step verification as on production (§1.3): the authenticator
-   application factor on, SMS codes off, the new-device check off, and the
-   Account Portal user profile on.
+6. Set up the account settings as on production (§1.3): "delete account" off
+   in the user profile (Q375), multi-factor authentication off until
+   production launch is planned (Q373), and the new-device check off.
 
 The gateway refuses startup when normal Clerk authentication has either a
 blank `CLERK_SECRET_KEY` or a blank `CLERK_WEBHOOK_SECRET`. Development with
@@ -3211,7 +3393,7 @@ enabled payment methods. The reload worker runs only where
 Plan credit limits are data, not migrations: the Free monthly allowance is
 200 credits (`UPDATE plan_limits SET credit_limit_micros = 200000000 WHERE
 plan_tier = 'free';`, Epo 2026-10-16), and the one-off 800-credit starter grant
-is the `user_credits` column default from migration 0088. A database built from
+comes with the first saved card (migration 0109, no setting). A database built from
 migrations still seeds the older values, so set the row by hand in each
 environment, **before** the deploy that restarts the API and the ingest worker:
 both read `plan_limits` once at startup (or restart them after the change).
@@ -3664,7 +3846,7 @@ subscription webhook for a user it has not admitted yet: rerun a minute later.
 The environment file needs a `sk_test_` `STRIPE_SECRET_KEY` for
 `UAT_STRIPE_ACCOUNT_ID`. The free account never subscribes.
 
-Sign in to any seeded account at `https://app.uat.capynotebook.com` with its
+Sign in to any seeded account at `https://uat.capynotebook.com` with its
 email and Clerk's fixed test code `424242` (no mail is sent). Automated journeys
 do not use these long-lived accounts; they create their own per run.
 

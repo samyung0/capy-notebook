@@ -80,7 +80,7 @@ def _excerpt() -> library.Excerpt:
 async def test_library_search_and_read_cards_hold_the_excerpt_in_a_block(
     monkeypatch,
 ):
-    ctx = ToolContext(workspace_id="ws", library=True)
+    ctx = ToolContext(workspace_id="ws")
 
     async def _search(_query, *, subject=None, roles=None, **_kwargs):
         return library.SearchResult([_excerpt(), _excerpt()], subject, roles or [])

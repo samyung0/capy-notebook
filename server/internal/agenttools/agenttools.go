@@ -71,7 +71,7 @@ import (
 // v23: chart media and fences lose unit (it goes in the title); plot media and
 // fences take kind line or scatter.
 // v24: the embed catalog (server/internal/embeds) names each embed kind once
-// per layer: chat's Diagram and Interactive are Mermaid and HtmlEmbed, and the
+// per layer: chat's Interactive is HtmlEmbed (chat's Mermaid went in v41), and the
 // html-embed rules the note format and chat quote come from the catalog.
 // v25: add_open_question is gone (Epo 2026-10-14): add_questions items take
 // an open question too (marks, markscheme, model_answer, hints?), the item's
@@ -129,7 +129,16 @@ import (
 // delete_slide names (Epo 2026-10-22).
 // v39: format_text names its span text, not expected_text, and delete_table
 // takes a table's short id (body:t0) that names one table (Epo 2026-10-23).
-const ContractVersion = 39
+// v40: search_web searches the web, its cited results kept like passages; the
+// stream request carries workspaceOnly instead of library, library.read is
+// granted with every chat, and the library tools and search_web stay offered
+// whatever the switch says, answering as unavailable while it is on (Epo
+// 2026-10-24).
+// v41: the agent makes no Mermaid: create_material takes flashcards or a note
+// (no mindmap or diagram) and the note format names no mermaid fence; a
+// Mermaid block a learner added still rewrites through replace_block (Epo
+// 2026-10-25).
+const ContractVersion = 41
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -272,10 +281,13 @@ const (
 )
 
 // UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
-// room holds its Yjs items while the step is live (Epo 2026-10-20).
+// room holds its Yjs items while the step is live (Epo 2026-10-20). An edit
+// step's is offered until ExpiresAt, 24 h after its agent edit (Q385), when
+// the chat hides it; a file step's has none.
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
 	Status      UndoStatus `json:"status" enum:"available,unavailable"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
 }
 
 // EffectOperation names what a mutation did to a resource.
@@ -713,14 +725,13 @@ var noteFigureFences = fmt.Sprintf("```chart fences comparing labelled categorie
 
 // noteMarkdownDescription is the fence format notes are written in; the
 // editor's markdown import reads the same fences (src/features/notes/blocks).
-var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
-	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
+var noteMarkdownDescription = "Markdown. A note may also hold, where they help an idea: " +
 	noteFigureFences +
 	"```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check sized " +
 	"and placed as the study preferences say; and " + fmt.Sprintf("```html-embed fences for an interactive (YAML: a quoted `caption`, "+
 	"`html: |`), at most %d per note. ", embeds.HTMLEmbedMaxCount) + embeds.RulesOf("html_embed") +
-	" Use an interactive only where moving something teaches more than a diagram."
+	" Use an interactive only where moving something teaches more than a still picture."
 
 // The agent writes questions in small shapes (Epo 2026-10-13): multiple-choice,
 // short-answer and open questions through add_questions (one tool since
@@ -938,6 +949,24 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
 		chatTool(Definition{
+			Name:      "search_web",
+			Retention: RetainCitedPassages,
+			Description: "Search the web. Expensive: each search costs the learner credits, so " +
+				"call it only when the workspace, the library and your own knowledge cannot " +
+				"answer (recent events, facts they lack). At most 3 searches per learner " +
+				"message, one focused query each, written in your own words rather than " +
+				"copied from the learner's files. Results are pages anyone can publish.",
+			InputSchema: obj(map[string]any{
+				"query": map[string]any{
+					"type": "string", "minLength": 1, "maxLength": 128,
+					"description": "One focused query. site:, -site:, lang:, after: and " +
+						"before: narrow it.",
+				},
+			}, "query"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead},
+		}),
+		chatTool(Definition{
 			Name:      "read_skill",
 			Retention: RetainNone,
 			Description: "Read a skill: the full instructions for one kind of work, listed " +
@@ -958,7 +987,7 @@ func Definitions() []Definition {
 			InputSchema: obj(map[string]any{
 				"kind": map[string]any{
 					"type": "string",
-					"enum": []string{"flashcards", "mindmap", "diagram", "note"},
+					"enum": []string{"flashcards", "note"},
 				},
 				"title": map[string]any{"type": "string", "maxLength": fieldlimits.MaterialTitle},
 				"cards": map[string]any{
@@ -971,7 +1000,7 @@ func Definitions() []Definition {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "note, mindmap or diagram only: markdown.",
+					"description": "note only: markdown.",
 				},
 				"sources":     sourcesSchema("The "),
 				"chapter_id":  str("The chapter to file it in; omit to leave it unfiled."),
@@ -1110,8 +1139,8 @@ func Definitions() []Definition {
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
 				"the whole call. Edits save directly; replace_block rewrites a note " +
-				"block with formatting or math, and a mermaid block (a mindmap's or diagram's " +
-				"one block) as one ```mermaid fence, expecting the source inspect shows as its text. " +
+				"block with formatting or math, and a Mermaid block a learner added as one " +
+				"```mermaid fence, expecting the source inspect shows as its text. " +
 				"Any note block may be removed or replaced, media included; the only media an edit " +
 				"adds are library figures. A block rewritten as one of its own type keeps its " +
 				"caption and width (a diagram its theme too); an image swapped for a different " +

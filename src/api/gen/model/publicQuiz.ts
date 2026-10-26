@@ -4,27 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { Privacy } from './privacy.ts';
-import type { Provenance } from './provenance.ts';
-import type { PublicQuizQuestionsItem } from './publicQuizQuestionsItem.ts';
 
 export interface PublicQuiz {
   author: string;
   canClone: boolean;
-  canEdit: boolean;
-  canEditContent: boolean;
-  chapters: string[];
   clones: number;
-  createdAt: string;
   id: string;
-  isOwner: boolean;
   name: string;
-  parentMaterialId?: string;
-  privacy: Privacy;
-  provenance?: Provenance;
-  questions: PublicQuizQuestionsItem[];
-  revision: number;
-  sharePath?: string;
+  questionCount?: number;
   workspaceId: string;
-  workspaceName: string;
 }

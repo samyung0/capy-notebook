@@ -376,6 +376,27 @@ def text_of(answer: str) -> str:
         return answer
 
 
+_ROOT_HEAD = re.compile(r"(?m)^[ \t]*root\s*=\s*Answer\s*\(")
+_BARE_ANSWER = re.compile(r"(?<!\w)Answer\s*\(\s*\[")
+
+
+def with_root(text: str) -> str:
+    """The first ``Answer([...])`` is the root when no statement names it
+    (Epo 2026-10-25): GLM writes the call bare, alone or glued to prose.
+    ``root = `` goes on its own line before it; prose before it stays the
+    Markdown preface."""
+    if _ROOT_HEAD.search(text):
+        return text
+    bare = _BARE_ANSWER.search(text)
+    if bare is None:
+        return text
+    head = text[: bare.start()].rstrip()
+    if head.endswith("="):
+        # Assigned to another name: not a bare root call.
+        return text
+    return (head + "\n\n" if head else "") + "root = " + text[bare.start() :]
+
+
 def _inside_string(text: str) -> bool:
     """Does the text end inside a string literal? A prefix that does not
     tokenize is treated as inside one, so a fence there never closes it."""
@@ -493,8 +514,9 @@ class LangRenderer:
                 self._held = ""
         tail = ""
         if not self.answer_shaped:
-            start = re.search(r"(?m)^[ \t]*root\s*=\s*Answer\s*\(", self.raw)
-            if start and start.start() > 0:
+            self.raw = with_root(self.raw)
+            start = _ROOT_HEAD.search(self.raw)
+            if start:
                 # Preserve the preface as Markdown, but recover the program's
                 # citations locally so the browser can render both parts.
                 recovered = LangRenderer(self.known)

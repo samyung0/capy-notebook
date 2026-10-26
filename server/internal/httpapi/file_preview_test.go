@@ -3,6 +3,8 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -334,7 +336,8 @@ func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
 	if _, err := st.Pool().Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, owner); err != nil {
 		t.Fatal(err)
 	}
-	if body := session(""); !strings.Contains(body, `"imageMaxBytes":5242880`) {
+	// 2 MiB on every plan (Epo 2026-10-24).
+	if body := session(""); !strings.Contains(body, `"imageMaxBytes":2097152`) {
 		t.Fatalf("editor of a Pro owner's file: %s", body)
 	}
 	if body := session(""); strings.Contains(body, "thumbnailStale") {
@@ -348,5 +351,69 @@ func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
 	}
 	if body := session("?view=true"); strings.Contains(body, "thumbnailStale") {
 		t.Fatalf("view read carries the stale card: %s", body)
+	}
+}
+
+// Q219: a DOCX editing session's token offers a second client id, for the
+// editor's resident layout worker, other than its own; an XLSX one offers
+// none.
+func TestDocxSourceTokenOffersAWorkerClientID(t *testing.T) {
+	ctx := context.Background()
+	st := openAccessTestStoreForPreview(t)
+	memory := blob.NewMemory()
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
+		AuthDisabled:        true,
+		E2EAuth:             true,
+		E2ESecret:           "e2e-test-secret",
+		E2EUserIDs:          []string{"u_owner"},
+		CollaborationSecret: "collab-test-secret",
+	})
+	workspace, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Worker ids", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
+	upload := func(name string) string {
+		t.Helper()
+		file, err := uploadSource(ctx, st, workspace.ID, "u_owner", name, 100, "sources/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := memory.Put("sources/"+name, bytes.NewReader([]byte("PK-source"))); err != nil {
+			t.Fatal(err)
+		}
+		return file.ID
+	}
+	mint := func(fileID string, body any) (string, map[string]any) {
+		t.Helper()
+		rec := doReq(t, handler, http.MethodPost, "/api/files/"+fileID+"/collaboration-token", "u_owner", body)
+		var out struct {
+			Token string `json:"token"`
+		}
+		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &out) != nil {
+			t.Fatalf("token = %d body=%s", rec.Code, rec.Body.String())
+		}
+		parts := strings.Split(out.Token, ".")
+		var claims map[string]any
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil || json.Unmarshal(payload, &claims) != nil {
+			t.Fatalf("claims: %v", err)
+		}
+		return out.Token, claims
+	}
+	docxID := upload("report.docx")
+	previous, docx := mint(docxID, nil)
+	if worker, _ := docx["workerClientId"].(float64); worker == 0 || worker == docx["clientId"] {
+		t.Fatalf("docx claims = %v", docx)
+	}
+	if _, xlsx := mint(upload("book.xlsx"), nil); xlsx["workerClientId"] != nil {
+		t.Fatalf("xlsx claims = %v", xlsx)
+	}
+	// Security regression (Q236): a reconnect presenting its previous token
+	// is offered both ids again, so its editor and layout worker keep them.
+	// Fails if the endpoint ignores the previous token.
+	_, again := mint(docxID, map[string]string{"previousToken": previous})
+	if again["clientId"] != docx["clientId"] || again["workerClientId"] != docx["workerClientId"] {
+		t.Fatalf("regranted claims = %v, previous = %v", again, docx)
 	}
 }

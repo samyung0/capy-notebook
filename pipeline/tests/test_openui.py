@@ -88,6 +88,28 @@ def test_program_after_a_prose_preface_keeps_its_citations(chunk, fenced):
 
 
 @pytest.mark.parametrize(
+    "raw",
+    [
+        # GLM's shapes (Epo 2026-10-25): bare, glued to prose, prose then bare.
+        'Answer([a])\na = Md("Grounded.", [2])\n',
+        'Built on it.Answer([a])\na = Md("Grounded.", [2])\n',
+        'All done:\n\nAnswer([a])\na = Md("Grounded.", [2])\n',
+    ],
+)
+def test_the_first_bare_answer_call_is_the_root(raw):
+    out, renderer = _stream(raw, 2, 5)
+    assert out == "" and renderer.answer_shaped is False
+    program = renderer.raw[renderer.raw.index("root = Answer(") :]
+    assert openui.validate(openui.parse(program, strict=True)) is None
+    assert renderer.reading_order() == [2]
+    prefix = raw[: raw.index("Answer(")].strip()
+    assert renderer.raw.startswith(prefix + "\n\nroot = " if prefix else "root = ")
+    # A named root or another name's Answer stays as written.
+    assert openui.with_root("root = Answer([a])\n") == "root = Answer([a])\n"
+    assert openui.with_root("x = Answer([a])\n") == "x = Answer([a])\n"
+
+
+@pytest.mark.parametrize(
     ("raw", "problem"),
     [
         ('root = Answer([a])\na = Md("cut off', "unterminated string"),

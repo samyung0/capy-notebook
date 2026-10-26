@@ -788,3 +788,49 @@ fn a_step_1_answer_is_large_only_for_what_lies_past_the_asker() {
     assert!(answer_at_least(&txn, &nearly, 1_000));
     assert!(!answer_at_least(&txn, &nearly, 1_002));
 }
+
+/// Held from a step 2 (in-place collection, step 1): a reconnecting tab's
+/// step 2 resends its whole delete set, and the room holds only what it
+/// deletes that the room held undeleted, its own deletions. Fails if the
+/// deletions another writer made already come back as this one's.
+#[test]
+fn a_step_2_adds_only_its_own_deletions() {
+    let room = doc(1);
+    room.get_or_insert_text("content")
+        .insert(&mut room.transact_mut(), 0, "abcdef");
+    let (alice, bob) = (doc(10), doc(20));
+    sync(&room, &alice);
+    sync(&room, &bob);
+    // Bob deletes "ab", and the room takes it.
+    let text = bob.get_or_insert_text("content");
+    let deleted = delta(&bob, |txn| text.remove_range(txn, 0, 2));
+    let (_, bobs) = apply_deleting(&room, decode(&deleted).unwrap()).unwrap();
+    assert!(!bobs.is_empty());
+    // Alice, offline, heard it, then deleted "ef" herself.
+    sync(&bob, &alice);
+    let text = alice.get_or_insert_text("content");
+    text.remove_range(&mut alice.transact_mut(), 2, 2);
+    let step2 = alice
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    // It resends Bob's deletion too.
+    assert!(
+        decode(&step2)
+            .unwrap()
+            .delete_set()
+            .contains(&ID::new(ClientID::new(1), 0))
+    );
+    let (_, alices) = apply_deleting(&room, decode(&step2).unwrap()).unwrap();
+    let mut expected = IdSet::new();
+    let base = room.transact().state_vector().get(&ClientID::new(1));
+    expected.insert(ID::new(ClientID::new(1), base - 2), 2);
+    assert_eq!(alices, expected);
+    assert_eq!(
+        room.get_or_insert_text("content")
+            .get_string(&room.transact()),
+        "cd"
+    );
+    // Sent again, it deletes nothing new.
+    let (_, again) = apply_deleting(&room, decode(&step2).unwrap()).unwrap();
+    assert!(again.is_empty());
+}

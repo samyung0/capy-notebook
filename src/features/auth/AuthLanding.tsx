@@ -760,6 +760,16 @@ export function AuthLanding({ mode }: { mode: Mode }) {
   useEffect(() => {
     if (isLoaded && isSignedIn) router.history.replace(redirectAfterAuth());
   }, [isLoaded, isSignedIn, router]);
+  // Hold the form until Clerk knows the session, so a signed-in visitor goes
+  // straight to the redirect instead of seeing the form flash first.
+  if (!isLoaded || isSignedIn)
+    return (
+      <AuthPage>
+        <div className="flex justify-center">
+          <Spinner />
+        </div>
+      </AuthPage>
+    );
   return (
     <AuthPage>{mode === 'signIn' ? <SignInCard /> : <SignUpCard />}</AuthPage>
   );

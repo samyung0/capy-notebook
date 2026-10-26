@@ -4,6 +4,7 @@ import type { APIRequestContext, FrameLocator, Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { seed, users } from '../fixtures/seed';
 import { uploadSourceFile } from '../helpers/api';
+import { collaborationLink } from '../helpers/collaboration';
 import { expectEditorLive } from '../helpers/editor';
 import { type OfficeFormat, officeEditMenu } from '../helpers/office';
 import { openWorkspaceMaterial } from '../helpers/workspace';
@@ -1214,6 +1215,60 @@ async function slidePixels(frame: FrameLocator) {
   throw new Error('the slide never settled');
 }
 
+/** Types `line` as an editor does: a new DOCX paragraph at the end, the
+ * empty cell D1 of the XLSX fixture's Grades sheet, or over the PPTX
+ * fixture's top text box on the first slide (1in,1in on its 10in x 7.5in
+ * slide). */
+async function typeLine(
+  frame: FrameLocator,
+  format: OfficeFormat,
+  line: string
+) {
+  if (format === 'docx') {
+    const input = frame.getByRole('textbox', { name: 'Document input' });
+    await input.focus();
+    await input.press('ControlOrMeta+End');
+    await input.press('Enter');
+    await input.pressSequentially(line);
+  } else if (format === 'xlsx') {
+    await frame.getByRole('tab', { exact: true, name: 'Grades' }).click();
+    const grid = frame.getByTestId('xlsx-scroll');
+    await grid.focus();
+    await grid.press('ControlOrMeta+Home');
+    for (let i = 0; i < 3; i++) await grid.press('ArrowRight');
+    const input = frame.getByTestId('xlsx-formula-input');
+    await input.fill(line);
+    await input.press('Enter');
+  } else {
+    const canvas = frame.getByTestId('pptx-slide-canvas');
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error('the slide canvas takes no pointer');
+    await canvas.click({
+      clickCount: 3,
+      position: { x: box.width * 0.17, y: box.height * 0.155 },
+    });
+    await frame.getByRole('application').pressSequentially(line);
+  }
+}
+
+/** Waits until the agent's read of the file (which merges its room) holds
+ * `line`. */
+async function readShows(
+  api: APIRequestContext,
+  fileId: string,
+  format: OfficeFormat,
+  line: string,
+  timeout = 30_000
+) {
+  await expect
+    .poll(
+      async () =>
+        (await entries(api, fileId, format)).map((entry) => entry.value),
+      { timeout }
+    )
+    .toContain(line);
+}
+
 test.describe('agent writes to Office sources', () => {
   test.describe.configure({ timeout: 300_000 });
 
@@ -1330,6 +1385,48 @@ test.describe('agent writes to Office sources', () => {
       if (format === 'docx')
         for (const frame of frames)
           await expect(shownText(frame, format, typed).first()).toBeAttached();
+      // XLSX and PPTX: the second editor's typing, under the client id its
+      // join token assigned, reaches the first editor and the agent's read.
+      if (format === 'docx') return;
+      const line = 'Collaborator typed live.';
+      await typeLine(frames[1], format, line);
+      if (format === 'xlsx')
+        await expect(shownText(frames[0], format, line).first()).toBeAttached({
+          timeout: 30_000,
+        });
+      else await showsSlide(0).toBe(false);
+      await readShows(anonymousApi, fileId, format, line);
+    });
+  }
+
+  for (const format of ['docx', 'pptx', 'xlsx'] as const) {
+    test(`a ${format.toUpperCase()} editor that typed offline while its room unloaded keeps its client ids: no reload, and its typing lands`, async ({
+      anonymousApi,
+      ownerApi,
+      ownerPage,
+    }) => {
+      // Q236: the reconnect presents its previous token and Go offers the
+      // same ids again, which the editor's replica (and DOCX layout worker)
+      // took at its load.
+      const link = await collaborationLink(ownerPage.context());
+      const fileId = await uploadOffice(ownerApi, format);
+      const frame = await openOffice(ownerPage, fileId, format);
+      // The editor's own element: a reload would replace it.
+      const editor = {
+        docx: frame.getByRole('textbox', { name: 'Document input' }),
+        pptx: frame.getByTestId('pptx-slide-canvas'),
+        xlsx: frame.getByTestId('xlsx-scroll'),
+      }[format];
+      await editor.evaluate((element) =>
+        element.setAttribute('data-e2e-kept', '')
+      );
+      // Alone in the room: its socket closing unloads the room.
+      await link.down(ownerPage);
+      const line = 'Typed while offline.';
+      await typeLine(frame, format, line);
+      await link.up(ownerPage);
+      await readShows(anonymousApi, fileId, format, line, 60_000);
+      await expect(editor).toHaveAttribute('data-e2e-kept', '');
     });
   }
 });

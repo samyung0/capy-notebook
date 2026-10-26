@@ -13,4 +13,6 @@ export interface GradeAnonymousQuizReq {
   answers: GradeAnonymousQuizReqAnswers;
   /** @maxLength 64 */
   localId?: string;
+  /** @maxLength 2048 */
+  turnstileToken?: string;
 }

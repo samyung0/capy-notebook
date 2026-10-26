@@ -18,6 +18,7 @@ import type {
   MermaidElement,
   QuestionFigureElement,
 } from './document';
+import { mediaWidth } from './document';
 import { EmbedLoading, EmbedViewContext } from './embeds/EmbedView';
 import { HtmlEmbed } from './HtmlEmbed';
 import { PublicPageContext } from './Island';
@@ -71,7 +72,7 @@ export function StaticMediaAsset({ element }: { element: MediaAssetNode }) {
         caption && (
           <figcaption
             className={MEDIA_CAPTION_CLASS}
-            style={{ width: element.width }}
+            style={{ width: mediaWidth(element.width) }}
           >
             {caption}
           </figcaption>
@@ -132,6 +133,7 @@ export function MermaidView({
   title?: string;
 } & Pick<MermaidElement, 'source' | 'theme' | 'width'>) {
   const preview = usePreview();
+  const frameWidth = mediaWidth(width);
   // A diagram that cannot be drawn shows its error, with nothing to enlarge.
   const [drawn, setDrawn] = useState(false);
   return (
@@ -139,13 +141,13 @@ export function MermaidView({
       <MediaFrame
         fill
         onOpen={drawn ? preview.onOpen : undefined}
-        width={width}
+        width={frameWidth}
       >
         <Mermaid
           code={source}
           // A live note View follows a source typed elsewhere.
           delay={MERMAID_TYPING_DELAY_MS}
-          fill={width !== undefined}
+          fill={frameWidth !== undefined}
           onDrawn={setDrawn}
           theme={theme}
         />
@@ -181,6 +183,8 @@ export function FigureView({
   toolbar?: ReactNode;
 }) {
   const preview = usePreview();
+  const frameWidth =
+    mediaWidth(width) ?? (block.type === 'graph' ? block.width : CHART_WIDTH);
   return (
     <>
       <MediaFrame
@@ -190,7 +194,7 @@ export function FigureView({
         onOpen={preview.onOpen}
         onWidthChange={onWidthChange}
         toolbar={toolbar}
-        width={width ?? (block.type === 'graph' ? block.width : CHART_WIDTH)}
+        width={frameWidth}
       >
         {/* The figure fills the frame so the handles scale it. */}
         <div className="[&_figure]:my-0 [&_figure]:w-full [&_figure]:max-w-none [&_img]:w-full">
@@ -202,10 +206,7 @@ export function FigureView({
         // Clear of the chart's legend, which sits at the figure's foot.
         <p
           className={cn(MEDIA_CAPTION_CLASS, 'mt-4')}
-          style={{
-            width:
-              width ?? (block.type === 'graph' ? block.width : CHART_WIDTH),
-          }}
+          style={{ width: frameWidth }}
         >
           {block.description}
         </p>

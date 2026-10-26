@@ -130,16 +130,16 @@ func TestMigrateRejectsEditedChecksum(t *testing.T) {
 	}
 }
 
-// The page-rate, default-pin and VLM page-rate files are the forward
-// migrations that write seed state; re-applying their bodies must leave the
-// database as it is.
+// The page-rate, default-pin, VLM page-rate and audio-rate files are the
+// forward migrations that write seed state; re-applying their bodies must
+// leave the database as it is.
 func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql"} {
+	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql", "0111_audio_transcription.sql", "0116_deepseek_chat_default.sql"} {
 		body, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -168,6 +168,17 @@ func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 			t.Fatalf("%s active row = v%d %d micros, want v%d 1000000", key, version, micros, want)
 		}
 	}
+	// One credit a minute for both audio keys; uploads at version 2, since
+	// 0001's version 1 had another price.
+	for key, want := range map[string]int{"audio_transcription_second": 2, "voice_input_second": 1} {
+		var version int
+		var micros int64
+		if err := s.pool.QueryRow(ctx,
+			`SELECT version, credit_micros_per_unit FROM resource_credit_rates WHERE resource_key=$1 AND active`, key,
+		).Scan(&version, &micros); err != nil || version != want || micros != 16_667 {
+			t.Fatalf("%s active rate = v%d %d (%v), want v%d 16667", key, version, micros, err, want)
+		}
+	}
 	var captionActive int
 	if err := s.pool.QueryRow(ctx,
 		`SELECT count(*) FROM resource_credit_rates WHERE resource_key='figure_caption_call' AND active`,
@@ -183,8 +194,9 @@ func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 	).Scan(&provider, &model); err != nil {
 		t.Fatalf("exactly one chat slot default expected: %v", err)
 	}
-	if provider != "zai" || model != "glm-5.3-flash" {
-		t.Fatalf("chat slot default = %s/%s, want zai/glm-5.3-flash", provider, model)
+	// 0116 moved it from GLM (Epo 2026-10-25).
+	if provider != "deepseek" || model != "deepseek-flash" {
+		t.Fatalf("chat slot default = %s/%s, want deepseek/deepseek-flash", provider, model)
 	}
 }
 
@@ -207,7 +219,7 @@ func TestDefaultChatModelMigrationRefusesWithoutAnEnabledGLMRow(t *testing.T) {
 	defer func() { _ = outer.Rollback(ctx) }() // leaves the shared database untouched
 	for _, stmt := range []string{
 		`UPDATE model_configs SET is_default_for = array_remove(is_default_for, 'chat')
-		   WHERE provider_slug='zai' AND model_slug='glm-5.3-flash'`,
+		   WHERE 'chat' = ANY(is_default_for)`,
 		`UPDATE model_configs SET is_default_for = array_append(is_default_for, 'chat')
 		   WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND version=1`,
 		`UPDATE model_configs SET enabled=false WHERE provider_slug='zai' AND model_slug='glm-5.3-flash'`,

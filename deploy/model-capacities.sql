@@ -32,6 +32,11 @@
 -- on this route, which InferenceNet held, but Cloudflare, the fallback, was
 -- measured only at 64, so an InferenceNet outage during a burst may leave
 -- reads slow or busy on Cloudflare.
+-- OpenRouter MiniMax 3.1 Flash (Together, then Wafer since 2026-10-25; a chat
+-- choice since 2026-10-24) serves chat alone, so all but one call is kept for
+-- interactive use (the reserve must stay below the total). Together and Wafer
+-- each held 16 calls at once in the 2026-10-23 probe (total p95 3.0 s and
+-- 3.1 s), so the gate is 16.
 -- Interactive reserves: 83% GLM / 60% DeepSeek / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never
@@ -43,6 +48,7 @@ WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
     ('zai', 'glm-5.3-flash', 150, 125),
     ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32, 0),
     ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 64, 0),
+    ('openrouter', 'minimax/minimax-m3.1-flash', 16, 15),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
     ('deepinfra', 'Qwen/Qwen3-Reranker-4B', 200, 80)
 )

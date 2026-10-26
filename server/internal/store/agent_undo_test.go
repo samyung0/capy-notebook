@@ -42,6 +42,9 @@ func undoTestEdit(t *testing.T, s *Store, owner, fileID string) AgentOperation {
 	return *op
 }
 
+// undoTestExpiry is when undoTestAuthority's rooms stop offering a step.
+var undoTestExpiry = time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+
 // undoTestAuthority answers the collaboration service's Undo routes: every
 // Undo lands under the id `kept` gives (the request's when it gives ""), its
 // reverse kept, and undo-status names the steps in `live`. It counts the
@@ -68,7 +71,7 @@ func undoTestAuthorityKeeping(t *testing.T, s *Store, live func() []string, aske
 			if id == "" {
 				id = body.Operation.ID
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"operationId": id, "reversible": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"operationId": id, "reversible": true, "expiresAt": undoTestExpiry})
 		case "/internal/documents/undo-status":
 			var body struct {
 				OperationIDs []string `json:"operationIds"`
@@ -139,6 +142,12 @@ func TestDocumentUndoRecordsTheRoomsSteps(t *testing.T) {
 	}
 	if redo.Effect.Operation != agenttools.EffectEdited || redo.Effect.Undo.OperationID != redo.ID {
 		t.Fatalf("redo = %+v", redo.Effect)
+	}
+	// Q385: each receipt's Undo is offered until the room drops its step.
+	for _, step := range []AgentOperation{undo, redo} {
+		if at := step.Effect.Undo.ExpiresAt; at == nil || !at.Equal(undoTestExpiry) {
+			t.Fatalf("step %s offered until %v, want %v", step.ID, at, undoTestExpiry)
+		}
 	}
 	steps, err := s.LatestSteps(ctx, []string{edit.ID})
 	if err != nil || steps[edit.ID].ID != redo.ID {

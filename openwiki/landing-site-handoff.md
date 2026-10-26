@@ -11,8 +11,8 @@ Build a public website that explains Capy Notebook, helps visitors decide whethe
 | Public website at `capynotebook.com` and `www.capynotebook.com` | Approved separation from the dashboard. |
 | Astro, entirely prerendered | Preliminary user choice. Use this as the planning baseline; do not silently add a server rendering requirement. |
 | Building the landing app | Deferred. This request authorizes the handoff document only. |
-| UAT dashboard | Live at `https://app.uat.capynotebook.com`. |
-| Old UAT hostname | Temporary 302 redirect to the new app for GET/HEAD, preserving path/query and excluding `/api` and `/api/*`. User confirmed no files or browser drafts to recover. |
+| UAT dashboard | Live at `https://uat.capynotebook.com`. |
+| Old UAT hostnames | `app.uat.capynotebook.com` was retired on 2026-10-25 (Q291) and no longer resolves. |
 | Production dashboard | Source prepared for `https://app.capynotebook.com`; no production deployment exists. |
 | Visual design, launch copy, public pricing, launch languages | Still to be chosen. Suggestions below are recommendations, not approved product decisions. |
 
@@ -102,7 +102,7 @@ Keep public site origin, the selected app destination and contact details in one
 | `capynotebook.com` | Recommended canonical public-site origin. |
 | `www.capynotebook.com` | Recommended edge redirect to the apex, preserving path/query. This canonical choice still needs approval. |
 | `app.capynotebook.com` | Future production dashboard, including `/sign-in`, `/sign-up`, `/forgot-password` and `/sso-callback`. |
-| `app.uat.capynotebook.com` | UAT dashboard, for testing rather than a public signup destination. |
+| `uat.capynotebook.com` | UAT dashboard, for testing rather than a public signup destination. |
 | App `/w/{workspaceId}` | Stays with the existing app Worker and its visibility-aware summary rendering. Never export user workspaces into the static website. |
 | App `/api/*` | Existing app/backend routing. The public site neither proxies it nor needs CORS access to it. |
 

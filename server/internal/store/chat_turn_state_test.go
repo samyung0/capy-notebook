@@ -99,7 +99,7 @@ func TestConversationPromptReplaysStoppedAndFailedTurns(t *testing.T) {
 	}
 	evidence := json.RawMessage(`{"tools":[{"name":"list_sources","text":"listing"}],"passages":[],"skills":[]}`)
 	for _, status := range []string{"aborted", "error", "streaming"} {
-		if _, err := s.AddUserMessage(ctx, userID, conv.ID, "ask "+status); err != nil {
+		if _, err := s.AddUserMessage(ctx, userID, conv.ID, "ask "+status, false); err != nil {
 			t.Fatal(err)
 		}
 		assistant, err := s.StartAssistantMessage(ctx, userID, conv.ID, cfg)

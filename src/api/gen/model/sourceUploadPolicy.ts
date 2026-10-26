@@ -12,7 +12,11 @@ export interface SourceUploadPolicy {
   readonly $schema?: string;
   accept: string;
   allowNoExtension: boolean;
+  audioMaxDurationSeconds: number;
+  audioSecondCreditMicros: number;
   digitalParsePageCreditMicros: number;
+  /** The caller's plan image cap, which each picture inside an Office upload must fit */
+  imageMaxBytes: number;
   kinds: SourceUploadKindPolicy[];
   maxBytes: number;
   parseModes: SourceUploadParseModePolicy[];

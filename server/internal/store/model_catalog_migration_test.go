@@ -11,12 +11,14 @@ import (
 )
 
 // pre0010Schema restores the columns and slot names 0010 was written against,
-// which 0013 and 0044 later removed.
+// which 0013 and 0044 later removed, and the GLM chat default 0116 moved.
 const pre0010Schema = `ALTER TABLE users
 		ADD COLUMN quiz_model_provider_slug text NOT NULL DEFAULT 'deepseek',
 		ADD COLUMN quiz_model_slug text NOT NULL DEFAULT 'deepseek-flash',
 		ADD COLUMN generate_model_provider_slug text NOT NULL DEFAULT 'deepseek',
-		ADD COLUMN generate_model_slug text NOT NULL DEFAULT 'deepseek-flash';
+		ADD COLUMN generate_model_slug text NOT NULL DEFAULT 'deepseek-flash',
+		ALTER COLUMN chat_model_provider_slug SET DEFAULT 'zai',
+		ALTER COLUMN chat_model_slug SET DEFAULT 'glm-5.3-flash';
 	ALTER TABLE model_configs DROP CONSTRAINT model_configs_slots_check,
 		DROP CONSTRAINT model_configs_default_for_check`
 
@@ -38,6 +40,8 @@ func TestDeepSeekFlashMigrationPreservesPinsRatesAndCapacity(t *testing.T) {
 		  '{"model_slug":"deepseek-v4-flash-vision-exp","enabled":false,"is_default_for":[]}'::jsonb)).*
 		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled;
 		DELETE FROM model_configs WHERE provider_slug='deepseek' AND model_slug='deepseek-flash';
+		UPDATE model_configs SET is_default_for=array_append(is_default_for, 'chat')
+		WHERE provider_slug='zai' AND model_slug='glm-5.3-flash' AND enabled;
 		UPDATE model_configs SET enabled=true, is_default_for=ARRAY['generate','editor','quiz','ingest'],
 		  micros_per_input_token=177, micros_per_output_token=888, micros_per_cached_input_token=17
 		WHERE provider_slug='deepseek' AND model_slug='deepseek-v4-flash-vision-exp';
@@ -118,6 +122,38 @@ func TestDeepSeekFlashMigrationRefusesConflictingCatalog(t *testing.T) {
 	}
 }
 
+func TestDeepSeekChatDefaultMigrationMovesTheSlotAndNewAccounts(t *testing.T) {
+	s := openMigrateTestStore(t)
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	body, err := migrations.FS.ReadFile("0116_deepseek_chat_default.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Applied by Migrate already; once more is a no-op.
+	if _, err := tx.Exec(ctx, string(body)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO users (id, name) VALUES ('migration-chat-new-user', 'New')`); err != nil {
+		t.Fatal(err)
+	}
+	for name, query := range map[string]string{
+		"new account chat pin": `SELECT chat_model_provider_slug='deepseek' AND chat_model_slug='deepseek-flash'
+		  FROM users WHERE id='migration-chat-new-user'`,
+		"chat slot default": `SELECT count(*)=1 AND bool_and(provider_slug='deepseek' AND model_slug='deepseek-flash'
+		  AND enabled AND default_thinking='high') FROM model_configs WHERE 'chat'=ANY(is_default_for)`,
+	} {
+		var ok bool
+		if err := tx.QueryRow(ctx, query).Scan(&ok); err != nil || !ok {
+			t.Fatalf("%s: ok=%v err=%v", name, ok, err)
+		}
+	}
+}
+
 func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()
@@ -140,7 +176,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 		}
 	}
 	var count int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_capacities`).Scan(&count); err != nil || count != 4 {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_capacities`).Scan(&count); err != nil || count != 5 {
 		t.Fatalf("bootstrap rows=%d err=%v", count, err)
 	}
 	for _, want := range []struct {
@@ -151,6 +187,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 		{"zai", "glm-5.3-flash", 150, 125},
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
 		{"deepinfra", "Qwen/Qwen3-Reranker-4B", 200, 80},
+		{"openrouter", "minimax/minimax-m3.1-flash", 16, 15},
 	} {
 		var total, reserve int
 		err := tx.QueryRow(ctx, `SELECT concurrency_total, interactive_reserve

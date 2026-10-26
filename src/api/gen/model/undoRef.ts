@@ -7,6 +7,7 @@
 import type { UndoRefStatus } from './undoRefStatus.ts';
 
 export interface UndoRef {
+  expiresAt?: string;
   operationId: string;
   status: UndoRefStatus;
 }

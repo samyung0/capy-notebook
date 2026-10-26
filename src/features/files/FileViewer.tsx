@@ -27,6 +27,7 @@ import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
+import { audioStartMs } from './citationRegions';
 import {
   FileEmpty,
   FileError,
@@ -80,15 +81,27 @@ function lazyView(node: ReactNode) {
 }
 
 /** Seeking past the buffered range re-reads the URL, which may have expired by
- * then; the retry fetches a fresh pair and the new URL remounts this view. */
+ * then; the retry fetches a fresh pair and the new URL remounts this view. A
+ * cited transcript passage moves the player to its first sentence. */
 function AudioView({
   file,
   onRetry,
+  regions,
 }: {
   file: ViewableFile;
   onRetry: () => void;
+  regions?: Region[];
 }) {
   const [failed, setFailed] = useState(false);
+  const player = useRef<HTMLAudioElement>(null);
+  // Each citation click passes a fresh regions array, so a second click on
+  // the same passage seeks again.
+  useEffect(() => {
+    const start = audioStartMs(regions);
+    if (player.current && start !== undefined) {
+      player.current.currentTime = start / 1000;
+    }
+  }, [regions]);
   if (failed) return <FileError onRetry={onRetry} />;
   return (
     <div className="grid h-full place-items-center">
@@ -98,6 +111,7 @@ function AudioView({
           className="w-full"
           controls
           onError={() => setFailed(true)}
+          ref={player}
           src={file.url}
         />
       </div>
@@ -476,6 +490,7 @@ function ResolvedFileView({
         file={file}
         key={`${file.url}:${previewAttempt}`}
         onRetry={retryPreview}
+        regions={regions}
       />
     );
   }

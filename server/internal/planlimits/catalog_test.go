@@ -13,7 +13,7 @@ func TestSeededCatalogValuesValidate(t *testing.T) {
 		StorageBytes: 1_000_000_000, CreditMicros: 20_000_000_000,
 		SourceFileBytes:   30 << 20,
 		FilesPerWorkspace: 100, FilesPerUpload: 20,
-		ImageBytes: 5 << 20,
+		ImageBytes: 2 << 20,
 	}
 	if err := validate(TierFree, free); err != nil {
 		t.Fatal(err)

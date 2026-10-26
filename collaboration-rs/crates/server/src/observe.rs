@@ -78,9 +78,12 @@ impl Level {
 
 /// `new Date().toISOString()`.
 pub fn iso_now() -> String {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+    iso(SystemTime::now())
+}
+
+/// `time` as `Date.toISOString()` writes it.
+pub fn iso(time: SystemTime) -> String {
+    let elapsed = time.duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = elapsed.as_secs() as i64;
     let millis = elapsed.subsec_millis();
     let days = secs.div_euclid(86_400);

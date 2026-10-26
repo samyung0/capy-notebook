@@ -277,6 +277,86 @@ pub fn valid_width(width: &str) -> bool {
     })
 }
 
+/// A column's width as the editor writes it: the layout presets, or Plate's
+/// column normalizer writing a float (`49.9995%`). A plain decimal percentage
+/// above 0 and at most 100, as JavaScript writes a number
+/// (`^(?:100|[1-9][0-9]?(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])%$`, Go's
+/// `columnWidth`).
+pub fn valid_column_width(width: &str) -> bool {
+    let Some(number) = width.strip_suffix('%') else {
+        return false;
+    };
+    if number == "100" {
+        return true;
+    }
+    let (whole, fraction) = match number.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (number, None),
+    };
+    let whole = match whole.as_bytes() {
+        [b'0'] => fraction.is_some(),
+        [b'1'..=b'9'] | [b'1'..=b'9', b'0'..=b'9'] => true,
+        _ => false,
+    };
+    whole
+        && fraction.is_none_or(|fraction| {
+            fraction.bytes().all(|b| b.is_ascii_digit())
+                && fraction.bytes().last().is_some_and(|b| b != b'0')
+        })
+}
+
+/// Go's `validateColumnWidth`: a column's one optional `width`.
+fn validate_column_width(node: &Node) -> Check {
+    match node.get("width") {
+        None => Ok(()),
+        Some(Value::String(width)) if valid_column_width(width) => Ok(()),
+        Some(_) => fail("column width must be a percentage above 0 and at most 100"),
+    }
+}
+
+/// The text marks Plate draws straight into a style.
+pub const STYLE_MARKS: [&str; 4] = ["color", "backgroundColor", "fontSize", "fontFamily"];
+
+/// A text mark's or a list's style value (Epo Q380): no `;` and no control
+/// character, as it goes into a style as written; any other value a browser
+/// writes stays accepted (Go's `validateStyleValue`).
+pub fn style_value(value: &str) -> bool {
+    !value
+        .chars()
+        .any(|c| c == ';' || c < '\u{20}' || c == '\u{7f}')
+}
+
+fn validate_style_value(node: &Node, key: &str) -> Check {
+    match node.get(key) {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::String(value)) if style_value(value) => Ok(()),
+        Some(_) => fail(format!("{key} may hold no semicolon or control character")),
+    }
+}
+
+/// A table's column size or left margin as Plate's table resizing writes it:
+/// px as a finite number of 0 or more (Go's `tableSize`).
+pub fn table_size(size: f64) -> bool {
+    size.is_finite() && size >= 0.0
+}
+
+/// Go's `validateTableSizes`: a table's column sizes (each a size or empty,
+/// null) and left margin.
+fn validate_table_sizes(node: &Node) -> Check {
+    let size = |value: &Value| value.as_f64().is_some_and(table_size);
+    if let Some(sizes) = node.get("colSizes")
+        && !sizes
+            .as_array()
+            .is_some_and(|sizes| sizes.iter().all(|s| s.is_null() || size(s)))
+    {
+        return fail("table colSizes must be a list of sizes");
+    }
+    if node.get("marginLeft").is_some_and(|margin| !size(margin)) {
+        return fail("table marginLeft must be a size");
+    }
+    Ok(())
+}
+
 /// `validateMediaWidth` (plate-2 3a87184d): the one optional `width` of a
 /// resizable block (image, YouTube video, Mermaid, chart, graph).
 fn validate_width(node: &Node) -> Check {
@@ -464,6 +544,9 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
         if node.contains_key("children") {
             return fail("text leaf cannot contain children");
         }
+        for key in STYLE_MARKS {
+            validate_style_value(node, key)?;
+        }
         return Ok(());
     }
     let kind = match node.get("type").and_then(Value::as_str) {
@@ -483,15 +566,19 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
     if !has_text_descendant(node) {
         return fail("element must contain a text descendant");
     }
-    // Any block's indent (lists, indented paragraphs) stops at the
-    // catalog's LIST_INDENT_MAX (Epo 2026-10-18).
-    if node
-        .get("indent")
-        .and_then(Value::as_f64)
-        .is_some_and(|indent| indent > LIST_INDENT_MAX as f64)
-    {
-        return fail(format!("indent is over {LIST_INDENT_MAX} levels"));
+    // Any block's indent (lists, indented paragraphs) is a number that stops
+    // at the catalog's LIST_INDENT_MAX (Epo 2026-10-18); Plate draws it as a
+    // class and a margin.
+    match node.get("indent") {
+        None | Some(Value::Null) => {}
+        Some(Value::Number(indent)) => {
+            if indent.as_f64().is_some_and(|i| i > LIST_INDENT_MAX as f64) {
+                return fail(format!("indent is over {LIST_INDENT_MAX} levels"));
+            }
+        }
+        Some(_) => return fail("indent must be a number"),
     }
+    validate_style_value(node, "listStyleType")?;
     // A type the catalog does not list is refused by the placement walk
     // (`placement`), as Go's `validateKind` refuses it.
     let Some(element) = catalog::element(kind) else {
@@ -551,6 +638,8 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
             validate_width(node)
         }
         "audio" => validate_media(node, kind),
+        "column" => validate_column_width(node),
+        "table" => validate_table_sizes(node),
         MATERIAL_REF_TYPE => validate_material_ref(node),
         "video" => {
             if node.get("provider").and_then(Value::as_str) != Some("youtube") {

@@ -23,6 +23,45 @@ function listen(manager: Y.UndoManager, notify: () => void) {
   };
 }
 
+/** How far back editors' Undo reaches, by the tab's own clock (in-place
+ * collection, Epo 2026-10-23): the server keeps the deletions an Undo may
+ * restore for 25 h after they arrived. */
+export const UNDO_HORIZON_MS = 24 * 60 * 60 * 1000;
+
+const limited = new WeakSet<Y.UndoManager>();
+
+/**
+ * Keeps `manager`'s Undo and Redo within UNDO_HORIZON_MS: each stack item
+ * records when it was made (`time`), and steps older than the horizon are
+ * dropped before every Undo and Redo, whoever calls it (the note editor's
+ * history, an item room's buttons, a shortcut). Once per manager.
+ */
+export function limitUndo(manager: Y.UndoManager, now = () => Date.now()) {
+  if (limited.has(manager)) return;
+  limited.add(manager);
+  manager.on('stack-item-added', ({ stackItem }) => {
+    if (!stackItem.meta.has('time')) stackItem.meta.set('time', now());
+  });
+  const drop = () => {
+    const oldest = now() - UNDO_HORIZON_MS;
+    for (const stack of [manager.undoStack, manager.redoStack]) {
+      const kept = stack.findIndex(
+        (item) => ((item.meta.get('time') as number | undefined) ?? 0) >= oldest
+      );
+      stack.splice(0, kept === -1 ? stack.length : kept);
+    }
+  };
+  const { redo, undo } = manager;
+  manager.undo = () => {
+    drop();
+    return undo.call(manager);
+  };
+  manager.redo = () => {
+    drop();
+    return redo.call(manager);
+  };
+}
+
 export function undoTarget(manager: Y.UndoManager): UndoTarget {
   return {
     canRedo: () => manager.redoStack.length > 0,

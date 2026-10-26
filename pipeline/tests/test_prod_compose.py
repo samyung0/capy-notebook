@@ -62,6 +62,37 @@ def test_collaboration_runs_without_capabilities_or_privilege_gain(
     assert "no-new-privileges:true" in service["security_opt"]
 
 
+def test_retrieval_has_a_memory_and_cpu_limit() -> None:
+    """(security regression: rate-limit audit L13) The retrieval container's
+    memory and CPU come from each environment's rendered configuration, so a
+    runaway turn cannot take the gateway's, Postgres' or collaboration's share
+    of the app host."""
+    service = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"][
+        "retrieval"
+    ]
+
+    assert service["mem_limit"] == "${RETRIEVAL_MEM_LIMIT:?set RETRIEVAL_MEM_LIMIT}"
+    assert service["cpus"] == "${RETRIEVAL_CPUS:?set RETRIEVAL_CPUS}"
+
+
+@pytest.mark.parametrize("compose", ["docker-compose.prod.yml", "docker-compose.yml"])
+def test_retrieval_returns_freed_memory_to_the_system(compose: str) -> None:
+    """(security regression: rate-limit audit M13, Q343) Retrieval runs with
+    the collaboration server's allocator settings, so request buffers freed
+    after a burst go back instead of holding the process near its limit; the
+    deployed one takes its turns-in-progress ceiling from each environment."""
+    path = COMPOSE.parent / compose
+    environment = yaml.safe_load(path.read_text(encoding="utf-8"))["services"][
+        "retrieval"
+    ]["environment"]
+
+    assert {key: environment.get(key) for key in MALLOC} == MALLOC
+    if compose == "docker-compose.prod.yml":
+        assert environment["CAPY_TURN_SLOTS"] == (
+            "${RETRIEVAL_TURN_SLOTS:?set RETRIEVAL_TURN_SLOTS}"
+        )
+
+
 APP_IMAGES = {
     "migrate": "CAPY_SERVER_IMAGE",
     "server": "CAPY_SERVER_IMAGE",

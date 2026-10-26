@@ -37,6 +37,8 @@ export interface Material {
   position: number;
   privacy: Privacy;
   provenance?: Provenance;
+  /** @nullable */
+  removedAssetIds?: string[] | null;
   revision: number;
   role?: WorkspaceRole;
   scopeChapters: string[];

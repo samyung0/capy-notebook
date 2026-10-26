@@ -13,6 +13,8 @@ export const FileIndexLimit = {
   scanned_page_limit: 'scanned_page_limit',
   element_limit: 'element_limit',
   image_pixel_limit: 'image_pixel_limit',
+  audio_duration_limit: 'audio_duration_limit',
   tabular_column_limit: 'tabular_column_limit',
   tabular_text_limit: 'tabular_text_limit',
+  no_speech: 'no_speech',
 } as const;

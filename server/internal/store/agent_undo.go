@@ -163,8 +163,9 @@ func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, step Agent
 		}
 	}
 	var answer struct {
-		OperationID string `json:"operationId"`
-		Reversible  bool   `json:"reversible"`
+		OperationID string     `json:"operationId"`
+		Reversible  bool       `json:"reversible"`
+		ExpiresAt   *time.Time `json:"expiresAt"`
 	}
 	err := s.postDocumentAuthority(ctx, "/internal/documents/undo", map[string]any{
 		"actorUserId": actorID, "operation": op, "undoOf": step.ID,
@@ -199,7 +200,8 @@ func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, step Agent
 		},
 	}
 	if answer.Reversible {
-		receipt.Effect.Undo = &agenttools.UndoRef{OperationID: id, Status: agenttools.UndoAvailable}
+		// Offered until the room drops it, 24 h after the agent edit (Q385).
+		receipt.Effect.Undo = &agenttools.UndoRef{OperationID: id, Status: agenttools.UndoAvailable, ExpiresAt: answer.ExpiresAt}
 	}
 	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {
 		return AgentOperation{}, err
