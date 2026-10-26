@@ -138,6 +138,39 @@ async function peerLeaves(page: Page) {
 
 /** Holds the late merge's WASM download until `answer` aborts it or lets it
  * through (a route disables the page's HTTP cache). */
+// Chromium's offline emulation does not reliably fire the window events.
+async function setOnline(page: Page, online: boolean) {
+  await page.context().setOffline(!online);
+  await page.evaluate(
+    (event) => window.dispatchEvent(new Event(event)),
+    online ? 'online' : 'offline'
+  );
+}
+
+/** The note's stored draft rows in this browser, by id. */
+function storedRows(page: Page) {
+  return page.evaluate(async (id) => {
+    const draftsPath = '/src/lib/editDrafts.ts';
+    const dbPath = '/src/mocks/db.ts';
+    const { draftKey, readDrafts } = await import(draftsPath);
+    const { user } = await import(dbPath);
+    const rows: {
+      id: string;
+      late?: true;
+      refused?: true;
+      session: string;
+    }[] = await readDrafts(draftKey(user.id, 'material', id));
+    return rows
+      .map(({ id: row, late, refused, session }) => ({
+        id: row,
+        late: !!late,
+        refused: !!refused,
+        session,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+  }, MATERIAL);
+}
+
 async function holdDownload(page: Page) {
   let answer: (how: 'abort' | 'continue') => void = () => {};
   const answered = new Promise<'abort' | 'continue'>((resolve) => {
@@ -188,7 +221,10 @@ test('a late tab merges its unsent edits into the current note and swaps without
     timeout: 30_000,
   });
   const versions = await sessionVersions(page);
-  expect(versions.marks).toHaveLength(1);
+  // Marked as the code loaded, and again at that version as the result
+  // applied (review r4 L1).
+  expect(versions.marks).toHaveLength(2);
+  expect(versions.marks[1]).toBe(versions.marks[0]);
   // The late mount joined as a new session, naming no version.
   expect(versions.joins.length).toBeGreaterThan(1);
   expect(versions.joins.at(-1)).toBeNull();
@@ -295,6 +331,18 @@ test('a late tab shows its own copy while the merge code downloads; a failed dow
   );
   await expect(saveState).toHaveAttribute('data-save-state', 'preparing');
   await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+
+  // One strip at a time: offline ranks above the failed download, whose
+  // strip comes back with the connection (Q420). This session rejoins as
+  // any (the mock would answer every session that joined before late).
+  await lateSessions(page, null);
+  await setOnline(page, false);
+  await expect(
+    page.locator('[data-testid="save-banner"][data-kind="offline"]')
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(banner).toHaveCount(0);
+  await setOnline(page, true);
+  await expect(banner).toBeVisible({ timeout: 30_000 });
 
   // Retry fails again, then the browser reconnects and it goes through.
   await page.context().unroute('**/late_merge_bg.wasm*');
@@ -790,4 +838,117 @@ test('leaving a late note stops its merge worker', async ({ page }) => {
     }),
   ]);
   await lateSessions(page, null);
+});
+
+// Q420 (review r4 M1): a room eviction while the late merge waits touches no
+// draft row; the reopened note takes the late path again and merges them.
+test('an eviction while the late merge waits keeps every draft for the reopened note', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto(note);
+  const live = page.locator('[data-note-mount="live"]');
+  await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
+    timeout: 30_000,
+  });
+  const saveState = page.getByTestId('editor-save-state');
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved');
+  await setReachable(page, false);
+  await live.locator('[contenteditable="true"]').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(OFFLINE);
+  const download = await holdDownload(page);
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, true);
+  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+    timeout: 30_000,
+  });
+  await expect
+    .poll(async () => (await storedRows(page)).some((row) => row.late))
+    .toBe(true);
+  const before = await storedRows(page);
+  const joins = (await sessionVersions(page)).joins.length;
+  await page.evaluate(async (path) => {
+    const { rejectMockNoteUpdate } = await import(path);
+    rejectMockNoteUpdate('mock-scenario-note');
+  }, MOCK);
+  // The note reopens (a new session joins) and waits for the merge again.
+  await expect
+    .poll(async () => (await sessionVersions(page)).joins.length, {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(joins);
+  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+    timeout: 30_000,
+  });
+  expect(await storedRows(page)).toEqual(before);
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+  download('continue');
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  const text = await editor.innerText();
+  expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+  await lateSessions(page, null);
+});
+
+// Q420 (review r4 M2): another open tab's rows (its session's lock held)
+// stay out of a late tab's merge, stored as they were.
+test("a late merge leaves another open tab's draft rows alone", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const OTHER = ' Typed in another tab.';
+  const open = async (tab: Page) => {
+    await tab.goto(note);
+    await expect(
+      tab.locator('[data-note-mount="live"] [contenteditable="true"]')
+    ).toContainText(seed, { timeout: 30_000 });
+    await expect(tab.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved'
+    );
+  };
+  await open(page);
+  const other = await page.context().newPage();
+  try {
+    await open(other);
+    const mine = new Set((await storedRows(page)).map((row) => row.id));
+    await setReachable(other, false);
+    await other
+      .locator('[data-note-mount="live"] [contenteditable="true"]')
+      .click();
+    await other.keyboard.press('ControlOrMeta+End');
+    await other.keyboard.type(OTHER);
+    await expect
+      .poll(
+        async () =>
+          (await storedRows(other)).filter((row) => !mine.has(row.id)).length
+      )
+      .toBeGreaterThan(0);
+    const theirs = (await storedRows(other)).filter((row) => !mine.has(row.id));
+
+    await page.bringToFront();
+    await setReachable(page, false);
+    const live = page.locator('[data-note-mount="live"]');
+    await live.locator('[contenteditable="true"]').click();
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.type(OFFLINE);
+    await lateSessions(page, MATERIAL);
+    await setReachable(page, true);
+    const editor = live.locator('[contenteditable="true"]');
+    await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+    await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+    await expect(editor).not.toContainText(OTHER.trim());
+    const after = await storedRows(page);
+    for (const row of theirs) expect(after).toContainEqual(row);
+    await lateSessions(page, null);
+  } finally {
+    await other.close();
+  }
 });

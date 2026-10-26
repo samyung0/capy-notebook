@@ -179,8 +179,20 @@ function CollaborativeNoteEditor({
   const [outdated, setOutdated] = useState<
     'outdated' | 'outdated-unstored' | null
   >(null);
+  // A late note's merge code did not load: its Retry (Q398).
+  const [lateRetry, setLateRetry] = useState<{ retry: () => void } | null>(
+    null
+  );
+  const onLateUnloaded = useCallback(
+    (retry: (() => void) | null) => setLateRetry(retry && { retry }),
+    []
+  );
+  // One strip at a time (Q252, Q420).
   const banner: SaveBannerState | null =
-    outdated ?? offline ?? (saveDelayed ? 'delayed' : null);
+    outdated ??
+    offline ??
+    (lateRetry ? 'late-unloaded' : null) ??
+    (saveDelayed ? 'delayed' : null);
   const markOutdated = useCallback(
     (stored: boolean) => setOutdated(stored ? 'outdated' : 'outdated-unstored'),
     []
@@ -375,6 +387,7 @@ function CollaborativeNoteEditor({
     if (!swap.pending) return;
     setOffline(null);
     setSaveDelayed(false);
+    setLateRetry(null);
   }, [swap.pending]);
 
   if (unavailable === 'notFound')
@@ -462,12 +475,14 @@ function CollaborativeNoteEditor({
         currentUserId={meData.id}
         discussions={discussionsData ?? NO_DISCUSSIONS}
         draftKey={storedKey}
+        held={mount.drafts.held}
         joinStartedAt={joinStart.current}
         late={late?.key === mount.key ? late.state : undefined}
         material={material}
         onDocumentRejected={onDocumentRejected}
         onEditorStatusChange={onEditorStatusChange}
         onLate={onLate}
+        onLateUnloaded={onLateUnloaded}
         onOffline={setOffline}
         onOutdated={markOutdated}
         onPainted={(view) => swap.painted(mount.key, view)}
@@ -489,7 +504,7 @@ function CollaborativeNoteEditor({
         <DndProvider backend={HTML5Backend}>
           <div className="relative flex h-full flex-col gap-0 overflow-hidden">
             {banner && !swap.shown.drafts.recovery && (
-              <SaveBanner state={banner} />
+              <SaveBanner onRetry={lateRetry?.retry} state={banner} />
             )}
             {swap.mounts.map(({ mount, phase, hidden }) => (
               // Keyed by room and mount: the swap only changes the classes, so

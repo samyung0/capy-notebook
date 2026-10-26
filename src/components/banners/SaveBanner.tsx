@@ -20,9 +20,12 @@ import { FileBanner } from './FileBanner';
  *   the reloaded page to send, and Reload waits for the new app.
  *   `outdated-unstored`: and this device could not store the unsent edits,
  *   so the reload loses them.
+ * - `late-unloaded`: a late note's merge code did not load; its edits stay
+ *   read-only on this device until Retry or a reconnect loads it (Q398).
  */
 export type SaveBannerState =
   | 'delayed'
+  | 'late-unloaded'
   | 'offline'
   | 'offline-unstored'
   | 'offline-limit'
@@ -56,6 +59,7 @@ const MESSAGES: Record<
   changed: () => m.editor_recovery_changed(),
   delayed: () => m.editor_save_delayed(),
   expired: () => m.editor_recovery_expired(),
+  'late-unloaded': () => m.editor_late_unloaded(),
   offline: () => m.editor_offline_banner(),
   'offline-limit': () => m.editor_offline_limit(),
   'offline-unstored': () => m.editor_offline_unstored(),
@@ -70,14 +74,18 @@ const MESSAGES: Record<
 export function SaveBanner({
   state,
   onReload,
+  onRetry,
   reloading = false,
 }: {
   state: SaveBannerState;
   onReload?: () => void;
+  /** `late-unloaded`'s Retry. */
+  onRetry?: () => void;
   reloading?: boolean;
 }) {
   if (isOutdatedBanner(state))
     return <OutdatedBanner stored={state === 'outdated'} />;
+  const retry = state === 'late-unloaded' && onRetry;
   return (
     <FileBanner
       actions={
@@ -89,15 +97,21 @@ export function SaveBanner({
                 onClick: onReload,
               },
             ]
-          : []
+          : retry
+            ? [{ label: m.error_action_retry(), onClick: retry }]
+            : []
       }
-      closeable={!isRecoveryBanner(state)}
+      closeable={!(isRecoveryBanner(state) || state === 'late-unloaded')}
       inline
       kind={state}
       message={MESSAGES[state]()}
       testId="save-banner"
       tone={
-        state === 'offline' || state === 'offline-limit' ? 'neutral' : 'error'
+        state === 'offline' ||
+        state === 'offline-limit' ||
+        state === 'late-unloaded'
+          ? 'neutral'
+          : 'error'
       }
     />
   );

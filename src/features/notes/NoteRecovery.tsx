@@ -14,6 +14,7 @@ import {
   draftGroups,
   dropExpiredGroup,
   type EditDraft,
+  heldDraftSessions,
   readDrafts,
   recoveryDocument,
   reportRecoveryGroup,
@@ -30,6 +31,9 @@ export interface NoteDrafts {
   current: EditDraft[];
   /** The room and mount the rows were read for. */
   for: string;
+  /** Sessions another open tab records (their locks held): a late merge
+   * leaves their rows alone (Q420). */
+  held: ReadonlySet<string>;
   /** Rows of never-accepted sessions with stored tokens: the draft send
    * takes them while the editor joins (Q319). */
   pending: EditDraft[];
@@ -76,9 +80,12 @@ export function useNoteDrafts(
         if (!recovery.length) {
           if (!active) return;
           const { apply, send } = splitOpenDrafts(current);
+          const held = await heldDraftSessions();
+          if (!active) return;
           setDrafts({
             current: apply,
             for: `${room}:${generation}`,
+            held,
             pending: send,
             recovery: null,
           });
@@ -92,6 +99,7 @@ export function useNoteDrafts(
             setDrafts({
               current,
               for: `${room}:${generation}`,
+              held: new Set(),
               pending: [],
               recovery: { doc, expired, refused, rows: recovery },
             });

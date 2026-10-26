@@ -36,7 +36,6 @@ import type {
   MaterialCollaborationToken,
   Provenance,
 } from '@/api/types';
-import { FileBanner } from '@/components/banners/FileBanner';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import {
@@ -509,6 +508,7 @@ export function NoteEditorCore({
   collaborationToken,
   draftKey,
   restored,
+  held,
   late,
   pending,
   phase = 'live',
@@ -518,6 +518,7 @@ export function NoteEditorCore({
   onPresenceChange,
   onDocumentRejected,
   onLate,
+  onLateUnloaded,
   onOffline,
   onOutdated,
   onReadOnly,
@@ -541,6 +542,9 @@ export function NoteEditorCore({
    * before the room connects, then synced and saved like any edit. Late
    * ones (any row flagged `late`) are merged instead, as `late` is. */
   restored: EditDraft[];
+  /** Sessions another open tab records: a late merge leaves their rows
+   * alone, never merging or deleting them (Q420). */
+  held: ReadonlySet<string>;
   /** The document of the editor this one replaces after the room answered
    * late (in-place GC): with the restored rows it is the old document whose
    * unsent edits the late merge places onto the room's current one, once
@@ -572,6 +576,9 @@ export function NoteEditorCore({
    * with a new editor (a new document, client id and empty Undo) given this
    * one's document as `late`. */
   onLate?: (state: Uint8Array) => void;
+  /** The late merge's code did not load: its Retry while the strip shows,
+   * null once it loads or this editor goes (Q398). */
+  onLateUnloaded?: (retry: (() => void) | null) => void;
   /** The room cannot be reached and edits stay on this device (the banner to
    * show), or null once it syncs again. */
   onOffline?: (state: NoteOfflineState | null) => void;
@@ -607,12 +614,15 @@ export function NoteEditorCore({
   // never-accepted ones included, in one merge (Q406). Until it applies the
   // editor is not shown, so nothing is edited or saved (a receipt would
   // cover the rows before their edits reached the room), nothing of it goes
-  // raw and no draft send runs (so no Q360 hold). `adoptedRows`: the rows
-  // the recorder stands for; `sendRows`: the draft send's.
+  // raw and no draft send runs (so no Q360 hold). Rows another open tab
+  // records stay out, untouched (Q420). `adoptedRows`: the rows the recorder
+  // stands for; `sendRows`: the draft send's.
   const [{ adoptedRows, lateDocument, sendRows }] = useState(() => {
     if (!(late || restored.some((row) => row.late)))
       return { adoptedRows: restored, lateDocument: null, sendRows: pending };
-    const rows = [...restored, ...pending];
+    const rows = [...restored, ...pending].filter(
+      (row) => !held.has(row.session)
+    );
     const parts = rows.length ? [mergedRows(rows)] : [];
     return {
       adoptedRows: rows,
@@ -809,6 +819,7 @@ export function NoteEditorCore({
   const reportOffline = useRef(onOffline);
   const reportOutdated = useRef(onOutdated);
   const reportLate = useRef(onLate);
+  const reportLateUnloaded = useRef(onLateUnloaded);
   const showOffline = useCallback(() => {
     if (!offlineMode.current) return;
     reportOffline.current?.(
@@ -879,8 +890,10 @@ export function NoteEditorCore({
   // it with the document handed to it and every leftover draft (Q406).
   const goLate = useRef(() => {});
   goLate.current = () => {
-    if (stale.current) return;
+    if (stale.current || rejected.current) return;
     stale.current = true;
+    // The next mount merges the rows the draft send held (review r4 N3).
+    sender.current?.stop();
     roomProvider(editorRef.current)?.disconnect();
     recorder.current?.late();
     reportLate.current?.(Y.encodeStateAsUpdate(ydoc));
@@ -940,13 +953,18 @@ export function NoteEditorCore({
           mergeNow.current();
           return;
         }
-        if (result) Y.applyUpdate(ydoc, result.merged, LATE_ORIGIN);
+        if (result) {
+          // Marked again as it applies: a send may have taken the mark and
+          // left the next store to clear it (review r4 L1).
+          markedRoom(editorRef.current)?.unsentFrom(base);
+          Y.applyUpdate(ydoc, result.merged, LATE_ORIGIN);
+        }
         mergeApplied.current = true;
         lateNow.current = false;
         const hidden = result?.hidden.length
           ? hiddenDocument(lateDocument, result.hidden)
           : undefined;
-        const kept = await recorder.current?.supersede(hidden);
+        const kept = await recorder.current?.supersede(hidden, !!result);
         if (hidden && !kept) {
           // The hidden blocks could not be stored: the adopted rows stay (no
           // receipt may delete them), the note never opens live here, and
@@ -973,6 +991,14 @@ export function NoteEditorCore({
         if (!(rejected.current || stale.current)) setLateUnloaded(true);
       });
   };
+  // The note's strip offers Retry while the code did not load (Q398), ranked
+  // after outdated and offline (NoteEditor, Q420).
+  useEffect(() => {
+    if (!(lateMerging && lateUnloaded)) return;
+    const shown = reportLateUnloaded.current;
+    shown?.(() => mergeNow.current());
+    return () => shown?.(null);
+  }, [lateMerging, lateUnloaded]);
   // A reconnecting browser tries the code again (Q398).
   useEffect(() => {
     if (!lateUnloaded) return;
@@ -992,24 +1018,33 @@ export function NoteEditorCore({
 
   // The room refused this editor's copy for good. Unsaved edits are kept as
   // one refused draft: the remount shows them read-only for copying, never
-  // merged back.
+  // merged back. While a late merge waits, no draft row is touched: none of
+  // them is in this document yet, and the remount merges them (Q420).
   const rejectDocument = useCallback(
     (
       code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked'
     ) => {
       if (rejected.current) return;
       rejected.current = true;
-      const unsaved = hasUnsavedWork() || !!recorder.current?.unsaved;
+      const merging = !!lateDocument && !mergeApplied.current;
+      const unsaved =
+        !merging && (hasUnsavedWork() || !!recorder.current?.unsaved);
       if (unsaved) recorder.current?.refuse();
       pendingCheckpoints.current.clear();
       saveDelay.retain([]);
       setStatus('error');
       reportRejection.current?.(
         code,
-        unsaved ? (storageOk.current ? 'kept' : 'lost') : 'none'
+        merging
+          ? 'kept'
+          : unsaved
+            ? storageOk.current
+              ? 'kept'
+              : 'lost'
+            : 'none'
       );
     },
-    [hasUnsavedWork, saveDelay, setStatus]
+    [hasUnsavedWork, lateDocument, saveDelay, setStatus]
   );
 
   const handleStatelessEvent = useCallback(
@@ -1748,6 +1783,7 @@ export function NoteEditorCore({
     reportOffline.current = paused ? undefined : onOffline;
     reportOutdated.current = paused ? undefined : onOutdated;
     reportLate.current = paused ? undefined : onLate;
+    reportLateUnloaded.current = paused ? undefined : onLateUnloaded;
     let reported = paused;
     readOnlyNow.current = (refusedConnect = false, code?: ReadOnlyCode) => {
       if (reported) return;
@@ -1765,6 +1801,7 @@ export function NoteEditorCore({
   }, [
     onDocumentRejected,
     onLate,
+    onLateUnloaded,
     onOffline,
     onOutdated,
     onReadOnly,
@@ -1795,21 +1832,6 @@ export function NoteEditorCore({
                 currentUserId={currentUserId}
                 discussions={discussions}
               >
-                {lateMerging && lateUnloaded && (
-                  <FileBanner
-                    actions={[
-                      {
-                        label: m.error_action_retry(),
-                        onClick: () => mergeNow.current(),
-                      },
-                    ]}
-                    closeable={false}
-                    inline
-                    kind="late-unloaded"
-                    message={m.editor_late_unloaded()}
-                    testId="save-banner"
-                  />
-                )}
                 {/* Held back: until sent. */}
                 <div className="contents" data-note-toolbar="" inert={locked}>
                   <CollaborationHold className="contents">

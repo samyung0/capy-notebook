@@ -78,6 +78,7 @@ import {
   dropExpiredGroup,
   dropLostDrafts,
   type EditDraft,
+  heldDraftSessions,
   markDraftsReported,
   openRecoveryGroup,
   putDrafts,
@@ -952,6 +953,59 @@ describe('recording a note session', () => {
     expect(rows.some((row) => row.kind === 'state')).toBe(true);
   });
 
+  // Q420 (review r4 L2): a row rewritten from older ones keeps their newest
+  // date, so the 7-day expiry is not restarted.
+  it('dates a late, refused or hidden row as the newest of the rows it replaces', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const late = 'u_1:material:dated-late';
+    const older = draft('older:1', {
+      key: late,
+      savedAt: Date.now() - 6 * day,
+      session: 'older',
+    });
+    const newer = draft('newer:1', {
+      key: late,
+      savedAt: Date.now() - 5 * day,
+      session: 'newer',
+    });
+    await putDrafts([older, newer]);
+    noteRecorder(late, 'a', { adopted: [older, newer] }).recorder.late();
+    expect((await readDrafts(late)).map((row) => row.savedAt)).toEqual([
+      newer.savedAt,
+    ]);
+    const refused = 'u_1:material:dated-refused';
+    const adopted = { ...newer, key: refused };
+    await putDrafts([adopted]);
+    const { recorder } = noteRecorder(refused, 'a', { adopted: [adopted] });
+    recorder.refuse(new Uint8Array([0, 0]));
+    expect((await readDrafts(refused)).map((row) => row.savedAt)).toEqual([
+      newer.savedAt,
+    ]);
+    const hidden = 'u_1:material:dated-hidden';
+    const merged = { ...newer, key: hidden };
+    await putDrafts([merged]);
+    const merging = noteRecorder(hidden, 'a', { adopted: [merged] });
+    merging.client.getText('content').insert(1, 'merged');
+    await merging.recorder.supersede(new Uint8Array([0, 0]));
+    const rows = await readDrafts(hidden);
+    expect(rows.find((row) => row.refused)?.savedAt).toBe(newer.savedAt);
+    // This session's own edit is dated now.
+    expect(
+      rows.find((row) => row.kind === 'state' && !row.refused)?.savedAt
+    ).toBeGreaterThan(newer.savedAt);
+  });
+
+  // Review r4 N4: nothing merged (the document already held every edit), so
+  // the adopted rows go with no whole document written.
+  it('writes no whole document when a late merge had nothing to merge', async () => {
+    const key = 'u_1:material:supersede-nothing';
+    const earlier = draft('earlier:1', { key, late: true, session: 'earlier' });
+    await putDrafts([earlier]);
+    const { recorder } = noteRecorder(key, 'a', { adopted: [earlier] });
+    expect(await recorder.supersede(undefined, false)).toBe(true);
+    expect(await readDrafts(key)).toEqual([]);
+  });
+
   it('keeps the adopted rows when the hidden blocks cannot be stored', async () => {
     const key = 'u_1:material:supersede-failing';
     const earlier = draft('earlier:1', { key, late: true, session: 'earlier' });
@@ -1529,6 +1583,15 @@ class Locks {
       if (--lock.count === 0) this.held.delete(name);
       for (const wake of this.waiting.splice(0)) wake();
     }
+  }
+  query(): Promise<LockManagerSnapshot> {
+    return Promise.resolve({
+      held: [...this.held].map(([name, { exclusive }]) => ({
+        mode: exclusive ? ('exclusive' as const) : ('shared' as const),
+        name,
+      })),
+      pending: [],
+    });
   }
 }
 
@@ -2149,6 +2212,41 @@ describe('the draft sweep sending', () => {
     room: ROOM,
     token: 'room-token',
     url: 'wss://collab.test',
+  });
+
+  // Q420 (review r4 M2): a recording session holds its own lock, so another
+  // tab's late merge leaves its rows alone; the lock goes as recording stops.
+  it("holds a recording session's lock until it stops recording", async () => {
+    const { recorder } = noteRecorder('u_1:material:session-lock', 'a');
+    await vi.waitFor(async () =>
+      expect((await heldDraftSessions()).has(recorder.session)).toBe(true)
+    );
+    recorder.late();
+    await vi.waitFor(async () =>
+      expect((await heldDraftSessions()).has(recorder.session)).toBe(false)
+    );
+  });
+
+  // Review r4 N5: a late group settles the send at once, though another
+  // group waits for a retry: the editor's late merge takes every row.
+  it('settles at once when a group is answered late, though another waits for a retry', async () => {
+    const key = 'u_late_mixed:material:mat_1';
+    const rows = [
+      ...(await leftRows(key)),
+      ...(await leftRows(key, `${ROOM}@b`)),
+    ];
+    await putDrafts(rows.map((row) => ({ ...row, grants: [grant(12)] })));
+    requests.length = 0;
+    answer(409, 'late');
+    answer(503);
+    const sender = draftSender(key, roomToken);
+    try {
+      await vi.waitFor(() => expect(sender.done).toBe(true));
+      expect(sender.late).toBe(true);
+      expect(requests).toHaveLength(2);
+    } finally {
+      sender.stop();
+    }
   });
 
   // Q406 (review r3 M2): a group the room answers late is marked late and

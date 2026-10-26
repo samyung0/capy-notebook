@@ -2573,7 +2573,13 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   the handed document and every stored draft found for the note, a
   never-accepted session's pending steps included, are the old document
   (Developer Epo, 2026-10-27, Q406, [error
-  handling](../../human/frontend/error-handling.md)), the synced one the
+  handling](../../human/frontend/error-handling.md)), except rows another
+  open tab records: each recording session holds its own Web Lock
+  (`capy-draft-session:<session>`, exclusive, from its first row until it
+  stops recording, online too), the note's draft read lists the held ones
+  (`heldDraftSessions`), and the late mount leaves their rows alone, never
+  merging or deleting them (Q420). A browser without Web Locks holds none,
+  so its late merge may take another open tab's rows (Q420). The synced one is the
   current, and `mergeLate` (`src/features/collaboration/lateMerge`) runs the
   merge in a worker that is gone afterwards (and stopped when the editor
   goes). Meanwhile no draft is applied raw or sent: a late mount runs no
@@ -2589,7 +2595,10 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   failed (the worker or its WASM did not load: `LateMergeUnloaded`) swaps the
   late mount in with its static copy, everything kept, and a strip "Couldn't
   sync your edits. Retry or reload the page." offering Retry; the browser's
-  `online` event tries again too (Q398), and so does a room sync. Code that
+  `online` event tries again too (Q398), and so does a room sync. The strip
+  is the note's save strip, one at a time: outdated, offline, then this one,
+  then delayed (Q252 as amended by Q420; the merge view's review strip comes
+  last). Code that
   does not load while the browser is online goes to Sentry once a page
   (`late-merge`, stage `load`): a cause no retry fixes (a CSP block) shows
   there. Once the code loaded, the current document is read (`mergeBase`) and
@@ -2599,8 +2608,12 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   the merged update and no collection passes the units it names (late merge
   review r2 S6). A result that arrives after another send took the mark and a
   store cleared it (the session reports past the base) is dropped and the
-  merge runs again (review r3 L1). The update is applied as this session's
-  edit (sent and stored); the merged document is then written whole and the
+  merge runs again (review r3 L1), and the mark is taken again at the base
+  just before the result applies, for a send that took it but whose record
+  the next store has not cleared yet (Q420, review r4 L1). The update is
+  applied as this session's
+  edit (sent and stored); the merged document is then written whole (not
+  when nothing needed merging) and the
   rows it stands for go once that landed (else at the receipt), so a reload
   never merges them again; then the note paints and swaps in. What
   the merge would hide, because someone deleted the block around it (Developer
@@ -2627,8 +2640,20 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   (the `refused` banner), and goes to Sentry (`late-merge`). The old document
   holds every draft the merge took, so every stored draft stays, in that row
   (Q406); no edit is dropped. A mount already set aside (paused,
-  outdated) leaves the rows to the next one.
-- **Stored drafts**: a sweep answered `late` marks the group's rows `late`.
+  outdated) leaves the rows to the next one. A room eviction while the merge
+  waits (`document-rejected`, `authorization-revoked`) touches no draft row,
+  writing nothing and deleting nothing: none of them is in the late mount's
+  document yet, and the reopened note takes the late path again (Q420). A
+  row rewritten from others (the late row, a refused or hidden row) keeps the
+  newest date of the rows it replaces (this session's last edit, the adopted
+  rows'), so the 7-day expiry runs from the edits, not the rewrite (Q420); an
+  expired late row opens once as the expired copy instead of merging (Q413).
+  Once the merge view lands, a failed late merge opens the live note with
+  merge view pieces instead of the copy-only recovery (Q420).
+- **Stored drafts**: a sweep or draft send answered `late` marks the group's
+  rows `late`, and a draft send with a late group settles at once (its
+  editor goes late, stopping the send) even when another group waits for a
+  retry (review r4 N5).
   Sweeps never send them, and an editor opening with any late row merges every
   restored row the same way instead of applying them. Late rows go to the
   merge whoever's session they are: `draftGroups` never shows them copy-only
