@@ -403,7 +403,8 @@ async fn shutdown_signal() {
 
 /// Every loaded room stores what it holds before the process exits (the
 /// container's shutdown grace period covers it), then the source disk store's
-/// files go (Epo 2026-10-17; a crash leaves them for the next start's wipe).
+/// files go (Epo 2026-10-17; a crash leaves them for the next start's wipe)
+/// and the instance leaves the heartbeat registry.
 async fn shutdown(app: &app::Shared) {
     let mut waits = Vec::new();
     for name in app.rooms.names() {
@@ -424,6 +425,11 @@ async fn shutdown(app: &app::Shared) {
             json!({ "error": error.to_string() }),
         );
     }
+    // The next process need not wait a minute for this one's heartbeat to
+    // age out before it collects (Q419).
+    let mut redis = app.redis.clone();
+    let _: Result<i64, _> =
+        redis::AsyncCommands::hdel(&mut redis, app::INSTANCE_REGISTRY, &app.instance_id).await;
 }
 
 #[cfg(test)]

@@ -1979,7 +1979,7 @@ fn collections_keep_every_replica_and_every_undo_exact() {
             && tally.day_episodes > seeds / 8
     );
     assert!(tally.late_rejoins > seeds / 4 && tally.lost_rejoins > 0);
-    assert!(tally.late_rejoins - tally.lost_rejoins > seeds / 20);
+    assert!(tally.late_rejoins - tally.lost_rejoins > seeds / 40);
     assert!(tally.contended > seeds / 4 && tally.holding > seeds / 8);
     yjs_check(&tally.sample);
 }

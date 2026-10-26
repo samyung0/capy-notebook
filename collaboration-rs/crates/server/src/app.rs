@@ -415,16 +415,22 @@ impl App {
         self.handoff.get().expect("the handoff is set at start")
     }
 
-    /// Whether another collaboration process heartbeat within the last
-    /// minute, or the registry cannot be read: the in-place collection
-    /// requires one process per database (Q400, review r3 L1).
-    pub async fn another_instance(&self) -> bool {
+    /// Why another collaboration process may be live: one heartbeat within
+    /// the last minute, a heartbeat that cannot be read, or a registry that
+    /// cannot be read (the cause and its detail); none when this one is
+    /// alone. The in-place collection requires one process per database
+    /// (Q400, review r3 L1). Each value is read on its own, as the source
+    /// handoff reads the registry.
+    pub async fn another_instance(&self) -> Option<(&'static str, String)> {
         let mut redis = self.redis.clone();
-        let Ok(entries) =
-            redis::AsyncCommands::hgetall::<_, HashMap<String, u64>>(&mut redis, INSTANCE_REGISTRY)
-                .await
-        else {
-            return true;
+        let entries = match redis::AsyncCommands::hgetall::<_, HashMap<String, String>>(
+            &mut redis,
+            INSTANCE_REGISTRY,
+        )
+        .await
+        {
+            Ok(entries) => entries,
+            Err(error) => return Some(("registry unreadable", error.to_string())),
         };
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -433,7 +439,12 @@ impl App {
         let cutoff = now.saturating_sub(INSTANCE_LIVE_FOR.as_millis() as u64);
         entries
             .iter()
-            .any(|(id, at)| *id != self.instance_id && *at >= cutoff)
+            .filter(|(id, _)| **id != self.instance_id)
+            .find_map(|(id, at)| match at.parse::<u64>() {
+                Ok(at) if at >= cutoff => Some(("another process live", id.clone())),
+                Ok(_) => None,
+                Err(_) => Some(("heartbeat unreadable", id.clone())),
+            })
     }
 }
 

@@ -164,8 +164,9 @@ fn stretches(item: &ItemPtr, window: &Window, held: &IdSet) -> Vec<(Range<u32>, 
 
 /// `doc`'s state without what W, H and the marker rule let go (module docs).
 /// `held` is H: the deletions an open session's Undo, the open room's agent
-/// steps or an unexpired durable Undo payload may still restore. `live_room` is the open room's own client,
-/// whose marker chains stay; None at the unload fold.
+/// steps or an unexpired durable Undo payload may still restore. `live_room`
+/// is the open room's own client, whose marker chains stay; None at the
+/// unload fold.
 pub fn collect(doc: &Doc, window: &Window, held: &IdSet, live_room: Option<ClientID>) -> Collected {
     let txn = doc.transact();
     let store = txn.store();

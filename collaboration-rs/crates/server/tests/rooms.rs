@@ -76,7 +76,9 @@ impl Drop for RedisDb {
 }
 
 /// A free Redis database, its registry emptied (a server stopped before
-/// keeps its last heartbeat there for a minute).
+/// keeps its last heartbeat there for a minute). Pub/sub crosses databases,
+/// but keys the test API writes (in the stack's database 0, eviction
+/// requests and the like) are not seen by a server in one of these.
 async fn redis_db(env: &Env) -> RedisDb {
     let index = loop {
         if let Some(index) = REDIS_DBS.lock().expect("databases").pop() {
@@ -1962,6 +1964,109 @@ async fn a_fold_stops_before_a_row_the_open_room_has_not_applied() {
     );
 }
 
+/// Q419 (review r4 M1): a store that commits behind a gap (a committed row
+/// the room has not applied) clears the draft floor of the group it holds,
+/// so no fold runs until the gap closes; the fold then takes that store's
+/// row with the rest. A closed tab's group types "D" inside "xyz", which a
+/// counted tab then cuts before it leaves, so no session counts (a viewer
+/// keeps the room open). An agent edit commits a row the room hears of 3 s
+/// later (debug builds: an operation id starting with
+/// `capy-it-service-later`); the group, sent meanwhile, is stored behind it,
+/// at the third row since the last fold. A reload shows "D". Fails if a
+/// fold runs up to the gap (it collects y, which the group names, and its
+/// row loads collected).
+#[tokio::test]
+async fn a_store_behind_a_gap_is_folded_with_the_gaps_row() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "3")]).await;
+    let (owner, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET privacy='link' WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("link share");
+    let reader = user(&env).await;
+    redeem(&env, &material, &reader).await;
+    let mut viewer = Client::open(server.port).await;
+    viewer.joined(&room, &token(&room, &reader, "read")).await;
+    let mut b = tab(server.port, &room, &owner).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    b.write(|doc| {
+        insert_unsent(doc, 4, "xz");
+        insert_unsent(doc, 5, "y");
+    })
+    .await;
+    persisted(&mut b, "typed").await;
+    let y = b.unit_at(5);
+    let mut d = tab(server.port, &room, &owner).await;
+    assert!(d.settle(|c| c.block_text() == "basexyz").await);
+    let version = stored_version(&env, &material).await;
+    let id = d.doc.client_id().get();
+    let group = drafted(&d.doc, |doc| insert_unsent(doc, 5, "D"));
+    d.leave(false).await;
+    b.write(|doc| remove_as(doc, "b", 4, 3)).await;
+    persisted(&mut b, "cut").await;
+    b.leave(false).await;
+    assert!(viewer.settle(|c| c.block_text() == "base").await);
+    let before = stored_version(&env, &material).await;
+    let edit = format!("capy-it-service-later-{material}");
+    let agent = tokio::spawn({
+        let body = serde_json::json!({
+            "actorUserId": owner,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "ba", "text": "BA" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        });
+        let port = server.port;
+        async move { internal(port, "/internal/documents/edit", &body).await }
+    });
+    for _ in 0..30 {
+        if stored_version(&env, &material).await > before {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(stored_version(&env, &material).await, before + 1);
+    let (status, answer) = send_drafts_over(
+        server.port,
+        &room,
+        Some(&token(&room, &owner, "write")),
+        Some(ORIGIN),
+        &[
+            ("x-capy-grants", &token_offering(&room, &owner, "write", id)),
+            ("x-capy-version", &version.to_string()),
+        ],
+        group,
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let (status, receipt) = agent.await.expect("agent");
+    assert_eq!(status, 200, "{receipt}");
+    assert!(
+        viewer.settle(|c| c.block_text() == "BAseD").await,
+        "{}",
+        viewer.block_text()
+    );
+    // The edit's arrival folds every row, the group's store's among them.
+    let folded = log_folded(&env, &material).await;
+    drop(viewer);
+    wait_unloaded(server.port).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &owner, "write")).await;
+    fresh.settle(|c| c.block_text() == "BAseD").await;
+    assert_eq!(
+        (folded, fresh.block_text().as_str()),
+        (true, "BAseD"),
+        "folded once the edit arrived; the reload's text"
+    );
+    assert!(!collected_in_base(&env, &material, y).await);
+}
+
 /// Q400 (review r3 L2): window snapshots are kept one per hour, the newest
 /// of each, for the latest 25 hours that have one, so a fold reaches back to
 /// a tab that acknowledged a version many folds ago. Each fold's snapshot is
@@ -2062,23 +2167,30 @@ async fn window_snapshots_are_kept_hourly_for_a_day() {
     );
 }
 
-/// Q400 (review r3 L1): a fold collects nothing while another collaboration
-/// process is live (its heartbeat in the instance registry within the last
-/// minute): the collection requires one process per database. With a second
-/// instance's heartbeat in the server's registry, folds whose window holds
-/// an ended session's cut store their windows but collect nothing; once that
-/// heartbeat is gone, the next fold collects. Fails if a fold ignores the
-/// other process.
+/// Q400 (review r3 L1) and Q419: a fold collects nothing while another
+/// collaboration process may be live: a heartbeat in the instance registry
+/// that cannot be read, or another one within the last minute (the
+/// collection requires one process per database). Each value is read on its
+/// own, as the source handoff reads them, and each cause is logged (and
+/// reported) once, tagged with the note. With such a heartbeat in the
+/// server's registry, folds whose window holds an ended session's cut store
+/// their windows but collect nothing; once it is gone, the next fold
+/// collects. Fails if a fold ignores the other process, if one unreadable
+/// value makes the whole registry unreadable, or if the cause goes unsaid,
+/// is said at every fold or names no note.
 #[tokio::test]
-async fn a_fold_collects_nothing_while_another_process_is_live() {
+async fn a_fold_collects_nothing_while_another_process_may_be_live() {
     let Some(env) = env() else { return };
-    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let (server, logs) = start_logged_with(
+        &env,
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+        ],
+    )
+    .await;
     let mut redis = redis_at(&server.redis.as_ref().expect("its own database").url).await;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock")
-        .as_millis() as u64;
-    let _: () = redis::AsyncCommands::hset(&mut redis, INSTANCE_REGISTRY, "it-other", now)
+    let _: () = redis::AsyncCommands::hset(&mut redis, INSTANCE_REGISTRY, "it-other", "soon")
         .await
         .expect("heartbeat");
     let (user, material) = note(&env, "base").await;
@@ -2099,12 +2211,33 @@ async fn a_fold_collects_nothing_while_another_process_is_live() {
     assert!(log_folded(&env, &material).await);
     b.leave(false).await;
     assert!(a.settle(|c| c.block_text() == "base").await);
-    for mark in ["!", "?"] {
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_millis() as u64
+    };
+    for (mark, cause) in [("!", "heartbeat unreadable"), ("?", "another process live")] {
         a.ack_all().await;
         a.type_at(0, mark).await;
         persisted(&mut a, mark).await;
         assert!(log_folded(&env, &material).await);
+        // Tagged with the note whose fold saw it, as Sentry gets it.
+        let file = format!("\"file_id\":\"{material}\"");
+        assert!(
+            logs.has(&["in-place collection withheld", cause, "it-other", &file])
+                .await,
+            "{cause}"
+        );
+        let _: () = redis::AsyncCommands::hset(&mut redis, INSTANCE_REGISTRY, "it-other", now())
+            .await
+            .expect("heartbeat");
     }
+    // Three folds saw the unreadable heartbeat: said once.
+    assert_eq!(
+        logs.count(&["in-place collection withheld", "heartbeat unreadable"]),
+        1
+    );
     assert!(windows(&env, &material).await > 0);
     assert!(!collected_in_base(&env, &material, y).await);
     assert_eq!(collected_window(&env, &material).await, 0);
@@ -2175,6 +2308,16 @@ async fn a_stop_stores_each_rooms_unsaved_edits_before_exiting() {
     let (user, room, mut client) = writer(&env, server.port, "kept").await;
     client.type_text(" too").await;
     client.until(6).await.expect("ack");
+    // Its heartbeat, under an id starting with its process id (Q419).
+    async fn beating(url: &str, pid: u32) -> bool {
+        let mut redis = redis_at(url).await;
+        let ids: Vec<String> = redis::AsyncCommands::hkeys(&mut redis, INSTANCE_REGISTRY)
+            .await
+            .expect("registry");
+        ids.iter().any(|id| id.starts_with(&format!("{pid}-")))
+    }
+    let pid = server.child.id();
+    assert!(beating(&env.redis, pid).await);
     let signalled = Command::new("kill")
         .args(["-TERM", &server.child.id().to_string()])
         .status()
@@ -2194,6 +2337,10 @@ async fn a_stop_stores_each_rooms_unsaved_edits_before_exiting() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     assert!(exited, "the server did not stop");
+    assert!(
+        !beating(&env.redis, pid).await,
+        "the stopped server's heartbeat stayed"
+    );
     let again = start(&env).await;
     let mut reader = Client::open(again.port).await;
     reader.joined(&room, &token(&room, &user, "write")).await;
@@ -10783,6 +10930,7 @@ async fn crafted_draft_bodies_are_refused_and_the_room_survives() {
     // Review r2 N2: an unreadable version is refused, not taken as none;
     // audit N1: so are a missing one and 0 (a new tab's, never late), which
     // no browser sends (a group's rows are made at version 1 or later).
+    // "" leaves the header out (`send_drafts_over` sends none for it).
     for version in ["seven", "", "0"] {
         let (got, answer) = send_drafts_over(
             server.port,

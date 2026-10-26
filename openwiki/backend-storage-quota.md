@@ -960,7 +960,13 @@ room also collects its own document at each threshold fold (Q401), in its
 own task (what arrives meanwhile waits), at that fold's window and held set,
 and swaps the result in: its state vector, unstored edits and own marker
 chains stay, tabs joining get the collected state, and open tabs keep their
-tombstones until they reload. While the room keeps agent steps it keeps its
+tombstones until they reload. With the same W and H it drops only units the
+stored pass drops too (a unit newer than W only ends a run), except a deleted
+block's children, which Yjs drops with the block either way. It can also
+keep units the stored base dropped: a refused or skipped pass, or one that
+found nothing while the stored pass did, leaves its document whole. A check
+of what a payload names therefore reads both documents (Q419). While the
+room keeps agent steps it keeps its
 document whole: their live Undo reverts against the room document's own
 deleted content and redo links, which a reload drops (durable Undo removes
 those steps). Kept list items keep their origins, and a map value drops its
@@ -996,10 +1002,12 @@ and tabs loading the collected state agree.
     the room admitted until a store taken after it commits (the draft floor,
     Q400), whichever trigger folds: a store or a service edit. A group must
     name its version (`X-Capy-Version`, 1 or later): one without is refused.
-  - A threshold fold folds only the rows the open room holds, never past a
-    service edit's row that committed before a later store's and has not
-    reached the room yet (`sessions::whole`), so W never holds a row the live
-    document lacks.
+  - A room never folds while a committed row has not reached it (a direct
+    write racing its load, or a service edit's row it hears of after a later
+    store's; Q419). The service edit's own fold runs once the row arrives
+    and folds up to the stored version, so W never holds a row the live
+    document lacks, and a store holding an admitted group is folded with
+    that group.
   - H holds what counted sessions deleted (their editor Undo may restore it)
     and what agent steps deleted (their Undo and Redo re-create it, naming
     the deleted items).
@@ -1017,7 +1025,11 @@ and tabs loading the collected state agree.
   process per database (Q400; no replicas, no start-first rollout, see
   [deployment-runbook.md](deployment-runbook.md)): a fold collects nothing
   while another process's heartbeat is in the instance registry
-  (`capy:collaboration:instances`, within a minute).
+  (`capy:collaboration:instances`, within a minute), or a heartbeat there or
+  the registry cannot be read (each value is read on its own, as the source
+  handoff reads them). Each such cause is logged and reported to Sentry once
+  per process (Q419), tagged `file_id` with the note whose fold first saw
+  it. A process removes its heartbeat when it stops.
 - **Lists.** In the document's current order, each run of dead units keeps its
   first and last unit: typing names the last unit of a deleted run, a list
   insert the first. Any other unit ends a run, a unit newer than W included,
@@ -1039,17 +1051,18 @@ and tabs loading the collected state agree.
   can reach a session counted up to 24 h back. They hold ids only and are
   not charged.
 - **Guard.** A collected state that does not load with nothing pending, keep
-  the model's roots and hold the folded document's value is refused: the fold
-  stores the folded document uncollected, as without the collection, and
-  reports the refusal to Sentry once per material while the process runs,
-  logging every refusal; a panic in the collection or the guard is a refusal
-  too. The next fold collects again (Epo 2026-10-24). The open room's own
+  the model's roots and hold the folded document's state vector and value is
+  refused: the fold stores the folded document uncollected, as without the
+  collection, and reports the refusal to Sentry once per material (tagged
+  `file_id`) while the process runs, logging every refusal; a panic in the
+  collection or the guard is a refusal too. The next fold collects again (Epo 2026-10-24). The open room's own
   collection has the same guard: a refusal keeps its document as it is.
 - **Undo.** An item that names a collected unit as origin, right origin or
   parent integrates as collected, so a durable Undo payload whose items name
   one would restore only part of its edit. `ydoc::gc::names_collected` finds
   such a payload; the durable Undo route must refuse it (`undo_unavailable`)
-  before the collection is turned on.
+  before the collection is turned on, checking both the loaded room's
+  document and the stored state (Q419).
 - **Switch.** `COLLABORATION_GC_COLLECT=true` turns the collection on. It is
   off by default, and the server refuses to start with it on outside tests
   (`APP_ENV=test`) until the rest of the release lands: the merge of a tab or

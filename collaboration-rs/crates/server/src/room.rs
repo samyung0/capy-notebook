@@ -396,7 +396,7 @@ struct Note {
     window: i64,
     /// Versions below `stored_version` the room has not applied: service
     /// edits whose rows committed before a later store's (`sessions::took`).
-    /// Note content rooms only.
+    /// No fold runs while one is open (Q419). Note content rooms only.
     gaps: std::collections::BTreeSet<i64>,
     /// The first gap below a store the room could not announce, and whether
     /// it was warned of (`announce_stored`).
@@ -2306,20 +2306,22 @@ impl Room {
                 return;
             }
         };
+        // A committed row the room has not applied (a direct write racing its
+        // load): no fold until it arrives, so the window never holds a row the
+        // open room lacks and a store holding a draft group is folded with it
+        // (Q419); `service_edit()` folds once the gap closes.
         if note.folding
+            || !note.gaps.is_empty()
             || (note.log_bytes < min_bytes.max(note.base_bytes) && note.log_rows < max_rows)
         {
             return;
         }
         note.folding = true;
-        // Never past a row the room has not applied (a service edit's whose
-        // row committed before a later store's): the window then holds only
-        // what the open room and its tabs hold (audit B1, Q401).
         let (app, material_id, schema, through, doc_kind) = (
             self.app.clone(),
             note.material_id.clone(),
             note.schema,
-            crate::sessions::whole(note.stored_version, &note.gaps),
+            note.stored_version,
             note.doc,
         );
         let holds = self.fold_holds(Some(self.doc.client_id()));
@@ -2330,7 +2332,7 @@ impl Room {
             note.window = note.window.max(holds.reached.unwrap_or(through));
         }
         tokio::spawn(async move {
-            let holds = one_process(&app, holds).await;
+            let holds = one_process(&app, &material_id, holds).await;
             let (folded, collected) = match note_store::fold(
                 &app.db,
                 &material_id,
@@ -4987,7 +4989,7 @@ impl Room {
                         json!({ "error": error.to_string(), "room": material_id }),
                     );
                 }
-                let holds = one_process(&app, holds).await;
+                let holds = one_process(&app, &material_id, holds).await;
                 if let Err(error) =
                     note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds).await
                 {
@@ -5003,22 +5005,45 @@ impl Room {
     }
 }
 
-/// `holds` collecting nothing while another collaboration process is seen:
-/// the in-place collection requires one process per database (Q400, review
-/// r3 L1), whose rooms' sessions and windows this one cannot see.
+/// `holds` collecting nothing while another collaboration process may be
+/// live: the in-place collection requires one process per database (Q400,
+/// review r3 L1), whose rooms' sessions and windows this one cannot see.
+/// Each cause is reported once per process (Q419), to Sentry and the log
+/// (`capture` logs it), tagged with the material whose fold first saw it.
 async fn one_process(
     app: &crate::app::App,
+    material_id: &str,
     holds: Option<note_store::Holds>,
 ) -> Option<note_store::Holds> {
     let holds = holds?;
-    if app.another_instance().await {
-        return Some(note_store::Holds {
-            alone: Box::new(|| false),
-            ..holds
-        });
+    let Some((cause, detail)) = app.another_instance().await else {
+        return Some(holds);
+    };
+    if WITHHELD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(cause)
+    {
+        observe::capture(
+            &format!("in-place collection withheld: {cause}"),
+            None,
+            &[
+                ("room", material_id),
+                ("file_id", material_id),
+                ("stage", "fold"),
+                ("detail", &detail),
+            ],
+        );
     }
-    Some(holds)
+    Some(note_store::Holds {
+        alone: Box::new(|| false),
+        ..holds
+    })
 }
+
+/// The causes of withheld collections this process reported.
+static WITHHELD: std::sync::LazyLock<std::sync::Mutex<HashSet<&'static str>>> =
+    std::sync::LazyLock::new(Default::default);
 
 /// What admission decided about a writer's update.
 enum Verdict {

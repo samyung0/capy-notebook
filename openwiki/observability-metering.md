@@ -385,7 +385,9 @@ only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal
 request's events with the caller's `trace_id`, and a source rebuild's (which
-runs outside any request, on a room unload or the sweep) with its `file_id`. Go, Python, and collaboration exclude request
+runs outside any request, on a room unload or the sweep) with its `file_id`;
+an in-place collection's refusal or withheld report (a fold, also outside any
+request) carries its note's material id as `file_id`. Go, Python, and collaboration exclude request
 bodies and internal authentication headers from Sentry because requests carry
 note content, prompts, and service credentials. Python stack locals are also
 excluded. The pipeline's `before_breadcrumb` (`obs._before_breadcrumb`) keeps

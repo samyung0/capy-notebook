@@ -575,9 +575,9 @@ const IT_STORE_LATER: &str = "capy-it-store-later";
 /// With `holds` (the collection's switch on, notes only) the new base is
 /// collected in place at the window the holds choose, when one qualifies,
 /// that window's version is kept as the latest (`collected_window`), and
-/// the folded document is stored as a later window candidate. A collection the guard refuses, or that panics,
-/// folds uncollected and is reported once per material (human/ 2026-10-24);
-/// the next fold collects again.
+/// the folded document is stored as a later window candidate. A collection
+/// the guard refuses, or that panics, folds uncollected and is reported once
+/// per material (human/ 2026-10-24); the next fold collects again.
 pub async fn fold(
     pool: &Pool,
     material_id: &str,
@@ -742,7 +742,9 @@ fn whole(doc: &yrs::Doc) -> Vec<u8> {
 
 /// The guard: the collected `state` loaded into a new document under
 /// `client` (0: any), if it loads with nothing pending, keeps the model's
-/// roots and holds the document value of `before`; otherwise why not.
+/// roots and holds the state vector and document value of `before`
+/// (joiners, open tabs and the room's durable cover rely on the vector);
+/// otherwise why not.
 fn loaded(state: &[u8], before: &yrs::Doc, model: Model, client: u64) -> Result<yrs::Doc, String> {
     let loaded = yrs::Doc::with_options(ydoc::doc_options(client));
     ydoc::replay(&loaded, state, &[] as &[&[u8]]).map_err(|error| error.to_string())?;
@@ -751,6 +753,9 @@ fn loaded(state: &[u8], before: &yrs::Doc, model: Model, client: u64) -> Result<
         model.assert_roots(&after)?;
         if model.document_value(&before)? != model.document_value(&after)? {
             return Err("the collected state holds another value".into());
+        }
+        if before.state_vector() != after.state_vector() {
+            return Err("the collected state holds another state vector".into());
         }
     }
     Ok(loaded)
@@ -802,6 +807,7 @@ pub fn report_refusal(material_id: &str, doc: Doc, stage: &str, why: &str) -> bo
             None,
             &[
                 ("room", material_id),
+                ("file_id", material_id),
                 ("document", doc.name()),
                 ("stage", stage),
             ],
@@ -1072,6 +1078,63 @@ mod tests {
             .insert(&mut later.transact_mut(), 0, "x");
         let tail = later.transact().encode_state_as_update_v1(&before);
         assert!(loaded(&tail, &folded, Model::Note, 0).is_err());
+        // The same value with a letter typed and deleted: another state vector.
+        let typed = ydoc::scratch_doc();
+        ydoc::replay(&typed, &state(&folded), &[] as &[&[u8]]).unwrap();
+        let block = first_block(&typed);
+        block.insert(&mut typed.transact_mut(), 0, "x");
+        block.remove_range(&mut typed.transact_mut(), 0, 1);
+        let moved = loaded(&state(&typed), &folded, Model::Note, 0);
+        assert!(moved.is_err_and(|why| why.contains("state vector")));
+    }
+
+    /// The note's first block (a Plate paragraph's text).
+    fn first_block(doc: &yrs::Doc) -> yrs::XmlTextRef {
+        let root = doc.get_or_insert_text(notes::CONTENT_ROOT);
+        root.diff(&doc.transact(), yrs::types::text::YChange::identity)
+            .into_iter()
+            .find_map(|chunk| match chunk.insert {
+                yrs::Out::YXmlText(block) => Some(block),
+                _ => None,
+            })
+            .unwrap()
+    }
+
+    /// The open room's own collection (Q401) keeps the room's client and its
+    /// contributor-marker chain, claimed or not, while it drops a run no one
+    /// holds: the room writes on under its id, against the chain the stored
+    /// fold keeps too (Q419). Fails if the live pass collects as the unload
+    /// fold does (no live room: the chain goes whole) or loads under another
+    /// client.
+    #[test]
+    fn the_open_rooms_collection_keeps_its_client_and_marker_chain() {
+        let client = ClientID::new(4242);
+        let room = yrs::Doc::with_options(ydoc::doc_options(client.get()));
+        ydoc::replay(&room, &state(&note("base")), &[] as &[&[u8]]).unwrap();
+        // "xz", then "y" typed between and all three deleted: y is an item
+        // nothing names.
+        let block = first_block(&room);
+        block.insert(&mut room.transact_mut(), 4, "xz");
+        let y = yrs::ID::new(client, room.transact().state_vector().get(&client));
+        block.insert(&mut room.transact_mut(), 5, "y");
+        block.remove_range(&mut room.transact_mut(), 4, 3);
+        // A writer's marker, written and claimed.
+        let markers = room.get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
+        let marker = yrs::ID::new(client, room.transact().state_vector().get(&client));
+        yrs::Map::insert(&markers, &mut room.transact_mut(), "w", "write");
+        yrs::Map::remove(&markers, &mut room.transact_mut(), "w");
+        let window = Window::of(&room.transact(), 1);
+        let (live, units) = collect_live(&room, &window, &IdSet::new(), Model::Note)
+            .unwrap()
+            .expect("a collection");
+        assert!(units > 0);
+        assert_eq!(live.client_id(), client);
+        let txn = live.transact();
+        assert!(matches!(txn.store().get_block_range(&y), Some((_, None))));
+        assert!(
+            matches!(txn.store().get_block_range(&marker), Some((_, Some(_)))),
+            "the room's own marker chain was collected"
+        );
     }
 
     /// A panic in the collection or its guard is a refusal, with why, and no
@@ -1088,27 +1151,36 @@ mod tests {
         assert!(events.is_empty(), "{events:?}");
     }
 
-    /// A material's refusals reach Sentry once; another material's still do.
+    /// A material's refusals reach Sentry once, tagged with its id as
+    /// `file_id` (what the UAT journeys' Sentry gate and operators search);
+    /// another material's still do.
     #[test]
     fn a_refusal_is_reported_once_per_material() {
-        assert!(report_refusal(
-            "m_refused_once",
-            Doc::Content,
-            "fold",
-            "why"
-        ));
-        assert!(!report_refusal(
-            "m_refused_once",
-            Doc::Content,
-            "live",
-            "why"
-        ));
-        assert!(!report_refusal("m_refused_once", Doc::Keys, "fold", "why"));
-        assert!(report_refusal(
-            "m_refused_other",
-            Doc::Content,
-            "fold",
-            "why"
-        ));
+        let events = sentry::test::with_captured_events(|| {
+            assert!(report_refusal(
+                "m_refused_once",
+                Doc::Content,
+                "fold",
+                "why"
+            ));
+            assert!(!report_refusal(
+                "m_refused_once",
+                Doc::Content,
+                "live",
+                "why"
+            ));
+            assert!(!report_refusal("m_refused_once", Doc::Keys, "fold", "why"));
+            assert!(report_refusal(
+                "m_refused_other",
+                Doc::Content,
+                "fold",
+                "why"
+            ));
+        });
+        let files: Vec<_> = events
+            .iter()
+            .map(|event| event.tags.get("file_id").map(String::as_str))
+            .collect();
+        assert_eq!(files, [Some("m_refused_once"), Some("m_refused_other")]);
     }
 }
