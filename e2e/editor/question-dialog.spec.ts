@@ -1,5 +1,12 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Locator, test } from '@playwright/test';
 import { m } from '../i18n';
+
+/** A part's answer row in the question: the answer key under the waves
+ * shares its name. A click selects the row and a double click edits it. */
+const partAnswers = (dialog: Locator) =>
+  dialog
+    .getByRole('button', { name: m.question_ui_select_answer() })
+    .and(dialog.locator('[data-row-key^="part:"]'));
 
 test('undoing the add of a chart still open in its editor goes back to the question', async ({
   page,
@@ -24,9 +31,7 @@ test('undoing the add of a chart still open in its editor goes back to the quest
   // The chart's edits stay staged until Done, so Undo takes back its add.
   await dialog.getByRole('button', { name: m.editor_undo() }).click();
   await expect(chartEditor).toBeHidden();
-  await expect(
-    dialog.getByRole('button', { name: m.question_ui_select_answer() })
-  ).toBeVisible();
+  await expect(partAnswers(dialog)).toBeVisible();
 });
 
 test('a quiz embedded in a note keeps its question dialog open through an edit', async ({
@@ -78,11 +83,8 @@ test('closing an open answer editor goes back to the question', async ({
     .first()
     .click({ timeout: 30_000 });
   const dialog = page.getByRole('dialog');
-  const answer = dialog.getByRole('button', {
-    name: m.question_ui_select_answer(),
-  });
-  await answer.click();
-  await page.keyboard.press('Enter');
+  const answer = partAnswers(dialog);
+  await answer.dblclick();
   const answerEditor = dialog.getByRole('heading', {
     exact: true,
     name: 'Answer and marks',
@@ -104,10 +106,7 @@ test('a part’s marks step and type within 1 to the marks cap', async ({
     .first()
     .click({ timeout: 30_000 });
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_select_answer() })
-    .click();
-  await page.keyboard.press('Enter');
+  await partAnswers(dialog).dblclick();
   const marks = dialog.getByRole('textbox', {
     name: m.question_ui_part_marks(),
   });
@@ -131,10 +130,7 @@ test('a multiple choice option is marked correct with its toggle', async ({
     .first()
     .click({ timeout: 30_000 });
   const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', { name: m.question_ui_select_answer() })
-    .click();
-  await page.keyboard.press('Enter');
+  await partAnswers(dialog).dblclick();
   const first = dialog.getByRole('button', {
     name: m.question_ui_mark_correct({ number: 1 }),
   });
@@ -194,7 +190,5 @@ test('adding a part shows it in the question instead of opening its answer', asy
   await page
     .getByRole('button', { exact: true, name: m.question_ui_part() })
     .click();
-  await expect(
-    dialog.getByRole('button', { name: m.question_ui_select_answer() })
-  ).toHaveCount(2);
+  await expect(partAnswers(dialog)).toHaveCount(2);
 });
