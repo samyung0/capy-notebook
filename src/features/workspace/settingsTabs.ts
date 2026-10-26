@@ -4,6 +4,7 @@ export const SETTINGS_TABS = [
   'sharing',
   'indexing',
   'statistics',
+  'study',
   'others',
   'danger',
 ] as const;

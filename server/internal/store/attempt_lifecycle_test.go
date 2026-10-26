@@ -19,10 +19,9 @@ func TestSuspendedUserCannotWriteAttemptHistory(t *testing.T) {
 		suspended_at=now(), suspended_reason='test' WHERE id=$1`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateAttempt(
-		ctx, userID, quiz.ID, 0, 1,
-		json.RawMessage(`{}`), json.RawMessage(`[]`), nil,
-	); err == nil {
+	if _, err := s.CheckQuizQuestion(ctx, userID, quiz.ID, QuizCheck{
+		Answers: map[string]any{}, Question: map[string]any{"id": "q1", "parts": []any{}}, Order: []string{"q1"},
+	}, time.Now()); err == nil {
 		t.Fatal("suspended user created an attempt")
 	}
 	var attempts int
@@ -125,11 +124,16 @@ func TestListAttemptsSortsFiltersAndPages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, correct, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot), nil)
-		if err != nil {
+		// Both questions earn correct/2 of their mark.
+		var qs []map[string]any
+		if err := json.Unmarshal([]byte(studySnapshot), &qs); err != nil {
 			t.Fatal(err)
 		}
-		return a.ID
+		for _, q := range qs {
+			q["parts"].([]any)[0].(map[string]any)["awarded"] = correct / 2
+		}
+		snapshot, _ := json.Marshal(qs)
+		return checkQuiz(t, f.s, f.user, quiz.ID, snapshot, studyAnswers).ID
 	}
 	high := attempt(f.ws.ID, f.ws.Name, 2)
 	low := attempt(f.ws.ID, f.ws.Name, 1)

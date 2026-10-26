@@ -31,15 +31,20 @@ type reviewOverviewOutput struct {
 }
 type workspaceReviewInput struct {
 	ID        string `path:"id"`
-	Group     string `query:"group" enum:"chapter,others,workspace" default:"workspace"`
+	Group     string `query:"group" enum:"chapter,others,workspace,plan" default:"workspace"`
 	ChapterID string `query:"chapterId" doc:"The chapter of a chapter group"`
+	PlanID    string `query:"planId" doc:"The plan of a plan group, one of the user's plans kept in this workspace"`
 	Mode      string `query:"mode" enum:"tricky,fading,learned" doc:"A suggestion's mode; omitted for a review from the workspace list"`
+}
+type workspaceStudyInput struct {
+	ID     string `path:"id"`
+	PlanID string `query:"planId" doc:"Draw Reviewable, QuickReview and Unfinished from this plan of the user's, kept in this workspace"`
 }
 type reviewSessionIDInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 type pastReviewsInput struct {
-	Sort        string `query:"sort" enum:"date,quiz,cards,time,workspace,chapter,status" default:"date"`
+	Sort        string `query:"sort" enum:"date,quiz,cards,time,workspace,plan,chapter,status" default:"date"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
 	Has         string `query:"has" doc:"Comma-separated: quiz, flashcards; a session with either passes"`
@@ -117,11 +122,20 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
 }
 
-func (a *api) getWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*studyOutput, error) {
+func (a *api) getWorkspaceStudy(ctx context.Context, in *workspaceStudyInput) (*studyOutput, error) {
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.StudySummary(ctx, userID(ctx), in.ID, time.Now())
+	var res store.StudySummary
+	var err error
+	if in.PlanID != "" {
+		res, err = a.s.PlanStudySummary(ctx, userID(ctx), in.ID, in.PlanID, time.Now())
+	} else {
+		res, err = a.s.StudySummary(ctx, userID(ctx), in.ID, time.Now())
+	}
+	if errors.Is(err, store.ErrReviewGroup) {
+		return nil, huma.Error404NotFound(err.Error())
+	}
 	if err != nil {
 		return nil, storedContentError(ctx, "", err)
 	}
@@ -191,6 +205,9 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) 
 	}
 	if in.Mode != "" {
 		info.Mode = &in.Mode
+	}
+	if in.PlanID != "" {
+		info.PlanID = &in.PlanID
 	}
 	res, err := a.s.WorkspaceReview(ctx, userID(ctx), in.ID, info, time.Now())
 	if errors.Is(err, store.ErrReviewGroup) {
@@ -304,11 +321,41 @@ func (a *api) getReviewOverview(ctx context.Context, _ *struct{}) (*reviewOvervi
 }
 
 // sessionAnswer is the store's view of an answer's session, nil without one.
-func sessionAnswer(ref *apimodel.ReviewSessionRef) *store.SessionAnswer {
+// A plan session needs its parent workspace readable; its first answer also
+// carries the plan's scope, which must be one of the user's plans kept there.
+// Later answers are checked against the recorded session instead, so it
+// keeps going once the plan changes or is deleted.
+func (a *api) sessionAnswer(ctx context.Context, ref *apimodel.ReviewSessionRef) (*store.SessionAnswer, error) {
 	if ref == nil {
-		return nil
+		return nil, nil
 	}
-	return &store.SessionAnswer{ID: ref.ID, WorkspaceID: ref.WorkspaceID, Info: ref.ReviewSessionInfo, Items: ref.Items}
+	out := &store.SessionAnswer{ID: ref.ID, WorkspaceID: ref.WorkspaceID, Info: ref.ReviewSessionInfo, Items: ref.Items}
+	if ref.Group != store.GroupPlan {
+		out.Info.PlanID = nil
+		return out, nil
+	}
+	if _, err := a.workspaceRead(ctx, ref.WorkspaceID); err != nil {
+		return nil, hErr(err)
+	}
+	recorded, err := a.s.ReviewSessionRecorded(ctx, ref.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if recorded {
+		return out, nil
+	}
+	if ref.PlanID == nil {
+		return nil, huma.Error422UnprocessableEntity("a new plan session needs its planId")
+	}
+	plan, err := a.s.PlanScopeOf(ctx, userID(ctx), *ref.PlanID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && plan.Parent != ref.WorkspaceID) {
+		return nil, huma.Error422UnprocessableEntity(store.ErrReviewSession.Error())
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out.Plan = &plan
+	return out, nil
 }
 
 type learningProgressInput struct {
@@ -371,7 +418,7 @@ func (a *api) updateStudyPlan(ctx context.Context, in *updateStudyPlanInput) (*E
 		name = &n
 	}
 	err := a.s.UpdateStudyPlan(ctx, userID(ctx), in.ID, name, in.Body.Steps)
-	if errors.Is(err, store.ErrStudyPlanStep) {
+	if errors.Is(err, store.ErrStudyPlanStep) || errors.Is(err, store.ErrStudyPlanSize) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return &Empty{}, hErr(err)
@@ -395,9 +442,13 @@ func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty
 	if ref := in.Body.Attempt; ref != nil {
 		attempt = &store.FlashcardAttemptRef{ID: ref.ID, StartedAt: ref.StartedAt}
 	}
-	err := a.s.RateItem(ctx, userID(ctx), store.Rating{
+	session, err := a.sessionAnswer(ctx, in.Body.Session)
+	if err != nil {
+		return nil, err
+	}
+	err = a.s.RateItem(ctx, userID(ctx), store.Rating{
 		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Rating: &in.Body.Rating,
-		Session: sessionAnswer(in.Body.Session), Attempt: attempt,
+		Session: session, Attempt: attempt,
 	}, time.Now())
 	if errors.Is(err, store.ErrStudyRating) || errors.Is(err, store.ErrStudyEmbedded) || errors.Is(err, store.ErrReviewSession) || errors.Is(err, store.ErrFlashcardAttempt) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
@@ -417,6 +468,11 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 	if _, err := a.materialRead(ctx, in.Body.MaterialID); err != nil {
 		return nil, hErr(err)
 	}
+	// The session is checked before grading, which may cost a model call.
+	session, err := a.sessionAnswer(ctx, in.Body.Session)
+	if err != nil {
+		return nil, err
+	}
 	q, workspaceID, err := a.s.ReviewQuestion(ctx, in.Body.MaterialID, in.Body.ItemID)
 	if errors.Is(err, store.ErrStudyRating) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
@@ -433,7 +489,6 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 		return nil, err
 	}
 	score := correct / total
-	session := sessionAnswer(in.Body.Session)
 	if session != nil {
 		answers, err := json.Marshal(in.Body.Answers)
 		if err != nil {

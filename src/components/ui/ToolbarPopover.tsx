@@ -1,19 +1,22 @@
 import { useId } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
-import { PopoverContent } from '@/components/ui/Popover';
+import { PopoverContent, useMenuOpenAutoFocus } from '@/components/ui/Popover';
 import { cn } from '@/lib/cn';
 
 export function ToolbarPopoverContent({
   className,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof PopoverContent>) {
+  const autoFocus = useMenuOpenAutoFocus(onOpenAutoFocus);
   return (
     <PopoverContent
       className={cn(
         'gap-0 rounded-lg px-1 py-1.5 font-medium text-fg text-sm leading-(--body-line-height)',
         className
       )}
+      onOpenAutoFocus={autoFocus}
       {...props}
     />
   );

@@ -30,6 +30,7 @@ import type { MaterialComment, MaterialDiscussion } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import { Spinner } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount } from '@/components/ui/Input';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
@@ -519,17 +520,21 @@ function authorName(entry: { authorName?: string }) {
 function DiscussionThread({ discussion }: { discussion: MaterialDiscussion }) {
   const actions = useCollaborationActions();
   const [reply, setReply] = useState('');
+  // This thread's reply in flight; the arrow turns into a spinner for it.
+  const [sending, setSending] = useState(false);
   const { data: me } = useMe({ errorBoundary: false });
   if (!actions) return null;
   const send = () => {
     const text = reply.trim();
     if (!text || commentTooLong(text) || actions.mutationPending) return;
+    setSending(true);
     // Keep anything typed while the request was in flight.
     void actions
       .addComment(discussion.id, text)
       .then(() =>
         setReply((current) => (current.trim() === text ? '' : current))
-      );
+      )
+      .finally(() => setSending(false));
   };
   return (
     <section>
@@ -544,7 +549,7 @@ function DiscussionThread({ discussion }: { discussion: MaterialDiscussion }) {
       {actions.canEdit && (
         <div className="flex items-center gap-2 px-2 py-1.5">
           <Avatar
-            className="size-6 text-[10px]"
+            className="size-6 -translate-y-px text-[10px]"
             name={me?.name}
             src={me?.avatarUrl}
           />
@@ -573,11 +578,14 @@ function DiscussionThread({ discussion }: { discussion: MaterialDiscussion }) {
               !reply.trim() || commentTooLong(reply) || actions.mutationPending
             }
             icon="arrowRight"
+            iconClassName={cn(sending && 'invisible')}
             label={m.editor_reply()}
             onClick={send}
             size="sm"
             variant="ghost-hover"
-          />
+          >
+            {sending && <Spinner className="absolute size-3.5" />}
+          </IconButton>
         </div>
       )}
     </section>

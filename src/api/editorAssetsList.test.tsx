@@ -26,6 +26,7 @@ it("drops the previous filter's rows while the next filter loads", async () => {
         createdAt: '',
         lostAccess: false,
         materialTitle: '',
+        materialType: 'note',
         name: '',
         purpose: 'image',
         sizeBytes: 1,

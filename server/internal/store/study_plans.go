@@ -19,13 +19,17 @@ import (
 const (
 	// studyPlanCap bounds one user's plans in one parent workspace.
 	studyPlanCap = 10
-	// studyPlanStepCap bounds one plan's steps.
-	studyPlanStepCap = 50
+	// studyPlanFileCap bounds one plan's steps, each one file or material.
+	studyPlanFileCap = 200
+	// studyPlanGroupCap bounds one plan's groups as the Study page shows
+	// them (planGroups).
+	studyPlanGroupCap = 20
 )
 
 var (
 	ErrStudyPlanCap  = errors.New("this workspace already has 10 plans")
 	ErrStudyPlanStep = errors.New("a step is not in a workspace you can read, or is in the plan twice")
+	ErrStudyPlanSize = errors.New("a plan holds at most 20 chapter groups and 200 files")
 )
 
 type StudyPlans struct {
@@ -46,11 +50,11 @@ type StudyPlan struct {
 }
 
 type PlanStep struct {
-	Kind        string  `json:"kind" enum:"workspace,unfiled,chapter,file,material"`
-	WorkspaceID string  `json:"workspaceId"`
-	TargetID    *string `json:"targetId,omitempty" doc:"The chapter, file or material"`
-	// Title is the chapter, file, material or workspace name; empty while
-	// Locked (the user can no longer read the step's workspace).
+	Kind        string `json:"kind" enum:"file,material"`
+	WorkspaceID string `json:"workspaceId"`
+	TargetID    string `json:"targetId" doc:"The file or material"`
+	// Title is the file's or material's name; empty while Locked (the user
+	// can no longer read the step's workspace).
 	Title  string `json:"title"`
 	Locked bool   `json:"locked"`
 }
@@ -67,9 +71,9 @@ type PlanWorkspace struct {
 }
 
 type PlanStepInput struct {
-	Kind        string  `json:"kind" enum:"workspace,unfiled,chapter,file,material"`
-	WorkspaceID string  `json:"workspaceId"`
-	TargetID    *string `json:"targetId,omitempty" doc:"The chapter, file or material; omitted for workspace and unfiled steps"`
+	Kind        string `json:"kind" enum:"file,material"`
+	WorkspaceID string `json:"workspaceId"`
+	TargetID    string `json:"targetId" minLength:"1" doc:"The file or material"`
 }
 
 // WorkspacePlans lists the plans parented in the workspace, then the user's
@@ -103,10 +107,9 @@ func (s *Store) studyPlans(ctx context.Context, userID, query string, args ...an
 	for i, p := range plans {
 		ids[i] = p.ID
 	}
-	rows, err = s.pool.Query(ctx, `SELECT s.plan_id, s.kind, s.workspace_id, coalesce(s.chapter_id, s.file_id, s.material_id),
-			coalesce(c.name, f.name, m.title, w.name)
-		FROM study_plan_steps s JOIN workspaces w ON w.id=s.workspace_id
-			LEFT JOIN chapters c ON c.id=s.chapter_id LEFT JOIN files f ON f.id=s.file_id
+	rows, err = s.pool.Query(ctx, `SELECT s.plan_id, s.kind, s.workspace_id, coalesce(s.file_id, s.material_id),
+			coalesce(f.name, m.title, '')
+		FROM study_plan_steps s LEFT JOIN files f ON f.id=s.file_id
 			LEFT JOIN materials m ON m.id=s.material_id
 		WHERE s.plan_id = ANY($1) ORDER BY s.plan_id, s.position`, ids)
 	if err != nil {
@@ -224,11 +227,11 @@ func (s *Store) UpdateStudyPlan(ctx context.Context, userID, planID string, name
 		}
 	}
 	if steps != nil {
-		if len(*steps) > studyPlanStepCap {
-			return ErrStudyPlanStep
+		if len(*steps) > studyPlanFileCap {
+			return ErrStudyPlanSize
 		}
 		held := map[stepKey]bool{}
-		rows, err := tx.Query(ctx, `SELECT kind, workspace_id, coalesce(chapter_id, file_id, material_id, '')
+		rows, err := tx.Query(ctx, `SELECT kind, workspace_id, coalesce(file_id, material_id)
 			FROM study_plan_steps WHERE plan_id=$1`, planID)
 		if err != nil {
 			return err
@@ -247,10 +250,7 @@ func (s *Store) UpdateStudyPlan(ctx context.Context, userID, planID string, name
 		}
 		seen := map[stepKey]bool{}
 		for _, st := range *steps {
-			k := stepKey{kind: st.Kind, ws: st.WorkspaceID}
-			if st.TargetID != nil {
-				k.target = *st.TargetID
-			}
+			k := stepKey{kind: st.Kind, ws: st.WorkspaceID, target: st.TargetID}
 			if seen[k] {
 				return ErrStudyPlanStep
 			}
@@ -265,21 +265,23 @@ func (s *Store) UpdateStudyPlan(ctx context.Context, userID, planID string, name
 				return err
 			}
 		}
+		if groups, err := s.planGroups(ctx, tx, userID, *steps); err != nil {
+			return err
+		} else if groups > studyPlanGroupCap {
+			return ErrStudyPlanSize
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM study_plan_steps WHERE plan_id=$1`, planID); err != nil {
 			return err
 		}
 		for i, st := range *steps {
-			var chapter, file, material *string
-			switch st.Kind {
-			case "chapter":
-				chapter = st.TargetID
-			case "file":
-				file = st.TargetID
-			case "material":
-				material = st.TargetID
+			var file, material *string
+			if st.Kind == "file" {
+				file = &st.TargetID
+			} else {
+				material = &st.TargetID
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO study_plan_steps (plan_id, position, kind, workspace_id, chapter_id, file_id, material_id)
-				VALUES ($1,$2,$3,$4,$5,$6,$7)`, planID, i, st.Kind, st.WorkspaceID, chapter, file, material); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO study_plan_steps (plan_id, position, kind, workspace_id, file_id, material_id)
+				VALUES ($1,$2,$3,$4,$5,$6)`, planID, i, st.Kind, st.WorkspaceID, file, material); err != nil {
 				return err
 			}
 		}
@@ -292,16 +294,73 @@ func (s *Store) UpdateStudyPlan(ctx context.Context, userID, planID string, name
 
 type stepKey struct{ kind, ws, target string }
 
+// planGroups counts the groups the Study page shows: runs of consecutive steps
+// in one chapter (or outside chapters) of one workspace. A step in a workspace
+// the user can no longer read groups by workspace alone; a trashed or
+// untracked step shows nowhere and joins the run around it.
+func (s *Store) planGroups(ctx context.Context, tx pgx.Tx, userID string, steps []PlanStepInput) (int, error) {
+	ids := make([]string, len(steps))
+	for i, st := range steps {
+		ids[i] = st.TargetID
+	}
+	rows, err := tx.Query(ctx, `SELECT f.id, coalesce(f.chapter_id, ''), f.trashed_at IS NULL AND NOT EXISTS (
+			SELECT 1 FROM study_progress sp WHERE sp.user_id=$2 AND sp.file_id=f.id AND sp.state='removed')
+		FROM files f WHERE f.id = ANY($1)
+		UNION ALL SELECT m.id, coalesce(m.chapter_id, ''), m.trashed_at IS NULL AND NOT EXISTS (
+			SELECT 1 FROM study_progress sp WHERE sp.user_id=$2 AND sp.material_id=m.id AND sp.state='removed')
+		FROM materials m WHERE m.id = ANY($1)`, ids, userID)
+	if err != nil {
+		return 0, err
+	}
+	chapter := map[string]string{}
+	for rows.Next() {
+		var id, ch string
+		var shown bool
+		if err := rows.Scan(&id, &ch, &shown); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if shown {
+			chapter[id] = ch
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	readable := map[string]bool{}
+	groups := 0
+	var last *[2]string
+	for _, st := range steps {
+		ok, seen := readable[st.WorkspaceID]
+		if !seen {
+			if ok, err = s.canReadWorkspace(ctx, userID, st.WorkspaceID); err != nil {
+				return 0, err
+			}
+			readable[st.WorkspaceID] = ok
+		}
+		at := [2]string{st.WorkspaceID, "\x00locked"}
+		if ok {
+			ch, shown := chapter[st.TargetID]
+			if !shown {
+				continue
+			}
+			at[1] = ch
+		}
+		if last == nil || at != *last {
+			groups++
+		}
+		last = &at
+	}
+	return groups, nil
+}
+
 func (s *Store) validPlanStep(ctx context.Context, tx pgx.Tx, userID string, st PlanStepInput) (bool, error) {
 	if ok, err := s.canReadWorkspace(ctx, userID, st.WorkspaceID); err != nil || !ok {
 		return false, err
 	}
 	var query string
 	switch st.Kind {
-	case "workspace", "unfiled":
-		return st.TargetID == nil, nil
-	case "chapter":
-		query = `SELECT EXISTS (SELECT 1 FROM chapters WHERE id=$1 AND workspace_id=$2)`
 	case "file":
 		query = `SELECT EXISTS (SELECT 1 FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL)`
 	case "material":
@@ -310,11 +369,8 @@ func (s *Store) validPlanStep(ctx context.Context, tx pgx.Tx, userID string, st 
 	default:
 		return false, nil
 	}
-	if st.TargetID == nil {
-		return false, nil
-	}
 	var ok bool
-	err := tx.QueryRow(ctx, query, *st.TargetID, st.WorkspaceID).Scan(&ok)
+	err := tx.QueryRow(ctx, query, st.TargetID, st.WorkspaceID).Scan(&ok)
 	return ok, err
 }
 
@@ -325,4 +381,89 @@ func (s *Store) DeleteStudyPlan(ctx context.Context, userID, planID string) erro
 		return ErrNotFound
 	}
 	return err
+}
+
+// PlanScope is what a plan's review draws from: its steps in the workspaces
+// the user can still read. Parent is the plan's own workspace.
+type PlanScope struct {
+	ID     string
+	Name   string
+	Parent string
+	// Steps are the readable workspaces' steps.
+	Steps []PlanStepInput
+}
+
+// Workspaces are the readable workspaces the plan has steps in, in step order.
+func (p PlanScope) Workspaces() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, st := range p.Steps {
+		if !seen[st.WorkspaceID] {
+			seen[st.WorkspaceID] = true
+			out = append(out, st.WorkspaceID)
+		}
+	}
+	return out
+}
+
+// Has reports whether the plan holds a material in wsID as a step; file
+// steps hold no review items.
+func (p PlanScope) Has(wsID, materialID string) bool {
+	for _, st := range p.Steps {
+		if st.WorkspaceID == wsID && st.Kind == "material" && st.TargetID == materialID {
+			return true
+		}
+	}
+	return false
+}
+
+// materials are the plan's material steps in wsID, in its order.
+func (p PlanScope) materials(wsID string) []string {
+	var out []string
+	for _, st := range p.Steps {
+		if st.WorkspaceID == wsID && st.Kind == "material" {
+			out = append(out, st.TargetID)
+		}
+	}
+	return out
+}
+
+// PlanScopeOf reads one of the user's plans for its review; ErrNotFound when
+// it is not theirs.
+func (s *Store) PlanScopeOf(ctx context.Context, userID, planID string) (PlanScope, error) {
+	out := PlanScope{ID: planID}
+	err := s.pool.QueryRow(ctx, `SELECT name, workspace_id FROM study_plans WHERE id=$1 AND user_id=$2`, planID, userID).
+		Scan(&out.Name, &out.Parent)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return out, ErrNotFound
+	}
+	if err != nil {
+		return out, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT kind, workspace_id, coalesce(file_id, material_id)
+		FROM study_plan_steps WHERE plan_id=$1 ORDER BY position`, planID)
+	if err != nil {
+		return out, err
+	}
+	steps, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PlanStepInput, error) {
+		var st PlanStepInput
+		return st, row.Scan(&st.Kind, &st.WorkspaceID, &st.TargetID)
+	})
+	if err != nil {
+		return out, err
+	}
+	readable := map[string]bool{}
+	for _, st := range steps {
+		ok, seen := readable[st.WorkspaceID]
+		if !seen {
+			if ok, err = s.canReadWorkspace(ctx, userID, st.WorkspaceID); err != nil {
+				return out, err
+			}
+			readable[st.WorkspaceID] = ok
+		}
+		if ok {
+			out.Steps = append(out.Steps, st)
+		}
+	}
+	return out, nil
 }

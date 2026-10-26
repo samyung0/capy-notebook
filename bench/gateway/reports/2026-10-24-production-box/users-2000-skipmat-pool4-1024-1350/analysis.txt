@@ -1,0 +1,12 @@
+== users-2000-skipmat-pool4-1024-1350: PASS
+   332 req/s (0.166 per user), p50 9 p95 377 p99 847 max 1340 ms, errors 0.00%, streams {'ended': 0, 'failed': 0, 'open_at_end': 1621, 'opened': 5046, 'refused': 0}
+   server   cpu mean 0.46 p95 0.75 cores, memory peak 274 MiB
+   db       cpu mean 0.54 p95 0.70 cores, memory peak 700 MiB
+   redis    cpu mean 0.04 p95 0.06 cores, memory peak 6 MiB
+   loadgen  cpu mean 0.15 p95 0.36 cores, memory peak 190 MiB
+   cores cpu0 50%, cpu1 63%, cpu2 23%, cpu3 21%
+   postgres backends (mean) active/- 0.1, active/IO 0.1, idle/- 0.1, idle/Client 4.6, idle in transaction/- 0.0, idle in transaction/Client 0.2, idle in transaction/IO 0.0
+   pool waits: 252502 acquires waited 4434.4 s in all, 14 windows with waits, 3 with every connection taken at the line
+   gateway warnings and errors: 1
+     {"time":"2026-10-24T13:50:50.44173475Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"5789e5a6131a5b981c6d8ff67394d01e","method":"GET","path":"/api/stream","status":503,"duration_ms":17,"bytes":75,"ip":"10.0.2.2","client_aborted":true}
+   slowest routes (p95): GET /api/flashcards/{id} 945 ms, GET /api/review/overview 936 ms, GET /api/quizzes/{id} 922 ms, GET /api/workspaces/{id}/study 828 ms, GET /api/materials/{id} 792 ms

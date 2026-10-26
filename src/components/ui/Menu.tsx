@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type ReactNode, useState } from 'react';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
@@ -44,6 +44,10 @@ export interface MenuItem {
   /** The current choice of a view switcher: a check at the row's end. */
   checked?: boolean;
   closeOnSelect?: boolean;
+  /** A second click confirms: the first swaps the label for this one and
+   * keeps the menu open; closing the menu resets it. Both labels hold one
+   * width, so the swap never shifts the menu. */
+  confirmLabel?: string;
   danger?: boolean;
   description?: string;
   disabled?: boolean;
@@ -87,6 +91,9 @@ export function Menu({
   className,
   itemClassName,
 }: MenuProps) {
+  // The item showing its confirmLabel, waiting for the second click; held by
+  // label, since items can arrive above it while the menu is open.
+  const [armed, setArmed] = useState<string | null>(null);
   const menuTrigger = (
     <DropdownMenuTrigger asChild>
       {trigger ?? (
@@ -102,7 +109,7 @@ export function Menu({
   );
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => !open && setArmed(null)}>
       {menuTrigger}
       <DropdownMenuContent
         align={align}
@@ -118,8 +125,8 @@ export function Menu({
         side={side}
       >
         <div data-slot="menu-items">
-          {items.map((it, i) => (
-            <Fragment key={i}>
+          {items.map((it) => (
+            <Fragment key={it.label}>
               {it.separated && (
                 <DropdownMenuSeparator className="mx-1.5 my-1.5 bg-overlay-line" />
               )}
@@ -141,6 +148,11 @@ export function Menu({
                 )}
                 disabled={it.disabled}
                 onSelect={(event) => {
+                  if (it.confirmLabel && armed !== it.label) {
+                    event.preventDefault();
+                    setArmed(it.label);
+                    return;
+                  }
                   if (it.closeOnSelect === false) event.preventDefault();
                   it.onClick?.();
                 }}
@@ -154,7 +166,28 @@ export function Menu({
                   </span>
                 )}
                 <span className="flex flex-col items-start">
-                  <span>{it.label}</span>
+                  {it.confirmLabel ? (
+                    <span className="grid">
+                      <span
+                        className={cn(
+                          '[grid-area:1/1]',
+                          armed === it.label && 'invisible'
+                        )}
+                      >
+                        {it.label}
+                      </span>
+                      <span
+                        className={cn(
+                          '[grid-area:1/1]',
+                          armed !== it.label && 'invisible'
+                        )}
+                      >
+                        {it.confirmLabel}
+                      </span>
+                    </span>
+                  ) : (
+                    <span>{it.label}</span>
+                  )}
                   {it.description && (
                     <span className="font-normal text-fg-muted text-xs">
                       {it.description}

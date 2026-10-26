@@ -178,6 +178,7 @@ function tracked(wsId: string) {
         chapterId: f.chapterId,
         createdAt: f.addedAt,
         id: f.id,
+        kind: f.kind as string,
         position: f.position,
         title: f.name,
         type: 'file' as const,
@@ -188,12 +189,21 @@ function tracked(wsId: string) {
         chapterId: mt.chapterId ?? null,
         createdAt: mt.createdAt,
         id: mt.id,
+        kind: mt.kind as string,
         position: mt.position,
         title: mt.title,
         type: 'material' as const,
       })),
   ]
-    .map((it) => ({ ...it, state: states.get(it.id)?.state }))
+    .map((it) => {
+      const st = states.get(it.id);
+      return {
+        ...it,
+        doneAt:
+          st?.state === 'done' ? new Date(st.at).toISOString() : undefined,
+        state: st?.state,
+      };
+    })
     .filter((it) => it.state !== 'removed');
 }
 
@@ -318,7 +328,7 @@ const SHOWCASE: ProgressWorkspace[] = [
 type MockPlanStep = {
   kind: PlanStep['kind'];
   workspaceId: string;
-  targetId?: string;
+  targetId: string;
 };
 type MockPlan = {
   id: string;
@@ -329,7 +339,7 @@ type MockPlan = {
   steps: MockPlanStep[];
 };
 
-/** A seeded plan in Biology reaching into Chemistry, as a plan does. */
+/** A seeded plan in Biology reaching into Calculus, as a plan does. */
 const plans: MockPlan[] = [
   {
     createdAt: daysAgo(5),
@@ -340,26 +350,49 @@ const plans: MockPlan[] = [
         .filter((ch) => ch.workspaceId === 'ws_bio')
         .sort((a, b) => a.order - b.order)
         .slice(0, 2)
-        .map((ch) => ({
-          kind: 'chapter' as const,
-          targetId: ch.id,
-          workspaceId: 'ws_bio',
-        })),
-      { kind: 'workspace', workspaceId: 'ws_chem' },
+        .flatMap((ch) => chapterSteps('ws_bio', ch.id)),
+      ...db.chapters
+        .filter((ch) => ch.workspaceId === 'ws_calc')
+        .sort((a, b) => a.order - b.order)
+        .slice(0, 1)
+        .flatMap((ch) => chapterSteps('ws_calc', ch.id)),
     ],
     updatedAt: daysAgo(1),
     workspaceId: 'ws_bio',
   },
 ];
 
+/** A chapter's files and materials as plan steps, in reading order. */
+function chapterSteps(wsId: string, chapterId: string): MockPlanStep[] {
+  return [
+    ...db.files
+      .filter((f) => f.workspaceId === wsId && f.chapterId === chapterId)
+      .map((f) => ({
+        kind: 'file' as const,
+        position: f.position,
+        targetId: f.id,
+      })),
+    ...db.materials
+      .filter(
+        (mt) =>
+          mt.workspaceId === wsId &&
+          !mt.parentMaterialId &&
+          mt.chapterId === chapterId
+      )
+      .map((mt) => ({
+        kind: 'material' as const,
+        position: mt.position,
+        targetId: mt.id,
+      })),
+  ]
+    .sort((a, b) => a.position - b.position)
+    .map(({ kind, targetId }) => ({ kind, targetId, workspaceId: wsId }));
+}
+
 function stepTitle(step: MockPlanStep) {
-  if (step.kind === 'chapter')
-    return db.chapters.find((ch) => ch.id === step.targetId)?.name ?? '';
   if (step.kind === 'file')
     return db.files.find((f) => f.id === step.targetId)?.name ?? '';
-  if (step.kind === 'material')
-    return db.materials.find((mt) => mt.id === step.targetId)?.title ?? '';
-  return db.workspaces.find((w) => w.id === step.workspaceId)?.name ?? '';
+  return db.materials.find((mt) => mt.id === step.targetId)?.title ?? '';
 }
 
 /** The plans response: steps with titles, every named workspace once. */
@@ -412,10 +445,8 @@ function learningProgress(leadId: string | null, all = false) {
       });
   }
   const rows: ProgressWorkspace[] = [...progress.keys()]
-    .filter(
-      (wsId) =>
-        (all || (enabled.get(wsId) ?? true)) &&
-        [...items(wsId).values()].some((it) => it.state !== 'removed')
+    .filter((wsId) =>
+      [...items(wsId).values()].some((it) => it.state !== 'removed')
     )
     .map((wsId) => {
       const ws = db.workspaces.find((w) => w.id === wsId);
@@ -434,14 +465,14 @@ function learningProgress(leadId: string | null, all = false) {
     .filter((ws) => ws.total > 0);
   rows.push(
     ...SHOWCASE.filter(
-      (ws) =>
-        !rows.some((r) => r.workspaceId === ws.workspaceId) &&
-        (all || (enabled.get(ws.workspaceId) ?? true))
+      (ws) => !rows.some((r) => r.workspaceId === ws.workspaceId)
     ).map((ws) => ({ ...ws, hidden: !(enabled.get(ws.workspaceId) ?? true) }))
   );
   rows.sort((a, b) => b.lastStudiedAt.localeCompare(a.lastStudiedAt));
-  const active = rows.filter((ws) => ws.done < ws.total).slice(0, 10);
-  const finished = rows.filter((ws) => ws.done >= ws.total).slice(0, 10);
+  // Hidden ones are counted either way and listed only with `all`.
+  const listed = all ? rows : rows.filter((ws) => !ws.hidden);
+  const active = listed.filter((ws) => ws.done < ws.total).slice(0, 10);
+  const finished = listed.filter((ws) => ws.done >= ws.total).slice(0, 10);
   const mapped = [...active, ...finished]
     .filter((ws) => !ws.hidden)
     .map((ws) => ws.workspaceId)
@@ -450,6 +481,7 @@ function learningProgress(leadId: string | null, all = false) {
   return {
     active,
     finished,
+    hiddenCount: rows.filter((ws) => ws.hidden).length,
     lead: lead && {
       chapters: db.chapters
         .filter((ch) => ch.workspaceId === lead)
@@ -556,6 +588,34 @@ function summary(wsId: string): StudySummary {
   };
 }
 
+/** A plan's rated items across its workspaces, only what its steps hold. */
+function planPool(planId: string): ReviewItem[] {
+  const plan = plans.find((p) => p.id === planId);
+  if (!plan) return [];
+  const held = (wsId: string, it: ReviewItem) =>
+    plan.steps.some(
+      (st) =>
+        st.workspaceId === wsId &&
+        st.kind === 'material' &&
+        it.materialId === st.targetId
+    );
+  const spaces = [...new Set(plan.steps.map((st) => st.workspaceId))];
+  return spaces.flatMap((wsId) => pool(wsId).filter((it) => held(wsId, it)));
+}
+
+/** The workspace's summary with a plan's review parts, as ?planId= asks. */
+function planSummary(wsId: string, planId: string): StudySummary {
+  const all = planPool(planId);
+  return {
+    ...summary(wsId),
+    quickReview: quickReview(all),
+    reviewable: all.length,
+    unfinished: unfinished().find(
+      (u) => u.workspaceId === wsId && sessions.get(u.id)?.planId === planId
+    ),
+  };
+}
+
 function workspaceOf(materialId: string) {
   return db.materials.find((x) => x.id === materialId)?.workspaceId ?? null;
 }
@@ -596,8 +656,9 @@ type Answer =
     };
 type Session = {
   workspaceId: string;
-  group: ReviewSuggestion['group'];
+  group: ReviewSessionRef['group'];
   chapterId?: string;
+  planId?: string;
   mode?: ReviewMode;
   items: { materialId: string; itemId: string }[];
   answers: Map<string, Answer>;
@@ -635,6 +696,7 @@ function answer(
       items: ref.items,
       lastAnswerAt: Date.now(),
       mode: ref.mode,
+      planId: ref.planId,
       startedAt: Date.now(),
       workspaceId: ref.workspaceId,
     };
@@ -760,7 +822,10 @@ function unfinished() {
       const ws = db.workspaces.find((w) => w.id === s.workspaceId);
       return {
         answered: s.answers.size,
-        chapterName: db.chapters.find((ch) => ch.id === s.chapterId)?.name,
+        chapterName:
+          s.group === 'plan'
+            ? plans.find((p) => p.id === s.planId)?.name
+            : db.chapters.find((ch) => ch.id === s.chapterId)?.name,
         group: s.group,
         iconId: ws?.iconId ?? '',
         id,
@@ -771,6 +836,15 @@ function unfinished() {
       };
     });
 }
+
+/** A top-level quiz or flashcard set, what a manual review draws from. */
+const isQuiz = (id: string) =>
+  db.materials.some(
+    (mt) =>
+      mt.id === id &&
+      !mt.parentMaterialId &&
+      (mt.kind === 'quiz' || mt.kind === 'flashcards')
+  );
 
 function overview() {
   const real = [...progress.keys()].filter(
@@ -785,6 +859,31 @@ function overview() {
       : undefined;
   };
   return {
+    // As the server: plans whose parent shows study progress, newest first.
+    plans: [...plans]
+      .filter((p) => enabled.get(p.workspaceId) ?? true)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((p) => {
+        const ws = db.workspaces.find((w) => w.id === p.workspaceId);
+        const times = [...sessions.values()]
+          .filter((sn) => sn.planId === p.id)
+          .map((sn) => sn.lastAnswerAt);
+        return {
+          // As the server: practised items, or any quiz or set step.
+          canReview:
+            planPool(p.id).length > 0 ||
+            p.steps.some((st) => isQuiz(st.targetId)),
+          iconId: ws?.iconId ?? '',
+          lastReviewedAt: times.length
+            ? new Date(Math.max(...times)).toISOString()
+            : undefined,
+          name: p.name,
+          planId: p.id,
+          reviewable: planPool(p.id).length,
+          workspaceId: p.workspaceId,
+          workspaceName: ws?.name ?? p.workspaceId,
+        };
+      }),
     suggestions: [
       ...real.flatMap(suggestionsOf),
       ...SHOWCASE_SUGGESTIONS,
@@ -794,6 +893,9 @@ function overview() {
       ...real.map((wsId) => {
         const ws = db.workspaces.find((w) => w.id === wsId);
         return {
+          canReview:
+            pool(wsId).length > 0 ||
+            db.materials.some((mt) => mt.workspaceId === wsId && isQuiz(mt.id)),
           iconId: ws?.iconId ?? '',
           lastReviewedAt: lastReviewed(wsId),
           name: ws?.name ?? wsId,
@@ -804,6 +906,7 @@ function overview() {
       ...SHOWCASE.filter((ws) => !real.includes(ws.workspaceId))
         .slice(0, 4)
         .map((ws, i) => ({
+          canReview: i !== 3,
           iconId: ws.iconId,
           lastReviewedAt: i % 2 ? daysAgo(i * 5) : undefined,
           name: ws.name,
@@ -889,6 +992,8 @@ function pastSortKey(r: PastReview, sort: string | null) {
       return +new Date(r.lastAnswerAt) - +new Date(r.startedAt);
     case 'workspace':
       return r.workspaceName.toLowerCase();
+    case 'plan':
+      return r.group === 'plan' ? (r.chapterName ?? '').toLowerCase() : null;
     case 'chapter':
       return r.group === 'chapter' ? (r.chapterName ?? '').toLowerCase() : null;
     case 'status':
@@ -1004,7 +1109,10 @@ function pastRow(id: string, s: Session): PastReview {
         }
       : undefined,
     chapterId: s.chapterId,
-    chapterName: db.chapters.find((ch) => ch.id === s.chapterId)?.name,
+    chapterName:
+      s.group === 'plan'
+        ? plans.find((p) => p.id === s.planId)?.name
+        : db.chapters.find((ch) => ch.id === s.chapterId)?.name,
     finishedAt: s.finishedAt ? new Date(s.finishedAt).toISOString() : undefined,
     group: s.group,
     iconId: ws?.iconId ?? '',
@@ -1051,9 +1159,14 @@ function pastReviews(params: URLSearchParams) {
 }
 
 export const studyHandlers = [
-  http.get('/api/workspaces/:id/study', ({ params }) =>
-    HttpResponse.json(summary(String(params.id)))
-  ),
+  http.get('/api/workspaces/:id/study', ({ params, request }) => {
+    const planId = new URL(request.url).searchParams.get('planId');
+    return HttpResponse.json(
+      planId
+        ? planSummary(String(params.id), planId)
+        : summary(String(params.id))
+    );
+  }),
   http.put('/api/workspaces/:id/study/enabled', async ({ params, request }) => {
     const body = (await request.json()) as { enabled: boolean };
     enabled.set(String(params.id), body.enabled);
@@ -1088,12 +1201,21 @@ export const studyHandlers = [
   http.get('/api/workspaces/:id/review', ({ params, request }) => {
     const url = new URL(request.url);
     const group = (url.searchParams.get('group') ??
-      'workspace') as ReviewSuggestion['group'];
+      'workspace') as ReviewSessionRef['group'];
     const chapterId = url.searchParams.get('chapterId') ?? undefined;
+    const planId = url.searchParams.get('planId') ?? undefined;
     const mode = (url.searchParams.get('mode') ?? undefined) as
       | ReviewMode
       | undefined;
-    const list = inGroup(String(params.id), group, chapterId).slice(0, 20);
+    const list = (
+      group === 'plan' && planId
+        ? planPool(planId)
+        : inGroup(
+            String(params.id),
+            group as ReviewSuggestion['group'],
+            chapterId
+          )
+    ).slice(0, 20);
     return HttpResponse.json({
       answered: 0,
       chapterId,
@@ -1105,6 +1227,7 @@ export const studyHandlers = [
       group,
       items: list,
       mode,
+      planId,
       total: list.length,
     });
   }),

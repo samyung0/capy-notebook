@@ -43,15 +43,6 @@ export const mockToastOptions: {
   },
   {
     group: 'Success and notices',
-    label: 'Questions copied to a quiz',
-    toast: () => ({
-      button: action(m.question_ui_open_quiz()),
-      title: m.question_ui_copied(),
-      variant: 'success',
-    }),
-  },
-  {
-    group: 'Success and notices',
     label: 'Topic finished',
     toast: () => ({
       button: action(m.common_go_check()),
@@ -97,6 +88,15 @@ export const mockToastOptions: {
       button: action(m.action_sign_in()),
       description: m.quiz_anonymous_limit_body(),
       title: m.quiz_anonymous_limit_title(),
+    }),
+  },
+  {
+    group: 'Success and notices',
+    label: 'Back online in a workspace',
+    toast: () => ({
+      description: m.connection_online_body(),
+      title: m.connection_online_title(),
+      variant: 'success',
     }),
   },
   {

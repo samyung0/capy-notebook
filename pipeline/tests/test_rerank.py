@@ -190,7 +190,7 @@ def test_a_refresh_drops_a_cleared_rerank_default(monkeypatch):
         def fetchall(self):
             return [
                 (1, "Qwen", "Reranker 4B", "deepinfra", "Qwen/Qwen3-Reranker-4B",
-                 True, False, {}, ["rerank"], [], "", 63, 63, True,
+                 {}, ["rerank"], [], "", 63, 63, True,
                  catalog["default_for"], 0, 63)
             ]  # fmt: skip
 

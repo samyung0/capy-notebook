@@ -23,6 +23,9 @@ export interface LocalQuizAttempt {
   questions: Question[];
   quizId: string;
   quizName: string;
+  /** When the try began. */
+  startedAt: string;
+  /** The latest check. */
   takenAt: string;
   total: number;
 }

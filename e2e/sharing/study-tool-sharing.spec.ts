@@ -188,12 +188,16 @@ for (const kind of kinds) {
       if (kind.kind === 'quiz') {
         const saved = waitForApi(
           otherPage,
-          apiEndsWith(`/api/quizzes/${kind.public.id}/attempts`, 'POST')
+          apiEndsWith(`/api/quizzes/${kind.public.id}/check`, 'POST')
         );
         await otherPage
-          .getByRole('button', { exact: true, name: m.quiz_submit() })
+          .getByRole('button', {
+            exact: true,
+            name: m.question_ui_check(),
+          })
+          .first()
           .click();
-        expect((await saved).status()).toBe(201);
+        expect((await saved).status()).toBe(200);
       } else {
         const saved = waitForApi(
           otherPage,

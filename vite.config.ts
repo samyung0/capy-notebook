@@ -1,4 +1,5 @@
 import type { Stats } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
@@ -18,6 +19,18 @@ const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
  * Worker small. Matched on the import as written, relative or not. */
 const BROWSER_ONLY =
   /^(jsxgraph|katex|mathlive|mermaid)$|\/(AppEmbed|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
+/** The markdown parser's entity decoder without a DOM. Under the `browser`
+ * condition it decodes through a DOM element, which the markdown preview
+ * worker (files/MarkdownPreview.worker.ts) does not have; Node's resolution
+ * picks the entity-table entry, as the server's bundle does. Vite has no
+ * per-worker condition, so the page's markdown import (paste, .docx) takes it
+ * too: ~12 KB gzipped. Resolved along declared dependencies. */
+const DECODE_ENTITIES = [
+  '@platejs/markdown',
+  'remark-parse',
+  'mdast-util-from-markdown',
+  'decode-named-character-reference',
+].reduce((from, id) => createRequire(from).resolve(id), import.meta.filename);
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
 /** MSW's entry points (src/main.tsx, src/share). A build without MSW never
  * runs them, but Rollup loads every dynamic import, dead code included, and
@@ -242,6 +255,10 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
       // by prefix, so an object sorted by a formatter turns `/viewer` into
       // `index.ts/viewer`.
       alias: [
+        {
+          find: 'decode-named-character-reference',
+          replacement: DECODE_ENTITIES,
+        },
         ...(useMsw
           ? [
               {

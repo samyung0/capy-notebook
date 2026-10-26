@@ -45,17 +45,6 @@ const SHORT_ANSWER_MAX = 1000;
 
 const NON_QUANTITY_CHAR = /[^\d\s+\-./eE]/;
 
-/** Whether a learner has given an answer for a part (ordering always has one). */
-export function isAnswered(value: Answer | undefined): boolean {
-  if (value == null) return false;
-  if (typeof value === 'string') return value.trim().length > 0;
-  // Gaps start as empty strings, one per gap.
-  if (Array.isArray(value))
-    return value.some((item) => typeof item === 'number' || item.trim() !== '');
-  if (typeof value === 'object') return Object.keys(value).length > 0;
-  return true;
-}
-
 /**
  * One question in the shared quiz look, used for taking, reviewing and every
  * read-only view (quiz preview, quiz editor, question bank, question dialog).
@@ -99,8 +88,8 @@ export function QuestionRunner({
     const part = question.parts.find(
       (item) => item.id === section.partId && item.answer.type === 'gaps'
     );
-    if (part && block.type === 'text' && !section.solution)
-      return (
+    if (part && block.type === 'text' && !section.solution) {
+      const view = (
         <GapText
           block={block}
           disabled={disabled}
@@ -110,6 +99,9 @@ export function QuestionRunner({
           value={answers[part.id] ?? emptyAnswer(part)}
         />
       );
+      // The question dialog frames it as it does every block.
+      return renderBlock ? renderBlock(block, index, section, view) : view;
+    }
     return renderBlock ? (
       renderBlock(block, index, section)
     ) : (
@@ -137,6 +129,7 @@ export function QuestionRunner({
   if (!review)
     return (
       <QuestionView
+        headerMarks={headerMarks}
         question={question}
         questionNumber={questionNumber}
         renderAnswer={answer}

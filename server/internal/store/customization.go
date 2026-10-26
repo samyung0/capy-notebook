@@ -13,13 +13,17 @@ var ErrInvalidCustomization = errors.New("invalid customization")
 // column that the schema would have refused.
 func (c Customization) Validate() error {
 	f := c.PageFrame
-	ok := slices.Contains([]string{"classroom", "notion"}, c.Style) &&
+	ok := slices.Contains([]string{"capy", "fisheye", "notion"}, c.Style) &&
 		slices.Contains([]string{"latte", "frappe", "mocha"}, c.Theme) &&
 		slices.Contains([]string{"none", "arc", "mesh", "glow"}, f.Pattern) &&
-		slices.Contains([]string{"dusk", "sea", "meadow", "rose", "sunset", "wheat", "mist", "custom"}, f.Colours) &&
+		slices.Contains([]string{"dawn", "dusk", "sea", "meadow", "rose", "sunset", "wheat", "mist", "custom"}, f.Colours) &&
 		len(f.Dots) >= 1 && len(f.Dots) <= 3 && unit(f.Strength)
 	for _, d := range f.Dots {
 		ok = ok && unit(d.X) && unit(d.Y)
+	}
+	ok = ok && len(f.Frosted) <= 3
+	for i, p := range f.Frosted {
+		ok = ok && slices.Contains([]string{"left", "center", "right"}, p) && !slices.Contains(f.Frosted[:i], p)
 	}
 	if !ok {
 		return ErrInvalidCustomization

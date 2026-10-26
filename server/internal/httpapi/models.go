@@ -40,9 +40,6 @@ func (a *api) registerModels(api huma.API) {
 	reg(api, http.MethodGet, "/api/model-slots", "listModelSlots", tag, "Known model slots", http.StatusOK, a.listModelSlots)
 	reg(api, http.MethodGet, "/api/models", "listModels", tag, "Enabled models for a slot", http.StatusOK, a.listModels)
 	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat, generate and editor model preferences", http.StatusNoContent, a.setModelPrefs)
-	reg(api, http.MethodGet, "/api/me/llm-credentials", "listLLMCredentials", tag, "Saved provider keys", http.StatusOK, a.listLLMCredentials)
-	reg(api, http.MethodPut, "/api/me/llm-credentials", "upsertLLMCredential", tag, "Save a provider key", http.StatusNoContent, a.upsertLLMCredential)
-	reg(api, http.MethodDelete, "/api/me/llm-credentials/{provider}", "deleteLLMCredential", tag, "Remove a provider key", http.StatusNoContent, a.deleteLLMCredential)
 }
 
 func (a *api) listModelSlots(context.Context, *struct{}) (*modelSlotsOutput, error) {
@@ -64,10 +61,6 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 	if err != nil {
 		return nil, hErr(err)
 	}
-	credSlugs, credErr := a.s.LLMCredentialSlugs(ctx, userID(ctx))
-	if credErr != nil {
-		return nil, hErr(credErr)
-	}
 	pref := prefs.Model(slot)
 	def, err := a.modelReg.DefaultPin(slot)
 	if err == nil {
@@ -81,14 +74,11 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 
 	var items []listedModel
 	for _, cfg := range a.modelReg.ListEnabled(slot) {
-		hasCred := credSlugs[cfg.ProviderSlug]
 		opt := apimodel.ModelOption{
 			ProviderName: cfg.ProviderName,
 			ModelName:    cfg.ModelName,
 			ModelSlug:    cfg.ModelSlug,
 			IsDefault:    cfg.Ref() == out.DefaultModel,
-			Available:    cfg.Available(hasCred),
-			UsesUserKey:  cfg.UsesUserKey(hasCred),
 			ProviderSlug: cfg.ProviderSlug,
 		}
 		if len(cfg.ThinkingLevels) > 0 {
@@ -100,12 +90,6 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 		items = append(items, listedModel{opt: opt, cfg: cfg})
 	}
 	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].opt.Available != items[j].opt.Available {
-			return items[i].opt.Available
-		}
-		if items[i].opt.UsesUserKey != items[j].opt.UsesUserKey {
-			return !items[i].opt.UsesUserKey
-		}
 		return items[i].opt.ModelName < items[j].opt.ModelName
 	})
 	for _, item := range items {
@@ -160,7 +144,6 @@ func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, er
 type resolvedLLM struct {
 	Cfg      models.Config
 	Rates    store.TokenRates
-	PaidBy   string
 	UserID   string
 	Thinking string
 }
@@ -171,9 +154,6 @@ func (r resolvedLLM) attach(body map[string]any) {
 	body["modelSlug"] = r.Cfg.ModelSlug
 	if r.UserID != "" {
 		body["userId"] = r.UserID
-	}
-	if r.PaidBy != "" {
-		body["paidBy"] = r.PaidBy
 	}
 	if r.Thinking != "" {
 		body["thinking"] = r.Thinking
@@ -202,21 +182,9 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		if err != nil {
 			return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 		}
-		hasCred, err := a.s.HasLLMCredential(ctx, userID, cfg.ProviderSlug)
-		if err != nil {
-			return out, err
-		}
-		if !cfg.Available(hasCred) {
-			return out, fmt.Errorf("%w: no credential for %s", store.ErrModelUnavailable, cfg.ProviderSlug)
-		}
 		out.Cfg = cfg
 		out.Rates = store.RatesFromConfig(cfg)
 		out.UserID = userID
-		if cfg.UsesUserKey(hasCred) {
-			out.PaidBy = models.PaidByUser
-		} else {
-			out.PaidBy = models.PaidByPlatform
-		}
 		stored := prefs.Thinking(slot)
 		if slot == models.SlotEditor {
 			// Editor calls have a fixed policy, separate from selectable levels.
@@ -235,7 +203,6 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		}
 		out.Cfg = cfg
 		out.Rates = store.RatesFromConfig(cfg)
-		out.PaidBy = models.PaidByPlatform
 		out.Thinking = cfg.DefaultThinking
 		return out, nil
 	}
@@ -255,16 +222,10 @@ func pipelineLLMError(err error) error {
 		return nil
 	}
 	body := pe.Decode()
-	switch body.Code {
-	case "invalid_key":
-		return store.ErrInvalidLLMKey
-	case "key_failed":
-		return store.ErrLLMKeyFailed
-	case "provider_busy":
+	if body.Code == "provider_busy" {
 		return &providerBusyError{RetryAfterSeconds: body.RetryAfterSeconds}
-	default:
-		return nil
 	}
+	return nil
 }
 
 // providerBusyError is the pipeline's provider_busy answer: every attempt in
@@ -331,12 +292,8 @@ func (a *api) notifyPendingOverflow(ctx context.Context, wsID string, fileIDs []
 	}()
 }
 
-func keyErrorFromEvent(code, message string) error {
+func errorFromEvent(code, message string) error {
 	switch code {
-	case "invalid_key":
-		return store.ErrInvalidLLMKey
-	case "key_failed":
-		return store.ErrLLMKeyFailed
 	case "context_too_large", "source_changed", "compaction_failed", "query_too_long", "invalid_scope":
 		return &chatEventError{Code: code, Message: message}
 	default:
@@ -352,20 +309,6 @@ type chatEventError struct {
 
 func (e *chatEventError) Error() string {
 	return e.Message
-}
-
-func llmKeyPayload(err error) (code, message string, ok bool) {
-	if mapped := pipelineLLMError(err); mapped != nil {
-		err = mapped
-	}
-	switch {
-	case errors.Is(err, store.ErrInvalidLLMKey):
-		return "invalid_key", "The provider rejected this key.", true
-	case errors.Is(err, store.ErrLLMKeyFailed):
-		return "key_failed", "Something went wrong, please double check if the key is valid", true
-	default:
-		return "", "", false
-	}
 }
 
 type resolvedEmbedding struct {

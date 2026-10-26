@@ -176,7 +176,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
-	charge, err := a.beginProviderSession(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy, llm.Rates, store.TokenRates{}, llm.Thinking)
+	charge, err := a.beginProviderSession(ctx, userID, wsID, store.SurfaceEditor, llm.Rates, store.TokenRates{}, llm.Thinking)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -202,10 +202,6 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		var busy *providerBusyError
 		if errors.As(pipelineLLMError(err), &busy) {
 			obs.RecordHTTPError(ctx, obs.ExpectedError(err))
-		}
-		if code, msg, ok := llmKeyPayload(err); ok {
-			writeAIError(w, http.StatusBadRequest, code, msg, false)
-			return
 		}
 		writeAIError(w, http.StatusBadGateway, "ai_unavailable", "AI service is unavailable", true)
 		return
@@ -347,7 +343,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
-	charge, err := a.beginProviderSession(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy, llm.Rates, store.TokenRates{}, llm.Thinking)
+	charge, err := a.beginProviderSession(ctx, userID, wsID, store.SurfaceEditor, llm.Rates, store.TokenRates{}, llm.Thinking)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -370,10 +366,6 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		obs.RecordHTTPError(ctx, err)
 		if ctx.Err() != nil {
-			return
-		}
-		if code, msg, ok := llmKeyPayload(err); ok {
-			writeAIError(w, http.StatusBadRequest, code, msg, false)
 			return
 		}
 		var busy *providerBusyError

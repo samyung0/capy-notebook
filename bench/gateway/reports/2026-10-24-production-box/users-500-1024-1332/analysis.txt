@@ -1,0 +1,14 @@
+== users-500-1024-1332: FAIL p95 1672 ms
+   90 req/s (0.181 per user), p50 7 p95 1672 p99 4223 max 6882 ms, errors 0.14%, streams {'ended': 0, 'failed': 0, 'open_at_end': 231, 'opened': 1245, 'refused': 0}
+   server   cpu mean 0.18 p95 0.29 cores, memory peak 108 MiB
+   db       cpu mean 0.28 p95 0.94 cores, memory peak 734 MiB
+   redis    cpu mean 0.03 p95 0.05 cores, memory peak 6 MiB
+   loadgen  cpu mean 0.05 p95 0.10 cores, memory peak 69 MiB
+   cores cpu0 23%, cpu1 37%, cpu2 15%, cpu3 13%
+   postgres backends (mean) active/- 0.2, idle/- 0.0, idle/Client 8.7, idle in transaction/Client 0.0
+   pool waits: 50585 acquires waited 9922.2 s in all, 12 windows with waits, 5 with every connection taken at the line
+   gateway warnings and errors: 28
+     {"time":"2026-10-24T13:32:23.663261032Z","level":"WARN","msg":"http request","service":"gateway","env":"e2e","trace_id":"7ffd0953a4357afc15c45441ae2b51b6","method":"POST","path":"/api/workspaces/ws_b1c7548a1f/materials","status":409,"duration_ms":126,"bytes":141,"ip":"10.0.2.2"}
+     {"time":"2026-10-24T13:32:29.406853977Z","level":"WARN","msg":"http request","service":"gateway","env":"e2e","trace_id":"d1849e48761edae7d118d14d0cbd75a6","method":"POST","path":"/api/workspaces/ws_f41f274e83/materials","status":409,"duration_ms":320,"bytes":141,"ip":"10.0.2.2"}
+     {"time":"2026-10-24T13:32:31.962036612Z","level":"WARN","msg":"http request","service":"gateway","env":"e2e","trace_id":"0b244a4a005278333daedfd4056e8a94","method":"POST","path":"/api/workspaces/ws_59ca53eb70/materials","status":409,"duration_ms":379,"bytes":141,"ip":"10.0.2.2"}
+   slowest routes (p95): GET /api/flashcards/{id} 5050 ms, GET /api/materials/{id} 5041 ms, GET /api/workspaces/{id}/study 4071 ms, GET /api/workspaces/{id} 3593 ms, GET /api/review/overview 3487 ms

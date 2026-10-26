@@ -23,15 +23,24 @@ export function CheckedQuestion({
   title,
   answers,
   question,
+  headerMarks,
 }: {
   title?: string;
   answers: Answers;
   question?: Question;
+  /** False hides the marks beside the question (Quick review). */
+  headerMarks?: boolean;
 }) {
   return (
     <>
       {question && (
-        <QuestionRunner answers={answers} disabled question={question} review />
+        <QuestionRunner
+          answers={answers}
+          disabled
+          headerMarks={headerMarks}
+          question={question}
+          review
+        />
       )}
       {title && (
         <span className="t-meta text-fg-muted">{m.review_from({ title })}</span>
@@ -48,15 +57,21 @@ export function QuestionItem({
   onChecked,
   session,
   source = true,
+  headerMarks,
+  onCheck,
 }: {
   item: ReviewItem;
   onChecked: (graded: GradedQuestion, answers: Answers) => void;
   session?: ReviewSessionRef;
   /** Names its quiz beside Check; off where the page header already does. */
   source?: boolean;
+  /** False hides the marks beside the question (Quick review). */
+  headerMarks?: boolean;
+  /** Check was sent: the server records it whatever happens to the page. */
+  onCheck?: () => void;
 }) {
   const [answers, setAnswers] = useState<Answers>({});
-  const { isPending: grading, mutate: check } = useMutation({
+  const { isPending: grading, mutate } = useMutation({
     meta: { errorToast: false },
     mutationFn: () =>
       api.post<GradedQuestion>('/review/check', {
@@ -71,14 +86,20 @@ export function QuestionItem({
         title: m.review_grade_failed(),
         variant: 'error',
       }),
-    onSuccess: (graded) => onChecked(graded, answers),
   });
+  // Passed per call: a mutate callback never fires once the question has
+  // unmounted, so a grade landing after its dialog closed is dropped.
+  const check = () => {
+    onCheck?.();
+    mutate(undefined, { onSuccess: (graded) => onChecked(graded, answers) });
+  };
 
   return (
     <>
       <QuestionRunner
         answers={answers}
         disabled={grading}
+        headerMarks={headerMarks}
         onChange={(partId, value) =>
           setAnswers((a) => ({ ...a, [partId]: value }))
         }
@@ -92,7 +113,13 @@ export function QuestionItem({
         ) : (
           <span />
         )}
-        <Button disabled={grading} onClick={() => check()} rounded="large">
+        <Button
+          className="h-9 px-3.5"
+          disabled={grading}
+          onClick={() => check()}
+          rounded="normal"
+          size="sm"
+        >
           {m.review_check()}
         </Button>
       </div>

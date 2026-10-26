@@ -51,9 +51,9 @@ var ErrTerminalCallNotAllowed = errors.New("terminal provider call not allowed")
 // unknown kind or thinking level, negative usage); retrying it fails the same way.
 var ErrInvalidProviderCall = errors.New("invalid provider call")
 
-// ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
-// Worst-case overshoot is this many in-flight settlements. BYOK does not take
-// a lease. Ingest uses ConcurrentIngestLeases instead.
+// ConcurrentLLMLeases caps unsettled model calls per actor. Worst-case
+// overshoot is this many in-flight settlements. Ingest uses
+// ConcurrentIngestLeases instead.
 const ConcurrentLLMLeases = 5
 
 // ConcurrentIngestLeases caps pending+running parse/ingest pipelines per actor.
@@ -440,13 +440,15 @@ func monthStart() time.Time {
 
 /* ------------------------------------------------------- begin / settle */
 
+// BeginProviderSession opens a platform-paid session: every model session
+// is charged to the actor's credits.
 func (s *Store) BeginProviderSession(
 	ctx context.Context,
-	actorUserID, workspaceID, surface, paidBy string,
+	actorUserID, workspaceID, surface string,
 	llm, embedding TokenRates,
 	thinking string,
 ) (string, error) {
-	return s.beginProviderSession(ctx, actorUserID, workspaceID, surface, paidBy, llm, embedding, thinking, 0)
+	return s.beginProviderSession(ctx, actorUserID, workspaceID, surface, llm, embedding, thinking, 0)
 }
 
 // BeginReservedSession opens a platform-paid session that holds
@@ -460,22 +462,19 @@ func (s *Store) BeginReservedSession(ctx context.Context, actorUserID, workspace
 	if reserveMicros < 0 {
 		return "", fmt.Errorf("negative reservation %d", reserveMicros)
 	}
-	return s.beginProviderSession(ctx, actorUserID, workspaceID, surface, models.PaidByPlatform,
+	return s.beginProviderSession(ctx, actorUserID, workspaceID, surface,
 		TokenRates{}, TokenRates{}, "", reserveMicros)
 }
 
 func (s *Store) beginProviderSession(
 	ctx context.Context,
-	actorUserID, workspaceID, surface, paidBy string,
+	actorUserID, workspaceID, surface string,
 	llm, embedding TokenRates,
 	thinking string,
 	reserveMicros int64,
 ) (string, error) {
 	if actorUserID == "" {
 		return "", ErrNotFound
-	}
-	if paidBy != models.PaidByPlatform && paidBy != models.PaidByUser {
-		return "", fmt.Errorf("invalid paid_by %q", paidBy)
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -494,37 +493,35 @@ func (s *Store) beginProviderSession(
 		return "", err
 	}
 
-	if paidBy == models.PaidByPlatform {
-		usage, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
-		if err != nil {
+	usage, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
+	if err != nil {
+		return "", err
+	}
+	if err := admit(ctx, tx, usage); err != nil {
+		return "", err
+	}
+	if reserveMicros == 0 {
+		// Reserved sessions (voice input) are left out: see
+		// BeginReservedSession.
+		var open int64
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM provider_sessions
+			 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
+			   AND surface <> $2 AND reserved_micros = 0`,
+			actorUserID, SurfaceIngest).Scan(&open); err != nil {
 			return "", err
 		}
-		if err := admit(ctx, tx, usage); err != nil {
+		if open >= ConcurrentLLMLeases {
+			return "", ErrTooManyLLMLeases
+		}
+	}
+	// SettleCredits, ReleaseCredits and the expiry sweep take the hold
+	// back off the counter.
+	if reserveMicros > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE user_credits
+			SET reserved_micros = reserved_micros + $2, updated_at = now()
+			WHERE user_id = $1`, actorUserID, reserveMicros); err != nil {
 			return "", err
-		}
-		if reserveMicros == 0 {
-			// Reserved sessions (voice input) are left out: see
-			// BeginReservedSession.
-			var open int64
-			if err := tx.QueryRow(ctx, `
-				SELECT count(*) FROM provider_sessions
-				 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-				   AND surface <> $2 AND paid_by = $3 AND reserved_micros = 0`,
-				actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
-				return "", err
-			}
-			if open >= ConcurrentLLMLeases {
-				return "", ErrTooManyLLMLeases
-			}
-		}
-		// SettleCredits, ReleaseCredits and the expiry sweep take the hold
-		// back off the counter.
-		if reserveMicros > 0 {
-			if _, err := tx.Exec(ctx, `UPDATE user_credits
-				SET reserved_micros = reserved_micros + $2, updated_at = now()
-				WHERE user_id = $1`, actorUserID, reserveMicros); err != nil {
-				return "", err
-			}
 		}
 	}
 
@@ -536,13 +533,13 @@ func (s *Store) beginProviderSession(
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO provider_sessions
 			(id, actor_user_id, workspace_id, trace_id, surface, reserved_micros,
-			 paid_by, llm_provider_slug, llm_model_slug, llm_model_version, thinking,
+			 llm_provider_slug, llm_model_slug, llm_model_version, thinking,
 			 llm_micros_per_input_token, llm_micros_per_output_token,
 			 llm_micros_per_cached_input_token,
 			 embedding_provider_slug, embedding_model_slug, embedding_model_version, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$18,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-		        now() + ($17 * interval '1 millisecond'))`,
-		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), surface, paidBy,
+		VALUES ($1,$2,$3,$4,$5,$17,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+		        now() + ($16 * interval '1 millisecond'))`,
+		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), surface,
 		llm.Model.ProviderSlug, llm.Model.ModelSlug, llm.ModelVersion, thinking,
 		llm.MicrosPerInputToken, llm.MicrosPerOutputToken, llm.MicrosPerCachedInputToken,
 		embedding.Model.ProviderSlug, embedding.Model.ModelSlug, embedding.ModelVersion,

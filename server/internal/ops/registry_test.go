@@ -81,8 +81,6 @@ func draftFromConfig(id string, config CatalogConfig) gridDraft {
 		ModelName:                 config.ModelName,
 		ProviderSlug:              config.ProviderSlug,
 		ModelSlug:                 config.ModelSlug,
-		PlatformEnabled:           config.PlatformEnabled,
-		ByokEnabled:               config.ByokEnabled,
 		ContextWindowTokens:       config.ContextWindowTokens,
 		ThinkingLevels:            append([]string(nil), config.ThinkingLevels...),
 		DefaultThinking:           config.DefaultThinking,
@@ -336,13 +334,13 @@ func TestRegistrySaveRevalidatesExistingRowsAgainstSlotRequirements(t *testing.T
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params,
 			slots, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
 			1, 'Stale', 'Chat', $1, $2,
-			true, false, 100000,
+			100000,
 			ARRAY['high']::text[], 'high', '{}'::jsonb,
 			ARRAY['chat'], 1, 1, 1, true, '{}'
 		)`, ref.ProviderSlug, ref.ModelSlug,
@@ -372,13 +370,13 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params,
 			slots, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
 			1, 'Retired', 'Model', $1, $2,
-			true, false, 100000,
+			100000,
 			ARRAY['high']::text[], 'high', '{}'::jsonb,
 			ARRAY['chat','editor'], 1, 1, 1, true, '{}'
 		)`, retiredRef.ProviderSlug, retiredRef.ModelSlug,
@@ -501,12 +499,11 @@ func TestRegistryCompileRefusesMissingDefaultAliasAndEmbeddingRewrite(t *testing
 	}
 	request = gridRequest(snapshot)
 	request.Drafts = []gridDraft{{
-		ID:              "new-embedding",
-		ProviderName:    "New",
-		ModelName:       "Embedding",
-		ProviderSlug:    "deepinfra",
-		ModelSlug:       "qwen/qwen3-embedding-8b",
-		PlatformEnabled: true,
+		ID:           "new-embedding",
+		ProviderName: "New",
+		ModelName:    "Embedding",
+		ProviderSlug: "deepinfra",
+		ModelSlug:    "qwen/qwen3-embedding-8b",
 		Params: json.RawMessage(
 			`{"dimensions":2560,"vector_table":"rag_chunk_vectors_new"}`,
 		),
@@ -526,7 +523,7 @@ func TestRegistryCompileAllowsUnassignedRerankSlot(t *testing.T) {
 		Slots:   models.AllSlots(),
 		Configs: []CatalogConfig{{
 			ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Reranker-4B",
-			Version: 1, Enabled: true, PlatformEnabled: true,
+			Version: 1, Enabled: true,
 			Slots: []string{models.SlotRerank}, IsDefaultFor: []string{models.SlotRerank},
 			Capabilities: []string{models.CapabilityRerank},
 		}},
@@ -597,7 +594,6 @@ func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 		Version: 1, ProviderName: "Qwen", ModelName: "Embed",
 		ProviderSlug:        "deepinfra",
 		ModelSlug:           models.SeededHopEmbedSlug,
-		PlatformEnabled:     true,
 		ContextWindowTokens: 8192,
 		Params: json.RawMessage(
 			`{"dimensions":2560,"vector_table":"rag_chunk_vectors_2560"}`,
@@ -612,8 +608,8 @@ func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 		Active: []DraftConfig{{
 			ConcurrencyTotal: intPointer(10), InteractiveReserve: intPointer(2),
 			ProviderSlug: current.ProviderSlug, ProviderName: current.ProviderName,
-			ModelName: current.ModelName,
-			ModelSlug: "deepseek-v4-flash", PlatformEnabled: current.PlatformEnabled,
+			ModelName:           current.ModelName,
+			ModelSlug:           "deepseek-v4-flash",
 			ContextWindowTokens: current.ContextWindowTokens, Params: current.Params,
 			Slots: current.Slots, Capabilities: current.Capabilities, DefaultFor: current.IsDefaultFor,
 			Rates: CreditRates{InputMicros: current.MicrosPerInputToken},
@@ -709,13 +705,13 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots, capabilities,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
 			1, 'Ops', 'Embed', $1, $2,
-			true, false, 0, ARRAY[]::text[], '', $3::jsonb, ARRAY['retrieval'], ARRAY['embedding'],
+			0, ARRAY[]::text[], '', $3::jsonb, ARRAY['retrieval'], ARRAY['embedding'],
 			50, 0, 0, true, ARRAY[]::text[]
 		)`, modelRef.ProviderSlug, modelRef.ModelSlug, params,
 	); err != nil {
@@ -787,9 +783,8 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 
 func TestBindEliteLLMDraftRejectsMarketplaceHop(t *testing.T) {
 	draft := gridDraft{
-		ProviderSlug:    "deepinfra",
-		ModelSlug:       "deepseek/deepseek-v4-flash",
-		PlatformEnabled: true,
+		ProviderSlug: "deepinfra",
+		ModelSlug:    "deepseek/deepseek-v4-flash",
 	}
 	err := bindEliteLLMDraft(&draft, nil)
 	if !IsValidation(err) {
@@ -818,8 +813,6 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 	flash := gridDraft{
 		ProviderSlug:    "deepseek",
 		ModelSlug:       "deepseek-v4-flash",
-		PlatformEnabled: true,
-		ByokEnabled:     true,
 		ThinkingLevels:  []string{"instant", "low", "mid", "high", "max"},
 		DefaultThinking: "instant",
 		Capabilities:    []string{models.CapabilityVision},
@@ -828,31 +821,25 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 		t.Fatalf("flash bind: %v", err)
 	}
 	embed := gridDraft{
-		ProviderSlug:    models.ProviderDeepInfra,
-		ModelSlug:       models.SeededHopEmbedSlug,
-		PlatformEnabled: true,
-		Capabilities:    []string{models.CapabilityEmbedding},
+		ProviderSlug: models.ProviderDeepInfra,
+		ModelSlug:    models.SeededHopEmbedSlug,
+		Capabilities: []string{models.CapabilityEmbedding},
 	}
 	if err := bindEliteLLMDraft(&embed, []string{models.SlotRetrieval}); err != nil {
 		t.Fatalf("seeded embed bind: %v", err)
 	}
 }
 
-func TestBindEliteLLMDraftAllowsOnlyPlatformGLM(t *testing.T) {
+func TestBindEliteLLMDraftAllowsRoutedGLM(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "sk-test")
 	glm := gridDraft{
 		ProviderSlug:    "zai",
 		ModelSlug:       "glm-5.3-flash",
-		PlatformEnabled: true,
 		ThinkingLevels:  []string{"low", "high", "max"},
 		DefaultThinking: "max",
 	}
 	if err := bindEliteLLMDraft(&glm, nil); err != nil {
 		t.Fatalf("routed GLM bind: %v", err)
-	}
-	glm.ByokEnabled = true
-	if err := bindEliteLLMDraft(&glm, nil); !IsValidation(err) {
-		t.Fatalf("routed GLM BYOK bind = %v, want validation", err)
 	}
 }
 
@@ -861,7 +848,6 @@ func TestBindEliteLLMDraftRequiresPlatformEnv(t *testing.T) {
 	draft := gridDraft{
 		ProviderSlug:    "deepseek",
 		ModelSlug:       "deepseek-v4-flash",
-		PlatformEnabled: true,
 		ThinkingLevels:  []string{"instant"},
 		DefaultThinking: "instant",
 	}
@@ -877,7 +863,6 @@ func TestBindEliteLLMDraftAppliesAgenticLoopSlotPolicy(t *testing.T) {
 	draft := gridDraft{
 		ProviderSlug:    "anthropic",
 		ModelSlug:       "claude-not-certified",
-		PlatformEnabled: true,
 		ThinkingLevels:  []string{"high"},
 		DefaultThinking: "high",
 	}
@@ -897,9 +882,8 @@ func TestBindEliteLLMDraftAppliesAgenticLoopSlotPolicy(t *testing.T) {
 func TestBindEliteLLMDraftRequiresSlotCapabilities(t *testing.T) {
 	t.Setenv("DEEPINFRA_API_KEY", "sk-test")
 	draft := gridDraft{
-		ProviderSlug:    "deepinfra",
-		ModelSlug:       "Qwen/Qwen3-Embedding-4B",
-		PlatformEnabled: true,
+		ProviderSlug: "deepinfra",
+		ModelSlug:    "Qwen/Qwen3-Embedding-4B",
 	}
 	err := bindEliteLLMDraft(&draft, []string{models.SlotRetrieval})
 	var coded *ValidationError
@@ -914,7 +898,6 @@ func TestBindEliteLLMDraftRequiresSlotCapabilities(t *testing.T) {
 	text := gridDraft{
 		ProviderSlug:    "deepseek",
 		ModelSlug:       "deepseek-flash",
-		PlatformEnabled: true,
 		ThinkingLevels:  []string{"instant"},
 		DefaultThinking: "instant",
 	}

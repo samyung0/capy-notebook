@@ -19,11 +19,11 @@ beforeEach(() => vi.clearAllMocks());
 
 it('grades a signed-in visitor through the signed-in check, with no captcha', async () => {
   session.sessionNow.mockReturnValue(true);
-  await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' }, take);
+  await gradeEmbeddedQuiz('note.tok', 'qz_1', 'q1', { a: 'b' }, take);
   expect(anonymous.checkSharedNoteQuiz).toHaveBeenCalledWith(
     'note.tok',
     'qz_1',
-    { a: 'b' }
+    { answers: { a: 'b' }, questionId: 'q1' }
   );
   expect(anonymous.gradeAnonymousNoteQuiz).not.toHaveBeenCalled();
   expect(take).not.toHaveBeenCalled();
@@ -33,13 +33,14 @@ it('takes the captcha route while signed out or not yet settled', async () => {
   for (const state of [false, undefined]) {
     vi.clearAllMocks();
     session.sessionNow.mockReturnValue(state);
-    await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' }, take);
+    await gradeEmbeddedQuiz('note.tok', 'qz_1', 'q1', { a: 'b' }, take);
     expect(anonymous.gradeAnonymousNoteQuiz).toHaveBeenCalledWith(
       'note.tok',
       'qz_1',
       {
         answers: { a: 'b' },
         localId: 'local-1',
+        questionId: 'q1',
         turnstileToken: 'turnstile-token',
       }
     );

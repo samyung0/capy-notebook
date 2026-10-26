@@ -1,6 +1,6 @@
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { Menu } from '@/components/ui/Menu';
+import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { cn } from '@/lib/cn';
 
 export interface PanelView<T extends string> {
@@ -10,26 +10,32 @@ export interface PanelView<T extends string> {
 }
 
 /** A workspace panel's title that switches its view: the current view's name
- * with a chevron, opening the others with a check on the current one. */
+ * with a chevron, opening the others with a check on the current one.
+ * `extra` items follow under a separator, e.g. Study, which opens elsewhere. */
 export function PanelTitleMenu<T extends string>({
   value,
   views,
   onChange,
+  extra = [],
 }: {
   value: T;
   views: PanelView<T>[];
   onChange: (value: T) => void;
+  extra?: MenuItem[];
 }) {
   const current = views.find((view) => view.value === value);
   return (
     <Menu
       align="start"
-      items={views.map((view) => ({
-        checked: view.value === value,
-        icon: view.icon,
-        label: view.label,
-        onClick: () => onChange(view.value),
-      }))}
+      items={[
+        ...views.map((view) => ({
+          checked: view.value === value,
+          icon: view.icon,
+          label: view.label,
+          onClick: () => onChange(view.value),
+        })),
+        ...extra.map((item, i) => ({ ...item, separated: i === 0 })),
+      ]}
       trigger={
         <button
           className={cn(

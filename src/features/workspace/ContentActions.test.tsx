@@ -16,12 +16,13 @@ vi.mock('@/components/ui/Menu', () => ({
   },
 }));
 
-function deleteItem(content: ContentActionTarget) {
+function deleteItem(content: ContentActionTarget, confirmInMenu = false) {
   menus.length = 0;
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <ContentActions
         chapters={[]}
+        confirmInMenu={confirmInMenu}
         content={content}
         display="menu"
         workspaceId="ws_1"
@@ -51,6 +52,12 @@ describe('trashing a file', () => {
     for (const target of [file('audio', 'ready'), file('pdf', 'processing')]) {
       expect(deleteItem(target)?.disabled).toBeUndefined();
     }
+  });
+
+  it('asks again in the menu instead of a dialog', () => {
+    expect(deleteItem(file('pdf', 'ready'), true)?.confirmLabel).toBe(
+      m.action_confirm_delete()
+    );
   });
 
   it("shows the server's transcribing refusal as its own copy", async () => {

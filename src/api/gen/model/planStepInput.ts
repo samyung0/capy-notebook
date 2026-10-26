@@ -8,7 +8,10 @@ import type { PlanStepInputKind } from './planStepInputKind.ts';
 
 export interface PlanStepInput {
   kind: PlanStepInputKind;
-  /** The chapter, file or material; omitted for workspace and unfiled steps */
-  targetId?: string;
+  /**
+     * The file or material
+     * @minLength 1
+     */
+  targetId: string;
   workspaceId: string;
 }

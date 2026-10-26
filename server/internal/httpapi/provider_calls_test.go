@@ -36,8 +36,7 @@ func TestInternalProviderCallSettlementAuthenticatesAndDeduplicates(t *testing.T
 		userID,
 		"",
 		store.SurfaceChat,
-		models.PaidByUser,
-		store.TokenRates{Model: models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-byok"}, ModelVersion: 1},
+		store.TokenRates{Model: models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-test"}, ModelVersion: 1},
 		store.TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
 		"",
 	)

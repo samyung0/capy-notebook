@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/api/client';
 import { m } from '@/i18n';
-import { VoiceButton } from './VoiceInput';
+import { VoiceButton, VoiceElapsed } from './VoiceInput';
 import {
   insertTranscript,
   micErrorMessage,
@@ -44,6 +44,21 @@ class FakeRecorder {
   }
 }
 
+// The waveform's tap on the microphone: only closing it matters here.
+class FakeAudioContext {
+  static last: FakeAudioContext | null = null;
+  close = vi.fn(async () => undefined);
+  constructor() {
+    FakeAudioContext.last = this;
+  }
+  createAnalyser() {
+    return { fftSize: 0 };
+  }
+  createMediaStreamSource() {
+    return { connect: () => undefined };
+  }
+}
+
 function microphone(answer: () => Promise<unknown>) {
   const track = { stop: vi.fn() };
   const getUserMedia = vi.fn(async () => {
@@ -51,6 +66,7 @@ function microphone(answer: () => Promise<unknown>) {
     return { getTracks: () => [track] };
   });
   vi.stubGlobal('MediaRecorder', FakeRecorder);
+  vi.stubGlobal('AudioContext', FakeAudioContext);
   vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
   return { getUserMedia, track };
 }
@@ -76,6 +92,7 @@ describe('chat voice input', () => {
     expect(track.stop).not.toHaveBeenCalled();
     recording.stop();
     expect(track.stop).toHaveBeenCalledOnce();
+    expect(FakeAudioContext.last?.close).toHaveBeenCalledOnce();
     expect(clips.map((clip) => clip.type)).toEqual(['audio/webm;codecs=opus']);
 
     const fetchMock = vi.fn(
@@ -196,17 +213,17 @@ describe('chat voice input', () => {
   });
 
   it('draws the elapsed time against the limit while recording, and waits while transcribing', () => {
-    const recording = renderToStaticMarkup(
-      <VoiceButton elapsedMs={42_500} onToggle={() => {}} phase="recording" />
-    );
-    expect(recording).toContain(
+    expect(renderToStaticMarkup(<VoiceElapsed elapsedMs={42_500} />)).toContain(
       m.voice_elapsed({ elapsed: '0:42', limit: '2:00' })
+    );
+    const recording = renderToStaticMarkup(
+      <VoiceButton onToggle={() => {}} phase="recording" />
     );
     expect(recording).toContain('aria-pressed="true"');
     expect(recording).toContain(m.voice_stop());
 
     const pending = renderToStaticMarkup(
-      <VoiceButton elapsedMs={0} onToggle={() => {}} phase="pending" />
+      <VoiceButton onToggle={() => {}} phase="pending" />
     );
     expect(pending).toContain('disabled');
     expect(pending).toContain('data-slot="spinner"');

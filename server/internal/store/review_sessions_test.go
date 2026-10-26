@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -263,5 +265,220 @@ func TestReviewSessionRecords(t *testing.T) {
 	}
 	if _, err := f.s.ResumeReviewSession(ctx, f.user, uuid.NewString()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("resume of a missing session: %v", err)
+	}
+}
+
+func TestPlanReviewSession(t *testing.T) {
+	f := newStudyFixture(t, "u_plan_review")
+	ctx := context.Background()
+	other, err := f.s.CreateWorkspace(ctx, f.user, WorkspaceCreate{Name: "Chemistry", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inPlan := f.set(t, [2]string{"Golgi", "Ships proteins"}, [2]string{"Lysosome", "Digests waste"})
+	outside := f.set(t, [2]string{"Ribosome", "Makes proteins"})
+	elsewhere := studyFixture{f.s, f.user, other}.set(t, [2]string{"Ion", "Charged atom"})
+	for _, c := range append(append(append([]Flashcard{}, inPlan...), outside...), elsewhere...) {
+		f.rate(t, c, 1)
+	}
+	plan, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Winter exams")
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := []PlanStepInput{
+		{Kind: "material", WorkspaceID: f.ws.ID, TargetID: inPlan[0].MaterialID},
+		{Kind: "material", WorkspaceID: other.ID, TargetID: elsewhere[0].MaterialID},
+	}
+	if err := f.s.UpdateStudyPlan(ctx, f.user, plan.ID, nil, &steps); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(72 * time.Hour)
+	keys := func(items []ReviewItem) map[string]bool {
+		out := map[string]bool{}
+		for _, it := range items {
+			out[it.ItemID] = true
+		}
+		return out
+	}
+
+	// The plan's Quick review and review draw from both workspaces, only its steps.
+	summary, err := f.s.PlanStudySummary(ctx, f.user, f.ws.ID, plan.ID, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := keys(summary.QuickReview); summary.Reviewable != 3 || !got[elsewhere[0].ID] || got[outside[0].ID] {
+		t.Fatalf("plan summary = %d %+v", summary.Reviewable, summary.QuickReview)
+	}
+	review, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupPlan, PlanID: &plan.ID}, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := keys(review.Items); len(review.Items) != 3 || got[outside[0].ID] {
+		t.Fatalf("plan review = %+v", review.Items)
+	}
+	// The Review tab lists the plan with its review's pool.
+	overview, err := f.s.ReviewOverview(ctx, f.user, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Plans) != 1 || overview.Plans[0].PlanID != plan.ID || overview.Plans[0].Reviewable != 3 || !overview.Plans[0].CanReview {
+		t.Fatalf("overview plans = %+v", overview.Plans)
+	}
+	// A plan holding only a file has nothing to review, though its workspace
+	// has sets.
+	fileID := uid("f")
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO files (id, workspace_id, user_id, name, kind) VALUES ($1,$2,$3,'notes.md','md')`, fileID, f.ws.ID, f.user); err != nil {
+		t.Fatal(err)
+	}
+	reading, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Reading")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileSteps := []PlanStepInput{{Kind: "file", WorkspaceID: f.ws.ID, TargetID: fileID}}
+	if err := f.s.UpdateStudyPlan(ctx, f.user, reading.ID, nil, &fileSteps); err != nil {
+		t.Fatal(err)
+	}
+	overview, err = f.s.ReviewOverview(ctx, f.user, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Plans) != 2 || overview.Plans[0].PlanID != reading.ID || overview.Plans[0].CanReview {
+		t.Fatalf("file-only plan = %+v", overview.Plans)
+	}
+
+	// Answers from either workspace record into the plan session; the plan
+	// continues it, the workspace does not.
+	scope, err := f.s.PlanScopeOf(ctx, f.user, plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &SessionAnswer{ID: uuid.NewString(), WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupPlan, PlanID: &plan.ID}, Plan: &scope}
+	for _, it := range review.Items {
+		a.Items = append(a.Items, SessionItem{MaterialID: it.MaterialID, ItemID: it.ItemID})
+	}
+	good := 3
+	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: elsewhere[0].MaterialID, ItemID: elsewhere[0].ID, Rating: &good, Session: a}, later); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: outside[0].MaterialID, ItemID: outside[0].ID, Rating: &good, Session: a}, later); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := f.s.ResumeReviewSession(ctx, f.user, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Group != GroupPlan || resumed.PlanID == nil || *resumed.PlanID != plan.ID || len(resumed.Done) != 2 || len(resumed.Items) != 2 {
+		t.Fatalf("resumed = %+v", resumed)
+	}
+	if summary, err := f.s.PlanStudySummary(ctx, f.user, f.ws.ID, plan.ID, later); err != nil || summary.Unfinished == nil || summary.Unfinished.ID != a.ID || summary.Unfinished.ChapterName != "Winter exams" || len(summary.Items) != 0 {
+		t.Fatalf("plan unfinished = %+v, %v", summary.Unfinished, err)
+	}
+	if summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, later); err != nil || summary.Unfinished != nil {
+		t.Fatalf("workspace unfinished = %+v, %v", summary.Unfinished, err)
+	}
+
+	// An answer naming another plan kept here is refused.
+	otherPlan, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Spring quiz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrong := &SessionAnswer{ID: a.ID, WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupPlan, PlanID: &otherPlan.ID}, Items: a.Items}
+	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: inPlan[0].MaterialID, ItemID: inPlan[0].ID, Rating: &good, Session: wrong}, later); !errors.Is(err, ErrReviewSession) {
+		t.Fatalf("answer naming another plan: %v", err)
+	}
+
+	// A plan is reviewed only from its own workspace.
+	if _, err := f.s.PlanStudySummary(ctx, f.user, other.ID, plan.ID, later); !errors.Is(err, ErrReviewGroup) {
+		t.Fatalf("plan from another workspace: %v", err)
+	}
+	// The session keeps its plan's name once the plan is deleted.
+	if err := f.s.DeleteStudyPlan(ctx, f.user, plan.ID); err != nil {
+		t.Fatal(err)
+	}
+	// It keeps taking answers, as resumed without a plan.
+	resumedAnswer := &SessionAnswer{ID: a.ID, WorkspaceID: f.ws.ID, Info: ReviewSessionInfo{Group: GroupPlan}, Items: a.Items}
+	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: inPlan[1].MaterialID, ItemID: inPlan[1].ID, Rating: &good, Session: resumedAnswer}, later); err != nil {
+		t.Fatalf("answer after the plan's deletion: %v", err)
+	}
+	rows, _, err := f.s.PastReviews(ctx, f.user, PastReviewParams{ID: a.ID, Limit: 1})
+	if err != nil || len(rows) != 1 || rows[0].Group != GroupPlan || rows[0].ChapterName != "Winter exams" {
+		t.Fatalf("deleted plan's session = %+v, %v", rows, err)
+	}
+}
+
+// A manual session takes 60% new items and 40% practised ones, spread
+// through it; a short side leaves its places to the other.
+func TestWithNewShares(t *testing.T) {
+	items := func(prefix string, n int) ([]scored, []ranked) {
+		var practised []scored
+		var fresh []ranked
+		for i := range n {
+			it := ranked{studyItem: studyItem{ReviewItem: ReviewItem{ItemID: fmt.Sprintf("%s%d", prefix, i), Kind: "card"}}}
+			practised = append(practised, scored{ranked: it, parts: [3]float64{1, 0, 0}})
+			fresh = append(fresh, it)
+		}
+		return practised, fresh
+	}
+	count := func(list []ReviewItem, prefix string) int {
+		n := 0
+		for _, it := range list {
+			if strings.HasPrefix(it.ItemID, prefix) {
+				n++
+			}
+		}
+		return n
+	}
+	practised, _ := items("old", 20)
+	_, fresh := items("new", 20)
+	prefs := ReviewPrefs{Size: 10, Items: "both"}
+	got := withNew(practised, fresh, reviewGroup{kind: GroupWorkspace}, prefs)
+	if len(got) != 10 || count(got, "new") != 6 || count(got, "old") != 4 || count(got[:5], "old") < 2 {
+		t.Fatalf("shares = %+v", got)
+	}
+	got = withNew(practised, fresh[:2], reviewGroup{kind: GroupWorkspace}, prefs)
+	if len(got) != 10 || count(got, "new") != 2 || count(got, "old") != 8 {
+		t.Fatalf("few new = %+v", got)
+	}
+}
+
+// New items come in reading order (chapters in order, then unfiled); a set
+// marked unread keeps its rated cards in the practised pool.
+func TestReviewPoolsOrderAndUnread(t *testing.T) {
+	f := newStudyFixture(t, "u_review_pools")
+	ctx := context.Background()
+	first, err := f.s.AddChapter(ctx, f.ws.ID, f.user, "First")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := f.s.AddChapter(ctx, f.ws.ID, f.user, "Second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := f.set(t, [2]string{"Late", "In the second chapter"})
+	early := f.set(t, [2]string{"Early", "In the first chapter"})
+	loose := f.set(t, [2]string{"Loose", "Outside chapters"})
+	for ch, set := range map[string][]Flashcard{second.ID: late, first.ID: early} {
+		if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET chapter_id=$1 WHERE id=$2`, ch, set[0].MaterialID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fresh, err := f.s.newPool(ctx, f.user, f.ws.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fresh) != 3 || fresh[0].ItemID != early[0].ID || fresh[1].ItemID != late[0].ID || fresh[2].ItemID != loose[0].ID {
+		t.Fatalf("new pool order = %+v", fresh)
+	}
+
+	f.rate(t, loose[0], 3)
+	if err := f.s.SetStudyItem(ctx, f.user, f.ws.ID, nil, &loose[0].MaterialID, nil); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := f.s.reviewPool(ctx, f.user, f.ws.ID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pool) != 1 || pool[0].ItemID != loose[0].ID {
+		t.Fatalf("practised pool after Mark as unread = %+v", pool)
 	}
 }

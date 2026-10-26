@@ -118,12 +118,6 @@ export function chatErrorMessage(payload: unknown, fallback: string): string {
       return m.chat_model_unavailable();
     case 'provider_busy':
       return m.error_provider_busy_body();
-    case 'invalid_llm_key':
-    case 'invalid_key':
-      return m.settings_llm_key_invalid();
-    case 'llm_key_failed':
-    case 'key_failed':
-      return m.settings_llm_key_failed();
     case 'context_too_large':
       return m.chat_context_too_large();
     case 'compaction_failed':

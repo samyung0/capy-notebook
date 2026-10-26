@@ -182,6 +182,28 @@ def test_includetext_does_not_read_a_local_file(tmp_path: Path) -> None:
     assert "SECRET-FILE-TEXT" not in text
 
 
+@needs_soffice
+def test_a_hidden_slide_keeps_its_page(tmp_path: Path) -> None:
+    """Page N of a PowerPoint file's PDF is slide N, hidden slides included
+    (Epo 2026-10-24, Q276); LibreOffice drops them unless told."""
+    fixture = PARSER_DIR.parent / "e2e/fixtures/files/rich-content/lecture.pptx"
+    out = io.BytesIO()
+    slides = 0
+    with (
+        zipfile.ZipFile(fixture) as source,
+        zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as hidden,
+    ):
+        for name in source.namelist():
+            data = source.read(name)
+            if name == "ppt/slides/slide2.xml":
+                data = data.replace(b"<p:sld ", b'<p:sld show="0" ', 1)
+            slides += name.startswith("ppt/slides/slide") and name.endswith(".xml")
+            hidden.writestr(name, data)
+    converted = document.normalize_document(out.getvalue(), "hidden.pptx", tmp_path)
+    with pymupdf.open(stream=converted.data, filetype="pdf") as pdf:
+        assert len(pdf) == slides == 20
+
+
 def _running(pid: int) -> bool:
     try:
         stat = Path(f"/proc/{pid}/stat").read_text()
@@ -214,16 +236,19 @@ def test_bytes_of_another_format_are_refused_before_libreoffice(
         document.normalize_document(data, name, tmp_path)
 
 
+HIDDEN_SLIDES = document._HIDDEN_SLIDES
+
+
 @needs_linux
 @pytest.mark.parametrize(
-    ("name", "data", "infilter"),
+    ("name", "data", "infilter", "target"),
     [
-        ("notes.docx", ZIP, "MS Word 2007 XML"),
-        ("sheet.xlsx", ZIP, "Calc MS Excel 2007 XML"),
-        ("deck.pptx", ZIP, "Impress MS PowerPoint 2007 XML"),
-        ("notes.doc", OLE, "MS Word 97"),
-        ("sheet.xls", OLE, "MS Excel 97"),
-        ("deck.ppt", OLE, "MS PowerPoint 97"),
+        ("notes.docx", ZIP, "MS Word 2007 XML", "pdf"),
+        ("sheet.xlsx", ZIP, "Calc MS Excel 2007 XML", "pdf"),
+        ("deck.pptx", ZIP, "Impress MS PowerPoint 2007 XML", HIDDEN_SLIDES),
+        ("notes.doc", OLE, "MS Word 97", "pdf"),
+        ("sheet.xls", OLE, "MS Excel 97", "pdf"),
+        ("deck.ppt", OLE, "MS PowerPoint 97", HIDDEN_SLIDES),
     ],
 )
 def test_libreoffice_imports_through_the_suffix_filter_inside_the_work_dir(
@@ -232,6 +257,7 @@ def test_libreoffice_imports_through_the_suffix_filter_inside_the_work_dir(
     name: str,
     data: bytes,
     infilter: str,
+    target: str,
 ) -> None:
     # It can write only its job folder: what it saw is the "PDF" it leaves.
     launcher = tmp_path / "soffice.bin"
@@ -248,6 +274,8 @@ def test_libreoffice_imports_through_the_suffix_filter_inside_the_work_dir(
 
     arenas, tmpdir, *argv = converted.data.decode().splitlines()
     assert f"--infilter={infilter}" in argv
+    # A PowerPoint file's PDF keeps its hidden slides (Q276).
+    assert argv[argv.index("--convert-to") + 1] == target
     # Two malloc arenas, so it fits the parse child's address-space limit.
     assert arenas == "2"
     # LibreOffice's temporary files and output share the job directory in the

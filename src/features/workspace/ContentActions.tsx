@@ -18,6 +18,7 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Menu, type MenuItem, type MenuProps } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
+import { userToast } from '@/components/ui/userToast';
 import { fileIsTranscribing, formatFileSize } from '@/features/files/fileUtils';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
@@ -39,6 +40,7 @@ export function ContentActions({
   canClone = false,
   chapters,
   color,
+  confirmInMenu = false,
   content,
   display,
   hoverClassName,
@@ -64,6 +66,9 @@ export function ContentActions({
   canClone?: boolean;
   chapters: Chapter[];
   color?: UserColor;
+  /** Delete asks again in the menu itself (a second click trashes) instead
+   * of opening the confirmation dialog. */
+  confirmInMenu?: boolean;
   content?: ContentActionTarget;
   display: 'hover' | 'menu';
   hoverClassName?: string;
@@ -148,10 +153,17 @@ export function ContentActions({
             danger: true,
             icon: 'trash' as const,
             label: m.action_delete(),
-            onClick: () => {
-              setDeleteError(null);
-              setConfirmOpen(true);
-            },
+            ...(confirmInMenu
+              ? {
+                  confirmLabel: m.action_confirm_delete(),
+                  onClick: () => void deleteContent(),
+                }
+              : {
+                  onClick: () => {
+                    setDeleteError(null);
+                    setConfirmOpen(true);
+                  },
+                }),
             // The server refuses until the transcription's job ends.
             ...(content.type === 'file' && fileIsTranscribing(content)
               ? {
@@ -196,7 +208,11 @@ export function ContentActions({
       try {
         await deleteFile(content.id);
       } catch (error) {
-        setDeleteError(trashErrorMessage(error));
+        if (confirmInMenu) {
+          userToast({ title: trashErrorMessage(error), variant: 'error' });
+        } else {
+          setDeleteError(trashErrorMessage(error));
+        }
         return;
       }
     } else {
@@ -271,16 +287,18 @@ export function ContentActions({
             open={propertiesOpen}
           />
 
-          <TrashConfirmDialog
-            error={deleteError}
-            isSubmitting={deletingFile}
-            name={content.name}
-            onClose={() => {
-              if (!deletingFile) setConfirmOpen(false);
-            }}
-            onConfirm={() => void deleteContent()}
-            open={confirmOpen}
-          />
+          {!confirmInMenu && (
+            <TrashConfirmDialog
+              error={deleteError}
+              isSubmitting={deletingFile}
+              name={content.name}
+              onClose={() => {
+                if (!deletingFile) setConfirmOpen(false);
+              }}
+              onConfirm={() => void deleteContent()}
+              open={confirmOpen}
+            />
+          )}
 
           <MoveToChapterDialog
             chapters={chapters}

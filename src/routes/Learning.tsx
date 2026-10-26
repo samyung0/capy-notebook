@@ -1,6 +1,7 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { type CSSProperties, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import {
+  useDeleteStudyPlan,
   useLearningPlans,
   useLearningProgress,
   useSetWorkspaceStudyEnabled,
@@ -11,14 +12,19 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
-import { Menu } from '@/components/ui/Menu';
+import { Icon } from '@/components/ui/Icon';
+import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { relativeTime } from '@/features/materials/MaterialListCard';
-import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
 import { AllResults } from '@/features/study/AllResults';
-import { PlanRow, usePlanLinks } from '@/features/study/plans/PlansSection';
-import { workspaceMap } from '@/features/study/plans/planProgress';
+import { usePlanLinks } from '@/features/study/plans/planLinks';
+import {
+  planFinishedAt,
+  planProgress,
+  planStudiedAt,
+  workspaceMap,
+} from '@/features/study/plans/planProgress';
 import { RecordProgress } from '@/features/study/RecordProgress';
 import { ReviewTab } from '@/features/study/ReviewTab';
 import { PlaceholderRailMap } from '@/features/study/railMap/RailMap';
@@ -26,66 +32,176 @@ import { WorkspaceRailMap } from '@/features/study/WorkspaceRailMap';
 import { inReadingOrder } from '@/features/workspace/workspaceContent';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { coverInk } from '@/lib/coverInk';
 import { iconUrl } from '@/lib/icon-catalog';
 import { waitsForConnection } from '@/lib/online';
 import type { LearningTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 /** Learning → Progress: the most recently studied workspace as a map with
- * its Continue, the user's plans, the other workspaces in progress as rows
- * with a small trail, then the finished ones. The map leads with the finished
- * workspace a finish toast's Go check names (`finished`), and with the latest
- * finished when none is in progress. Show all brings back workspaces hiding
- * study progress, at half opacity. */
+ * its Continue, the user's plans, the other workspaces' Default Plans in
+ * progress as rows, then the finished ones naming the plan; every row
+ * opens what it names. The map leads with the finished workspace a finish
+ * toast's Go check names (`finished`), and with the latest finished when none
+ * is in progress. Each list's Show hidden (with its count) brings back what
+ * hides study progress (a plan by its workspace), at half opacity. */
 function Progress({ finished }: { finished?: string }) {
   const [all, setAll] = useState(false);
+  const [allPlans, setAllPlans] = useState(false);
   const { data, fetchStatus, isLoading } = useLearningProgress(finished, all);
   const { data: plans } = useLearningPlans({ errorBoundary: false });
   const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
   const links = usePlanLinks(undefined);
+  const { mutate: deletePlan } = useDeleteStudyPlan();
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isLoading) return <ProgressSkeleton />;
-  const showAll = (
-    <Button
-      className="ml-auto"
-      onClick={() => setAll(!all)}
-      rounded="large"
-      size="sm"
-      variant="outline"
-    >
-      {all ? m.learning_hide_hidden() : m.learning_show_all()}
-    </Button>
-  );
-  const planList = plans && plans.plans.length > 0 && (
+  // Show hidden (count), only while something hides; Hide hidden once on.
+  const showHidden = (on: boolean, count: number, toggle: () => void) =>
+    (on || count > 0) && (
+      <Button
+        className="ml-auto"
+        onClick={toggle}
+        rounded="large"
+        size="sm"
+        variant="ghost-hover"
+      >
+        {on ? m.learning_hide_hidden() : m.learning_show_hidden({ count })}
+      </Button>
+    );
+  // Plans in progress list under Your plans, finished ones under Finished; a
+  // plan whose workspace hides study progress waits for Your plans' Show
+  // hidden, which counts both.
+  const spaces = workspaceMap(plans?.plans.length ? plans.workspaces : []);
+  const planRows = (plans?.plans ?? []).map((plan) => {
+    const parent = spaces.get(plan.workspaceId);
+    const progress = planProgress(plan, spaces);
+    return {
+      finishedAt: planFinishedAt(progress),
+      hidden: !!parent?.hidden,
+      parent,
+      plan,
+      progress,
+    };
+  });
+  const hiddenPlans = planRows.filter((p) => p.hidden).length;
+  const shownPlans = planRows.filter((p) => allPlans || !p.hidden);
+  const ongoing = shownPlans.filter((p) => !p.finishedAt);
+  const planList = (ongoing.length > 0 || hiddenPlans > 0) && (
     <section className="mt-8">
-      <h3 className="mb-1 font-bold text-fg-muted text-sm">
-        {m.learning_your_plans()}
-      </h3>
-      {plans.plans.map((plan) => (
-        <PlanRow
-          key={plan.id}
-          onContinue={(next) => links.openItem(next.item, next.workspaceId)}
-          onOpen={() => links.openPlan(plan)}
-          parent={workspaceMap(plans.workspaces).get(plan.workspaceId)}
-          plan={plan}
-          spaces={workspaceMap(plans.workspaces)}
-        />
-      ))}
+      <div className="mb-1 flex items-center gap-3">
+        <h3 className="font-bold text-fg-muted text-sm">
+          {m.learning_your_plans()}
+        </h3>
+        {showHidden(allPlans, hiddenPlans, () => setAllPlans(!allPlans))}
+      </div>
+      {ongoing.map(({ plan, parent, hidden, progress }) => {
+        const studiedAt = planStudiedAt(progress);
+        const remove: MenuItem = {
+          confirmLabel: m.action_confirm_delete(),
+          danger: true,
+          icon: 'trash',
+          label: m.plan_delete(),
+          onClick: () => deletePlan(plan.id),
+        };
+        return (
+          <ProgressRow
+            done={m.learning_done_of(progress)}
+            hidden={hidden}
+            iconId={parent?.iconId}
+            key={plan.id}
+            menu={
+              parent ? (
+                <ShownMenu more={[remove]} workspace={parent} />
+              ) : (
+                <Menu items={[remove]} />
+              )
+            }
+            meta={
+              hidden
+                ? m.learning_hidden()
+                : studiedAt
+                  ? m.learning_studied({ when: relativeTime(studiedAt) })
+                  : m.progress_not_studied()
+            }
+            name={plan.name}
+            onOpen={() => links.openPlan(plan)}
+          />
+        );
+      })}
     </section>
   );
+  const openWorkspace = (workspaceId: string) =>
+    navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });
+  // Finished workspaces (their Default Plan) and plans, latest first.
+  const finishedList = (done: ProgressWorkspace[]) => {
+    const rows = [
+      ...done.map((ws) => ({
+        at: ws.lastStudiedAt,
+        end: <ShownMenu workspace={ws} />,
+        hidden: !!ws.hidden,
+        key: ws.workspaceId,
+        open: () => openWorkspace(ws.workspaceId),
+        planName: m.plan_default(),
+        workspace: ws,
+      })),
+      ...shownPlans.flatMap(({ plan, parent, hidden, finishedAt }) =>
+        finishedAt && parent
+          ? [
+              {
+                at: finishedAt,
+                // Keeps the plan name in line with the rows' ⋮.
+                end: <span className="w-9" />,
+                hidden,
+                key: plan.id,
+                open: () => links.openPlan(plan),
+                planName: plan.name,
+                workspace: parent,
+              },
+            ]
+          : []
+      ),
+    ].sort((a, b) => b.at.localeCompare(a.at));
+    if (!rows.length) return null;
+    return (
+      <section className="mt-8">
+        <h3 className="mb-1 font-bold text-fg-muted text-sm">
+          {m.learning_finished()}
+        </h3>
+        {rows.map((row) => (
+          <div
+            className={cn(
+              'relative -mx-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 border-divider border-t px-1.5 py-3 hover:bg-surface-hover-bg',
+              row.hidden && 'opacity-50'
+            )}
+            key={row.key}
+          >
+            <WorkspaceName
+              iconId={row.workspace.iconId}
+              meta={m.learning_finished_when({ when: relativeTime(row.at) })}
+              name={row.workspace.name}
+              onOpen={row.open}
+            />
+            <div className="max-w-[160px] truncate text-right text-fg-secondary text-sm">
+              {row.planName}
+            </div>
+            {row.end}
+          </div>
+        ))}
+      </section>
+    );
+  };
   if (!data?.active.length && !data?.finished.length)
     return (
       <>
         <PlaceholderRailMap />
         <RecordProgress />
         {planList}
-        <div className="mt-8 flex">{showAll}</div>
+        {finishedList([])}
+        <div className="mt-8 flex">
+          {showHidden(all, data?.hiddenCount ?? 0, () => setAll(!all))}
+        </div>
       </>
     );
-  const openWorkspace = (workspaceId: string) =>
-    navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });
   const lead = [...data.active, ...data.finished].find(
     (ws) => ws.workspaceId === data.lead?.workspaceId
   );
@@ -104,92 +220,28 @@ function Progress({ finished }: { finished?: string }) {
       <section className={cn((lead || planList) && 'mt-8')}>
         <div className="mb-1 flex items-center gap-3">
           <h3 className="font-bold text-fg-muted text-sm">
-            {m.learning_other_workspaces()}
+            {m.learning_default_plans()}
           </h3>
-          {showAll}
+          {showHidden(all, data?.hiddenCount ?? 0, () => setAll(!all))}
         </div>
         {others.map((ws) => (
-          <div
-            className={cn(
-              'grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3 sm:grid-cols-[minmax(0,1fr)_minmax(150px,240px)_4.5rem_auto_auto]',
-              ws.hidden && 'opacity-50'
-            )}
+          <ProgressRow
+            done={m.learning_done_of({ done: ws.done, total: ws.total })}
+            hidden={!!ws.hidden}
+            iconId={ws.iconId}
             key={ws.workspaceId}
-          >
-            <WorkspaceName
-              meta={
-                ws.hidden
-                  ? m.learning_hidden()
-                  : m.learning_studied({
-                      when: relativeTime(ws.lastStudiedAt),
-                    })
-              }
-              workspace={ws}
-            />
-            <div
-              className={cn(
-                'col-span-2 row-start-2 max-w-[282px] pl-[42px] sm:col-span-1 sm:row-start-auto sm:pl-0',
-                'rail-trail',
-                ws.cover && 'rail-colour'
-              )}
-              style={{ '--cover-ink': coverInk(ws.cover) } as CSSProperties}
-            >
-              <MiniTrail
-                answered={ws.done}
-                topicId={ws.workspaceId}
-                total={ws.total}
-              />
-            </div>
-            <div className="hidden text-right text-fg-secondary text-sm sm:block">
-              {m.study_of({ done: ws.done, total: ws.total })}
-            </div>
-            <UnderlineLink
-              className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto"
-              iconRight={undefined}
-              onClick={() => openWorkspace(ws.workspaceId)}
-            >
-              {m.study_continue()}
-            </UnderlineLink>
-            <ShownMenu
-              className="col-start-3 row-start-1 sm:col-start-auto sm:row-start-auto"
-              workspace={ws}
-            />
-          </div>
+            menu={<ShownMenu workspace={ws} />}
+            meta={
+              ws.hidden
+                ? m.learning_hidden()
+                : m.learning_studied({ when: relativeTime(ws.lastStudiedAt) })
+            }
+            name={ws.name}
+            onOpen={() => openWorkspace(ws.workspaceId)}
+          />
         ))}
       </section>
-      {done.length > 0 && (
-        <section className={cn((lead || others.length > 0) && 'mt-8')}>
-          <h3 className="mb-1 font-bold text-fg-muted text-sm">
-            {m.learning_finished()}
-          </h3>
-          {done.map((ws) => (
-            <div
-              className={cn(
-                'grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 border-divider border-t py-3 sm:grid-cols-[minmax(0,1fr)_4.5rem_auto_auto]',
-                ws.hidden && 'opacity-50'
-              )}
-              key={ws.workspaceId}
-            >
-              <WorkspaceName
-                meta={m.learning_finished_when({
-                  when: relativeTime(ws.lastStudiedAt),
-                })}
-                workspace={ws}
-              />
-              <div className="hidden text-right text-fg-secondary text-sm sm:block">
-                {m.study_of({ done: ws.done, total: ws.total })}
-              </div>
-              <UnderlineLink
-                noArrow
-                onClick={() => openWorkspace(ws.workspaceId)}
-              >
-                {m.learning_open()}
-              </UnderlineLink>
-              <ShownMenu workspace={ws} />
-            </div>
-          ))}
-        </section>
-      )}
+      {finishedList(done)}
     </div>
   );
 }
@@ -267,13 +319,15 @@ function LeadWorkspace({
   );
 }
 
-/** A workspace row's ⋮: its Hide study progress, the Study page's switch. A
- * hidden row (Show all) shows Show instead. */
+/** A row's ⋮: its workspace's Hide study progress, the Study page's switch,
+ * then `more`. A hidden row (Show all) shows Show instead. */
 function ShownMenu({
   workspace,
+  more = [],
   className,
 }: {
-  workspace: ProgressWorkspace;
+  workspace: Pick<ProgressWorkspace, 'workspaceId' | 'hidden'>;
+  more?: MenuItem[];
   className?: string;
 }) {
   const { isPending, mutate: setShown } = useSetWorkspaceStudyEnabled(
@@ -282,7 +336,7 @@ function ShownMenu({
   if (workspace.hidden)
     return (
       <Button
-        className={className}
+        className={cn('relative z-10', className)}
         disabled={isPending}
         onClick={() => setShown(true)}
         rounded="large"
@@ -293,7 +347,7 @@ function ShownMenu({
       </Button>
     );
   return (
-    <div className={className}>
+    <div className={cn('relative z-10', className)}>
       <Menu
         items={[
           {
@@ -301,28 +355,75 @@ function ShownMenu({
             label: m.study_hide_progress(),
             onClick: () => setShown(false),
           },
+          ...more,
         ]}
       />
     </div>
   );
 }
 
+/** A row in progress (Your plans, Default plans): its name and when it was
+ * studied, how much is done and its ⋮. Hidden ones are at half opacity. */
+function ProgressRow({
+  done,
+  hidden,
+  menu,
+  ...name
+}: Parameters<typeof WorkspaceName>[0] & {
+  done: string;
+  hidden: boolean;
+  menu: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'relative -mx-1.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-divider border-t px-1.5 py-3 hover:bg-surface-hover-bg sm:grid-cols-[minmax(0,1fr)_auto_auto]',
+        hidden && 'opacity-50'
+      )}
+    >
+      <WorkspaceName {...name} />
+      <div className="hidden text-right text-fg-secondary text-sm sm:block">
+        {done}
+      </div>
+      {menu}
+    </div>
+  );
+}
+
+/** A row's icon (a plan without its workspace: the plan's), name and meta;
+ * the name's button covers the row, opening it. */
 function WorkspaceName({
-  workspace,
+  name,
+  iconId,
   meta,
+  onOpen,
 }: {
-  workspace: ProgressWorkspace;
+  name: string;
+  iconId?: string;
   meta: string;
+  onOpen: () => void;
 }) {
   return (
     <div className="flex min-w-0 items-center gap-2.5 lg:gap-3.5">
-      <img
-        alt=""
-        className="size-8 shrink-0 rounded-button"
-        src={iconUrl(workspace.iconId)}
-      />
+      {iconId ? (
+        <img
+          alt=""
+          className="size-8 shrink-0 rounded-button"
+          src={iconUrl(iconId)}
+        />
+      ) : (
+        <span className="grid size-8 shrink-0 place-items-center text-fg-secondary">
+          <Icon className="-scale-x-100" name="route" size={18} />
+        </span>
+      )}
       <div className="min-w-0">
-        <div className="truncate font-semibold text-fg">{workspace.name}</div>
+        <button
+          className="block max-w-full truncate text-left font-semibold text-fg after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
+          onClick={onOpen}
+          type="button"
+        >
+          {name}
+        </button>
         <div className="truncate text-fg-muted text-xs">{meta}</div>
       </div>
     </div>

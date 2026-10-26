@@ -608,10 +608,15 @@ type EditorAssetItem struct {
 	// MaterialID is the note, quiz or set it sits in (an embedded quiz's or
 	// set's note), to open; empty when LostAccess.
 	MaterialID string `json:"materialId,omitempty"`
+	// MaterialType is that note's, quiz's or set's kind, for its icon.
+	MaterialType MaterialRefType `json:"materialType"`
 	// MaterialTitle and WorkspaceName are blank once that workspace's owner is
 	// no longer live.
 	MaterialTitle string `json:"materialTitle"`
 	WorkspaceName string `json:"workspaceName"`
+	// WorkspaceID is that note's workspace, for its icon; empty for a
+	// standalone note and when LostAccess.
+	WorkspaceID string `json:"workspaceId,omitempty"`
 	// LostAccess: the caller can no longer open its note (lostAccessSQL).
 	LostAccess bool `json:"lostAccess"`
 }
@@ -659,9 +664,10 @@ func (s *Store) ListEditorAssets(
 	args := append([]any{userID}, cursorArgs...)
 	args = append(args, limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT a.id, a.name, a.purpose, a.size_bytes, a.created_at,
-			CASE WHEN l.lost THEN '' ELSE top.id END,
+			CASE WHEN l.lost THEN '' ELSE top.id END, top.kind,
 			`+workspaceNameSQL("top.workspace_id", "top.title")+`,
-			`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`, l.lost
+			`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`,
+			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id,'') END, l.lost
 		FROM editor_assets a
 		JOIN materials m ON m.id=a.material_id
 		JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
@@ -673,8 +679,11 @@ func (s *Store) ListEditorAssets(
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EditorAssetItem, error) {
 		var item EditorAssetItem
-		return item, row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt,
-			&item.MaterialID, &item.MaterialTitle, &item.WorkspaceName, &item.LostAccess)
+		var kind MaterialKind
+		err := row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt,
+			&item.MaterialID, &kind, &item.MaterialTitle, &item.WorkspaceName, &item.WorkspaceID, &item.LostAccess)
+		item.MaterialType = kind.RefType()
+		return item, err
 	})
 	if err != nil {
 		return EditorAssetPage{}, err

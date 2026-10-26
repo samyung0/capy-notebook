@@ -38,6 +38,8 @@ export function recordingType(): string | null {
 }
 
 export interface Recording {
+  /** The microphone's live signal, for the waveform beside the time. */
+  analyser: AnalyserNode;
   /** Ends it without a clip (the composer went away). */
   cancel: () => void;
   /** Ends the recording; the clip goes to onClip. */
@@ -53,8 +55,14 @@ export async function startRecording(
   onClip: (clip: Blob) => void
 ): Promise<Recording> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // Only read, never played: nothing is connected to the speakers.
+  const audio = new AudioContext();
+  const analyser = audio.createAnalyser();
+  analyser.fftSize = 1024;
+  audio.createMediaStreamSource(stream).connect(analyser);
   const release = () => {
     for (const track of stream.getTracks()) track.stop();
+    void audio.close();
   };
   let recorder: MediaRecorder;
   try {
@@ -91,7 +99,7 @@ export async function startRecording(
     release();
     throw error;
   }
-  return { cancel: () => end(false), stop: () => end(true) };
+  return { analyser, cancel: () => end(false), stop: () => end(true) };
 }
 
 /** A getUserMedia failure: refused permission, or no usable microphone. */

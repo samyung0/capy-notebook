@@ -758,6 +758,12 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     resolved = await _resolve_scope(ctx, [file_id])
     if isinstance(resolved, ToolResult):
         return resolved
+    # An Office file has no page view (Q283): say so before asking for a
+    # passage, which would only send the model searching.
+    if await capture.office_file(ctx.workspace_id, file_id):
+        return _refused(
+            f"capture_page: {capture.OFFICE_NO_PAGES}", code="unsupported_format"
+        )
     existing = [
         i + 1
         for i, passage in enumerate(ctx.citations)
@@ -2571,6 +2577,99 @@ OFFICE_COMMANDS_MAX_BYTES = 256 * 1024
 _NOT_APPLIED = re.compile(r"Not applied: the commands? at index(?:es)? (\d+) ")
 
 
+# A read's pictures, charts, equations and drawn shapes (Epo 2026-10-24, Q240,
+# Q278, Q280, Q284), explained in the head of a read that lists any.
+OFFICE_OBJECTS_HEAD = (
+    '\npictures as [id] picture alt "text", width x height px (cropped), or not '
+    'viewable: why; charts as [id] chart type "title", each series with its cell '
+    "references and its first points as [idx, category, value]; "
+    "inspect_office_document with ids (at most 4) attaches a picture as an image "
+    "and gives a chart's every point"
+)
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _picture_text(item: dict[str, Any]) -> str:
+    """A picture's alt text and size, or why the model cannot see it; a deck
+    read gives no size."""
+    parts = [f"alt {_json(str(item['alt']))}"] if item.get("alt") else []
+    if item.get("viewable") is False:
+        parts.append(f"not viewable: {item.get('reason') or 'unknown'}")
+    elif isinstance(item.get("pixels"), list) and len(item["pixels"]) == 2:
+        width, height = item["pixels"]
+        parts.append(
+            f"{width} x {height} px" + (", cropped" if item.get("crop") else "")
+        )
+    return ", ".join(parts)
+
+
+def _series_line(series: dict[str, Any]) -> str:
+    """``series "name" (name, categories and values references), N points:
+    [[idx, category, value], …] … M more``."""
+    refs = series.get("refs") or {}
+    where = ", ".join(
+        f"{key} {refs[key]}"
+        for key in ("name", "categories", "values")
+        if refs.get(key)
+    )
+    line = f"series {_json(str(series.get('name') or ''))}"
+    if where:
+        line += f" ({where})"
+    if series.get("count") is not None:
+        line += f", {series['count']} points"
+    if series.get("reason"):
+        line += f", {series['reason']}"
+    if series.get("points"):
+        line += ": " + _json(series["points"])
+    if series.get("more"):
+        line += f" … {series['more']} more"
+    if series.get("cut"):
+        line += f" … {series['cut']} not sent"
+    return line
+
+
+def _chart_text(item: dict[str, Any], indent: str) -> str:
+    """A chart's type and title, then a line per series it lists; or why its
+    data does not read."""
+    if not item.get("chartType"):
+        return f"not readable: {item.get('reason') or 'unknown'}"
+    text = str(item["chartType"])
+    if item.get("title"):
+        text += f" {_json(str(item['title']))}"
+    for series in item.get("series") or []:
+        text += f"\n{indent}{_series_line(series)}"
+    for key, what in (("moreSeries", "more series"), ("seriesCut", "series not sent")):
+        if item.get(key):
+            text += f"\n{indent}… {item[key]} {what}"
+    return text
+
+
+def _office_object(item: dict[str, Any], indent: str = "  ") -> str:
+    """One object a DOCX paragraph or XLSX sheet lists, or a by-id item: a
+    picture or chart under its id, an equation's or drawn shape's text; an
+    XLSX one says its anchor cell."""
+    kind = str(item.get("kind") or "")
+    head = f"[{item['id']}] {kind}" if item.get("id") else kind
+    if item.get("cell"):
+        head += f" at {item['cell']}"
+    if kind == "picture":
+        text = _picture_text(item)
+        return f"{head} {text}" if text else head
+    if kind == "chart":
+        return f"{head} {_chart_text(item, indent + '  ')}"
+    return f"{head}: {item.get('text') or ''}"
+
+
+def _objects_lines(holder: dict[str, Any], indent: str = "  ") -> list[str]:
+    lines = [indent + _office_object(o, indent) for o in holder.get("objects") or []]
+    if holder.get("moreObjects"):
+        lines.append(f"{indent}… and {holder['moreObjects']} more objects")
+    return lines
+
+
 def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
     """A DOCX read: the styles (first page), then its paragraphs as ``[id]
     (style unless the default, list, table cell, content control, locked:
@@ -2601,10 +2700,13 @@ def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
             marks.append(f"locked: {locked}")
         group = f" ({', '.join(marks)})" if marks else ""
         line = f"[{paragraph.get('id')}]{group} {paragraph.get('text') or ''}"
+        line = "\n".join([line, *_objects_lines(paragraph)])
         if paragraph.get("part") != part:
             part = paragraph.get("part")
             line = f"== {part or 'body'} ==\n{line}"
         lines.append(line)
+    if any(paragraph.get("objects") for paragraph in scoped.get("paragraphs") or []):
+        head += OFFICE_OBJECTS_HEAD + ":"
     more = scoped.get("stylesMore")
     styles = (
         [
@@ -2651,6 +2753,17 @@ def _pptx_shape(shape: dict[str, Any], *, boxed: bool = False) -> str:
     if boxed and isinstance(shape.get("box"), list):
         x, y, w, h = (_points(value) for value in shape["box"])
         line += f" at {x}, {y} size {w} x {h}"
+    # A deck read gives a picture's alt text and viewability and a chart's
+    # type and title; a slide read also a picture's size and a chart's series.
+    text = ""
+    if shape.get("kind") == "picture":
+        text = _picture_text(shape)
+    elif shape.get("kind") == "chart" and (
+        shape.get("chartType") or shape.get("reason")
+    ):
+        text = _chart_text(shape, "  ")
+    if text:
+        line += f"; {text}" if boxed else f" {text}"
     return line
 
 
@@ -2666,6 +2779,12 @@ def _render_pptx_deck(head: str, scoped: dict[str, Any], start: int) -> str:
         "first line of text (… when longer); read one slide by its number for all its "
         "shapes and its paragraphs:"
     )
+    if any(
+        shape.get("kind") in ("picture", "chart")
+        for slide in scoped.get("slides") or []
+        for shape in slide.get("shapes") or []
+    ):
+        head += OFFICE_OBJECTS_HEAD + ":"
     layouts = scoped.get("layouts") or []
     prelude = (
         [
@@ -2717,6 +2836,11 @@ def _render_pptx_slide(head: str, scoped: dict[str, Any], start: int) -> str:
         "top left corner (shapes in a group show no box), each followed by its paragraphs "
         "as [id] (level, table cell) text; a page counts shapes and paragraphs:"
     )
+    if any(
+        shape.get("kind") in ("picture", "chart")
+        for shape in scoped.get("shapes") or []
+    ):
+        head += OFFICE_OBJECTS_HEAD + ":"
     title = f"slide {slide.get('number')} of {scoped.get('slides')} [{slide.get('id')}]"
     if layout:
         title += f", layout [{layout.get('id')}] {layout.get('name')}"
@@ -2785,10 +2909,20 @@ def _render_scoped(body: dict[str, Any], scoped: dict[str, Any], start: int) -> 
     if "paragraphs" in scoped:
         return _render_docx_page(head, scoped, start)
     if "sheets" in scoped:
-        head += "\nsheets as [id] name used range:"
-        for sheet in scoped.get("sheets") or []:
+        head += "\nsheets as [id] name used range"
+        sheets = scoped.get("sheets") or []
+        if any(sheet.get("objects") for sheet in sheets):
+            head += (
+                ", each followed by its pictures, charts and drawn shapes at their cells"
+                + OFFICE_OBJECTS_HEAD
+            )
+        head += ":"
+        for sheet in sheets:
             used = sheet.get("usedRange") or "empty"
             lines.append(f"[{sheet.get('id')}] {sheet.get('name')} {used}")
+            lines.extend(_objects_lines(sheet))
+            if sheet.get("notice"):
+                lines.append(f"  {sheet['notice']}")
     else:
         sheet = scoped.get("sheet") or {}
         head += (
@@ -2801,6 +2935,112 @@ def _render_scoped(body: dict[str, Any], scoped: dict[str, Any], start: int) -> 
                 line += f" → {cell.get('value')}"
             lines.append(line)
     return head + "\n" + source_block("\n".join(lines))
+
+
+# The sentence a by-id read adds once its pictures fill the message's images
+# (MAX_IMAGES, shared with the page captures); later pictures are named as
+# not attached.
+PICTURE_LIMIT = (
+    "This message's image limit is reached: no more pictures or page captures "
+    "can be attached."
+)
+
+
+async def _office_picture(
+    ctx: ToolContext, image_id: str, rid: str, name: str, item: dict[str, Any]
+) -> str:
+    """Attach one by-id picture as its own image: what its line says of it."""
+    if ctx.images_taken >= MAX_IMAGES:
+        return "not attached: this message's image limit is reached"
+    started = time.perf_counter()
+    try:
+        data = base64.b64decode(str(item["data"]), validate=True)
+    except ValueError:
+        return "not attached: its stored bytes do not decode"
+    try:
+        jpeg, box, size = await limits.render_thread(
+            capture.picture_jpeg, data, item.get("crop"), cfg.capture_max_edge
+        )
+    except capture.CaptureUnavailable as exc:
+        return f"not attached: {exc}"
+    except ValueError:
+        return "not attached: its crop leaves no pixels"
+    except Exception:
+        # Whatever else Pillow raises on a damaged picture (a garbage EXIF
+        # block raises SyntaxError) skips this picture, not the read (Q396).
+        log.warning("office picture %s did not decode", item.get("id"), exc_info=True)
+        return "not attached: it could not be decoded"
+    # Checked again: the image calls of one response run side by side.
+    if ctx.images_taken >= MAX_IMAGES:
+        return "not attached: this message's image limit is reached"
+    n = len(ctx.captures) + 1
+    ctx.captures.append(
+        capture.record(
+            call_id=image_id,
+            file_id=rid,
+            page=None,
+            box=box,
+            jpeg=jpeg,
+            size=size,
+            started=started,
+        )
+        | {"picture": str(item["id"])}
+    )
+    ctx.pending_images[image_id] = (
+        f"inspect_office_document result {n}: {name} picture {item['id']}",
+        capture.data_url(jpeg),
+    )
+    ctx.budget_images.add(image_id)
+    ctx.images_taken += 1
+    return f"attached as capture {n}"
+
+
+async def _office_items(
+    ctx: ToolContext,
+    args: dict[str, Any],
+    rid: str,
+    body: dict[str, Any],
+    answer: dict[str, Any],
+) -> ToolResult:
+    """A by-id read (Epo 2026-10-24, Q278, Q284): each picture its own image
+    on the next request, counted toward MAX_IMAGES, kept and dropped by the
+    image budget like a capture and usable as a deck figure by its capture
+    number; a picture the model cannot see as its alt text and why (Q280); a
+    chart with every point the answer holds; the engine's notice the fence's
+    first line, so the tool output limit cannot cut it. A picture that does
+    not decode is named and the rest of the read stands (Q396)."""
+    name = str(body.get("title") or "")
+    call_id = str(args.get("_tool_call_id") or "")
+    lines: list[str] = []
+    pictures = 0
+    for item in answer.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        line = _office_object(item, "")
+        # Only a picture the engine calls viewable is decoded (Q280, Q381).
+        if (
+            item.get("kind") == "picture"
+            and item.get("viewable") is True
+            and item.get("data")
+            and item.get("id")
+        ):
+            pictures += 1
+            image_id = capture.picture_id(call_id, pictures)
+            line += "; " + await _office_picture(ctx, image_id, rid, name, item)
+        lines.append(line)
+    head = (
+        f"{name} format={body.get('format')}\npictures and charts by id; a picture "
+        "attached as capture n is on the next message and a deck slide may use it "
+        "as a figure:"
+    )
+    # The notice names ids and part paths from the file: fenced like the
+    # items, as its first line (review r1 N2).
+    if answer.get("notice"):
+        lines.insert(0, str(answer["notice"]))
+    text = head + "\n" + source_block("\n".join(lines))
+    if ctx.images_taken >= MAX_IMAGES and pictures:
+        text += "\n\n" + PICTURE_LIMIT
+    return _result(text)
 
 
 async def _inspect_office_document(
@@ -2825,7 +3065,7 @@ async def _inspect_office_document(
             "target": {"kind": "source_file", "id": rid},
             "office": {
                 k: args[k]
-                for k in ("sheet", "range", "start", "count", "slide")
+                for k in ("sheet", "range", "start", "count", "slide", "ids")
                 if k in args
             },
         },
@@ -2835,6 +3075,8 @@ async def _inspect_office_document(
         return body
     ctx.pending_sources.read(rid)
     scoped = body.get("scoped")
+    if isinstance(scoped, dict) and "items" in scoped:
+        return await _office_items(ctx, args, rid, body, scoped)
     if isinstance(scoped, dict):
         start = max(int(args.get("start") or 0), 0)
         return _result(_render_scoped(body, scoped, start))

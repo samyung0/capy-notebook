@@ -165,7 +165,6 @@ services:
       CAPY_PARSER: ${CAPY_PARSER:-opendataloader}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
-      LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       APP_URL: ${APP_URL:-http://localhost:5173}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       # Clerk session tokens are accepted only from these origins (their azp).
@@ -363,19 +362,15 @@ services:
       <<: *observability
       DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       SENTRY_DSN: ${SENTRY_DSN_RETRIEVAL:-}
-      # Tools with side effects call back into the gateway rather than writing
-      # materials directly, so the agent inherits Go's authz and quota checks.
-      PARSER_URL: ${PARSER_URL:-}
-      PARSER_TOKEN: ${PARSER_TOKEN:-}
-      PARSER_TIMEOUT: ${PARSER_TIMEOUT:-1320}
       B2_ENDPOINT: ${B2_ENDPOINT:-}
       B2_REGION: ${B2_REGION:-}
       B2_BUCKET: ${B2_BUCKET:-}
       B2_KEY_ID: ${B2_KEY_ID:-}
       B2_APP_KEY: ${B2_APP_KEY:-}
+      # Tools with side effects call back into the gateway rather than writing
+      # materials directly, so the agent inherits Go's authz and quota checks.
       GATEWAY_URL: http://server:8080
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
-      LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

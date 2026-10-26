@@ -127,11 +127,6 @@ async def unexpected_error_handler(request: Request, exc: Exception):
     )
 
 
-@app.exception_handler(models.UserKeyError)
-async def user_key_error_handler(_request: Request, exc: models.UserKeyError):
-    return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
-
-
 @app.exception_handler(compact.ContextTooLarge)
 async def context_too_large_handler(_request: Request, exc: compact.ContextTooLarge):
     return JSONResponse(
@@ -232,12 +227,11 @@ class LLMPin(BaseModel):
     modelSlug: str | None = None
     configVersion: int | None = None
     userId: str | None = None
-    paidBy: str | None = None
     thinking: ThinkingLevel
 
 
 def _bind_llm(req: LLMPin) -> None:
-    registry.bind_request_llm(req.userId, req.paidBy, req.thinking)
+    registry.bind_request_llm(req.thinking)
 
 
 class ChatStreamReq(LLMPin):
@@ -461,9 +455,6 @@ async def _chat_events(req: ChatStreamReq):
         )
         async for chunk in _relay_until_disconnect(agen, client):
             yield chunk
-    except models.UserKeyError as exc:
-        if not client.dropped:
-            yield _sse(exc.as_event())
     except Exception as exc:
         log.exception("chat stream failed")
         event = obs.reported_event(client_error(CLIENT_ERROR, CLIENT_ERROR_CODE), exc)

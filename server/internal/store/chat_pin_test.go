@@ -305,12 +305,12 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token,
 			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES (1, 'Alt', 'Embed', $1, $2,
-			true, false, 0, ARRAY[]::text[], '',
+			0, ARRAY[]::text[], '',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
 			ARRAY['retrieval'], 99, 99, 0, true, ARRAY['retrieval'])`, altRef.ProviderSlug, altRef.ModelSlug); err != nil {
 		t.Fatal(err)
@@ -426,13 +426,13 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		)
 		SELECT 1, $2, $2, $1, $2,
-		       platform_enabled, byok_enabled, context_window_tokens,
+		       context_window_tokens,
 		       thinking_levels, default_thinking, params, ARRAY['chat']::text[],
 		       micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 		       true, ARRAY[]::text[]
@@ -522,26 +522,6 @@ func TestAccountModelPrefsRequiresRegistry(t *testing.T) {
 	_, _, err := s.accountModelPrefs(context.Background())
 	if !errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("account prefs without registry: got %v", err)
-	}
-}
-
-func TestSetModelPrefsRejectsLockedUserKey(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	userID := newCreditsTestUser(t, s)
-	ref := models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-5.6-sol"}
-	if _, err := s.pool.Exec(ctx, `
-		INSERT INTO model_configs
-		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
-		  '{"provider_slug":"openai","model_slug":"gpt-5.6-sol","platform_enabled":false,"slots":["editor"],"is_default_for":[]}'::jsonb)).*
-		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled`); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = s.pool.Exec(context.Background(), `DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2`, ref.ProviderSlug, ref.ModelSlug)
-	})
-	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{EditorModel: &ref}); !errors.Is(err, ErrModelUnavailable) {
-		t.Fatalf("locked byok: %v", err)
 	}
 }
 

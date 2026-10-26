@@ -17,7 +17,7 @@ export function LoadingLarge({
 }) {
   const online = useOnlineStatus();
   return (
-    <Panel sectionClassName="items-center justify-center h-full">
+    <Panel frost="center" sectionClassName="items-center justify-center h-full">
       <div
         className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 px-6 text-center"
         data-testid="loading-large"

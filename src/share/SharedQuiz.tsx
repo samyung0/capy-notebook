@@ -1,18 +1,21 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { anonymousAssetUrl, gradeAnonymousQuiz } from '@/api/anonymous';
-import { api } from '@/api/client';
-import type { AnonymousQuiz, AttemptDetail } from '@/api/types';
+import type { AnonymousQuiz } from '@/api/types';
 import { PublicActionMenu } from '@/components/app/PublicActionMenu';
 import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
 import { userToast } from '@/components/ui/userToast';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
+import {
+  type QuizRunControl,
+  useLocalRun,
+  useSharedAccountRun,
+} from '@/features/quizzes/quizRun';
 import { m } from '@/i18n';
 import {
   anonymousId,
   type LocalQuizAttempt,
   localQuizAttempts,
-  saveLocalQuizAttempt,
 } from '@/lib/localDb';
 import { redeemShareToken } from '@/lib/shareRedeem';
 import { signedIn, useSignedIn } from './session';
@@ -34,9 +37,9 @@ function Frame({
 }
 
 /** `/share/quizzes/{token}`: the Worker renders it from the same edge-cached
- * data for every visitor and the browser hydrates it. Submitting asks the
- * session: signed in, the attempt is graded and kept on the account; signed
- * out, the share route grades it and this browser keeps it. */
+ * data for every visitor and the browser hydrates it. Each check asks the
+ * session: signed in, the question is graded and kept in the account's
+ * attempt; signed out, the share route grades it and this browser keeps it. */
 export function SharedQuiz({
   quiz,
   token,
@@ -45,7 +48,7 @@ export function SharedQuiz({
   token: string;
 }) {
   const session = useSignedIn();
-  const check = useTurnstileCheck();
+  const turnstile = useTurnstileCheck();
   const [past, setPast] = useState<LocalQuizAttempt[]>([]);
   const quizId = quiz.id;
   useEffect(() => {
@@ -55,16 +58,48 @@ export function SharedQuiz({
       .catch(() => setPast([]));
   }, [quizId, session]);
 
+  // A signed-in visitor presents the link once, then the attempt is the
+  // account's; a signed-out one is graded by the link and kept here.
+  const account = useSharedAccountRun(quizId, () => redeemShareToken(token));
+  const local = useLocalRun(
+    quiz,
+    past,
+    async (questionId, answers) =>
+      gradeAnonymousQuiz(token, {
+        answers,
+        localId: await anonymousId().catch(() => undefined),
+        questionId,
+        // Only a signed-out check carries a Turnstile token.
+        turnstileToken: await turnstile.take(),
+      }),
+    (attempt) =>
+      setPast((current) => [
+        attempt,
+        ...current.filter((a) => a.id !== attempt.id),
+      ]),
+    () => userToast({ title: m.quiz_browser_save_failed(), variant: 'error' })
+  );
+  const control: QuizRunControl = {
+    async check(questionId, answers) {
+      // The session as the page shows it, once known.
+      const run = (session ?? (await signedIn())) ? account : local;
+      await run.check(questionId, answers);
+    },
+    redo: () => (session === true ? account : local).redo(),
+    run: session === true ? account.run : local.run,
+  };
+
   return (
     <AssetUrlContext.Provider
       value={(assetId) => anonymousAssetUrl(token, assetId)}
     >
       <AttemptBody
         actions={<PublicActionMenu kind="quiz" token={token} />}
-        belowSubmit={check.view}
+        belowCheck={turnstile.view}
         byline={
           <PublicByline author={quiz.author} updatedAt={quiz.updatedAt} />
         }
+        control={control}
         footer={
           // Signed-in attempts live on the account, so only signed-out
           // visitors get the browser note and their past attempts.
@@ -90,46 +125,6 @@ export function SharedQuiz({
           )
         }
         frame={Frame}
-        grade={async (answers) => {
-          if (await signedIn()) {
-            // A signed-in visitor presents the link once, then reads by id.
-            await redeemShareToken(token);
-            const attempt = await api.post<AttemptDetail>(
-              `/quizzes/${quiz.id}/attempts`,
-              { answers }
-            );
-            return {
-              awarded: attempt.correct,
-              max: attempt.total,
-              questions: attempt.questions,
-            };
-          }
-          const graded = await gradeAnonymousQuiz(token, {
-            answers,
-            localId: await anonymousId().catch(() => undefined),
-            // Only a signed-out check carries a Turnstile token.
-            turnstileToken: await check.take(),
-          });
-          const attempt: LocalQuizAttempt = {
-            answers,
-            correct: graded.awarded,
-            id: crypto.randomUUID(),
-            questions: graded.questions,
-            quizId: quiz.id,
-            quizName: quiz.name,
-            takenAt: new Date().toISOString(),
-            total: graded.max,
-          };
-          saveLocalQuizAttempt(attempt)
-            .then(() => setPast((current) => [attempt, ...current]))
-            .catch(() =>
-              userToast({
-                title: m.quiz_browser_save_failed(),
-                variant: 'error',
-              })
-            );
-          return graded;
-        }}
         name={quiz.name}
         provenance={quiz.provenance}
         questions={quiz.questions}

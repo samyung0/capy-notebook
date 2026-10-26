@@ -91,7 +91,7 @@ func TestLearningProgressListsByLastStudied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Active) != 1 || got.Lead == nil || got.Lead.WorkspaceID != f.ws.ID {
+	if len(got.Active) != 1 || got.HiddenCount != 1 || got.Lead == nil || got.Lead.WorkspaceID != f.ws.ID {
 		t.Fatalf("after progress off = %+v", got)
 	}
 

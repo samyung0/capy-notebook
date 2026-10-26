@@ -1183,7 +1183,7 @@ func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID stri
 	// Read with the fence's connection back in the pool (as below for files
 	// and materials): holding it across a second acquire lets a few
 	// concurrent clones take every connection and stall the API.
-	workspace, err := s.GetWorkspace(ctx, userID, newID, false)
+	workspace, err := s.GetWorkspace(ctx, userID, newID)
 	return workspace, copies, skipped, err
 }
 
@@ -1926,6 +1926,9 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	if err != nil {
 		return "", nil, err
 	}
+	if err := markCreatedTx(ctx, tx, userID, OpenFile, nid); err != nil {
+		return "", nil, err
+	}
 	if f.indexed {
 		indexed, err := cloneRetrievalIndex(ctx, tx, sourceWorkspaceID, dest.workspaceID, map[string]string{f.id: nid}, nil)
 		if err != nil {
@@ -2214,6 +2217,9 @@ func (s *Store) cloneMaterialOnce(
 		return nil
 	}
 	if err := insert(root, target.Name, dest.chapterID, nil, scopeChapters, scopeFileNames); err != nil {
+		return "", err
+	}
+	if err := markCreatedTx(ctx, tx, userID, OpenMaterial, root.newID); err != nil {
 		return "", err
 	}
 	for _, clone := range clones {

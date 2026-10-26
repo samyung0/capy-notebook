@@ -22,6 +22,9 @@ type LearningProgress struct {
 	// Active starts with the leading workspace.
 	Active   []ProgressWorkspace `json:"active" nullable:"false"`
 	Finished []ProgressWorkspace `json:"finished" nullable:"false"`
+	// HiddenCount is how many workspaces with progress hide it, listed or
+	// not: Show hidden's count.
+	HiddenCount int `json:"hiddenCount"`
 }
 
 type ProgressWorkspace struct {
@@ -54,21 +57,27 @@ type ProgressChapter struct {
 }
 
 type ProgressItem struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type" enum:"file,material"`
+	ID   string `json:"id"`
+	Type string `json:"type" enum:"file,material"`
+	// Kind is the file's kind or the material's type, for its icon.
+	Kind      string    `json:"kind"`
 	Title     string    `json:"title"`
 	ChapterID *string   `json:"chapterId"`
 	Position  int64     `json:"position"`
 	CreatedAt time.Time `json:"createdAt"`
 	// State is empty for an untouched item.
 	State string `json:"state,omitempty" enum:"started,done"`
+	// DoneAt is a done item's latest progress change, as a workspace's
+	// LastStudiedAt is: when a plan finished is its items' latest.
+	DoneAt *time.Time `json:"doneAt,omitempty"`
 }
 
 // LearningProgress lists the workspaces the user tracks progress in and can
 // still read, most recently studied first: up to progressListCap in progress
 // and as many finished. Workspaces hiding study progress are left out unless
-// showHidden is set, and never lead. leadID asks for that workspace's map (a
-// finished one, after its finish toast).
+// showHidden is set (HiddenCount counts them either way), and never lead.
+// leadID asks for that workspace's map (a finished one, after its finish
+// toast).
 func (s *Store) LearningProgress(ctx context.Context, userID, leadID string, showHidden bool) (LearningProgress, error) {
 	out := LearningProgress{Active: []ProgressWorkspace{}, Finished: []ProgressWorkspace{}}
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, w.cover,
@@ -104,32 +113,47 @@ func (s *Store) LearningProgress(ctx context.Context, userID, leadID string, sho
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	for _, ws := range all {
-		if len(out.Active) == progressListCap && len(out.Finished) == progressListCap {
-			break
+	hidden := map[string]bool{}
+	rows, err = s.pool.Query(ctx, `SELECT workspace_id FROM workspace_study WHERE user_id=$1 AND NOT enabled`, userID)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return out, err
 		}
+		hidden[id] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	for _, ws := range all {
 		if ws.Total == 0 {
 			continue
 		}
 		finished := ws.Done >= ws.Total
-		if (finished && len(out.Finished) == progressListCap) || (!finished && len(out.Active) == progressListCap) {
+		full := (finished && len(out.Finished) == progressListCap) || (!finished && len(out.Active) == progressListCap)
+		// A hidden workspace is counted even past the caps.
+		if full && !hidden[ws.WorkspaceID] {
 			continue
 		}
-		// Access can end after progress was recorded; progress can be hidden.
+		// Access can end after progress was recorded.
 		if ok, err := s.canReadWorkspace(ctx, userID, ws.WorkspaceID); err != nil || !ok {
 			if err != nil {
 				return out, err
 			}
 			continue
 		}
-		on, err := s.StudyEnabled(ctx, userID, ws.WorkspaceID)
-		if err != nil {
-			return out, err
+		ws.Hidden = hidden[ws.WorkspaceID]
+		if ws.Hidden {
+			out.HiddenCount++
 		}
-		if !on && !showHidden {
+		if full || (ws.Hidden && !showHidden) {
 			continue
 		}
-		ws.Hidden = !on
 		if finished {
 			out.Finished = append(out.Finished, ws)
 		} else {
@@ -176,11 +200,13 @@ func (s *Store) progressMap(ctx context.Context, userID, wsID string) (ProgressM
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT f.id, 'file', f.name, f.chapter_id, f.position, f.added_at, coalesce(sp.state, '')
+	rows, err = s.pool.Query(ctx, `SELECT f.id, 'file', f.kind, f.name, f.chapter_id, f.position, f.added_at, coalesce(sp.state, ''),
+				CASE WHEN sp.state='done' THEN sp.updated_at END
 			FROM files f LEFT JOIN study_progress sp ON sp.user_id=$1 AND sp.file_id=f.id
 			WHERE f.workspace_id=$2 AND f.trashed_at IS NULL AND coalesce(sp.state, '') <> 'removed'
 		UNION ALL
-		SELECT m.id, 'material', m.title, m.chapter_id, m.position, m.created_at, coalesce(sp.state, '')
+		SELECT m.id, 'material', m.kind, m.title, m.chapter_id, m.position, m.created_at, coalesce(sp.state, ''),
+				CASE WHEN sp.state='done' THEN sp.updated_at END
 			FROM materials m LEFT JOIN study_progress sp ON sp.user_id=$1 AND sp.material_id=m.id
 			WHERE m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 				AND coalesce(sp.state, '') <> 'removed'`, userID, wsID)
@@ -190,7 +216,7 @@ func (s *Store) progressMap(ctx context.Context, userID, wsID string) (ProgressM
 	defer rows.Close()
 	for rows.Next() {
 		var it ProgressItem
-		if err := rows.Scan(&it.ID, &it.Type, &it.Title, &it.ChapterID, &it.Position, &it.CreatedAt, &it.State); err != nil {
+		if err := rows.Scan(&it.ID, &it.Type, &it.Kind, &it.Title, &it.ChapterID, &it.Position, &it.CreatedAt, &it.State, &it.DoneAt); err != nil {
 			return out, err
 		}
 		out.Items = append(out.Items, it)

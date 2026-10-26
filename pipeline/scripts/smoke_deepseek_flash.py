@@ -20,8 +20,6 @@ async def main() -> None:
         model_name="Flash 4.1",
         provider_slug="deepseek",
         model_slug="deepseek-flash",
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=("instant", "low", "mid", "high", "max"),
         default_thinking="instant",
         context_window_tokens=1000000,
@@ -37,7 +35,7 @@ async def main() -> None:
     buffer = io.BytesIO()
     picture.save(buffer, format="PNG")
     data_url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
-    bind_request_llm(paid_by="platform", thinking="instant")
+    bind_request_llm(thinking="instant")
     vision = await complete(
         spec,
         [
@@ -58,7 +56,7 @@ async def main() -> None:
     )
     observed = json.loads(vision.choices[0].message.content)
     assert observed == {"apples": 17, "pears": 29}, observed
-    bind_request_llm(paid_by="platform", thinking="max")
+    bind_request_llm(thinking="max")
     thinking = await complete(
         spec,
         [{"role": "user", "content": "What is 17 + 29? Reply with just the number."}],

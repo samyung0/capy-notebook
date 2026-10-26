@@ -535,7 +535,7 @@ function ResolvedFileView({
         onDirtyChange={onDirtyChange}
         renderPreview={(url) => (
           <TextView
-            key={`${url ?? file.url}:${previewAttempt}`}
+            key={previewAttempt}
             markdown={isMarkdown}
             onRetry={retryPreview}
             url={url ?? file.url}

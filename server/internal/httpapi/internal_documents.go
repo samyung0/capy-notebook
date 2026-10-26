@@ -186,7 +186,7 @@ type officeInspectQuery struct {
 // story or drawing part path and a short suffix, with room for long part
 // names (Epo 2026-10-26, Q381).
 const (
-	officeIDsPerCall = 4
+	officeIDsPerCall = agenttools.OfficeIDsPerCall
 	officeIDBytes    = 256
 )
 

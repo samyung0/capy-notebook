@@ -22,7 +22,7 @@ const DEFAULTS: Required<Omit<StudyPreferences, '$schema'>> = {
   reviewItems: 'both',
   reviewSize: 20,
   visualAids: 'more',
-  writingStyle: 'normal',
+  writingStyle: 'brief',
 };
 
 /** Fields saved as numbers. */

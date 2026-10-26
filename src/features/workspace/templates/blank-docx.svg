@@ -1,0 +1,16 @@
+<svg viewBox="0 0 240 150" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter height="140%" id="s" width="140%" x="-20%" y="-20%">
+      <feDropShadow dx="0" dy="1" flood-opacity=".14" stdDeviation="2.5" />
+    </filter>
+  </defs>
+  <rect
+    fill="#fff"
+    filter="url(#s)"
+    height="150"
+    rx="3"
+    width="120"
+    x="60"
+    y="16"
+  />
+</svg>

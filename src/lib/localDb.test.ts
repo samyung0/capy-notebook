@@ -18,6 +18,7 @@ describe('browser-local study data', () => {
       questions: [],
       quizId,
       quizName: 'Quiz',
+      startedAt: takenAt,
       takenAt,
       total: 2,
     });

@@ -1,4 +1,4 @@
-import { type QueryKey, skipToken, useQueries } from '@tanstack/react-query';
+import { type QueryKey, useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { qk } from '@/api/client';
 import type { Material, Provenance } from '@/api/types';
@@ -64,8 +64,11 @@ export function useNoteFooter(
   );
   const reads = useQueries({
     combine: (results) => results,
+    // Disabled with no queryFn rather than skipToken: a refetch of the
+    // embed's read (children-ready invalidates it) then borrows the embed
+    // block's queryFn, where a skipToken left here would fail it.
     queries: refs.map((ref) => ({
-      queryFn: skipToken,
+      enabled: false,
       queryKey: EMBED_READ_KEYS[ref.kind](ref.id),
       select: (data: { provenance?: Provenance }) => data.provenance,
     })),
