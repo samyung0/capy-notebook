@@ -251,10 +251,20 @@ export async function openNote(
 export async function lineAfter(page: Page, editor: Locator, text: string) {
   const line = editor.getByText(text, { exact: true });
   await expect(line).toBeVisible({ timeout: 60_000 });
-  // Clicking the text's last character puts Slate's caret at its end.
-  const box = await line.boundingBox();
-  assert(box);
-  await line.click({ position: { x: box.width - 1, y: box.height / 2 } });
+  // The start of the text's last visual line, then End, is the paragraph's
+  // end. Clicking the end itself misses when the narrow viewer (both panels
+  // open at 1280) wraps the line, or when a first line ends under the note's
+  // display toggles in the top right corner.
+  const position = await line.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const last = [...element.getClientRects()].at(-1);
+    if (!last) throw new Error('The text has no line box');
+    return {
+      x: last.left - box.left + 2,
+      y: last.top - box.top + last.height / 2,
+    };
+  });
+  await line.click({ position });
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
 }
@@ -323,9 +333,13 @@ export async function insertNoteMedia(
       filename?: string
     ) {
       if (name === 'file' && value instanceof Blob) scope.uatUploadPart = value;
-      return filename === undefined || typeof value === 'string'
-        ? append.call(this, name, value as string)
-        : append.call(this, name, value, filename);
+      return Reflect.apply(
+        append,
+        this,
+        filename === undefined || typeof value === 'string'
+          ? [name, value]
+          : [name, value, filename]
+      );
     };
   });
   const [chooser] = await Promise.all([
@@ -1103,11 +1117,11 @@ export async function quizImageOnPick(run: UatRun, quizId: string) {
   await dialog
     .getByRole('textbox', { name: m.question_ui_description() })
     .fill('Field photo');
-  // No Save: Done goes back to the question, where the new block stays
+  // No Save: Back goes back to the question, where the new block stays
   // selected under its floating toolbar. Esc closes the toolbar, then a second
   // Esc the dialog.
   await dialog
-    .getByRole('button', { exact: true, name: m.question_ui_done() })
+    .getByRole('button', { exact: true, name: m.action_back() })
     .click();
   const blockActions = page.getByRole('toolbar', {
     name: m.question_ui_block_actions(),
