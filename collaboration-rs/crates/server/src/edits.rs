@@ -877,7 +877,7 @@ pub async fn edit_material(
         return Ok(receipt);
     }
     access::lock_material(&tx, &material_id).await?;
-    access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor)).await?;
+    access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor), &[]).await?;
     access::assert_access(&tx, &material_id, &actor, crate::auth::Access::Write).await?;
     let select = "SELECT d.state, d.room_schema, d.stored_version, m.kind
                   FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
@@ -1100,6 +1100,7 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         &tx,
         &material_id,
         std::slice::from_ref(&command.actor_user_id),
+        &[],
     )
     .await
     .map_err(|error| error.to_string())?;
@@ -1269,7 +1270,15 @@ async fn send_writes(
 /// The Undo ref of an agent edit every room it wrote took: stored on the
 /// receipt, then shown on it (a receipt whose ref did not store has none).
 async fn offer_undo(app: &Shared, operation_id: &str, receipt: &mut Value) {
-    let undo = json!({ "operationId": operation_id, "status": "available" });
+    // Offered until 24 h after the edit (Q385): the chat hides it then.
+    let Some(until) = app.agent_steps.until(operation_id) else {
+        return;
+    };
+    let undo = json!({
+        "operationId": operation_id,
+        "status": "available",
+        "expiresAt": observe::iso(until),
+    });
     let Ok(client) = app.db.get().await else {
         return;
     };
@@ -1562,7 +1571,9 @@ async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     }
     let holding = app.agent_steps.rooms(&kept);
     let reversible = reverted.iter().all(|room| holding.contains(room));
-    Ok(json!({ "operationId": kept, "reversible": reversible }))
+    // Its reverse is offered as long as the edit's step was (Q385).
+    let expires = app.agent_steps.until(&kept).map(observe::iso);
+    Ok(json!({ "operationId": kept, "reversible": reversible, "expiresAt": expires }))
 }
 
 /// Reverts each room's revert again (its step under `step` once more), in

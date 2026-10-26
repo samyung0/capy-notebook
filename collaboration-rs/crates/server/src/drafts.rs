@@ -367,7 +367,14 @@ async fn checked_and_stored(
     let granted = header_text(headers, GRANTS_HEADER)
         .map(|header| crate::auth::granted_by(header, &app.config.secret, room, user, now))
         .unwrap_or_default();
-    let version = header_text(headers, VERSION_HEADER).and_then(|value| value.parse().ok());
+    // An unreadable version is refused, not taken as none (review r2 N2).
+    let version =
+        match header_text(headers, VERSION_HEADER) {
+            None => None,
+            Some(value) => Some(value.parse::<u64>().map_err(|_| {
+                Refused::new(Class::Malformed, "the drafts' version is not a number")
+            })?),
+        };
     let durable = admitted(app, &name, &context, update, base, granted, version).await?;
     match durable.await {
         Ok(Ok(())) => Ok(()),

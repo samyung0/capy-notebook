@@ -327,6 +327,7 @@ pub async fn lock_boundary<C: GenericClient>(
     client: &C,
     material_id: &str,
     actors: &[String],
+    bystanders: &[String],
 ) -> Result<(), AccessError> {
     let placement = client
         .query(
@@ -354,10 +355,16 @@ pub async fn lock_boundary<C: GenericClient>(
         owner = found.get("user_id");
     }
     // The payer is charged by the write (the material's bytes), so its row is
-    // locked with the owner's and the actors'.
-    let mut ids: Vec<String> = actors.to_vec();
-    ids.push(owner.clone());
-    ids.push(payer.clone());
+    // locked with the owner's and the actors'. Bystanders (a note store's
+    // session users, review r2 M2) are locked in the same order and refuse
+    // nothing.
+    let mut required: Vec<String> = actors.to_vec();
+    required.push(owner.clone());
+    required.push(payer.clone());
+    required.sort();
+    required.dedup();
+    let mut ids = required.clone();
+    ids.extend(bystanders.iter().cloned());
     ids.sort();
     ids.dedup();
     let rows = client
@@ -368,7 +375,11 @@ pub async fn lock_boundary<C: GenericClient>(
             &[&ids],
         )
         .await?;
-    if rows.len() != ids.len() {
+    let found = rows
+        .iter()
+        .filter(|row| required.contains(&row.get::<_, String>("id")))
+        .count();
+    if found != required.len() {
         return Err(AccessError::Forbidden(
             "collaboration account not found".into(),
         ));
@@ -380,10 +391,10 @@ pub async fn lock_boundary<C: GenericClient>(
     // workspace's, or a standalone material's) and the payer refuse as the
     // material's; an actor's access is gone anyway (live_access).
     for row in &rows {
-        if !row.get::<_, bool>("locked") {
+        let id: String = row.get("id");
+        if !row.get::<_, bool>("locked") || !required.contains(&id) {
             continue;
         }
-        let id: String = row.get("id");
         return Err(AccessError::Forbidden(if id == owner || id == payer {
             "material owner account is locked".into()
         } else {

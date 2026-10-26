@@ -29,12 +29,12 @@ afterEach(() => {
 const at = (s: number) =>
   new Date(Date.UTC(2026, 9, 20, 12, 0, s)).toISOString();
 
-function undoButton(handlers: UndoHandlers, id: string) {
+function renderUndo(handlers: UndoHandlers, id: string, expiresAt?: string) {
   const edit: ResourceEffect = {
     operation: 'edited',
     operationId: id,
     resource: { id: 'mat_1', kind: 'material', title: 'Cells' },
-    undo: { operationId: id, status: 'available' },
+    undo: { expiresAt, operationId: id, status: 'available' },
   };
   const msg = {
     activity: [
@@ -61,9 +61,11 @@ function undoButton(handlers: UndoHandlers, id: string) {
       <ChatTrace handlers={handlers} live={false} mode="verbose" msg={msg} />
     </QueryClientProvider>
   );
-  const button = buttons.find(
-    ({ children }) => children === m.chat_undo_edit()
-  );
+  return buttons.find(({ children }) => children === m.chat_undo_edit());
+}
+
+function undoButton(handlers: UndoHandlers, id: string) {
+  const button = renderUndo(handlers, id);
   if (!button?.onClick) throw new Error('no Undo button');
   return button.onClick;
 }
@@ -71,6 +73,14 @@ function undoButton(handlers: UndoHandlers, id: string) {
 const handlers = () => ({
   onUndoApplied: vi.fn(),
   onUndoRefused: vi.fn(),
+});
+
+it('hides an Undo 24 h after its edit (Q385)', () => {
+  const now = Date.now();
+  const soon = new Date(now + 60_000).toISOString();
+  const past = new Date(now - 1).toISOString();
+  expect(renderUndo(handlers(), 'op_fresh', soon)).toBeDefined();
+  expect(renderUndo(handlers(), 'op_expired', past)).toBeUndefined();
 });
 
 it('sends one Undo for two clicks while the first is out', async () => {

@@ -308,14 +308,17 @@ pub struct App {
 
 /// The agent edits (and their Undo and Redo steps) whose Yjs items a loaded
 /// room holds for the live Undo (`ydoc::undo`, Epo 2026-10-20): each step's
-/// id and the rooms holding its parts (a quiz: its content and keys rooms).
-/// A room's steps go when it unloads.
+/// id, the rooms holding its parts (a quiz: its content and keys rooms) and
+/// when it stops being offered, 24 h after its agent edit (Q385). A room's
+/// steps go when it unloads.
 #[derive(Default)]
 pub struct AgentSteps(Mutex<Steps>);
 
 #[derive(Default)]
 struct Steps {
     held: HashMap<String, Vec<String>>,
+    /// When each held step stops being offered.
+    until: HashMap<String, std::time::SystemTime>,
     /// Steps rooms reverted, by those rooms: they answer a request repeated
     /// after a lost answer (`Room::agent_undo`).
     reverted: HashMap<String, Vec<String>>,
@@ -335,14 +338,24 @@ impl AgentSteps {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// `room` holds a part of step `id`.
-    pub fn hold(&self, id: &str, room: &str) {
-        add(&mut self.steps().held, id, room);
+    /// `room` holds a part of step `id`, offered until `until` (the earliest
+    /// of its rooms').
+    pub fn hold(&self, id: &str, room: &str, until: std::time::SystemTime) {
+        let mut steps = self.steps();
+        add(&mut steps.held, id, room);
+        let at = steps.until.entry(id.to_owned()).or_insert(until);
+        *at = (*at).min(until);
     }
 
-    /// The rooms holding step `id` (none: no Undo).
+    /// The rooms holding step `id` (none: no Undo, or past its 24 h: its
+    /// rooms released it).
     pub fn rooms(&self, id: &str) -> Vec<String> {
         self.steps().held.get(id).cloned().unwrap_or_default()
+    }
+
+    /// When step `id` stops being offered.
+    pub fn until(&self, id: &str) -> Option<std::time::SystemTime> {
+        self.steps().until.get(id).copied()
     }
 
     /// The rooms that reverted step `id`.
@@ -351,7 +364,9 @@ impl AgentSteps {
     }
 
     pub fn forget(&self, id: &str) {
-        self.steps().held.remove(id);
+        let mut steps = self.steps();
+        steps.held.remove(id);
+        steps.until.remove(id);
     }
 
     /// `room` no longer holds a part of step `id`.
@@ -361,6 +376,7 @@ impl AgentSteps {
             rooms.retain(|held| held != room);
             if rooms.is_empty() {
                 steps.held.remove(id);
+                steps.until.remove(id);
             }
         }
     }
@@ -378,6 +394,8 @@ impl AgentSteps {
         for map in [&mut steps.held, &mut steps.reverted] {
             map.retain(|_, rooms| !rooms.iter().any(|held| held == room));
         }
+        let held = &steps.held;
+        steps.until.retain(|id, _| held.contains_key(id));
     }
 }
 

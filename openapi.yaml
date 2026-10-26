@@ -6680,6 +6680,9 @@ components:
     UndoRef:
       additionalProperties: false
       properties:
+        expiresAt:
+          format: date-time
+          type: string
         operationId:
           type: string
         status:

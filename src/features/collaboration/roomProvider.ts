@@ -624,20 +624,21 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     }
     // An update is an edit made now, and takes any mark `unsentFrom` left
     // (M2); a step 2 carries everything the room lacks, every unsent edit
-    // included. An empty step 2 (a new document's) carries none (H2).
+    // included. An empty step 2 (a new document's) carries no edit (H2),
+    // but takes a mark: the room holds what it marks, stored once a second
+    // store's notice came after this step 2's ACK (H1, review r2 N1).
     const empty = kind === SyncKind.Step2 && isEmptyUpdate(update);
+    const carries = !empty || this.unsentAt !== null;
     let at =
       kind === SyncKind.Step2 ? this.reportedVersion : this.storedVersion;
-    if (!empty) {
-      at = Math.min(at, this.unsentAt ?? at);
-      this.unsentAt = null;
-    }
+    at = Math.min(at, this.unsentAt ?? at);
+    this.unsentAt = null;
     for (const piece of pieces) {
       this.sent += 1;
       this.setUnsynced(this.unsyncedChanges + 1);
       this.send(MessageKind.Sync, syncMessage(kind, piece));
     }
-    if (!empty) this.inFlight.push({ at, upTo: this.sent });
+    if (carries) this.inFlight.push({ at, upTo: this.sent });
     if (pieces.length > 1 || this.lastPiece !== null)
       this.setLastPiece(this.sent);
   }

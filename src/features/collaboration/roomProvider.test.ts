@@ -527,6 +527,33 @@ it("acknowledges its answer's version after an empty step 2", async () => {
   expect(provider.reportedVersion).toBe(5);
 });
 
+// Review r2 N1: a mark whose edits the room already holds (an empty step 2)
+// clears by the rule above, once a second store's notice came after that
+// step 2's ACK, not at the next edit. Fails if the mark stays until an
+// edit, or clears before a store covers it.
+it('clears a mark an empty step 2 answered once a second store covers it', async () => {
+  const { join, provider, socket } = await joined({ unsentFrom: 3 });
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(new Y.Doc()))
+    ),
+    ack(join.channel, 1),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(new Y.Doc()))
+    ),
+    stored(join.channel, 9),
+    stored(join.channel, 10)
+  );
+  expect(provider.reportedVersion).toBe(3);
+  socket.deliver(stored(join.channel, 11));
+  expect(provider.reportedVersion).toBe(11);
+});
+
 // Review r1 M2: drafts marked while the channel is open (a late merge)
 // hold the tab back only until the update carrying them is stored, by the
 // rule above; and a Leave while they are marked says unsent (review r1

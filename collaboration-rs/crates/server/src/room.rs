@@ -249,6 +249,15 @@ pub struct ServiceEdit {
     pub taken: Option<oneshot::Sender<bool>>,
 }
 
+/// An agent step a room keeps for its Undo or Redo: the change to revert,
+/// what its revert may send, and when its agent edit was made (Q385: it goes
+/// 24 h after that).
+struct AgentStep {
+    change: Change,
+    cost: usize,
+    edited: std::time::SystemTime,
+}
+
 /// An Undo or Redo of the agent step `step` (`edits::undo`), under the chat
 /// actor's contributor marker; the step that reverses it is kept as `next`.
 /// The reply comes once the room stored it.
@@ -383,6 +392,8 @@ struct Note {
     /// edits whose rows committed before a later store's (`sessions::took`).
     /// Note content rooms only.
     gaps: std::collections::BTreeSet<i64>,
+    /// The room logged a store it could not announce (review r2 L2).
+    stall_logged: bool,
 }
 
 impl Note {
@@ -550,8 +561,12 @@ pub struct Room {
     applying: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
     /// items of, by operation id (`ydoc::undo`), with what each one's revert
-    /// may send (the edit's `sources::undo_cost`); gone with the room.
-    agent_changes: HashMap<String, (Change, usize)>,
+    /// may send (the edit's `sources::undo_cost`) and when the agent edit was
+    /// made: each goes 24 h after its edit (Q385, `AgentStep`), or with the
+    /// room.
+    agent_changes: HashMap<String, AgentStep>,
+    /// When the earliest of them goes.
+    agent_expiry: Option<Instant>,
     /// Steps this room reverted, by the id their reverse is kept under, so a
     /// request repeated after a lost answer gets the same answer.
     agent_reverted: HashMap<String, String>,
@@ -765,6 +780,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 folding: false,
                 window: 0,
                 gaps: std::collections::BTreeSet::new(),
+                stall_logged: false,
             };
             // A note's content room keeps its sessions (Q274: notes only).
             let sessions = if note.sessioned() {
@@ -1005,6 +1021,7 @@ async fn run(
         rows_running: false,
         applying: false,
         agent_changes: HashMap::new(),
+        agent_expiry: None,
         agent_reverted: HashMap::new(),
         open_at: None,
         openings: 0,
@@ -1074,6 +1091,7 @@ impl Room {
             self.idle_at,
             self.open_at,
             presence,
+            self.agent_expiry,
         ]
         .into_iter()
         .flatten()
@@ -1119,6 +1137,9 @@ impl Room {
         }
         if self.presence_dirty && self.presence_at.is_some_and(|at| at <= now) {
             self.send_presence(now);
+        }
+        if self.agent_expiry.is_some_and(|at| at <= now) {
+            self.expire_agent_steps();
         }
     }
 
@@ -1384,7 +1405,7 @@ impl Room {
             version,
             reply,
         } = draft;
-        if self.late(version) {
+        if self.late(&granted, version) {
             // Nothing is collected yet, so nothing is late; the late path
             // holds such a group once collection lands.
             log(
@@ -1771,6 +1792,16 @@ impl Room {
                     None,
                     &[("room", &self.name), ("stage", "service_edit")],
                 );
+                // Its row committed: its version leaves no gap (review r2 L2).
+                if let Kindly::Note(note) = &mut self.kind
+                    && note.sessioned()
+                {
+                    note.stored_version = crate::sessions::took(
+                        note.stored_version,
+                        &mut note.gaps,
+                        edit.version as i64,
+                    );
+                }
                 if let Some(reply) = edit.taken {
                     let _ = reply.send(false);
                 }
@@ -1792,10 +1823,12 @@ impl Room {
             && changed
             && self.update_fits(cost)
         {
-            let change = items.change(&self.doc);
-            self.hold_agent_step(&change);
-            self.agent_changes.insert(id.clone(), (change, cost));
-            self.app.agent_steps.hold(&id, &self.name);
+            let step = AgentStep {
+                change: items.change(&self.doc),
+                cost,
+                edited: std::time::SystemTime::now(),
+            };
+            self.keep_agent_step(id, step);
             taken = true;
         }
         if let Some(reply) = edit.taken {
@@ -1846,7 +1879,14 @@ impl Room {
             actor,
             reply,
         } = undo;
-        let Some((change, cost)) = self.agent_changes.remove(&step) else {
+        // A step past its 24 h is answered as one the room no longer has.
+        self.expire_agent_steps();
+        let Some(AgentStep {
+            change,
+            cost,
+            edited,
+        }) = self.agent_changes.remove(&step)
+        else {
             let answer = match self.agent_reverted.get(&step) {
                 Some(kept) => Reverted::Done(kept.clone()),
                 None => Reverted::Missing,
@@ -1877,7 +1917,14 @@ impl Room {
                 .then_some(("unavailable_target", "integration test refusal"))
         });
         if let Some((code, message)) = refused {
-            self.agent_changes.insert(step, (change, cost));
+            self.agent_changes.insert(
+                step,
+                AgentStep {
+                    change,
+                    cost,
+                    edited,
+                },
+            );
             let _ = reply.send(Ok(Reverted::Refused {
                 code,
                 message: message.into(),
@@ -1938,8 +1985,12 @@ impl Room {
                         self.broadcast_update(None, restored.update);
                         match restored.next {
                             Some(again) => {
-                                self.hold_agent_step(&again);
-                                self.agent_changes.insert(step, (again, cost));
+                                let step_again = AgentStep {
+                                    change: again,
+                                    cost,
+                                    edited,
+                                };
+                                self.keep_agent_step(step, step_again);
                             }
                             None => self.app.agent_steps.release(&step, &self.name),
                         }
@@ -2004,12 +2055,17 @@ impl Room {
         self.agent_reverted.insert(step, next.clone());
         // Its reverse (the same edit's other side) is kept only when its
         // estimate fits, as an edit's is.
+        // Its reverse keeps the agent edit's time: an Undo or Redo does not
+        // restart the 24 h (Q385).
         if let Some(back) = back
             && self.update_fits(cost)
         {
-            self.hold_agent_step(&back);
-            self.agent_changes.insert(next.clone(), (back, cost));
-            self.app.agent_steps.hold(&next, &self.name);
+            let reverse = AgentStep {
+                change: back,
+                cost,
+                edited,
+            };
+            self.keep_agent_step(next.clone(), reverse);
         }
         // The next store's snapshot holds the revert.
         let snapshot = self.store.snapshots + 1;
@@ -2547,7 +2603,9 @@ impl Room {
             return;
         };
         if let Some(sessions) = &mut self.sessions {
-            sessions.left(member.client, std::time::SystemTime::now());
+            let user = &member.context.user_id;
+            let recorded = self.client_ids.owned_by(member.client, user);
+            sessions.left(member.client, user, std::time::SystemTime::now(), recorded);
         }
         self.view_dirty = true;
         if in_presence(&member, &self.kind) {
@@ -3037,7 +3095,9 @@ impl Room {
             {
                 sessions.synced(member.client);
             }
-            if sessions.deleted(member.client, deleted, now) && !written.contains(&member.client) {
+            if sessions.deleted(member.client, &context.user_id, deleted, now)
+                && !written.contains(&member.client)
+            {
                 written.push(member.client);
             }
         }
@@ -3518,12 +3578,12 @@ impl Room {
             return;
         }
         if event["type"] == ACK_TYPE {
-            let client = member.client;
+            let (client, user) = (member.client, member.context.user_id.clone());
             if let (Some(sessions), Kindly::Note(note), Some(version)) =
                 (&mut self.sessions, &self.kind, event["version"].as_i64())
             {
                 let version = version.clamp(0, note.stored_version);
-                sessions.acked(client, version);
+                sessions.acked(client, &user, version);
                 if let Some(member) = self.members.get_mut(&key) {
                     member.version = version;
                 }
@@ -3659,17 +3719,12 @@ impl Room {
         let hidden = markers::live_items(&self.doc);
         let (row, durable) = ydoc::delta_update(&self.doc.transact(), &self.durable, &hidden);
         // The sessions as of this snapshot go in its transaction, their held
-        // deletions with the state that holds them. One whose id's row is
-        // still queued waits for a later store: the store holds the
-        // document's row, which that insert's key check waits on, so writing
-        // the same new id here would deadlock with it.
+        // deletions with the state that holds them.
         let (session_rows, sessions) = match &mut self.sessions {
             Some(sessions) => {
-                let (ids, queued) = (&self.client_ids, &self.rows);
+                let ids = &self.client_ids;
                 let now = std::time::SystemTime::now();
-                let unsaved = sessions.unsaved(now, |client, user| {
-                    ids.owned_by(client, user) && !queued.iter().any(|rows| rows.records(client))
-                });
+                let unsaved = sessions.unsaved(now, |client, user| ids.owned_by(client, user));
                 let through = unsaved.through;
                 (unsaved, Some(through))
             }
@@ -3801,7 +3856,8 @@ impl Room {
     /// its JOIN names, never above the room's (a viewer, who never edits,
     /// has none).
     fn session_joined(&mut self, key: MemberKey, version: Option<u64>) {
-        if self.late(version) {
+        let client = self.members.get(&key).map(|member| member.client);
+        if self.late(client.as_slice(), version) {
             // Nothing is collected yet, so nothing is late; the late path
             // takes such a JOIN once collection lands.
             log(
@@ -3842,16 +3898,18 @@ impl Room {
             return;
         };
         if named == Some(member.client) {
-            sessions.end(member.client);
+            sessions.end(member.client, &member.context.user_id);
         }
     }
 
-    /// Whether a JOIN or draft group naming `version` is older than the
-    /// latest collection's window (`sessions::late`); notes only.
-    fn late(&self, version: Option<u64>) -> bool {
-        match (&self.kind, version) {
-            (Kindly::Note(note), Some(version)) if self.sessions.is_some() => {
-                crate::sessions::late(note.window, version)
+    /// Whether a JOIN or draft group under `clients` naming `version` is
+    /// older than the latest collection's window, or comes under an id whose
+    /// session record was lost (`sessions::late`, Q385); notes only.
+    fn late(&self, clients: &[u64], version: Option<u64>) -> bool {
+        match (&self.kind, &self.sessions) {
+            (Kindly::Note(note), Some(sessions)) => {
+                let lost = clients.iter().any(|&client| sessions.lost(client));
+                crate::sessions::late(note.window, version.unwrap_or(0), lost)
             }
             _ => false,
         }
@@ -3869,11 +3927,17 @@ impl Room {
         };
         let version = crate::sessions::whole(note.stored_version, &note.gaps);
         if version < store {
-            log(
-                Level::Info,
-                "store not announced",
-                json!({ "room": self.name, "store": store, "whole": version }),
-            );
+            // Once per room: a gap that stays stalls its sessions.
+            if !note.stall_logged {
+                log(
+                    Level::Warn,
+                    "store not announced",
+                    json!({ "room": self.name, "store": store, "whole": version }),
+                );
+            }
+            if let Kindly::Note(note) = &mut self.kind {
+                note.stall_logged = true;
+            }
             return;
         }
         let notice = json!({ "type": STORED_TYPE, "version": version }).to_string();
@@ -3905,12 +3969,41 @@ impl Room {
         );
     }
 
-    /// An agent step the room keeps for its Undo or Redo: what it deleted is
-    /// held 24 h (review r1 M3, `sessions.rs`).
-    fn hold_agent_step(&mut self, change: &ydoc::undo::Change) {
+    /// Keeps an agent step for its Undo or Redo until 24 h after its agent
+    /// edit (Q385): what it deleted is held as long (review r1 M3,
+    /// `sessions.rs`), and the step registry offers it until then.
+    fn keep_agent_step(&mut self, id: String, step: AgentStep) {
         if let Some(sessions) = &mut self.sessions {
-            sessions.agent_deleted(change.deletions().clone(), std::time::SystemTime::now());
+            sessions.agent_deleted(step.change.deletions().clone(), step.edited);
         }
+        let until = step.edited + self.app.config.agent_undo;
+        self.app.agent_steps.hold(&id, &self.name, until);
+        let at = instant_at(until);
+        self.agent_expiry = Some(self.agent_expiry.map_or(at, |next| next.min(at)));
+        self.agent_changes.insert(id, step);
+    }
+
+    /// Agent steps 24 h past their agent edit go (Q385), from this room and
+    /// the step registry: an Undo or Redo of one is answered as of a step
+    /// this room no longer has.
+    fn expire_agent_steps(&mut self) {
+        let now = std::time::SystemTime::now();
+        let undo = self.app.config.agent_undo;
+        let mut next = None;
+        let mut expired = Vec::new();
+        for (id, step) in &self.agent_changes {
+            let until = step.edited + undo;
+            if until <= now {
+                expired.push(id.clone());
+            } else {
+                next = Some(next.map_or(until, |at: std::time::SystemTime| at.min(until)));
+            }
+        }
+        for id in expired {
+            self.agent_changes.remove(&id);
+            self.app.agent_steps.release(&id, &self.name);
+        }
+        self.agent_expiry = next.map(instant_at);
     }
 
     /// A clean Leave (Q236): the channel's recorded ids its token offered
@@ -3974,13 +4067,7 @@ impl Room {
     /// The queue's head was written, or failed every try (logged as lost).
     fn rows_written(&mut self, result: Result<(), String>) {
         self.rows_running = false;
-        // Sessions a store passed over while their ids' rows were queued are
-        // written by the next store, or the unload.
-        if let (Some(rows), Some(sessions)) = (self.rows.pop_front(), &mut self.sessions) {
-            for client in rows.recorded() {
-                sessions.touch(client);
-            }
-        }
+        self.rows.pop_front();
         if let Err(error) = result {
             log(
                 Level::Error,
@@ -4822,6 +4909,14 @@ fn validate(
         });
     }
     Ok((metrics, code))
+}
+
+/// The instant a wall-clock `time` falls at (now when it has passed).
+fn instant_at(time: std::time::SystemTime) -> Instant {
+    let now = Instant::now();
+    now + time
+        .duration_since(std::time::SystemTime::now())
+        .unwrap_or_default()
 }
 
 async fn sleep_until(deadline: Option<Instant>) {

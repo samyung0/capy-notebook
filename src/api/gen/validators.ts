@@ -1118,6 +1118,7 @@ export const UndoEditOperationResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -1250,6 +1251,7 @@ export const ListMessagesResponseItem = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -5841,6 +5843,7 @@ export const PurgeTrashedResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -5898,6 +5901,7 @@ export const RestoreTrashedResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -7798,6 +7802,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()

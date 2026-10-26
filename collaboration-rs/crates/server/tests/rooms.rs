@@ -73,8 +73,58 @@ async fn start_with(env: &Env, api: Option<&str>) -> Server {
 }
 
 /// The server with `api` as its gateway and `extra` settings.
-#[allow(clippy::zombie_processes)]
 async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) -> Server {
+    let stdout = if std::env::var_os("CAPY_IT_LOGS").is_some() {
+        Stdio::inherit()
+    } else {
+        Stdio::null()
+    };
+    launch(env, api, extra, stdout).await
+}
+
+/// The server, its log lines kept for the test to read (`Logs`).
+async fn start_logged(env: &Env) -> (Server, Logs) {
+    let mut server = launch(env, env.api.as_deref(), &[], Stdio::piped()).await;
+    let logs = Logs::default();
+    let stdout = server.child.stdout.take().expect("piped output");
+    let lines = logs.0.clone();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+        {
+            lines.lock().expect("logs").push(line);
+        }
+    });
+    (server, logs)
+}
+
+/// A server's log lines (`start_logged`).
+#[derive(Default)]
+struct Logs(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+impl Logs {
+    /// Whether a line holding every one of `parts` comes within 10 s.
+    async fn has(&self, parts: &[&str]) -> bool {
+        for _ in 0..100 {
+            let found = self
+                .0
+                .lock()
+                .expect("logs")
+                .iter()
+                .any(|line| parts.iter().all(|part| line.contains(part)));
+            if found {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        false
+    }
+}
+
+#[allow(clippy::zombie_processes)]
+async fn launch(env: &Env, api: Option<&str>, extra: &[(&str, &str)], stdout: Stdio) -> Server {
     // A free port per server, so the tests run in parallel.
     let port = std::net::TcpListener::bind(("127.0.0.1", 0))
         .and_then(|listener| listener.local_addr())
@@ -101,11 +151,7 @@ async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) 
         .env("COLLABORATION_SOURCE_DISK_DIR", disk_dir(port))
         .env("COLLABORATION_SOURCE_DISK_BYTES", "5368709120")
         .envs(extra.iter().copied())
-        .stdout(if std::env::var_os("CAPY_IT_LOGS").is_some() {
-            Stdio::inherit()
-        } else {
-            Stdio::null()
-        })
+        .stdout(stdout)
         .spawn()
         .expect("the server starts");
     for _ in 0..100 {
@@ -1476,15 +1522,21 @@ async fn an_update_that_panics_yrs_costs_neither_the_process_nor_the_room() {
     assert!(b.until(6).await.is_some());
 }
 
+/// A panic discards the room and moves its lineage; the old lineage's
+/// sessions end with it (review r2 L3: their tabs never rejoin the new one).
 #[tokio::test]
 async fn a_panic_inside_a_transaction_discards_the_room_and_moves_its_lineage() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
-    let (user, material) = note(&env, "durable").await;
+    let (user, material) = note(&env, "xdurable").await;
     let room = format!("material:{material}:schema:1");
     let mut a = Client::open(server.port).await;
     a.joined(&room, &token(&room, &user, "write")).await;
-    assert!(a.settle(|c| c.block_text() == "durable").await);
+    assert!(a.settle(|c| c.block_text() == "xdurable").await);
+    let answered = a.stored_past(0).await;
+    a.delete_in_block(0, 1, true).await;
+    a.stored_past(answered).await;
+    assert!(session_row(&env, &material, a.id()).await.1);
     // The debug build's panic inside an open write transaction, outside the
     // sync path: the room is discarded, not left dead in the registry.
     let request = serde_json::json!({ "type": "capy-it-panic" }).to_string();
@@ -1530,6 +1582,8 @@ async fn a_panic_inside_a_transaction_discards_the_room_and_moves_its_lineage() 
         "{}",
         b.block_text()
     );
+    let (_, seen, held) = session_row(&env, &material, a.id()).await;
+    assert_eq!((seen, held.is_empty()), (false, true));
 }
 
 #[tokio::test]
@@ -9419,6 +9473,21 @@ async fn crafted_draft_bodies_are_refused_and_the_room_survives() {
             "{answer}"
         );
     }
+    // Review r2 N2: an unreadable version is refused, not taken as none.
+    let (got, answer) = send_drafts_over(
+        server.port,
+        &room,
+        Some(&write),
+        Some(ORIGIN),
+        &[("x-capy-version", "seven")],
+        drafted(&reader.doc, typed_into_note(" late")),
+    )
+    .await;
+    assert_eq!(
+        (got, answer["class"].as_str()),
+        (400, Some("malformed")),
+        "{answer}"
+    );
     // The room still takes a writer's drafts.
     let (status, answer) = send(drafted(&reader.doc, typed_into_note(" kept"))).await;
     assert_eq!(status, 200, "{answer}");
@@ -10713,7 +10782,7 @@ async fn an_agent_edit_announces_no_stored_version() {
 #[tokio::test]
 async fn a_damaged_session_row_drops_only_that_session() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let (server, logs) = start_logged(&env).await;
     let (user, room, mut writer) = writer(&env, server.port, "base").await;
     let material = material_of(&room).to_owned();
     let committed = writer.stored_past(0).await;
@@ -10737,10 +10806,66 @@ async fn a_damaged_session_row_drops_only_that_session() {
     let mut reader = Client::open(server.port).await;
     reader.joined(&room, &token(&room, &user, "write")).await;
     assert!(reader.settle(|c| c.block_text() == "ase").await);
-    let (_, seen, kept) = session_row(&env, &material, damaged).await;
-    assert_eq!((seen, kept.is_empty()), (false, true));
+    let (version, seen, kept) = session_row(&env, &material, damaged).await;
+    assert_eq!((version, seen, kept.is_empty()), (-1, false, true));
     let (_, seen, kept) = session_row(&env, &material, good).await;
     assert_eq!((seen, kept), (true, held));
+    let message = format!("session {damaged}: unreadable held deletions");
+    assert!(logs.has(&["captured error", &message]).await, "reported");
+    // Review r2 M1: its tab returns as late, whatever version it names (its
+    // record, and so its held deletions, were lost).
+    assert!(!logs.has(&["late session joined"]).await);
+    let mut back = Client::open(server.port).await;
+    let join = token(&room, &user, "write");
+    let payload = join_payload_at(&room, &join, Some(client_protocol()), damaged, 99);
+    back.send(0, &payload).await;
+    back.until(1).await.expect("joined");
+    assert!(logs.has(&["late session joined"]).await, "late");
+}
+
+/// Q386 (Epo 2026-10-26): agent holds that cannot be read are dropped and
+/// reported, the note loads, and the sessions' holds stay; the next store
+/// writes the agent holds cleared. Fails if the load fails or drops more.
+#[tokio::test]
+async fn unreadable_agent_holds_are_dropped_and_reported() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    let committed = writer.stored_past(0).await;
+    let held = writer.delete_in_block(0, 1, true).await;
+    writer.stored_past(committed).await;
+    let session = writer.id();
+    drop(writer);
+    wait_unloaded(server.port).await;
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE material_yjs_documents SET agent_held='\\x09'::bytea WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("damaged agent holds");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    assert!(reader.settle(|c| c.block_text() == "ase").await);
+    assert!(
+        logs.has(&["captured error", "unreadable agent holds"])
+            .await
+    );
+    let answered = reader.stored_past(0).await;
+    reader.type_text("!").await;
+    reader.stored_past(answered).await;
+    let agent: Option<Vec<u8>> = client
+        .query_one(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0);
+    assert_eq!(agent, None);
+    assert_eq!(session_row(&env, &material, session).await.2, held);
 }
 
 /// Review r1 L5: a room never writes back the session row of an account
@@ -10857,6 +10982,175 @@ async fn an_agent_steps_deletions_are_held_beside_the_document() {
         .get(0);
     let held = held_ids(&agent.expect("agent holds"));
     assert!(!held.is_empty());
+}
+
+/// The agent holds as stored: each batch's arrival (Unix seconds) and ids.
+async fn agent_held(env: &Env, material: &str) -> Vec<(u64, yrs::IdSet)> {
+    let bytes: Option<Vec<u8>> = db(env)
+        .await
+        .query_one(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0);
+    let bytes = bytes.expect("agent holds");
+    let mut at = 0;
+    let mut batches = Vec::new();
+    for _ in 0..read_var(&bytes, &mut at) {
+        let arrived = read_var(&bytes, &mut at);
+        let len = read_var(&bytes, &mut at) as usize;
+        let ids = yrs::IdSet::decode_v1(&bytes[at..at + len]).expect("ids");
+        at += len;
+        batches.push((arrived, ids));
+    }
+    batches
+}
+
+/// All the ids of stored agent holds.
+fn all_ids(batches: &[(u64, yrs::IdSet)]) -> yrs::IdSet {
+    let mut ids = yrs::IdSet::new();
+    for (_, batch) in batches {
+        ids.merge_with(batch.clone());
+    }
+    ids
+}
+
+/// Whether `inner` is inside `outer` and smaller.
+fn grew(inner: &yrs::IdSet, outer: &yrs::IdSet) -> bool {
+    let mut both = outer.clone();
+    both.merge_with(inner.clone());
+    &both == outer && inner != outer
+}
+
+/// Q385 (Epo 2026-10-26): the agent holds cover what an agent edit, its
+/// Undo and then its Redo deleted, each held from the agent edit's time (an
+/// Undo or Redo does not restart its 24 h). Fails if a step's deletions are
+/// not held, or are held from their own time.
+#[tokio::test]
+async fn an_agent_edits_undo_and_redo_are_held_from_the_edit() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut person) = writer(&env, server.port, "hello world").await;
+    let material = material_of(&room).to_owned();
+    let (edit, undo, redo) = (
+        format!("e_{material}"),
+        format!("u_{material}"),
+        format!("r_{material}"),
+    );
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    let edited = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("time")
+        .as_secs()
+        + 1;
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    // A person's store writes the edit's holds.
+    let answered = person.stored_past(0).await;
+    person.type_at(0, "A").await;
+    person.stored_past(answered).await;
+    let after_edit = all_ids(&agent_held(&env, &material).await);
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &edit, &undo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let after_undo = all_ids(&agent_held(&env, &material).await);
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &undo, &redo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let batches = agent_held(&env, &material).await;
+    assert!(grew(&after_edit, &after_undo), "the Undo's deletions");
+    assert!(
+        grew(&after_undo, &all_ids(&batches)),
+        "the Redo's deletions"
+    );
+    assert!(
+        batches.iter().all(|(arrived, _)| *arrived <= edited),
+        "held from the edit ({edited}): {:?}",
+        batches
+            .iter()
+            .map(|(arrived, _)| arrived)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Q385 (Epo 2026-10-26): an agent edit's Undo is offered until 24 h after
+/// the edit (shortened here), its receipt says until when, and then the
+/// room drops the step: it no longer shows as live, and its Undo is refused
+/// as a step the room no longer has. Fails if a loaded room keeps the step.
+#[tokio::test]
+async fn an_agent_step_goes_24_hours_after_its_edit() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_AGENT_UNDO_MS", "1500")],
+    )
+    .await;
+    let (user, room, mut person) = writer(&env, server.port, "hello world").await;
+    let material = material_of(&room).to_owned();
+    let edit = format!("e_{material}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(
+        receipt["effect"]["undo"]["expiresAt"].is_string(),
+        "{receipt}"
+    );
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    assert_eq!(
+        live_steps(server.port, &[&edit]).await,
+        serde_json::json!([edit])
+    );
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    assert_eq!(
+        live_steps(server.port, &[&edit]).await,
+        serde_json::json!([])
+    );
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &edit, &format!("u_{material}"), &material),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("undo_unavailable")),
+        "{refusal}"
+    );
+    assert_eq!(person.block_text(), "hello there");
 }
 
 /// Review r1 L1: a viewer whose token turns writable (a role upgrade, then a

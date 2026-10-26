@@ -68,6 +68,10 @@ pub struct Config {
     /// before it closes (`socket.rs`); tests shorten them.
     pub ping_every: Duration,
     pub silent_close: Duration,
+    /// How long after an agent edit its Undo and Redo are offered (Q385:
+    /// 24 h); tests shorten it. Never longer than the agent holds
+    /// (`sessions::AGENT_HELD_FOR`), which keep every offered Undo's text.
+    pub agent_undo: Duration,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -175,6 +179,16 @@ impl Config {
                     .into(),
             ));
         }
+        let agent_undo = millis(
+            env,
+            "COLLABORATION_AGENT_UNDO_MS",
+            crate::sessions::AGENT_HELD_FOR.as_millis() as u64,
+        )?;
+        if agent_undo > crate::sessions::AGENT_HELD_FOR {
+            return Err(ConfigError(
+                "COLLABORATION_AGENT_UNDO_MS must be at most 24 hours".into(),
+            ));
+        }
         // A smaller burst would refuse an update the rooms take, every time.
         if update_limits.burst_bytes < ydoc::MAX_UPDATE_BYTES as u64 {
             return Err(ConfigError(format!(
@@ -243,6 +257,7 @@ impl Config {
             )?,
             ping_every,
             silent_close,
+            agent_undo,
         })
     }
 
