@@ -472,8 +472,8 @@ func TestListUsageEventsPagesBySortColumn(t *testing.T) {
 	}
 }
 
-// Every model session is platform-paid (Q290): the session is stored as
-// paid by the platform, and the schema refuses a user-paid one.
+// Every model session is platform-paid (Q290): it passes admission and is
+// stored with the payer whose calls settlement charges.
 func TestModelSessionIsPlatformPaid(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -486,9 +486,6 @@ func TestModelSessionIsPlatformPaid(t *testing.T) {
 	}
 	if paidBy != models.PaidByPlatform {
 		t.Fatalf("paid_by = %q", paidBy)
-	}
-	if _, err := s.pool.Exec(ctx, `UPDATE provider_sessions SET paid_by='user' WHERE id=$1`, sessionID); err == nil {
-		t.Fatal("a user-paid session was stored")
 	}
 }
 

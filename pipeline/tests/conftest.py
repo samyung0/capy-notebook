@@ -57,8 +57,7 @@ os.environ["CAPY_EMBEDDING_BATCH"] = "1000"
 
 # Dummy provider keys for replay (never sent anywhere — VCR intercepts). Real
 # keys come from the exported environment in record mode. elitellm reads the
-# platformEnv name from elitellm_providers.json; never write user keys into
-# process env.
+# platformEnv name from elitellm_providers.json.
 for _k in (
     "DEEPSEEK_API_KEY",
     "ANTHROPIC_API_KEY",

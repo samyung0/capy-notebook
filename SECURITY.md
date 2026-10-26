@@ -65,8 +65,8 @@ The important boundaries are:
   Share roles never become structural workspace membership.
 - Only owners manage members, sharing, workspace settings, statistics,
   deletion, and ownership transfer.
-- Conversations, schedules, notifications, billing records, provider keys,
-  quiz attempts, study progress, and integrations remain scoped to their actor.
+- Conversations, schedules, notifications, billing records, quiz attempts,
+  study progress, and integrations remain scoped to their actor.
 - A collaboration token grants only the computed `write`, `comment`, `shrink`,
   or read behavior for that material at mint time. Membership, sharing, account
   state, or quota changes evict or constrain existing room access.
