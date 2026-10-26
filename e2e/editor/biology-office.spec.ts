@@ -918,6 +918,14 @@ test.describe('DOCX on a phone', () => {
     isMobile: true,
     viewport: { height: 740, width: 360 },
   });
+  // These check the page view. A View frame narrower than 768 px now reads
+  // the text reflowed to its width (Q394) unless View › Page layout is ticked,
+  // which the runtime keeps per person in this storage key.
+  test.beforeEach(async ({ context }) => {
+    await context.addInitScript(() =>
+      localStorage.setItem('capy.docx.pageLayout', 'shown')
+    );
+  });
 
   const open = async (page: Page) => {
     await page.goto('/workspaces/ws_bio?file=bio-office-docx');
