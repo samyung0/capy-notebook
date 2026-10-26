@@ -1220,6 +1220,12 @@ async fn send_writes(
     versions: &[i64],
     step: Option<(&str, usize)>,
 ) -> bool {
+    // Debug builds only: the integration tests' edit whose rooms hear of it
+    // only after a later store committed (a gap, audit B1).
+    #[cfg(debug_assertions)]
+    if step.is_some_and(|(id, _)| id.starts_with(crate::room::IT_SERVICE_LATER)) {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    }
     let mut answers = Vec::new();
     let mut taken = step.is_some() && !writes.is_empty();
     for (write, version) in writes.into_iter().zip(versions) {

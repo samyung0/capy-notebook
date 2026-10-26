@@ -8,7 +8,8 @@
 //! 24 h after it was last seen; it ends earlier on a clean Leave naming it.
 //! Agent steps' deletions are held 24 h too (review r1 M3). A later fold
 //! reads what must stay from here ([Sessions::holds]): the oldest version
-//! every counted session reached and the held deletions. Notes only (Q274):
+//! every counted session reached, never past a draft group the room admitted
+//! but has not stored (Q400), and the held deletions. Notes only (Q274):
 //! item rooms keep their whole history.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -160,6 +161,11 @@ pub struct Sessions {
     /// Ids whose session record was lost: a JOIN or draft group under one is
     /// late (Q385).
     lost: HashSet<u64>,
+    /// The oldest version of the draft groups admitted since the last store
+    /// that holds them all, and the change count at the latest admission
+    /// (Q400, review r3 M1): a group's session is not counted, so this keeps
+    /// a fold's window at or below it until its row is stored.
+    draft_floor: Option<(i64, u64)>,
     changes: u64,
     saved: u64,
 }
@@ -238,6 +244,7 @@ impl Sessions {
             agent,
             agent_changed: changes,
             lost,
+            draft_floor: None,
             changes,
             saved: 0,
         };
@@ -381,6 +388,17 @@ impl Sessions {
         self.agent_changed = self.changes;
     }
 
+    /// A draft group naming `version` was admitted (Q400, review r3 M1): a
+    /// fold's window stays at or below it until a store whose snapshot was
+    /// taken after this commits ([Sessions::saved]), whichever trigger folds.
+    pub fn draft_admitted(&mut self, version: i64) {
+        self.changes += 1;
+        let floor = self
+            .draft_floor
+            .map_or(version, |(floor, _)| floor.min(version));
+        self.draft_floor = Some((floor, self.changes));
+    }
+
     /// Sessions past the cap end and deletions past their hold go.
     fn expire(&mut self, now: SystemTime) {
         let mut changed = Vec::new();
@@ -411,11 +429,11 @@ impl Sessions {
     }
 
     /// What a fold must keep now: the oldest version every counted session
-    /// reached (a new one that never synced holds nothing yet), and the held
-    /// deletions.
+    /// reached (a new one that never synced holds nothing yet) and the draft
+    /// floor, and the held deletions.
     pub fn holds(&mut self, now: SystemTime) -> Holds {
         self.expire(now);
-        let mut reached = None;
+        let mut reached = self.draft_floor.map(|(floor, _)| floor);
         let mut held = IdSet::new();
         for session in self.sessions.values().filter(|s| s.counts(now)) {
             if session.synced || session.version > 0 {
@@ -464,10 +482,14 @@ impl Sessions {
         }
     }
 
-    /// The rows up to change `through` were written: ended sessions go.
+    /// The rows up to change `through` were written: ended sessions go, and
+    /// the draft floor once the store holds every group under it.
     pub fn saved(&mut self, through: u64) {
         self.saved = self.saved.max(through);
         let saved = self.saved;
+        if self.draft_floor.is_some_and(|(_, at)| at <= saved) {
+            self.draft_floor = None;
+        }
         self.sessions
             .retain(|_, session| !(session.ended && session.changed <= saved));
     }
@@ -552,6 +574,30 @@ mod tests {
         assert_eq!(sessions.holds(now + 23 * HOUR).reached, Some(6));
         sessions.end(7, "u_a");
         assert_eq!(sessions.holds(now).reached, None);
+    }
+
+    /// The draft floor (Q400, review r3 M1): admitted draft groups hold
+    /// `reached` at their oldest version until a store whose snapshot was
+    /// taken after the last admission is saved; the store already running
+    /// when they came does not clear it. With no session counted, the floor
+    /// alone holds the window. Fails if the floor is ignored or cleared early.
+    #[test]
+    fn draft_groups_hold_reached_until_a_store_taken_after_them_is_saved() {
+        let now = start();
+        let mut sessions = Sessions::default();
+        sessions.joined(7, "u_a", 9, now);
+        let running = sessions.unsaved(now, |_, _| true).through;
+        sessions.draft_admitted(6);
+        sessions.draft_admitted(4);
+        assert_eq!(sessions.holds(now).reached, Some(4));
+        sessions.saved(running);
+        assert_eq!(sessions.holds(now).reached, Some(4));
+        let holding = sessions.unsaved(now, |_, _| true).through;
+        sessions.saved(holding);
+        assert_eq!(sessions.holds(now).reached, Some(9));
+        sessions.end(7, "u_a");
+        sessions.draft_admitted(3);
+        assert_eq!(sessions.holds(now).reached, Some(3));
     }
 
     /// The 25 h release (Q2): each held deletion goes 25 h after it arrived,

@@ -9,13 +9,17 @@
 //! redoes its steps; now and then a day passes at once. Every tab, and the
 //! room's agent, has a twin editing a room R that never collects.
 //!
-//! As the server does, the open room keeps its whole history, and what is
-//! stored is a base plus the rows stored since (each store's update, with
-//! the room's contributor marker for the writer written and claimed). A fold
-//! replays them and collects the result into the new base: at every leave
-//! and idle moment with the room open (the open room's own marker chains
-//! stay), and when the last connected tab goes (the room unloads; its next
-//! life loads the stored state under a new client).
+//! What is stored is a base plus the rows stored since (each store's update,
+//! with the room's contributor marker for the writer written and claimed). A
+//! fold replays them and collects the result into the new base: at every
+//! leave and idle moment with the room open (the open room's own marker
+//! chains stay), and when the last connected tab goes (the room unloads; its
+//! next life loads the stored state under a new client). A fold with the
+//! room open also collects the room's own document at the same window and
+//! held set, and the room swaps the result in (Q401):
+//! tabs joining after load the collected state, open tabs keep their
+//! tombstones. As the server does, the room keeps its document whole while
+//! it keeps agent steps (until a day passes or the room reloads).
 //!
 //! The window and H come from the room's `Sessions`, driven as the room
 //! drives it: a JOIN names the tab's version and the step 1 answer syncs it,
@@ -27,9 +31,11 @@
 //! session rows and the agent holds, as does the unload, and each room life
 //! loads them back (rows seen within 24 h, and lost ids); now and then a
 //! row's held deletions cannot be read and that session is written lost
-//! (Q382). The window is the newest of the last four stored snapshots that
-//! every counted session reached, or the folded document itself when none
-//! counts, and the latest collection's window is kept.
+//! (Q382). The window is the newest stored snapshot that every counted
+//! session reached, never past a draft group admitted but not stored yet
+//! (Q400's floor), or the folded document itself when none counts; the
+//! snapshots kept are the newest of each hour for the latest 25 hours, and
+//! the latest collection's window is kept.
 //!
 //! A day passing (26 h) clears every editor's Undo (it reaches back 24 h,
 //! Q2) and the agent's (its Undo is offered 24 h, Q385), and ends the
@@ -45,7 +51,10 @@
 //! plays out there: an offline (or holding) tab and an online one type at
 //! the spot, a third tab deletes the range around it and leaves, and the
 //! room folds before or after the draft arrives, so the draft sits inside a
-//! run the window holds deleted.
+//! run the window holds deleted. In a draft episode the offline tab's
+//! session ends instead (a day passes: its tab closed), and its drafts come
+//! as one group (the sweep, no JOIN) between a store and that store's fold
+//! (Q400, review r3 M1).
 //!
 //! Checked for every seed:
 //! * every collected state loads to the value the uncollected fold's state
@@ -89,7 +98,9 @@ use yrs::{Any, Doc, ID, IdSet, Map as _, Origin, ReadTxn, StateVector, Transact}
 #[path = "../../server/src/sessions.rs"]
 mod sessions;
 
-/// The lib0 varuints `sessions.rs` takes from the server's protocol module.
+/// The lib0 varuints `sessions.rs` takes from the server's protocol module,
+/// copied from `server/src/protocol.rs` (`write_var`, `read_var`): change
+/// both together.
 mod protocol {
     pub struct Truncated;
 
@@ -130,8 +141,9 @@ const AGENT: &str = "agent";
 /// Every tab's user (the sessions check that a channel acts on its own).
 const USER: &str = "u";
 const MARKS: [&str; 3] = ["bold", "italic", "code"];
-/// Window snapshots kept, as the fold keeps them.
-const WINDOWS_KEPT: usize = 4;
+/// Hours whose newest window snapshot is kept, as `server/src/note_store.rs`
+/// (`WINDOW_HOURS`, `store_window`) keeps them: change both together.
+const WINDOW_HOURS: usize = 25;
 /// Collected states sent to Yjs at most.
 const YJS_SAMPLE: usize = 600;
 /// The clock's step.
@@ -774,18 +786,28 @@ struct Tally {
     lost_rejoins: u64,
     /// Session rows whose held deletions could not be read at a load.
     damaged: u64,
-    /// The episodes that set up an agent Undo, a lost record's return and a
-    /// day-old Undo after a collection (module docs).
+    /// The episodes that set up an agent Undo, a lost record's return, a
+    /// day-old Undo after a collection and a closed tab's drafts (module
+    /// docs).
     agent_episodes: u64,
     lost_episodes: u64,
     day_episodes: u64,
+    draft_episodes: u64,
+    /// Closed tabs' groups admitted between a store and its fold, and those
+    /// dropped as late.
+    drafts: u64,
+    late_drafts: u64,
+    /// The open room's own collections (Q401), and the units they discarded.
+    live_collections: u64,
+    live_units: u64,
     agent_edits: u64,
     agent_undos: u64,
     days: u64,
     load_differs: u64,
     /// Units a tab that would come back raw can name that a collected state
-    /// dropped.
+    /// dropped, and of those the open room's own collection's.
     unnameable: u64,
+    live_unnameable: u64,
     /// Folded documents that read differently once their own state is
     /// loaded: not the collection's doing (the uncollected fold writes it).
     reloads_differ: u64,
@@ -829,6 +851,8 @@ struct World {
     /// The stored version: one more for every row.
     version: i64,
     windows: Vec<Window>,
+    /// The hour (since the epoch) each window was stored in, by version.
+    hours: BTreeMap<i64, u64>,
     /// The latest collection's window version (`collected_window`).
     window: i64,
     /// The open room's sessions, and what their rows and the agent holds
@@ -1167,6 +1191,62 @@ impl World {
         tally.day_episodes += 1;
     }
 
+    /// A closed tab's drafts (M1): T goes offline and types at the spot's
+    /// small items, D deletes around them and leaves (a fold), a day passes
+    /// (T's session ends: its tab closed), B stores elsewhere, and T's
+    /// drafts arrive between that store and its fold.
+    fn draft_episode(&mut self, rng: &mut Rng, tally: &mut Tally) {
+        self.all_back(rng, tally);
+        let Some(on) = self.spot_items(rng, 3) else {
+            return;
+        };
+        let (b, d, t) = (on[0], on[1], on[2]);
+        self.drop_tab(t);
+        let Some(block) = spot(&self.tabs[t].g) else {
+            return;
+        };
+        let ops = self.tabs[t].g.insert_ops(block, HOT, "dr");
+        self.type_ops(t, &ops);
+        let Some(ops) = Self::spot_cut(&self.tabs[d].g) else {
+            return;
+        };
+        self.type_ops(d, &ops);
+        self.leave(d);
+        self.went(tally);
+        self.day_passes(tally);
+        let Some(&block) = self.tabs[b].g.text_blocks().first() else {
+            return;
+        };
+        let ops = self.tabs[b].g.insert_ops(block, 0, "z");
+        self.type_ops(b, &ops);
+        self.closed_drafts(t, tally);
+        tally.draft_episodes += 1;
+    }
+
+    /// Tab `t` closed; its drafts arrive as one group (the sweep: no JOIN, no
+    /// session) after a store and before that store's fold. Admitted unless
+    /// late, they sit in the room unstored through the fold (the draft
+    /// floor), and their row is stored after it. A late group is dropped on
+    /// both sides (the late merge's stand-in).
+    fn closed_drafts(&mut self, t: usize, tally: &mut Tally) {
+        self.tabs[t].st = St::Left;
+        let (client, version) = (
+            self.tabs[t].client(),
+            self.tabs[t].unsent.unwrap_or(self.tabs[t].reached),
+        );
+        if sessions::late(self.window, version as u64, self.sessions.lost(client)) {
+            tally.late_drafts += 1;
+            return;
+        }
+        sync(&self.tabs[t].g, &mut self.s);
+        sync(&self.tabs[t].r, &mut self.r);
+        self.sessions.draft_admitted(version);
+        self.fold(tally);
+        self.room_store();
+        self.hear();
+        tally.drafts += 1;
+    }
+
     /// The contended episode (module docs): tab T goes offline, B types at
     /// the spot, T types there too, D deletes from the unit before the spot
     /// through the one after B's text and leaves (a fold), T comes back raw
@@ -1477,6 +1557,10 @@ impl World {
                         named_but_collected(&t.g.doc, &folded.doc, &loaded.doc) as u64;
                 }
                 self.window = self.window.max(window.stored_version);
+                // The open room collects its own document too (Q401).
+                if self.open {
+                    self.collect_live(&window, &holds.held, tally);
+                }
                 tally.collections += 1;
                 tally.units += collected.units;
                 if collected.units > 0
@@ -1495,23 +1579,67 @@ impl World {
             None => folded.state(),
         };
         self.rows.clear();
-        if !self
-            .windows
-            .iter()
-            .any(|w| w.stored_version == now.stored_version)
-        {
+        let hour = self.clock.duration_since(UNIX_EPOCH).unwrap().as_secs() / 3600;
+        if self.hours.insert(now.stored_version, hour).is_none() {
             self.windows.push(now);
         }
-        while self.windows.len() > WINDOWS_KEPT {
-            let oldest = (0..self.windows.len())
-                .min_by_key(|&k| self.windows[k].stored_version)
-                .unwrap();
-            self.windows.remove(oldest);
+        let mut newest: BTreeMap<u64, i64> = BTreeMap::new();
+        for (&version, &hour) in &self.hours {
+            let kept = newest.entry(hour).or_insert(version);
+            *kept = (*kept).max(version);
         }
+        let keep: HashSet<i64> = newest.values().rev().take(WINDOW_HOURS).copied().collect();
+        self.windows.retain(|w| keep.contains(&w.stored_version));
+        self.hours.retain(|version, _| keep.contains(version));
+    }
+
+    /// The open room collects its own document at a fold's window and held
+    /// set and swaps the result in (Q401), unless it keeps agent steps. The
+    /// new document must read as S does, with the same state vector and
+    /// nothing pending, and no connected tab, nor one that would come back
+    /// raw, may name a unit it dropped. As at the stored fold, units are
+    /// judged against S's state reloaded: a deleted type's children are
+    /// collected there at its deletion, as Yjs does, while S still holds
+    /// them as deleted items; an edit next to one lands in a deleted block,
+    /// lost with or without the collection.
+    fn collect_live(&mut self, window: &Window, held: &IdSet, tally: &mut Tally) {
+        if !(self.agent_s.undo_stack().is_empty() && self.agent_s.redo_stack().is_empty()) {
+            return;
+        }
+        let client = self.s.doc.client_id();
+        let collected = gc::collect(&self.s.doc, window, held, Some(client));
+        if collected.units == 0 {
+            return;
+        }
+        let mut live = Note::load(client.get(), "s", &collected.state);
+        live.next_id = self.s.next_id;
+        let reloaded = Note::load(client.get(), "s", &self.s.state());
+        let same_vector =
+            live.doc.transact().state_vector() == self.s.doc.transact().state_vector();
+        if live.value() != self.s.value() || live.pending() || !same_vector {
+            tally.load_differs += 1;
+        }
+        for t in self.tabs.iter().filter(|t| {
+            t.st != St::Left
+                && !sessions::late(
+                    window.stored_version,
+                    t.reached as u64,
+                    self.sessions.lost(t.client()),
+                )
+        }) {
+            let named = named_but_collected(&t.g.doc, &reloaded.doc, &live.doc) as u64;
+            tally.unnameable += named;
+            tally.live_unnameable += named;
+        }
+        self.s = live;
+        self.agent_s = undo_manager(&self.s, AGENT);
+        tally.live_collections += 1;
+        tally.live_units += collected.units;
     }
 }
 
 fn run(seed: u64, tally: &mut Tally) {
+    let unnameable = tally.unnameable;
     let mut rng = Rng::new(seed);
     let mut s = Note::new(1, "s");
     for k in 0..3 {
@@ -1544,6 +1672,7 @@ fn run(seed: u64, tally: &mut Tally) {
         // holding nothing).
         version: 1,
         windows: Vec::new(),
+        hours: BTreeMap::new(),
         window: 0,
         sessions: sessions::Sessions::default(),
         session_rows: BTreeMap::new(),
@@ -1635,6 +1764,7 @@ fn run(seed: u64, tally: &mut Tally) {
             }
             90..=94 if w.tabs.len() < 8 => w.join(&mut rng, tally),
             95 | 96 => w.contended(&mut rng, tally),
+            97 | 98 => w.draft_episode(&mut rng, tally),
             100..=103 => w.agent_edit(&mut rng, tally),
             104..=106 => w.agent_undo(&mut rng, tally),
             107 | 108 => w.day_passes(tally),
@@ -1671,6 +1801,12 @@ fn run(seed: u64, tally: &mut Tally) {
     let equals_reference = w.twins_agree && values[0] == w.r.value();
     tally.converged += u64::from(converged);
     tally.equals_reference += u64::from(equals_reference);
+    if tally.unnameable > unnameable && tally.failures.len() < 20 {
+        tally.failures.push(format!(
+            "seed {seed}: {} unnameable",
+            tally.unnameable - unnameable
+        ));
+    }
     if !(converged && equals_reference) && tally.failures.len() < 20 {
         tally.failures.push(format!(
             "seed {seed}: converged {converged}, equals R {equals_reference}"
@@ -1785,17 +1921,23 @@ fn collections_keep_every_replica_and_every_undo_exact() {
     let started = std::time::Instant::now();
     let mut tally = Tally::default();
     for seed in first..first + seeds {
-        run(seed, &mut tally);
+        let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(seed, &mut tally)));
+        if ran.is_err() && tally.failures.len() < 20 {
+            tally.failures.push(format!("seed {seed}: panicked"));
+        }
     }
     eprintln!(
-        "gc_views: seeds {} converged {} equals R {} | collections {} (units collected {}, loads differing {}, unnameable {}, reloads differing {}) | contended {} (holding {}) | rejoins raw {} late {} (lost {}, rows damaged {}) | undos {} | agent edits {} undos {} | days {} | episodes agent {} lost {} day {} | {:.1} s",
+        "gc_views: seeds {} converged {} equals R {} | collections {} (units collected {}, live {} with {} units, loads differing {}, unnameable {} (live {}), reloads differing {}) | contended {} (holding {}) | rejoins raw {} late {} (lost {}, rows damaged {}) | undos {} | agent edits {} undos {} | days {} | episodes agent {} lost {} day {} drafts {} (admitted {}, late {}) | {:.1} s",
         tally.seeds,
         tally.converged,
         tally.equals_reference,
         tally.collections,
         tally.units,
+        tally.live_collections,
+        tally.live_units,
         tally.load_differs,
         tally.unnameable,
+        tally.live_unnameable,
         tally.reloads_differ,
         tally.contended,
         tally.holding,
@@ -1810,6 +1952,9 @@ fn collections_keep_every_replica_and_every_undo_exact() {
         tally.agent_episodes,
         tally.lost_episodes,
         tally.day_episodes,
+        tally.draft_episodes,
+        tally.drafts,
+        tally.late_drafts,
         started.elapsed().as_secs_f64()
     );
     assert!(tally.failures.is_empty(), "{:?}", tally.failures);
@@ -1819,10 +1964,14 @@ fn collections_keep_every_replica_and_every_undo_exact() {
         tally.reloads_differ, 0,
         "a folded document reads differently after its own reload, collection or not"
     );
-    // Not vacuous: collections ran, discarded units, tabs and the agent
-    // undid steps, days passed, tabs came back late (some under a lost
-    // record) and contended episodes played out.
+    // Not vacuous: collections ran, discarded units, the open room collected
+    // its own document, tabs and the agent undid steps, days passed, tabs
+    // came back late (a fair share past a window, not only under a lost
+    // record), closed tabs' groups came between a store and its fold, and
+    // contended episodes played out.
     assert!(tally.collections > seeds && tally.units > 0 && tally.undos > seeds);
+    assert!(tally.live_collections > seeds / 4 && tally.live_units > 0);
+    assert!(tally.draft_episodes > seeds / 8 && tally.drafts > seeds / 8);
     assert!(tally.agent_undos > seeds / 4 && tally.days > seeds / 2);
     assert!(
         tally.agent_episodes > seeds / 8
@@ -1830,6 +1979,7 @@ fn collections_keep_every_replica_and_every_undo_exact() {
             && tally.day_episodes > seeds / 8
     );
     assert!(tally.late_rejoins > seeds / 4 && tally.lost_rejoins > 0);
+    assert!(tally.late_rejoins - tally.lost_rejoins > seeds / 20);
     assert!(tally.contended > seeds / 4 && tally.holding > seeds / 8);
     yjs_check(&tally.sample);
 }

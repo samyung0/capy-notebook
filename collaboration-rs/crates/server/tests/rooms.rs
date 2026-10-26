@@ -48,6 +48,63 @@ fn env() -> Option<Env> {
 struct Server {
     child: Child,
     port: u16,
+    /// A collecting server's own Redis database (`redis_db`), given back
+    /// once the server is gone.
+    redis: Option<RedisDb>,
+}
+
+/// The collaboration processes' heartbeat registry (`app.rs`).
+const INSTANCE_REGISTRY: &str = "capy:collaboration:instances";
+
+/// Redis databases 1-15 for collecting servers (every other server uses the
+/// stack's): a fold collects nothing while another collaboration process's
+/// heartbeat is in its registry (Q400, review r3 L1), and the tests run
+/// servers side by side.
+static REDIS_DBS: std::sync::LazyLock<std::sync::Mutex<Vec<u8>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new((1..16).collect()));
+
+/// A Redis database a collecting server has to itself.
+struct RedisDb {
+    index: u8,
+    url: String,
+}
+
+impl Drop for RedisDb {
+    fn drop(&mut self) {
+        REDIS_DBS.lock().expect("databases").push(self.index);
+    }
+}
+
+/// A free Redis database, its registry emptied (a server stopped before
+/// keeps its last heartbeat there for a minute).
+async fn redis_db(env: &Env) -> RedisDb {
+    let index = loop {
+        if let Some(index) = REDIS_DBS.lock().expect("databases").pop() {
+            break index;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    let base = match env.redis.rsplit_once('/') {
+        Some((base, db)) if db.parse::<u8>().is_ok() => base,
+        _ => env.redis.as_str(),
+    };
+    let db = RedisDb {
+        index,
+        url: format!("{base}/{index}"),
+    };
+    let mut redis = redis_at(&db.url).await;
+    let _: () = redis::AsyncCommands::del(&mut redis, INSTANCE_REGISTRY)
+        .await
+        .expect("registry");
+    db
+}
+
+async fn redis_at(url: &str) -> redis::aio::MultiplexedConnection {
+    redis::Client::open(url)
+        .expect("redis url")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis")
 }
 
 impl Drop for Server {
@@ -145,9 +202,19 @@ async fn launch(env: &Env, api: Option<&str>, extra: &[(&str, &str)], stdout: St
         .and_then(|listener| listener.local_addr())
         .map(|address| address.port())
         .expect("a free port");
+    let redis = if extra.contains(&("COLLABORATION_GC_COLLECT", "true")) {
+        Some(redis_db(env).await)
+    } else {
+        None
+    };
     let child = Command::new(env!("CARGO_BIN_EXE_capy-collaboration"))
         .env("DATABASE_URL", &env.database)
-        .env("REDIS_URL", &env.redis)
+        .env(
+            "REDIS_URL",
+            redis
+                .as_ref()
+                .map_or(env.redis.as_str(), |db| db.url.as_str()),
+        )
         .env("PORT", port.to_string())
         .env("HOST", "127.0.0.1")
         .env("COLLABORATION_SECRET", SECRET)
@@ -171,7 +238,7 @@ async fn launch(env: &Env, api: Option<&str>, extra: &[(&str, &str)], stdout: St
         .expect("the server starts");
     for _ in 0..100 {
         if TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
-            return Server { child, port };
+            return Server { child, port, redis };
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -899,10 +966,10 @@ async fn persisted(client: &mut Client, id: &str) {
     }
 }
 
-/// Waits up to 5 s for a material's log to be folded (empty).
+/// Waits up to 10 s for a material's log to be folded (empty).
 async fn log_folded(env: &Env, material: &str) -> bool {
     let client = db(env).await;
-    for _ in 0..50 {
+    for _ in 0..100 {
         let rows: i32 = client
             .query_one(
                 "SELECT log_rows FROM material_yjs_documents WHERE material_id=$1",
@@ -935,8 +1002,28 @@ async fn collected_in_base(env: &Env, material: &str, unit: yrs::ID) -> bool {
     doc.transact_mut()
         .apply_update(Update::decode_v1(&state).expect("base decodes"))
         .expect("base applies");
-    let txn = doc.transact();
-    matches!(txn.store().get_block_range(&unit), Some((_, None)))
+    collected_in(&doc, unit)
+}
+
+/// Whether `doc` holds `unit` collected.
+fn collected_in(doc: &Doc, unit: yrs::ID) -> bool {
+    matches!(
+        doc.transact().store().get_block_range(&unit),
+        Some((_, None))
+    )
+}
+
+/// The material's stored version.
+async fn stored_version(env: &Env, material: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT stored_version FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0)
 }
 
 /// The material's `collected_window`: the window version of its latest
@@ -1052,14 +1139,23 @@ async fn tab(port: u16, room: &str, user: &str) -> Client {
 /// with its sessions: while the room stays open, a fold whose window holds a
 /// run that an ended session deleted collects the run's middle items, but
 /// not a deletion inside a run that a counted session's Undo may restore
-/// (held); that Undo after the folds restores the letter, and the next load
-/// holds it. The folds keep four window snapshots. Fails if nothing is
-/// collected, or if the held deletion is (the restored letter is then lost
-/// on load).
+/// (held), in the stored base and in the open room's own document (Q401). A
+/// tab joining then loads the collected state; the open tab, which keeps its
+/// tombstones, and the joined one type next to the run's edge and converge;
+/// the counted tab's Undo restores the letter, and the next load holds it
+/// all. Fails if nothing is collected, stored or live, or if the held
+/// deletion is (the restored letter is then lost).
 #[tokio::test]
-async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
+async fn folds_collect_the_stored_and_open_documents_and_an_undo_after_them_restores_the_text() {
     let Some(env) = env() else { return };
-    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let (server, logs) = start_logged_with(
+        &env,
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+        ],
+    )
+    .await;
     let (user, material) = note(&env, "base").await;
     let room = format!("material:{material}:schema:1");
     let mut a = tab(server.port, &room, &user).await;
@@ -1105,18 +1201,37 @@ async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
         !collected_in_base(&env, &material, x).await,
         "a deletion a counted session may undo was collected"
     );
+    // The open room collected its own document too: a tab joining loads it.
+    assert!(logs.has(&["live document collected", &material]).await);
+    let mut joined = tab(server.port, &room, &user).await;
+    assert!(joined.settle(|c| c.block_text() == "?!base").await);
+    assert!(
+        collected_in(&joined.doc, s),
+        "a joining tab got the open room's uncollected document"
+    );
+    assert!(!collected_in(&joined.doc, x));
+    // A (holding the tombstones) and the joined tab type at the end, after
+    // q, the last deleted letter (an edge both keep).
+    a.type_at(6, "w").await;
+    assert!(joined.settle(|c| c.block_text() == "?!basew").await);
+    joined.type_at(7, "v").await;
+    assert!(a.settle(|c| c.block_text() == "?!basewv").await);
     // A's Undo brings X back, naming X itself and "p", the edge of B's run.
     a.write(|_| assert!(undo.undo_blocking())).await;
-    assert_eq!(a.block_text(), "?!baseX");
+    assert_eq!(a.block_text(), "?!baseXwv");
+    assert!(
+        joined.settle(|c| c.block_text() == "?!baseXwv").await,
+        "{}",
+        joined.block_text()
+    );
     persisted(&mut a, "undo").await;
     assert!(log_folded(&env, &material).await);
-    drop(a);
+    drop((a, joined));
     wait_unloaded(server.port).await;
-    assert_eq!(windows(&env, &material).await, 4);
     let mut fresh = Client::open(server.port).await;
     fresh.joined(&room, &token(&room, &user, "write")).await;
     assert!(
-        fresh.settle(|c| c.block_text() == "?!baseX").await,
+        fresh.settle(|c| c.block_text() == "?!baseXwv").await,
         "{}",
         fresh.block_text()
     );
@@ -1290,9 +1405,13 @@ async fn an_unload_fold_keeps_what_an_away_tab_may_undo() {
 /// folds): what an agent step deleted is held (`sessions.rs`, Q385), so a
 /// fold whose window holds the deletion keeps it, and the Undo, which
 /// re-creates each deleted item naming the item itself, restores the whole
-/// text and the next load holds it. Fails if the folds do not hold the agent
-/// step's deletions (the middle writer's letter is collected and lost on
-/// load).
+/// text and the next load holds it. A fourth writer's cut run makes the
+/// folds discard something, and the open room, which keeps the agent step,
+/// keeps its own document whole meanwhile (Q401: a reload of it would drop
+/// the deleted text the step's Undo restores). Fails if the folds do not
+/// hold the agent step's deletions (the middle writer's letter is collected
+/// and lost on load), or if the open room collects its document while it
+/// keeps the step (the Undo restores no text).
 #[tokio::test]
 async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
     let Some(env) = env() else { return };
@@ -1316,6 +1435,23 @@ async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
         writers.push(writer);
     }
     let middle = middle.expect("the middle letter");
+    // The fourth types "xz" and "y" between in front, cuts them and leaves.
+    let mut cutter = tab(server.port, &room, &user).await;
+    assert!(cutter.settle(|c| c.block_text() == "baseabc").await);
+    cutter
+        .write(|doc| {
+            insert_unsent(doc, 0, "xz");
+            insert_unsent(doc, 1, "y");
+        })
+        .await;
+    persisted(&mut cutter, "xyz").await;
+    assert!(log_folded(&env, &material).await);
+    let y = cutter.unit_at(1);
+    cutter.write(|doc| remove_as(doc, "c", 0, 3)).await;
+    persisted(&mut cutter, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    cutter.leave(false).await;
+    writers.push(cutter);
     assert!(a.settle(|c| c.block_text() == "baseabc").await);
     a.ack_all().await;
     let (edit, undo) = (format!("e_{material}"), format!("u_{material}"));
@@ -1347,6 +1483,7 @@ async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
         !collected_in_base(&env, &material, middle).await,
         "the agent step's deletion was collected while its Undo is live"
     );
+    assert!(collected_in_base(&env, &material, y).await);
     let (status, answer) = internal(
         server.port,
         "/internal/documents/undo",
@@ -1451,16 +1588,27 @@ async fn a_join_older_than_the_collected_window_is_late() {
     let (user, material) = note(&env, "base").await;
     let room = format!("material:{material}:schema:1");
     let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    // B types "xz" and "y" between (version 2), deletes them (3) and leaves.
+    b.write(|doc| {
+        insert_unsent(doc, 4, "xz");
+        insert_unsent(doc, 5, "y");
+    })
+    .await;
+    persisted(&mut b, "typed").await;
+    assert!(log_folded(&env, &material).await);
+    b.write(|doc| remove_as(doc, "b", 4, 3)).await;
+    persisted(&mut b, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    b.leave(false).await;
     assert!(a.settle(|c| c.block_text() == "base").await);
     a.ack_all().await;
-    for mark in ["1", "2", "3"] {
-        a.type_text(mark).await;
-        persisted(&mut a, mark).await;
-        assert!(log_folded(&env, &material).await);
-        a.ack_all().await;
-    }
-    // A fresh note is at version 1: the last fold collected at the window of
-    // the second store, version 3.
+    a.type_text("1").await;
+    persisted(&mut a, "1").await;
+    assert!(log_folded(&env, &material).await);
+    // A fresh note is at version 1: that fold collected B's cut at the
+    // window of the cut's store, version 3.
     assert_eq!(collected_window(&env, &material).await, 3);
     let late = |version: u64| format!("\"version\":{version}");
     let port = server.port;
@@ -1546,6 +1694,428 @@ async fn a_fold_collects_nothing_while_a_later_room_life_is_loaded() {
     assert!(log_folded(&env, &material).await);
     assert!(collected_in_base(&env, &material, y).await);
     assert!(collected_window(&env, &material).await > 0);
+}
+
+/// A note whose id holds `capy-it-store-later` (debug builds: every store
+/// waits 3 s): an ended session's run "xyz" with a closed tab's draft group
+/// typed inside it before the cut ("D" after x, naming y), and a tab A
+/// counted at the cut's version.
+struct DraftInCut {
+    user: String,
+    material: String,
+    room: String,
+    a: Client,
+    /// The group, the stored token that grants its id, and its version.
+    group: Vec<u8>,
+    grant: String,
+    version: i64,
+    /// The run's middle letter, which the group names.
+    y: yrs::ID,
+}
+
+async fn draft_in_a_cut(env: &Env, server: &Server) -> DraftInCut {
+    let (user, material) = note_named(env, "base", "capy-it-store-later").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    // "xz", then "y" typed between: an item nothing names.
+    b.write(|doc| {
+        insert_unsent(doc, 4, "xz");
+        insert_unsent(doc, 5, "y");
+    })
+    .await;
+    persisted(&mut b, "typed").await;
+    assert!(log_folded(env, &material).await);
+    let y = b.unit_at(5);
+    let mut d = tab(server.port, &room, &user).await;
+    assert!(d.settle(|c| c.block_text() == "basexyz").await);
+    let version = stored_version(env, &material).await;
+    let id = d.doc.client_id().get();
+    let group = drafted(&d.doc, |doc| insert_unsent(doc, 5, "D"));
+    d.leave(false).await;
+    // B cuts the letters and leaves: nothing holds them. A acknowledges.
+    b.write(|doc| remove_as(doc, "b", 4, 3)).await;
+    persisted(&mut b, "cut").await;
+    assert!(log_folded(env, &material).await);
+    b.leave(false).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    a.ack_all().await;
+    DraftInCut {
+        grant: token_offering(&room, &user, "write", id),
+        user,
+        material,
+        room,
+        a,
+        group,
+        version,
+        y,
+    }
+}
+
+/// Sends the closed tab's group as the sweep does: (status, answer).
+fn send_group(
+    port: u16,
+    cut: &DraftInCut,
+) -> impl Future<Output = (u16, serde_json::Value)> + use<> {
+    let (room, write) = (cut.room.clone(), token(&cut.room, &cut.user, "write"));
+    let (grant, version, group) = (
+        cut.grant.clone(),
+        cut.version.to_string(),
+        cut.group.clone(),
+    );
+    async move {
+        send_drafts_over(
+            port,
+            &room,
+            Some(&write),
+            Some(ORIGIN),
+            &[("x-capy-grants", &grant), ("x-capy-version", &version)],
+            group,
+        )
+        .await
+    }
+}
+
+/// After the group's store: the run's middle letter was never collected, and
+/// once the room unloads a fresh load shows `text`, the group's "D" in it.
+async fn the_group_survives(env: &Env, server: &Server, cut: DraftInCut, text: &str) {
+    assert!(log_folded(env, &cut.material).await);
+    assert!(
+        !collected_in_base(env, &cut.material, cut.y).await,
+        "a fold collected a letter the unstored group names"
+    );
+    drop(cut.a);
+    wait_unloaded(server.port).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh
+        .joined(&cut.room, &token(&cut.room, &cut.user, "write"))
+        .await;
+    assert!(
+        fresh.settle(|c| c.block_text() == text).await,
+        "{}",
+        fresh.block_text()
+    );
+}
+
+/// Q400 (review r3 M1): a fold never collects past a draft group the room
+/// admitted but has not stored. A's store waits 3 s; the closed tab's group
+/// arrives meanwhile, so its row comes after that store's. That store's fold
+/// must keep the letter the group names: the room counts no session for the
+/// group, and A acknowledged the cut. Fails if the floor is not kept (the
+/// fold collects y and a reload loses the group's "D").
+#[tokio::test]
+async fn a_draft_group_admitted_during_a_store_holds_that_stores_fold_back() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let mut cut = draft_in_a_cut(&env, &server).await;
+    cut.a.type_at(0, "!").await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let (status, answer) = send_group(server.port, &cut).await;
+    assert_eq!(status, 200, "{answer}");
+    the_group_survives(&env, &server, cut, "!baseD").await;
+}
+
+/// The draft floor holds back a service edit's fold too (audit A1). An
+/// agent edit computes against the room's live state, so its row carries
+/// every group the room admitted before it; the race is a group admitted
+/// after the edit read that state and before the edit reaches the room
+/// (debug builds: an operation id starting with `capy-it-service-later`
+/// reaches its room 3 s after its row committed). The group's own store
+/// waits 3 s, so the edit's fold comes first, and must not collect past
+/// the group. Fails if the floor is not kept, or is consulted only after
+/// the room's own stores.
+#[tokio::test]
+async fn a_draft_group_holds_back_a_service_edits_fold() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let cut = draft_in_a_cut(&env, &server).await;
+    let before = stored_version(&env, &cut.material).await;
+    let edit = format!("capy-it-service-later-{}", cut.material);
+    let agent = tokio::spawn({
+        let body = serde_json::json!({
+            "actorUserId": cut.user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "ba", "text": "BA" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": cut.room,
+            "target": { "id": cut.material, "kind": "material" },
+        });
+        let port = server.port;
+        async move { internal(port, "/internal/documents/edit", &body).await }
+    });
+    for _ in 0..30 {
+        if stored_version(&env, &cut.material).await > before {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(stored_version(&env, &cut.material).await, before + 1);
+    // The edit's row committed; its room hears of it in 3 s. The group
+    // arrives a second later, and its store commits a second after that.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let sent = tokio::spawn(send_group(server.port, &cut));
+    let (status, receipt) = agent.await.expect("agent");
+    assert_eq!(status, 200, "{receipt}");
+    let (status, answer) = sent.await.expect("sent");
+    assert_eq!(status, 200, "{answer}");
+    the_group_survives(&env, &server, cut, "BAseD").await;
+}
+
+/// Audit B1: a fold never folds past a row the open room has not applied.
+/// An agent edit replacing the run "xyz" reaches the room only 3 s after its
+/// row committed (debug builds: an operation id starting with
+/// `capy-it-service-later`); a closed tab's group stored meanwhile commits
+/// after it, a gap the room's stored version skips. With no session counted
+/// (a viewer keeps the room open), that store's fold stops before the gap,
+/// so the run's middle letter, which the room and its tabs still show live,
+/// is not collected; once the room applied the edit, its agent step holds
+/// the letter. Fails if the fold folds every stored row (the letter is
+/// collected while the open room still shows it).
+#[tokio::test]
+async fn a_fold_stops_before_a_row_the_open_room_has_not_applied() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let (owner, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET privacy='link' WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("link share");
+    let reader = user(&env).await;
+    redeem(&env, &material, &reader).await;
+    let mut viewer = Client::open(server.port).await;
+    viewer.joined(&room, &token(&room, &reader, "read")).await;
+    let mut b = tab(server.port, &room, &owner).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    b.write(|doc| {
+        insert_unsent(doc, 4, "xz");
+        insert_unsent(doc, 5, "y");
+    })
+    .await;
+    persisted(&mut b, "typed").await;
+    assert!(log_folded(&env, &material).await);
+    let y = b.unit_at(5);
+    b.leave(false).await;
+    assert!(viewer.settle(|c| c.block_text() == "basexyz").await);
+    let before = stored_version(&env, &material).await;
+    let edit = format!("capy-it-service-later-{material}");
+    let agent = tokio::spawn({
+        let body = serde_json::json!({
+            "actorUserId": owner,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "xyz", "text": "Q" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        });
+        let port = server.port;
+        async move { internal(port, "/internal/documents/edit", &body).await }
+    });
+    for _ in 0..30 {
+        if stored_version(&env, &material).await > before {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(stored_version(&env, &material).await, before + 1);
+    // A closed tab's group, typed at the start, is stored after that row.
+    let id = fresh_client_id();
+    let from = Doc::with_options(ydoc::doc_options(id));
+    from.transact_mut()
+        .apply_update(
+            Update::decode_v1(
+                &viewer
+                    .doc
+                    .transact()
+                    .encode_state_as_update_v1(&StateVector::default()),
+            )
+            .expect("state"),
+        )
+        .expect("apply");
+    let (status, answer) = send_drafts_over(
+        server.port,
+        &room,
+        Some(&token(&room, &owner, "write")),
+        Some(ORIGIN),
+        &[
+            ("x-capy-grants", &token_offering(&room, &owner, "write", id)),
+            ("x-capy-version", &before.to_string()),
+        ],
+        drafted(&from, |doc| insert_unsent(doc, 0, "!")),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let (status, receipt) = agent.await.expect("agent");
+    assert_eq!(status, 200, "{receipt}");
+    assert!(
+        viewer.settle(|c| c.block_text() == "!baseQ").await,
+        "{}",
+        viewer.block_text()
+    );
+    assert!(log_folded(&env, &material).await);
+    assert!(
+        !collected_in_base(&env, &material, y).await,
+        "a fold collected a letter the open room had not seen deleted"
+    );
+}
+
+/// Q400 (review r3 L2): window snapshots are kept one per hour, the newest
+/// of each, for the latest 25 hours that have one, so a fold reaches back to
+/// a tab that acknowledged a version many folds ago. Each fold's snapshot is
+/// moved an hour back before the next; once a lagging tab acknowledges the
+/// cut's version, five folds later, the next fold collects at that version's
+/// window. With thirty older snapshots (two in one hour) the fold keeps 25,
+/// one per hour, the cut's among them. Fails if only the newest few are kept
+/// (no window at the tab's version is left), or the per-hour or 25-hour rule
+/// goes.
+#[tokio::test]
+async fn window_snapshots_are_kept_hourly_for_a_day() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let client = db(&env).await;
+    // Every window stored so far moves an hour back.
+    async fn an_hour_back(client: &tokio_postgres::Client, material: &str) {
+        client
+            .execute(
+                "UPDATE material_yjs_windows SET created_at=created_at - interval '1 hour'
+                 WHERE material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("an hour back");
+    }
+    // A lags: synced, it acknowledges nothing until told.
+    let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    b.write(|doc| {
+        insert_unsent(doc, 4, "xz");
+        insert_unsent(doc, 5, "y");
+    })
+    .await;
+    persisted(&mut b, "typed").await;
+    assert!(log_folded(&env, &material).await);
+    let y = b.unit_at(5);
+    b.write(|doc| remove_as(doc, "b", 4, 3)).await;
+    persisted(&mut b, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    b.leave(false).await;
+    let cut = stored_version(&env, &material).await;
+    an_hour_back(&client, &material).await;
+    let mut c = tab(server.port, &room, &user).await;
+    assert!(c.settle(|c| c.block_text() == "base").await);
+    for mark in ["1", "2", "3", "4", "5"] {
+        c.ack_all().await;
+        c.type_at(0, mark).await;
+        persisted(&mut c, mark).await;
+        assert!(log_folded(&env, &material).await);
+        an_hour_back(&client, &material).await;
+    }
+    assert!(!collected_in_base(&env, &material, y).await);
+    a.ack_version(cut).await;
+    c.ack_all().await;
+    let empty = (
+        StateVector::default().encode_v1(),
+        yrs::IdSet::new().encode_v1(),
+    );
+    for k in 0i64..31 {
+        let (version, hours) = (1_000_000 + k, if k == 30 { 10 } else { 10 + k });
+        client
+            .execute(
+                "INSERT INTO material_yjs_windows
+                   (material_id, document, stored_version, state_vector, delete_set, created_at)
+                 VALUES ($1, 'content', $2, $3, $4, now() - make_interval(hours => $5::int))",
+                &[&material, &version, &empty.0, &empty.1, &(hours as i32)],
+            )
+            .await
+            .expect("an older window");
+    }
+    c.type_at(0, "6").await;
+    persisted(&mut c, "6").await;
+    assert!(log_folded(&env, &material).await);
+    assert!(
+        collected_in_base(&env, &material, y).await,
+        "no window at the lagging tab's version was left"
+    );
+    assert_eq!(collected_window(&env, &material).await, cut);
+    let kept = client
+        .query_one(
+            "SELECT count(*), count(DISTINCT date_trunc('hour', created_at)),
+                    count(*) FILTER (WHERE stored_version=$2)
+             FROM material_yjs_windows WHERE material_id=$1",
+            &[&material, &cut],
+        )
+        .await
+        .expect("windows");
+    assert_eq!(
+        (
+            kept.get::<_, i64>(0),
+            kept.get::<_, i64>(1),
+            kept.get::<_, i64>(2)
+        ),
+        (25, 25, 1)
+    );
+}
+
+/// Q400 (review r3 L1): a fold collects nothing while another collaboration
+/// process is live (its heartbeat in the instance registry within the last
+/// minute): the collection requires one process per database. With a second
+/// instance's heartbeat in the server's registry, folds whose window holds
+/// an ended session's cut store their windows but collect nothing; once that
+/// heartbeat is gone, the next fold collects. Fails if a fold ignores the
+/// other process.
+#[tokio::test]
+async fn a_fold_collects_nothing_while_another_process_is_live() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let mut redis = redis_at(&server.redis.as_ref().expect("its own database").url).await;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_millis() as u64;
+    let _: () = redis::AsyncCommands::hset(&mut redis, INSTANCE_REGISTRY, "it-other", now)
+        .await
+        .expect("heartbeat");
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    b.write(|doc| {
+        insert_unsent(doc, 4, "xz");
+        insert_unsent(doc, 5, "y");
+    })
+    .await;
+    persisted(&mut b, "typed").await;
+    assert!(log_folded(&env, &material).await);
+    let y = b.unit_at(5);
+    b.write(|doc| remove_as(doc, "b", 4, 3)).await;
+    persisted(&mut b, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    b.leave(false).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    for mark in ["!", "?"] {
+        a.ack_all().await;
+        a.type_at(0, mark).await;
+        persisted(&mut a, mark).await;
+        assert!(log_folded(&env, &material).await);
+    }
+    assert!(windows(&env, &material).await > 0);
+    assert!(!collected_in_base(&env, &material, y).await);
+    assert_eq!(collected_window(&env, &material).await, 0);
+    let _: () = redis::AsyncCommands::hdel(&mut redis, INSTANCE_REGISTRY, "it-other")
+        .await
+        .expect("gone");
+    a.ack_all().await;
+    a.type_at(0, ".").await;
+    persisted(&mut a, ".").await;
+    assert!(log_folded(&env, &material).await);
+    assert!(collected_in_base(&env, &material, y).await);
 }
 
 /// Item rooms keep their whole history (Q274: the collection covers notes
@@ -9724,7 +10294,8 @@ async fn send_drafts(
     send_drafts_over(port, room, token, origin, &[], body).await
 }
 
-/// `send_drafts` with more headers (a source's base, stored tokens).
+/// `send_drafts` with more headers (a source's base, stored tokens, the
+/// drafts' version: 1 unless given, none when given empty).
 async fn send_drafts_over(
     port: u16,
     room: &str,
@@ -9745,7 +10316,10 @@ async fn send_drafts_over(
     if let Some(origin) = origin {
         request = request.header("origin", origin);
     }
-    for (name, value) in headers {
+    if !headers.iter().any(|(name, _)| *name == "x-capy-version") {
+        request = request.header("x-capy-version", "1");
+    }
+    for (name, value) in headers.iter().filter(|(_, value)| !value.is_empty()) {
         request = request.header(*name, *value);
     }
     let response = request.send().await.expect("draft send");
@@ -10206,21 +10780,25 @@ async fn crafted_draft_bodies_are_refused_and_the_room_survives() {
             "{answer}"
         );
     }
-    // Review r2 N2: an unreadable version is refused, not taken as none.
-    let (got, answer) = send_drafts_over(
-        server.port,
-        &room,
-        Some(&write),
-        Some(ORIGIN),
-        &[("x-capy-version", "seven")],
-        drafted(&reader.doc, typed_into_note(" late")),
-    )
-    .await;
-    assert_eq!(
-        (got, answer["class"].as_str()),
-        (400, Some("malformed")),
-        "{answer}"
-    );
+    // Review r2 N2: an unreadable version is refused, not taken as none;
+    // audit N1: so are a missing one and 0 (a new tab's, never late), which
+    // no browser sends (a group's rows are made at version 1 or later).
+    for version in ["seven", "", "0"] {
+        let (got, answer) = send_drafts_over(
+            server.port,
+            &room,
+            Some(&write),
+            Some(ORIGIN),
+            &[("x-capy-version", version)],
+            drafted(&reader.doc, typed_into_note(" late")),
+        )
+        .await;
+        assert_eq!(
+            (got, answer["class"].as_str()),
+            (400, Some("malformed")),
+            "{version:?}: {answer}"
+        );
+    }
     // The room still takes a writer's drafts.
     let (status, answer) = send(drafted(&reader.doc, typed_into_note(" kept"))).await;
     assert_eq!(status, 200, "{answer}");

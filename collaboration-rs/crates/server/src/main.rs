@@ -40,7 +40,6 @@ use crate::app::App;
 use crate::config::Config;
 use crate::observe::{Level, log};
 
-const INSTANCE_REGISTRY: &str = "capy:collaboration:instances";
 const INSTANCE_HEARTBEAT: Duration = Duration::from_secs(15);
 
 fn main() {
@@ -367,7 +366,7 @@ async fn heartbeat(app: app::Shared) {
             .map(|elapsed| elapsed.as_millis() as u64)
             .unwrap_or(0);
         let result = redis::cmd("HSET")
-            .arg(INSTANCE_REGISTRY)
+            .arg(app::INSTANCE_REGISTRY)
             .arg(&app.instance_id)
             .arg(now)
             .query_async::<i64>(&mut redis)

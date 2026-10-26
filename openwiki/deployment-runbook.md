@@ -560,6 +560,12 @@ before migrations, as the cutover reset below requires), and starts
 collaboration only once the new gateway is healthy (`depends_on`, with a probe
 a second while they boot). Old and new containers never overlap: the
 gateway's boot sweep and the single collaboration instance need that.
+The in-place Yjs collection requires one collaboration process per database
+(Q400): never scale `collaboration` to replicas, roll it out start-first, or
+point another collaboration server (a developer's) at an environment's
+database. A fold collects nothing while it sees another process's heartbeat
+in that Redis (within a minute), so folds after a deploy collect again about
+a minute after the old process stopped.
 Postgres and Redis are not restarted. Expect the API to be down for about
 2-12 s (the gateway's drain, up to 10 s with open SSE streams, plus `migrate`)
 and collaboration for about 4-35 s (its flush plus the API gap), against

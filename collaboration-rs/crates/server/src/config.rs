@@ -36,7 +36,10 @@ pub struct Config {
     pub fold_max_rows: u64,
     /// A note's folds collect the tombstones no session can still name
     /// (`ydoc::gc`), in place, keeping what the room's sessions hold
-    /// (`sessions.rs`). The kill switch, off unless exactly `true`, and
+    /// (`sessions.rs`), and an open room collects its own document at its
+    /// threshold folds (Q401). The collection requires one collaboration
+    /// process per database (Q400): a fold collects nothing while another
+    /// process's heartbeat is seen. The kill switch, off unless exactly `true`, and
     /// refused outside tests (`APP_ENV=test`) until the rest of the
     /// collection's release lands: the merge of a tab older than the window
     /// (without it that tab's unsent edits would be lost), and the durable

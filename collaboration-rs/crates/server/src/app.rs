@@ -399,11 +399,41 @@ impl AgentSteps {
     }
 }
 
+/// Every collaboration process's id and its last heartbeat (Unix ms), kept
+/// by `main.rs`'s heartbeat; the source handoff and the API's eviction
+/// worker read it too.
+pub const INSTANCE_REGISTRY: &str = "capy:collaboration:instances";
+
+/// How recent a heartbeat keeps another process live, as the source handoff
+/// and the API's eviction worker read the registry.
+const INSTANCE_LIVE_FOR: std::time::Duration = std::time::Duration::from_secs(60);
+
 impl App {
     /// The source handoff (set before any connection is accepted).
     #[allow(clippy::expect_used)]
     pub fn handoff(&self) -> &Arc<sources::handoff::Handoff> {
         self.handoff.get().expect("the handoff is set at start")
+    }
+
+    /// Whether another collaboration process heartbeat within the last
+    /// minute, or the registry cannot be read: the in-place collection
+    /// requires one process per database (Q400, review r3 L1).
+    pub async fn another_instance(&self) -> bool {
+        let mut redis = self.redis.clone();
+        let Ok(entries) =
+            redis::AsyncCommands::hgetall::<_, HashMap<String, u64>>(&mut redis, INSTANCE_REGISTRY)
+                .await
+        else {
+            return true;
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as u64)
+            .unwrap_or(0);
+        let cutoff = now.saturating_sub(INSTANCE_LIVE_FOR.as_millis() as u64);
+        entries
+            .iter()
+            .any(|(id, at)| *id != self.instance_id && *at >= cutoff)
     }
 }
 

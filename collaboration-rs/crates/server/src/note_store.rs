@@ -282,6 +282,9 @@ pub async fn append(
     actors: &[String],
     sessions: &sessions::Unsaved,
 ) -> Result<i64, StoreError> {
+    if cfg!(debug_assertions) && material_id.contains(IT_STORE_LATER) {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
@@ -519,11 +522,14 @@ pub(crate) async fn append_row(
     Ok(())
 }
 
-/// What a fold removed from the log, and the new base size.
+/// What a fold removed from the log, and the new base size; with a
+/// collection, its window and held set, at which the open room collects its
+/// own document (Q401).
 pub struct Folded {
     pub rows: usize,
     pub log_bytes: i64,
     pub base_bytes: i64,
+    pub collected: Option<(Window, IdSet)>,
 }
 
 /// What a fold's collection must keep (`ydoc::gc`), from the room's
@@ -543,28 +549,35 @@ pub struct Holds {
     /// material's lock: one loaded before this fold checks JOINs against
     /// the window it read, so the fold then collects nothing; one loading
     /// after it waits for the lock and reads the window this fold writes.
+    /// False too while another collaboration process is seen (L1).
     pub alone: Box<dyn Fn() -> bool + Send>,
 }
 
-/// Window snapshots a document keeps (`material_yjs_windows`), the newest.
-const WINDOWS_KEPT: i64 = 4;
+/// Window snapshots a document keeps (`material_yjs_windows`): the newest of
+/// each hour, for the latest this many hours that have one (Q400), so a
+/// collection can reach a session counted up to 24 h back.
+const WINDOW_HOURS: i64 = 25;
 
 /// Debug builds only: the integration tests' collection that panics, for a
 /// material whose id holds this.
 const IT_PANIC_COLLECTION: &str = "capy-it-panic-collection";
 
-/// Debug builds only: the integration tests' fold that waits 2 s before it
+/// Debug builds only: the integration tests' fold that waits 5 s before it
 /// starts, for a material whose id holds this.
 const IT_FOLD_LATER: &str = "capy-it-fold-later";
+
+/// Debug builds only: the integration tests' store that waits 3 s before it
+/// starts, for a material whose id holds this.
+const IT_STORE_LATER: &str = "capy-it-store-later";
 
 /// Merges the base and the rows up to `through` (all when `None`) into a new
 /// base after the load check (DESIGN.md 3.5). Rows appended meanwhile stay.
 /// With `holds` (the collection's switch on, notes only) the new base is
 /// collected in place at the window the holds choose, when one qualifies,
 /// that window's version is kept as the latest (`collected_window`), and
-/// the folded document is stored as a later window candidate. A collection
-/// the guard refuses, or that panics, folds uncollected and is reported once
-/// per material (human/ 2026-10-24); the next fold collects again.
+/// the folded document is stored as a later window candidate. A collection the guard refuses, or that panics,
+/// folds uncollected and is reported once per material (human/ 2026-10-24);
+/// the next fold collects again.
 pub async fn fold(
     pool: &Pool,
     material_id: &str,
@@ -574,7 +587,7 @@ pub async fn fold(
     holds: Option<Holds>,
 ) -> Result<Option<Folded>, StoreError> {
     if cfg!(debug_assertions) && material_id.contains(IT_FOLD_LATER) {
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
@@ -615,10 +628,15 @@ pub async fn fold(
     let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();
     let count = rows.len();
     let it_panic = cfg!(debug_assertions) && material_id.contains(IT_PANIC_COLLECTION);
-    // The state, the folded document as a window candidate, the version of
-    // the window collected at, and why the guard refused a collection.
-    type Built = (Vec<u8>, Option<Window>, Option<i64>, Option<String>);
-    let (state, window, collected_at, refused) =
+    // The state, the folded document as a window candidate, the window and
+    // held set of a collection, and why the guard refused one.
+    type Built = (
+        Vec<u8>,
+        Option<Window>,
+        Option<(Window, IdSet)>,
+        Option<String>,
+    );
+    let (state, window, collected, refused) =
         tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
             let scratch = ydoc::scratch_doc();
             let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
@@ -639,15 +657,21 @@ pub async fn fold(
             let Some(window) = window else {
                 return Ok((whole(&scratch), Some(now), None, None));
             };
-            let (state, refused) = guarded(&scratch, || {
+            let collected = guarded(|| {
                 if it_panic {
                     panic!("integration test collection panic");
                 }
                 let collected = ydoc::gc::collect(&scratch, window, &holds.held, holds.live_room);
-                checked(&scratch, collected.state, model)
+                loaded(&collected.state, &scratch, model, 0)?;
+                Ok(collected)
             });
-            let at = refused.is_none().then_some(window.stored_version);
-            Ok((state, Some(now), at, refused))
+            Ok(match collected {
+                Ok(collected) => {
+                    let at = (window.clone(), holds.held);
+                    (collected.state, Some(now), Some(at), None)
+                }
+                Err(why) => (whole(&scratch), Some(now), None, Some(why)),
+            })
         })
         .await
         .map_err(|error| StoreError::Other(error.to_string()))??;
@@ -669,23 +693,46 @@ pub async fn fold(
     if let Some(window) = window {
         store_window(&tx, material_id, doc, &window).await?;
     }
-    if let Some(at) = collected_at {
+    if let Some((window, _)) = &collected {
         tx.execute(
             "UPDATE material_yjs_documents SET collected_window=GREATEST(collected_window, $2)
              WHERE material_id=$1",
-            &[&material_id, &at],
+            &[&material_id, &window.stored_version],
         )
         .await?;
     }
     tx.commit().await?;
     if let Some(why) = refused {
-        report_refusal(material_id, doc, &why);
+        report_refusal(material_id, doc, "fold", &why);
     }
     Ok(Some(Folded {
         rows: count,
         log_bytes: folded_bytes,
         base_bytes: after_bytes,
+        collected,
     }))
+}
+
+/// The open room's document collected at its threshold fold's window and
+/// held set (Q401), loaded into a new document under the room's client id,
+/// whose own marker chains stay. None when nothing was discarded; the
+/// guard's reason (or the panic's) when the new document loads with
+/// something pending, lacks the model's roots or holds another value.
+pub fn collect_live(
+    doc: &yrs::Doc,
+    window: &Window,
+    held: &IdSet,
+    model: Model,
+) -> Result<Option<(yrs::Doc, u64)>, String> {
+    guarded(|| {
+        let client = doc.client_id();
+        let collected = ydoc::gc::collect(doc, window, held, Some(client));
+        if collected.units == 0 {
+            return Ok(None);
+        }
+        let live = loaded(&collected.state, doc, model, client.get())?;
+        Ok(Some((live, collected.units)))
+    })
 }
 
 fn whole(doc: &yrs::Doc) -> Vec<u8> {
@@ -693,33 +740,26 @@ fn whole(doc: &yrs::Doc) -> Vec<u8> {
         .encode_state_as_update_v1(&StateVector::default())
 }
 
-/// The collected `state` if it loads with nothing pending, keeps the model's
-/// roots and holds the document value of `folded`; otherwise `folded` whole,
-/// with why the guard refused the collection.
-fn checked(folded: &yrs::Doc, state: Vec<u8>, model: Model) -> (Vec<u8>, Option<String>) {
-    let guard = || -> Result<(), String> {
-        let loaded = ydoc::scratch_doc();
-        ydoc::replay(&loaded, &state, &[] as &[&[u8]]).map_err(|error| error.to_string())?;
-        let (before, after) = (folded.transact(), loaded.transact());
+/// The guard: the collected `state` loaded into a new document under
+/// `client` (0: any), if it loads with nothing pending, keeps the model's
+/// roots and holds the document value of `before`; otherwise why not.
+fn loaded(state: &[u8], before: &yrs::Doc, model: Model, client: u64) -> Result<yrs::Doc, String> {
+    let loaded = yrs::Doc::with_options(ydoc::doc_options(client));
+    ydoc::replay(&loaded, state, &[] as &[&[u8]]).map_err(|error| error.to_string())?;
+    {
+        let (before, after) = (before.transact(), loaded.transact());
         model.assert_roots(&after)?;
         if model.document_value(&before)? != model.document_value(&after)? {
             return Err("the collected state holds another value".into());
         }
-        Ok(())
-    };
-    match guard() {
-        Ok(()) => (state, None),
-        Err(why) => (whole(folded), Some(why)),
     }
+    Ok(loaded)
 }
 
 /// `collect` (a collection and its guard) with a panic in it counted as a
-/// refusal: `folded` whole, with why. Its panic event is muted (no client on
-/// the hub it runs under), so it reaches Sentry once, as a refusal.
-fn guarded(
-    folded: &yrs::Doc,
-    collect: impl FnOnce() -> (Vec<u8>, Option<String>),
-) -> (Vec<u8>, Option<String>) {
+/// refusal, with why. Its panic event is muted (no client on the hub it runs
+/// under), so it reaches Sentry once, as a refusal.
+fn guarded<T>(collect: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
     let muted = Arc::new(sentry::Hub::new(None, Arc::new(Default::default())));
     let ran = sentry::Hub::run(muted, || {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(collect))
@@ -730,16 +770,17 @@ fn guarded(
             .map(|why| (*why).to_owned())
             .or_else(|| panic.downcast_ref::<String>().cloned())
             .unwrap_or_default();
-        (whole(folded), Some(format!("panicked: {why}")))
+        Err(format!("panicked: {why}"))
     })
 }
 
 /// Materials whose refused collection this process reported.
 static REPORTED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
 
-/// Reports a refused collection to Sentry the first time for its material in
-/// this process, and logs every one; whether it reported.
-fn report_refusal(material_id: &str, doc: Doc, why: &str) -> bool {
+/// Reports a refused collection (`stage`: the stored fold's, or the open
+/// room's live one) to Sentry the first time for its material in this
+/// process, and logs every one; whether it reported.
+pub fn report_refusal(material_id: &str, doc: Doc, stage: &str, why: &str) -> bool {
     let first = REPORTED
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -752,16 +793,17 @@ fn report_refusal(material_id: &str, doc: Doc, why: &str) -> bool {
             "document": doc.name(),
             "error": why,
             "reported": first,
+            "stage": stage,
         }),
     );
     if first {
         observe::capture(
-            &format!("in-place collection refused, folded uncollected: {why}"),
+            &format!("in-place collection refused, kept uncollected: {why}"),
             None,
             &[
                 ("room", material_id),
                 ("document", doc.name()),
-                ("stage", "fold"),
+                ("stage", stage),
             ],
         );
     }
@@ -795,8 +837,8 @@ async fn windows(
         .collect()
 }
 
-/// Stores `window` as a later collection's candidate and keeps only the
-/// newest [WINDOWS_KEPT].
+/// Stores `window` as a later collection's candidate and keeps the newest of
+/// each hour, for the latest [WINDOW_HOURS] hours that have one.
 async fn store_window(
     tx: &Transaction<'_>,
     material_id: &str,
@@ -819,10 +861,12 @@ async fn store_window(
     tx.execute(
         "DELETE FROM material_yjs_windows
          WHERE material_id=$1 AND document=$2 AND stored_version NOT IN (
-           SELECT stored_version FROM material_yjs_windows
+           SELECT DISTINCT ON (date_trunc('hour', created_at)) stored_version
+           FROM material_yjs_windows
            WHERE material_id=$1 AND document=$2
-           ORDER BY stored_version DESC LIMIT $3)",
-        &[&material_id, &doc.name(), &WINDOWS_KEPT],
+           ORDER BY date_trunc('hour', created_at) DESC, stored_version DESC
+           LIMIT $3)",
+        &[&material_id, &doc.name(), &WINDOW_HOURS],
     )
     .await?;
     Ok(())
@@ -1008,19 +1052,17 @@ mod tests {
             .encode_state_as_update_v1(&StateVector::default())
     }
 
-    /// A fold writes a collected state only when it loads, with nothing
-    /// pending, to the value it folded; otherwise it writes the folded
-    /// document whole (human/ 2026-10-24).
+    /// The guard (human/ 2026-10-24): a collected state passes only when it
+    /// loads, with nothing pending, to the value it was collected from, under
+    /// the client asked for (the open room's own, Q401); otherwise why not,
+    /// and the fold writes its document whole.
     #[test]
-    fn a_refused_collection_folds_uncollected() {
+    fn the_guard_passes_only_the_same_value_with_nothing_pending() {
         let folded = note("kept");
-        assert_eq!(
-            checked(&folded, state(&folded), Model::Note),
-            (state(&folded), None)
-        );
-        let lost = checked(&folded, state(&note("lost")), Model::Note);
-        assert_eq!(lost.0, state(&folded));
-        assert!(lost.1.is_some_and(|why| why.contains("another value")));
+        let live = loaded(&state(&folded), &folded, Model::Note, 77).unwrap();
+        assert_eq!(live.client_id().get(), 77);
+        let lost = loaded(&state(&note("lost")), &folded, Model::Note, 0);
+        assert!(lost.is_err_and(|why| why.contains("another value")));
         // An update naming structs the state does not hold.
         let later = ydoc::scratch_doc();
         ydoc::replay(&later, &state(&folded), &[] as &[&[u8]]).unwrap();
@@ -1029,35 +1071,44 @@ mod tests {
             .get_or_insert_text(notes::CONTENT_ROOT)
             .insert(&mut later.transact_mut(), 0, "x");
         let tail = later.transact().encode_state_as_update_v1(&before);
-        let pending = checked(&folded, tail, Model::Note);
-        assert_eq!(pending.0, state(&folded));
-        assert!(pending.1.is_some());
+        assert!(loaded(&tail, &folded, Model::Note, 0).is_err());
     }
 
-    /// A panic in the collection or its guard is a refusal: the folded
-    /// document whole, with why, and no Sentry event of its own (the refusal
-    /// is reported once instead).
+    /// A panic in the collection or its guard is a refusal, with why, and no
+    /// Sentry event of its own (the refusal is reported once instead).
     #[test]
-    fn a_panicking_collection_folds_uncollected() {
-        let folded = note("kept");
+    fn a_panicking_collection_is_a_refusal() {
         let mut result = None;
         let events = sentry::test::with_captured_events_options(
-            || result = Some(guarded(&folded, || panic!("collector bug"))),
+            || result = Some(guarded::<()>(|| panic!("collector bug"))),
             sentry::ClientOptions::new()
                 .add_integration(sentry::integrations::panic::PanicIntegration::new()),
         );
-        let (written, why) = result.unwrap();
-        assert_eq!(written, state(&folded));
-        assert_eq!(why.as_deref(), Some("panicked: collector bug"));
+        assert_eq!(result.unwrap(), Err("panicked: collector bug".to_owned()));
         assert!(events.is_empty(), "{events:?}");
     }
 
     /// A material's refusals reach Sentry once; another material's still do.
     #[test]
     fn a_refusal_is_reported_once_per_material() {
-        assert!(report_refusal("m_refused_once", Doc::Content, "why"));
-        assert!(!report_refusal("m_refused_once", Doc::Content, "why"));
-        assert!(!report_refusal("m_refused_once", Doc::Keys, "why"));
-        assert!(report_refusal("m_refused_other", Doc::Content, "why"));
+        assert!(report_refusal(
+            "m_refused_once",
+            Doc::Content,
+            "fold",
+            "why"
+        ));
+        assert!(!report_refusal(
+            "m_refused_once",
+            Doc::Content,
+            "live",
+            "why"
+        ));
+        assert!(!report_refusal("m_refused_once", Doc::Keys, "fold", "why"));
+        assert!(report_refusal(
+            "m_refused_other",
+            Doc::Content,
+            "fold",
+            "why"
+        ));
     }
 }

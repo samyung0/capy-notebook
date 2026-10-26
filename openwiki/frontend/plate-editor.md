@@ -1728,7 +1728,8 @@ from any page.
 
 Epo approved the in-place Yjs collection on 2026-10-23
 ([storage quota](../backend-storage-quota.md#yjs-storage-growth)): a note's
-stored state is collected when a room folds it, keeping what an open
+stored state is collected when a room folds it, and an open room's own
+document at its threshold folds (Q401, Epo 2026-10-26), keeping what an open
 session or an Undo may still name; the sessions below are its bookkeeping,
 and the collection stays off until the rest of its release lands. Notes only
 (Q274, 2026-10-24): quiz, flashcard and other item rooms and source rooms
@@ -1836,11 +1837,14 @@ keep no sessions and their full history.
   discard) ends the old lineage's sessions in its transaction (review r2
   L3).
 - **The fold's input** (`Sessions::holds`): the oldest version every counted
-  session reached (none when no session counts) and their held deletions with
-  the agent holds, which choose the collection's window and what it keeps.
+  session reached (none when no session counts), never past the oldest draft
+  group the room admitted and has not stored yet (Q400), and their held
+  deletions with the agent holds, which choose the collection's window and
+  what it keeps.
 - **Late.** A JOIN or a draft group naming a version below the latest
   collection's window has missed what that collection discarded (`late` in
-  `sessions.rs`, version 0 never is). So has one under the id of a session
+  `sessions.rs`, version 0 never is; a draft group must name 1 or later).
+  So has one under the id of a session
   whose record was lost, whatever version it names (Q385, review r2 M1): its
   held deletions were not kept; for a draft group, an id its grants name or
   one it writes under, which the room admits through its record (review r3
