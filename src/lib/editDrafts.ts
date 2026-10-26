@@ -68,10 +68,10 @@ export interface EditDraft {
   id: string;
   /** `${actorId}:material:${id}` or `${actorId}:file:${id}`. */
   key: string;
-  /** Yjs rows (`state`, `update`), or a note's saved copy edited before its
-   * room joined, as JSON (`copy`, Q229, features/notes/merge/copyDraft.ts),
-   * which no Yjs reader takes. */
-  kind: 'state' | 'update' | 'copy';
+  /** Yjs rows (`state`, `update`), or a note's JSON rows no Yjs reader
+   * takes: its saved copy edited before its room joined (`copy`, Q229) and
+   * the merge view's pieces (`piece`, Q251), features/notes/merge/. */
+  kind: 'state' | 'update' | 'copy' | 'piece';
   lineage: string;
   /** A save refused for good: shown for copying, never merged back. */
   refused?: true;
@@ -320,16 +320,16 @@ export function markDraftsReported(key: string, ids: string[]): Promise<void> {
   return markDrafts(key, ids, 'reported');
 }
 
-/** A row of Yjs updates: every other kind (a note's `copy`) is JSON that
- * only its own reader takes. */
+/** A row of Yjs updates: every other kind (a note's `copy` and `piece`
+ * rows) is JSON that only its own reader takes. */
 export const yjsRow = (row: { kind: EditDraft['kind'] }) =>
   row.kind === 'state' || row.kind === 'update';
 
 /** Unsent edits expire 7 days after their last edit (Epo 2026-10-24,
- * human/frontend/error-handling.md): the next open on the device shows them
- * once copy-only with a line that they are too old to sync, then deletes
- * them, and no sweep sends them. For notes until the merge view exists
- * (Q251); other kinds keep it. */
+ * human/frontend/error-handling.md), and no sweep sends them: the next open
+ * of a note on the device turns them into the merge view's pieces (Q251),
+ * never applying them raw; other kinds show them once copy-only with a line
+ * that they are too old to sync, then delete them. */
 export const DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The sessions among `rows` past the expiry: each session's edits expire
@@ -354,14 +354,16 @@ function expiredSessions(
  * lineage, or one session's rows past the 7-day expiry) to show read-only
  * first, `refused` and `expired` saying which. Further groups wait for the
  * next open. `same` compares lineages (text sources ignore the base). Only
- * Yjs rows are split; a note's copy rows go to their own reader.
+ * Yjs rows are split; a note's copy and piece rows go to their own readers.
+ * A note turns every recovery group into the merge view's pieces (Q251);
+ * other kinds show it copy-only.
  *
  * Rows of this lineage from a session the room never accepted that no draft
- * send delivers (held after one, or with no stored token) open copy-only
- * with the refused ones when they draw on their own (Epo 2026-10-25, Q360:
- * Q237 and Q251 until the merge view). Ones that need the room's document
- * stay current: the editor applies them, and the room's refusal of them
- * opens its whole document copy-only. The drafts worker decides which (its
+ * send delivers (held after one, or with no stored token) join the refused
+ * ones when they draw on their own (Epo 2026-10-25, Q360: Q237 and Q251).
+ * Ones that need the room's document stay current: the editor applies them,
+ * and the room's refusal of them keeps its whole document as a refused
+ * group. The drafts worker decides which (its
  * `draws`), so the main thread merges and applies held rows only once, as
  * recovery or as current rows (r5 N5); rows it cannot read stay current.
  */

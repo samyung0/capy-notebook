@@ -40,6 +40,7 @@ vi.mock('react', async (load) => ({
 const stored = vi.hoisted(() => ({ rows: [] as unknown[] }));
 vi.mock('@/lib/editDrafts', async (load) => ({
   ...(await load<typeof import('@/lib/editDrafts')>()),
+  deleteDrafts: vi.fn(async () => undefined),
   dropExpiredGroup: vi.fn(),
   readDrafts: vi.fn(async () => stored.rows),
 }));
@@ -50,7 +51,8 @@ import {
   dropExpiredGroup,
   type EditDraft,
 } from '@/lib/editDrafts';
-import { useNoteDrafts } from './NoteRecovery';
+import { useNoteDrafts } from './noteDrafts';
+import { pieceRow } from './pieceRows';
 
 const ROOM = 'material:m_1:schema:1';
 
@@ -84,13 +86,14 @@ it("applies accepted sessions' rows and leaves never-accepted ones with a token 
   expect(render()).toMatchObject({
     current: [accepted],
     pending: [pending],
-    recovery: null,
+    sources: [],
   });
 });
 
-// Late merge M5 (Epo 2026-10-24): rows whose last edit is over 7 days old
-// open once, copy-only and marked too old, and go as they open.
-it('opens an expired group once, copy-only, and drops it', async () => {
+// Q251: a group whose last edit is over 7 days old becomes pieces once the
+// room synced, never applied raw and never shown copy-only. Fails if the
+// expired group is applied (current) or dropped as it opens.
+it('makes an expired group a source of pieces, never applied or dropped', async () => {
   const doc = new Y.Doc();
   doc.getText('content').insert(0, 'old');
   const old = draft('a:state', {
@@ -100,13 +103,44 @@ it('opens an expired group once, copy-only, and drops it', async () => {
     savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
   });
   stored.rows = [old];
+  vi.mocked(dropExpiredGroup).mockClear();
   render();
   await vi.waitFor(() => expect(render()).not.toBeNull());
-  expect(render()).toMatchObject({
-    current: [],
-    recovery: { expired: true, refused: false, rows: [old] },
+  const drafts = render();
+  expect(drafts?.current).toEqual([]);
+  expect(drafts?.sources).toMatchObject([{ rows: [old], source: 'expired' }]);
+  expect(dropExpiredGroup).not.toHaveBeenCalled();
+});
+
+// Q251: refused and other-lineage groups become sources too, all of them
+// in one open, while the current rows still apply.
+it('makes every refused and other-lineage group a source, applying the current rows', async () => {
+  const state = (id: string, extra: Partial<EditDraft>) => {
+    const doc = new Y.Doc();
+    doc.getText('content').insert(0, id);
+    return draft(id, {
+      data: Y.encodeStateAsUpdate(doc),
+      kind: 'state',
+      ...extra,
+    });
+  };
+  const refused = state('r:state', { refused: true, session: 'r' });
+  const moved = state('m:state', {
+    lineage: 'material:m_1:schema:0',
+    session: 'm',
   });
-  expect(dropExpiredGroup).toHaveBeenCalledWith([old], expect.any(Function));
+  const live = draft('l:1', { accepted: true, session: 'l' });
+  stored.rows = [refused, moved, live];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  const drafts = render();
+  expect(drafts?.current).toEqual([live]);
+  expect(
+    drafts?.sources.map(({ rows, source }) => [rows[0].id, source])
+  ).toEqual([
+    ['r:state', 'refused'],
+    ['m:state', 'changed'],
+  ]);
 });
 
 const copyRow = (id: string, value: unknown, extra: Partial<EditDraft>) =>
@@ -123,51 +157,28 @@ const p = (id: string, text: string) => ({
 });
 
 // Q229: a copy edited before the room joined, left by a closed tab, goes to
-// the next editor, which shows it and merges it at the first sync.
-it('hands the editor the copies it merges at the first sync', async () => {
+// the next editor, which shows it and merges it at the first sync; an
+// expired copy becomes pieces whole; stored pieces show at once.
+it('hands the editor its copies, its stored pieces and an expired copy as a source', async () => {
   const copy = { base: [p('a', 'A')], mine: [p('a', 'A typed')], revision: 1 };
   const row = copyRow('s', copy, {});
-  stored.rows = [row];
+  const expired = copyRow('x', copy, {
+    savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
+  });
+  const piece = {
+    after: null,
+    at: 1,
+    block: 'a',
+    mine: p('a', 'Mine'),
+    source: 'refused' as const,
+  };
+  const stored_ = pieceRow('u_1:material:m_1', ROOM, piece, 2);
+  stored.rows = [row, expired, stored_];
   render();
   await vi.waitFor(() => expect(render()).not.toBeNull());
   expect(render()).toMatchObject({
     copies: { adopted: { copy, row }, others: [] },
-    recovery: null,
+    pieces: [{ piece, row: stored_ }],
+    sources: [{ copy, rows: [expired], source: 'expired' }],
   });
-});
-
-// Q229: blocks of the copy someone else changed too open copy-only under
-// their own line; an expired copy opens once and goes. Fails if either
-// reaches the editor's merge.
-it('opens the blocks a merge left copy-only, then an expired copy once', async () => {
-  const conflict = copyRow(
-    'c',
-    { mine: [p('b', 'B mine')] },
-    { refused: true }
-  );
-  const expired = copyRow(
-    'x',
-    { base: [], mine: [p('a', 'Old')], revision: 1 },
-    { savedAt: Date.now() - DRAFT_EXPIRY_MS - 1 }
-  );
-  vi.mocked(dropExpiredGroup).mockClear();
-  stored.rows = [conflict, expired];
-  render();
-  await vi.waitFor(() => expect(render()).not.toBeNull());
-  expect(render()).toMatchObject({
-    copies: { adopted: null, others: [] },
-    recovery: { conflict: true, rows: [conflict], value: [p('b', 'B mine')] },
-  });
-  expect(dropExpiredGroup).not.toHaveBeenCalled();
-  hooks.reset();
-  stored.rows = [expired];
-  render();
-  await vi.waitFor(() => expect(render()).not.toBeNull());
-  expect(render()).toMatchObject({
-    recovery: { expired: true, rows: [expired], value: [p('a', 'Old')] },
-  });
-  expect(dropExpiredGroup).toHaveBeenCalledWith(
-    [expired],
-    expect.any(Function)
-  );
 });

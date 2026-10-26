@@ -540,6 +540,8 @@ export function mockNotePeer(materialId: string) {
     /** The peer's own document, for edits inside a block (a figure's map). */
     document,
     leave,
+    /** Deletes the top-level block `id`. */
+    remove: (id: string) => root.delete(indexOf(id), 1),
     /** Puts `block` where the top-level block `id` is. */
     replace: (id: string, block: MaterialValue[number]) => {
       const index = indexOf(id);
@@ -842,6 +844,8 @@ class MockCollaborationProvider implements UnifiedProvider {
   /** A room event the service sends this note's editors. */
   announce(materialId: string, event: Record<string, unknown>) {
     if (this.options.materialId !== materialId || !this.isConnected) return;
+    if (event.type === 'document-rejected' && this.room)
+      this.room.retired = true;
     this.options.onStateless?.({
       payload: JSON.stringify({
         materialId,
@@ -1066,7 +1070,9 @@ export function discardMockMaterialRoom(materialId: string) {
   for (const provider of providers) provider.evicted(materialId);
 }
 /** The room refuses an open note's update for good (over a limit): its
- * editors keep their unsaved edits as a refused draft. */
+ * editors keep their unsaved edits as a refused draft. The service refuses
+ * the update on entry; the mock applied it already, so its room is retired
+ * and the next join loads the last checkpoint, without the update. */
 export function rejectMockNoteUpdate(materialId: string) {
   for (const provider of [...materialProviders])
     provider.announce(materialId, {

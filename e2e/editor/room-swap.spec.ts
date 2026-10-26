@@ -325,7 +325,10 @@ test.describe('on a phone', () => {
   });
 });
 
-test('a refused update keeps its edits for copying after the swap', async ({
+// Q251: a refused update's edits come back after the swap as the merge
+// view's pieces on the live note (no copy-only renderer), and Apply mine is
+// one Undo step.
+test("a refused update's edits come back as pieces after the swap", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -343,22 +346,44 @@ test('a refused update keeps its edits for copying after the swap', async ({
   });
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
-  await page.keyboard.type(' Kept for copying.');
+  await page.keyboard.type(' Refused text.');
   await page.evaluate(async () => {
     const path = '/src/mocks/collaboration.ts';
     const { rejectMockNoteUpdate } = await import(path);
     rejectMockNoteUpdate('mock-scenario-note');
   });
-  const recovery = page.getByTestId('note-recovery');
-  await expect(recovery).toContainText('Kept for copying.', {
-    timeout: 30_000,
-  });
-  await expect(page.getByTestId('save-banner')).toHaveAttribute(
-    'data-kind',
-    'refused'
-  );
-  await expect(recovery.locator('[contenteditable="true"]')).toHaveCount(0);
+  const strip = page.locator('[data-testid="save-banner"][data-kind="review"]');
+  await expect(strip).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
+  await expect(editor).toContainText(SCENARIO_SEED);
+  await expect(editor).not.toContainText('Refused text.');
+  await strip.getByRole('button', { name: m.merge_review() }).click();
+  const piece = page.locator('[data-merge-piece="mock-scenario-note-intro"]');
+  await expect(piece).toHaveAttribute('data-status', 'conflict');
+  await expect(piece).toContainText('Refused text.');
+  await piece.getByRole('button').first().click();
+  await piece.getByRole('button', { name: m.merge_apply() }).click();
+  await expect(piece).toHaveAttribute('data-status', 'resolved');
+  await expect(editor).toContainText('Refused text.');
+  await expect(strip).toHaveCount(0);
+  // In the room: a peer reads it.
+  const peerText = await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { mockNotePeer } = (await import(
+      path
+    )) as typeof import('../../src/mocks/collaboration');
+    const peer = mockNotePeer('mock-scenario-note');
+    const text = String(peer.document.get('content'));
+    peer.leave();
+    return text;
+  });
+  expect(peerText).toContain('Refused text.');
+  // Undo takes the choice back, and the piece is to review again.
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+Z');
+  await expect(editor).not.toContainText('Refused text.');
+  await expect(piece).toHaveAttribute('data-status', 'conflict');
+  await expect(strip).toBeVisible();
 });
 
 // The reading place wins over a restored caret, and the focus the editor

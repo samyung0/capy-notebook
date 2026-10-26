@@ -46,7 +46,7 @@ afterEach(() => {
 });
 
 describe('noteCopies', () => {
-  it('shows the newest live copy, merges older ones before it, and splits conflicts, an expired copy and unreadable rows', () => {
+  it('shows the newest live copy, merges older ones before it, and splits expired copies and unreadable rows', () => {
     const now = Date.now();
     const copy = {
       base: [p('a', 'A')],
@@ -55,28 +55,16 @@ describe('noteCopies', () => {
     };
     const older = copyRow('older', copy, { savedAt: now - 2000 });
     const newer = copyRow('newer', copy, { savedAt: now - 1000 });
-    const conflict = copyRow(
-      'c',
-      { mine: [p('b', 'B mine')] },
-      { refused: true }
-    );
     const expired = copyRow('x', copy, {
       savedAt: now - DRAFT_EXPIRY_MS - 1,
     });
     const broken = { ...copyRow('y', copy), data: new Uint8Array([123]) };
     const yjs = { ...copyRow('u', copy), kind: 'update' as const };
-    const read = noteCopies(
-      [newer, conflict, older, expired, broken, yjs],
-      now
-    );
+    const read = noteCopies([newer, older, expired, broken, yjs], now);
     expect(read.copies.adopted?.row).toBe(newer);
     expect(read.copies.adopted?.copy).toEqual(copy);
     expect(read.copies.others.map(({ row }) => row)).toEqual([older]);
-    expect(read.conflicts).toEqual({
-      rows: [conflict],
-      value: [p('b', 'B mine')],
-    });
-    expect(read.expired).toEqual({ row: expired, value: copy.mine });
+    expect(read.expired).toEqual([{ copy, row: expired }]);
     expect(read.unreadable).toEqual([broken]);
   });
 });

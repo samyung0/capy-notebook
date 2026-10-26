@@ -555,12 +555,14 @@ type RateReviewItemReq struct {
 // ReportEditIncidentReq is one editing incident only the browser sees, where
 // a user lost or could lose work (human/observability-metering.md,
 // 2026-10-05, 2026-10-06). The collaboration service records the room
-// incidents itself. Reasons are the tokens the browser sends, nothing else.
+// incidents itself. Reasons are the tokens the browser sends, nothing else;
+// `merge_view` is a note merge view choice that failed, its reason the
+// piece's source (Q261).
 type ReportEditIncidentReq struct {
 	FileID   string `json:"fileId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$" doc:"The note (material) or source file"`
 	FileKind string `json:"fileKind" enum:"material,source_file"`
-	Kind     string `json:"kind" enum:"other_epoch_draft,draft_unrestorable,draft_storage_failed,unconfirmed_edit,offline_episode,discard_unsaved"`
-	Reason   string `json:"reason,omitempty" enum:"reopen,held,epoch_changed,paused,base_missing,expired,quota,unavailable,write,browser_offline,unreachable,read_only,forbidden,not_found"`
+	Kind     string `json:"kind" enum:"other_epoch_draft,draft_unrestorable,draft_storage_failed,unconfirmed_edit,offline_episode,discard_unsaved,merge_view"`
+	Reason   string `json:"reason,omitempty" enum:"reopen,held,epoch_changed,paused,base_missing,expired,quota,unavailable,write,browser_offline,unreachable,read_only,forbidden,not_found,refused,changed,conflict"`
 	// The bytes at risk: the drafts involved, or what the device held unsaved.
 	// 1 GiB is far above the 100 MB source state cap.
 	SizeBytes *int64 `json:"sizeBytes,omitempty" minimum:"0" maximum:"1073741824"`

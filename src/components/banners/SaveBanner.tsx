@@ -12,15 +12,18 @@ import { FileBanner } from './FileBanner';
  *   and the editor stops taking edits until it reconnects.
  * - `refused`: a save was refused for good. `changed`: the file moved on
  *   (a newer version, a room reset) while the edits waited to sync.
- *   `expired`: the edits are past the 7-day expiry, too old to sync.
- *   `conflict`: blocks of a note's copy edited before its room joined that
- *   someone else changed meanwhile (Q229). All four show the edits read-only
- *   for copying; Reload is the only way out, so these cannot be closed.
+ *   `expired`: the edits are past the 7-day expiry, too old to sync. All
+ *   three show the edits read-only for copying (Office and text files and
+ *   item rooms; a note opens the merge view instead, Q251); Reload is the
+ *   only way out, so these cannot be closed.
  * - `outdated`: Capy was updated and the room refuses this build (the
  *   version gate); the editor is read-only, its edits stay on this device for
  *   the reloaded page to send, and Reload waits for the new app.
  *   `outdated-unstored`: and this device could not store the unsent edits,
  *   so the reload loses them.
+ * - `review`: a note has edits that could not sync waiting in the merge view
+ *   (Q252): Review opens it and Discard drops them all; it cannot be closed
+ *   and has the lowest priority.
  */
 export type SaveBannerState =
   | 'delayed'
@@ -30,30 +33,23 @@ export type SaveBannerState =
   | 'refused'
   | 'changed'
   | 'expired'
-  | 'conflict'
   | 'outdated'
-  | 'outdated-unstored';
+  | 'outdated-unstored'
+  | 'review';
 
 export function isOutdatedBanner(state: SaveBannerState | null | undefined) {
   return state === 'outdated' || state === 'outdated-unstored';
 }
 
 export function isRecoveryBanner(state: SaveBannerState | null) {
-  return (
-    state === 'refused' ||
-    state === 'changed' ||
-    state === 'expired' ||
-    state === 'conflict'
-  );
+  return state === 'refused' || state === 'changed' || state === 'expired';
 }
 
 /** The strip of a copy-only group of stored edits. */
 export function recoveryBanner(group: {
-  conflict?: boolean;
   expired?: boolean;
   refused: boolean;
 }): SaveBannerState {
-  if (group.conflict) return 'conflict';
   if (group.expired) return 'expired';
   return group.refused ? 'refused' : 'changed';
 }
@@ -63,13 +59,13 @@ const MESSAGES: Record<
   () => string
 > = {
   changed: () => m.editor_recovery_changed(),
-  conflict: () => m.editor_recovery_conflict(),
   delayed: () => m.editor_save_delayed(),
   expired: () => m.editor_recovery_expired(),
   offline: () => m.editor_offline_banner(),
   'offline-limit': () => m.editor_offline_limit(),
   'offline-unstored': () => m.editor_offline_unstored(),
   refused: () => m.source_edit_recovery(),
+  review: () => m.merge_strip(),
 };
 
 /**
@@ -79,35 +75,49 @@ const MESSAGES: Record<
  */
 export function SaveBanner({
   state,
+  onDiscard,
   onReload,
+  onReview,
   reloading = false,
 }: {
   state: SaveBannerState;
+  /** `review`: drop every piece (after a confirmation). */
+  onDiscard?: () => void;
   onReload?: () => void;
+  /** `review`: open the merge view. */
+  onReview?: () => void;
   reloading?: boolean;
 }) {
   if (isOutdatedBanner(state))
     return <OutdatedBanner stored={state === 'outdated'} />;
+  const review = state === 'review' && onReview && onDiscard;
   return (
     <FileBanner
       actions={
-        isRecoveryBanner(state) && onReload
+        review
           ? [
-              {
-                disabled: reloading,
-                label: m.error_action_reload(),
-                onClick: onReload,
-              },
+              { label: m.merge_review(), onClick: onReview },
+              { label: m.merge_discard_all(), onClick: onDiscard },
             ]
-          : []
+          : isRecoveryBanner(state) && onReload
+            ? [
+                {
+                  disabled: reloading,
+                  label: m.error_action_reload(),
+                  onClick: onReload,
+                },
+              ]
+            : []
       }
-      closeable={!isRecoveryBanner(state)}
+      closeable={!(isRecoveryBanner(state) || state === 'review')}
       inline
       kind={state}
       message={MESSAGES[state]()}
       testId="save-banner"
       tone={
-        state === 'offline' || state === 'offline-limit' ? 'neutral' : 'error'
+        state === 'offline' || state === 'offline-limit' || state === 'review'
+          ? 'neutral'
+          : 'error'
       }
     />
   );

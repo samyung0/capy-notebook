@@ -12,6 +12,7 @@ export const editorScenarios = [
     label: 'Text source: reopen a recovered draft',
   },
   { id: 'note-permission-lost', label: 'Note: edit access removed' },
+  { id: 'note-merge-review', label: 'Note: edits to review' },
   { id: 'office-docx-save', label: 'Word: save failed after editing' },
   { id: 'office-xlsx-save', label: 'Spreadsheet: save failed after editing' },
   { id: 'office-pptx-save', label: 'Slides: save failed after editing' },

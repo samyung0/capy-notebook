@@ -1638,13 +1638,15 @@ from any page.
   rows and syncs them over its live channel; rows of a never-accepted
   session with a stored token go through the draft send (`draftSender`)
   while the editor joins. Never-accepted rows no send delivers (held after
-  one, or with no stored token) open copy-only with the refused rows when
-  they draw on their own (the drafts worker's `draws` decides, so the main
-  thread merges and applies them once), as Q237 and Q251 say until the merge
-  view exists (Epo 2026-10-25, Q360), reported once as the edit incident
+  one, or with no stored token) join the refused rows when they draw on
+  their own (the drafts worker's `draws` decides, so the main thread merges
+  and applies them once): a note's become the merge view's pieces, other
+  kinds open them copy-only (Epo 2026-10-25, Q360, Q251), reported once as
+  the edit incident
   `other_epoch_draft`/`held` (never sent, so no service log has them); ones
   that need the room's document are applied, and the room's live refusal of
-  them opens the whole document copy-only. Restored rows the room's document
+  them keeps the whole document as a refused group (pieces for a note,
+  copy-only otherwise). Restored rows the room's document
   cannot place either (their base is gone) go at the first receipt with the
   drafts-lost notice, reported `draft_unrestorable`/`base_missing` as
   recovery reports a group nothing can draw (an item room too, under its
@@ -1660,8 +1662,9 @@ from any page.
   are held no socket is open, so a server that comes back is noticed only by
   the next try: the hold's own connect, the browser's `online` event and the
   backoff are its triggers. A send that settles before the hold with a group
-  the room did not take opens it copy-only at once (a note remounts, an item
-  room is replaced, a source session opens again). Not settled 30 s after
+  the room did not take opens it at once (a note remounts with it as
+  pieces, an item room is replaced, a source session opens again, both
+  copy-only). Not settled 30 s after
   the open (`DRAFT_SEND_WAIT_MS`) with the room synced, or at a first sync
   after that, the editor closes its channel, applies those rows, adds them
   to its recorder's adopted rows and edits on: every edit is stored as a
@@ -1673,7 +1676,7 @@ from any page.
   offline, and syncing (a source saving) again once back online. Once a send
   is accepted the editor joins and continues; one the room refused leaves
   the steps in the document, so the live sync is refused `unassigned` and
-  the edits open in the copy-only recovery. Before a first sync the join's
+  the edits become pieces (copy-only recovery for items and sources). Before a first sync the join's
   own 30 s connection error stands. A live refusal has no automatic
   fallback: an accepted session is refused only once its record and its
   tokens are past 7 days.
@@ -1693,8 +1696,9 @@ from any page.
   keeps its unsaved edits as a refused draft), source rooms
   `source-checkpoint-failed` with `recoverable: false` and code `unassigned`
   (recovery), and a draft send answers 409 `unassigned` (the group is held,
-  never sent again: its next open shows it copy-only, or applies it when it
-  needs the room's document, which the live refusal then opens copy-only).
+  never sent again: its next open makes it pieces (copy-only for items and
+  sources), or applies it when it needs the room's document, which the live
+  refusal then keeps as a refused group).
   Each is logged at warn and recorded as
   the edit incident `save_refused`/`client_id`. So after the server lost
   state a tab restores only its own user's unsaved edits; another user's are
@@ -2118,13 +2122,13 @@ the sync sends it. On the
 next open of the note `NoteEditor` reads its rows beside the token: rows of
 the token's room are applied before the room connects (updates whose base is
 missing stay pending until the sync brings it) and saved like any edit; rows
-of another room, and refused rows, open read-only in copy-only recovery
-(`NoteRecovery`: the static renderer under a `changed` or `refused` banner
-whose Reload deletes them, one group at a time). A lineage's rows expire 7
-days after its newest row (`draftGroups`, Epo 2026-10-24): that group opens
-once under the `expired` banner and is deleted as it opens
-(`dropExpiredGroup`), and the draft sweep never sends it; for notes until the
-merge view (Q251). A group with no `state` row
+of another room, refused rows and a session's rows past the expiry become
+the merge view's pieces once the room synced (see [the merge
+view](#the-merge-view), Q251); nothing of them is applied. A session's rows
+expire 7 days after its newest row (`draftGroups`, Epo 2026-10-24), and the
+draft sweep never sends them; items, Office and text files show an expired
+group once under the `expired` banner and delete it as it opens
+(`dropExpiredGroup`). A group with no `state` row
 cannot be drawn (a tab closed online, then the room moved): it is dropped
 with "Some unsaved edits from your last session couldn't be restored."
 
@@ -2191,13 +2195,92 @@ room joins (`src/features/notes/merge/`):
   any edit and the editor asks for a receipt at once. A block only the room
   changed, or neither, stays as the room has it; one both moved keeps the
   room's place. A block both changed differently is a conflict: the room's
-  version stays, and the copy's version (when the copy did not delete it) is
-  kept as one `refused` copy row, which the editor remounts to show copy-only
-  under the `conflict` banner (until the merge view, Q229). Blocks without an
+  version stays, and the copy's version becomes a piece of the merge view
+  (`conflict`, carrying its base; one the copy deleted is a piece with no
+  version of the user's). A copy past the 7-day expiry is never merged: each
+  block it changed becomes a piece (`expired`). Blocks without an
   id match by content; their deletion cannot be placed. The merge reads the
   room's tree in the same task it applies, so a block changed meanwhile is
   never overwritten (first applied wins; no lock). A merge that throws is
   reported to Sentry (`note-copy-merge`) and the rows stay for the next open.
+
+### The merge view
+
+Epo decided on 2026-10-24 (Q251, Q252, Q253-Q265 as recommended, Q261
+amended) that a note's edits that could not sync open the live note with a
+merge view instead of copy-only recovery (`src/features/notes/merge/`).
+Items, Office and text files keep copy-only recovery.
+
+- **Pieces** (`types.ts`). Each is one top-level block of the user's
+  version (`mine`, null when the user deleted it), the block before it there
+  (`after`, where a restore goes), its source (`refused`, `changed`,
+  `expired`, `conflict`) and, for a Q229 conflict, the base. A piece holds no
+  Yjs ids, so id expiry, collection and lineage moves never invalidate it;
+  the room's version is read live by block id. Its status is derived, never
+  stored (`pieceStatus`): `conflict`, `theirs-deleted`, `mine-deleted` or
+  `resolved` (the current block equals `mine`, both deleted, or the copy it
+  inserted is in the note).
+- **Stored** as `piece` rows of the draft store (`pieceRows.ts`): JSON kept as
+  bytes, one row per block per document (`piece:<key>:<block>`, the newer
+  replacing the older with a higher `seq`), never sent by the sweep
+  (`yjsRow`), kept through sign-out, deleted with the document's rows when
+  the account loses it. Pieces never expire (Q254).
+- **What becomes pieces.** At the room's first sync and after its paint
+  (`convertSources`), each refused, other-lineage, expired or undelivered
+  (Q360) Yjs group read at open (`useNoteDrafts` in `noteDrafts.ts`) is drawn
+  and compared with the synced room (`piecesFromDrafts`): a top-level block
+  is the user's to review when the user's document shows something the
+  room's does not, past the room's state vector (typing, inserted elements,
+  attributes), or deletes something the room still shows (`changedBlocks`);
+  of those, blocks whose version equals the current one are left out, so a
+  move alone makes none. The pieces are written, then the group's rows
+  deleted (the drafts worker keeps the order; a repeat converts to the same
+  rows). An expired saved copy becomes a piece per block it changed
+  (`piecesFromCopy`), and a copy's conflicting blocks at the bind become
+  pieces at once. A conversion that throws is reported to Sentry
+  (`merge-view`) and its rows stay for the next open.
+- **The strip and the sheet** (Q252). While unresolved pieces exist the save
+  banner shows `review` ("Some of your edits couldn't sync into this note."),
+  with Review and Discard in the close button's place; it cannot be closed
+  and comes last (outdated, offline, delayed, review). Discard drops every
+  piece after a confirmation. Review opens `NoteMergeView` (lazy-loaded),
+  non-modal over the note: the bottom 60% on phones, a 400 px right sheet
+  from md (below the strip, so its actions stay in reach), never docked,
+  since re-flowing a large note costs seconds. Rows list the pieces in
+  document order: a status chip, the source and a text excerpt; expanded,
+  "Yours" and "Current" as static renders. A row's header scrolls the note
+  to its block (else the block before it) and marks it for 1.5 s with a DOM
+  attribute (no Slate render); a phone's sheet closes for it, and Review
+  reopens it on the same piece. Esc and the close button close the sheet.
+- **Choices** (`applyPiece.ts`, Q253): a conflict offers Apply mine, Keep
+  current, Insert as new block and Copy; a block someone deleted Restore
+  mine, Discard and Copy; a block the user deleted Delete current and Keep
+  current. Apply, Insert, Restore and Delete are ordinary edits of the bound
+  note, one local Yjs transaction and one Undo step each under the session's
+  id (`asOneStep`): Apply keeps a same-type block's element; Insert and
+  Restore put a copy under a new top-level id (nested ids clashing with the
+  note's are renewed by `stableElementIds`) after the current block, else
+  after `after`, else at the end. They need the live, synced, bound note,
+  never paused, refused, locked, held or offline (Q255: "Reconnect to
+  apply"); Keep, Discard and Copy always work. Copy writes the block as text
+  and as its static render's HTML.
+- **Kept current** (`mergeStore.ts`). Each change of the note (local or
+  remote) re-reads the pieces' blocks a frame later, O(pieces): the cached
+  index first, and a block object seen before (Slate nodes are immutable)
+  costs no comparison. An applied piece stays listed as Applied until the
+  sheet closes or the mount ends, so Undo makes it a conflict again (Q256);
+  then resolved rows are deleted. A choice compares the block it was shown
+  with the note's: one changed since applies nothing and the row says "This
+  block just changed. Review it again." (first applied wins, no lock; two
+  Applies within milliseconds both land, accepted).
+- **Lifecycle.** The live mount's store is the sheet's, and a paused one's
+  while it is on screen, its choices off; a standby mount registers none, and
+  the sheet's open state lives in `NoteEditor`, so it survives a room swap.
+  Before the first sync stored pieces show with their choices off and groups
+  wait. Each tab re-diffs from the room on its own; a dismissal shows in
+  another tab at its next open (Q264). Q261: only an unexpected failure is an
+  incident, a choice that throws (`merge_view`, the piece's source as the
+  reason); pieces entering the view are none.
 
 ### Sending drafts without the editor open
 
@@ -2272,8 +2355,9 @@ class
 
 - `limit` (422, over a content limit or a source's state cap) and
   `malformed` (400, not an update a writer may send): the group is marked
-  `refused` and opens read-only at the next open, as the editor's own
-  refusals do, when it draws on its own (the worker's `draws`); otherwise it
+  `refused` and opens at the next open as the editor's own refusals do
+  (pieces for a note, copy-only otherwise), when it draws on its own (the
+  worker's `draws`); otherwise it
   is marked `held`, left for the editor's next open, where the room
   refuses it again and the editor keeps the whole document as its refused
   row; neither is sent again, so the room records the over-limit incident
@@ -2283,7 +2367,8 @@ class
   `too_large` (413) and `lineage` (409, a token for another room, a schema
   or epoch that moved on, another Office base): marked `held`, left for the
   editor's next open, which applies a held group of an accepted session and
-  shows any other copy-only (see opening with stored drafts, Q360);
+  shows any other as pieces or copy-only (see opening with stored drafts,
+  Q360);
 - `outdated` (426, the page's client protocol is refused): kept unmarked,
   and no sweep runs again until the page reloads (see
   [Client protocol](#client-protocol-and-the-release-nudge));
@@ -2539,11 +2624,10 @@ by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
   toolbar is inert, the palette and AI menu unmount, it leaves its room
   (no reconnect), writes its unsaved edits as one whole document (its child
   effect runs before `useNoteDrafts` reads the next room's drafts, so another
-  lineage's edits still open in recovery, as before) and reports nothing
+  lineage's edits still become pieces) and reports nothing
   more: no status, presence, banners or refusals. Reading, scrolling,
   selecting, copying and links still work.
-- **Standby**: the next renderer (an editor, or `NoteRecovery` when stored
-  edits must show for copying) once the next room's stored edits are read.
+- **Standby**: the next editor once the next room's stored edits are read.
   It mounts `invisible absolute inset-0` and `inert` beside the paused one,
   so its layout is real, connects and syncs, and its header status reads
   Reconnecting (with a slowed open's line); `NoteEditor` reports Reconnecting
