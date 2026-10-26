@@ -378,8 +378,9 @@ test("a refused update's edits come back as pieces after the swap", async ({
     return text;
   });
   expect(peerText).toContain('Refused text.');
-  // Undo takes the choice back, and the piece is to review again.
-  await editor.click();
+  // Undo takes the choice back, and the piece is to review again. The sheet
+  // covers the note's right side: focus it at its left edge.
+  await editor.click({ position: { x: 8, y: 8 } });
   await page.keyboard.press('ControlOrMeta+Z');
   await expect(editor).not.toContainText('Refused text.');
   await expect(piece).toHaveAttribute('data-status', 'conflict');

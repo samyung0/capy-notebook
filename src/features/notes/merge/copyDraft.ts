@@ -1,3 +1,4 @@
+import type { Operation } from 'platejs';
 import type { MaterialValue } from '@/features/materials/document';
 import type { DraftRef } from '@/lib/draftStore';
 import {
@@ -78,11 +79,21 @@ export function holdCopy(session: string) {
   return () => release();
 }
 
+/** The editor takes over its copy's lock from the read that adopted it
+ * (Q410): its own request goes first, then the adoption's lock, so no other
+ * tab takes the row between them. Returns the editor's release. */
+export function takeOverCopy(session: string, adoption: () => void) {
+  const release = holdCopy(session);
+  adoption();
+  return release;
+}
+
 /** Takes the lock of the copy session `session` only if no tab holds it
- * (Q410), so two tabs opening together never adopt the same row; resolves
- * its release, or null when another tab holds it. */
+ * (Q410, Q421), so two tabs opening together never take the same row;
+ * resolves its release, or null when another tab holds it, and rejects when
+ * Web Locks fail. */
 export function takeCopy(session: string) {
-  return new Promise<(() => void) | null>((answer) => {
+  return new Promise<(() => void) | null>((answer, fail) => {
     navigator.locks
       .request(`${LOCK}${session}`, { ifAvailable: true }, (lock) => {
         if (!lock) {
@@ -91,7 +102,7 @@ export function takeCopy(session: string) {
         }
         return new Promise<void>((release) => answer(() => release()));
       })
-      .catch(() => answer(null));
+      .catch(fail);
   });
 }
 
@@ -143,6 +154,56 @@ export function noteCopies(
   };
 }
 
+/**
+ * The copies this tab takes, each under its lock taken only if free: the
+ * newest no tab holds is adopted (Q410), older ones (closed tabs') merge
+ * first (Q421); a row another tab took meanwhile is that tab's, never shown
+ * or merged here. `copies.release` lets go of the adopted row's lock (the
+ * editor takes it over); every lock taken goes into `taken`. Rejects when
+ * Web Locks fail.
+ */
+export async function lockCopies(
+  rows: EditDraft[],
+  held: Set<string>,
+  active: () => boolean,
+  taken: (() => void)[]
+) {
+  let split = noteCopies(rows, held);
+  let adoption = nothing;
+  while (split.copies.adopted && active()) {
+    const { session } = split.copies.adopted.row;
+    const lock = await takeCopy(session);
+    if (lock) {
+      taken.push(lock);
+      adoption = lock;
+      break;
+    }
+    held.add(session);
+    split = noteCopies(rows, held);
+  }
+  const others: StoredCopy[] = [];
+  for (const other of split.copies.others) {
+    const lock = active() ? await takeCopy(other.row.session) : null;
+    if (!lock) continue;
+    taken.push(lock);
+    others.push(other);
+  }
+  return {
+    ...split,
+    copies: { adopted: split.copies.adopted, others, release: adoption },
+  };
+}
+
+/** Whether an edit inserts more than one character, which no keystroke
+ * does: a paste of text or of blocks (a node always counts). The typing
+ * before it is written first (Q410, Q421). */
+export const insertsMany = (operations: readonly Operation[]) =>
+  operations.some(
+    (op) =>
+      op.type === 'insert_node' ||
+      (op.type === 'insert_text' && op.text.length > 1)
+  );
+
 /** How often an edited copy is written at most. */
 export const COPY_WRITE_MS = 1000;
 
@@ -154,8 +215,10 @@ export const COPY_WRITE_MS = 1000;
  * one row. A copy grown past `limitBytes` over its base (the offline bound
  * drafts keep, review r1 L2) is not written: `onLimit` locks the editor, and
  * `kept` is the last value written (null when none was). An edit that
- * inserts nodes (a paste) writes the typing before it first (Q410), so the
- * bound drops only that edit.
+ * inserts more than a keystroke (`insertsMany`, a paste) writes the typing
+ * before it first (Q410, Q421), so the bound drops only that edit.
+ * `editedAt` is the copy's last edit (the adopted row's write until this
+ * mount edits it): past the 7-day expiry it is never merged (Q421).
  */
 export function recordCopy({
   adopted,
@@ -180,6 +243,7 @@ export function recordCopy({
   let seq = row?.seq ?? 0;
   let written: DraftRef | null = row ? { id, key, seq } : null;
   let kept: MaterialValue | null = adopted?.copy.mine ?? null;
+  let editedAt = row?.savedAt ?? Date.now();
   // The base is the same in every write: encoded once.
   let baseJson: string | null = null;
   let baseBytes = 0;
@@ -227,7 +291,11 @@ export function recordCopy({
       if (stopped) return;
       if (inserted) flush();
       latest = value;
+      editedAt = Date.now();
       timer ??= setTimeout(flush, COPY_WRITE_MS);
+    },
+    get editedAt() {
+      return editedAt;
     },
     flush,
     get kept() {

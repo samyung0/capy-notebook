@@ -1688,6 +1688,32 @@ describe('the draft sweep sending', () => {
     ).toHaveLength(1);
   });
 
+  // Merge view review r2 L3 (Q421): rows held as hidden typing are a group
+  // of their own; refused rows beside them keep their reason.
+  it('keeps hidden rows apart from refused rows of the same lineage', async () => {
+    const limit = draft('l:state', {
+      kind: 'state',
+      refused: true,
+      session: 'l',
+    });
+    const typed = draft('h:state', {
+      hidden: true,
+      kind: 'state',
+      refused: true,
+      session: 'h',
+    });
+    const first = await draftGroups([limit, typed], ROOM);
+    expect(first).toMatchObject({
+      hidden: false,
+      recovery: [limit],
+      refused: true,
+    });
+    expect(await draftGroups([typed], ROOM)).toMatchObject({
+      hidden: true,
+      recovery: [typed],
+    });
+  });
+
   it('leaves a group only the editor can send for its next open, without sending it again', async () => {
     const keys = ['too_large', 'unheld', 'unassigned', 'lineage', 'hidden'].map(
       (_, index) => `u_waits:material:mat_${index}`

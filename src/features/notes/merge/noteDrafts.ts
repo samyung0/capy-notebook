@@ -14,10 +14,10 @@ import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import { toastDraftsLost } from '../saveFailure';
 import {
   heldCopies,
+  lockCopies,
   type NoteCopies,
   type NoteCopy,
   noteCopies,
-  takeCopy,
 } from './copyDraft';
 import { storedPieces } from './pieceRows';
 import type { MergePiece, PieceSource } from './types';
@@ -71,9 +71,12 @@ export function useNoteDrafts(
   useEffect(() => {
     if (!(key && room)) return;
     let active = true;
-    // The adopted copy's lock, until its editor takes it over (or this read
-    // is dropped).
-    let release = () => {};
+    // The copies' locks (the adopted one until its editor takes it over),
+    // let go when this read is dropped or its mount ends.
+    const taken: (() => void)[] = [];
+    const release = () => {
+      for (const lock of taken.splice(0)) lock();
+    };
     const report = editIncidentReporter('material', materialId);
     void (async () => {
       let rows = await readDrafts(key).catch((error) => {
@@ -82,19 +85,15 @@ export function useNoteDrafts(
       });
       const pieces = storedPieces(rows);
       const held = await heldCopies().catch(() => null);
-      let copy = noteCopies(rows, held);
-      // Adopted only once its lock is taken (Q410): a row another tab
-      // took meanwhile is that tab's.
-      while (held && copy.copies.adopted && active) {
-        const { session } = copy.copies.adopted.row;
-        const taken = await takeCopy(session);
-        if (taken) {
-          release = taken;
-          break;
-        }
-        held.add(session);
-        copy = noteCopies(rows, held);
-      }
+      // Each copy under its lock (Q410, Q421). Without Web Locks, or when
+      // they fail (review r2 N6), nothing is adopted and every live copy
+      // merges as an older one.
+      const copy = held
+        ? await lockCopies(rows, held, () => active, taken).catch(() => {
+            release();
+            return noteCopies(rows, null);
+          })
+        : noteCopies(rows, null);
       if (!active) {
         release();
         return;
@@ -124,7 +123,7 @@ export function useNoteDrafts(
           }
           const { apply, send } = splitOpenDrafts(current);
           setDrafts({
-            copies: { ...copy.copies, release },
+            copies: copy.copies,
             current: apply,
             for: `${room}:${generation}`,
             pending: send,

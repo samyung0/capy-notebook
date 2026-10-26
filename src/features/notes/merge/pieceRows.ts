@@ -27,8 +27,11 @@ function contentHash(mine: MergePiece['mine']) {
 export const pieceKey = (piece: MergePiece) =>
   `${piece.block}:${contentHash(piece.mine)}`;
 
+/** What every piece row id of the document `key` starts with. */
+export const piecePrefix = (key: string) => `piece:${key}:`;
+
 export const pieceId = (key: string, piece: MergePiece) =>
-  `piece:${key}:${pieceKey(piece)}`;
+  `${piecePrefix(key)}${pieceKey(piece)}`;
 
 let written = 0;
 /** A rewrite's seq: the time with a per-tab counter, so two tabs that read
@@ -39,11 +42,12 @@ export function pieceRow(
   key: string,
   lineage: string,
   piece: MergePiece,
-  seq: number
+  seq: number,
+  id = pieceId(key, piece)
 ): EditDraft {
   return {
     data: encoder.encode(JSON.stringify(piece)),
-    id: pieceId(key, piece),
+    id,
     key,
     kind: 'piece',
     lineage,

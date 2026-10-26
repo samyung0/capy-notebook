@@ -2196,8 +2196,10 @@ room joins (`src/features/notes/merge/`):
   edits. A copy keeps the offline bound drafts keep (Epo 2026-10-26, Q397):
   one grown more than 2 MiB over its base is not written further, the editor
   stops under the `offline-limit` strip, and the bind merges the copy as
-  last written. An edit that inserts nodes (a paste) writes the typing
-  before it first, so the bound drops only that edit (Q410). A paused editor
+  last written. An edit that inserts more than one character, which no
+  keystroke does (a paste of text or of blocks, `insertsMany`), writes the
+  typing before it first, so the bound drops only that edit (Q410, Q421).
+  A paused editor
   (a room swap before its bind) writes its copy, stops recording and lets go
   of its lock, so the next mount adopts it (Q409). An unreadable copy
   row is dropped with the drafts-lost notice and reported
@@ -2211,12 +2213,14 @@ room joins (`src/features/notes/merge/`):
   deleted, and merges when its own tab joins (or at the next open once that
   tab closed). A reopened note shows the newest copy no tab holds and goes
   on with that row (same id, a higher `seq`); older ones (closed tabs')
-  merge first. The newest copy's lock is taken as it is read, only if free
-  (`takeCopy`, `ifAvailable`, Q410), and the editor asks for its own before
-  that one goes, so two tabs opening together never adopt one row; a row
-  another tab took meanwhile is left to it. Without Web Locks no copy is
-  adopted and each merges as an older one, another open tab's too: that
-  tab's later typing then shows as conflict pieces at its own bind (Q410).
+  merge first. Every copy a tab takes is locked as it is read, only if free
+  (`lockCopies`, `takeCopy` with `ifAvailable`): the adopted one (Q410) and
+  each older one it merges (Q421), so two tabs opening together never show
+  or merge one row twice; a row another tab took meanwhile is left to it.
+  The editor asks for its own lock before the adopted one's goes
+  (`takeOverCopy`). Without Web Locks, or when they fail, no copy is adopted
+  and each merges as an older one, another open tab's too: that tab's later
+  typing then shows as conflict pieces at its own bind (Q410).
 - **Undo before the bind** (Q397). The Yjs history works on the bound
   document only, so until the bind Undo and Redo walk Slate's own history of
   the copy (`roomBindingPlugin`).
@@ -2250,7 +2254,9 @@ room joins (`src/features/notes/merge/`):
   copies' rows are deleted (`deleteOnceStored`, Q397): a failed write keeps
   the copies for the next open and shows the drafts-lost notice. A copy past
   the 7-day expiry is never merged: each block it changed becomes a piece
-  (`expired`). Within a tab the first applied wins; two tabs whose binds
+  (`expired`), at the next open's read or, for a copy whose last edit
+  passed the expiry while its tab stayed unbound, the tab's own included,
+  at the bind (`editedAt`, Q421). Within a tab the first applied wins; two tabs whose binds
   race over the network can both apply, and Yjs keeps both texts (accepted,
   as the merge view's plan does). A merge that throws is reported to Sentry
   (`note-copy-merge`) and the rows stay for the next open, with the last
@@ -2290,7 +2296,8 @@ Items, Office and text files keep copy-only recovery.
   (`piece:<key>:<block>:<hash of mine>`, Q409): a block may have several
   pieces, a piece never replaces a different one of its block, and one equal
   to a listed piece of its block (`sameBlock`) is not added, so a repeat
-  conversion never duplicates. A rewrite (Insert's mark) keeps the row's id
+  conversion never duplicates; a different piece whose hash matches takes
+  the key with `:2` after it. A rewrite (Insert's mark) keeps the row's id
   with a new `seq` from the time and a per-tab counter, unique across tabs,
   so another tab's exact delete never removes it (Q410). Rows are never sent
   by the sweep (`yjsRow`), kept through sign-out, deleted with the
@@ -2303,8 +2310,9 @@ Items, Office and text files keep copy-only recovery.
   room's does not, past the room's state vector (typing, inserted elements,
   attributes), or deletes something the room still shows (`changedBlocks`);
   of those, blocks whose version equals the current one are left out, so a
-  move alone makes none. A group the service held as hidden typing (its
-  rows marked `hidden`, below) is a `hidden` source. The pieces are written,
+  move alone makes none. Rows the service held as hidden typing (marked
+  `hidden`, below) are a group of their own and a `hidden` source; refused
+  rows beside them keep their own reason (Q421). The pieces are written,
   then the group's rows deleted (the drafts worker keeps the order; a repeat
   converts to no new rows). An expired saved copy becomes a piece per block it changed
   (`piecesFromCopy`), and a copy's conflicting blocks at the bind become
@@ -2373,7 +2381,7 @@ Items, Office and text files keep copy-only recovery.
   holder, or next to a unit the room collected with its deleted container
   (`ydoc::inspect`'s `hidden_units`), as `hidden` (409); the send (a sweep's
   or the editor's own) holds the group for the editor's next open and marks
-  its rows `hidden`: applied there, the join finds the typing; drawn on its
+  its rows `held` and `hidden` in one write: applied there, the join finds the typing; drawn on its
   own, the group becomes `hidden` pieces (Q410). Live typing over a
   socket into a block someone just deleted is ordinary collaboration and
   admitted. Hidden typing is never an incident (Q261).

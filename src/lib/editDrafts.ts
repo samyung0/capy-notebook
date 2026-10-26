@@ -312,10 +312,10 @@ export async function dropLostDrafts(
 function markDrafts(
   key: string,
   ids: string[],
-  flag: 'accepted' | 'held' | 'hidden' | 'refused' | 'reported'
+  ...flags: ('accepted' | 'held' | 'hidden' | 'refused' | 'reported')[]
 ): Promise<void> {
   if (!(stored(key) && ids.length)) return Promise.resolve();
-  return call({ flag, ids, key, op: 'mark' });
+  return call({ flags, ids, key, op: 'mark' });
 }
 
 /** Marks these rows of a document reported (edit_incidents). */
@@ -355,9 +355,9 @@ function expiredSessions(
  * Split a document's rows against the room it opens: `current` merges into
  * the live document; `recovery` is one group (refused rows, one other
  * lineage, or one session's rows past the 7-day expiry) to show read-only
- * first, `refused` and `expired` saying which (`hidden`: refused rows the
- * service held as typing into a deleted block). Further groups wait for the
- * next open. `same` compares lineages (text sources ignore the base). Only
+ * first, `refused` and `expired` saying which (`hidden`: rows the service
+ * held as typing into a deleted block, a group of their own, Q421). Further
+ * groups wait for the next open. `same` compares lineages (text sources ignore the base). Only
  * Yjs rows are split; a note's copy and piece rows go to their own readers.
  * A note turns every recovery group into the merge view's pieces (Q251);
  * other kinds show it copy-only.
@@ -412,14 +412,16 @@ export async function draftGroups(
         )
       : rows.filter(
           (row) =>
-            same(row.lineage, first.lineage) && refused(row) === refused(first)
+            same(row.lineage, first.lineage) &&
+            refused(row) === refused(first) &&
+            !!row.hidden === !!first.hidden
         );
   return {
     current: rows.filter(
       (row) => !(old(row) || refused(row)) && same(row.lineage, lineage)
     ),
     expired: stale,
-    hidden: !stale && recovery.some((row) => row.hidden),
+    hidden: !stale && !!first?.hidden,
     recovery,
     refused: !stale && !!first && refused(first),
   };
@@ -1241,8 +1243,9 @@ async function sendGroups(
       const draws =
         sent === 'refused' &&
         (await call<boolean | null>({ op: 'draws', rows: refs }));
-      await markDrafts(key, ids, draws ? 'refused' : 'held');
-      if (sent === 'hidden') await markDrafts(key, ids, 'hidden');
+      // One write, so a held row is never left unlabelled (review r2 N4).
+      if (sent === 'hidden') await markDrafts(key, ids, 'held', 'hidden');
+      else await markDrafts(key, ids, draws ? 'refused' : 'held');
     }
   }
   return answers;

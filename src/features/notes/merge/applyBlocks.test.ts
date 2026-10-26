@@ -9,6 +9,7 @@ import { createPlateEditor } from 'platejs/react';
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import type { MaterialValue } from '@/features/materials/document';
+import { DRAFT_EXPIRY_MS } from '@/lib/editDrafts';
 import { bindSyncedRoom, roomBindingPlugin, whenBound } from '../roomBinding';
 import { stableElementIdsPlugin } from '../stableElementIds';
 import { mergeAtBind, replaceBlock, textChange } from './applyBlocks';
@@ -26,8 +27,12 @@ const block = (id: string, text: string, extra = {}) => ({
 const PROJECTION = [block('a', 'Title'), block('b', 'Body'), block('c', 'End')];
 
 /** The note editor before its room synced, holding `value` (the
- * projection), with the copy merge NoteEditorCore registers. */
-function copyEditor(value: MaterialValue = PROJECTION as MaterialValue) {
+ * projection), with the copy merge NoteEditorCore registers; the copy was
+ * last edited at `editedAt`. */
+function copyEditor(
+  value: MaterialValue = PROJECTION as MaterialValue,
+  editedAt = Date.now()
+) {
   const ydoc = new Y.Doc();
   const editor = createPlateEditor({
     nodeId: false,
@@ -43,8 +48,13 @@ function copyEditor(value: MaterialValue = PROJECTION as MaterialValue) {
   ydoc.on('update', (_update: Uint8Array, origin: unknown) =>
     updates.push(origin)
   );
+  const merged: ReturnType<typeof mergeAtBind>[] = [];
   whenBound(editor, (unbound) => {
-    mergeAtBind(editor, [{ base: value, mine: unbound as MaterialValue }]);
+    merged.push(
+      mergeAtBind(editor, [
+        { base: value, editedAt, mine: unbound as MaterialValue },
+      ])
+    );
   });
   const sync = (value: unknown[]) => {
     const room = new Y.Doc();
@@ -59,7 +69,7 @@ function copyEditor(value: MaterialValue = PROJECTION as MaterialValue) {
     YjsEditor.flushLocalChanges(editor as never);
     return yTextToSlateElement(root).children;
   };
-  return { editor, roomBlocks, root, sync, updates, ydoc };
+  return { editor, merged, roomBlocks, root, sync, updates, ydoc };
 }
 
 describe('the copy merge at the bind', () => {
@@ -114,6 +124,25 @@ describe('the copy merge at the bind', () => {
     });
     editor.tf.insertText('X');
     expect(roomBlocks()).toEqual([block('a', 'Hello big Xworld')]);
+  });
+
+  // Merge view review r2 L2 (Q421): a copy last edited over 7 days ago is
+  // never merged, the tab's own included; its blocks become pieces.
+  it('makes a copy past the 7-day expiry pieces at the bind, merging nothing', () => {
+    const { editor, merged, roomBlocks, sync, updates } = copyEditor(
+      PROJECTION as MaterialValue,
+      Date.now() - DRAFT_EXPIRY_MS - 1
+    );
+    editor.tf.insertText(' typed', { at: { offset: 4, path: [1, 0] } });
+    sync(PROJECTION);
+    expect(roomBlocks()).toEqual(PROJECTION);
+    expect(updates.filter((origin) => origin !== 'room')).toEqual([]);
+    expect(merged[0]).toMatchObject({
+      applied: false,
+      expired: [
+        { block: 'b', mine: block('b', 'Body typed'), source: 'expired' },
+      ],
+    });
   });
 
   // Review r1 L3: the Yjs history works on the bound document only; before

@@ -175,6 +175,21 @@ describe('the merge store', () => {
     expect(storage.put).toHaveLength(1);
   });
 
+  // Review r2 N1: two different pieces of one block whose content hashes
+  // the same (FNV-1a of these two texts) are both kept, in their own rows.
+  it('keeps two different pieces of a block whose hashes collide', () => {
+    const first = piece('a', p('a', 't67594'));
+    const second = piece('a', p('a', 't830200'));
+    expect(pieceKey(first)).toBe(pieceKey(second));
+    const { store } = setup();
+    store.add([first, second]);
+    expect(new Set(storage.put.map(({ id }) => id)).size).toBe(2);
+    expect(store.getSnapshot().pieces.map(({ piece: one }) => one)).toEqual([
+      first,
+      second,
+    ]);
+  });
+
   // Review r1 V-L8 (Q410): a rewrite's seq is unique across tabs, not the
   // stored one plus one, so another tab's exact delete of its own rewrite
   // never removes this one.

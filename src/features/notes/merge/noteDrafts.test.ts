@@ -38,6 +38,8 @@ vi.mock('react', async (load) => ({
   },
 }));
 const stored = vi.hoisted(() => ({
+  // Web Locks fail (a sandboxed frame).
+  fail: false,
   held: [] as { name: string }[],
   // Locks this tab holds now, and those another tab takes between this
   // tab's query and its request.
@@ -76,13 +78,17 @@ const ROOM = 'material:m_1:schema:1';
 Object.defineProperty(navigator, 'locks', {
   configurable: true,
   value: {
-    query: async () => ({ held: stored.held }),
+    query: async () => ({
+      held: [...stored.held, ...[...stored.locks].map((name) => ({ name }))],
+    }),
     request: async (
       name: string,
       _options: unknown,
       callback: (lock: { name: string } | null) => unknown
     ) => {
-      if (stored.taken.includes(name)) return callback(null);
+      if (stored.fail) throw new Error('SecurityError');
+      if (stored.taken.includes(name) || stored.locks.has(name))
+        return callback(null);
       stored.locks.add(name);
       await callback({ name });
       stored.locks.delete(name);
@@ -109,6 +115,7 @@ const render = () => {
 
 beforeEach(() => {
   hooks.reset();
+  stored.fail = false;
   stored.held = [];
   stored.locks.clear();
   stored.reports = [];
@@ -289,5 +296,43 @@ it('makes an expired copy pieces and merges only the fresh copy of another close
   expect(render()).toMatchObject({
     copies: { adopted: { row: fresh }, others: [] },
     sources: [{ copy, rows: [expired], source: 'expired' }],
+  });
+});
+
+// Merge view review r2 L1 (Q421): a closed tab's copy merges only under its
+// lock, taken if free. Two tabs restored together read the same two rows:
+// the first takes both (the newer to show, the older to merge first); the
+// second, finding both taken, shows and merges neither, so each row merges
+// once.
+it('gives two tabs restored together each row once', async () => {
+  const copy = { base: [p('a', 'A')], mine: [p('a', 'A typed')], revision: 1 };
+  const older = copyRow('older', copy, { savedAt: Date.now() - 2000 });
+  const newer = copyRow('newer', copy, { savedAt: Date.now() - 1000 });
+  stored.rows = [older, newer];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()?.copies).toMatchObject({
+    adopted: { row: newer },
+    others: [{ row: older }],
+  });
+  hooks.reset();
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()?.copies).toMatchObject({ adopted: null, others: [] });
+});
+
+// Review r2 N6: Web Locks that fail act as none: nothing is adopted and
+// every live copy merges as an older one.
+it('adopts nothing and merges every copy when Web Locks fail', async () => {
+  const copy = { base: [p('a', 'A')], mine: [p('a', 'A typed')], revision: 1 };
+  const older = copyRow('older', copy, { savedAt: Date.now() - 2000 });
+  const newer = copyRow('newer', copy, { savedAt: Date.now() - 1000 });
+  stored.rows = [older, newer];
+  stored.fail = true;
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()?.copies).toMatchObject({
+    adopted: null,
+    others: [{ row: older }, { row: newer }],
   });
 });

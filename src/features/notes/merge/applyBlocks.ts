@@ -5,12 +5,14 @@ import type {
   MaterialElement,
   MaterialValue,
 } from '@/features/materials/document';
+import { DRAFT_EXPIRY_MS } from '@/lib/editDrafts';
 import {
   type CopyPair,
   type MergeStep,
   mergeCopies,
   sameBlock,
 } from './blockMerge';
+import { piecesFromCopy } from './pieces';
 
 /**
  * Runs `edit` on the bound note editor as one local Yjs transaction under
@@ -197,17 +199,35 @@ export function applyMergeSteps(editor: PlateEditor, steps: MergeStep[]) {
   }
 }
 
+/** A copy at the bind, with its last edit. */
+export interface BoundCopy extends CopyPair {
+  editedAt: number;
+}
+
 /**
  * The bind merge (Q229, Q408): the copies diffed against the editor's blocks
  * as bound and applied as one Undo step, in the same task, so nothing can
- * change a block between the diff and its step. Returns the conflicts, and
- * whether a step applied.
+ * change a block between the diff and its step. A copy whose last edit is
+ * past the 7-day expiry is never merged (Q412, Q421: the tab's own included)
+ * and becomes pieces whole (`expired`). Returns whether a step applied, the
+ * conflicts and the expired copies' pieces.
  */
-export function mergeAtBind(editor: PlateEditor, pairs: CopyPair[]) {
+export function mergeAtBind(
+  editor: PlateEditor,
+  copies: BoundCopy[],
+  now = Date.now()
+) {
+  const live = copies.filter(
+    ({ editedAt }) => now - editedAt <= DRAFT_EXPIRY_MS
+  );
   const { conflicts, steps } = mergeCopies(
-    pairs,
+    live,
     editor.children as MaterialValue
   );
   if (steps.length) asOneStep(editor, () => applyMergeSteps(editor, steps));
-  return { applied: steps.length > 0, conflicts };
+  const value = editor.children as MaterialValue;
+  const expired = copies
+    .filter((copy) => !live.includes(copy))
+    .flatMap((copy) => piecesFromCopy(copy, value, 'expired', now));
+  return { applied: steps.length > 0, conflicts, expired };
 }

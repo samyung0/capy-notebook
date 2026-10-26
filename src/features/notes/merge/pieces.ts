@@ -167,7 +167,7 @@ export function piecesFromConflicts(
 /** Every block a saved copy changed, as pieces and nothing applied: an
  * expired copy is never merged (the 7-day rule). A move alone is no piece. */
 export function piecesFromCopy(
-  copy: NoteCopy,
+  copy: Pick<NoteCopy, 'base' | 'mine'>,
   value: MaterialValue,
   source: PieceSource,
   at = Date.now()

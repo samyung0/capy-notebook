@@ -112,13 +112,13 @@ import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
 import { registerLiveNote } from './liveNoteHandover';
-import { mergeAtBind } from './merge/applyBlocks';
-import type { CopyPair } from './merge/blockMerge';
+import { type BoundCopy, mergeAtBind } from './merge/applyBlocks';
 import {
   deleteOnceStored,
-  holdCopy,
+  insertsMany,
   type NoteCopies,
   recordCopy,
+  takeOverCopy,
 } from './merge/copyDraft';
 import { draftClients, watchHiddenTyping } from './merge/hiddenTyping';
 import { createMergeStore, type MergeStore } from './merge/mergeStore';
@@ -1415,9 +1415,18 @@ export function NoteEditorCore({
       setCopyFull(false);
       reportOffline.current?.(null);
     }
-    const pairs: CopyPair[] = copies.others.map(({ copy: other }) => other);
+    // Each with its last edit: past the 7-day expiry it becomes pieces
+    // instead (Q421).
+    const pairs: BoundCopy[] = copies.others.map(({ copy: other, row }) => ({
+      ...other,
+      editedAt: row.savedAt,
+    }));
     if (mine && (copyEdited.current || copies.adopted))
-      pairs.push({ base: copies.adopted?.copy.base ?? projection, mine });
+      pairs.push({
+        base: copies.adopted?.copy.base ?? projection,
+        editedAt: copy.editedAt,
+        mine,
+      });
     if (!pairs.length) return;
     let merged: ReturnType<typeof mergeAtBind>;
     try {
@@ -1431,7 +1440,10 @@ export function NoteEditorCore({
     // no value change.
     if (merged.applied) scheduleCheckpoint();
     void deleteOnceStored(
-      store.add(piecesFromConflicts(merged.conflicts, 'conflict')),
+      store.add([
+        ...piecesFromConflicts(merged.conflicts, 'conflict'),
+        ...merged.expired,
+      ]),
       copyRows(own),
       toastDraftsLost
     );
@@ -1443,8 +1455,7 @@ export function NoteEditorCore({
     // This tab owns its copy row while mounted (review r1 M1): its own lock,
     // asked for before the adoption's lock goes (Q410), so no other tab
     // takes the row between them.
-    const release = holdCopy(copy.session);
-    copies.release();
+    const release = takeOverCopy(copy.session, copies.release);
     releaseCopy.current = release;
     // A copy edited and not written yet goes as the page or the editor goes.
     const flush = () => copy.flush();
@@ -1736,7 +1747,7 @@ export function NoteEditorCore({
         copyEdited.current = true;
         copy.edited(
           current.children as MaterialValue,
-          current.operations.some((op) => op.type === 'insert_node')
+          insertsMany(current.operations)
         );
       }
       scheduleCheckpoint();

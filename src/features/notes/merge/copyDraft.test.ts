@@ -19,8 +19,10 @@ import {
   COPY_WRITE_MS,
   deleteOnceStored,
   holdCopy,
+  insertsMany,
   noteCopies,
   recordCopy,
+  takeOverCopy,
 } from './copyDraft';
 
 /* Q229: a note's saved copy edited before its room joined is kept on the
@@ -140,6 +142,42 @@ describe('holdCopy', () => {
   });
 });
 
+// Merge view review r2 L5 (Q421): the editor asks for its own lock before
+// the adoption's lock goes, so no other tab takes the row between them.
+it('takes over the adopted copy with its own request first', () => {
+  const original = Object.getOwnPropertyDescriptor(navigator, 'locks');
+  const order: string[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: (name: string) => {
+        order.push(`request ${name}`);
+        return new Promise(() => {});
+      },
+    },
+  });
+  try {
+    takeOverCopy('s1', () => order.push('adoption released'));
+    expect(order).toEqual(['request capy-copy:s1', 'adoption released']);
+  } finally {
+    if (original) Object.defineProperty(navigator, 'locks', original);
+    else Reflect.deleteProperty(navigator, 'locks');
+  }
+});
+
+// Merge view review r2 L4 (Q421): a paste of text writes the typing before
+// it first, as a pasted block does; a keystroke does not.
+it('counts an edit inserting more than one character as a paste', () => {
+  const at = { offset: 0, path: [0, 0] };
+  expect(insertsMany([{ ...at, text: 'a', type: 'insert_text' }])).toBe(false);
+  expect(insertsMany([{ ...at, text: 'a log', type: 'insert_text' }])).toBe(
+    true
+  );
+  expect(
+    insertsMany([{ node: p('b', ''), path: [1], type: 'insert_node' }])
+  ).toBe(true);
+});
+
 describe('recordCopy', () => {
   it('writes the edited copy at most once a second, at once on flush, and stops with the row it wrote', async () => {
     vi.useFakeTimers();
@@ -227,6 +265,25 @@ describe('recordCopy', () => {
     expect(onLimit).toHaveBeenCalledOnce();
     expect(stored.puts).toHaveLength(1);
     expect(recorder.kept).toEqual([p('a', 'A typed')]);
+  });
+
+  // Merge view review r2 L2 (Q421): the copy's last edit, the adopted row's
+  // write until this mount edits it, decides the expiry at the bind.
+  it("keeps the copy's last edit", () => {
+    const row = copyRow('s', { base: [], mine: [] }, { savedAt: 1000 });
+    const recorder = recordCopy({
+      adopted: { copy: { base: [], mine: [], revision: 3 }, row },
+      base: [p('a', 'A')],
+      key: KEY,
+      limitBytes: 1024,
+      lineage: ROOM,
+      onLimit: () => {},
+      revision: 3,
+    });
+    expect(recorder.editedAt).toBe(1000);
+    recorder.edited([p('a', 'A typed')]);
+    expect(recorder.editedAt).toBeGreaterThan(Date.now() - 1000);
+    recorder.stop();
   });
 
   it('goes on with the copy it reopened: same row, a higher seq', () => {

@@ -4,7 +4,7 @@ import type { DraftRef } from '@/lib/draftStore';
 import { deleteDrafts, type EditDraft, putDrafts } from '@/lib/editDrafts';
 import { applyChoice } from './applyPiece';
 import { sameBlock } from './blockMerge';
-import { nextPieceSeq, pieceKey, pieceRow } from './pieceRows';
+import { nextPieceSeq, pieceKey, piecePrefix, pieceRow } from './pieceRows';
 import { pieceStatus } from './pieces';
 import type { MergePiece, PieceChoice, PieceStatus } from './types';
 
@@ -156,13 +156,15 @@ export function createMergeStore({
     if (changed) publish();
   };
 
+  // A row's id is the document's prefix and the piece's key.
+  const prefix = piecePrefix(key);
   const keep = (piece: MergePiece, id: string, seq: number) => {
     const entry: Entry = {
       current: undefined,
       id,
       index: -1,
       inserted: -1,
-      key: pieceKey(piece),
+      key: id.startsWith(prefix) ? id.slice(prefix.length) : pieceKey(piece),
       piece,
       seq,
     };
@@ -170,10 +172,28 @@ export function createMergeStore({
     read(entry);
   };
 
+  /** `piece`'s key: its own, or with `:2`, `:3`... after a different
+   * piece of its block that hashed the same (review r2 N1). */
+  const free = (piece: MergePiece) => {
+    const own = pieceKey(piece);
+    let found = own;
+    for (let n = 2; ; n++) {
+      const entry = entries.get(found);
+      if (!entry || sameAs(entry.piece, piece)) return found;
+      found = `${own}:${n}`;
+    }
+  };
+
   /** The pieces' rows written, each replacing its own key's. */
   const write = (pieces: MergePiece[]) => {
     const rows = pieces.map((piece) => {
-      const row = pieceRow(key, lineage, piece, nextPieceSeq());
+      const row = pieceRow(
+        key,
+        lineage,
+        piece,
+        nextPieceSeq(),
+        `${prefix}${free(piece)}`
+      );
       keep(piece, row.id, row.seq);
       return row;
     });

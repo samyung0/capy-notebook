@@ -398,6 +398,55 @@ test('a copy pasted past the offline bound locks the editor and merges the typin
   await expect.poll(() => draftKinds(page)).toEqual([]);
 });
 
+// Merge view review r2 L5 (Q421): a tab holds its copy's lock while it
+// records it, so a second tab of the note neither shows nor merges that copy.
+test("a second tab leaves an open tab's copy alone", async ({
+  context,
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openCopy(page);
+  await type(page, ' Typed in the first tab.');
+  await expect.poll(() => draftKinds(page)).toEqual(['copy']);
+  const second = await context.newPage();
+  await second.goto(note);
+  const editor = second
+    .locator('[data-note-mount="live"] [contenteditable="true"]')
+    .first();
+  await expect(editor).toContainText(seed, { timeout: 30_000 });
+  await expect(second.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
+  await expect(editor).not.toContainText('Typed in the first tab.');
+  expect(await draftKinds(page)).toEqual(['copy']);
+  await second.close();
+});
+
+// Merge view review r2 L2 (Q421): a tab whose own copy was last edited over
+// 7 days ago never merges it at its bind: its blocks wait in the merge view
+// as expired pieces.
+test("a tab's own copy past the 7-day expiry becomes pieces at its bind", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.clock.install();
+  const editor = await openCopy(page);
+  await type(page, ' Typed a week ago.');
+  await expect.poll(() => draftKinds(page)).toEqual(['copy']);
+  // Eight days on, as a sleeping device wakes (no timer runs between).
+  await page.clock.setSystemTime(Date.now() + 8 * 24 * 60 * 60 * 1000);
+  await setReachable(page, true);
+  const strip = page.locator('[data-testid="save-banner"][data-kind="review"]');
+  await expect(strip).toBeVisible({ timeout: 30_000 });
+  await expect(editor).not.toContainText('Typed a week ago.');
+  await strip.getByRole('button', { name: m.merge_review() }).click();
+  const piece = page.locator('[data-merge-piece="mock-scenario-note-intro"]');
+  await expect(piece).toContainText('Typed a week ago.');
+  await expect(piece).toContainText(m.merge_source_expired());
+  await expect.poll(() => draftKinds(page)).toEqual(['piece']);
+});
+
 // Q327, Q328, Q360: a closed session's never-accepted steps go through the
 // draft send while the note opens view-only; not delivered 30 s on, the
 // synced note takes them itself and edits on, syncing, with nothing of them
