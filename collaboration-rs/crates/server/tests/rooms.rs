@@ -10778,7 +10778,10 @@ async fn an_agent_edit_announces_no_stored_version() {
 /// Q382 (Epo 2026-10-26): a session row whose held deletions cannot be read
 /// is dropped alone, as if that session had ended: the note loads, that
 /// row's session columns are cleared, and another session's row stays.
-/// Fails if one damaged row keeps the note from loading.
+/// Fails if one damaged row keeps the note from loading. Its tab returns
+/// late (Q385): the JOIN is refused before it makes a session, so the next
+/// store keeps the record lost (P1 review r3 N9), and its drafts answer
+/// `late` for the editor's merge.
 #[tokio::test]
 async fn a_damaged_session_row_drops_only_that_session() {
     let Some(env) = env() else { return };
@@ -10787,7 +10790,7 @@ async fn a_damaged_session_row_drops_only_that_session() {
     let material = material_of(&room).to_owned();
     let committed = writer.stored_past(0).await;
     let held = writer.delete_in_block(0, 1, true).await;
-    writer.stored_past(committed).await;
+    let last = writer.stored_past(committed).await;
     let good = writer.id();
     let damaged = fresh_client_id();
     db(&env)
@@ -10814,13 +10817,19 @@ async fn a_damaged_session_row_drops_only_that_session() {
     assert!(logs.has(&["captured error", &message]).await, "reported");
     // Review r2 M1: its tab returns as late, whatever version it names (its
     // record, and so its held deletions, were lost).
-    assert!(!logs.has(&["late session joined"]).await);
     let mut back = Client::open(server.port).await;
     let join = token(&room, &user, "write");
     let payload = join_payload_at(&room, &join, Some(client_protocol()), damaged, 99);
     back.send(0, &payload).await;
-    back.until(1).await.expect("joined");
-    assert!(logs.has(&["late session joined"]).await, "late");
+    let reason = text_payload(&back.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-late");
+    reader.type_text("!").await;
+    reader.stored_past(last).await;
+    assert_eq!(
+        session_row(&env, &material, damaged).await.0,
+        -1,
+        "still lost"
+    );
     // Review r3 L4: so is a draft group written under the lost id, which
     // the room admits through its record without any grant.
     let lost = Doc::with_options(ydoc::doc_options(damaged));
@@ -10836,7 +10845,16 @@ async fn a_damaged_session_row_drops_only_that_session() {
         .transact()
         .encode_state_as_update_v1(&StateVector::default());
     let (status, answer) = send_drafts(server.port, &room, Some(&join), Some(ORIGIN), body).await;
-    assert!(logs.has(&["late draft group"]).await, "{status} {answer}");
+    assert_eq!(
+        (status, answer),
+        (409, serde_json::json!({ "class": "late" }))
+    );
+    let metrics = metrics_text(server.port).await;
+    let line = "capy_collaboration_draft_refusals_total{class=\"late\"} 1";
+    assert!(
+        metrics.lines().any(|known| known == line),
+        "{line} in {metrics}"
+    );
 }
 
 /// Q386 (Epo 2026-10-26): agent holds that cannot be read are dropped and

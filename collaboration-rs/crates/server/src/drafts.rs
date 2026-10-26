@@ -88,7 +88,7 @@ pub enum Class {
 }
 
 impl Class {
-    pub const ALL: [Class; 10] = [
+    pub const ALL: [Class; 11] = [
         Class::Lineage,
         Class::Late,
         Class::Limit,
