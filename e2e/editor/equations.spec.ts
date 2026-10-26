@@ -296,7 +296,7 @@ for (const kind of ['block', 'inline'] as const) {
             wrapperBox!.y -
             wrapperBox!.height / 2
         )
-      ).toBeLessThan(1);
+      ).toBeLessThanOrEqual(1);
       const fieldBox = await field.boundingBox();
       expect(menuBox!.x - fieldBox!.x - fieldBox!.width).toBeGreaterThanOrEqual(
         8

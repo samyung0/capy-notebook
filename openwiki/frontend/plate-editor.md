@@ -2020,6 +2020,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   Leave from an older build carries no version or session and still reads.
   The two landed together, so their deploy request names "client protocol
   18 -> 20, material 18 -> 20, source 18 -> 19".
+  The UI branch's reading layouts (pin 502d19fc9: the DOCX reading layout
+  for narrow viewers and the PPTX strip and Notes button below the slide;
+  Epo 2026-10-26, Q394) raised `CLIENT_PROTOCOL` to 21 and `MIN_SOURCE` to
+  20; `MIN_MATERIAL` stays 20. Its deploy request names "client protocol
+  20 -> 21, source 19 -> 20".
 
 #### When to bump
 

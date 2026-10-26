@@ -36,7 +36,7 @@ clone or charged to storage.
 | --- | --- |
 | `workspace_study (user_id, workspace_id, enabled)` | Hide study progress for one workspace (`enabled` false hides); no row shows progress (`StudyEnabled`). Migration `0108_study_plans.sql` dropped the old global default `users.study_progress`. |
 | `study_plans (id, user_id, workspace_id, name, created_at, updated_at)` | Migration `0108_study_plans.sql`. A user's private plan kept in a parent workspace (`workspace_id`, cascade); name at most 60 characters; at most 10 per user and workspace. |
-| `study_plan_steps (plan_id, position, kind, workspace_id, file_id \| material_id)` | A plan's steps in order: `kind` is `file` or `material`, with the matching target set (migration `0118_plan_reviews_file_steps.sql` dropped the chapter, Others and whole-workspace steps); cascades with its plan, workspace and target; unique per plan and target; at most 200 per plan, in at most 20 groups. |
+| `study_plan_steps (plan_id, position, kind, workspace_id, file_id \| material_id)` | A plan's steps in order: `kind` is `file` or `material`, with the matching target set (migration `0119_plan_reviews_file_steps.sql` dropped the chapter, Others and whole-workspace steps); cascades with its plan, workspace and target; unique per plan and target; at most 200 per plan, in at most 20 groups. |
 | `study_progress (user_id, workspace_id, file_id \| material_id, state, updated_at)` | One row per touched file or material, exactly one of the two ids set; `state` is `started`, `done` or `removed`. No row means untouched. Unique per (user, file) and (user, material). |
 | `review_states (user_id, material_id, item_id, item_hash, stability, difficulty, reps, lapses, fsrs_state, last_review)` | FSRS state per quiz question or card. The key includes `material_id`, so a cloned quiz that keeps its question ids stays separate. |
 | `review_log (user_id, material_id, item_id, rating, reviewed_at)` | Append-only, rating 1–4 for every rating and every rated attempt question. Suggestions read each item's last 8 (`review_log_item_idx`); kept for offline merge and parameter fitting later too. |
@@ -899,7 +899,7 @@ Sources: [migration](../server/migrations/0051_study_progress.sql),
 [plans store](../server/internal/store/study_plans.go),
 [Study page](../src/features/study/StudyPage.tsx),
 [plans](../src/features/study/plans/PlanSelect.tsx),
-[plan review migration](../server/migrations/0118_plan_reviews_file_steps.sql),
+[plan review migration](../server/migrations/0119_plan_reviews_file_steps.sql),
 [marks and menus](../src/features/study/studyItems.tsx),
 [review session](../src/routes/ReviewSession.tsx),
 [Learning](../src/routes/Learning.tsx) and

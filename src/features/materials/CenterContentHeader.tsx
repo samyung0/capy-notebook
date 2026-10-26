@@ -625,7 +625,7 @@ export function Header({
             // The workspace chrome at the row's height; the workspace picker
             // (a dropdown trigger) as a slimmer pill. The save status grows
             // with its label where it shows one, or its icon spills under ⋮.
-            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6 [&_[role=status]]:size-6 @xl/header:[&_[role=status]]:w-auto',
+            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6 [&_[role=status]]:size-6 @xl/header:[&_[role=status]]:w-auto group-data-roomy/header:[&_[role=status]]:w-auto',
             '[&_[data-slot=dropdown-menu-trigger]]:h-6 [&_[data-slot=dropdown-menu-trigger]]:gap-1.5 [&_[data-slot=dropdown-menu-trigger]]:px-2'
           )}
         >

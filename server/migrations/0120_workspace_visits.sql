@@ -8,9 +8,9 @@
 -- ops reads the newest visit instead.
 --
 -- Deploying (UAT and prod), checked by hand on the host:
---   1. The migrator refuses a gap: 0119 (another branch) must be applied, or
---      land with this one. Check: SELECT version FROM schema_migrations
---      ORDER BY version DESC LIMIT 3;
+--   1. The migrator refuses a gap: 0119 (plan reviews, this release) must be
+--      applied first, or land with this one. Check: SELECT version FROM
+--      schema_migrations ORDER BY version DESC LIMIT 3;
 --   2. Let the gateway's own migrator run this file with the release that
 --      reads workspace_visits. Never apply it by hand ahead of that release:
 --      the running gateway still selects workspaces.last_accessed_at, and every
