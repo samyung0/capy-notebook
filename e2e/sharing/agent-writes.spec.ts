@@ -1271,6 +1271,24 @@ async function readShows(
 
 test.describe('agent writes to Office sources', () => {
   test.describe.configure({ timeout: 300_000 });
+  // The XLSX check finds the typed cell in the first editor's grid, which
+  // renders only the columns in view: the viewer at 1280px with the left
+  // panel closed, as before the workspace opened it by default.
+  test.use({
+    storageState: async ({ baseURL }, use) =>
+      use({
+        cookies: [],
+        origins: [
+          {
+            localStorage: [
+              { name: 'capy.workspace.rightPanel', value: 'true' },
+              { name: 'capy.workspace.leftPanel', value: 'false' },
+            ],
+            origin: baseURL!,
+          },
+        ],
+      }),
+  });
 
   for (const format of ['docx', 'pptx', 'xlsx'] as const) {
     test(`${format === 'xlsx' ? 'set_range' : 'replace_text'} on a ${format.toUpperCase()} source lands on its targets, live for two editors, and one Undo restores both`, async ({

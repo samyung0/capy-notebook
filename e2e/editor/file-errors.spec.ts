@@ -185,7 +185,10 @@ test('workspace statistics and indexing share a recoverable inline error', async
   });
   // The rail's gear (its aria-label); the empty viewer's quick action shares
   // the name as text and appears once the recent files load.
-  await page.getByLabel(m.workspace_settings(), { exact: true }).click();
+  await page
+    .getByLabel(m.workspace_settings(), { exact: true })
+    .first()
+    .click();
   const settings = page.getByRole('dialog', { name: m.workspace_settings() });
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_stats_title() })

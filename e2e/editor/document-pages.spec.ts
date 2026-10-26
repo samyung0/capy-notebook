@@ -80,6 +80,8 @@ test('Blocks and Files open the shared document page in View', async ({
     .click();
   await expect(page).toHaveURL(/\/files\?tab=blocks$/);
 
+  // The markdown samples are newer than f_2 and fill the first Files page.
+  await makeNewest(page, { files: ['f_2'] });
   await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
   await openItem(page, 'Organelles cheatsheet.md');
   await expect(page).toHaveURL(/\/files\/f_2$/);

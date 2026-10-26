@@ -705,7 +705,10 @@ test.describe('study progress', () => {
     // document, so the router never runs) and closes the dialog once.
     await ownerPage.goto('/workspaces');
     await ownerPage.getByRole('link', { name: workspace.name }).first().click();
-    await ownerPage.getByLabel(m.workspace_settings(), { exact: true }).click();
+    await ownerPage
+      .getByLabel(m.workspace_settings(), { exact: true })
+      .first()
+      .click();
     await expect(ownerPage).toHaveURL(/settings=/);
     await ownerPage.goBack();
     await expect(ownerPage).toHaveURL(/\/workspaces$/);
