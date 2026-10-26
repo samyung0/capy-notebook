@@ -34,14 +34,14 @@ pub struct Config {
     /// `fold_max_rows` rows (DESIGN.md 3.5); an unloaded one always.
     pub fold_min_bytes: u64,
     pub fold_max_rows: u64,
-    /// A fold collects the tombstones no session can still name
-    /// (`ydoc::gc`), in place. The kill switch, off unless exactly `true`,
-    /// and refused outside tests (`APP_ENV=test`) until the collection's
-    /// inputs exist: counted sessions with what each deleted, the durable
-    /// Undo payloads' deletions, the merge of a tab older than the window,
-    /// and the durable Undo route's refusal of payloads naming collected
-    /// units. Until then the folds pass stand-ins that would drop the text of
-    /// a session away from the room, an editor's Undo or an offline draft.
+    /// A note's folds collect the tombstones no session can still name
+    /// (`ydoc::gc`), in place, keeping what the room's sessions hold
+    /// (`sessions.rs`). The kill switch, off unless exactly `true`, and
+    /// refused outside tests (`APP_ENV=test`) until the rest of the
+    /// collection's release lands: the merge of a tab older than the window
+    /// (without it that tab's unsent edits would be lost), and the durable
+    /// Undo payloads' holds and the durable Undo route's refusal of payloads
+    /// naming collected units.
     pub gc_collect: bool,
     /// Office engine child processes per lane and each one's memory cap
     /// (Epo 2026-10-07: production 2 + 1 at 4 GiB, UAT 1 + 1 at 3 GiB).
@@ -170,8 +170,7 @@ fn collection(env: &HashMap<String, String>) -> Result<bool, ConfigError> {
         return Err(ConfigError(
             concat!(
                 "COLLABORATION_GC_COLLECT=true is refused outside tests until the collection's ",
-                "inputs exist (counted sessions and held deletions, the late merge, the durable ",
-                "Undo refusal)"
+                "inputs exist (the late merge, the durable Undo holds and refusal)"
             )
             .into(),
         ));
@@ -375,7 +374,8 @@ mod tests {
     }
 
     /// Off unless exactly `true`, and refused outside tests: turned on in a
-    /// deployment, the folds' stand-in inputs would drop text.
+    /// deployment before the late merge and the durable Undo holds land, a
+    /// late tab's edits or a durable Undo's text could be lost.
     #[test]
     fn the_collection_is_off_unless_exactly_true_and_only_in_tests() {
         let on = ("COLLABORATION_GC_COLLECT", "true");

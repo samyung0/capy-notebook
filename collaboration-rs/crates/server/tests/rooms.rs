@@ -84,7 +84,12 @@ async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) 
 
 /// The server, its log lines kept for the test to read (`Logs`).
 async fn start_logged(env: &Env) -> (Server, Logs) {
-    let mut server = launch(env, env.api.as_deref(), &[], Stdio::piped()).await;
+    start_logged_with(env, &[]).await
+}
+
+/// `start_logged` with `extra` settings.
+async fn start_logged_with(env: &Env, extra: &[(&str, &str)]) -> (Server, Logs) {
+    let mut server = launch(env, env.api.as_deref(), extra, Stdio::piped()).await;
     let logs = Logs::default();
     let stdout = server.child.stdout.take().expect("piped output");
     let lines = logs.0.clone();
@@ -105,6 +110,16 @@ async fn start_logged(env: &Env) -> (Server, Logs) {
 struct Logs(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
 
 impl Logs {
+    /// How many lines so far hold every one of `parts`.
+    fn count(&self, parts: &[&str]) -> usize {
+        self.0
+            .lock()
+            .expect("logs")
+            .iter()
+            .filter(|line| parts.iter().all(|part| line.contains(part)))
+            .count()
+    }
+
     /// Whether a line holding every one of `parts` comes within 10 s.
     async fn has(&self, parts: &[&str]) -> bool {
         for _ in 0..100 {
@@ -924,166 +939,385 @@ async fn collected_in_base(env: &Env, material: &str, unit: yrs::ID) -> bool {
     matches!(txn.store().get_block_range(&unit), Some((_, None)))
 }
 
-/// The in-place collection at a room's folds (switch on, every store folds):
-/// the middle of a run of deleted text, typed by another writer and named by
-/// nothing, is collected from the stored state while the room stays open; a
-/// tab's Undo of its own deletion after a fold whose window covers it
-/// restores the text, the room's next load holds it (the Undo names the
-/// deleted run's edge, which the fold kept), and the folds keep four window
-/// snapshots. Fails if the folds leave the run uncollected or the restored
-/// text is lost (as it is with the edge rule removed).
+/// The material's `collected_window`: the window version of its latest
+/// collection.
+async fn collected_window(env: &Env, material: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT collected_window FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0)
+}
+
+/// The server with the collection on and `extra` settings.
+async fn start_collecting(env: &Env, extra: &[(&str, &str)]) -> Server {
+    let mut settings = vec![("COLLABORATION_GC_COLLECT", "true")];
+    settings.extend_from_slice(extra);
+    start_configured(env, env.api.as_deref(), &settings).await
+}
+
+/// An editor's Undo over the edits `doc` makes with `origin`.
+fn own_undo(doc: &Doc, origin: &str) -> yrs::undo::UndoManager<()> {
+    let mut undo = yrs::undo::UndoManager::with_options(yrs::undo::Options {
+        capture_timeout_millis: 0,
+        tracked_origins: std::collections::HashSet::from([yrs::Origin::from(origin)]),
+        ..Default::default()
+    });
+    undo.expand_scope(doc, &doc.get_or_insert_text("content"));
+    undo
+}
+
+/// The note's first block (an XmlText inside `content`), read with no
+/// transaction open (taking the root may write).
+fn first_block(doc: &Doc) -> yrs::XmlTextRef {
+    let root = doc.get_or_insert_text("content");
+    root.diff(&doc.transact(), yrs::types::text::YChange::identity)
+        .into_iter()
+        .find_map(|chunk| match chunk.insert {
+            yrs::Out::YXmlText(block) => Some(block),
+            _ => None,
+        })
+        .expect("a block")
+}
+
+/// Removes `len` units at `index` of the first block in a transaction with
+/// `origin` (an editor's own edit, which its Undo tracks).
+fn remove_as(doc: &Doc, origin: &str, index: u32, len: u32) {
+    let block = first_block(doc);
+    block.remove_range(&mut doc.transact_mut_with(origin), index, len);
+}
+
+/// Inserts `text` at `index` of the first block, without sending it.
+fn insert_unsent(doc: &Doc, index: u32, text: &str) {
+    let block = first_block(doc);
+    block.insert(&mut doc.transact_mut(), index, text);
+}
+
+impl Client {
+    /// Acknowledges the room's latest stored version (the room counts it at
+    /// most at its own), as a tab holding everything it heard does.
+    async fn ack_all(&mut self) {
+        self.ack_version(i64::MAX).await;
+    }
+
+    /// The unit at visible `index` of the first block.
+    fn unit_at(&self, index: u32) -> yrs::ID {
+        let block = first_block(&self.doc);
+        let _txn = self.doc.transact();
+        let mut next = yrs::branch::BranchPtr::from(block.as_ref() as &yrs::branch::Branch).start();
+        let mut left = index;
+        while let Some(item) = next {
+            if !item.is_deleted() && item.is_countable() {
+                if left < item.len() {
+                    return yrs::ID::new(item.id().client, item.id().clock + left);
+                }
+                left -= item.len();
+            }
+            next = item.right();
+        }
+        panic!("no unit at {index}");
+    }
+}
+
+/// A tab with its own document `doc` joining `room` again on a new socket
+/// (its token offering the document's client id), naming `version`, and
+/// syncing: what it typed while away goes in its step 2.
+async fn returning(port: u16, doc: Doc, room: &str, user: &str, version: u64) -> Client {
+    let mut client = Client::open(port).await;
+    let id = doc.client_id().get();
+    client.doc = doc;
+    client
+        .rejoin_at(room, &token_offering(room, user, "write", id), version)
+        .await;
+    client
+}
+
+/// A fresh tab with an offered client id, joined (naming no version) and
+/// synced.
+async fn tab(port: u16, room: &str, user: &str) -> Client {
+    let mut client = Client::open(port).await;
+    let id = fresh_client_id();
+    client.doc = Doc::with_options(ydoc::doc_options(id));
+    client
+        .rejoin_at(room, &token_offering(room, user, "write", id), 0)
+        .await;
+    client
+}
+
+/// The in-place collection at a room's folds (switch on, every store folds),
+/// with its sessions: while the room stays open, a fold whose window holds a
+/// run that an ended session deleted collects the run's middle items, but
+/// not a deletion inside a run that a counted session's Undo may restore
+/// (held); that Undo after the folds restores the letter, and the next load
+/// holds it. The folds keep four window snapshots. Fails if nothing is
+/// collected, or if the held deletion is (the restored letter is then lost
+/// on load).
 #[tokio::test]
 async fn folds_collect_in_place_and_an_undo_after_them_restores_the_text() {
     let Some(env) = env() else { return };
-    let server = start_configured(
-        &env,
-        env.api.as_deref(),
-        &[
-            ("COLLABORATION_GC_COLLECT", "true"),
-            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
-        ],
-    )
-    .await;
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
     let (user, material) = note(&env, "base").await;
     let room = format!("material:{material}:schema:1");
-    let write = token(&room, &user, "write");
-    let mut a = Client::open(server.port).await;
-    let mut b = Client::open(server.port).await;
-    a.joined(&room, &write).await;
-    b.joined(&room, &write).await;
+    let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
     assert!(a.settle(|c| c.block_text() == "base").await);
-    assert!(b.settle(|c| c.block_text() == "base").await);
-    // A's editor Undo tracks A's own edits (origin "a").
-    let mut undo: yrs::undo::UndoManager<()> =
-        yrs::undo::UndoManager::with_options(yrs::undo::Options {
-            capture_timeout_millis: 0,
-            tracked_origins: std::collections::HashSet::from([yrs::Origin::from("a")]),
-            ..Default::default()
-        });
-    undo.expand_scope(&a.doc, &a.doc.get_or_insert_text("content"));
-    let first_block = |root: &yrs::TextRef, txn: &yrs::TransactionMut| {
-        root.diff(txn, yrs::types::text::YChange::identity)
-            .into_iter()
-            .find_map(|chunk| match chunk.insert {
-                yrs::Out::YXmlText(block) => Some(block),
-                _ => None,
-            })
-            .expect("a block")
-    };
-    // B types " one", A " two", then B "MID" between "base" and " one".
-    b.type_at(4, " one").await;
-    persisted(&mut b, "one").await;
-    assert!(log_folded(&env, &material).await);
-    assert!(a.settle(|c| c.block_text() == "base one").await);
+    let mut undo = own_undo(&a.doc, "a");
+    // "rtpq", then "s" and "X" typed inside it: items nothing names (the
+    // collection takes whole items).
     a.write(|doc| {
-        let root = doc.get_or_insert_text("content");
-        let mut txn = doc.transact_mut_with("a");
-        first_block(&root, &txn).insert(&mut txn, 8, " two");
+        insert_unsent(doc, 4, "rtpq");
+        insert_unsent(doc, 5, "s");
+        insert_unsent(doc, 8, "X");
     })
     .await;
-    persisted(&mut a, "two").await;
+    persisted(&mut a, "typed").await;
     assert!(log_folded(&env, &material).await);
-    assert!(b.settle(|c| c.block_text() == "base one two").await);
-    b.type_at(4, "MID").await;
-    persisted(&mut b, "mid").await;
+    a.ack_all().await;
+    let (s, x) = (a.unit_at(5), a.unit_at(8));
+    // A deletes X, which its Undo may restore.
+    a.write(|doc| remove_as(doc, "a", 8, 1)).await;
+    persisted(&mut a, "x").await;
     assert!(log_folded(&env, &material).await);
-    // B deletes "seMID o": a run of three items whose middle one ("MID")
-    // nothing names. B's session then ends.
-    b.write(|doc| {
-        let root = doc.get_or_insert_text("content");
-        let mut txn = doc.transact_mut();
-        first_block(&root, &txn).remove_range(&mut txn, 2, 7);
-    })
-    .await;
+    a.ack_all().await;
+    // B deletes the other letters around it; its session then ends.
+    assert!(b.settle(|c| c.block_text() == "baserstpq").await);
+    b.write(|doc| remove_as(doc, "b", 4, 5)).await;
     persisted(&mut b, "cut").await;
     assert!(log_folded(&env, &material).await);
-    let mid = yrs::ID::new(b.doc.client_id(), 4);
-    drop(b);
-    assert!(a.settle(|c| c.block_text() == "bane two").await);
-    // A deletes its own " two" (one item, which nothing names), then types
-    // "!" at the start, so a later fold's window covers the deletion.
-    a.write(|doc| {
-        let root = doc.get_or_insert_text("content");
-        let mut txn = doc.transact_mut_with("a");
-        first_block(&root, &txn).remove_range(&mut txn, 4, 4);
-    })
-    .await;
-    persisted(&mut a, "own").await;
-    assert!(log_folded(&env, &material).await);
-    a.write(|doc| {
-        let root = doc.get_or_insert_text("content");
-        let mut txn = doc.transact_mut_with("a");
-        first_block(&root, &txn).insert(&mut txn, 0, "!");
-    })
-    .await;
-    persisted(&mut a, "bang").await;
-    assert!(log_folded(&env, &material).await);
-    // A later fold's window covers B's deletion: "MID" left the stored base
-    // while the room is open.
+    b.leave(false).await;
+    a.ack_all().await;
+    // A types; once it has acknowledged B's cut, a fold's window holds it.
+    for mark in ["!", "?"] {
+        a.type_at(0, mark).await;
+        persisted(&mut a, mark).await;
+        assert!(log_folded(&env, &material).await);
+        a.ack_all().await;
+    }
     assert!(
-        collected_in_base(&env, &material, mid).await,
-        "the run's middle stayed in the stored base"
+        collected_in_base(&env, &material, s).await,
+        "the ended session's run kept its middle"
     );
-    // A's Undo: "!" goes, then " two" comes back, naming its own first
-    // unit, which the fold kept as the edge of its deleted run.
-    a.write(|_| {
-        assert!(undo.undo_blocking());
-        assert!(undo.undo_blocking());
+    assert!(
+        !collected_in_base(&env, &material, x).await,
+        "a deletion a counted session may undo was collected"
+    );
+    // A's Undo brings X back, naming X itself and "p", the edge of B's run.
+    a.write(|_| assert!(undo.undo_blocking())).await;
+    assert_eq!(a.block_text(), "?!baseX");
+    persisted(&mut a, "undo").await;
+    assert!(log_folded(&env, &material).await);
+    drop(a);
+    wait_unloaded(server.port).await;
+    assert_eq!(windows(&env, &material).await, 4);
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        fresh.settle(|c| c.block_text() == "?!baseX").await,
+        "{}",
+        fresh.block_text()
+    );
+}
+
+/// A tab away from the room holds the window back at the version it
+/// acknowledged: it drops and types offline after a letter in the middle of
+/// a run that another session then deletes before it leaves; the
+/// folds after that (each store's while the room stays open, or the unload
+/// fold's) keep that letter, deleted after the window, so the tab's draft
+/// lands when it returns and the next load holds it. Fails if a fold's
+/// window passes the away tab (its draft names a collected letter and is
+/// lost on load).
+async fn an_away_tab_holds_the_window_back(env: &Env, server: &Server, every_store_folds: bool) {
+    let (user, material) = note(env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut t = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    // "wz", then "x" typed between: an item nothing names.
+    b.write(|doc| {
+        insert_unsent(doc, 4, "wz");
+        insert_unsent(doc, 5, "x");
     })
     .await;
-    assert_eq!(a.block_text(), "bane two");
-    persisted(&mut a, "undo").await;
-    drop(a);
-    // The room unloads and folds once more; its next load holds the text.
-    assert!(log_folded(&env, &material).await);
-    assert_eq!(windows(&env, &material).await, 4);
-    assert!(collected_in_base(&env, &material, mid).await);
-    let mut c = Client::open(server.port).await;
-    c.joined(&room, &write).await;
+    persisted(&mut b, "typed").await;
+    // T writes too, so its session has a row and counts in the next room
+    // life (one that never wrote counts only in its own).
+    assert!(t.settle(|c| c.block_text() == "basewxz").await);
+    t.type_at(7, "~").await;
+    persisted(&mut t, "own").await;
+    t.ack_all().await;
+    b.ack_all().await;
+    // T drops (no Leave: its session still counts) and types after x.
+    let doc = t.doc.clone();
+    drop(t);
+    insert_unsent(&doc, 6, "T");
+    // B deletes the three letters and leaves (the room unloads; the next
+    // life loads T's session from its row).
+    assert!(b.settle(|c| c.block_text() == "basewxz~").await);
+    b.write(|doc| remove_as(doc, "b", 4, 3)).await;
+    persisted(&mut b, "cut").await;
+    b.leave(false).await;
+    // C stores twice, acknowledging each: B's cut would be in a window that
+    // ignored T.
+    let mut c = tab(server.port, &room, &user).await;
+    assert!(c.settle(|c| c.block_text() == "base~").await);
+    c.ack_all().await;
+    for mark in ["!", "?"] {
+        c.type_at(0, mark).await;
+        persisted(&mut c, mark).await;
+        assert!(!every_store_folds || log_folded(env, &material).await);
+        c.ack_all().await;
+    }
+    // The room unloads with T still away, and folds.
+    c.leave(false).await;
+    wait_unloaded(server.port).await;
+    assert!(log_folded(env, &material).await);
+    // T returns: its draft lands.
+    let mut t = returning(server.port, doc, &room, &user, 3).await;
     assert!(
-        c.settle(|c| c.block_text() == "bane two").await,
+        t.settle(|c| c.block_text() == "?!baseT~").await,
         "{}",
-        c.block_text()
+        t.block_text()
+    );
+    persisted(&mut t, "back").await;
+    t.leave(false).await;
+    wait_unloaded(server.port).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        fresh.settle(|c| c.block_text() == "?!baseT~").await,
+        "{}",
+        fresh.block_text()
+    );
+}
+
+/// `an_away_tab_holds_the_window_back` with every store folding while the
+/// room is open.
+#[tokio::test]
+async fn an_away_tab_holds_the_open_rooms_folds_back() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    an_away_tab_holds_the_window_back(&env, &server, true).await;
+}
+
+/// `an_away_tab_holds_the_window_back` with the room folding only when it
+/// unloads.
+#[tokio::test]
+async fn an_away_tab_holds_the_unload_fold_back() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[]).await;
+    an_away_tab_holds_the_window_back(&env, &server, false).await;
+}
+
+/// The unload fold keeps what a tab away from the room may still undo
+/// (switch on, folds only at unload): the tab dropped without a Leave, so
+/// its session counts and holds its deletion; the next life's unload fold,
+/// whose window holds another session's deleted run around that deletion,
+/// collects the run's middle items but not the deletion, and the tab's Undo
+/// once it returns restores the letter. Fails if the unload fold holds
+/// nothing (the letter is lost on load).
+#[tokio::test]
+async fn an_unload_fold_keeps_what_an_away_tab_may_undo() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[]).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    let mut undo = own_undo(&a.doc, "a");
+    // "rtpq", then "s" and "X" typed inside it: items nothing names (the
+    // collection takes whole items).
+    a.write(|doc| {
+        insert_unsent(doc, 4, "rtpq");
+        insert_unsent(doc, 5, "s");
+        insert_unsent(doc, 8, "X");
+    })
+    .await;
+    persisted(&mut a, "typed").await;
+    let (s, x) = (a.unit_at(5), a.unit_at(8));
+    a.write(|doc| remove_as(doc, "a", 8, 1)).await;
+    persisted(&mut a, "x").await;
+    assert!(b.settle(|c| c.block_text() == "baserstpq").await);
+    b.write(|doc| remove_as(doc, "b", 4, 5)).await;
+    persisted(&mut b, "cut").await;
+    b.leave(false).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    a.ack_all().await;
+    // A drops; the first unload stores the first window candidate.
+    let doc = a.doc.clone();
+    drop(a);
+    wait_unloaded(server.port).await;
+    assert!(log_folded(&env, &material).await);
+    // A comes back, types and drops again: this unload's window holds B's cut.
+    let mut a = returning(server.port, doc, &room, &user, 4).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    a.type_at(0, "!").await;
+    persisted(&mut a, "bang").await;
+    a.ack_all().await;
+    let doc = a.doc.clone();
+    drop(a);
+    wait_unloaded(server.port).await;
+    assert!(log_folded(&env, &material).await);
+    assert!(
+        collected_in_base(&env, &material, s).await,
+        "the unload fold kept the ended session's run whole"
+    );
+    assert!(
+        !collected_in_base(&env, &material, x).await,
+        "the unload fold collected a deletion an away tab may undo"
+    );
+    // A returns and undoes its deletion.
+    let mut a = returning(server.port, doc, &room, &user, 5).await;
+    assert!(a.settle(|c| c.block_text() == "!base").await);
+    a.write(|_| assert!(undo.undo_blocking())).await;
+    persisted(&mut a, "undo").await;
+    a.leave(false).await;
+    wait_unloaded(server.port).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        fresh.settle(|c| c.block_text() == "!baseX").await,
+        "{}",
+        fresh.block_text()
     );
 }
 
 /// The live agent Undo after a fold that collects (switch on, every store
-/// folds): what an agent step the room holds deleted is held, so a fold whose
-/// window covers the deletion keeps it, and the Undo, which re-creates each
-/// deleted item naming the item itself, restores the whole text and the next
-/// load holds it. Fails if the folds do not hold the room's agent steps (the
-/// middle writer's letter is collected and lost on load).
+/// folds): what an agent step deleted is held (`sessions.rs`, Q385), so a
+/// fold whose window holds the deletion keeps it, and the Undo, which
+/// re-creates each deleted item naming the item itself, restores the whole
+/// text and the next load holds it. Fails if the folds do not hold the agent
+/// step's deletions (the middle writer's letter is collected and lost on
+/// load).
 #[tokio::test]
 async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
     let Some(env) = env() else { return };
-    let server = start_configured(
-        &env,
-        env.api.as_deref(),
-        &[
-            ("COLLABORATION_GC_COLLECT", "true"),
-            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
-        ],
-    )
-    .await;
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
     let (user, material) = note(&env, "base").await;
     let room = format!("material:{material}:schema:1");
-    let write = token(&room, &user, "write");
-    let mut a = Client::open(server.port).await;
-    a.joined(&room, &write).await;
-    // Three writers type a, c, then b between them: three items, the middle
-    // one named by nothing.
+    let mut a = tab(server.port, &room, &user).await;
+    // Three writers type a, c, then b between them (three items, the middle
+    // one named by nothing), each leaving after its store (kept open: a
+    // socket closed with unread messages may lose its Leave).
     let mut middle = None;
+    let mut writers = Vec::new();
     for (at, letter, before) in [(4, "a", "base"), (5, "c", "basea"), (5, "b", "baseac")] {
-        let mut writer = Client::open(server.port).await;
-        writer.joined(&room, &write).await;
+        let mut writer = tab(server.port, &room, &user).await;
         assert!(writer.settle(|c| c.block_text() == before).await);
         writer.type_at(at, letter).await;
         persisted(&mut writer, letter).await;
         assert!(log_folded(&env, &material).await);
+        writer.leave(false).await;
         middle = Some(yrs::ID::new(writer.doc.client_id(), 0));
+        writers.push(writer);
     }
     let middle = middle.expect("the middle letter");
     assert!(a.settle(|c| c.block_text() == "baseabc").await);
+    a.ack_all().await;
     let (edit, undo) = (format!("e_{material}"), format!("u_{material}"));
     let (status, receipt) = internal(
         server.port,
@@ -1101,10 +1335,14 @@ async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
     assert_eq!(receipt["effect"]["undo"]["operationId"], edit.as_str());
     assert!(a.settle(|c| c.block_text() == "baseZ").await);
     assert!(log_folded(&env, &material).await);
-    // A later fold's window covers the agent's deletion.
-    a.type_at(0, "!").await;
-    persisted(&mut a, "bang").await;
-    assert!(log_folded(&env, &material).await);
+    // Once A has acknowledged the agent's row, a fold's window holds its
+    // deletion.
+    for mark in ["!", "?"] {
+        a.type_at(0, mark).await;
+        persisted(&mut a, mark).await;
+        assert!(log_folded(&env, &material).await);
+        a.ack_all().await;
+    }
     assert!(
         !collected_in_base(&env, &material, middle).await,
         "the agent step's deletion was collected while its Undo is live"
@@ -1117,18 +1355,19 @@ async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
     .await;
     assert_eq!(status, 200, "{answer}");
     assert!(
-        a.settle(|c| c.block_text() == "!baseabc").await,
+        a.settle(|c| c.block_text() == "?!baseabc").await,
         "{}",
         a.block_text()
     );
     drop(a);
+    wait_unloaded(server.port).await;
     assert!(log_folded(&env, &material).await);
-    let mut c = Client::open(server.port).await;
-    c.joined(&room, &write).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
     assert!(
-        c.settle(|c| c.block_text() == "!baseabc").await,
+        fresh.settle(|c| c.block_text() == "?!baseabc").await,
         "{}",
-        c.block_text()
+        fresh.block_text()
     );
 }
 
@@ -1140,69 +1379,209 @@ async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
 #[tokio::test]
 async fn a_panicking_collection_still_folds_uncollected() {
     let Some(env) = env() else { return };
-    let server = start_configured(
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let (user, material) = note_named(&env, "base", "capy-it-panic-collection").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    // Three writers' letters (b last, between a and c), each store folded,
+    // each writer leaving: from the second fold on a window qualifies and
+    // the collection panics.
+    let mut middle = None;
+    let mut writers = Vec::new();
+    for (at, letter, before) in [(4, "a", "base"), (5, "c", "basea"), (5, "b", "baseac")] {
+        let mut writer = tab(server.port, &room, &user).await;
+        assert!(writer.settle(|c| c.block_text() == before).await);
+        writer.type_at(at, letter).await;
+        persisted(&mut writer, letter).await;
+        assert!(log_folded(&env, &material).await, "the fold after {letter}");
+        writer.leave(false).await;
+        middle = Some(yrs::ID::new(writer.doc.client_id(), 0));
+        writers.push(writer);
+    }
+    let middle = middle.expect("the middle letter");
+    assert!(a.settle(|c| c.block_text() == "baseabc").await);
+    a.ack_all().await;
+    // A deletes the letters, then types twice: a fold whose window holds
+    // the deletion would drop b.
+    a.write(|doc| remove_as(doc, "a", 4, 3)).await;
+    persisted(&mut a, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    a.ack_all().await;
+    for mark in ["!", "?"] {
+        a.type_at(0, mark).await;
+        persisted(&mut a, mark).await;
+        assert!(log_folded(&env, &material).await);
+        a.ack_all().await;
+    }
+    assert!(windows(&env, &material).await > 0);
+    assert_eq!(collected_window(&env, &material).await, 0);
+    assert!(
+        !collected_in_base(&env, &material, middle).await,
+        "a panicking collection stored a collected base"
+    );
+    a.leave(false).await;
+    wait_unloaded(server.port).await;
+    assert!(log_folded(&env, &material).await);
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        fresh.settle(|c| c.block_text() == "?!base").await,
+        "{}",
+        fresh.block_text()
+    );
+}
+
+/// The latest collection's window makes older JOINs late (switch on, every
+/// store folds): once a fold collected at a window, a session naming a
+/// version below it is late, in the room that folded (it raised its window
+/// for the fold) and after the room reloads (the window is stored with the
+/// document), while one naming the window's version is not. Fails if the
+/// room's own folds leave its window behind, or the window is not loaded.
+#[tokio::test]
+async fn a_join_older_than_the_collected_window_is_late() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged_with(
         &env,
-        env.api.as_deref(),
         &[
             ("COLLABORATION_GC_COLLECT", "true"),
             ("COLLABORATION_FOLD_MAX_ROWS", "1"),
         ],
     )
     .await;
-    let (user, material) = note_named(&env, "base", "capy-it-panic-collection").await;
+    let (user, material) = note(&env, "base").await;
     let room = format!("material:{material}:schema:1");
-    let write = token(&room, &user, "write");
-    let mut a = Client::open(server.port).await;
-    a.joined(&room, &write).await;
-    // Three writers' letters (b last, between a and c), each store folded:
-    // from the second fold on a window qualifies and the collection panics.
-    let mut middle = None;
-    for (at, letter, before) in [(4, "a", "base"), (5, "c", "basea"), (5, "b", "baseac")] {
-        let mut writer = Client::open(server.port).await;
-        writer.joined(&room, &write).await;
-        assert!(writer.settle(|c| c.block_text() == before).await);
-        writer.type_at(at, letter).await;
-        persisted(&mut writer, letter).await;
-        assert!(log_folded(&env, &material).await, "the fold after {letter}");
-        middle = Some(yrs::ID::new(writer.doc.client_id(), 0));
+    let mut a = tab(server.port, &room, &user).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    a.ack_all().await;
+    for mark in ["1", "2", "3"] {
+        a.type_text(mark).await;
+        persisted(&mut a, mark).await;
+        assert!(log_folded(&env, &material).await);
+        a.ack_all().await;
     }
-    let middle = middle.expect("the middle letter");
-    assert!(a.settle(|c| c.block_text() == "baseabc").await);
-    // A deletes the letters, then types: a fold whose window holds the
-    // deletion would drop b.
+    // A fresh note is at version 1: the last fold collected at the window of
+    // the second store, version 3.
+    assert_eq!(collected_window(&env, &material).await, 3);
+    let late = |version: u64| format!("\"version\":{version}");
+    let port = server.port;
+    let join_at = |version: u64| {
+        let (room, user) = (room.clone(), user.clone());
+        async move {
+            let mut client = Client::open(port).await;
+            let id = fresh_client_id();
+            let join = token_offering(&room, &user, "write", id);
+            client
+                .send(
+                    0,
+                    &join_payload_at(&room, &join, Some(client_protocol()), id, version),
+                )
+                .await;
+            client.until(1).await.expect("joined");
+            client
+        }
+    };
+    let mut current = join_at(3).await;
+    let mut older = join_at(2).await;
+    assert!(
+        logs.has(&["late session joined", &late(2)]).await,
+        "late in the room that folded"
+    );
+    assert_eq!(logs.count(&["late session joined", &late(3)]), 0);
+    for client in [&mut a, &mut current, &mut older] {
+        client.leave(false).await;
+    }
+    wait_unloaded(server.port).await;
+    let mut again = join_at(2).await;
+    for _ in 0..50 {
+        if logs.count(&["late session joined", &late(2)]) == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(
+        logs.count(&["late session joined", &late(2)]),
+        2,
+        "late after the room reloaded"
+    );
+    again.leave(false).await;
+}
+
+/// A fold collects only while no other life of its room is loaded (debug
+/// builds: the folds of a material whose id holds `capy-it-fold-later` wait
+/// 2 s first): an unload fold running after the next room loaded folds
+/// uncollected, since that room checks JOINs against the window it loaded;
+/// the next room's own unload fold collects. Fails if the late fold collects
+/// anyway (the stored window then passes the one the loaded room holds).
+#[tokio::test]
+async fn a_fold_collects_nothing_while_a_later_room_life_is_loaded() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[]).await;
+    let (user, material) = note_named(&env, "base", "capy-it-fold-later").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    // "xz", then "y" typed between: an item nothing names.
     a.write(|doc| {
-        let root = doc.get_or_insert_text("content");
-        let mut txn = doc.transact_mut();
-        let block = root
-            .diff(&txn, yrs::types::text::YChange::identity)
-            .into_iter()
-            .find_map(|chunk| match chunk.insert {
-                yrs::Out::YXmlText(block) => Some(block),
-                _ => None,
-            })
-            .expect("a block");
-        block.remove_range(&mut txn, 4, 3);
+        insert_unsent(doc, 4, "xz");
+        insert_unsent(doc, 5, "y");
     })
     .await;
+    persisted(&mut a, "typed").await;
+    let y = a.unit_at(5);
+    a.write(|doc| remove_as(doc, "a", 4, 3)).await;
     persisted(&mut a, "cut").await;
+    a.leave(false).await;
+    // The room unloads; its fold waits while the next room loads.
+    wait_unloaded(server.port).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
     assert!(log_folded(&env, &material).await);
-    a.type_at(0, "!").await;
-    persisted(&mut a, "bang").await;
+    assert!(!collected_in_base(&env, &material, y).await);
+    assert_eq!(collected_window(&env, &material).await, 0);
+    // That room's own unload fold collects.
+    b.type_at(0, "!").await;
+    persisted(&mut b, "bang").await;
+    b.leave(false).await;
+    wait_unloaded(server.port).await;
     assert!(log_folded(&env, &material).await);
-    assert!(windows(&env, &material).await > 0);
-    assert!(
-        !collected_in_base(&env, &material, middle).await,
-        "a panicking collection stored a collected base"
-    );
-    drop(a);
-    assert!(log_folded(&env, &material).await);
-    let mut c = Client::open(server.port).await;
-    c.joined(&room, &write).await;
-    assert!(
-        c.settle(|c| c.block_text() == "!base").await,
-        "{}",
-        c.block_text()
-    );
+    assert!(collected_in_base(&env, &material, y).await);
+    assert!(collected_window(&env, &material).await > 0);
+}
+
+/// Item rooms keep their whole history (Q274: the collection covers notes
+/// only): with the switch on and every store folding, a flashcard set's
+/// folds store no window candidate and collect nothing. Fails if an item
+/// room's fold takes holds.
+#[tokio::test]
+async fn item_rooms_fold_without_collecting() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let owner = user(&env).await;
+    let set = flashcard_set(&env, &owner, None, &[("c1", "front", "back")]).await;
+    let room = format!("material:{set}:schema:1");
+    let mut writer = Client::open(server.port).await;
+    writer.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(writer.settle(|c| !c.cards().is_empty()).await);
+    writer
+        .write(|doc| {
+            let face = card_face(doc, "c1", "front").expect("front");
+            face.insert(&mut doc.transact_mut(), 5, "xyz");
+        })
+        .await;
+    persisted(&mut writer, "typed").await;
+    assert!(log_folded(&env, &set).await);
+    writer
+        .write(|doc| {
+            let face = card_face(doc, "c1", "front").expect("front");
+            face.remove_range(&mut doc.transact_mut(), 5, 3);
+        })
+        .await;
+    persisted(&mut writer, "cut").await;
+    assert!(log_folded(&env, &set).await);
+    writer.leave(false).await;
+    wait_unloaded(server.port).await;
+    assert_eq!(windows(&env, &set).await, 0);
+    assert_eq!(collected_window(&env, &set).await, 0);
 }
 
 /// A stop (SIGTERM, what Docker sends before the compose file's 60 s grace

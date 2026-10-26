@@ -113,6 +113,8 @@ pub struct Loaded {
     pub projected_version: i64,
     pub log_bytes: i64,
     pub material_kind: String,
+    /// The stored version of the latest collection's window (0: none yet).
+    pub window: i64,
 }
 
 /// The Plate envelope of `materials.content`, refused unless canonical in shape.
@@ -225,12 +227,14 @@ pub async fn load(
     access::lock_material(&tx, material_id).await?;
     let select = match doc {
         Doc::Content => {
-            "SELECT d.state, d.room_schema, d.stored_version, d.projected_version, d.log_bytes, m.kind
+            "SELECT d.state, d.room_schema, d.stored_version, d.projected_version, d.log_bytes,
+                    d.collected_window, m.kind
              FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
              WHERE d.material_id=$1 FOR UPDATE OF d"
         }
         Doc::Keys => {
-            "SELECT k.state, d.room_schema, d.stored_version, d.projected_version, k.log_bytes, m.kind
+            "SELECT k.state, d.room_schema, d.stored_version, d.projected_version, k.log_bytes,
+                    d.collected_window, m.kind
              FROM material_yjs_keys k
              JOIN material_yjs_documents d ON d.material_id=k.material_id
              JOIN materials m ON m.id=k.material_id
@@ -259,6 +263,7 @@ pub async fn load(
         projected_version: row.get("projected_version"),
         log_bytes: row.get("log_bytes"),
         material_kind: row.get("kind"),
+        window: row.get("collected_window"),
     };
     tx.commit().await?;
     Ok(loaded)
@@ -522,20 +527,23 @@ pub struct Folded {
 }
 
 /// What a fold's collection must keep (`ydoc::gc`), from the room's
-/// sessions.
+/// sessions (`sessions::Holds`).
 pub struct Holds {
     /// The oldest stored_version every counted session has reached: the
     /// window is the newest snapshot stored at or before it. None when no
     /// session is counted: the window is the folded document itself.
     pub reached: Option<i64>,
     /// H: what may still be restored, so nothing next to it is collected:
-    /// what counted sessions deleted (their Undo), what the agent steps the
-    /// open room holds deleted (the live agent Undo and Redo re-create it,
-    /// naming the deleted items), and what agent edits deleted whose durable
-    /// Undo payload is still valid (24 h).
+    /// what counted sessions deleted (their Undo) and what agent steps
+    /// deleted (their Undo and Redo re-create it, naming the deleted items).
     pub held: IdSet,
     /// The open room's own client, whose contributor-marker chains stay.
     pub live_room: Option<ClientID>,
+    /// Whether no other life of the room is loaded, asked under the
+    /// material's lock: one loaded before this fold checks JOINs against
+    /// the window it read, so the fold then collects nothing; one loading
+    /// after it waits for the lock and reads the window this fold writes.
+    pub alone: Box<dyn Fn() -> bool + Send>,
 }
 
 /// Window snapshots a document keeps (`material_yjs_windows`), the newest.
@@ -545,13 +553,18 @@ const WINDOWS_KEPT: i64 = 4;
 /// material whose id holds this.
 const IT_PANIC_COLLECTION: &str = "capy-it-panic-collection";
 
+/// Debug builds only: the integration tests' fold that waits 2 s before it
+/// starts, for a material whose id holds this.
+const IT_FOLD_LATER: &str = "capy-it-fold-later";
+
 /// Merges the base and the rows up to `through` (all when `None`) into a new
 /// base after the load check (DESIGN.md 3.5). Rows appended meanwhile stay.
-/// With `holds` (the collection's switch on) the new base is collected in
-/// place at the window the holds choose, when one qualifies, and the folded
-/// document is stored as a later window candidate. A collection the guard
-/// refuses, or that panics, folds uncollected and is reported once per
-/// material (human/ 2026-10-24); the next fold collects again.
+/// With `holds` (the collection's switch on, notes only) the new base is
+/// collected in place at the window the holds choose, when one qualifies,
+/// that window's version is kept as the latest (`collected_window`), and
+/// the folded document is stored as a later window candidate. A collection
+/// the guard refuses, or that panics, folds uncollected and is reported once
+/// per material (human/ 2026-10-24); the next fold collects again.
 pub async fn fold(
     pool: &Pool,
     material_id: &str,
@@ -560,6 +573,9 @@ pub async fn fold(
     through: Option<i64>,
     holds: Option<Holds>,
 ) -> Result<Option<Folded>, StoreError> {
+    if cfg!(debug_assertions) && material_id.contains(IT_FOLD_LATER) {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
@@ -595,11 +611,14 @@ pub async fn fold(
         Some(_) => windows(&tx, material_id, doc).await?,
         None => Vec::new(),
     };
+    let alone = holds.as_ref().is_some_and(|holds| (holds.alone)());
     let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();
     let count = rows.len();
     let it_panic = cfg!(debug_assertions) && material_id.contains(IT_PANIC_COLLECTION);
-    type Built = (Vec<u8>, Option<Window>, Option<String>);
-    let (state, window, refused) =
+    // The state, the folded document as a window candidate, the version of
+    // the window collected at, and why the guard refused a collection.
+    type Built = (Vec<u8>, Option<Window>, Option<i64>, Option<String>);
+    let (state, window, collected_at, refused) =
         tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
             let scratch = ydoc::scratch_doc();
             let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
@@ -608,26 +627,27 @@ pub async fn fold(
             let txn = scratch.transact();
             model.assert_roots(&txn).map_err(StoreError::Invalid)?;
             let Some(holds) = holds else {
-                return Ok((whole(&scratch), None, None));
+                return Ok((whole(&scratch), None, None, None));
             };
             let now = Window::of(&txn, last);
             drop(txn);
             let window = match holds.reached {
                 None => Some(&now),
                 Some(reached) => ydoc::gc::window_for(&windows, reached),
+            }
+            .filter(|_| alone);
+            let Some(window) = window else {
+                return Ok((whole(&scratch), Some(now), None, None));
             };
-            let (state, refused) = match window {
-                Some(window) => guarded(&scratch, || {
-                    if it_panic {
-                        panic!("integration test collection panic");
-                    }
-                    let collected =
-                        ydoc::gc::collect(&scratch, window, &holds.held, holds.live_room);
-                    checked(&scratch, collected.state, model)
-                }),
-                None => (whole(&scratch), None),
-            };
-            Ok((state, Some(now), refused))
+            let (state, refused) = guarded(&scratch, || {
+                if it_panic {
+                    panic!("integration test collection panic");
+                }
+                let collected = ydoc::gc::collect(&scratch, window, &holds.held, holds.live_room);
+                checked(&scratch, collected.state, model)
+            });
+            let at = refused.is_none().then_some(window.stored_version);
+            Ok((state, Some(now), at, refused))
         })
         .await
         .map_err(|error| StoreError::Other(error.to_string()))??;
@@ -648,6 +668,14 @@ pub async fn fold(
     .await?;
     if let Some(window) = window {
         store_window(&tx, material_id, doc, &window).await?;
+    }
+    if let Some(at) = collected_at {
+        tx.execute(
+            "UPDATE material_yjs_documents SET collected_window=GREATEST(collected_window, $2)
+             WHERE material_id=$1",
+            &[&material_id, &at],
+        )
+        .await?;
     }
     tx.commit().await?;
     if let Some(why) = refused {
