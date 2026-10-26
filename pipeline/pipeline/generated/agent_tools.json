@@ -1,5 +1,5 @@
 {
-  "version": 41,
+  "version": 42,
   "operations": [
     "source.read",
     "material.read",
@@ -136,7 +136,7 @@
     {
       "name": "capture_page",
       "version": 1,
-      "description": "Render a source page a shown passage cites, or a region of it, as an image you read directly. An uploaded image is page 1.",
+      "description": "Render a PDF page a shown passage cites, or a region of it, as an image you read directly. An uploaded image is page 1. Word, Excel and PowerPoint files have no pages here: inspect_office_document reads them, pictures included.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1287,7 +1287,7 @@
     {
       "name": "inspect_office_document",
       "version": 1,
-      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, first line), the first page also listing the deck's layouts; with slide, count of that slide's shapes and paragraphs from start, each shape followed by its paragraphs with their target ids, the first page also giving the slide's speaker notes.",
+      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, first line), the first page also listing the deck's layouts; with slide, count of that slide's shapes and paragraphs from start, each shape followed by its paragraphs with their target ids, the first page also giving the slide's speaker notes. Reads also list pictures, charts with their first points, equations and drawn shapes' text. The cheap read: with ids, the pictures come back as images and the charts with every point.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1301,6 +1301,13 @@
           "file_id": {
             "minLength": 1,
             "type": "string"
+          },
+          "ids": {
+            "description": "Any format, at most 4: pictures' and charts' ids from an earlier read, copied whole; a picture comes back as an image, a chart with every point. The other arguments are then ignored.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "range": {
             "description": "XLSX: an A1 range on that sheet, like \"A1:H40\".",

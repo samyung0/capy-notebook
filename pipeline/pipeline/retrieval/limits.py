@@ -151,13 +151,11 @@ TURN_SLOTS = Slots(cfg.turn_slots)
 # past either a chat waits up to this long in arrival order, with the waiting
 # status (Q268, Q293), and anything else answers provider_busy at once;
 CHAT_SLOT_WAIT_S = 60.0
-# Office captures in flight to the parser, whose queue ingest shares;
-OFFICE_CAPTURE_SLOTS = Slots(1)
-# and threads for deck scripts, page renders and capture downloads, so they
-# never hold the default executor every model call's admission runs on. Two
-# also bound the memory of side-by-side image decodes (a 5-megapixel source up
-# to about 130 MiB; at Pillow's pixel limit up to 1.3 GiB for a WebP, 0.1 GiB
-# for a JPEG; capture._decoded).
+# and threads for deck scripts, page renders, capture downloads and Office
+# picture decodes, so they never hold the default executor every model call's
+# admission runs on. Two also bound the memory of side-by-side image decodes
+# (a 5-megapixel source up to about 130 MiB; at Pillow's pixel limit up to
+# 1.3 GiB for a WebP, 0.1 GiB for a JPEG; capture._decoded).
 RENDER_THREADS = 2
 _render_pool = ThreadPoolExecutor(RENDER_THREADS, thread_name_prefix="capy-render")
 

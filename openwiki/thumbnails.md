@@ -111,7 +111,7 @@ other render failure.
 
 | Route | Thumbnail |
 | ----- | --------- |
-| PDF and Office (`document_parse`) | the bundle's `page1.png`: the parse job renders page 1 of the PDF it holds, in its bounded child (the font-repaired bytes when there are any, an Office file's LibreOffice conversion; `odl.capture.page_thumbnail`, 200 px wide, cut at 400 px), and the decode helper encodes it as WebP after checking from its header that it is a PNG of at most 200 x 400. The worker takes the file the bundle's extraction already wrote, with no second copy of the bundle. It never renders a document (no PyMuPDF in it for thumbnails) and never calls `/capture_page` for them (chat keeps using it). Without the image (an older parser, a failed render) the file takes the key of a same-bytes file, as a reuse does, or none |
+| PDF and Office (`document_parse`) | the bundle's `page1.png`: the parse job renders page 1 of the PDF it holds, in its bounded child (the font-repaired bytes when there are any, an Office file's LibreOffice conversion, a PowerPoint file's hidden slides included since parser v20, so a hidden slide 1 is the card as the editor draws it; `odl.capture.page_thumbnail`, 200 px wide, cut at 400 px), and the decode helper encodes it as WebP after checking from its header that it is a PNG of at most 200 x 400. The worker takes the file the bundle's extraction already wrote, with no second copy of the bundle. It never renders a document (no PyMuPDF in it for thumbnails) and never calls `/capture_page` for them (chat keeps using it). Without the image (an older parser, a failed render) the file takes the key of a same-bytes file, as a reuse does, or none |
 | Image (`image_caption`) | Pillow, in the decode helper: first frame, shrunk while it decodes once it is at least 400 px both ways (a JPEG at a reduced DCT scale, any other image by a whole factor, so one near Pillow's limit fits the helper's memory), EXIF orientation, then 200 px wide and cut at 400 px before it is converted and flattened on white; refused over `CAPY_IMAGE_MAX_PIXELS` or Pillow's decompression-bomb limit; SVG gets none (no rasterizer), HEIC only with a Pillow plugin |
 | Text (`raw_text`) and CSV/TSV (`delimited_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters of the source (a text-mode read, never cut mid-character; NUL removed), for an untouched upload; once the file has saved edits its saves write it ([Text previews on save](#text-previews-on-save)). Cards draw text and code as monospace lines, and a CSV or TSV (kind `sheet`) as a small table: its first 8 rows and 5 columns, the first row the header, tab-separated when the first line has a tab, quoted cells kept whole |
 | Store-only, audio | none |
@@ -154,8 +154,9 @@ page render adds 3.4-37 ms to a PDF parse (a 27 MB textbook 21.5 ms) and
 1.7-20 ms to an Office parse (the `thumbnail` phase of a real parse: 2-23 ms;
 the LibreOffice conversion it reuses takes 2.2-28 s); the ingest's PNG to WebP
 step takes 4-28 ms and a 12 MP JPEG photo 132 ms. A second conversion through
-`/capture_page`, the first version of this, took 3.2-8 s per small Office
-document and 28.5 s for a 24 MB deck.
+the parser's former `/capture_page` route (removed with Office page captures,
+Q283), the first version of this, took 3.2-8 s per small Office document and
+28.5 s for a 24 MB deck.
 
 ## Material previews
 

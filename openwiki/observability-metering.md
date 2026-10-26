@@ -630,7 +630,8 @@ slot-to-capability policy lives is the map in
 `server/internal/models/slot.go`: chat needs `agentic_loop` and `vision`,
 retrieval needs `embedding`, captioning needs `vision`, rerank needs `rerank`,
 the other slots need nothing. Chat needs `vision` because its tools attach
-images (`capture_page`, pending Office images); the assignment check is the
+images (`capture_page`, Office pictures from `inspect_office_document`,
+pending Office images); the assignment check is the
 only gate, with no runtime vision check, and both seeded chat rows
 (`deepseek/deepseek-flash`, `zai/glm-5.3-flash`) carry it. Every
 registry save runs that subset check for drafts and for existing rows alike,
@@ -1784,8 +1785,8 @@ and the planning phase when the slot arrives, or the in-stream
 request answers the existing 503 `provider_busy` with `Retry-After` at once,
 the editor routes before starting a response (Q359). Model-call
 admission holds the model-wide lock for one conditional insert, and a call's
-lease goes with its settlement. Deck scripts, renders and captures run on a
-pool of two threads of their own; one Office capture at a time
+lease goes with its settlement. Deck scripts, renders, captures and Office
+picture decodes run on a pool of two threads of their own
 ([agentic-retrieval.md](agentic-retrieval.md#process-capacity)).
 
 **Per-model outbound concurrency** bounds what reaches a provider.

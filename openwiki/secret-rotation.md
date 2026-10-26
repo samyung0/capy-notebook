@@ -92,7 +92,7 @@ gives 64); the dev defaults are shorter and work only locally.
 
 | Key                                                                             | Both sides                                           | Notes                                                                                            |
 | ------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `PARSER_TOKEN`                                                                  | API on the app host, parser on the ingest host       | Deploy ingest straight after the app host.                                                       |
+| `PARSER_TOKEN`                                                                  | Ingest worker and parser, both on the ingest host    | Deploy ingest; the app host holds no parser token (Q283).                                        |
 | `PIPELINE_SECRET`                                                               | Gateway and retrieval on the app host, ingest worker | As above.                                                                                        |
 | `COLLABORATION_SECRET`                                                          | Gateway and collaboration server                     | Open editors reconnect, as on any deploy.                                                        |
 | `POSTGRES_PASSWORD`, `*_DATABASE_URL`, `OPS_*_DATABASE_URL`, `UAT_DATABASE_URL` | The database role and its clients                    | `ALTER ROLE … PASSWORD` right before the deploy.                                                 |

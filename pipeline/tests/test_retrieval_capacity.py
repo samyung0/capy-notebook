@@ -2,9 +2,8 @@
 model calls in flight take call slots, one per call and not per turn, and wait
 for one in arrival order with the waiting status (inner-turn slots); past the
 turns-in-progress ceiling a chat waits in arrival order (Q268) and a generate
-answers provider_busy; Office captures past their slots answer busy instead
-of queueing at the parser, and page renders run on the render pool instead of
-the default executor every model call's admission uses."""
+answers provider_busy; page renders run on the render pool instead of the
+default executor every model call's admission uses."""
 
 from __future__ import annotations
 
@@ -77,47 +76,6 @@ def test_generate_answers_busy_past_the_turn_ceiling(monkeypatch):
     assert busy.json()["code"] == "provider_busy"
     assert runs == ["chat", "generate"]
     assert limits.TURN_SLOTS.used == 1
-
-
-async def _office_row(_workspace_id: str, _file_id: str) -> dict:
-    return {
-        "kind": "doc",
-        "ever_parsed_successfully": True,
-        "parse_mode": "fast",
-        "blob_path": "objects/f_1",
-        "size_bytes": 10,
-    }
-
-
-async def test_a_second_office_capture_answers_busy_while_one_runs(monkeypatch):
-    """(security regression: rate-limit audit M13) Office captures share the
-    parser's queue with ingest: past the process's slots a capture answers
-    busy instead of sending another document to the parser."""
-    monkeypatch.setattr(limits, "OFFICE_CAPTURE_SLOTS", limits.Slots(1))
-    monkeypatch.setattr(capture.store, "file_page_source", _office_row)
-    started, finish = threading.Event(), threading.Event()
-    sent: list[int] = []
-
-    def office(_row, page, _bbox, _max_edge):
-        sent.append(page)
-        started.set()
-        finish.wait(10)
-        return b"\xff\xd8", [0.0, 0.0, 1000.0, 1000.0], (1, 1)
-
-    monkeypatch.setattr(capture, "_office_capture", office)
-    first = asyncio.create_task(capture.render_file("ws_1", "f_1", 1, None, 64))
-    await asyncio.to_thread(started.wait, 10)
-
-    with pytest.raises(capture.CaptureUnavailable, match="busy") as busy:
-        await capture.render_file("ws_1", "f_1", 2, None, 64)
-    assert busy.value.code == "unavailable_target"
-    finish.set()
-    await first
-    assert sent == [1]
-    assert limits.OFFICE_CAPTURE_SLOTS.used == 0
-
-    await capture.render_file("ws_1", "f_1", 3, None, 64)
-    assert sent == [1, 3]
 
 
 async def test_page_renders_run_on_the_render_pool(monkeypatch, tmp_path):

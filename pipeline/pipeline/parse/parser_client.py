@@ -7,7 +7,7 @@ back to that volume atomically. The zip holds only what ingest reads:
 layout block, with page index and bounding box) and ``refinement.json`` (frozen
 furniture and Office page-text/heading evidence). Only native PDF sources may
 include a repaired ``parsed.pdf``; Office bundles contain no PDF. Native Office highlights resolve
-quoted text against the viewer, and page captures convert the source temporarily.
+quoted text against the viewer; Office files have no page captures.
 
 The live route is OpenDataLoader with the reviewed native repairs and selective
 RapidOCR on pages without a text layer (``parser/odl``).
@@ -58,7 +58,7 @@ ROUTE_FAST = "fast"
 # the ingest worker's VLM page read (prompts/captioning.py VLM_PAGE_PROMPT)
 # changes output. With the release SHA it forms the artifact version, so a
 # parser from another release is refused.
-PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-vlm-v19"}
+PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-vlm-v20"}
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 
 
