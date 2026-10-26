@@ -50,11 +50,17 @@ it('loads the session on a note embedding a quiz, so a signed-in check skips the
     []
   );
   for (const node of rendered) await prerender(node);
-  await gradeEmbeddedQuiz('note.tok', 'qz_1', { a: 'b' }, async () => 'token');
+  await gradeEmbeddedQuiz(
+    'note.tok',
+    'qz_1',
+    'q1',
+    { a: 'b' },
+    async () => 'token'
+  );
   expect(anonymous.checkSharedNoteQuiz).toHaveBeenCalledWith(
     'note.tok',
     'qz_1',
-    { a: 'b' }
+    { answers: { a: 'b' }, questionId: 'q1' }
   );
   expect(anonymous.gradeAnonymousNoteQuiz).not.toHaveBeenCalled();
 });

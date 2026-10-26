@@ -63,6 +63,7 @@ export function ListToolbar<V extends string>({
   onViewChange,
   action,
   selection,
+  wide,
 }: {
   /** Left out where every sort lives in the table's header. */
   sortMenu?: SortMenuProps<V>;
@@ -75,24 +76,40 @@ export function ListToolbar<V extends string>({
   /** The SelectionBar, shown instead of the whole toolbar while anything is
    * selected. */
   selection?: ReactNode;
+  /** Under a page's tabs: the tab body's gutter, like PageBody's `wide`. */
+  wide?: boolean;
 }) {
   // The toolbar stays mounted under the selection bar, so a first pick or a
   // last deselect does not rebuild its menus.
   return (
     <>
-      {selection && <div className="page-px -mb-3 flex">{selection}</div>}
+      {selection && (
+        <div className={cn('-mb-3 flex', wide ? 'page-px-wide' : 'page-px')}>
+          {selection}
+        </div>
+      )}
       {/* Phones: icon-only sort and filter with the action on one row, the
           view toggle on its own row at the right (or on the first, without
           an action). From sm, one labelled row. */}
       <div
         className={cn(
-          'page-px -mb-3 flex flex-wrap items-center gap-x-3',
+          '-mb-3 flex flex-wrap items-center gap-x-3',
+          wide ? 'page-px-wide' : 'page-px',
           selection && 'hidden'
         )}
       >
         <div className="flex min-h-10 items-center sm:min-h-11.5 sm:py-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {sortMenu && <SortMenu {...sortMenu} />}
+          {/* -ml-1 with the buttons' -mx-1 puts the first icon on the
+              gutter, over the list's first column. */}
+          <div className="-ml-1 flex flex-wrap items-center gap-2">
+            {/* Hidden whole, so its wrapper leaves no gap before Filter. */}
+            {sortMenu && (
+              <div
+                className={cn('contents', sortMenu.hiddenFromMd && 'md:hidden')}
+              >
+                <SortMenu {...sortMenu} />
+              </div>
+            )}
             <FilterPopover filters={filters} onResetFilters={onResetFilters} />
           </div>
         </div>
@@ -102,11 +119,12 @@ export function ListToolbar<V extends string>({
           </div>
         )}
         {/* On phones the toggle takes its own row only when an action shares
-          the first one. */}
+          the first one. -mr-1.5 puts its icon on the gutter, like Filter's
+          on the left. */}
         {view && onViewChange && (
           <div
             className={cn(
-              'flex min-h-10 items-center justify-end sm:min-h-11.5',
+              '-mr-1.5 flex min-h-10 items-center justify-end sm:min-h-11.5',
               action ? 'w-full sm:w-auto' : 'ml-auto'
             )}
           >
@@ -123,7 +141,6 @@ export function SortMenu<V extends string>({
   sort,
   ascending,
   onSortChange,
-  hiddenFromMd,
 }: SortMenuProps<V>) {
   const current = sorts.find((option) => option.value === sort) ?? sorts[0];
   return (
@@ -145,7 +162,7 @@ export function SortMenu<V extends string>({
           aria-label={m.workspaces_sort_prefix({
             label: current.label,
           })}
-          className={cn('-mx-1 h-fit px-2 py-1.5', hiddenFromMd && 'md:hidden')}
+          className="-mx-1 h-fit px-2 py-1.5"
           data-order={ascending ? 'ascending' : 'descending'}
           data-sort={current.value}
           iconLeft="sort"

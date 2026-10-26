@@ -137,7 +137,6 @@
     "BANK_PRIVATE_B2_BUCKET": { "kind": "variable", "targets": ["local"] },
     "BANK_PRIVATE_B2_KEY_ID": { "kind": "secret", "targets": ["local"] },
     "BANK_PRIVATE_B2_APP_KEY": { "kind": "secret", "targets": ["local"] },
-    "BYOK_ENABLED": { "kind": "variable", "targets": ["local"] },
     "CAPY_CAPTION_CACHE_TTL_DAYS": {
       "kind": "variable",
       "targets": ["app", "ingest-production", "ingest-shared"]
@@ -598,11 +597,6 @@
       "kind": "variable",
       "targets": ["local"]
     },
-    "LLM_CREDENTIALS_KEY": {
-      "kind": "secret",
-      "targets": ["app"],
-      "required_for": ["app"]
-    },
     "MIGRATE": {
       "kind": "variable",
       "targets": ["local"]
@@ -697,13 +691,12 @@
     },
     "PARSER_TOKEN": {
       "kind": "secret",
-      "targets": ["app", "local", "ingest-production", "ingest-shared"],
-      "required_for": ["app", "ingest-production", "ingest-shared"]
+      "targets": ["local", "ingest-production", "ingest-shared"],
+      "required_for": ["ingest-production", "ingest-shared"]
     },
     "PARSER_URL": {
       "kind": "variable",
-      "targets": ["local", "app"],
-      "required_for": ["app"]
+      "targets": ["local"]
     },
     "PIPELINE_SECRET": {
       "kind": "secret",

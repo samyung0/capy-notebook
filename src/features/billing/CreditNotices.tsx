@@ -33,11 +33,13 @@ function Notice({
       className={cn(
         // Phones put the actions on their own row, right-aligned.
         'flex flex-col gap-3 rounded-lg border p-3.5 sm:flex-row sm:items-start sm:justify-between',
-        tone === 'plain' && 'border-line bg-surface-hover-bg text-fg',
+        // --notice-tone tints the hover of ghost buttons inside.
+        tone === 'plain' &&
+          'border-line bg-surface-hover-bg text-fg [--notice-tone:var(--color-fg)]',
         tone === 'warning' &&
-          'border-solid-warning/45 bg-tint-warning text-tint-warning-fg',
+          'border-solid-warning/45 bg-tint-warning text-tint-warning-fg [--notice-tone:var(--color-solid-warning)]',
         tone === 'error' &&
-          'border-solid-error/45 bg-tint-error text-tint-error-fg'
+          'border-solid-error/45 bg-tint-error text-tint-error-fg [--notice-tone:var(--color-solid-error)]'
       )}
       role="status"
     >
@@ -104,6 +106,7 @@ export function CreditNotices({
         action={
           <div className="flex items-center gap-2">
             <Button
+              className="hover:bg-(--notice-tone)/15"
               disabled={cancelling}
               onClick={() => cancelRetry()}
               size="sm"
@@ -160,5 +163,9 @@ export function CreditNotices({
     );
   }
   if (notices.length === 0) return null;
-  return <div className={cn('flex flex-col gap-3', className)}>{notices}</div>;
+  return (
+    <div className={cn('flex max-w-3xl flex-col gap-3', className)}>
+      {notices}
+    </div>
+  );
 }

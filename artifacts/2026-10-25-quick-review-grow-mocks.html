@@ -1,0 +1,618 @@
+<meta charset="utf-8">
+<title>Quick Review Grow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400..800&display=swap">
+<style>
+/* Layout: a proposal column with two app-styled frames (desktop, phone). Each frame stands in for the
+   viewport, so the enlarged card centres inside its own frame. Classroom theme tokens. */
+:root {
+  --page: #f7f7f7; --card: #ffffff; --card-dark: #e6e9ea; --hover: #f7f8f8;
+  --fg: #222222; --fg2: #4b4b4b; --muted: #6b6b6b; --link: #5b4aa8;
+  --border: #d6d6d6; --divider: #e6e6e6; --strong: #afafaf;
+  --primary: #222222; --primary-fg: #ffffff; --accent: #8c7bd9;
+  --tint-accent: #ece6f6; --tint-accent-fg: #5b4aa8;
+  --tint-ok: #e7f6ee; --tint-ok-fg: #2f7d56; --tint-warn: #f7f0e5; --tint-warn-fg: #a9772a;
+  --tint-err: #fbe9ec; --tint-err-fg: #b23a4f; --tint-info: #e6f1fb; --tint-info-fg: #2f639a;
+  --ok: #7bd9ab; --err: #f35a71;
+  --ws-stat: #3a5f9e;
+  --scrim: rgba(20, 22, 26, .38);
+  --shadow: 0 24px 60px -12px rgba(20, 22, 26, .28), 0 4px 14px rgba(20, 22, 26, .08);
+  --sans: "Fustat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r-btn: 12px; --r-card: 18px;
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #0d1219; --card: #161d27; --card-dark: #222c3a; --hover: #1d2633;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --link: #b4befe;
+  --border: #323e52; --divider: rgba(255,255,255,.07); --strong: #3a4657;
+  --primary: #cdd4de; --primary-fg: #0d1219; --accent: #b5a1f8;
+  --tint-accent: #31334b; --tint-accent-fg: #c8b8fa;
+  --tint-ok: #2e3f3c; --tint-ok-fg: #a6e3a1; --tint-warn: #423c2e; --tint-warn-fg: #f9e2af;
+  --tint-err: #43303a; --tint-err-fg: #f38ba8; --tint-info: #2a3550; --tint-info-fg: #89b4fa;
+  --ok: #a6e3a1; --err: #f38ba8; --ws-stat: #89b4fa;
+  --scrim: rgba(0, 0, 0, .55);
+  --shadow: 0 24px 60px -12px rgba(0, 0, 0, .6), 0 4px 14px rgba(0, 0, 0, .3);
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --page: #0d1219; --card: #161d27; --card-dark: #222c3a; --hover: #1d2633;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --link: #b4befe;
+  --border: #323e52; --divider: rgba(255,255,255,.07); --strong: #3a4657;
+  --primary: #cdd4de; --primary-fg: #0d1219; --accent: #b5a1f8;
+  --tint-accent: #31334b; --tint-accent-fg: #c8b8fa;
+  --tint-ok: #2e3f3c; --tint-ok-fg: #a6e3a1; --tint-warn: #423c2e; --tint-warn-fg: #f9e2af;
+  --tint-err: #43303a; --tint-err-fg: #f38ba8; --tint-info: #2a3550; --tint-info-fg: #89b4fa;
+  --ok: #a6e3a1; --err: #f38ba8; --ws-stat: #89b4fa;
+  --scrim: rgba(0, 0, 0, .55);
+  --shadow: 0 24px 60px -12px rgba(0, 0, 0, .6), 0 4px 14px rgba(0, 0, 0, .3);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--fg); font-family: var(--sans); font-size: 15px; font-weight: 500; line-height: 1.45; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 40px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 40px; }
+h1 { font-size: 30px; font-weight: 800; letter-spacing: -.02rem; margin: 0; text-wrap: balance; }
+h2 { font-size: 22px; font-weight: 800; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--fg2); font-size: 16px; }
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 16px; }
+.prose ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; max-width: 74ch; }
+code { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 13px; background: var(--card-dark); padding: 1px 5px; border-radius: 5px; }
+
+/* Controls */
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 12px; font-weight: 700; color: var(--muted); }
+select { font: inherit; font-size: 14px; font-weight: 600; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 7px 30px 7px 11px; appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
+.btn { font: inherit; font-size: 14px; font-weight: 700; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: var(--r-btn); padding: 7px 14px; cursor: pointer; }
+.btn:hover:not(:disabled) { background: var(--hover); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.btn.primary:hover:not(:disabled) { background: var(--primary); filter: brightness(1.15); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Frames */
+.frames { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.frame-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.frame-col.desk { flex: 1 1 640px; max-width: 780px; }
+.frame-col.phone { flex: 0 0 360px; }
+.frame { position: relative; overflow: hidden; background: var(--page); border: 1px solid var(--border); border-radius: 22px; isolation: isolate; }
+.desk .frame { height: 620px; }
+.phone .frame { width: 360px; height: 700px; }
+@media (max-width: 420px) { .frame-col.phone { flex-basis: 100%; } .phone .frame { width: 100%; } }
+.study { padding: 28px 32px; display: flex; flex-direction: column; gap: 22px; height: 100%; }
+.phone .study { padding: 20px 16px; gap: 18px; }
+.ptitle { font-size: 24px; font-weight: 800; }
+.cont { border: 1px solid var(--border); background: var(--card); border-radius: var(--r-card); padding: 16px 18px; display: flex; align-items: center; gap: 12px; }
+.cont .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cont .big { font-size: 17px; font-weight: 700; }
+.meta { font-size: 13px; color: var(--muted); font-weight: 600; }
+.lnk { color: var(--fg); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.prow { display: flex; align-items: center; gap: 10px; }
+.prow .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ws { width: 22px; height: 22px; border-radius: 6px; color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center; background: var(--ws-stat); flex: none; }
+.qhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.qhead h4 { margin: 0; font-size: 16px; font-weight: 700; }
+.rows { display: flex; flex-direction: column; }
+.crow { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--divider); }
+.crow .nm { flex: 1; min-width: 0; font-weight: 600; }
+.i { width: 18px; height: 18px; flex: none; }
+
+/* The row: horizontal slider with the app's scroll fade (scroll-driven mask, no JS). */
+@property --fade-on { syntax: "<integer>"; inherits: false; initial-value: 0; }
+@property --fade-start { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --fade-end { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes fade-x { from { --fade-on: 1; --fade-start: 0px; --fade-end: 28px; } to { --fade-on: 1; --fade-start: 28px; --fade-end: 0px; } }
+.qcards { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 6px; margin: -2px -2px 0; scrollbar-width: none; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent); }
+.qcards::-webkit-scrollbar { display: none; }
+@supports (animation-timeline: scroll()) {
+  .qcards { animation-name: fade-x; animation-timing-function: linear; animation-fill-mode: both; animation-timeline: scroll(self inline); }
+}
+.qslot { flex: none; width: 200px; transition: width 260ms var(--ease-smooth-out), margin 260ms var(--ease-smooth-out), opacity 200ms ease; scroll-snap-align: start; }
+.phone .qslot { width: 176px; }
+.qslot.gone { width: 0 !important; margin-right: -12px; opacity: 0; }
+.qc { all: unset; box-sizing: border-box; width: 100%; height: 118px; border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; background: var(--card); cursor: pointer; transition: border-color 150ms ease, transform 150ms var(--ease-smooth-out); }
+.qc:hover { border-color: var(--strong); }
+.qc:active { transform: scale(.985); }
+.qc:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.qc.hollow { visibility: hidden; }
+.qc .q { font-size: 14px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.qc small { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qc .chip { align-self: flex-start; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; }
+.alldone { color: var(--muted); font-weight: 600; font-size: 14px; padding: 6px 0 4px; }
+
+/* The overlay: scrim + the enlarged card, both inside the frame. */
+.scrim { position: absolute; inset: 0; background: var(--scrim); opacity: 0; z-index: 20; }
+.grown { position: absolute; z-index: 21; background: var(--card); border: 1px solid var(--border); overflow: hidden; box-shadow: var(--shadow); transform-origin: 0 0; }
+.grown .mini { position: absolute; left: 0; top: 0; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+.grown .mini .q { font-size: 14px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.grown .mini small { color: var(--muted); font-weight: 600; font-size: 12px; }
+.full { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+.phone .full { padding: 14px 16px 16px; }
+.bhead { display: flex; align-items: center; gap: 8px; }
+.bhead .src { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bhead .pos { font-size: 13px; font-weight: 600; color: var(--muted); }
+.x { all: unset; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--fg2); cursor: pointer; margin-right: -6px; }
+.x:hover { background: var(--hover); }
+.x:focus-visible { outline: 2px solid var(--accent); }
+.swap { display: flex; flex-direction: column; gap: 14px; }
+
+/* Flashcard inside the enlarged card */
+.flipwrap { perspective: 1200px; }
+.flip { position: relative; height: 200px; transform-style: preserve-3d; transition: transform 520ms var(--ease-smooth-out); cursor: pointer; }
+.phone .flip { height: 220px; }
+.flip.on { transform: rotateY(180deg); }
+.face { position: absolute; inset: 0; backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 8px 12px; border-radius: 14px; background: var(--card-dark); }
+.face.back { transform: rotateY(180deg); }
+.face .ft { font-size: 21px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
+.phone .face .ft { font-size: 19px; }
+.face .ba { font-size: 17px; font-weight: 600; line-height: 1.45; text-wrap: pretty; color: var(--fg); }
+.face .hint { font-size: 13px; color: var(--muted); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tile { all: unset; text-align: center; padding: 9px 0; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; transition: filter 120ms ease, opacity 200ms ease, transform 260ms var(--ease-smooth-out); }
+.tile:hover { filter: brightness(.95); }
+.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tile.again { background: var(--tint-err); color: var(--tint-err-fg); }
+.tile.hard { background: var(--tint-warn); color: var(--tint-warn-fg); }
+.tile.good { background: var(--tint-info); color: var(--tint-info-fg); }
+.tile.easy { background: var(--tint-ok); color: var(--tint-ok-fg); }
+.tiles.wait .tile { opacity: 0; transform: translateY(6px); pointer-events: none; }
+
+/* Question inside the enlarged card */
+.stem { font-size: 18px; font-weight: 700; line-height: 1.4; text-wrap: pretty; }
+.opts { display: flex; flex-direction: column; gap: 8px; }
+.opt { all: unset; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-weight: 600; cursor: pointer; }
+.opt:hover { background: var(--hover); }
+.opt:focus-visible { outline: 2px solid var(--accent); }
+.opt .dot { width: 16px; height: 16px; border-radius: 50%; border: 1.6px solid var(--strong); flex: none; display: grid; place-items: center; }
+.opt.sel { border-color: var(--fg2); }
+.opt.sel .dot { border-color: var(--fg); }
+.opt.sel .dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--fg); }
+.opt.right { background: var(--tint-ok); border-color: transparent; color: var(--tint-ok-fg); }
+.opt.wrong { background: var(--tint-err); border-color: transparent; color: var(--tint-err-fg); }
+.opt.right .dot, .opt.wrong .dot { border-color: currentColor; }
+.opt.right .dot::after, .opt.wrong .dot::after { background: currentColor; }
+.opts.locked .opt { cursor: default; }
+.opts.locked .opt:hover:not(.right):not(.wrong) { background: none; }
+.num { font: inherit; font-size: 16px; font-weight: 600; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; width: 160px; }
+.num.right { background: var(--tint-ok); color: var(--tint-ok-fg); border-color: transparent; }
+.num.wrong { background: var(--tint-err); color: var(--tint-err-fg); border-color: transparent; }
+.verdict { font-weight: 700; }
+.verdict.right { color: var(--tint-ok-fg); }
+.verdict.wrong { color: var(--tint-err-fg); }
+.why { color: var(--fg2); font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.foot { display: flex; justify-content: flex-end; gap: 8px; }
+
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.note { display: flex; flex-direction: column; gap: 8px; }
+.note h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.note ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; color: var(--fg2); font-size: 14px; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="fwd" viewBox="0 0 20 20"><path d="M4 10h11M11 5.5l4.5 4.5L11 14.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="close" viewBox="0 0 20 20"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="half" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--fg)" stroke-width="1.8"/><path d="M10 2a8 8 0 0 1 0 16z" fill="var(--fg)"/></symbol>
+  <symbol id="todo" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--strong)" stroke-width="1.8" stroke-dasharray="3 2.6"/></symbol>
+  <symbol id="ck" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="var(--ok)"/><path d="M6 10.4l2.6 2.6L14.2 7.4" fill="none" stroke="#1f4d36" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:10px">
+    <span class="eyebrow">Study page · Quick review · 2026-10-25</span>
+    <h1>Quick review cards that grow</h1>
+    <p class="lede">Quick review becomes a row of compact cards that scrolls sideways, with the same edge fade as other horizontal rows. Clicking a card makes that card itself grow out of the row into a large card centred over the page, like a dialog. Closing shrinks it back into its slot. Try both frames below.</p>
+  </header>
+
+  <section>
+    <div class="controls">
+      <div class="field">
+        <label for="motion">Motion</label>
+        <select id="motion">
+          <option value="grow">A · Grow (box resizes, text stays sharp)</option>
+          <option value="zoom">B · Zoom (whole card scales up)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="after">After answering</label>
+        <select id="after">
+          <option value="next">Go to the next card in place</option>
+          <option value="back">Shrink back into the row</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="speed">Speed</label>
+        <select id="speed">
+          <option value="1">Normal</option>
+          <option value="4">Slow motion ×4</option>
+        </select>
+      </div>
+      <button class="btn" id="reset" type="button">Reset cards</button>
+    </div>
+
+    <div class="frames">
+      <div class="frame-col desk">
+        <span class="eyebrow">Desktop · centre Study page</span>
+        <div class="frame" data-frame="desk"></div>
+      </div>
+      <div class="frame-col phone">
+        <span class="eyebrow">Phone · 360px</span>
+        <div class="frame" data-frame="phone"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What happens</h2>
+    <div class="notes">
+      <div class="note">
+        <h3>The row</h3>
+        <ul>
+          <li>Cards are 200 × 118 (176 wide on phones). The text is cut off after three lines, with the source and type below it.</li>
+          <li>The row scrolls sideways with snapping, and its edges fade only while there is more to scroll. This uses the app's <code>scroll-fade-x</code>.</li>
+          <li>An answered card shows its result for a moment, then its slot closes up. After the last card, the section says it's done.</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>The enlarged card</h3>
+        <ul>
+          <li>The card grows from its own position and size to the centre: 520 wide on desktop, the full width minus 16px each side on phones.</li>
+          <li>Its short text fades out while the full card fades in. Flashcards flip with a click, then show Again / Hard / Good / Easy. Questions have Check, then Next.</li>
+          <li>Esc, the ×, or a click on the backdrop shrinks it back into its slot. It behaves as a real dialog: focus stays inside and returns to the card afterwards.</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>A vs B</h3>
+        <ul>
+          <li><b>A · Grow</b> animates the box's size and position. The text never stretches, and the full content is revealed as the box opens. Only this one card's layout updates while it moves.</li>
+          <li><b>B · Zoom</b> scales the finished card up from the slot, the way a phone app opens. It's cheaper to animate, but the text is stretched for a moment.</li>
+          <li>Opening takes 350ms and closing 250ms, with the app's smooth-out ease. With reduced motion turned on, it only crossfades.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const ITEMS = [
+    { id: 'c1', kind: 'card', src: 'Probability flashcards', chapter: 'Conditional probability',
+      front: 'P(A | B) when A and B are independent?',
+      back: 'P(A | B) = P(A). Knowing that B happened tells you nothing about A.' },
+    { id: 'q1', kind: 'mcq', src: 'Probability quiz', chapter: 'Distributions',
+      short: 'Which is a discrete distribution? A) Normal B) Poisson…',
+      stem: 'Which is a discrete distribution?',
+      options: ['Normal', 'Poisson', 'Uniform on [0, 1]', 'Exponential'], answer: 1,
+      why: 'Poisson counts events in an interval, so it only takes whole-number values. The other three are continuous.' },
+    { id: 'c2', kind: 'card', src: 'Spread flashcards', chapter: 'Spread',
+      front: 'Standard deviation vs variance',
+      back: 'Variance is the mean squared distance from the mean. Standard deviation is its square root, so it is in the data’s own units.' },
+    { id: 'q2', kind: 'num', src: 'Descriptive quiz', chapter: 'Centre',
+      short: 'Median of 3, 7, 8, 12, 40',
+      stem: 'What is the median of 3, 7, 8, 12, 40?', answer: '8',
+      why: 'Sort the values and take the middle one. With five values that is the third, 8. The outlier 40 does not move it.' },
+    { id: 'c3', kind: 'card', src: 'Probability flashcards', chapter: 'Events',
+      front: 'When are two events mutually exclusive?',
+      back: 'When they cannot happen together, so P(A ∩ B) = 0.' },
+  ];
+  const RATINGS = [['again', 'Again'], ['hard', 'Hard'], ['good', 'Good'], ['easy', 'Easy']];
+  const TINT = { again: 'err', hard: 'warn', good: 'info', easy: 'ok' };
+  const $ = (sel, el = document) => el.querySelector(sel);
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const speed = () => Number($('#speed').value);
+  const motion = () => $('#motion').value;
+  const meta = (it) => `${it.src} · ${it.kind === 'card' ? 'Flip' : '1 question'}`;
+  const short = (it) => it.kind === 'card' ? it.front : it.short;
+
+  function studyPage(phone) {
+    return `
+      <div class="study">
+        <div class="ptitle">Study</div>
+        <div class="cont">
+          <div class="tx"><span class="meta">Continue</span><div class="big">Conditional probability.pdf</div><span class="meta">Probability · 3 of 7 done</span></div>
+          <span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span>
+        </div>
+        ${phone ? '' : `<div class="prow"><span class="ws">S</span><div class="tx"><b>Whole workspace</b><span class="meta">14 items worth a look</span></div><button class="btn" type="button" tabindex="-1">Review</button></div>`}
+        <div class="qsec" style="display:flex;flex-direction:column;gap:10px">
+          <div class="qhead"><h4>Quick review</h4><span class="meta qcount"></span></div>
+          <div class="qcards" role="list"></div>
+        </div>
+        <div class="rows">
+          <div class="crow"><svg class="i"><use href="#half"/></svg><span class="nm">Descriptive statistics</span><span class="meta">4 of 6</span></div>
+          <div class="crow"><svg class="i"><use href="#half"/></svg><span class="nm">Probability</span><span class="meta">3 of 7</span></div>
+          <div class="crow"><svg class="i"><use href="#todo"/></svg><span class="nm">Distributions</span><span class="meta">0 of 5</span></div>
+        </div>
+      </div>`;
+  }
+
+  function cardInner(it) {
+    return `<span class="q">${esc(short(it))}</span><small>${esc(meta(it))}</small>`;
+  }
+
+  /* One frame = one fake viewport with its own row and overlay. */
+  function Frame(el) {
+    const phone = el.dataset.frame === 'phone';
+    el.innerHTML = studyPage(phone);
+    const row = $('.qcards', el);
+    const count = $('.qcount', el);
+    let queue = [];   // ids still in the row
+    let open = null;  // { id, big, scrim, mini, full, slotBtn, busy }
+
+    function render() {
+      queue = ITEMS.map((it) => it.id);
+      row.innerHTML = ITEMS.map((it) => `<div class="qslot" role="listitem" data-id="${it.id}"><button class="qc" type="button">${cardInner(it)}</button></div>`).join('');
+      row.scrollLeft = 0;
+      updateCount();
+    }
+    function updateCount() {
+      count.textContent = queue.length ? `${queue.length} left` : '';
+      if (!queue.length && !$('.alldone', el)) {
+        row.insertAdjacentHTML('afterend', '<div class="alldone">Quick review done. New cards come with your next answers.</div>');
+      }
+      if (queue.length) $('.alldone', el)?.remove();
+    }
+    row.addEventListener('click', (e) => {
+      const btn = e.target.closest('.qc');
+      if (!btn || open) return;
+      openItem(btn.parentElement.dataset.id);
+    });
+
+    const frameRect = () => el.getBoundingClientRect();
+    function rectIn(node) {
+      const f = frameRect(), r = node.getBoundingClientRect();
+      return { x: r.left - f.left, y: r.top - f.top, w: r.width, h: r.height };
+    }
+    function targetWidth() { return Math.min(520, el.clientWidth - 32); }
+
+    function fullHTML(it) {
+      const pos = `${ITEMS.length - queue.length + 1} of ${ITEMS.length}`;
+      const head = `<div class="bhead"><span class="src">${esc(it.src)} · ${esc(it.chapter)}</span><span class="pos">${pos}</span><button class="x" type="button" aria-label="Close"><svg class="i"><use href="#close"/></svg></button></div>`;
+      if (it.kind === 'card') {
+        return `${head}<div class="swap">
+          <div class="flipwrap"><div class="flip" role="button" tabindex="0" aria-label="Flip card">
+            <div class="face"><div class="ft">${esc(it.front)}</div><div class="hint">Click to flip</div></div>
+            <div class="face back"><div class="ba">${esc(it.back)}</div></div>
+          </div></div>
+          <div class="tiles wait">${RATINGS.map(([k, l]) => `<button class="tile ${k}" type="button" data-rate="${k}" tabindex="-1">${l}</button>`).join('')}</div>
+        </div>`;
+      }
+      const body = it.kind === 'mcq'
+        ? `<div class="opts">${it.options.map((o, i) => `<button class="opt" type="button" data-i="${i}"><span class="dot"></span>${esc(o)}</button>`).join('')}</div>`
+        : `<input class="num" inputmode="decimal" placeholder="Answer" aria-label="Answer" id="num-${el.dataset.frame}">`;
+      return `${head}<div class="swap"><div class="stem">${esc(it.stem)}</div>${body}<div class="result" hidden></div>
+        <div class="foot"><button class="btn check" type="button" disabled>Check</button></div></div>`;
+    }
+
+    function openItem(id) {
+      const it = ITEMS.find((x) => x.id === id);
+      const slotBtn = $(`.qslot[data-id="${id}"] .qc`, row);
+      const src = rectIn(slotBtn);
+      const scrim = document.createElement('div');
+      scrim.className = 'scrim';
+      const big = document.createElement('div');
+      big.className = 'grown';
+      big.setAttribute('role', 'dialog');
+      big.setAttribute('aria-modal', 'true');
+      big.setAttribute('aria-label', it.src);
+      const w = targetWidth();
+      big.innerHTML = `<div class="mini" style="width:${src.w}px;height:${src.h}px">${cardInner(it)}</div><div class="full" style="width:${w}px">${fullHTML(it)}</div>`;
+      el.append(scrim, big);
+      const full = $('.full', big), mini = $('.mini', big);
+      // Measure the finished card, then place it centred.
+      Object.assign(big.style, { left: '0px', top: '0px', width: `${w}px`, height: 'auto', visibility: 'hidden', borderRadius: '20px' });
+      const h = big.offsetHeight;
+      const dst = { x: (el.clientWidth - w) / 2, y: Math.max(16, (el.clientHeight - h) / 2), w, h };
+      Object.assign(big.style, { left: `${dst.x}px`, top: `${dst.y}px`, width: `${w}px`, height: `${h}px`, visibility: '' });
+      open = { id, it, big, scrim, mini, full, slotBtn, dst, busy: true };
+      wire(open);
+      slotBtn.classList.add('hollow');
+      run(open, src, dst, true).then(() => {
+        // Settle into plain styles so the card can grow with its content.
+        open.busy = false;
+        mini.style.opacity = 0;
+        scrim.style.opacity = 1;
+        [big, mini, full, scrim].forEach((n) => n.getAnimations().forEach((a) => a.cancel()));
+        big.style.height = 'auto';
+        ($('.flip', big) || $('.opt', big) || $('.num', big))?.focus({ preventScroll: true });
+      });
+    }
+
+    /* Animate between the slot rect and the centred rect. */
+    function run(o, src, dst, opening) {
+      const dur = (opening ? 350 : 250) * speed();
+      const ease = 'cubic-bezier(0.22, 1, 0.36, 1)';
+      const opts = { duration: reduce.matches ? 160 * speed() : dur, easing: ease, fill: 'both' };
+      const box = (r, rad) => ({ left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, borderRadius: `${rad}px` });
+      const anims = [];
+      anims.push(o.scrim.animate({ opacity: opening ? [0, 1] : [1, 0] }, opts));
+      if (reduce.matches) {
+        Object.assign(o.big.style, box(dst, 20));
+        o.mini.style.opacity = 0;
+        anims.push(o.big.animate({ opacity: opening ? [0, 1] : [1, 0] }, opts));
+      } else if (motion() === 'grow') {
+        const from = box(src, 14), to = box(dst, 20);
+        anims.push(o.big.animate(opening ? [from, to] : [to, from], opts));
+        // The short text leaves early, the full card arrives late, both sharp.
+        const miniK = opening ? [{ opacity: 1, offset: 0 }, { opacity: 0, offset: .35 }, { opacity: 0, offset: 1 }]
+                              : [{ opacity: 0, offset: 0 }, { opacity: 0, offset: .5 }, { opacity: 1, offset: 1 }];
+        const fullK = opening ? [{ opacity: 0, filter: 'blur(2px)', transform: 'translateY(4px)', offset: 0 }, { opacity: 0, filter: 'blur(2px)', transform: 'translateY(4px)', offset: .3 }, { opacity: 1, filter: 'blur(0)', transform: 'none', offset: 1 }]
+                              : [{ opacity: 1, offset: 0 }, { opacity: 0, offset: .45 }, { opacity: 0, offset: 1 }];
+        anims.push(o.mini.animate(miniK, opts), o.full.animate(fullK, opts));
+      } else {
+        // Zoom: the finished card scales from the slot (non-uniform for a moment).
+        Object.assign(o.big.style, box(dst, 20));
+        const sx = src.w / dst.w, sy = src.h / dst.h;
+        const from = { transform: `translate(${src.x - dst.x}px, ${src.y - dst.y}px) scale(${sx}, ${sy})`, borderRadius: `${14 / sx}px / ${14 / sy}px` };
+        const to = { transform: 'none', borderRadius: '20px' };
+        anims.push(o.big.animate(opening ? [from, to] : [to, from], opts));
+        // Counter-scaled so the short text starts at its slot size.
+        o.mini.style.transform = `scale(${1 / sx}, ${1 / sy})`; o.mini.style.transformOrigin = '0 0';
+        o.mini.style.width = `${src.w}px`; o.mini.style.height = `${src.h}px`;
+        const miniK = opening ? [{ opacity: 1, offset: 0 }, { opacity: 0, offset: .3 }, { opacity: 0, offset: 1 }]
+                              : [{ opacity: 0, offset: 0 }, { opacity: 0, offset: .55 }, { opacity: 1, offset: 1 }];
+        const fullK = opening ? [{ opacity: 0, offset: 0 }, { opacity: 0, offset: .15 }, { opacity: 1, offset: .6 }, { opacity: 1, offset: 1 }]
+                              : [{ opacity: 1, offset: 0 }, { opacity: 0, offset: .45 }, { opacity: 0, offset: 1 }];
+        anims.push(o.mini.animate(miniK, opts), o.full.animate(fullK, opts));
+      }
+      return Promise.all(anims.map((a) => a.finished));
+    }
+
+    function close(result) {
+      const o = open;
+      if (!o || o.busy) return;
+      o.busy = true;
+      // The slot may have scrolled away: bring it into view first.
+      const slot = o.slotBtn.parentElement;
+      const r = slot.offsetLeft - row.scrollLeft;
+      if (r < 0 || r + slot.offsetWidth > row.clientWidth) row.scrollLeft = slot.offsetLeft - 12;
+      const src = rectIn(o.slotBtn);
+      const dst = { x: parseFloat(o.big.style.left), y: parseFloat(o.big.style.top), w: o.big.offsetWidth, h: o.big.offsetHeight };
+      o.big.style.height = `${dst.h}px`;
+      if (result) markDone(o.slotBtn, result);
+      run(o, src, dst, false).then(() => {
+        o.slotBtn.classList.remove('hollow');
+        o.scrim.remove(); o.big.remove();
+        open = null;
+        if (result) leave(o.id);
+        else o.slotBtn.focus({ preventScroll: true });
+      });
+    }
+
+    function markDone(btn, result) {
+      const chip = result.rating
+        ? `<span class="chip" style="background:var(--tint-${TINT[result.rating]});color:var(--tint-${TINT[result.rating]}-fg)">${RATINGS.find(([k]) => k === result.rating)[1]}</span>`
+        : `<span class="chip" style="background:var(--tint-${result.right ? 'ok' : 'err'});color:var(--tint-${result.right ? 'ok' : 'err'}-fg)">${result.right ? 'Correct' : 'Not quite'}</span>`;
+      btn.querySelector('small').outerHTML = chip;
+      btn.disabled = true;
+    }
+    function leave(id) {
+      queue = queue.filter((x) => x !== id);
+      const slot = $(`.qslot[data-id="${id}"]`, row);
+      setTimeout(() => { slot.classList.add('gone'); setTimeout(() => { slot.remove(); updateCount(); }, 280 * speed()); }, 650 * speed());
+    }
+
+    /* Answered: either swap to the next card in place, or shrink back. */
+    function answered(result) {
+      const o = open;
+      const nextId = queue.find((x) => x !== o.id);
+      if ($('#after').value === 'back' || !nextId) { close(result); return; }
+      // Mark the old slot done and let it leave behind the overlay.
+      markDone(o.slotBtn, result);
+      o.slotBtn.classList.remove('hollow');
+      leave(o.id);
+      const it = ITEMS.find((x) => x.id === nextId);
+      const nextBtn = $(`.qslot[data-id="${nextId}"] .qc`, row);
+      const beforeH = o.big.offsetHeight;
+      const outK = { duration: 120 * speed(), easing: 'ease-in', fill: 'forwards' };
+      o.busy = true;
+      o.full.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(-8px)', filter: 'blur(2px)' }], outK).finished.then(() => {
+        o.full.innerHTML = fullHTML(it);
+        o.mini.innerHTML = cardInner(it);
+        o.big.setAttribute('aria-label', it.src);
+        o.big.style.height = 'auto';
+        const afterH = o.big.offsetHeight;
+        const top = Math.max(16, (el.clientHeight - afterH) / 2);
+        const oldTop = parseFloat(o.big.style.top);
+        o.big.style.top = `${top}px`;
+        o.big.animate([{ height: `${beforeH}px`, top: `${oldTop}px` }, { height: `${afterH}px`, top: `${top}px` }], { duration: 250 * speed(), easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+        o.full.getAnimations().forEach((a) => a.cancel());
+        o.full.animate([{ opacity: 0, transform: 'translateX(8px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }], { duration: 250 * speed(), easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }).finished.then(() => {
+          o.id = nextId; o.it = it; o.slotBtn = nextBtn; o.busy = false;
+          nextBtn.classList.add('hollow');
+          wire(o);
+          ($('.flip', o.big) || $('.opt', o.big) || $('.num', o.big))?.focus({ preventScroll: true });
+        });
+      });
+    }
+
+    function wire(o) {
+      const big = o.big, it = o.it;
+      $('.x', big).onclick = () => close();
+      o.scrim.onclick = () => close();
+      if (it.kind === 'card') {
+        const flip = $('.flip', big), tiles = $('.tiles', big);
+        const doFlip = () => {
+          flip.classList.toggle('on');
+          if (flip.classList.contains('on')) {
+            tiles.classList.remove('wait');
+            tiles.querySelectorAll('.tile').forEach((t, i) => { t.tabIndex = 0; t.style.transitionDelay = `${i * 40}ms`; });
+          }
+        };
+        flip.onclick = doFlip;
+        flip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doFlip(); } };
+        tiles.onclick = (e) => {
+          const t = e.target.closest('.tile');
+          if (!t || o.busy) return;
+          t.style.outline = '2px solid currentColor'; t.style.outlineOffset = '-2px';
+          setTimeout(() => answered({ rating: t.dataset.rate }), 160 * speed());
+        };
+        return;
+      }
+      const check = $('.check', big), result = $('.result', big);
+      let pick = null, checked = null;
+      if (it.kind === 'mcq') {
+        const opts = $('.opts', big);
+        opts.onclick = (e) => {
+          const b = e.target.closest('.opt');
+          if (!b || checked) return;
+          opts.querySelectorAll('.opt').forEach((x) => x.classList.toggle('sel', x === b));
+          pick = Number(b.dataset.i); check.disabled = false;
+        };
+      } else {
+        const num = $('.num', big);
+        num.oninput = () => { pick = num.value.trim(); check.disabled = !pick; };
+        num.onkeydown = (e) => { if (e.key === 'Enter' && pick) check.click(); };
+      }
+      check.onclick = () => {
+        if (checked) { answered(checked); return; }
+        const right = it.kind === 'mcq' ? pick === it.answer : Number(pick) === Number(it.answer);
+        checked = { right };
+        if (it.kind === 'mcq') {
+          const opts = $('.opts', big); opts.classList.add('locked');
+          opts.querySelectorAll('.opt').forEach((x, i) => {
+            x.classList.remove('sel');
+            if (i === it.answer) x.classList.add('right');
+            else if (i === pick) x.classList.add('wrong');
+          });
+        } else {
+          const num = $('.num', big); num.readOnly = true; num.classList.add(right ? 'right' : 'wrong');
+        }
+        result.hidden = false;
+        result.innerHTML = `<div class="why"><span class="verdict ${right ? 'right' : 'wrong'}">${right ? 'Correct' : `Not quite. The answer is ${esc(it.kind === 'mcq' ? it.options[it.answer] : it.answer)}.`}</span><span>${esc(it.why)}</span></div>`;
+        result.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 250 * speed(), easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+        check.textContent = queue.length > 1 && $('#after').value === 'next' ? 'Next' : 'Done';
+        check.classList.add('primary');
+        check.focus({ preventScroll: true });
+      };
+    }
+
+    el.addEventListener('keydown', (e) => {
+      if (!open) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key === 'Tab') {
+        // Keep focus inside the enlarged card.
+        const f = [...open.big.querySelectorAll('button:not([disabled]), input, [tabindex="0"]')].filter((n) => n.tabIndex >= 0 && n.offsetParent);
+        if (!f.length) return;
+        const i = f.indexOf(document.activeElement);
+        if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+      }
+    });
+
+    render();
+    return {
+      reset() {
+        if (open) { open.scrim.remove(); open.big.remove(); open = null; }
+        $('.alldone', el)?.remove();
+        render();
+      },
+    };
+  }
+
+  const frames = [...document.querySelectorAll('.frame')].map(Frame);
+  $('#reset').onclick = () => frames.forEach((f) => f.reset());
+})();
+</script>

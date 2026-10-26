@@ -6,8 +6,14 @@ import {
   useState,
 } from 'react';
 import { useSyncCustomization } from '@/api/hooks';
-import type { PageFrame, PageFrameColor, PageFramePattern } from '@/api/types';
+import type {
+  FrostPanel,
+  PageFrame,
+  PageFrameColor,
+  PageFramePattern,
+} from '@/api/types';
 import { Button } from '@/components/ui/Button';
+import { ButtonGroup } from '@/components/ui/ButtonGroup';
 import { InputTitle } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
@@ -17,6 +23,7 @@ import {
   FRAME_PATTERNS,
   FRAME_PRESET_NAMES,
   FRAME_PRESETS,
+  FROST_PANELS,
   frameColors,
   MAX_FRAME_COLORS,
   patternImage,
@@ -32,8 +39,15 @@ const PATTERN_LABEL: Record<PageFramePattern, () => string> = {
   none: m.page_frame_pattern_none,
 };
 
+const FROST_LABEL: Record<FrostPanel, () => string> = {
+  center: m.page_frame_frost_center,
+  left: m.page_frame_frost_left,
+  right: m.page_frame_frost_right,
+};
+
 const PRESET_LABEL: Record<(typeof FRAME_PRESET_NAMES)[number], () => string> =
   {
+    dawn: m.page_frame_preset_dawn,
     dusk: m.page_frame_preset_dusk,
     meadow: m.page_frame_preset_meadow,
     mist: m.page_frame_preset_mist,
@@ -110,7 +124,8 @@ function useLiveFrame() {
 /**
  * The Theme drawer's Page frame section (openwiki/frontend/appearance.md):
  * pattern, colours (a preset or up to three custom colours on a hue and
- * saturation field) and Strength, each change kept on this device; then
+ * saturation field), Strength and which panels frost over the frame, each
+ * change kept on this device; then
  * Sync, which stores the style, theme and frame on the account for the
  * user's other devices, and Shuffle, a random set of colours and Strength.
  */
@@ -199,7 +214,7 @@ export function PageFrameSection() {
               onDragEnd={live.end}
             />
           </div>
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-4">
             <span className="t-muted font-semibold">
               {m.page_frame_strength()}
             </span>
@@ -214,6 +229,31 @@ export function PageFrameSection() {
               }}
               value={frame.strength}
             />
+            <span className="t-muted font-semibold">
+              {m.page_frame_frosted()}
+            </span>
+            <ButtonGroup aria-label={m.page_frame_frosted()}>
+              {FROST_PANELS.map((panel) => {
+                const on = frame.frosted.includes(panel);
+                return (
+                  <Button
+                    aria-pressed={on}
+                    key={panel}
+                    onClick={() =>
+                      set({
+                        frosted: FROST_PANELS.filter((p) =>
+                          p === panel ? !on : frame.frosted.includes(p)
+                        ),
+                      })
+                    }
+                    size="sm"
+                    variant={on ? 'dark' : 'outline'}
+                  >
+                    {FROST_LABEL[panel]()}
+                  </Button>
+                );
+              })}
+            </ButtonGroup>
           </div>
         </>
       )}

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { prerenderToNodeStream } from 'react-dom/static';
 import { describe, expect, it, vi } from 'vitest';
 import type { Material } from '@/api/types';
+import { ThemeProvider } from '@/theme/ThemeProvider';
 import { MaterialContent } from './CenterContent';
 
 const provenance = {
@@ -138,7 +139,9 @@ vi.mock('./MaterialPreview', () => ({
 
 async function render(node: ReactNode) {
   const { prelude } = await prerenderToNodeStream(
-    <QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>
+    <QueryClientProvider client={new QueryClient()}>
+      <ThemeProvider>{node}</ThemeProvider>
+    </QueryClientProvider>
   );
   let html = '';
   for await (const chunk of prelude) html += chunk;

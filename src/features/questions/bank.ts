@@ -6,8 +6,6 @@ import {
 import { api } from '@/api/client';
 import { persisted } from '@/api/queryPersistence';
 import type {
-  BankCopyReq,
-  BankCopyResult,
   BankProgress,
   BankTopicMarks,
   BankTopicSummary,
@@ -255,8 +253,6 @@ export const bankProgressQuery = () =>
     queryKey: ['bank', 'progress'],
     retry: false,
   });
-export const copyBankQuestions = (body: BankCopyReq) =>
-  api.post<BankCopyResult>('/bank/copy', body);
 /** Grades the answers on the server, which records the result, and returns
  * the question with its key: checking is what reveals it, one at a time. */
 export const checkBankQuestion = (id: string, body: CheckBankQuestionReq) =>

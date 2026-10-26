@@ -259,6 +259,37 @@ def _page_count(count: Any) -> int:
     return count if 0 < count <= 200 else 60
 
 
+def _office_ids(raw: list[Any]) -> list[str]:
+    """internal_documents.go officeIDs: the ids trimmed of spaces, quotes and
+    brackets, blanks and repeats dropped, in the order asked; refused past 4
+    ids, an id past 256 bytes, or none left."""
+    ids: list[str] = []
+    for value in raw:
+        value = str(value)
+        if len(value.encode()) > 256:
+            raise Refusal(
+                "invalid_input",
+                "An id is at most 256 bytes; copy each id whole from an earlier "
+                "inspect_office_document read.",
+            )
+        value = value.strip().strip("[]\"'`").strip()
+        if value and value not in ids:
+            ids.append(value)
+            if len(ids) > 4:
+                raise Refusal(
+                    "invalid_input",
+                    "ids names at most 4 pictures and charts a call; read the rest "
+                    "in another call.",
+                )
+    if raw and not ids:
+        raise Refusal(
+            "invalid_input",
+            "ids names the pictures and charts to read, each id copied from an "
+            "earlier read.",
+        )
+    return ids
+
+
 async def _inspect(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """internalInspectDocument for a source file with an office query."""
     record = await _open(
@@ -267,6 +298,12 @@ async def _inspect(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
     query, fmt = payload["office"], record["format"]
     body = {"format": fmt, "title": record["name"]}
     base, checkpoint = wire(record["base"]), record["checkpoint"]
+    # Pictures and charts by id, in any format (Q278, Q284).
+    if ids := _office_ids(list(query.get("ids") or [])):
+        body["scoped"] = await call(
+            "inspectOfficeScoped", base, checkpoint, {"ids": ids}
+        )
+        return body
     if fmt == "xlsx":
         scoped = {k: query[k] for k in ("sheet", "range") if query.get(k)}
         body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, scoped)

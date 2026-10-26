@@ -20,8 +20,6 @@ def _spec(**overrides) -> ModelConfig:
         "model_name": "Flash",
         "provider_slug": "deepseek",
         "model_slug": "deepseek-v4-flash",
-        "platform_enabled": True,
-        "byok_enabled": True,
         "thinking_levels": ("instant", "low", "high"),
         "default_thinking": "instant",
         "context_window_tokens": 100_000,
@@ -119,7 +117,6 @@ async def test_glm_settles_under_its_catalog_pair(monkeypatch):
             spec=_spec(
                 provider_slug="zai",
                 model_slug="glm-5.3-flash",
-                byok_enabled=False,
                 thinking_levels=("low", "high", "max"),
                 default_thinking="max",
             ),
@@ -159,7 +156,6 @@ async def test_rerank_settles_under_its_own_catalog_version(monkeypatch):
                 version=3,
                 provider_slug="deepinfra",
                 model_slug="Qwen/Qwen3-Reranker-4B",
-                byok_enabled=False,
                 thinking_levels=(),
                 default_thinking="",
             ),
@@ -574,10 +570,7 @@ def _gated_spec() -> ModelConfig:
     )
 
 
-@pytest.mark.parametrize("paid_by, mode", [("platform", "gateway"), ("user", None)])
-async def test_open_call_bypasses_capacity_only_for_byok(monkeypatch, paid_by, mode):
-    from pipeline import registry
-
+async def test_open_call_takes_capacity(monkeypatch):
     monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
 
@@ -590,7 +583,6 @@ async def test_open_call_bypasses_capacity_only_for_byok(monkeypatch, paid_by, m
         return True
 
     monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
-    registry.bind_request_llm(paid_by=paid_by)
     token = accounting.bind("cr_1")
     try:
         await accounting.open_call(
@@ -599,11 +591,10 @@ async def test_open_call_bypasses_capacity_only_for_byok(monkeypatch, paid_by, m
             purpose=accounting.KIND_EMBEDDING,
             spec=_gated_spec(),
         )
-        assert admissions == [mode]
-        assert bool(accounting.current().leased_calls) == (paid_by == "platform")
+        assert admissions == ["gateway"]
+        assert accounting.current().leased_calls
     finally:
         accounting.reset(token)
-        registry.bind_request_llm(paid_by="platform")
 
 
 async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
@@ -732,7 +723,7 @@ async def test_a_settled_call_frees_its_lease_in_the_settlement(monkeypatch, ing
     monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
     monkeypatch.setattr(models, "_stream_via_adapter", stream)
     monkeypatch.setattr(models.elitellm, "complete", complete)
-    registry.bind_request_llm(paid_by="platform")
+    registry.bind_request_llm()
     token = accounting.bind_ingest("cr_1", {}) if ingest else accounting.bind("cr_1")
     settled = "_settle_ingest_call_sync" if ingest else "post_settlement"
     try:
@@ -930,12 +921,11 @@ async def test_openrouter_serving_provider_is_recorded_as_served_by(monkeypatch)
     )
     monkeypatch.setattr(transport, "_client", lambda: client)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
-    registry.bind_request_llm(paid_by="platform", thinking="max")
+    registry.bind_request_llm(thinking="max")
     events = _record_call_lifecycle(monkeypatch)
     glm = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        byok_enabled=False,
         thinking_levels=("low", "high", "max"),
         default_thinking="max",
     )

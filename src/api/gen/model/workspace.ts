@@ -27,7 +27,6 @@ export interface Workspace {
   iconId: string;
   id: string;
   isOwner: boolean;
-  lastAccessedAt: string;
   name: string;
   privacy: Privacy;
   role?: WorkspaceRole;

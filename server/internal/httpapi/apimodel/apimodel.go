@@ -113,8 +113,6 @@ type ModelOption struct {
 	ModelName    string         `json:"modelName"`
 	ModelSlug    string         `json:"modelSlug"`
 	IsDefault    bool           `json:"isDefault"`
-	Available    bool           `json:"available"`
-	UsesUserKey  bool           `json:"usesUserKey"`
 	ProviderSlug string         `json:"providerSlug"`
 	Thinking     *ModelThinking `json:"thinking,omitempty"`
 }
@@ -132,29 +130,6 @@ type SetModelPrefsReq struct {
 	ChatModel    *models.Ref `json:"chatModel,omitempty"`
 	EditorModel  *models.Ref `json:"editorModel,omitempty"`
 	ChatThinking *string     `json:"chatThinking,omitempty"`
-}
-
-type LLMCredential struct {
-	ProviderSlug string `json:"providerSlug"`
-	Last4        string `json:"last4"`
-}
-
-type LLMCredentialProvider struct {
-	ProviderSlug string   `json:"providerSlug"`
-	Eligible     bool     `json:"eligible"`
-	Reason       string   `json:"reason,omitempty"`
-	Unlocks      []string `json:"unlocks" nullable:"false"`
-	Last4        string   `json:"last4,omitempty"`
-}
-
-type LLMCredentialsResponse struct {
-	Credentials []LLMCredential         `json:"credentials" nullable:"false"`
-	Providers   []LLMCredentialProvider `json:"providers" nullable:"false"`
-}
-
-type UpsertLLMCredentialReq struct {
-	ProviderSlug string    `json:"providerSlug"`
-	APIKey       LLMAPIKey `json:"apiKey"`
 }
 
 // SourceUploadPolicy describes the server-owned file allowlist and parser
@@ -286,24 +261,23 @@ type (
 // IsOwner is request-scoped: false when a non-owner reads a link/public
 // workspace (the client renders it read-only with a clone action).
 type Workspace struct {
-	AutoProcess    bool                     `json:"autoProcess"`
-	Description    string                   `json:"description"`
-	ID             string                   `json:"id"`
-	Name           string                   `json:"name"`
-	IconID         string                   `json:"iconId"`
-	Cover          *cover.Cover             `json:"cover,omitempty" doc:"The card's cover art; absent means none"`
-	Privacy        store.Privacy            `json:"privacy"`
-	ShareRole      store.ShareRole          `json:"shareRole"`
-	SharePath      string                   `json:"sharePath"`
-	Tags           []Tag                    `json:"tags" nullable:"false"`
-	ChapterCount   int                      `json:"chapterCount"`
-	FileCount      int                      `json:"fileCount"`
-	FilesLimit     int                      `json:"filesLimit"`
-	CreatedAt      time.Time                `json:"createdAt"`
-	LastAccessedAt time.Time                `json:"lastAccessedAt"`
-	IsOwner        bool                     `json:"isOwner"`
-	Role           *store.WorkspaceRole     `json:"role,omitempty"`
-	Capabilities   store.AccessCapabilities `json:"capabilities"`
+	AutoProcess  bool                     `json:"autoProcess"`
+	Description  string                   `json:"description"`
+	ID           string                   `json:"id"`
+	Name         string                   `json:"name"`
+	IconID       string                   `json:"iconId"`
+	Cover        *cover.Cover             `json:"cover,omitempty" doc:"The card's cover art; absent means none"`
+	Privacy      store.Privacy            `json:"privacy"`
+	ShareRole    store.ShareRole          `json:"shareRole"`
+	SharePath    string                   `json:"sharePath"`
+	Tags         []Tag                    `json:"tags" nullable:"false"`
+	ChapterCount int                      `json:"chapterCount"`
+	FileCount    int                      `json:"fileCount"`
+	FilesLimit   int                      `json:"filesLimit"`
+	CreatedAt    time.Time                `json:"createdAt"`
+	IsOwner      bool                     `json:"isOwner"`
+	Role         *store.WorkspaceRole     `json:"role,omitempty"`
+	Capabilities store.AccessCapabilities `json:"capabilities"`
 	// CanClone: members of any role and effective editors may copy the
 	// workspace; a link/public viewer may not.
 	CanClone bool `json:"canClone"`
@@ -321,7 +295,7 @@ func FromWorkspace(w store.Workspace) Workspace {
 		SharePath: w.SharePath,
 		Tags:      WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,
-		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
+		CreatedAt:  w.CreatedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true), CanClone: true,
 	}
 	return out
@@ -474,23 +448,16 @@ func FromAttemptDetail(d store.AttemptDetail) AttemptDetail {
 	return out
 }
 
-// GradedQuiz is a graded signed-out attempt: every question with its key and,
-// on each part, the awarded marks (open parts also itemAwards, Jev's marks per
-// marking item; matching and gaps parts also itemResults, right or wrong per
-// pair or gap). Correct is the awarded marks over Total, the quiz's marks.
-type GradedQuiz struct {
-	Correct   float64          `json:"correct"`
-	Total     float64          `json:"total"`
-	Questions []map[string]any `json:"questions" nullable:"false"`
-}
-
 // VoiceTranscription is a chat voice recording's text, for the composer to
 // insert where the user edits and sends it; nothing is sent or stored.
 type VoiceTranscription struct {
 	Text string `json:"text"`
 }
 
-// GradedQuestion is one checked question, keyed and awarded like GradedQuiz.
+// GradedQuestion is one checked question with its key and, on each part, the
+// awarded marks (open parts also itemAwards, Jev's marks per marking item;
+// matching and gaps parts also itemResults, right or wrong per pair or gap).
+// Correct is the awarded marks over Total, the question's marks.
 type GradedQuestion struct {
 	Correct  float64        `json:"correct"`
 	Total    float64        `json:"total"`

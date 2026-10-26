@@ -7,12 +7,10 @@
 import type { ModelThinking } from './modelThinking.ts';
 
 export interface ModelOption {
-  available: boolean;
   isDefault: boolean;
   modelName: string;
   modelSlug: string;
   providerName: string;
   providerSlug: string;
   thinking?: ModelThinking;
-  usesUserKey: boolean;
 }

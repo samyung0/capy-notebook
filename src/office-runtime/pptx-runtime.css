@@ -179,7 +179,7 @@
 /* pptx-react's Notes button (a ToolbarButton at the stage's bottom right). */
 .pptx-viewer-notes-toggle {
   position: absolute;
-  right: var(--pptx-notes-toggle-right, 8px);
+  right: 8px;
   bottom: 8px;
   z-index: 5;
   display: inline-flex;
@@ -205,12 +205,6 @@
 .pptx-viewer-notes-toggle[aria-pressed="true"] {
   color: var(--pptx-pressed-text);
   background: var(--pptx-pressed);
-}
-
-/* Below lg Capy's 52px chat button (ChatDock, right-4) sits over the
-   frame's bottom right, so the Notes button keeps that column clear. */
-:root[data-narrow] {
-  --pptx-notes-toggle-right: 72px;
 }
 
 /* pptx-react's notesPanel, read-only. */
@@ -243,47 +237,42 @@
   border-radius: 6px;
 }
 
-/* pptx-react's narrow layout (an editor under 640px): the strip becomes a row
-   of 96px thumbnails under the slide, the pager under it. */
-@media (max-width: 639.98px) {
-  /* Icon only, as the editor's narrow layout. */
-  .pptx-viewer-notes-toggle {
-    justify-content: center;
-    width: var(--pptx-button-size);
-    padding: 0;
-  }
+/* pptx-react's narrow layout (Capy's window below desktop, or a frame under
+   640px): the strip becomes a row of 96px thumbnails under the slide, with no
+   pager under it. */
+/* At the stage's bottom left, over the first thumbnail, as the editor's
+   narrow layout; Capy's chat button floats at the right. */
+.pptx-viewer-narrow .pptx-viewer-notes-toggle {
+  right: auto;
+  left: 8px;
+}
 
-  .pptx-viewer-notes-toggle span {
-    display: none;
-  }
+.pptx-viewer-narrow .pptx-viewer-workspace {
+  flex-direction: column;
+}
 
-  .pptx-viewer-workspace {
-    flex-direction: column;
-  }
+.pptx-viewer-narrow .pptx-viewer-strip {
+  order: 1;
+  width: auto;
+  border-top: 1px solid var(--pptx-divider);
+  border-right: 0;
+}
 
-  .pptx-viewer-strip {
-    order: 1;
-    width: auto;
-    border-top: 1px solid var(--pptx-divider);
-    border-right: 0;
-  }
+.pptx-viewer-narrow .pptx-viewer-slides {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
 
-  .pptx-viewer-slides {
-    display: flex;
-    flex: 0 0 auto;
-    gap: 8px;
-    padding: 8px 10px;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
+.pptx-viewer-narrow .pptx-viewer-slide {
+  flex: 0 0 auto;
+  width: auto;
+  margin-bottom: 0;
+}
 
-  .pptx-viewer-slide {
-    flex: 0 0 auto;
-    width: auto;
-    margin-bottom: 0;
-  }
-
-  .pptx-viewer-slide-preview {
-    width: 96px;
-  }
+.pptx-viewer-narrow .pptx-viewer-slide-preview {
+  width: 96px;
 }

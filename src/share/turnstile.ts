@@ -50,8 +50,8 @@ function loadTurnstile(): Promise<Turnstile> {
 }
 
 // One widget serves the whole shared page, however many quizzes it holds
-// (Q309). It renders under the Submit of the check that asks for a token
-// (`slot`, Q372), rendering again under another check's Submit when that one
+// (Q309). It renders under the Check button that asks for a token
+// (`slot`, Q372), rendering again under another Check when that one
 // asks. The slot shows while a solve can run (an invisible widget takes no
 // room, and its solve needs a rendered container) and is hidden once the
 // token settles or the interaction ends, which clears the widget's success
@@ -166,7 +166,7 @@ async function solve() {
   }
 }
 
-/** A Turnstile token for one signed-out answer check, whose Submit has
+/** A Turnstile token for one signed-out answer check, whose Check button has
  * `slot` under it: the one already solved, or the next solve's. It resolves
  * empty without a site key, when the script cannot load, or once
  * TAKE_TIMEOUT_MS has run outside an interactive challenge, and the API
@@ -186,7 +186,7 @@ export function takeTurnstileToken(slot: HTMLElement): Promise<string> {
 }
 
 /** The slot whose interactive challenge shows now, and its changes, for the
- * check under whose Submit it sits (TurnstileCheck.tsx). */
+ * check under whose Check it sits (TurnstileCheck.tsx). */
 export const challengeSlot = () => showing;
 export function onChallenge(listener: () => void) {
   listeners.add(listener);

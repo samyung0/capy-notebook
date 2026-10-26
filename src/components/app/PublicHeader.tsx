@@ -52,7 +52,7 @@ export function PublicNav() {
       {/* Phones get the icon alone; the label stays for screen readers. */}
       <Button
         asChild
-        className="w-10 min-w-0 rounded-xl px-0 [--button-h:--spacing(10)] sm:w-auto sm:min-w-24 sm:rounded-full sm:px-6.5 sm:[--button-h:--spacing(13)]"
+        className="h-(--control-h) w-10 min-w-0 rounded-xl px-0 sm:h-(--button-h-lg) sm:w-auto sm:min-w-24 sm:rounded-button-xl sm:px-6.5"
         size="lg"
       >
         <a href="/sign-up">

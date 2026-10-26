@@ -149,7 +149,7 @@ type ModelPrefsPatch struct {
 // not reuse another model's level. Empty model refs are rejected: every
 // account always has a concrete provider/model pair, populated from the registry
 // default at insert. Model refs are validated against enabled configs that
-// advertise the slot. BYOK-only rows also need a credential.
+// advertise the slot.
 func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPrefsPatch) error {
 	prefs := []struct {
 		ref  *models.Ref
@@ -192,7 +192,7 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		if pref.ref == nil {
 			continue
 		}
-		if err := s.assertModelRef(ctx, tx, userID, *pref.ref, pref.slot); err != nil {
+		if err := assertModelRef(ctx, tx, *pref.ref, pref.slot); err != nil {
 			return err
 		}
 	}
@@ -274,29 +274,16 @@ func assertCatalogThinking(ctx context.Context, tx pgx.Tx, ref models.Ref, slot,
 	return ErrNotFound
 }
 
-func (s *Store) assertModelRef(ctx context.Context, q rowQueryer, userID string, ref models.Ref, slot string) error {
-	var platformEnabled, byokEnabled bool
-	var provider string
+func assertModelRef(ctx context.Context, q rowQueryer, ref models.Ref, slot string) error {
+	var one int
 	err := q.QueryRow(ctx, `
-		SELECT platform_enabled, byok_enabled, provider_slug FROM model_configs
+		SELECT 1 FROM model_configs
 		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(slots)
-		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, slot).Scan(&platformEnabled, &byokEnabled, &provider)
+		 LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, slot).Scan(&one)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
-	if err != nil {
-		return err
-	}
-	if !platformEnabled && byokEnabled {
-		ok, credErr := s.HasLLMCredential(ctx, userID, provider)
-		if credErr != nil {
-			return credErr
-		}
-		if !ok {
-			return ErrModelUnavailable
-		}
-	}
-	return nil
+	return err
 }
 
 type UserLLMPrefs struct {

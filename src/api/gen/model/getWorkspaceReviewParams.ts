@@ -14,6 +14,10 @@ group?: GetWorkspaceReviewGroup;
  */
 chapterId?: string;
 /**
+ * The plan of a plan group, one of the user's plans kept in this workspace
+ */
+planId?: string;
+/**
  * A suggestion's mode; omitted for a review from the workspace list
  */
 mode?: GetWorkspaceReviewMode;

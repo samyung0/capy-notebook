@@ -63,14 +63,14 @@ export function WorkspacePicker({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          className="group/ws-trigger flex h-8 w-full min-w-0 items-center justify-start gap-2 px-1.5 active:scale-100 data-pressed:scale-100"
+          className="group/ws-trigger flex h-8 w-full min-w-0 items-center justify-start gap-1.5 px-1.5 active:scale-100 data-pressed:scale-100"
           iconRight="chevronDown"
           iconRightClassName="text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/ws-trigger:rotate-180"
           variant="ghost-hover"
         >
           <img
             alt=""
-            className="size-5 shrink-0 -translate-y-px rounded-md"
+            className="mr-0.5 size-3.75 shrink-0 -translate-y-px rounded-sm"
             src={iconUrl(workspace.iconId)}
           />
           <span className="t-body min-w-0 truncate text-left font-semibold">

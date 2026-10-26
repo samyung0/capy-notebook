@@ -48,6 +48,21 @@ func (a *api) registerWorkspaces(api huma.API) {
 	reg(api, http.MethodPatch, "/api/workspaces/{id}/sharing", "updateWorkspaceSharing", tag, "Update workspace sharing", http.StatusOK, a.updateWorkspaceSharing)
 	reg(api, http.MethodDelete, "/api/workspaces/{id}", "deleteWorkspace", tag, "Delete a workspace", http.StatusNoContent, a.deleteWorkspace)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/stats", "getWorkspaceStats", tag, "Workspace stats", http.StatusOK, a.getWorkspaceStats)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/visit", "visitWorkspace", tag, "Note that the caller opened a workspace", http.StatusNoContent, a.visitWorkspace)
+	reg(api, http.MethodDelete, "/api/workspaces/{id}/visit", "forgetWorkspace", tag, "Forget the caller's visit to a workspace", http.StatusNoContent, a.forgetWorkspace)
+}
+
+// visitWorkspace records the open behind recent workspaces; a visitor's link
+// or public workspace then lists with their own. Repeats within a few minutes
+// are acknowledged without a write.
+func (a *api) visitWorkspace(ctx context.Context, in *workspaceIDInput) (*Empty, error) {
+	return &Empty{}, hErr(a.s.RecordWorkspaceVisit(ctx, userID(ctx), in.ID))
+}
+
+// forgetWorkspace drops the caller's visit, needing no access: a workspace they
+// reach only as a visitor leaves their lists.
+func (a *api) forgetWorkspace(ctx context.Context, in *workspaceIDInput) (*Empty, error) {
+	return &Empty{}, hErr(a.s.ForgetWorkspaceVisit(ctx, userID(ctx), in.ID))
 }
 
 // workspaceOutputFor renders w with the requester's membership and effective
@@ -96,7 +111,7 @@ func (a *api) getWorkspace(ctx context.Context, in *workspaceIDInput) (*workspac
 	}
 	var res store.Workspace
 	if isOwner {
-		res, err = a.s.GetWorkspace(ctx, userID(ctx), in.ID, true)
+		res, err = a.s.GetWorkspace(ctx, userID(ctx), in.ID)
 	} else {
 		res, err = a.s.GetWorkspaceShared(ctx, in.ID)
 	}

@@ -1,10 +1,12 @@
 /**
  * View toggles one person keeps in this browser for every file of a format:
- * PPTX speaker notes and the DOCX rulers, and Presenter view's notes size.
+ * PPTX speaker notes, the DOCX rulers and page layout on small screens, and
+ * Presenter view's notes size.
  * Storage can be missing or blocked (private windows, storage access
  * denied); a toggle then starts off, the size at its default.
  */
 const KEYS = {
+  docxPageLayout: 'capy.docx.pageLayout',
   docxRuler: 'capy.docx.ruler',
   speakerNotes: 'capy.pptx.speakerNotes',
 } as const;

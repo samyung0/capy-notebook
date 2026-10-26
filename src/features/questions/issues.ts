@@ -95,6 +95,21 @@ function blockMessage(
     });
   if (block?.type === 'graph' && issue.code === 'custom')
     return m.question_issue_graph({ message: issue.message });
+  // A chart without rows: no labels, so no values either.
+  if (
+    block?.type === 'chart' &&
+    issue.code === 'too_small' &&
+    (issue.path.at(-1) === 'labels' || issue.path.at(-1) === 'values')
+  )
+    return m.question_issue_chart_rows();
+  // A new image block holds an empty link until a file is uploaded.
+  if (
+    block?.type === 'image' &&
+    'url' in block.image &&
+    !block.image.url &&
+    issue.path.at(-1) === 'url'
+  )
+    return m.question_issue_image();
   return m.question_issue_generic();
 }
 
@@ -338,7 +353,7 @@ function answerMessage(
       return;
     case 'gaps':
       if (field === 'accepted' && index === undefined && tooSmall)
-        return m.question_issue_blanks_order();
+        return m.question_issue_blanks_none();
       if (
         field === 'accepted' &&
         typeof index === 'number' &&

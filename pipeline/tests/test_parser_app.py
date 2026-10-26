@@ -837,7 +837,7 @@ def test_a_parse_past_the_address_space_answers_parse_oom(
     responses, child_responses = multiprocessing.Pipe(duplex=False)
     source = tmp_path / "a.pdf"
     source.write_bytes(b"%PDF")
-    requests.send((str(source), str(tmp_path / "a.result"), "a.pdf", "fp", None))
+    requests.send((str(source), str(tmp_path / "a.result"), "a.pdf", "fp"))
     requests.send(None)
     parser_app._parse_worker_main(child_requests, child_responses, str(tmp_path))
     assert json.loads(responses.recv_bytes())[1][0] == kind
@@ -997,7 +997,7 @@ async def test_a_parse_child_reads_only_its_slot_and_holds_no_token(
     child.start()
     try:
         await child.send(
-            (str(other), str(child.work_dir / "transfer.result"), "a.pdf", "", None)
+            (str(other), str(child.work_dir / "transfer.result"), "a.pdf", "")
         )
         status, (kind, _detail) = await child.recv()
         pid = child._process.pid
@@ -1254,7 +1254,7 @@ async def test_terminal_failures_answer_422_with_their_code(
     )
 
     assert (status, payload["code"]) == (422, code)
-    # The multipart and capture routes answer the same.
+    # The multipart route answers the same.
     response = parser_app._failure_response(error)
     assert (response.status_code, json.loads(response.body)["code"]) == (422, code)
 
@@ -1832,52 +1832,3 @@ def test_a_failed_page_render_leaves_the_parse_and_bundle_intact(monkeypatch, tm
     bundle = parser_app._bundle_bytes(result, "fingerprint", "aa" * 32, "request", {})
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         assert "page1.png" not in archive.namelist()
-
-
-@pytest.mark.asyncio
-async def test_capture_uses_the_bounded_runtime_without_a_parse_receipt(monkeypatch):
-    from types import SimpleNamespace
-
-    import httpx
-
-    calls = []
-
-    async def parse(document):
-        calls.append(document)
-        return {"jpeg": "image", "box": [0, 0, 1000, 1000], "size": [100, 100]}, 0
-
-    monkeypatch.setattr(
-        parser_app, "runtime", SimpleNamespace(active_jobs=0, parse=parse)
-    )
-    monkeypatch.setattr(parser_app, "_authorized", lambda _: True)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=parser_app.app), base_url="http://parser.test"
-    ) as client:
-        response = await client.post(
-            "/capture_page",
-            files={"file": ("source.docx", b"office")},
-            data={
-                "filename": "source.docx",
-                "page": "2",
-                "max_edge": "200",
-                "bbox": "[0,0,500,500]",
-            },
-        )
-        assert response.status_code == 200
-        assert "parse_receipt" not in response.json()
-        assert calls[0].capture == {
-            "page": 2,
-            "bbox": [0, 0, 500, 500],
-            "max_edge": 200,
-        }
-        bad = await client.post(
-            "/capture_page",
-            files={"file": ("source.docx", b"office")},
-            data={
-                "filename": "source.docx",
-                "page": "2",
-                "max_edge": "200",
-                "bbox": "[NaN,0,500,500]",
-            },
-        )
-        assert bad.status_code == 400 and len(calls) == 1

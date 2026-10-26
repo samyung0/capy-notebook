@@ -277,6 +277,11 @@ func (s *Store) finalizeUploadSessionTx(
 	if err != nil {
 		return File{}, err
 	}
+	if u.CreatedBy != nil {
+		if err := markCreatedTx(ctx, tx, *u.CreatedBy, OpenFile, fileID); err != nil {
+			return File{}, err
+		}
+	}
 
 	if !ready {
 		jobID := uid("job")

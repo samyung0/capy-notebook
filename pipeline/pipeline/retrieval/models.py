@@ -38,10 +38,6 @@ from .usage_extract import NormalizedUsage, extract_usage, response_usage
 
 log = logging.getLogger("capy.models")
 
-INVALID_KEY = "invalid_key"
-KEY_FAILED = "key_failed"
-INVALID_KEY_MSG = "The provider rejected this key."
-KEY_FAILED_MSG = "Something went wrong, please double check if the key is valid."
 BUSY_ERROR_CODE = "provider_busy"
 BUSY_ERROR = "The model is busy right now. Try again in a moment."
 
@@ -52,39 +48,6 @@ def busy_retry_after_s(exc: BaseException) -> int:
     if retry_after is None or retry_after <= 0:
         retry_after = accounting.BUSY_RETRY_AFTER_S
     return max(1, math.ceil(retry_after))
-
-
-class UserKeyError(RuntimeError):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-
-    def as_event(self) -> dict[str, str]:
-        return {"type": "error", "code": self.code, "message": self.message}
-
-
-def classify_user_key_error(exc: BaseException) -> UserKeyError | None:
-    if registry.current_request_llm().paid_by != "user":
-        return None
-    status = getattr(exc, "status_code", None)
-    name = type(exc).__name__.lower()
-    if status in (401, 403) or "authentication" in name or "permission" in name:
-        return UserKeyError(INVALID_KEY, INVALID_KEY_MSG)
-    text = str(exc).lower()
-    if any(
-        token in text
-        for token in (
-            "invalid api key",
-            "incorrect api key",
-            "invalid_api_key",
-            "authentication",
-            "unauthorized",
-            "forbidden",
-        )
-    ):
-        return UserKeyError(INVALID_KEY, INVALID_KEY_MSG)
-    return UserKeyError(KEY_FAILED, KEY_FAILED_MSG)
 
 
 class _StreamReceipt:
@@ -309,13 +272,13 @@ async def _retry_or_raise(
     last = attempt >= policy.attempts - 1
     if busy is None:
         if last or not retry_any:
-            _raise_user_key(exc)
+            raise exc
         wait = 0.25 * (2**attempt)
     else:
         wait = _busy_wait_s(busy, attempt)
     if last or time.monotonic() + wait > deadline:
         if busy is None:
-            _raise_user_key(exc)
+            raise exc
         raise elitellm.ProviderBusy(
             str(busy) or "the provider is busy",
             status_code=accounting.provider_status(busy),
@@ -359,7 +322,7 @@ async def _call_with_retry(
             return await attempt_call(deadline)
         except asyncio.CancelledError:
             raise
-        except (UserKeyError, registry.RegistryError, accounting.SettlementError):
+        except (registry.RegistryError, accounting.SettlementError):
             raise
         except Exception as exc:  # noqa: BLE001 - the policy re-raises or sleeps
             await _retry_or_raise(
@@ -374,15 +337,6 @@ async def _call_with_retry(
                 ),
             )
     raise AssertionError("retry loop must return or raise")
-
-
-def _raise_user_key(exc: BaseException) -> None:
-    # A busy answer is the provider's capacity, not the user's key.
-    if busy_error(exc) is None:
-        mapped = classify_user_key_error(exc)
-        if mapped is not None:
-            raise mapped from exc
-    raise exc
 
 
 def _as_spec(model: ModelConfig) -> ModelConfig:
@@ -462,10 +416,7 @@ async def embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
                 spec=spec,
                 deadline=deadline,
             ) as call_id:
-                try:
-                    resp = await elitellm.embed_batch(spec, batch, dimensions=dim)
-                except Exception as exc:  # noqa: BLE001
-                    _raise_user_key(exc)
+                resp = await elitellm.embed_batch(spec, batch, dimensions=dim)
                 obs.record_embedding(spec.provider_slug, _record_name(spec), resp)
                 block = getattr(resp, "usage", None)
                 await accounting.settle(
@@ -617,52 +568,49 @@ async def complete_response(
             deadline=deadline,
             stream=receipt,
         ) as call_id:
-            try:
-                if receipt is not None:
-                    assembled = await _stream_via_adapter(
-                        spec,
-                        submitted_messages,
-                        tools,
-                        temperature,
-                        None,
-                        receipt=receipt,
-                        max_tokens=max_tokens,
-                        reasoning=reasoning,
-                        response_format=response_format,
+            if receipt is not None:
+                assembled = await _stream_via_adapter(
+                    spec,
+                    submitted_messages,
+                    tools,
+                    temperature,
+                    None,
+                    receipt=receipt,
+                    max_tokens=max_tokens,
+                    reasoning=reasoning,
+                    response_format=response_format,
+                )
+                if assembled.status == "error":
+                    raise elitellm.ProviderError(
+                        assembled.error or "provider stream failed"
                     )
-                    if assembled.status == "error":
-                        raise elitellm.ProviderError(
-                            assembled.error or "provider stream failed"
-                        )
-                    usage = assembled.usage
-                    message = dict(assembled.provider_message)
-                    message.setdefault("role", "assistant")
-                    message.setdefault("content", assembled.text)
-                    resp = elitellm.chat_response(
-                        message,
-                        finish_reason="length"
-                        if assembled.status == "incomplete"
-                        else ("tool_calls" if assembled.tool_calls else "stop"),
-                        usage=usage,
+                usage = assembled.usage
+                message = dict(assembled.provider_message)
+                message.setdefault("role", "assistant")
+                message.setdefault("content", assembled.text)
+                resp = elitellm.chat_response(
+                    message,
+                    finish_reason="length"
+                    if assembled.status == "incomplete"
+                    else ("tool_calls" if assembled.tool_calls else "stop"),
+                    usage=usage,
+                )
+            else:
+                resp = await elitellm.complete(
+                    spec,
+                    submitted_messages,
+                    temperature=temperature,
+                    tools=tools,
+                    response_format=response_format,
+                    max_tokens=max_tokens,
+                    reasoning=reasoning,
+                    input_items=messages_to_responses_input(submitted_messages)
+                    if elitellm.uses_responses(
+                        spec, tools=bool(tools), reasoning=reasoning
                     )
-                else:
-                    resp = await elitellm.complete(
-                        spec,
-                        submitted_messages,
-                        temperature=temperature,
-                        tools=tools,
-                        response_format=response_format,
-                        max_tokens=max_tokens,
-                        reasoning=reasoning,
-                        input_items=messages_to_responses_input(submitted_messages)
-                        if elitellm.uses_responses(
-                            spec, tools=bool(tools), reasoning=reasoning
-                        )
-                        else None,
-                    )
-                    usage = response_usage(resp, provider=spec.provider_slug)
-            except Exception as exc:  # noqa: BLE001
-                _raise_user_key(exc)
+                    else None,
+                )
+                usage = response_usage(resp, provider=spec.provider_slug)
             obs.record_normalized(
                 spec.provider_slug,
                 _record_name(spec),
@@ -896,14 +844,11 @@ async def stream_agent_response(
             return assembled
         except asyncio.CancelledError:
             raise
-        except (UserKeyError, registry.RegistryError, accounting.SettlementError):
+        except (registry.RegistryError, accounting.SettlementError):
             raise
         except Exception as exc:
             if received.seen:
-                _raise_user_key(exc)
-            mapped = classify_user_key_error(exc)
-            if mapped is not None and mapped.code == INVALID_KEY:
-                raise mapped from exc
+                raise
             if stopped is not None and stopped():
                 raise
             await _retry_or_raise(
@@ -1035,14 +980,11 @@ async def stream_text(
             return
         except asyncio.CancelledError:
             raise
-        except (UserKeyError, registry.RegistryError, accounting.SettlementError):
+        except (registry.RegistryError, accounting.SettlementError):
             raise
         except Exception as exc:
             if received.seen:
-                _raise_user_key(exc)
-            mapped = classify_user_key_error(exc)
-            if mapped is not None and mapped.code == INVALID_KEY:
-                raise mapped from exc
+                raise
             await _retry_or_raise(
                 exc,
                 attempt=attempt,

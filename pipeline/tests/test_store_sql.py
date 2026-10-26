@@ -592,15 +592,13 @@ async def test_a_failed_stream_leaves_no_open_call_or_lease(
         return {}
 
     monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
-    bind_request_llm(paid_by="platform", thinking="high")
+    bind_request_llm(thinking="high")
     spec = ModelConfig(
         version=1,
         provider_name="Z.ai",
         model_name="GLM-5.3-Flash",
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=("low", "high", "max"),
         default_thinking="high",
         slots=("chat",),

@@ -78,6 +78,7 @@ func (a *api) registerBankProgress(api huma.API) {
 	reg(api, http.MethodGet, "/api/bank/topics/{topicId}/marks", "bankTopicMarks", tag, "Latest scores for a topic's questions", http.StatusOK, a.bankMarks)
 	reg(api, http.MethodGet, "/api/bank/topics/{topicId}/summary", "bankTopicSummary", tag, "A topic's questions with the learner's latest results, for its summary page", http.StatusOK, a.bankSummary)
 	reg(api, http.MethodGet, "/api/bank/progress", "bankProgress", tag, "Topics the learner has answered questions in", http.StatusOK, a.bankProgress)
+	// Unused since 2026-10-25 (no page offers Copy to quiz); kept for future use.
 	reg(api, http.MethodPost, "/api/bank/copy", "copyBankQuestions", tag, "Copy bank questions into a workspace quiz", http.StatusOK, a.bankCopy)
 }
 
@@ -167,6 +168,7 @@ func (a *api) bankProgress(ctx context.Context, _ *struct{}) (*bankProgressOutpu
 
 // bankCopy copies bank questions, unchanged and each credited from the bank's
 // sources, into a new quiz or the end of one in a workspace the learner edits.
+// No frontend calls it since 2026-10-25; kept for a future Copy to quiz.
 func (a *api) bankCopy(ctx context.Context, in *bankCopyInput) (*bankCopyOutput, error) {
 	if _, err := a.bankAccess(ctx, false); err != nil {
 		return nil, err

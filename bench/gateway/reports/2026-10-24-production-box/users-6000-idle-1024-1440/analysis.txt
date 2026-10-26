@@ -1,0 +1,12 @@
+== users-6000-idle-1024-1440: PASS
+   84 req/s (0.014 per user), p50 4 p95 20 p99 43 max 114 ms, errors 0.00%, streams {'ended': 0, 'failed': 0, 'open_at_end': 5999, 'opened': 12000, 'refused': 0}
+   server   cpu mean 0.71 p95 0.89 cores, memory peak 804 MiB
+   db       cpu mean 0.54 p95 0.60 cores, memory peak 678 MiB
+   redis    cpu mean 0.07 p95 0.09 cores, memory peak 5 MiB
+   loadgen  cpu mean 0.41 p95 0.56 cores, memory peak 417 MiB
+   cores cpu0 77%, cpu1 69%, cpu2 44%, cpu3 39%
+   postgres backends (mean) active/IO 0.1, idle/- 0.1, idle/Client 8.7
+   pool waits: 38904 acquires waited 53.1 s in all, 12 windows with waits, 0 with every connection taken at the line
+   gateway warnings and errors: 0
+   seconds with p95 over 500 ms: 0 of 17
+   slowest routes (p95): GET /api/me 52 ms, GET /api/workspaces/{id}/study 43 ms, GET /api/workspaces/{id} 40 ms, GET /api/learning/progress 36 ms, GET /api/workspaces 21 ms

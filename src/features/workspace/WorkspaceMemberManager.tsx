@@ -172,12 +172,12 @@ export function WorkspaceMemberManager({
             />
           )}
         />
-        {/* Phones show the send icon alone. */}
+        {/* Phones show the send icon alone. As tall as the field and select. */}
         <Button
-          className="aspect-square px-0 sm:aspect-auto sm:rounded-button-lg sm:px-5"
+          className="aspect-square px-0 sm:aspect-auto sm:px-5"
           disabled={inviteDisabled}
           type="submit"
-          variant="accent"
+          variant="ghost-hover"
         >
           <span className="sr-only sm:not-sr-only">{m.members_invite()}</span>
           {isSubmitting ? <Spinner /> : <Icon name="send" />}
@@ -288,7 +288,7 @@ export function WorkspaceMemberManager({
         title={m.members_manage()}
       >
         {manageTarget && (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-3">
             <InputTitle>{m.common_role()}</InputTitle>
             <RoleSelect
               disabled={updateMemberIsPending}

@@ -435,6 +435,11 @@ function OfficeRuntime() {
         setCompact(message.compact);
         // Below lg, for CSS that keeps clear of Capy's floating tools button.
         document.documentElement.toggleAttribute('data-narrow', message.narrow);
+        // On a frosted panel (office-runtime.css): see-through chrome and desk.
+        document.documentElement.toggleAttribute(
+          'data-frosted',
+          message.frosted
+        );
         setAppearance(true);
         return;
       }
@@ -900,6 +905,7 @@ function OfficeRuntime() {
             citation={citation}
             initialZoom={file.zoom}
             locale={locale}
+            narrow={narrow}
             onAnalysis={reportAnalysis}
             onAskPresenter={askPresenter}
             onError={reportError}

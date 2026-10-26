@@ -3,7 +3,9 @@ import {
   isValidElement,
   type ReactElement,
   type ReactNode,
+  useEffect,
   useId,
+  useState,
 } from 'react';
 import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
@@ -23,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { Textarea } from '@/components/ui/TextArea';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ToolbarPopoverItem } from '@/components/ui/ToolbarPopover';
 import { m } from '@/i18n';
@@ -42,6 +45,55 @@ export function FieldInput({ wrapperClassName, ...props }: InputProps) {
   );
 }
 
+/** A question editor's written text on ruled lines, as learners write
+ * theirs: `lines` tall, growing two more before it scrolls. */
+export function FieldTextarea({
+  lines,
+  className,
+  ...props
+}: React.ComponentProps<'textarea'> & { lines: 2 | 3 }) {
+  return (
+    <Textarea
+      className={cn(
+        'ruled-lines rounded-none border-0 bg-transparent px-0.5 py-0 focus:border-0',
+        lines === 2
+          ? 'max-h-[calc(var(--ruled-line)*4)] min-h-[calc(var(--ruled-line)*2)]'
+          : 'max-h-[calc(var(--ruled-line)*5)] min-h-[calc(var(--ruled-line)*3)]',
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+/** A list's Add button, its plus in line with the inputs above it. */
+function AddButton(props: {
+  disabled: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      className="-ml-4"
+      iconLeft="plus"
+      size="sm"
+      type="button"
+      variant="ghost-hover"
+      {...props}
+    />
+  );
+}
+
+/** An option's letter (A, B, …) before its input, as issues and matches
+ * name it. */
+function OptionLetter({ index }: { index: number }) {
+  return (
+    <span className="w-4 shrink-0 font-medium text-fg-muted text-sm">
+      {String.fromCharCode(65 + index)}
+    </span>
+  );
+}
+
 /** A row in a question editor's popover menu, closing it when chosen. */
 export function MenuItem(
   props: React.ComponentProps<typeof ToolbarPopoverItem>
@@ -56,15 +108,17 @@ export function MenuItem(
 export function Field({
   label,
   count,
+  className,
   children,
 }: {
   label: string;
   count?: CountLimit;
+  className?: string;
   children: ReactNode;
 }) {
   const id = useId();
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className={cn('flex min-w-0 flex-col gap-0.5', className)}>
       <div className="flex items-center gap-1">
         <label className="t-label" htmlFor={id}>
           {label}
@@ -122,6 +176,9 @@ export function StringList({
   onChange,
   onRemove,
   onMove,
+  letters = false,
+  addLabel = m.question_ui_add_item(),
+  className,
   maxLength = limits.QUESTION_TEXT_MAX,
 }: {
   label: string;
@@ -132,14 +189,20 @@ export function StringList({
    * 2026-10-18): each row gets up and down buttons, and Alt+ArrowUp or
    * Alt+ArrowDown moves the focused option, focus following it. */
   onMove?: (from: number, to: number) => void;
+  /** Each row starts with its letter (A, B, …), as matches name them. */
+  letters?: boolean;
+  /** The Add button's words, where "Add item" says too little. */
+  addLabel?: string;
+  className?: string;
   /** Characters an item holds at most (its input stops there). */
   maxLength?: number;
 }) {
   return (
-    <div className="space-y-2" data-string-list>
+    <div className={cn('space-y-2', className)} data-string-list>
       <p className="t-label">{label}</p>
       {values.map((value, index) => (
         <div className="flex items-center gap-2" key={index}>
+          {letters && <OptionLetter index={index} />}
           <FieldInput
             aria-label={m.question_ui_numbered_item({
               label,
@@ -207,24 +270,76 @@ export function StringList({
           </ToolbarButton>
         </div>
       ))}
-      <Button
+      <AddButton
         disabled={values.length >= limits.QUESTION_ANSWERS_MAX}
-        iconLeft="plus"
         onClick={() => onChange([...values, ''])}
-        size="sm"
-        type="button"
-        variant="ghost"
       >
-        {m.question_ui_add_item()}
-      </Button>
+        {addLabel}
+      </AddButton>
     </div>
   );
 }
-export const markOptions = Array.from(
-  { length: limits.QUESTION_MARKS_MAX },
-  (_, i) => ({ label: String(i + 1), value: String(i + 1) })
-);
-
+/** A part's whole marks, 1 to `max`: stepped with − and +, as the note
+ * toolbar's font size, or typed, which holds to the bounds as it goes. */
+export function MarksField({
+  label,
+  ariaLabel,
+  value,
+  max,
+  onChange,
+}: {
+  /** Shown above; a row's own stepper names itself with `ariaLabel`. */
+  label?: string;
+  ariaLabel?: string;
+  value: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  const id = useId();
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const set = (next: number) => onChange(Math.min(max, Math.max(1, next)));
+  return (
+    <div className="flex flex-col gap-0.5">
+      {label && (
+        <label className="t-label" htmlFor={id}>
+          {label}
+        </label>
+      )}
+      <div className="flex w-fit items-center overflow-hidden rounded-button">
+        <ToolbarButton
+          className="rounded-r-none bg-surface-hover-bg p-0 hover:bg-surface-dark"
+          disabled={value <= 1}
+          label={m.question_ui_marks_decrease()}
+          onClick={() => set(value - 1)}
+        >
+          <Icon name="minus" />
+        </ToolbarButton>
+        <input
+          aria-label={ariaLabel}
+          className="h-(--toolbar-button) w-10 bg-surface-hover-bg text-center font-semibold text-sm outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+          id={id}
+          inputMode="numeric"
+          onBlur={() => setText(String(value))}
+          onChange={(event) => {
+            const digits = event.target.value.replace(/\D/g, '');
+            setText(digits);
+            if (digits) set(Number(digits));
+          }}
+          value={text}
+        />
+        <ToolbarButton
+          className="rounded-l-none bg-surface-hover-bg p-0 hover:bg-surface-dark"
+          disabled={value >= max}
+          label={m.question_ui_marks_increase()}
+          onClick={() => set(value + 1)}
+        >
+          <Icon name="plus" />
+        </ToolbarButton>
+      </div>
+    </div>
+  );
+}
 /** An open part's marking items, each with its own whole marks. */
 export function MarkschemeList({
   label,
@@ -242,39 +357,32 @@ export function MarkschemeList({
     onChange(
       items.map((item, i) => (i === index ? { ...item, ...change } : item))
     );
+  const total = items.reduce((sum, item) => sum + item.marks, 0);
   return (
     <div className="space-y-2">
       <p className="t-label">{label}</p>
       {items.map((item, index) => (
-        <div className="flex items-center gap-2" key={index}>
-          <FieldInput
+        <div className="flex items-start gap-2" key={index}>
+          <FieldTextarea
             aria-label={m.question_ui_numbered_item({
               label,
               number: index + 1,
             })}
+            lines={2}
             maxLength={limits.QUESTION_MARK_ITEM_MAX}
             onChange={(e) => update(index, { text: e.target.value })}
             value={item.text}
           />
-          <Select
-            onValueChange={(value) => update(index, { marks: Number(value) })}
-            value={String(item.marks)}
-          >
-            <SelectTrigger
-              aria-label={m.question_ui_item_marks({ number: index + 1 })}
-              className="h-9 w-16 shrink-0 bg-transparent px-0.5"
-              variant="underline"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {markOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Up to what the part's marks leave over the other items. */}
+          <MarksField
+            ariaLabel={m.question_ui_item_marks({ number: index + 1 })}
+            max={Math.max(
+              item.marks,
+              limits.QUESTION_MARKS_MAX - total + item.marks
+            )}
+            onChange={(marks) => update(index, { marks })}
+            value={item.marks}
+          />
           <ToolbarButton
             label={m.question_ui_remove_item({ label, number: index + 1 })}
             onClick={() => onChange(items.filter((_, i) => i !== index))}
@@ -283,16 +391,12 @@ export function MarkschemeList({
           </ToolbarButton>
         </div>
       ))}
-      <Button
-        disabled={items.length >= max}
-        iconLeft="plus"
+      <AddButton
+        disabled={items.length >= max || total >= limits.QUESTION_MARKS_MAX}
         onClick={() => onChange([...items, { marks: 1, text: '' }])}
-        size="sm"
-        type="button"
-        variant="ghost"
       >
         {m.question_ui_add_item()}
-      </Button>
+      </AddButton>
     </div>
   );
 }
@@ -328,15 +432,19 @@ export function AnswerEditor({
   answer,
   bank,
   onChange,
+  gapsText,
 }: {
   answer: QuestionAnswer;
   /** A bank question: open answers take the bank's longer text bound. */
   bank: boolean;
   onChange: (answer: QuestionAnswer) => void;
+  /** A gaps part's text holding its blanks, shown above their answers. */
+  gapsText?: ReactNode;
 }) {
   return (
     <div className="space-y-4">
       <SelectField
+        className="w-44"
         label={m.question_ui_answer_type()}
         onChange={(value) => onChange(emptyAnswer(value as QuestionType))}
         options={QUESTION_TYPES.map((value) => ({
@@ -352,19 +460,7 @@ export function AnswerEditor({
           </p>
           {answer.options.map((option, i) => (
             <div className="flex items-center gap-2" key={i}>
-              <input
-                aria-label={m.question_ui_correct_option({ number: i + 1 })}
-                checked={answer.correct.includes(i)}
-                onChange={(event) =>
-                  onChange({
-                    ...answer,
-                    correct: event.target.checked
-                      ? [...answer.correct, i]
-                      : answer.correct.filter((value) => value !== i),
-                  })
-                }
-                type="checkbox"
-              />
+              <OptionLetter index={i} />
               <FieldInput
                 aria-label={m.question_ui_option_number({ number: i + 1 })}
                 maxLength={limits.QUESTION_TEXT_MAX}
@@ -392,24 +488,36 @@ export function AnswerEditor({
               >
                 <Icon name="trash" />
               </ToolbarButton>
+              {/* A toggle: pressed while the option is a correct answer. */}
+              <ToolbarButton
+                active={answer.correct.includes(i)}
+                label={m.question_ui_mark_correct({ number: i + 1 })}
+                onClick={() =>
+                  onChange({
+                    ...answer,
+                    correct: answer.correct.includes(i)
+                      ? answer.correct.filter((value) => value !== i)
+                      : [...answer.correct, i],
+                  })
+                }
+              >
+                <Icon name="circleCheck" />
+              </ToolbarButton>
             </div>
           ))}
-          <Button
+          <AddButton
             disabled={answer.options.length >= limits.QUESTION_ANSWERS_MAX}
-            iconLeft="plus"
             onClick={() =>
               onChange({ ...answer, options: [...answer.options, ''] })
             }
-            size="sm"
-            type="button"
-            variant="ghost"
           >
             {m.question_ui_add_option()}
-          </Button>
+          </AddButton>
         </div>
       )}
       {answer.type === 'boolean' && (
         <SelectField
+          className="w-44"
           label={m.question_ui_correct_answer()}
           onChange={(value) =>
             onChange({ ...answer, correct: value === 'true' })
@@ -423,6 +531,7 @@ export function AnswerEditor({
       )}
       {answer.type === 'short' && (
         <StringList
+          addLabel={m.question_ui_add_accepted_answer()}
           label={m.question_ui_accepted_answers()}
           onChange={(accepted) => onChange({ ...answer, accepted })}
           values={answer.accepted}
@@ -437,7 +546,8 @@ export function AnswerEditor({
           }}
           label={m.question_ui_sample_answer()}
         >
-          <FieldInput
+          <FieldTextarea
+            lines={3}
             maxLength={
               bank ? limits.QUESTION_TEXT_MAX : limits.QUIZ_OPEN_ANSWER_MAX
             }
@@ -452,21 +562,29 @@ export function AnswerEditor({
         </Field>
       )}
       {answer.type === 'short' && (
-        <Field
-          count={{
-            max: limits.QUESTION_UNIT_MAX,
-            value: textLength(answer.unit),
-          }}
-          label={m.question_ui_unit()}
-        >
-          <FieldInput
-            maxLength={limits.QUESTION_UNIT_MAX}
-            onChange={(event) =>
-              onChange({ ...answer, unit: event.target.value || undefined })
-            }
-            value={answer.unit ?? ''}
-          />
-        </Field>
+        <div>
+          <Field
+            className="w-44"
+            count={{
+              max: limits.QUESTION_UNIT_MAX,
+              value: textLength(answer.unit),
+            }}
+            label={m.question_ui_unit()}
+          >
+            <FieldInput
+              maxLength={limits.QUESTION_UNIT_MAX}
+              onChange={(event) =>
+                onChange({ ...answer, unit: event.target.value || undefined })
+              }
+              value={answer.unit ?? ''}
+            />
+          </Field>
+          {/* Answers with a unit are graded as numbers; the server refuses
+              any other. */}
+          <p className="mt-1 text-fg-muted text-xs">
+            {m.question_ui_unit_hint()}
+          </p>
+        </div>
       )}
       {answer.type === 'open' && (
         <StringList
@@ -476,48 +594,35 @@ export function AnswerEditor({
         />
       )}
       {answer.type === 'gaps' && (
+        // Blanks come from the question text (its Add blank); here each
+        // keeps its accepted answers.
         <div className="space-y-4">
-          {answer.accepted.map((accepted, i) => (
-            <div className="flex items-start gap-2" key={i}>
-              <div className="min-w-0 flex-1">
-                <StringList
-                  label={m.question_ui_gap({ number: i + 1 })}
-                  onChange={(values) =>
-                    onChange({
-                      ...answer,
-                      accepted: answer.accepted.map((item, j) =>
-                        j === i ? values : item
-                      ),
-                    })
-                  }
-                  values={accepted}
-                />
-              </div>
-              <ToolbarButton
-                label={m.question_ui_remove_gap({ number: i + 1 })}
-                onClick={() =>
-                  onChange({
-                    ...answer,
-                    accepted: answer.accepted.filter((_, j) => j !== i),
-                  })
-                }
-              >
-                <Icon name="trash" />
-              </ToolbarButton>
+          {gapsText && (
+            <div className="space-y-2">
+              <p className="t-label">{m.question_ui_text_with_blanks()}</p>
+              {gapsText}
             </div>
+          )}
+          {answer.accepted.length === 0 && (
+            <p className="text-fg-muted text-sm">{m.question_ui_gaps_hint()}</p>
+          )}
+          {answer.accepted.map((accepted, i) => (
+            <StringList
+              addLabel={m.question_ui_add_accepted_answer()}
+              className="max-w-md"
+              key={i}
+              label={m.question_ui_gap({ number: i + 1 })}
+              onChange={(values) =>
+                onChange({
+                  ...answer,
+                  accepted: answer.accepted.map((item, j) =>
+                    j === i ? values : item
+                  ),
+                })
+              }
+              values={accepted}
+            />
           ))}
-          <Button
-            disabled={answer.accepted.length >= limits.QUESTION_ANSWERS_MAX}
-            iconLeft="plus"
-            onClick={() =>
-              onChange({ ...answer, accepted: [...answer.accepted, ['']] })
-            }
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            {m.question_ui_add_gap()}
-          </Button>
         </div>
       )}
       {answer.type === 'ordering' && (
@@ -531,6 +636,7 @@ export function AnswerEditor({
         <>
           <StringList
             label={m.question_ui_choice_pool()}
+            letters
             onChange={(options) => onChange({ ...answer, options })}
             onMove={(from, to) =>
               onChange({
@@ -573,8 +679,10 @@ export function AnswerEditor({
           />
           <p className="t-label">{m.question_ui_matches()}</p>
           {answer.pairs.map((pair, i) => (
+            // The item and its choice share the row: either may be long.
             <div className="flex items-end gap-2" key={i}>
               <Field
+                className="flex-1"
                 count={{
                   max: limits.QUESTION_TEXT_MAX,
                   value: textLength(pair.left),
@@ -595,6 +703,7 @@ export function AnswerEditor({
                 />
               </Field>
               <SelectField
+                className="flex-1"
                 label={m.question_ui_correct_choice()}
                 onChange={(value) =>
                   onChange({
@@ -623,21 +732,17 @@ export function AnswerEditor({
               </ToolbarButton>
             </div>
           ))}
-          <Button
+          <AddButton
             disabled={answer.pairs.length >= limits.QUESTION_ANSWERS_MAX}
-            iconLeft="plus"
             onClick={() =>
               onChange({
                 ...answer,
                 pairs: [...answer.pairs, { left: '', right: 0 }],
               })
             }
-            size="sm"
-            type="button"
-            variant="ghost"
           >
             {m.question_ui_add_match()}
-          </Button>
+          </AddButton>
         </>
       )}
     </div>

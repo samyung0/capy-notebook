@@ -1,6 +1,8 @@
 import * as PopoverPrimitive from '@radix-ui/react-popover';
+import { useContext } from 'react';
 import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 import { cn } from '@/lib/cn';
+import { FrostedSurface } from '@/theme/theme';
 import { PopupMotion } from './PopupMotion';
 
 /** The compact action row shared by selected document and question blocks. */
@@ -8,9 +10,12 @@ export function BlockToolbar({
   className,
   ...props
 }: React.ComponentProps<'div'>) {
+  const frosted = useContext(FrostedSurface);
   return (
     <div
       data-floating-toolbar
+      // Frosted glass over a frosted panel (tailwind.css).
+      data-frost={frosted || undefined}
       role="toolbar"
       {...props}
       className={cn(

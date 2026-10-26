@@ -2117,7 +2117,7 @@ those services start.
    and a 1,500-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
    20-minute bound. Queue wait does not spend the parse deadline. The job worker
    refuses to start with a `PARSER_TIMEOUT` that is not below `CAPY_PARSE_JOB_TIMEOUT`;
-   retrieval, which reads `PARSER_TIMEOUT` only for page captures, does not check it. The parser container
+   retrieval, which holds no parser setting since Office files lost their page capture (Q283), does not check it. The parser container
    gets 8 CPUs, 14 GiB RAM, 18 GiB memory plus swap and a per-document JVM
    heap of `CAPY_PARSER_JVM_MAX_HEAP` (1g; 1g to 8g made no speed difference on
    15 to 1,220 pages). The coordinator writes the raw source to
@@ -2553,9 +2553,10 @@ the host:
   `CAPY_OFFICE_CONVERT_TIMEOUT` (180 s) is killed with its whole process group,
   and the document fails as
   `parse_hard_timeout` with its fingerprint quarantined, like a parse past its
-  deadline. Ingest, `/capture_page`, and
-  Drive/OneDrive imports (which reach the parser as ordinary parse jobs) all
-  convert through this one function. It ships with the parser image; nothing to
+  deadline. Ingest and
+  Drive/OneDrive imports (which reach the parser as ordinary parse jobs) both
+  convert through this one function, a PowerPoint file keeping its hidden
+  slides (Q276). It ships with the parser image; nothing to
   apply by hand.
 - **In the container.** Both ingest compose files run the parser with
   `cap_drop: [ALL]`, `no-new-privileges:true`, Docker's default seccomp
@@ -3946,8 +3947,12 @@ carry parsed blocks, refinement evidence and the receipt, with no image files
 or Markdown; Office bundles also carry no PDF bytes. Google Docs, Sheets and
 Slides import as DOCX, XLSX and PPTX; Drawings export PDF.
 
-Set `PARSER_URL` and `PARSER_TOKEN` on retrieval for temporary Office captures.
-The shared non-production parser binds `PARSER_BIND_ADDRESS` on WireGuard
+Retrieval holds no parser settings since Office files lost their page capture
+(Q283; Q240 phase B): `PARSER_URL` is local development's alone and
+`PARSER_TOKEN` the ingest hosts' (`deploy/env-manifest.json`), so an app
+host's leftover `PARSER_URL` is unused: delete the `PARSER_URL` variable from
+the `uat` and `production` GitHub environments once the app runs this change.
+Deploy the app before a parser image without `/capture_page`. The shared non-production parser binds `PARSER_BIND_ADDRESS` on WireGuard
 instead of loopback; configure its private address and port 8091, with production
 on port 8090 when provisioned. Local development needs a private route or an SSH
 forward. The environment manifest includes these app-host values.

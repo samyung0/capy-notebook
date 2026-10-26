@@ -7,14 +7,9 @@ import type { SrsRating } from '@/lib/srs';
 import { CardBackFace, CardFront } from './CardView';
 
 /* The study card, shared by flashcard study (study page, shared page, note
-   embed), the review session and Quick review. Its front reads the card's
-   chapter where the page shows it nowhere else, the text and "Click to
-   flip". Compact is the
-   note embed's shorter card; panel is Quick review's, visibly smaller still
-   (narrower, shorter, smaller front text) so it sits clear of the study
-   panel's sides. */
-
-export type CardStackSize = 'large' | 'compact' | 'panel';
+   embed), the review session and the card dialog's preview. Its front reads
+   the card's chapter where the page shows it nowhere else, the text and
+   "Click to flip". */
 
 type Leaving = { card: FlashcardContent; flipped: boolean };
 
@@ -50,7 +45,6 @@ export function CardStack({
   label,
   onRate,
   rated,
-  size,
   stack,
 }: {
   card: FlashcardContent;
@@ -60,17 +54,11 @@ export function CardStack({
   onRate: (rating: SrsRating) => void;
   /** A card shown again after it was rated: its ratings are read only. */
   rated?: SrsRating;
-  size: CardStackSize;
   stack: CardStackState;
 }) {
   const { flipped, leaving, setFlipped, setLeaving, turn } = stack;
   return (
-    <div
-      className={cn(
-        'relative',
-        size === 'panel' && 'mx-auto w-full max-w-[360px]'
-      )}
-    >
+    <div className="relative">
       <StudyCard
         card={card}
         className={cn(
@@ -85,7 +73,6 @@ export function CardStack({
         onFlip={() => setFlipped((f) => !f)}
         onRate={onRate}
         rated={rated}
-        size={size}
       />
       {leaving && (
         <StudyCard
@@ -99,10 +86,23 @@ export function CardStack({
           key={`leaving-${turn.n}`}
           label={label}
           onAnimationEnd={() => setLeaving(null)}
-          size={size}
         />
       )}
     </div>
+  );
+}
+
+/** The card dialog's preview: the study card turned to the answer, front
+ * pinned on top, until a click flips it to the front (Epo 2026-10-25). */
+export function CardPreview({ card }: { card: FlashcardContent }) {
+  const [flipped, setFlipped] = useState(true);
+  return (
+    <StudyCard
+      card={card}
+      flipped={flipped}
+      onFlip={() => setFlipped((f) => !f)}
+      ratings={false}
+    />
   );
 }
 
@@ -119,21 +119,21 @@ function StudyCard({
   onFlip,
   onRate,
   rated,
-  size,
+  ratings = true,
 }: {
   card: FlashcardContent;
   className?: string;
   flipped: boolean;
   rated?: SrsRating;
+  /** Off for a preview: the back shows no ratings. */
+  ratings?: boolean;
   /** The copy swiping away: shown only, never focused or clicked. */
   inert?: boolean;
   label?: string;
   onAnimationEnd?: () => void;
   onFlip?: () => void;
   onRate?: (rating: SrsRating) => void;
-  size: CardStackSize;
 }) {
-  const compact = size !== 'large';
   // Flips since this card mounted; the face before the latest one leaves.
   const [flip, setFlip] = useState({ flipped, n: 0 });
   const [leaving, setLeaving] = useState<boolean | null>(null);
@@ -141,23 +141,15 @@ function StudyCard({
     setLeaving(flip.flipped);
     setFlip({ flipped, n: flip.n + 1 });
   }
-  const padding = size === 'large' ? 'p-8' : size === 'compact' ? 'p-5' : 'p-4';
   // Each face fills the card: the front centred in its padding, the back with
   // the front's text pinned on top.
   const face = (back: boolean): ReactNode =>
     back ? (
-      <CardBackFace card={card} className="flex-1" size={size} />
+      <CardBackFace card={card} className="flex-1" size="compact" />
     ) : (
-      <div
-        className={cn(
-          'flex flex-1 flex-col items-center justify-center text-center text-fg-muted',
-          compact ? 'gap-2 text-sm' : 'gap-4',
-          size === 'panel' && 'gap-1.5 text-xs',
-          padding
-        )}
-      >
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-fg-muted text-sm">
         {label && <span className="line-clamp-1">{label}</span>}
-        <CardFront card={card} className="text-fg" size={size} />
+        <CardFront card={card} className="text-fg" size="compact" />
         <span>{m.flashcards_click_to_flip()}</span>
       </div>
     );
@@ -165,10 +157,10 @@ function StudyCard({
     <div
       aria-hidden={inert}
       className={cn(
-        'relative flex w-full flex-col overflow-hidden rounded-card-lg border border-line bg-surface shadow-card',
-        size === 'large' && 'h-[clamp(300px,48vh,400px)]',
-        size === 'compact' && 'h-[clamp(220px,30vh,260px)]',
-        size === 'panel' && 'h-[clamp(160px,22vh,190px)]',
+        'relative flex w-full flex-col overflow-hidden rounded-flashcard border border-line bg-surface frosted:bg-(--frost-fill) shadow-card',
+        // Grows with a long back up to its cap, then the answer scrolls under
+        // the front.
+        'max-h-[clamp(320px,50vh,440px)] min-h-[clamp(220px,30vh,260px)]',
         className
       )}
       inert={inert}
@@ -184,7 +176,7 @@ function StudyCard({
           // Inset ring: the card's overflow clips an outer one to a bar.
           // No scrollbar: the ratings arriving with a flip briefly overflow it.
           'relative flex min-h-0 w-full flex-1 flex-col overflow-auto rounded-t-card-lg [scrollbar-width:none] focus-visible:ring-inset [&::-webkit-scrollbar]:hidden',
-          !flipped && 'rounded-b-card-lg'
+          !(flipped && ratings) && 'rounded-b-card-lg'
         )}
         onClick={onFlip}
         type="button"
@@ -201,13 +193,9 @@ function StudyCard({
           {face(flipped)}
         </div>
       </button>
-      {flipped && (
-        <div className={cn(compact ? 'px-3 pb-3' : 'px-4 pb-4')}>
-          <RatingTiles
-            chosen={rated}
-            dense={size === 'panel'}
-            onRate={(rating) => onRate?.(rating)}
-          />
+      {flipped && ratings && (
+        <div className="px-3 pt-2 pb-3">
+          <RatingTiles chosen={rated} onRate={(rating) => onRate?.(rating)} />
         </div>
       )}
       {leaving !== null && (
@@ -226,11 +214,9 @@ function StudyCard({
               {face(leaving)}
             </div>
           </div>
-          {leaving && (
-            <div
-              className={cn('invisible', compact ? 'px-3 pb-3' : 'px-4 pb-4')}
-            >
-              <RatingTiles dense={size === 'panel'} onRate={() => undefined} />
+          {leaving && ratings && (
+            <div className="invisible px-3 pt-2 pb-3">
+              <RatingTiles onRate={() => undefined} />
             </div>
           )}
         </div>

@@ -9,6 +9,7 @@ import {
   useAttempt,
   useCards,
   useFlashcardSet,
+  useMe,
   useRateReviewItem,
   useWorkspace,
 } from '@/api/hooks';
@@ -19,6 +20,7 @@ import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
+import { useKeptFlashcardRun } from '@/features/flashcards/flashcardRun';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import type { FlashcardContent } from '@/features/materials/blocks';
@@ -61,6 +63,9 @@ function Study({ setId }: { setId: string }) {
   // The study session follows the set's live room (Epo 2026-10-10): edits
   // show as they land, added cards join the end of the session.
   const liveCards = useLiveSetCards(setId, cards ?? NO_CARDS, !!cards);
+  // Kept per user: another account on this browser starts its own run.
+  const { data: me } = useMe();
+  const kept = useKeptFlashcardRun(me?.id ?? '', setId, liveCards);
   const { mutateAsync: rateItem } = useRateReviewItem();
   const [cloning, setCloning] = useState(false);
   // In a workspace only its members and editors clone, and an embedded item
@@ -87,7 +92,7 @@ function Study({ setId }: { setId: string }) {
     return (
       <WorkspaceError backLabel={m.flashcards_back_to()} backTo="/flashcards" />
     );
-  if (!set || !cards || !setFetched || !cardsFetched)
+  if (!set || !cards || !setFetched || !cardsFetched || !me)
     return (
       <PagePanel>
         <div className="h-full p-6">
@@ -144,12 +149,14 @@ function Study({ setId }: { setId: string }) {
             source: flashcardsStudySource(window.location.pathname),
           })
         }
-        onRate={(card, rating, attempt) =>
+        onRate={(card, rating, attempt, run) => {
           // Every reader records their own progress, except in a set embedded in
           // a note, which records nothing; the server keeps the attempt for a
-          // workspace set. One toast however many ratings fail in a row.
-          !set.parentMaterialId &&
-          rateItem({
+          // workspace set, and this browser the run to resume.
+          if (set.parentMaterialId) return;
+          kept.keep(run);
+          // One toast however many ratings fail in a row.
+          void rateItem({
             attempt,
             itemId: card.id,
             materialId: setId,
@@ -160,9 +167,11 @@ function Study({ setId }: { setId: string }) {
               title: m.flashcards_review_failed(),
               variant: 'error',
             })
-          )
-        }
+          );
+        }}
+        onRestart={kept.forget}
         provenance={set.provenance}
+        resume={set.parentMaterialId ? undefined : kept.resume}
         trail={[blockHomeCrumb(set)]}
         usePrevious={
           set.workspaceId && !set.parentMaterialId

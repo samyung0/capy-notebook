@@ -32,13 +32,6 @@ export function parseModelRef(value: string): ModelRef {
   return { modelSlug: parsed[1], providerSlug: parsed[0] };
 }
 
-export function sortModelOptions(models: ModelOption[]): ModelOption[] {
-  return [...models].sort((a, b) => {
-    if (a.available !== b.available) return a.available ? -1 : 1;
-    return a.modelName.localeCompare(b.modelName);
-  });
-}
-
 export function hasThinkingControls(
   spec: ModelThinking | undefined
 ): spec is ModelThinking {

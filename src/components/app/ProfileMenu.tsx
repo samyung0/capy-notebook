@@ -1,6 +1,5 @@
 import { useClerk } from '@clerk/react';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useMe } from '@/api/hooks';
 import { Avatar } from '@/components/ui/Avatar';
@@ -12,7 +11,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { OwnAvatarButton } from './MemberAvatars';
 import { ProfilePillButton } from './ProfilePillButton';
-import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
+import { useThemeDrawer } from './themeDrawerSearch';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -106,7 +105,7 @@ function ProfileMenuInner({
 }: ProfileMenuProps & { onLogout?: () => void }) {
   const { data: me, isPending } = useMe({ errorBoundary: false });
   const navigate = useNavigate();
-  const [themeOpen, setThemeOpen] = useState(false);
+  const themeDrawer = useThemeDrawer();
   const upwards = trigger === 'own' || trigger === 'row';
 
   const account: MenuItem[] = [
@@ -133,7 +132,7 @@ function ProfileMenuInner({
     {
       icon: 'palette',
       label: m.settings_theme(),
-      onClick: () => setThemeOpen(true),
+      onClick: () => themeDrawer.setOpen(true),
     },
     {
       danger: true,
@@ -157,40 +156,37 @@ function ProfileMenuInner({
     : account;
 
   return (
-    <>
-      <Menu
-        align={upwards ? 'start' : 'end'}
-        className={upwards ? 'min-w-56' : undefined}
-        items={items}
-        side={upwards ? 'top' : undefined}
-        trigger={
-          trigger === 'row' ? (
-            <ProfileRowButton
-              avatarUrl={me?.avatarUrl}
-              name={me?.name}
-              pending={isPending}
-            />
-          ) : trigger === 'own' ? (
-            <OwnAvatarButton
-              aria-label={m.workspace_account_menu()}
-              avatarUrl={me?.avatarUrl}
-              dot={dot}
-              name={me?.name}
-              pending={isPending}
-            />
-          ) : (
-            <ProfilePillButton
-              avatarUrl={me?.avatarUrl}
-              dot={dot}
-              name={me?.name}
-              pending={isPending}
-              variant="avatar"
-            />
-          )
-        }
-      />
-      <ThemeSwitchDrawer onOpenChange={setThemeOpen} open={themeOpen} />
-    </>
+    <Menu
+      align={upwards ? 'start' : 'end'}
+      className={upwards ? 'min-w-56' : undefined}
+      items={items}
+      side={upwards ? 'top' : undefined}
+      trigger={
+        trigger === 'row' ? (
+          <ProfileRowButton
+            avatarUrl={me?.avatarUrl}
+            name={me?.name}
+            pending={isPending}
+          />
+        ) : trigger === 'own' ? (
+          <OwnAvatarButton
+            aria-label={m.workspace_account_menu()}
+            avatarUrl={me?.avatarUrl}
+            dot={dot}
+            name={me?.name}
+            pending={isPending}
+          />
+        ) : (
+          <ProfilePillButton
+            avatarUrl={me?.avatarUrl}
+            dot={dot}
+            name={me?.name}
+            pending={isPending}
+            variant="avatar"
+          />
+        )
+      }
+    />
   );
 }
 

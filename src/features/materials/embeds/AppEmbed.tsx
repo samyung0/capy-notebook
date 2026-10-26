@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
+import { useCheckQuizQuestion, useMaterial, useQuiz } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
@@ -27,6 +27,7 @@ import {
 } from '@/features/quizzes/liveQuizRooms';
 import { QuizForm, QuizRecovery } from '@/features/quizzes/QuizForm';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
+import { type QuizRunControl, useMemoryRun } from '@/features/quizzes/quizRun';
 import { m } from '@/i18n';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
@@ -113,6 +114,7 @@ function LiveSetEdit({
   return (
     <div ref={box}>
       <LiveFlashcards
+        compact
         enabled={near}
         inside={inside}
         onEmpty={onEmpty}
@@ -218,22 +220,17 @@ function QuizView({
   materialId: string;
   ownerId?: string;
 }) {
-  const { mutateAsync: submit } = useSubmitAttempt({ errorToast: false });
+  // An embedded quiz is graded and records nothing: its try lives only on
+  // the page.
+  const { mutateAsync: check } = useCheckQuizQuestion({ errorToast: false });
+  const control = useMemoryRun(async (questionId, answers) => {
+    const attempt = await check({ answers, questionId, quizId: materialId });
+    const [question] = attempt.questions;
+    return { correct: attempt.correct, question, total: attempt.total };
+  });
   return (
     <QuizGate materialId={materialId} ownerId={ownerId}>
-      {(quiz) => (
-        <LiveQuizStudy
-          grade={async (answers) => {
-            const attempt = await submit({ answers, quizId: materialId });
-            return {
-              awarded: attempt.correct,
-              max: attempt.total,
-              questions: attempt.questions,
-            };
-          }}
-          quiz={quiz}
-        />
-      )}
+      {(quiz) => <LiveQuizStudy control={control} quiz={quiz} />}
     </QuizGate>
   );
 }
@@ -242,10 +239,10 @@ function QuizView({
  * the screen, as in Edit (REVIEW5 S5). */
 function LiveQuizStudy({
   quiz,
-  grade,
+  control,
 }: {
   quiz: NonNullable<ReturnType<typeof useQuiz>['data']>;
-  grade: Parameters<typeof AttemptBody>[0]['grade'];
+  control: QuizRunControl;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const { near, entered } = useNearScreen(box);
@@ -257,8 +254,8 @@ function LiveQuizStudy({
   return (
     <div ref={box}>
       <AttemptBody
+        control={control}
         embedded
-        grade={grade}
         name=""
         provenance={quiz.provenance}
         questions={questions}

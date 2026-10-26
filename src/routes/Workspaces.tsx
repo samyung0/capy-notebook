@@ -87,7 +87,7 @@ export default function Workspaces() {
       <ListToolbar
         action={
           <Button
-            className="-mx-1 h-fit rounded-card px-2 py-1.5 font-bold text-link sm:mx-0 sm:h-11 sm:px-5 sm:py-0"
+            className="-mx-1 h-fit rounded-card px-2 py-1.5 font-bold text-link sm:mx-0 sm:h-(--control-h) sm:px-5 sm:py-0"
             disabled={frozen}
             iconLeft="plus"
             onClick={() => setCreateOpen(true)}
@@ -143,7 +143,7 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              className="min-h-34 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
+              className="min-h-34 cursor-pointer items-center justify-center frosted:bg-transparent focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
               interactive
               onClick={() => setCreateOpen(true)}
               radius="card-lg"

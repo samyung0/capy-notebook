@@ -30,10 +30,12 @@ it('toasts a workspace that moved into finished', () => {
   const prev = {
     active: [workspace('w1')],
     finished: [workspace('w2')],
+    hiddenCount: 0,
   } as LearningProgress;
   const next = {
     active: [],
     finished: [workspace('w1'), workspace('w2')],
+    hiddenCount: 0,
   } as LearningProgress;
   expect(newlyFinishedWorkspaces(prev, next).map((w) => w.workspaceId)).toEqual(
     ['w1']

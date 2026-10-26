@@ -2,9 +2,6 @@ import {
   isApiError,
   isCreditsExhaustedError,
   isFileLimitError,
-  isInvalidLLMKeyError,
-  isLLMKeyError,
-  isLLMKeyFailedError,
   isModelUnavailableError,
   isProviderBusyError,
   isStorageQuotaError,
@@ -30,7 +27,6 @@ export type ErrorKind =
   | 'ingest'
   | 'model'
   | 'busy'
-  | 'llmKey'
   | 'validation'
   | 'sourceChanged'
   | 'server'
@@ -85,7 +81,6 @@ export function errorKind(error: unknown): ErrorKind {
   if (isTooManyIngestLeasesError(error)) return 'ingest';
   if (isModelUnavailableError(error)) return 'model';
   if (isProviderBusyError(error)) return 'busy';
-  if (isLLMKeyError(error)) return 'llmKey';
 
   if (isApiError(error)) {
     if (error.code === 'source_changed') return 'sourceChanged';
@@ -449,13 +444,6 @@ export function describeError(error: unknown): ErrorDescription {
         description: m.error_provider_busy_body(),
         title: m.error_provider_busy_title(),
       };
-    case 'llmKey':
-      return {
-        description: isInvalidLLMKeyError(error)
-          ? m.settings_llm_key_invalid()
-          : m.settings_llm_key_failed(),
-        title: m.error_llm_key_title(),
-      };
     case 'sourceChanged':
       return {
         action: 'retry',
@@ -575,27 +563,4 @@ export function deferStorageRefusal(error: unknown): boolean {
 
 export function toastKeyFor(error: unknown): string {
   return `error:${errorKind(error)}`;
-}
-
-/** Maps provider-key failures from HTTP or stream payloads onto the settings copy. */
-export function llmKeyUserMessage(error: unknown): string | null {
-  if (isInvalidLLMKeyError(error)) return m.settings_llm_key_invalid();
-  if (isLLMKeyFailedError(error)) return m.settings_llm_key_failed();
-  const text = error instanceof Error ? error.message : String(error ?? '');
-  const lower = text.toLowerCase();
-  if (
-    lower.includes('rejected this key') ||
-    lower.includes('invalid_key') ||
-    lower.includes('invalid_llm_key')
-  ) {
-    return m.settings_llm_key_invalid();
-  }
-  if (
-    lower.includes('double check if the key') ||
-    lower.includes('key_failed') ||
-    lower.includes('llm_key_failed')
-  ) {
-    return m.settings_llm_key_failed();
-  }
-  return null;
 }

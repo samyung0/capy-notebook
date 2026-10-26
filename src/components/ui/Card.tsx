@@ -20,6 +20,7 @@ const cardVariants = cva('flex flex-col items-stretch gap-2 p-5.5', {
       card: 'rounded-card',
       'card-lg': 'rounded-card-lg',
       'card-xl': 'rounded-card-xl',
+      flashcard: 'rounded-flashcard',
       none: 'rounded-none',
       panel: 'rounded-card-lg',
       row: 'rounded-button',

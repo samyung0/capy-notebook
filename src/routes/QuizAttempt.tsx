@@ -6,7 +6,7 @@ import {
   useRouter,
 } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useQuiz, useSubmitAttempt, useWorkspace } from '@/api/hooks';
+import { useQuiz, useWorkspace } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
 import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -21,6 +21,7 @@ import type { LearnerQuestion } from '@/features/questions/types';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { blockHomeCrumb } from '@/features/quizzes/crumbs';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
+import { useQuizRun } from '@/features/quizzes/quizRun';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -48,7 +49,7 @@ function Attempt({ quizId }: { quizId: string }) {
     errorBoundary: 'unlessMissing',
     fresh: true,
   });
-  const { mutateAsync: submit } = useSubmitAttempt({ errorToast: false });
+  const control = useQuizRun(quizId);
   // The questions follow the quiz's live room as editors change them (D9).
   const questions = useLiveQuizQuestions(
     quizId,
@@ -119,6 +120,7 @@ function Attempt({ quizId }: { quizId: string }) {
             </>
           )
         }
+        control={control}
         emptyAction={
           <Link
             className="mt-6 inline-flex"
@@ -132,14 +134,6 @@ function Attempt({ quizId }: { quizId: string }) {
           </Link>
         }
         frame={PagePanel}
-        grade={async (answers, startedAt) => {
-          const attempt = await submit({ answers, quizId, startedAt });
-          return {
-            awarded: attempt.correct,
-            max: attempt.total,
-            questions: attempt.questions,
-          };
-        }}
         inApp
         name={quiz.name}
         onBack={() =>

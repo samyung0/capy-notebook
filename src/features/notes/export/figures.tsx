@@ -7,7 +7,7 @@ import {
 import { PlotChart } from '@/components/charts/PlotChart';
 import type { ExportImage, Figure } from './render';
 
-// The classroom light theme's --chart-* (classroom.css).
+// The capy light theme's --chart-* (capy.css).
 const chartColors = [
   '#8c7bd9',
   '#ca6816',

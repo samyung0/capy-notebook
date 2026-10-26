@@ -365,7 +365,7 @@ function Choices({
 function Label({ all, text }: { all: string[]; text: string }) {
   if (all.length === 0) return <span />;
   return (
-    <span className="grid pr-1.5 font-bold md:pr-2">
+    <span className="grid pr-2.5 font-bold md:pr-3">
       {all.map((item) => (
         <span
           aria-hidden
@@ -388,10 +388,13 @@ export interface QuestionViewProps {
   questionNumber?: number;
   /** Returns grid items for the part row; an answer spans `col-[2/-1]`. */
   renderAnswer?: (part: QuestionPart | LearnerPart) => ReactNode;
+  /** A block as the caller draws it; `view` is the block as drawn here
+   * when it differs from a plain view (a gaps part's text with its fields). */
   renderBlock?: (
     block: QuestionBlock,
     index: number,
-    section: BlockSection
+    section: BlockSection,
+    view?: ReactNode
   ) => ReactNode;
   renderMarks?: (part: QuestionPart | LearnerPart) => ReactNode;
   review?: boolean;
@@ -466,7 +469,7 @@ export function QuestionView({
               merged ? { partId: question.parts[0].id } : {}
             )}
         </div>
-        <span className="@max-[36rem]/question:col-start-3 @max-[36rem]/question:row-start-1 flex items-center gap-1 whitespace-nowrap pl-1.5 text-fg-muted text-xs md:pl-2">
+        <span className="@max-[36rem]/question:col-start-3 @max-[36rem]/question:row-start-1 flex items-center gap-1 whitespace-nowrap pl-1.5 text-fg-muted text-sm md:pl-2">
           {headerMarks &&
             (lone && renderMarks
               ? renderMarks(question.parts[0])
@@ -527,7 +530,7 @@ export function QuestionView({
                 </div>
               )}
               {!lone && (
-                <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 pl-1.5 text-fg-muted text-xs md:pl-2">
+                <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 pl-1.5 text-fg-muted text-sm md:pl-2">
                   {renderMarks ? renderMarks(part) : `[${part.marks}]`}
                   {titleAside?.(part.id)}
                 </span>
@@ -563,7 +566,7 @@ export function QuestionView({
                               className="min-w-0 flex-1"
                               text={item.text}
                             />
-                            <span className="shrink-0 text-fg-muted text-xs">
+                            <span className="shrink-0 text-fg-muted text-sm">
                               [{item.marks}]
                             </span>
                           </li>
@@ -634,13 +637,13 @@ export function QuestionReview({
                       <li className="flex items-baseline gap-4" key={i}>
                         <TextView className="min-w-0 flex-1" text={item.text} />
                         {award == null ? (
-                          <span className="shrink-0 text-fg-muted text-xs">
+                          <span className="shrink-0 text-fg-muted text-sm">
                             [{item.marks}]
                           </span>
                         ) : (
                           <span
                             className={cn(
-                              'inline-flex shrink-0 items-center gap-1 font-semibold text-xs',
+                              'inline-flex shrink-0 items-center gap-1 font-semibold text-sm',
                               award === item.marks
                                 ? 'text-tint-success-fg'
                                 : award > 0

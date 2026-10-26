@@ -150,6 +150,11 @@ def make_handler(
         scope = await tools._resolve_scope(ctx, [file_id])
         if isinstance(scope, tools.ToolResult):
             return scope
+        # Production's refusal: an Office file has no page view (Q283).
+        if await production.office_file(ctx.workspace_id, file_id):
+            return tools._refused(
+                f"capture_page: {production.OFFICE_NO_PAGES}", code="unsupported_format"
+            )
         if cap["require_seen_page"] and not any(
             p.file_id == file_id
             and p.page_start
@@ -363,12 +368,17 @@ def check_pixels_capture() -> None:
     import asyncio
     import shutil
     import tempfile
+    from unittest.mock import AsyncMock, patch
 
     import pymupdf
+    from pipeline.retrieval import capture as production
     from pipeline.retrieval import tools
     from pipeline.retrieval.search import Passage
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        patch.object(production, "office_file", AsyncMock(return_value=False)),
+    ):
         pdf = Path(tmp) / "one.pdf"
         with pymupdf.open() as doc:
             doc.new_page(width=200, height=100).insert_text((20, 50), "hello")

@@ -94,7 +94,7 @@ func TestProviderSessionLocksWorkspaceBeforeAccount(t *testing.T) {
 	}
 	llm, embed := platformSessionRates()
 	holdWorkspaceThenAccount(t, s, ws.ID, userID, func(ctx context.Context) error {
-		_, err := s.BeginProviderSession(ctx, userID, ws.ID, SurfaceChat, models.PaidByPlatform, llm, embed, "")
+		_, err := s.BeginProviderSession(ctx, userID, ws.ID, SurfaceChat, llm, embed, "")
 		return err
 	})
 }

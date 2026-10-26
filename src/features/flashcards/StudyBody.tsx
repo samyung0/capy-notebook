@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { AttemptCard, PreviousAttempt, Provenance } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,7 @@ import {
   NoFrame,
   QuizPageHeader,
 } from '@/features/quizzes/QuizPageHeader';
+import { ResetButton } from '@/features/quizzes/ResetButton';
 import { attemptMinutes } from '@/features/study/attempts';
 import { StepNav } from '@/features/study/StepNav';
 import { StudyPosition } from '@/features/study/StudyPosition';
@@ -28,10 +29,35 @@ export interface StudyAttempt {
   startedAt: string;
 }
 
+/** A run so far, to resume: its cards in the order first rated with every
+ * rating, and the latest rating's time. */
+export interface FlashcardRun extends StudyAttempt {
+  cards: AttemptCard[];
+  takenAt: string;
+}
+
 const newAttempt = (): StudyAttempt => ({
   id: crypto.randomUUID(),
   startedAt: new Date().toISOString(),
 });
+
+/** Where a resumed run stands: the cards it rated are behind it (read only,
+ * with their latest rating), and ahead are the cards it has not rated in set
+ * order, then those whose latest rating is Again, as Again sends a card to
+ * the end. Skips are not recorded, so skipped cards come back unrated. */
+export function resumeSteps(ids: string[], cards: AttemptCard[]) {
+  const live = new Set(ids);
+  const rated = cards.filter((c) => live.has(c.id));
+  const seen = new Set(rated.map((c) => c.id));
+  const latest = (c: AttemptCard) => SRS_RATINGS[c.ratings.at(-1)! - 1];
+  return {
+    done: rated.map((c) => ({ key: c.id, record: latest(c) })),
+    queue: [
+      ...ids.filter((id) => !seen.has(id)),
+      ...rated.filter((c) => latest(c) === 'again').map((c) => c.id),
+    ],
+  };
+}
 
 /* Studying a flashcard set, shared by the app page and the public /share page.
    It knows no router or session: callers pass the frame, where ratings go and,
@@ -62,7 +88,9 @@ export function StudyBody({
   onBack,
   onFinished,
   onRate,
+  onRestart,
   provenance,
+  resume,
   usePrevious,
   trail,
 }: {
@@ -79,12 +107,18 @@ export function StudyBody({
   name: string;
   onBack?: () => void;
   onFinished?: (total: number) => void;
+  /** `run` is the run with this rating, for callers that keep it. */
   onRate: (
     card: FlashcardContent,
     rating: SrsRating,
-    attempt: StudyAttempt
+    attempt: StudyAttempt,
+    run: FlashcardRun
   ) => void;
+  /** Reset or Study again began a new run, e.g. to forget the kept one. */
+  onRestart?: () => void;
   provenance?: Provenance;
+  /** A run to continue, read once when the page opens. */
+  resume?: FlashcardRun;
   /** A recorded run's result reads the set's attempt before it (a hook: the
    * app reads the run's attempt back; share pages pass none). */
   usePrevious?: (attemptId: string) => PreviousAttempt | undefined;
@@ -92,10 +126,19 @@ export function StudyBody({
 }) {
   const Shell = frame ?? NoFrame;
   const [ids, setIds] = useState(() => studyIds(cards));
-  const [attempt, setAttempt] = useState(newAttempt);
+  const [start] = useState(() =>
+    resume ? resumeSteps(ids, resume.cards) : { done: [], queue: ids }
+  );
+  const [attempt, setAttempt] = useState<StudyAttempt>(() =>
+    resume ? { id: resume.id, startedAt: resume.startedAt } : newAttempt()
+  );
   // The run's cards in the order first rated, for its result.
-  const [rated, setRated] = useState<AttemptCard[]>([]);
-  const steps = useSteps<SrsRating>(ids);
+  const [rated, setRated] = useState<AttemptCard[]>(resume?.cards ?? []);
+  const [takenAt, setTakenAt] = useState(resume?.takenAt);
+  const steps = useSteps<SrsRating>(start.queue, { done: start.done });
+  // The steps a rating last answered: a second click before the page renders
+  // again (a double click) would rate the same card twice from them.
+  const answered = useRef<unknown>(null);
   const stack = useCardStack();
   const shown = steps.current;
   const card = shown && cards.find((c) => c.id === shown.key);
@@ -109,25 +152,31 @@ export function StudyBody({
   }, [cards]);
 
   function rate(rating: SrsRating) {
-    if (!card) return;
-    onRate(card, rating, attempt);
+    if (!card || answered.current === steps.steps) return;
+    answered.current = steps.steps;
     const n = SRS_RATINGS.indexOf(rating) + 1;
-    setRated((list) =>
-      list.some((c) => c.id === card.id)
-        ? list.map((c) =>
-            c.id === card.id ? { ...c, ratings: [...c.ratings, n] } : c
-          )
-        : [
-            ...list,
-            {
-              back: card.back,
-              front: card.front,
-              id: card.id,
-              image: card.image,
-              ratings: [n],
-            },
-          ]
-    );
+    const nextRated = rated.some((c) => c.id === card.id)
+      ? rated.map((c) =>
+          c.id === card.id ? { ...c, ratings: [...c.ratings, n] } : c
+        )
+      : [
+          ...rated,
+          {
+            back: card.back,
+            front: card.front,
+            id: card.id,
+            image: card.image,
+            ratings: [n],
+          },
+        ];
+    const now = new Date().toISOString();
+    onRate(card, rating, attempt, {
+      ...attempt,
+      cards: nextRated,
+      takenAt: now,
+    });
+    setRated(nextRated);
+    setTakenAt(now);
     const next = steps.answer(rating, { requeue: rating === 'again' });
     stack.move(card);
     if (!currentStep(next)) onFinished?.(ids.length);
@@ -151,15 +200,27 @@ export function StudyBody({
     stack.reset();
     setAttempt(newAttempt());
     setRated([]);
+    setTakenAt(undefined);
+    onRestart?.();
   }
 
   // The card's own place in the set, which stays put as it is skipped or
   // shown again.
   const position = card ? ids.indexOf(card.id) + 1 : 0;
   const total = ids.length;
+  // While studying, Reset sits at the far right once the run has a rating;
+  // the result has Study again instead.
+  const reset = !!card && rated.length > 0;
   const header = !embedded && (
     <QuizPageHeader
-      actions={actions}
+      actions={
+        (actions || reset) && (
+          <>
+            {actions}
+            {reset && <ResetButton onClick={studyAgain} />}
+          </>
+        )
+      }
       byline={byline}
       // Public pages have no label row, so the title sits higher.
       className={byline ? 'pt-4 sm:pt-2' : undefined}
@@ -179,6 +240,7 @@ export function StudyBody({
           <RunResult
             attempt={attempt}
             cards={rated}
+            takenAt={takenAt}
             usePrevious={usePrevious}
           />
           {/* Where a quiz result has Redo quiz, sized like it. */}
@@ -187,7 +249,7 @@ export function StudyBody({
               className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="refresh"
               onClick={studyAgain}
-              rounded="large"
+              rounded="normal"
               size="sm"
               variant="outline"
             >
@@ -229,7 +291,6 @@ export function StudyBody({
                   label={chapter}
                   onRate={rate}
                   rated={shown.record}
-                  size={embedded ? 'compact' : 'large'}
                   stack={stack}
                 />
               </div>
@@ -262,22 +323,27 @@ export function StudyBody({
   );
 }
 
-/** A finished run's result, timed to when it finished. */
+/** A finished run's result, timed to its last rating. */
 function RunResult({
   attempt,
   cards,
+  takenAt,
   usePrevious = () => undefined,
 }: {
   attempt: StudyAttempt;
   cards: AttemptCard[];
+  takenAt?: string;
   usePrevious?: (attemptId: string) => PreviousAttempt | undefined;
 }) {
-  const [takenAt] = useState(() => new Date().toISOString());
   const previous = usePrevious(attempt.id);
   return (
     <FlashcardResult
       cards={cards}
-      minutes={attemptMinutes({ startedAt: attempt.startedAt, takenAt })}
+      minutes={
+        takenAt
+          ? attemptMinutes({ startedAt: attempt.startedAt, takenAt })
+          : undefined
+      }
       previous={previous}
     />
   );

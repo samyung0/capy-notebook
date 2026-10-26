@@ -17,6 +17,8 @@ import {
 export type VoicePhase = 'idle' | 'starting' | 'recording' | 'pending';
 
 export interface VoiceInput {
+  /** The microphone's signal while recording, for VoiceWaveform. */
+  analyser: AnalyserNode | null;
   elapsedMs: number;
   /** The last failure, shown under the composer until the next recording. */
   error: string | null;
@@ -43,6 +45,7 @@ export function useVoiceInput(
   const [startedAt, setStartedAt] = useState(0);
   const [now, setNow] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const recording = useRef<Recording | null>(null);
   const live = useRef(false);
 
@@ -80,6 +83,7 @@ export function useVoiceInput(
         return;
       }
       recording.current = next;
+      setAnalyser(next.analyser);
       const at = Date.now();
       setStartedAt(at);
       setNow(at);
@@ -91,6 +95,7 @@ export function useVoiceInput(
   }
 
   return {
+    analyser: phase === 'recording' ? analyser : null,
     elapsedMs: Math.min(Math.max(now - startedAt, 0), VOICE_MAX_MS),
     error: micError ?? (error ? voiceErrorMessage(error) : null),
     phase: isPending ? 'pending' : phase,
@@ -102,71 +107,189 @@ export function useVoiceInput(
   };
 }
 
-/** The time a recording has run against the limit, with a pulsing dot. */
-export function VoiceElapsed({ elapsedMs }: { elapsedMs: number }) {
+/** Bar width and the step to the next bar (with the 3px gap), in px. */
+const WAVE_BAR = 2;
+const WAVE_STEP = 5;
+/** The tallest bar, in px. */
+const WAVE_HEIGHT = 22;
+/** A new bar this often; the strip slides one step meanwhile. */
+const WAVE_SAMPLE_MS = 80;
+/** Loudness in dB mapped onto the bar's height, on a curve that keeps
+ * syllables apart from pauses: room noise stays a dot and speech (about
+ * -25 dB after the browser's gain control) reaches about half. */
+const WAVE_FLOOR_DB = -55;
+const WAVE_CEILING_DB = -10;
+
+/** A level from 0 to 1 for a stretch of signal. */
+function inputLevel(samples: Float32Array) {
+  let sum = 0;
+  for (const sample of samples) sum += sample * sample;
+  const db = 10 * Math.log10(sum / samples.length || 1e-10);
+  const level = (db - WAVE_FLOOR_DB) / (WAVE_CEILING_DB - WAVE_FLOOR_DB);
+  return Math.min(1, Math.max(0, level)) ** 1.5;
+}
+
+function motionToken(name: string) {
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+}
+
+/**
+ * The input's levels as bars, newest on the right, sliding left as each one
+ * arrives and growing leftwards until they fill the space they are given.
+ * Each bar keeps the loudest frame since the last, so short syllables show.
+ * The bars are DOM nodes animated with the motion tokens: nothing in React
+ * re-renders while it records.
+ */
+export function VoiceWaveform({ analyser }: { analyser: AnalyserNode }) {
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const stripRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const box = boxRef.current;
+    const strip = stripRef.current;
+    if (!(box && strip)) return;
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const grow = {
+      duration: still
+        ? 0
+        : Number.parseFloat(motionToken('--motion-duration-quick')),
+      easing: motionToken('--motion-ease-smooth-out'),
+    };
+    const slide = {
+      duration: WAVE_SAMPLE_MS,
+      easing: motionToken('--motion-ease-linear'),
+    };
+    // One more bar than fits: the newest slides in from under the edge.
+    let capacity = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      capacity = Math.floor(entry.contentRect.width / WAVE_STEP) + 1;
+    });
+    observer.observe(box);
+    const samples = new Float32Array(analyser.fftSize);
+    let loudest = 0;
+    let addedAt = 0;
+    let frame = 0;
+    const tick = (time: number) => {
+      frame = requestAnimationFrame(tick);
+      analyser.getFloatTimeDomainData(samples);
+      loudest = Math.max(loudest, inputLevel(samples));
+      if (time - addedAt < WAVE_SAMPLE_MS) return;
+      addedAt = time;
+      const bar = document.createElement('span');
+      const height = `${Math.max(WAVE_BAR, loudest * WAVE_HEIGHT)}px`;
+      bar.style.height = height;
+      strip.append(bar);
+      bar.animate([{ height: `${WAVE_BAR}px` }, { height }], grow);
+      while (strip.childElementCount > capacity)
+        strip.firstElementChild?.remove();
+      if (!still)
+        strip.animate(
+          [{ transform: `translateX(${WAVE_STEP}px)` }, { transform: 'none' }],
+          slide
+        );
+      loudest = 0;
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      strip.replaceChildren();
+    };
+  }, [analyser]);
   return (
     <span
-      className="t-meta flex items-center gap-1.5 whitespace-nowrap text-fg-muted"
-      data-voice-elapsed
+      aria-hidden
+      className="mr-1 flex h-[22px] min-w-0 flex-1 items-center justify-end overflow-hidden"
+      ref={boxRef}
     >
       <span
-        aria-hidden
-        className="size-2 rounded-full bg-solid-error motion-safe:animate-pulse"
+        className="flex shrink-0 items-center gap-[3px] text-action-accent [&>span]:w-[2px] [&>span]:rounded-full [&>span]:bg-current"
+        ref={stripRef}
       />
-      {m.voice_elapsed({
-        elapsed: formatClock(elapsedMs),
-        limit: formatClock(VOICE_MAX_MS),
-      })}
     </span>
   );
 }
 
-/** The mic button, its icon filled purple while it records, with the elapsed
- * time beside it then (unless the caller shows VoiceElapsed elsewhere) and a
+/** The time a recording has run against the limit, with a pulsing dot, and
+ * the input's waveform filling the space before it when the caller has the
+ * signal. The time keeps the width of its widest value, so nothing beside it
+ * moves as it counts. */
+export function VoiceElapsed({
+  elapsedMs,
+  analyser = null,
+  className,
+}: {
+  elapsedMs: number;
+  analyser?: AnalyserNode | null;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        't-meta flex min-w-0 items-center gap-1.5 whitespace-nowrap text-fg-muted',
+        className
+      )}
+      data-voice-elapsed
+    >
+      {analyser && <VoiceWaveform analyser={analyser} />}
+      <span
+        aria-hidden
+        className="size-2 shrink-0 rounded-full bg-solid-error motion-safe:animate-pulse"
+      />
+      <span className="min-w-[5.4em] text-right">
+        {m.voice_elapsed({
+          elapsed: formatClock(elapsedMs),
+          limit: formatClock(VOICE_MAX_MS),
+        })}
+      </span>
+    </span>
+  );
+}
+
+/** The mic button, on a pale purple square while it records and with a
  * spinner while the clip is transcribed; the full composer and the chat dock
- * both show it. */
+ * both show it, and VoiceElapsed beside it while it records. */
 export function VoiceButton({
   phase,
-  elapsedMs,
   onToggle,
   onMouseDown,
-  elapsed = true,
-}: Pick<VoiceInput, 'phase' | 'elapsedMs'> & {
+  className,
+}: Pick<VoiceInput, 'phase'> & {
   onToggle: () => void;
   /** The dock keeps its field focused through a tap, as its Send does. */
   onMouseDown?: MouseEventHandler<HTMLButtonElement>;
-  /** False where the elapsed time has its own line (the dock). */
-  elapsed?: boolean;
+  /** Overrides the toolbar-sized box. */
+  className?: string;
 }) {
   const recording = phase === 'recording';
   const busy = phase === 'starting' || phase === 'pending';
   return (
-    <span className="flex shrink-0 items-center gap-2">
-      {recording && elapsed && <VoiceElapsed elapsedMs={elapsedMs} />}
-      <IconButton
-        aria-pressed={recording}
-        disabled={busy}
-        icon="microphone"
-        // While recording the mic's capsule (its first path) is filled.
-        iconClassName={cn(
-          busy && 'invisible',
-          recording && 'text-action-accent [&>path:first-child]:fill-current'
-        )}
-        label={
-          phase === 'pending'
-            ? m.voice_transcribing()
-            : recording
-              ? m.voice_stop()
-              : m.voice_record()
-        }
-        onClick={onToggle}
-        onMouseDown={onMouseDown}
-        size="toolbar"
-        tooltip
-        variant="ghost-hover"
-      >
-        {busy && <Spinner className="absolute size-4" />}
-      </IconButton>
-    </span>
+    <IconButton
+      aria-pressed={recording}
+      className={cn(
+        recording
+          ? 'bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
+          : 'text-fg-muted hover:text-fg',
+        className
+      )}
+      disabled={busy}
+      icon="microphone"
+      iconClassName={cn(busy && 'invisible')}
+      label={
+        phase === 'pending'
+          ? m.voice_transcribing()
+          : recording
+            ? m.voice_stop()
+            : m.voice_record()
+      }
+      onClick={onToggle}
+      onMouseDown={onMouseDown}
+      size="toolbar"
+      tooltip
+      variant="ghost-hover"
+    >
+      {busy && <Spinner className="absolute size-4" />}
+    </IconButton>
   );
 }

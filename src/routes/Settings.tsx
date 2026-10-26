@@ -2,7 +2,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useNotificationPrefs, useSetNotificationPrefs } from '@/api/hooks';
 import { PageHeader, PagePanel } from '@/components/app/layout';
-import { StyleIcon } from '@/components/app/ThemeDrawer';
+import { STYLE_LABELS, StyleIcon } from '@/components/app/ThemeDrawer';
 import {
   DangerZone,
   SettingRow,
@@ -54,9 +54,7 @@ function CustomizationsTab() {
                       dotClassName="size-1.5"
                       style={t.value}
                     />
-                    {t.value === 'classroom'
-                      ? m.theme_style_classroom()
-                      : m.theme_style_notion()}
+                    {STYLE_LABELS[t.value]()}
                   </span>
                 </SelectItem>
               ))}
@@ -223,7 +221,7 @@ export default function Settings() {
         ]}
         value={tab}
       />
-      <TabContent>
+      <TabContent narrow>
         {tab === 'customizations' ? (
           <CustomizationsTab />
         ) : tab === 'study' ? (

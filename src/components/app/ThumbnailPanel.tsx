@@ -113,7 +113,7 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
         small
           ? 'pv-small size-10 rounded-[9px]'
           : cn(
-              '@container rounded-[13px] bg-(--surface-canvas)',
+              '@container rounded-[calc(var(--radius-tile)-1px)] bg-(--surface-canvas)',
               dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
             ),
         // A recents row's bare kind icon sits without the tile.

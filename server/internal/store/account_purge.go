@@ -292,9 +292,6 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		WHERE payload->>'requestedBy'=$1`, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM user_llm_credentials WHERE user_id=$1`, userID); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(ctx, `DELETE FROM user_model_reasoning WHERE user_id=$1`, userID); err != nil {
 		return err
 	}

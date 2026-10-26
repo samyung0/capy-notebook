@@ -10,7 +10,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   durationBucket,
   failureReason,
@@ -22,6 +22,7 @@ import {
   trackItemCloned,
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
+import { dropOpen, type OpenKey, takeOpen } from '@/lib/sentOpens';
 import { emitSyncedCustomization } from '@/theme/customizationEvents';
 import { USE_MSW } from './auth';
 import { api, isApiError, qk } from './client';
@@ -44,12 +45,13 @@ import type {
   CalendarEvent,
   Chapter,
   ChatPrefs,
+  CheckQuizQuestionReq,
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResult,
   ContentOrderItem,
   Conversation,
-  CreateAttemptReq,
+  CreateBlankFileReq,
   CreateCommentReq,
   CreateDiscussionReq,
   CreateEmbeddedMaterialReq,
@@ -103,6 +105,7 @@ import type {
   PublicWorkspacePage,
   Quiz,
   RateReviewItemReq,
+  RecentPage,
   RequestAccountDeletionReq,
   RetryProcessingReq,
   ReviewOverview,
@@ -1053,6 +1056,84 @@ export function useDeleteWorkspace() {
   });
 }
 
+/** The lists a visit moves: workspaces always (the recent order), and the
+ * Member file and material lists and search when a visitor's workspace joins
+ * or leaves them (every mutation marks Recent stale, queryClient.ts). */
+function invalidateVisitLists(qc: QueryClient, visitor: boolean) {
+  void qc.invalidateQueries({ queryKey: ['workspaces'] });
+  if (!visitor) return;
+  void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+  void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+  void qc.invalidateQueries({ queryKey: ['search'] });
+}
+
+/** Notes an open of the workspace page, at most once per workspace per
+ * `OPEN_WINDOW_MS` from this browser (the server holds the same window). A
+ * visitor's open always sends: Forget on another device leaves this browser's
+ * window standing, and such opens are rare. Nothing to report: a failed send
+ * is dropped, so the next open sends again. */
+export function useVisitWorkspace() {
+  const qc = useQueryClient();
+  const { mutate } = useMutation({
+    meta: { errorToast: false },
+    mutationFn: ({ id }: { id: string; visitor: boolean }) =>
+      api.post<void>(`/workspaces/${id}/visit`),
+    onError: (_error, { id }) => dropOpen(`workspace:${id}`),
+    onSuccess: (_data, { visitor }) => invalidateVisitLists(qc, visitor),
+  });
+  return useCallback(
+    (visit: { id: string; visitor: boolean }) => {
+      if (takeOpen(`workspace:${visit.id}`) || visit.visitor) mutate(visit);
+    },
+    [mutate]
+  );
+}
+
+/** Forget: a workspace the caller reaches only as a visitor leaves their
+ * lists until they open it again. */
+export function useForgetWorkspace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/workspaces/${id}/visit`),
+    onSuccess: (_data, id) => {
+      dropOpen(`workspace:${id}`);
+      invalidateVisitLists(qc, true);
+    },
+  });
+}
+
+/** How many opens Recent Files and the quick open read (one shared list). */
+export const RECENT_LIMIT = 20;
+
+/** The dashboard's Recent Files and the phone quick open: the caller's
+ * newest opened (or created) files and materials they can still open, in
+ * open order, from any device. */
+export const recentQuery = () =>
+  queryOptions({
+    queryFn: () => api.get<RecentPage>(`/recent?limit=${RECENT_LIMIT}`),
+    queryKey: qk.recent,
+    ...persisted,
+  });
+
+/** Notes an open of a file or material in the centre pane, at most once per
+ * item per `OPEN_WINDOW_MS` from this browser (the server holds the same
+ * window). Nothing to report: a failed send is dropped, so the next open
+ * sends again. */
+export function useRecordOpen() {
+  const { mutate } = useMutation({
+    meta: { errorToast: false },
+    mutationFn: ({ kind, id }: { kind: 'file' | 'material'; id: string }) =>
+      api.post<void>(`/${kind === 'file' ? 'files' : 'materials'}/${id}/open`),
+    onError: (_error, { kind, id }) => dropOpen(`${kind}:${id}` as OpenKey),
+  });
+  return useCallback(
+    (open: { kind: 'file' | 'material'; id: string }) => {
+      if (takeOpen(`${open.kind}:${open.id}`)) mutate(open);
+    },
+    [mutate]
+  );
+}
+
 /* ---------------- chapters & files ---------------- */
 /** A presigned pair is read once, at fetch time, by whichever consumer mounts
  * it: nothing tracks expiresAt, nothing invalidates it, and neither focus nor
@@ -1236,13 +1317,6 @@ export function useDeleteEditorAsset() {
     },
   });
 }
-
-/** The dashboard recents: newest files across every workspace the caller is
- * a member of. The first page covers the card, which shows 20 items. */
-export const recentFilesQuery = () => ({
-  ...ownedFilesQuery({ scope: 'member' }),
-  ...persisted,
-});
 
 export function useUpdateFile(wsId: string) {
   const qc = useQueryClient();
@@ -1930,18 +2004,6 @@ export const useOwnedMaterials = (params: MaterialListParams = {}) =>
     ...ownedMaterialsQuery(params),
     placeholderData: keepPreviousData,
   });
-/** The dashboard recents: newest top-level materials of every kind across
- * member workspaces, plus the caller's standalone ones. */
-export const recentMaterialsQuery = () => ({
-  ...ownedMaterialsQuery({
-    kinds: ['note', 'quiz', 'flashcards', 'mindmap', 'diagram'],
-    locations: ['workspace', 'standalone'],
-    scope: 'member',
-    sort: 'created',
-  }),
-  ...persisted,
-});
-
 function invalidateOwnedMaterials(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
 }
@@ -1993,6 +2055,22 @@ export function useCloneFile(options?: MutationUiOptions) {
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       if (body.chapterName)
         qc.invalidateQueries({ queryKey: qk.chapters(file.workspaceId) });
+    },
+  });
+}
+
+/** The Create tab's Blank DOCX and Blank XLSX: a stored, unprocessed file
+ * the caller pays for. */
+export function useCreateBlankFile(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateBlankFileReq) =>
+      api.post<SourceFile>(`/workspaces/${wsId}/files/blank`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.files(wsId) });
+      qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+      qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
+      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
     },
   });
 }
@@ -2445,8 +2523,10 @@ export const useAttempts = (params: AttemptParams = {}) =>
     placeholderData: keepPreviousData,
   });
 
+// Persisted: the quiz page resumes its open attempt from it.
 export const attemptQuery = (id: string) =>
   queryOptions({
+    ...persisted,
     enabled: !!id,
     queryFn: () => api.get<AttemptDetail>(`/attempts/${id}`),
     queryKey: qk.attempt(id),
@@ -2506,14 +2586,18 @@ export function useDeleteQuiz() {
     },
   });
 }
-/** Submits the answers; the server grades every part, records the attempt
- * and returns it graded, with the key for each question. */
-export function useSubmitAttempt(options?: MutationUiOptions) {
+/** Checks one question of a quiz attempt: the server grades it, adds it to
+ * the attempt (a new one when `attemptId` is missing or unknown) and returns
+ * the attempt so far, with the key for each checked question. */
+export function useCheckQuizQuestion(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
-    mutationFn: ({ quizId, ...body }: CreateAttemptReq & { quizId: string }) =>
-      api.post<AttemptDetail>(`/quizzes/${quizId}/attempts`, body),
+    mutationFn: ({
+      quizId,
+      ...body
+    }: CheckQuizQuestionReq & { quizId: string }) =>
+      api.post<AttemptDetail>(`/quizzes/${quizId}/check`, body),
     onSuccess: (attempt) => {
       // An embedded quiz records nothing: its attempt comes back without an id.
       if (!attempt.id) return;
@@ -2582,6 +2666,24 @@ export const useWorkspaceStudy = (
 ) =>
   useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
 
+/** The workspace's summary with its review parts (Reviewable, Quick review,
+ * Continue review) drawn from one of the user's plans kept in it. */
+export const usePlanStudy = (
+  workspaceId: string,
+  planId: string | undefined,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    ...persisted,
+    enabled: !!planId,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<StudySummary>(
+        `/workspaces/${workspaceId}/study${listSearch({ planId }, '')}`
+      ),
+    queryKey: qk.planStudy(workspaceId, planId ?? ''),
+  });
+
 /** Each quiz's and set's attempt count and latest attempts in a workspace,
  * for the Study progress page; refreshed with the Study tab. */
 export const workspaceAttemptsQuery = (workspaceId: string) =>
@@ -2608,14 +2710,15 @@ export function invalidateStudy(
   workspaceId?: string
 ) {
   // qk.study and qk.workspaceReview: ['workspace', id, 'study' | 'review'];
-  // every workspace's plans, since a plan counts steps in other workspaces.
+  // every workspace's plans and plan summaries, since a plan counts steps
+  // and draws review items from other workspaces.
   return Promise.all([
     qc.invalidateQueries({
       predicate: ({ queryKey: [scope, id, kind, part] }) =>
         scope === 'workspace' &&
         (((!workspaceId || id === workspaceId) &&
           (kind === 'study' || kind === 'review')) ||
-          (kind === 'study' && part === 'plans')),
+          (kind === 'study' && (part === 'plans' || part === 'plan'))),
     }),
     qc.invalidateQueries({ queryKey: qk.reviewRoot }),
     qc.invalidateQueries({ queryKey: qk.learningRoot }),
@@ -2800,6 +2903,7 @@ export const useLearningProgress = (
 /** Plans kept in a workspace, then the user's plans elsewhere with a step in it. */
 export const workspacePlansQuery = (workspaceId: string) =>
   queryOptions({
+    ...persisted,
     queryFn: () =>
       api.get<StudyPlans>(`/workspaces/${workspaceId}/study/plans`),
     queryKey: qk.studyPlans(workspaceId),
@@ -2821,8 +2925,11 @@ export const useLearningPlans = (options?: QueryUiOptions) =>
 const invalidatePlans = (qc: QueryClient) =>
   Promise.all([
     qc.invalidateQueries({
+      // The plans, and each plan's review parts its steps feed.
       predicate: ({ queryKey: [scope, , kind, part] }) =>
-        scope === 'workspace' && kind === 'study' && part === 'plans',
+        scope === 'workspace' &&
+        kind === 'study' &&
+        (part === 'plans' || part === 'plan'),
     }),
     qc.invalidateQueries({ queryKey: qk.learningPlans }),
   ]);
@@ -2857,7 +2964,8 @@ export function useUpdateStudyPlan(workspaceId: string) {
           ...list,
           plans: list.plans.map((p) => {
             if (p.id !== id) return p;
-            // Steps keep their shown titles; new ones show once refetched.
+            // Held steps keep their titles; new ones are in the list at once
+            // (a save before the refetch must keep them) and get theirs then.
             const held = new Map(
               p.steps.map((st) => [stepKey(st), st] as const)
             );
@@ -2865,7 +2973,14 @@ export function useUpdateStudyPlan(workspaceId: string) {
               ...p,
               name: name ?? p.name,
               steps: steps
-                ? steps.flatMap((st) => held.get(stepKey(st)) ?? [])
+                ? steps.map(
+                    (st) =>
+                      held.get(stepKey(st)) ?? {
+                        ...st,
+                        locked: false,
+                        title: '',
+                      }
+                  )
                 : p.steps,
             };
           }),
@@ -2880,7 +2995,7 @@ export function useUpdateStudyPlan(workspaceId: string) {
 
 /** One identity per step target, the server's uniqueness. */
 export const stepKey = (st: PlanStepInput) =>
-  `${st.kind}:${st.workspaceId}:${st.targetId ?? ''}`;
+  `${st.kind}:${st.workspaceId}:${st.targetId}`;
 
 export function useDeleteStudyPlan() {
   const qc = useQueryClient();

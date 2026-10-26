@@ -143,7 +143,7 @@ func TestWorkspaceIconPersistsAndClonesWithMemberPermissions(t *testing.T) {
 	if !strings.HasPrefix(ws.IconID, "waves-") || !ValidIconID(ws.IconID) {
 		t.Fatalf("invalid default %s", ws.IconID)
 	}
-	loaded, err := s.GetWorkspace(ctx, owner, ws.ID, false)
+	loaded, err := s.GetWorkspace(ctx, owner, ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

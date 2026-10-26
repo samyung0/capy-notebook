@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { captchaCopy, isAnonymousGradingLimit } from '@/api/anonymous';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
@@ -24,8 +25,7 @@ import { scoreBucket, track } from '@/lib/analytics';
 import { toastSignInRequired } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
-import type { Answer } from './grade';
-import { isAnswered } from './QuestionRunner';
+import { type Answer, runScore } from './grade';
 import { QuizQuestionList, QuizScore, quizMeta } from './QuizPage';
 import {
   type Crumb,
@@ -33,6 +33,8 @@ import {
   NoFrame,
   QuizPageHeader,
 } from './QuizPageHeader';
+import type { QuizRunControl } from './quizRun';
+import { ResetButton } from './ResetButton';
 
 /* Taking a quiz, shared by the app page and the public /share page. It knows
    no router or session: callers pass the frame, the top bar and how to grade. */
@@ -81,33 +83,31 @@ const EmbeddedBody = ({ children }: { children: ReactNode }) => (
 const WideBody = ({ children }: { children: ReactNode }) => (
   <TabContent fill>{children}</TabContent>
 );
-/** An attempt graded on the server: its questions with their keys and each
- * part's award, and the marks over the quiz's total. */
-export type Graded = { questions: Question[]; awarded: number; max: number };
-
 export function AttemptBody({
   actions,
-  belowSubmit,
+  belowCheck,
   byline,
+  control,
   embedded,
   emptyAction,
   footer,
   frame,
-  grade,
   name,
   onBack,
-  onGraded,
   provenance,
   questions,
   inApp = false,
   trail,
 }: {
   actions?: ReactNode;
-  /** Under Submit while taking the quiz: the shared pages' Turnstile
-   * challenge (Q372). */
-  belowSubmit?: ReactNode;
+  /** Under the Check last clicked while taking the quiz: the shared pages'
+   * Turnstile challenge (Q372). */
+  belowCheck?: ReactNode;
   /** The owner, on shared links. */
   byline?: ReactNode;
+  /** The try in progress and how a question is checked: on the account,
+   * in this browser or only on the page (quizRun.ts). */
+  control: QuizRunControl;
   /** Inside a note: no header, frame or page padding; the note around it
    * names nothing, so the quiz starts at its first question. */
   embedded?: boolean;
@@ -117,15 +117,10 @@ export function AttemptBody({
   /** The surrounding panel; the result view remounts it to open at the top.
    * Embedded quizzes have none. */
   frame?: Frame;
-  /** Grades every part on the server; signed in, this also records the attempt. */
-  /** `startedAt` is when this try began, for the minutes a result shows. */
-  grade: (answers: Answers, startedAt: string) => Promise<Graded>;
   name: string;
   onBack?: () => void;
-  /** After grading, e.g. to keep a signed-out attempt in this browser. */
-  onGraded?: (answers: Answers, graded: Graded) => void;
   provenance?: Provenance;
-  /** Answer-free: the key arrives with the graded attempt. */
+  /** Answer-free: each key arrives with its checked question. */
   questions: (Question | LearnerQuestion)[];
   /** The app's page. Public pages leave it off: their ⋮ stays on every state
    * and the title sits higher, with no label row above it. */
@@ -134,15 +129,22 @@ export function AttemptBody({
 }) {
   const Shell = frame ?? NoFrame;
   const Body = embedded ? EmbeddedBody : WideBody;
-  const [answers, setAnswers] = useState<Answers>({});
-  const [startedAt, setStartedAt] = useState(() => new Date().toISOString());
-  const [graded, setGraded] = useState<Graded | null>(null);
-  const [minutes, setMinutes] = useState<string>();
-  const [grading, setGrading] = useState(false);
+  const { run, check, redo } = control;
+  // Answers typed into questions not yet checked; a checked question shows
+  // the answers it was checked with.
+  const [drafts, setDrafts] = useState<Answers>({});
+  // The question being checked: one at a time, so each check builds on the
+  // run the page shows.
+  const [checking, setChecking] = useState<string | null>(null);
+  // Where belowCheck renders: under the Check clicked last, which keeps a
+  // challenge or a captcha refusal under it after the check ends.
+  const [lastChecked, setLastChecked] = useState<string | null>(null);
   const [checkError, setCheckError] = useState<string>();
+  // Confetti greets a try finished here, not one reopened finished.
+  const [celebrate, setCelebrate] = useState(false);
   const setAnswer = useCallback(
     (partId: string, value: Answer) =>
-      setAnswers((current) => ({ ...current, [partId]: value })),
+      setDrafts((current) => ({ ...current, [partId]: value })),
     []
   );
   // Questions update live under the learner (D9): answers that no longer
@@ -161,7 +163,7 @@ export function AttemptBody({
     const before = previousParts.current;
     previousParts.current = partsById;
     if (before === partsById) return;
-    setAnswers((current) => {
+    setDrafts((current) => {
       const kept = Object.fromEntries(
         Object.entries(current).filter(([id, value]) => {
           const was = before.get(id);
@@ -175,20 +177,63 @@ export function AttemptBody({
     });
   }, [partsById]);
 
+  const checkedById = useMemo(
+    () => new Map(run.checked.map((q) => [q.id, q] as const)),
+    [run.checked]
+  );
+  const shown = questions.map((q) => checkedById.get(q.id) ?? q);
+  const checkedCount = questions.filter((q) => checkedById.has(q.id)).length;
+  const finished = questions.length > 0 && checkedCount === questions.length;
+  const { awarded, max } = runScore(questions, run.checked);
+
+  // The try finishes with the check of its last question, not on a page
+  // that opens it already finished.
+  const finishedByCheck = useRef(false);
+  useEffect(() => {
+    if (!finished || !finishedByCheck.current) return;
+    finishedByCheck.current = false;
+    setCelebrate(true);
+    const pct = max > 0 ? (awarded / max) * 100 : 0;
+    track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
+  }, [finished, awarded, max]);
+
+  function restart() {
+    setDrafts({});
+    setCelebrate(false);
+    redo();
+  }
+
   // Public pages keep their ⋮ on every state; the app page shows Clone only
-  // while taking the quiz.
-  const header = (headerActions = inApp ? undefined : actions) =>
-    !embedded && (
-      <QuizPageHeader
-        actions={headerActions}
-        byline={byline}
-        className={inApp ? undefined : 'pt-4 sm:pt-2'}
-        meta={quizMeta(questions)}
-        onBack={onBack}
-        title={name}
-        trail={trail}
-      />
+  // while taking the quiz. While taking it, Reset sits at the far right once
+  // a question is checked; the result has Redo quiz instead.
+  const header = (
+    headerActions = inApp ? undefined : actions,
+    taking = false
+  ) => {
+    const reset = taking && run.checked.length > 0;
+    return (
+      !embedded && (
+        <QuizPageHeader
+          actions={
+            (headerActions || reset) && (
+              <>
+                {headerActions}
+                {reset && (
+                  <ResetButton disabled={checking !== null} onClick={restart} />
+                )}
+              </>
+            )
+          }
+          byline={byline}
+          className={inApp ? undefined : 'pt-4 sm:pt-2'}
+          meta={quizMeta(questions)}
+          onBack={onBack}
+          title={name}
+          trail={trail}
+        />
+      )
     );
+  };
 
   if (!questions.length) {
     return (
@@ -201,19 +246,23 @@ export function AttemptBody({
     );
   }
 
-  async function finish() {
-    setGrading(true);
-    setCheckError(undefined);
+  async function checkQuestion(question: Question | LearnerQuestion) {
+    const own = new Set(question.parts.map((part) => part.id));
+    const answers = Object.fromEntries(
+      Object.entries(drafts).filter(([id]) => own.has(id))
+    );
+    // Committed now, so a signed-out check finds its Turnstile slot under
+    // this Check when it asks for a token.
+    flushSync(() => {
+      setChecking(question.id);
+      setLastChecked(question.id);
+      setCheckError(undefined);
+    });
     try {
-      const result = await grade(answers, startedAt);
-      const pct = result.max > 0 ? (result.awarded / result.max) * 100 : 0;
-      track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
-      setMinutes(
-        attemptMinutes({ startedAt, takenAt: new Date().toISOString() })
-      );
-      setGraded(result);
-      onGraded?.(answers, result);
+      finishedByCheck.current = checkedCount === questions.length - 1;
+      await check(question.id, answers);
     } catch (err) {
+      finishedByCheck.current = false;
       const captcha = captchaCopy(err);
       if (captcha) {
         setCheckError(captcha);
@@ -232,11 +281,13 @@ export function AttemptBody({
         variant: 'error',
       });
     } finally {
-      setGrading(false);
+      setChecking(null);
     }
   }
 
-  if (graded) {
+  const answers = { ...drafts, ...run.answers };
+
+  if (finished) {
     return (
       // A fresh panel so the result opens at the top, not at the quiz's scroll.
       <Shell header={header()} key="result">
@@ -245,18 +296,25 @@ export function AttemptBody({
               shows its own result. */}
           {!embedded && (
             <QuizScore
-              awarded={graded.awarded}
-              confetti
-              max={graded.max}
-              minutes={minutes}
-              questions={graded.questions}
+              awarded={awarded}
+              confetti={celebrate}
+              max={max}
+              minutes={
+                run.takenAt
+                  ? attemptMinutes({
+                      startedAt: run.startedAt,
+                      takenAt: run.takenAt,
+                    })
+                  : undefined
+              }
+              questions={shown as Question[]}
             />
           )}
           <QuizQuestionList
             answers={answers}
             className={cn(embedded ? 'gap-10' : 'mt-12')}
             credits={provenance?.questions}
-            questions={graded.questions}
+            questions={shown}
             review
           />
           {/* Sized like the quiz editor's Edit and Remove. */}
@@ -264,12 +322,8 @@ export function AttemptBody({
             <Button
               className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="refresh"
-              onClick={() => {
-                setAnswers({});
-                setGraded(null);
-                setStartedAt(new Date().toISOString());
-              }}
-              rounded="large"
+              onClick={restart}
+              rounded="normal"
               size="sm"
               variant="outline"
             >
@@ -286,49 +340,54 @@ export function AttemptBody({
     );
   }
 
-  const parts = questions.flatMap(
-    (q): (QuestionPart | LearnerPart)[] => q.parts
-  );
-  // An ordering part always counts: its shown order is the answer, and the
-  // shown order may already be the right one.
-  const answered = parts.filter(
-    (part) => part.answer.type === 'ordering' || isAnswered(answers[part.id])
-  ).length;
-
   return (
-    <Shell header={header(actions)}>
+    <Shell header={header(actions, true)}>
       <Body>
         <QuizQuestionList
           answers={answers}
           className={cn(embedded && 'gap-10')}
           credits={provenance?.questions}
+          disabled={(question) => checking === question.id}
           onChange={setAnswer}
-          questions={questions}
+          questions={shown}
+          renderAfter={(question) =>
+            !checkedById.has(question.id) && (
+              <div>
+                <div className="flex justify-end">
+                  {/* Sized like the review session's Check. */}
+                  <Button
+                    className="h-9 px-3.5"
+                    disabled={checking !== null}
+                    onClick={() => void checkQuestion(question)}
+                    rounded="normal"
+                    size="sm"
+                  >
+                    {checking === question.id
+                      ? m.quiz_grading()
+                      : m.question_ui_check()}
+                  </Button>
+                </div>
+                {lastChecked === question.id && (
+                  <>
+                    {belowCheck}
+                    {checkError && (
+                      <InputError className="mt-2 justify-end">
+                        {checkError}
+                      </InputError>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          }
+          review={(question) => checkedById.has(question.id)}
         />
-        {/* Inside a note Submit is a small accent button beside the count,
-            sized like the flashcards' Previous and Next. */}
-        <div
-          className={cn(
-            'mt-12',
-            embedded ? 'flex items-center justify-between gap-3' : 'grid gap-3'
-          )}
-        >
-          <p className="t-meta text-fg-muted">
-            {m.quiz_answered_count({ answered, total: parts.length })}
-          </p>
-          <Button
-            disabled={grading}
-            fullWidth={!embedded}
-            onClick={() => void finish()}
-            rounded={embedded ? undefined : 'large'}
-            size={embedded ? 'sm' : 'lg'}
-            variant={embedded ? 'accent' : 'dark'}
-          >
-            {grading ? m.quiz_grading() : m.quiz_submit()}
-          </Button>
-        </div>
-        {belowSubmit}
-        {checkError && <InputError className="mt-2">{checkError}</InputError>}
+        <p className="t-meta mt-12 text-fg-muted">
+          {m.quiz_checked_count({
+            checked: checkedCount,
+            total: questions.length,
+          })}
+        </p>
         {footer}
         <SourcesLine
           className={embedded ? 'mt-3' : 'mt-16 pb-4'}

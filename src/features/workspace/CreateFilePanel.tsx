@@ -1,6 +1,13 @@
 import { useState } from 'react';
-import { useCreateMaterial, useMaterials, useWorkspace } from '@/api/hooks';
-import type { Material, MaterialKind } from '@/api/types';
+import {
+  useCreateBlankFile,
+  useCreateMaterial,
+  useFiles,
+  useMaterials,
+  useWorkspace,
+} from '@/api/hooks';
+import type { Material, SourceFile } from '@/api/types';
+import { PreviewCard } from '@/components/app/PreviewCard';
 import { Button } from '@/components/ui/Button';
 import { DialogFooter, DialogPrimary } from '@/components/ui/Dialog';
 import type { FileIconName } from '@/components/ui/FileIcon';
@@ -15,10 +22,10 @@ import type { OpenItem } from '@/features/materials/openItem';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
-import { FileKindGrid, FileKindTile } from './FileKindTile';
 import { nextGenerateTitle } from './generateTitle';
+import { TEMPLATE_THUMBNAILS } from './templatePreviews';
 
-type CreateKind = MaterialKind | 'docx' | 'xlsx' | 'csv' | 'pptx';
+type CreateKind = keyof typeof TEMPLATE_THUMBNAILS;
 
 // Office files say Blank so templates can sit beside them later.
 const SECTIONS: {
@@ -41,11 +48,7 @@ const SECTIONS: {
         kind: 'flashcards',
         label: m.generate_flashcards,
       },
-      {
-        icon: materialIconName('mindmap'),
-        kind: 'mindmap',
-        label: m.generate_kind_mindmap,
-      },
+      // Mindmap is hidden until it has a starter source (Epo 2026-10-25).
       {
         icon: materialIconName('diagram'),
         kind: 'diagram',
@@ -65,25 +68,12 @@ const SECTIONS: {
     label: m.source_create_section_spreadsheets,
     tiles: [
       { icon: 'ms-excel', kind: 'xlsx', label: m.source_create_blank_xlsx },
-      { icon: 'csv', kind: 'csv', label: m.source_create_blank_csv },
     ],
   },
-  {
-    id: 'presentations',
-    label: m.source_create_section_presentations,
-    tiles: [
-      {
-        icon: 'ms-powerpoint',
-        kind: 'pptx',
-        label: m.source_create_blank_pptx,
-      },
-    ],
-  },
+  // CSV and PPTX are hidden until the Office engine has starters for them.
 ];
 
 // Kinds whose document must hold their own element start from these.
-// ponytail: mindmap and the office blanks wait on Epo's call for starter
-// content and blank file bytes; their tiles show but cannot create yet.
 const STARTERS = {
   // Same starter as the editor's diagram block.
   diagram: () => ({
@@ -96,7 +86,28 @@ const STARTERS = {
 const hasStarter = (kind: CreateKind): kind is keyof typeof STARTERS =>
   kind in STARTERS;
 
-/** The Add file dialog's Create tab: pick a kind, then create and open it. */
+/** Blank Office files come from the Office engine's starter (the server's
+ * blank file route); their names count up like Generate's titles. */
+const BLANK_NAMES = {
+  docx: m.create_blank_docx_name,
+  xlsx: m.create_blank_xlsx_name,
+};
+const isBlankOffice = (kind: CreateKind): kind is keyof typeof BLANK_NAMES =>
+  kind in BLANK_NAMES;
+
+function nextBlankName(
+  format: keyof typeof BLANK_NAMES,
+  files: SourceFile[]
+): string {
+  const taken = new Set(files.map((file) => file.name.toLowerCase()));
+  const base = BLANK_NAMES[format]();
+  let n = 1;
+  while (taken.has(`${base} ${n}.${format}`.toLowerCase())) n++;
+  return `${base} ${n}`;
+}
+
+/** The Add file dialog's Create tab: pick a template card, then create and
+ * open it. */
 export function CreateFilePanel({
   workspaceId,
   onCreated,
@@ -111,11 +122,17 @@ export function CreateFilePanel({
   const { data: materials } = useMaterials(workspaceId, {
     errorBoundary: false,
   });
-  const { mutate: createMaterial, isPending } = useCreateMaterial(workspaceId);
+  const { data: files } = useFiles(workspaceId, { errorBoundary: false });
+  const { mutate: createMaterial, isPending: materialPending } =
+    useCreateMaterial(workspaceId);
+  const { mutate: createBlank, isPending: blankPending } =
+    useCreateBlankFile(workspaceId);
 
   const canCreate =
-    !isPending &&
-    (selected === 'note' || (selected !== null && hasStarter(selected)));
+    !materialPending &&
+    !blankPending &&
+    selected !== null &&
+    (selected === 'note' || hasStarter(selected) || isBlankOffice(selected));
 
   function create() {
     const open = {
@@ -123,7 +140,12 @@ export function CreateFilePanel({
         onCreated({ id: material.id, kind: 'material' }),
     };
     if (selected === 'note') createMaterial({ kind: 'note' }, open);
-    else if (selected && hasStarter(selected)) {
+    else if (selected && isBlankOffice(selected)) {
+      createBlank(
+        { format: selected, name: nextBlankName(selected, files ?? []) },
+        { onSuccess: (file) => onCreated({ id: file.id, kind: 'file' }) }
+      );
+    } else if (selected && hasStarter(selected)) {
       createMaterial(
         {
           content: createMaterialDocument([STARTERS[selected]()]),
@@ -148,17 +170,18 @@ export function CreateFilePanel({
         nav={false}
         sections={SECTIONS.map((section) => ({
           content: (
-            <FileKindGrid>
+            <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
               {section.tiles.map((tile) => (
-                <FileKindTile
+                <PreviewCard
                   icon={tile.icon}
                   key={tile.kind}
-                  label={tile.label()}
                   onClick={() => setSelected(tile.kind)}
                   selected={selected === tile.kind}
+                  thumbnail={TEMPLATE_THUMBNAILS[tile.kind]()}
+                  title={tile.label()}
                 />
               ))}
-            </FileKindGrid>
+            </div>
           ),
           id: section.id,
           label: section.label(),
