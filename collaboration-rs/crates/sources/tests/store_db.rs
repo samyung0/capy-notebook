@@ -1404,6 +1404,8 @@ async fn the_uat_hold_holds_a_text_publication_and_keeps_the_save_made_meanwhile
     let published = h.fake.published.lock().unwrap().clone();
     assert_eq!(published.len(), 1, "{published:?}");
     assert_eq!(published[0]["expectedLatestCheckpoint"], 2);
-    assert_eq!(published[0]["pendingEffects"][0]["after"], " three");
+    // The residual is the changed line against the published text (Q416).
+    assert_eq!(published[0]["pendingEffects"][0]["before"], "one two");
+    assert_eq!(published[0]["pendingEffects"][0]["after"], "one two three");
     assert!(published[0]["netTokens"].as_i64().unwrap() > 0);
 }
