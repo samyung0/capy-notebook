@@ -644,6 +644,20 @@ describe('lineage', () => {
     expect(kept.current.map((row) => row.id)).toEqual(['dead:1', 'dead:3']);
   });
 
+  // Q229: a note's copy row holds JSON, not Yjs; applying it as an update
+  // would throw. Fails if draftGroups takes it.
+  it("leaves a note's copy rows to their own reader", async () => {
+    const copy = draft('s:copy', {
+      data: new TextEncoder().encode('{"base":[],"mine":[]}'),
+      kind: 'copy',
+    });
+    const refusedCopy = draft('r:copy', { kind: 'copy', refused: true });
+    const live = draft('live', { accepted: true });
+    const opened = await draftGroups([copy, refusedCopy, live], ROOM);
+    expect(opened.current.map((row) => row.id)).toEqual(['live']);
+    expect(opened.recovery).toEqual([]);
+  });
+
   it('drops an expired group it opened, reporting its bytes', async () => {
     const key = 'u_expired:material:mat_1';
     const rows = [draft('gone', { data: new Uint8Array([1, 2, 3]), key })];
@@ -1573,6 +1587,29 @@ describe('the draft sweep sending', () => {
     Y.applyUpdate(doc, requests[0].body);
     expect(doc.getText('content').toString()).toBe('base typed');
     expect((await readDrafts(key)).map((row) => row.id)).toEqual(['old:state']);
+  });
+
+  // Q229: a note's copy edited before its room joined merges in its editor
+  // only. Fails if the sweep sends it with the Yjs rows.
+  it("never sends a note's copy rows, and keeps them for the editor", async () => {
+    const key = 'u_copy:material:mat_1';
+    await putDrafts([
+      draft('c:copy', {
+        data: new TextEncoder().encode('{"base":[],"mine":[]}'),
+        key,
+        kind: 'copy',
+        session: 'c',
+      }),
+    ]);
+    await leftRows(key);
+    requests.length = 0;
+    storeNext();
+    await sweepDrafts('u_copy', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, requests[0].body);
+    expect(doc.getText('content').toString()).toBe('base typed');
+    expect((await readDrafts(key)).map((row) => row.id)).toEqual(['c:copy']);
   });
 
   it('skips a document an editor has open, and sends it once the editor closed', async () => {

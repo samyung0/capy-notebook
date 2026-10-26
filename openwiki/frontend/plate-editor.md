@@ -1195,8 +1195,11 @@ room's first sync (`roomBinding.ts`, CAPY-WEB-7). Plate's init binds after
 waiting at most 5 s; bound to a document the room had not filled, the editor
 showed it empty and kept a paragraph the document never got, which broke
 every later Yjs mapping. Until it binds, an editor painted early (red because
-its join ran out first) shows the projection. Binding replaces that tree and
-keeps a caret placed on it by block id where its text still exists, else
+its join ran out first, or offline with no earlier sync on the device) shows
+the saved copy, editable (Epo 2026-10-24, Q229): the projection, or the
+newest copy this device kept. Binding replaces that tree, merges what was
+typed into the copy (see [the editable saved copy](#the-editable-saved-copy)),
+then keeps a caret placed on it by block id where its text still exists, else
 drops it; history maps the selection onto the room only once bound (the
 @slate-yjs/core patch).
 Item rooms (quizzes, flashcard sets, standalone diagrams and mindmaps) have
@@ -2156,6 +2159,45 @@ save-delay warning and each offline episode (after the reconnect) are
 reported as editing incidents; the service records its discards, refusals and
 lineage moves itself (see
 [observability](../observability-metering.md#editing-incidents)).
+
+### The editable saved copy
+
+Epo decided on 2026-10-24 (Q229) that a note shown from its saved copy
+before its room joins stays editable. Its edits are not Yjs edits (the
+editor is not bound), so they are kept apart, merged by block id when the
+room joins (`src/features/notes/merge/`):
+
+- **The copy row.** While the editor is unbound, each value change records
+  the edited tree, written at most once a second and at once at `pagehide`,
+  a pause or unmount (`recordCopy`), as one `copy` row of the draft store:
+  JSON holding the tree the copy started from (`base`, the projection, with
+  its `revision`), and the edited tree (`mine`). No Yjs reader takes a copy
+  row (`yjsRow`: `draftGroups`, the sweep), the 7-day expiry applies to it
+  from when it was written, the load sweep's lost-document delete takes it,
+  and a read-only room or lost access discards it with the other unsaved
+  edits. A reopened note shows the newest copy's `mine` before its room joins
+  and goes on with that row (same id, a higher `seq`); older copies (another
+  tab's) merge first (`noteCopies`).
+- **The merge** (`mergeBlocks`, pure). At the bind (`whenBound` in
+  `roomBinding.ts`) the editor compares, by top-level block id, the copy's
+  base, its edited tree and the room's tree; a block counts with everything
+  nested in it. A block only the copy changed (edited, inserted, deleted,
+  moved) is applied to the room's tree as ordinary Slate edits on the bound
+  editor (`applyMergeSteps`: a same-type block keeps its element and gets its
+  attributes and children replaced, another type is replaced at its index
+  keeping its id; inserts and moves go after the previous block of the copy
+  the room still holds, else at the start), one local transaction and one
+  Undo step under the session's id (`asOneStep`), so it syncs and saves as
+  any edit and the editor asks for a receipt at once. A block only the room
+  changed, or neither, stays as the room has it; one both moved keeps the
+  room's place. A block both changed differently is a conflict: the room's
+  version stays, and the copy's version (when the copy did not delete it) is
+  kept as one `refused` copy row, which the editor remounts to show copy-only
+  under the `conflict` banner (until the merge view, Q229). Blocks without an
+  id match by content; their deletion cannot be placed. The merge reads the
+  room's tree in the same task it applies, so a block changed meanwhile is
+  never overwritten (first applied wins; no lock). A merge that throws is
+  reported to Sentry (`note-copy-merge`) and the rows stay for the next open.
 
 ### Sending drafts without the editor open
 
@@ -3241,7 +3283,9 @@ validation and are not rendered.
   not Redis fan-out.
 - Broadcasts merge over 30 ms windows (`flushDelay`), and a note editor
   publishes its cursor at most once per 50 ms
-  (`src/features/notes/cursorThrottle.ts`).
+  (`src/features/notes/cursorThrottle.ts`); a send that waited sends the
+  selection as it is then, and none once the editor is unbound, since the
+  range it was given may name paths a remote change moved (Q229).
 - Monitor active rooms/connections, Y.Doc size, store/projection latency and
   failures, projection version lag, event-loop lag, RSS, disconnects, and
   Redis/PostgreSQL latency.

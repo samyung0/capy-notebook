@@ -213,6 +213,13 @@ function CollaborativeNoteEditor({
     },
     [qc, material.id]
   );
+  // Blocks of the copy edited before the join that someone else changed too
+  // (Q229): the next mount shows them copy-only.
+  const onCopyConflicts = useCallback(() => {
+    setSaveDelayed(false);
+    setOffline(null);
+    setEditorGeneration((generation) => generation + 1);
+  }, []);
   // Trashed, deleted, or access lost while open: the room refused to let the
   // editor back in.
   const [unavailable, setUnavailable] = useState<
@@ -439,11 +446,13 @@ function CollaborativeNoteEditor({
       <NoteEditorCore
         allowExternalAssets={allowExternalAssets}
         collaborationToken={mount.token}
+        copies={mount.drafts.copies}
         currentUserId={meData.id}
         discussions={discussionsData ?? NO_DISCUSSIONS}
         draftKey={storedKey}
         joinStartedAt={joinStart.current}
         material={material}
+        onCopyConflicts={onCopyConflicts}
         onDocumentRejected={onDocumentRejected}
         onEditorStatusChange={onEditorStatusChange}
         onOffline={setOffline}

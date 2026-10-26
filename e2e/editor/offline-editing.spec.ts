@@ -215,6 +215,91 @@ test('offline edits outlive a reload and save once the room is back', async ({
   );
 });
 
+// Q229: a note whose join ran out (its 30 s) shows its saved copy, editable.
+// What is typed there is kept on this device as the copy, and the next
+// open's first sync merges it into the room block by block, as ordinary
+// edits that save.
+test('a copy edited before the join merges into the room at the next first sync', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto('/workspaces/ws_scenarios');
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  await setReachable(page, false);
+  await page.goto(note);
+  const saveState = page.getByTestId('editor-save-state');
+  await expect(saveState).toHaveAttribute('data-save-state', 'error', {
+    timeout: 60_000,
+  });
+  const editor = page.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText(seed);
+  await type(page, ' Typed in the copy.');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('A block of the copy.');
+  // The copy alone: nothing reached the Yjs document.
+  await expect.poll(() => draftKinds(page)).toEqual(['copy']);
+  await page.reload();
+  await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await setReachable(page, true);
+  await expect(editor).toContainText('Typed in the copy.', {
+    timeout: 30_000,
+  });
+  await expect(editor).toContainText('A block of the copy.');
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved');
+  await expect.poll(() => draftKinds(page)).toEqual([]);
+  // The room holds them: a reload with nothing stored shows them.
+  await page.reload();
+  await expect(editor).toContainText('A block of the copy.', {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+});
+
+// Q229: a note opened offline with no earlier sync on this device shows its
+// saved copy, editable. Back online, a block only the user changed merges
+// into the room; a block the room changed meanwhile too opens copy-only
+// under its own line with the user's version, and Reload goes on with the
+// room's.
+test('a block both the copy and the room changed opens copy-only while the rest merges', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openNote(page);
+  await typeSaved(page, ' Room edit.');
+  // MSW rebuilds the projection on each load: the next one is behind the
+  // room, as a projection a co-editor's edit has not reached yet.
+  await setReachable(page, false);
+  await page.reload();
+  await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await setOnline(page, false);
+  const editor = page.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText(seed, { timeout: 30_000 });
+  await expect(editor).not.toContainText('Room edit.');
+  await type(page, ' Mine.');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('A clean block.');
+  await setReachable(page, true);
+  await setOnline(page, true);
+  const banner = page.getByTestId('save-banner');
+  const recovery = page.getByTestId('note-recovery');
+  await expect(banner).toHaveAttribute('data-kind', 'conflict', {
+    timeout: 30_000,
+  });
+  await expect(recovery).toContainText('Mine.');
+  await expect(recovery).not.toContainText('A clean block.');
+  await expect(recovery.locator('[contenteditable="true"]')).toHaveCount(0);
+  await shot(page, 'copy-conflict');
+  await banner.getByRole('button', { name: m.error_action_reload() }).click();
+  await expect(editor).toContainText('Room edit.', { timeout: 30_000 });
+  await expect(editor).toContainText('A clean block.');
+  await expect(editor).not.toContainText('Mine.');
+  await expect.poll(() => storedDrafts(page)).toBe(0);
+});
+
 // Q327, Q328, Q360: a closed session's never-accepted steps go through the
 // draft send while the note opens view-only; not delivered 30 s on, the
 // synced note takes them itself and edits on, syncing, with nothing of them

@@ -1,6 +1,6 @@
 import { YjsPlugin } from '@platejs/yjs/react';
 import { captureException } from '@sentry/react';
-import type { YHistoryEditor } from '@slate-yjs/core';
+import { type YHistoryEditor, YjsEditor } from '@slate-yjs/core';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Path } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
@@ -65,15 +65,18 @@ import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
 import { cn } from '@/lib/cn';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
+import type { DraftRef } from '@/lib/draftStore';
 import {
   applyDrafts,
   DRAFT_SEND_WAIT_MS,
   type DraftRecorder,
   type DraftSender,
+  deleteDrafts,
   draftSender,
   draftsVersion,
   dropLostDrafts,
   type EditDraft,
+  putDrafts,
   recordDrafts,
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
@@ -94,7 +97,11 @@ import {
   parseCollaborationEvent,
   type ReadOnlyCode,
 } from './collaborationEvents';
-import { type CursorSender, throttleCursorPosition } from './cursorThrottle';
+import {
+  CURSOR_SEND_MS,
+  type CursorSender,
+  throttleCursorPosition,
+} from './cursorThrottle';
 import {
   contentSizeKilobytes,
   formatContentSize,
@@ -105,11 +112,19 @@ import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
 import { registerLiveNote } from './liveNoteHandover';
+import { applyMergeSteps, asOneStep } from './merge/applyBlocks';
+import { mergeBlocks } from './merge/blockMerge';
+import {
+  conflictRow,
+  type NoteCopies,
+  type NoteCopy,
+  recordCopy,
+} from './merge/copyDraft';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
 import { remoteCursorRangesForEntry, useRemotePeers } from './RemoteCursors';
-import { bindSyncedRoom, roomBindingPlugin } from './roomBinding';
+import { bindSyncedRoom, roomBindingPlugin, whenBound } from './roomBinding';
 import {
   type RoomReconnector,
   refusalDropsDrafts,
@@ -487,12 +502,14 @@ export function NoteEditorCore({
   draftKey,
   restored,
   pending,
+  copies,
   phase = 'live',
   onPainted,
   joinStartedAt,
   onEditorStatusChange,
   onPresenceChange,
   onDocumentRejected,
+  onCopyConflicts,
   onOffline,
   onOutdated,
   onReadOnly,
@@ -518,6 +535,12 @@ export function NoteEditorCore({
   /** Stored edits of never-accepted sessions: the draft send takes them
    * while the room joins (Q319, Q327). */
   pending: EditDraft[];
+  /** The note's saved copy edited before its room joined (Q229): the
+   * newest is shown until the room's first sync, when every one merges. */
+  copies: NoteCopies;
+  /** Blocks of the copy that someone else changed too were kept as a
+   * copy-only group: the caller remounts to show them. */
+  onCopyConflicts?: () => void;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   /** The room's other editors, for the header's avatar group (null once
    * the editor unmounts). */
@@ -589,11 +612,29 @@ export function NoteEditorCore({
   // costs seconds. It is the *initial* value — the room is authoritative from
   // sync onwards — so it is computed once per mount rather than on every
   // render that a status change or a projection refetch causes.
-  const [initialValue] = useState<MaterialValue>(
+  const [projection] = useState<MaterialValue>(
     () =>
       parseMaterialDocument(material.content)?.value ??
       ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue)
   );
+  // Until the room's first sync the editor holds the saved copy, editable
+  // (Q229): the projection, or the newest stored copy's edited value, whose
+  // row this mount goes on with. What is typed there is kept on this device
+  // as the copy and merges into the room's document once bound.
+  const [initialValue] = useState(
+    () => copies.adopted?.copy.mine ?? projection
+  );
+  const [copy] = useState(() =>
+    recordCopy({
+      adopted: copies.adopted?.row ?? null,
+      base: copies.adopted?.copy.base ?? projection,
+      key: draftKey,
+      lineage: collaborationToken.room,
+      revision: copies.adopted?.copy.revision ?? material.revision,
+    })
+  );
+  // The copy was edited before the room's first sync.
+  const copyEdited = useRef(false);
   const [scrollArea, setScrollArea] = useState<HTMLDivElement | null>(null);
   // Seeded from the last projection so the footer has numbers before the first
   // checkpoint receipt; the service owns every value after that.
@@ -707,6 +748,7 @@ export function NoteEditorCore({
   const saveNow = useRef(() => {});
   const resendCheckpoints = useRef(() => {});
   const reportRejection = useRef(onDocumentRejected);
+  const reportCopyConflicts = useRef(onCopyConflicts);
   const reportSaveDelayed = useRef(onSaveDelayed);
   // edit_incidents; the unconfirmed-edit warning once until saving works.
   const [reportIncident] = useState(() =>
@@ -973,6 +1015,7 @@ export function NoteEditorCore({
             reportIncident
           ).catch((error) => console.warn('Draft storage failed:', error));
           void recorder.current?.discard();
+          copy.stop();
         }
         reportUnavailable.current?.(refusal);
       }
@@ -1042,7 +1085,9 @@ export function NoteEditorCore({
               ? ({
                   options: {
                     beforeJoin,
-                    initialValue,
+                    // The mock room is seeded as the service's holds the
+                    // note: from its stored state, never a copy's edits.
+                    initialValue: projection,
                     materialId: material.id,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
@@ -1142,6 +1187,7 @@ export function NoteEditorCore({
     material.workspaceId,
     qc,
     rejectDocument,
+    projection,
     reportPresence,
     restored,
     saveDelay,
@@ -1209,6 +1255,91 @@ export function NoteEditorCore({
       if (recorder.current === current) recorder.current = null;
     };
   }, [ydoc]);
+
+  // The copy's rows: this mount's (or the one it went on with) and older
+  // ones, which go once merged or discarded.
+  const copyRows = useCallback(
+    (own: DraftRef | null) => {
+      const rows = [
+        own,
+        copies.adopted?.row,
+        ...copies.others.map(({ row }) => row),
+      ];
+      return rows.filter((row): row is DraftRef => !!row);
+    },
+    [copies]
+  );
+  // The room turned read-only: the copy's edits go with the other unsaved
+  // ones.
+  const discardCopy = useRef(() => {});
+  discardCopy.current = () => {
+    void deleteDrafts(copyRows(copy.stop())).catch((error) =>
+      console.warn('Draft storage failed:', error)
+    );
+  };
+  // Bound at the room's first sync (roomBinding.ts): what was typed into the
+  // saved copy merges into the room's document block by block (Q229), older
+  // copies first, as one Undo step of ordinary edits under this session's
+  // id. The merge reads the room's blocks as it applies, in the same task,
+  // so a block changed meanwhile is never overwritten. Blocks both sides
+  // changed are kept as a copy-only group, shown once this editor remounts.
+  const mergeCopy = useRef((_unbound: MaterialValue) => {});
+  mergeCopy.current = (unbound) => {
+    const own = copy.stop();
+    const pairs: Pick<NoteCopy, 'base' | 'mine'>[] = copies.others.map(
+      ({ copy: other }) => other
+    );
+    if (copyEdited.current || copies.adopted)
+      pairs.push({
+        base: copies.adopted?.copy.base ?? projection,
+        mine: unbound,
+      });
+    if (!pairs.length) return;
+    const conflicts: MaterialValue = [];
+    try {
+      asOneStep(editor, () => {
+        for (const { base, mine } of pairs) {
+          const merged = mergeBlocks(
+            base,
+            mine,
+            editor.children as MaterialValue
+          );
+          applyMergeSteps(editor, merged.steps);
+          for (const { mine: blocked } of merged.conflicts)
+            if (blocked) conflicts.push(blocked);
+        }
+      });
+    } catch (error) {
+      // The rows stay for the next open's merge.
+      captureException(error, { tags: { component: 'note-copy-merge' } });
+      return;
+    }
+    // Unsaved like restored drafts: a bind before the first paint changes
+    // the value with no value change reported.
+    unsavedChanges.current = true;
+    // The merge's updates are recorded already (asOneStep flushed them).
+    setTimeout(() => {
+      const warn = (error: unknown) =>
+        console.warn('Draft storage failed:', error);
+      if (conflicts.length)
+        void putDrafts([
+          conflictRow(draftKey, collaborationToken.room, conflicts),
+        ]).catch(warn);
+      void deleteDrafts(copyRows(own)).catch(warn);
+      saveNow.current();
+      if (conflicts.length) reportCopyConflicts.current?.();
+    });
+  };
+  useEffect(() => {
+    whenBound(editor, (unbound) => mergeCopy.current(unbound as MaterialValue));
+    // A copy edited and not written yet goes as the page or the editor goes.
+    const flush = () => copy.flush();
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [copy, editor]);
 
   useEffect(() => {
     const current = roomReconnector({
@@ -1364,8 +1495,9 @@ export function NoteEditorCore({
     if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
     reconnector.current?.dispose();
     void recorder.current?.dispose();
+    copy.flush();
     roomProvider(editor)?.disconnect();
-  }, [editor, phase]);
+  }, [copy, editor, phase]);
   // Edits stop at the model first, so a composition the pause ends adds
   // nothing; the DOM listeners stop the rest before Slate sees it.
   useEffect(() => {
@@ -1397,7 +1529,16 @@ export function NoteEditorCore({
 
   // Cursor awareness goes to every peer through the server: at most one per
   // 50 ms (withCursors installs sendCursorPosition when the editor is made).
-  useEffect(() => throttleCursorPosition(editor as CursorSender), [editor]);
+  useEffect(
+    () =>
+      throttleCursorPosition(
+        editor as CursorSender,
+        CURSOR_SEND_MS,
+        Date.now,
+        () => YjsEditor.connected(editor as unknown as YjsEditor)
+      ),
+    [editor]
+  );
 
   useEffect(() => {
     // A blip the socket survived brings no provider event, so the status comes
@@ -1465,6 +1606,14 @@ export function NoteEditorCore({
   const [embeds, setEmbeds] = useState(() => embedKey(material.content.value));
   const changeValue = useCallback(
     ({ editor: current }: { editor: PlateEditor }) => {
+      // The saved copy shown before the room's first sync was edited (Q229).
+      if (
+        !YjsEditor.connected(current as unknown as YjsEditor) &&
+        current.operations.some((op) => op.type !== 'set_selection')
+      ) {
+        copyEdited.current = true;
+        copy.edited(current.children as MaterialValue);
+      }
       scheduleCheckpoint();
       const { operations } = current;
       if (
@@ -1477,7 +1626,7 @@ export function NoteEditorCore({
       const next = embedKey(current.children);
       setEmbeds((previous) => (previous === next ? previous : next));
     },
-    [scheduleCheckpoint]
+    [copy, scheduleCheckpoint]
   );
 
   // `mod+s` stays registered so the browser's own save dialog never opens, and
@@ -1497,6 +1646,7 @@ export function NoteEditorCore({
     // A paused editor is being replaced: the next one reports for the note.
     const paused = phase === 'paused';
     reportRejection.current = paused ? undefined : onDocumentRejected;
+    reportCopyConflicts.current = paused ? undefined : onCopyConflicts;
     reportSaveDelayed.current = paused ? undefined : onSaveDelayed;
     reportUnavailable.current = paused ? undefined : onUnavailable;
     reportOffline.current = paused ? undefined : onOffline;
@@ -1511,11 +1661,13 @@ export function NoteEditorCore({
       if (refusedConnect && unsaved?.unsaved)
         reportIncident('discard_unsaved', 'read_only', unsaved.unsavedBytes);
       void recorder.current?.discard();
+      discardCopy.current();
       onReadOnly?.(code);
     };
     resendCheckpoints.current = resendPendingCheckpoints;
     saveNow.current = saveImmediately;
   }, [
+    onCopyConflicts,
     onDocumentRejected,
     onOffline,
     onOutdated,

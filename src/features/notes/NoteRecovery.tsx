@@ -21,10 +21,14 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
+import { NO_COPIES, type NoteCopies, noteCopies } from './merge/copyDraft';
 import { afterPaint, type NoteView } from './roomSwap';
 import { toastDraftsLost } from './saveFailure';
 
 export interface NoteDrafts {
+  /** The note's saved copy edited before its room joined (Q229): the
+   * editor shows the newest and merges them at the first sync. */
+  copies: NoteCopies;
   /** Rows of the current lineage the editor applies: its accepted
    * sessions' (Q326). */
   current: EditDraft[];
@@ -33,21 +37,24 @@ export interface NoteDrafts {
   /** Rows of never-accepted sessions with stored tokens: the draft send
    * takes them while the editor joins (Q319). */
   pending: EditDraft[];
-  /** One refused, other-lineage or expired group, shown read-only first
-   * (an expired one once: its rows are deleted as it opens). */
+  /** One refused, other-lineage or expired group, or the blocks a copy's
+   * merge could not take (`conflict`, Q229), shown read-only first (an
+   * expired one once: its rows are deleted as it opens). */
   recovery: {
-    doc: Y.Doc;
+    conflict?: boolean;
     expired: boolean;
     refused: boolean;
     rows: EditDraft[];
+    value: MaterialValue;
   } | null;
 }
 
 /**
  * Reads a note's stored edits for the room it opens (`for`: room and mount
  * generation, so a remount reads what the old mount wrote), split by who
- * sends them (`splitOpenDrafts`, Q326). A recovery group
- * nothing can draw is dropped with a toast and the next one is read. Both
+ * sends them (`splitOpenDrafts`, Q326), and its copy rows (Q229,
+ * `noteCopies`). A recovery group, or a copy row, nothing can draw is
+ * dropped with a toast and the next one is read. Both
  * are reported (edit_incidents): a group of another lineage or held rows
  * shown copy-only once (reportRecoveryGroup), a dropped group once per page
  * load.
@@ -74,13 +81,35 @@ export function useNoteDrafts(
           room
         );
         if (!recovery.length) {
+          const copy = noteCopies(rows);
+          if (copy.unreadable.length) {
+            toastDraftsLost();
+            await deleteDrafts(copy.unreadable).catch(() => undefined);
+          }
+          // The blocks a copy's merge left, then an expired copy (shown
+          // once), copy-only before the live note.
+          let shown: Omit<
+            NonNullable<NoteDrafts['recovery']>,
+            'refused'
+          > | null = null;
+          if (copy.conflicts)
+            shown = { ...copy.conflicts, conflict: true, expired: false };
+          else if (copy.expired) {
+            shown = {
+              expired: true,
+              rows: [copy.expired.row],
+              value: copy.expired.value,
+            };
+            dropExpiredGroup(shown.rows, report);
+          }
           if (!active) return;
           const { apply, send } = splitOpenDrafts(current);
           setDrafts({
-            current: apply,
+            copies: shown ? NO_COPIES : copy.copies,
+            current: shown ? current : apply,
             for: `${room}:${generation}`,
-            pending: send,
-            recovery: null,
+            pending: shown ? [] : send,
+            recovery: shown ? { ...shown, refused: false } : null,
           });
           return;
         }
@@ -88,12 +117,16 @@ export function useNoteDrafts(
         if (doc) {
           if (expired) dropExpiredGroup(recovery, report);
           else reportRecoveryGroup(recovery, report, refused);
+          const value = yTextToSlateElement(doc.get('content', Y.XmlText))
+            .children as MaterialValue;
+          doc.destroy();
           if (active)
             setDrafts({
+              copies: NO_COPIES,
               current,
               for: `${room}:${generation}`,
               pending: [],
-              recovery: { doc, expired, refused, rows: recovery },
+              recovery: { expired, refused, rows: recovery, value },
             });
           return;
         }
@@ -113,9 +146,9 @@ export function useNoteDrafts(
 }
 
 /**
- * Edits that cannot join the live note (a refused save, or a room that moved
- * on while they waited), read-only and selectable for copying. Reload deletes
- * them and opens the live note.
+ * Edits that cannot join the live note (a refused save, a room that moved on
+ * while they waited, or blocks a copy's merge could not take), read-only and
+ * selectable for copying. Reload deletes them and opens the live note.
  */
 export function NoteRecovery({
   material,
@@ -144,12 +177,8 @@ export function NoteRecovery({
     []
   );
   const content = useMemo<MaterialDocument>(
-    () => ({
-      schemaVersion: 1,
-      value: yTextToSlateElement(recovery.doc.get('content', Y.XmlText))
-        .children as MaterialValue,
-    }),
-    [recovery.doc]
+    () => ({ schemaVersion: 1, value: recovery.value }),
+    [recovery.value]
   );
   useEffect(() => {
     onEditorStatusChange?.({ saveState: 'error' });

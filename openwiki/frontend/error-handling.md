@@ -638,7 +638,7 @@ lost."; red `offline-unstored`: "Your edits can't be saved on this device.
 Keep this tab open until you reconnect."; grey `offline-limit`: "You've
 reached the offline edit limit for this file. Reconnect to keep editing.",
 see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)); and the
-recovery states `refused` and `changed` (below). Offline takes over from
+recovery states `refused`, `changed`, `expired` and `conflict` (below). Offline takes over from
 `delayed` while the room cannot be reached, and recovery from both. `delayed` shows on a server-reported failure with unsaved
 work (`source-checkpoint-failed` recoverable, `checkpoint-failed`), and also
 when the client's oldest checkpoint request stays unanswered past a threshold,
@@ -701,7 +701,13 @@ edits whose group was last edited over 7 days ago (Epo 2026-10-24; for notes
 until the merge view, Q251) open once under the `expired` one ("These edits
 are more than 7 days old and too old to sync. Copy anything you need, then
 reload."): their rows are deleted as they open (reported as
-`draft_unrestorable` / `expired`) and no draft sweep sends them. The
+`draft_unrestorable` / `expired`) and no draft sweep sends them. Blocks of a
+note's saved copy, edited before its room joined, that someone else changed
+meanwhile (Epo 2026-10-24, Q229; see
+[plate-editor.md](plate-editor.md#the-editable-saved-copy)) open under the
+`conflict` one ("Someone changed the same parts of this note while your edits
+waited to sync. Copy anything you need, then reload."), holding the user's
+version of those blocks; the rest of the copy merged into the note. The
 unsaved content stays on screen read-only and selectable, with no download or
 discard; a page refresh reopens the same view, except an expired one. A recovery banner has no close
 button: its Reload, in the close button's place, is the only way out. It

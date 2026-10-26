@@ -64,11 +64,14 @@ export interface EditDraft {
    * is of another lineage or Office base), so no sweep sends it again. */
   held?: true;
   /** `${session}:state`, or `${session}:${seq}` for an update (or a run
-   * ending at `seq`). */
+   * ending at `seq`), or `${session}:copy`. */
   id: string;
   /** `${actorId}:material:${id}` or `${actorId}:file:${id}`. */
   key: string;
-  kind: 'state' | 'update';
+  /** Yjs rows (`state`, `update`), or a note's saved copy edited before its
+   * room joined, as JSON (`copy`, Q229, features/notes/merge/copyDraft.ts),
+   * which no Yjs reader takes. */
+  kind: 'state' | 'update' | 'copy';
   lineage: string;
   /** A save refused for good: shown for copying, never merged back. */
   refused?: true;
@@ -317,6 +320,11 @@ export function markDraftsReported(key: string, ids: string[]): Promise<void> {
   return markDrafts(key, ids, 'reported');
 }
 
+/** A row of Yjs updates: every other kind (a note's `copy`) is JSON that
+ * only its own reader takes. */
+export const yjsRow = (row: { kind: EditDraft['kind'] }) =>
+  row.kind === 'state' || row.kind === 'update';
+
 /** Unsent edits expire 7 days after their last edit (Epo 2026-10-24,
  * human/frontend/error-handling.md): the next open on the device shows them
  * once copy-only with a line that they are too old to sync, then deletes
@@ -345,7 +353,8 @@ function expiredSessions(
  * the live document; `recovery` is one group (refused rows, one other
  * lineage, or one session's rows past the 7-day expiry) to show read-only
  * first, `refused` and `expired` saying which. Further groups wait for the
- * next open. `same` compares lineages (text sources ignore the base).
+ * next open. `same` compares lineages (text sources ignore the base). Only
+ * Yjs rows are split; a note's copy rows go to their own reader.
  *
  * Rows of this lineage from a session the room never accepted that no draft
  * send delivers (held after one, or with no stored token) open copy-only
@@ -357,12 +366,13 @@ function expiredSessions(
  * recovery or as current rows (r5 N5); rows it cannot read stay current.
  */
 export async function draftGroups(
-  rows: EditDraft[],
+  all: EditDraft[],
   lineage: string,
   same: (left: string, right: string) => boolean = (left, right) =>
     left === right,
   now = Date.now()
 ) {
+  const rows = all.filter(yjsRow);
   const expired = expiredSessions(rows, now);
   const old = (row: EditDraft) => expired.has(row.session);
   const unsendable = (row: EditDraft) =>
@@ -991,15 +1001,16 @@ function groupGrants(group: DraftInfo[]) {
   return [...byId.values()].slice(0, MAX_GRANTS);
 }
 
-/** A document's rows its room takes now: not refused, not left for the
- * editor (`held`), of the token's room, one group per lineage (an Office
- * file's rows of another base go apart), with the newest of their stored
- * tokens. */
+/** A document's rows its room takes now: Yjs rows (never a note's copy),
+ * not refused, not left for the editor (`held`), of the token's room, one
+ * group per lineage (an Office file's rows of another base go apart), with
+ * the newest of their stored tokens. */
 function sendableGroups(rows: DraftInfo[], room: string) {
   // An expired session's rows wait for the next open, which shows them once.
   const expired = expiredSessions(rows, Date.now());
   const groups = new Map<string, DraftInfo[]>();
   for (const row of rows) {
+    if (!yjsRow(row)) continue;
     if (row.refused || row.held || row.lineage.split('@')[0] !== room) continue;
     if (expired.has(row.session)) continue;
     groups.set(row.lineage, [...(groups.get(row.lineage) ?? []), row]);

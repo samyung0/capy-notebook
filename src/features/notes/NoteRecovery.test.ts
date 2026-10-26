@@ -108,3 +108,66 @@ it('opens an expired group once, copy-only, and drops it', async () => {
   });
   expect(dropExpiredGroup).toHaveBeenCalledWith([old], expect.any(Function));
 });
+
+const copyRow = (id: string, value: unknown, extra: Partial<EditDraft>) =>
+  draft(`${id}:copy`, {
+    data: new TextEncoder().encode(JSON.stringify(value)),
+    kind: 'copy',
+    session: id,
+    ...extra,
+  });
+const p = (id: string, text: string) => ({
+  children: [{ text }],
+  id,
+  type: 'p',
+});
+
+// Q229: a copy edited before the room joined, left by a closed tab, goes to
+// the next editor, which shows it and merges it at the first sync.
+it('hands the editor the copies it merges at the first sync', async () => {
+  const copy = { base: [p('a', 'A')], mine: [p('a', 'A typed')], revision: 1 };
+  const row = copyRow('s', copy, {});
+  stored.rows = [row];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()).toMatchObject({
+    copies: { adopted: { copy, row }, others: [] },
+    recovery: null,
+  });
+});
+
+// Q229: blocks of the copy someone else changed too open copy-only under
+// their own line; an expired copy opens once and goes. Fails if either
+// reaches the editor's merge.
+it('opens the blocks a merge left copy-only, then an expired copy once', async () => {
+  const conflict = copyRow(
+    'c',
+    { mine: [p('b', 'B mine')] },
+    { refused: true }
+  );
+  const expired = copyRow(
+    'x',
+    { base: [], mine: [p('a', 'Old')], revision: 1 },
+    { savedAt: Date.now() - DRAFT_EXPIRY_MS - 1 }
+  );
+  vi.mocked(dropExpiredGroup).mockClear();
+  stored.rows = [conflict, expired];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()).toMatchObject({
+    copies: { adopted: null, others: [] },
+    recovery: { conflict: true, rows: [conflict], value: [p('b', 'B mine')] },
+  });
+  expect(dropExpiredGroup).not.toHaveBeenCalled();
+  hooks.reset();
+  stored.rows = [expired];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()).toMatchObject({
+    recovery: { expired: true, rows: [expired], value: [p('a', 'Old')] },
+  });
+  expect(dropExpiredGroup).toHaveBeenCalledWith(
+    [expired],
+    expect.any(Function)
+  );
+});
