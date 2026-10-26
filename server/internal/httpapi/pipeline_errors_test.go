@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
-	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func TestPendingSourcesTooLargeKeepsFileIDs(t *testing.T) {
@@ -51,7 +49,7 @@ func TestSourceContextErrorsRelay(t *testing.T) {
 					t.Fatalf("raw error lost code: %d %s", rec.Code, rec.Body.String())
 				}
 				var event *chatEventError
-				if !errors.As(keyErrorFromEvent(tc.code, "source request failed"), &event) || event.Code != tc.code {
+				if !errors.As(errorFromEvent(tc.code, "source request failed"), &event) || event.Code != tc.code {
 					t.Fatalf("chat lost source error: %#v", event)
 				}
 			}
@@ -60,22 +58,16 @@ func TestSourceContextErrorsRelay(t *testing.T) {
 }
 
 func TestPipelineLLMError(t *testing.T) {
-	invalid := &pipeline.Error{
-		Status: 400,
-		Body:   []byte(`{"code":"invalid_key","message":"The provider rejected this key."}`),
+	busy := &pipeline.Error{
+		Status: 503,
+		Body:   []byte(`{"code":"provider_busy","message":"busy","retryAfterSeconds":7}`),
 	}
-	if !errors.Is(pipelineLLMError(invalid), store.ErrInvalidLLMKey) {
-		t.Fatalf("invalid_key: %v", pipelineLLMError(invalid))
-	}
-	failed := &pipeline.Error{
-		Status: 400,
-		Body:   []byte(`{"detail":{"code":"key_failed","message":"check the key"}}`),
-	}
-	if !errors.Is(pipelineLLMError(failed), store.ErrLLMKeyFailed) {
-		t.Fatalf("key_failed: %v", pipelineLLMError(failed))
+	var mapped *providerBusyError
+	if !errors.As(pipelineLLMError(busy), &mapped) || mapped.retryAfter() != 7 {
+		t.Fatalf("provider_busy: %v", pipelineLLMError(busy))
 	}
 	if pipelineLLMError(&pipeline.Error{Status: 503, Body: []byte(`{"message":"down"}`)}) != nil {
-		t.Fatal("unrelated pipeline error must not map to a key error")
+		t.Fatal("unrelated pipeline error must not map")
 	}
 }
 
@@ -99,40 +91,21 @@ func TestPipelineGenerateError(t *testing.T) {
 	}
 }
 
-func TestKeyErrorFromEvent(t *testing.T) {
-	if !errors.Is(keyErrorFromEvent("invalid_key", "x"), store.ErrInvalidLLMKey) {
-		t.Fatal("invalid_key")
-	}
-	if !errors.Is(keyErrorFromEvent("key_failed", "x"), store.ErrLLMKeyFailed) {
-		t.Fatal("key_failed")
-	}
-	if keyErrorFromEvent("", "") != nil {
+func TestErrorFromEvent(t *testing.T) {
+	if errorFromEvent("", "") != nil {
 		t.Fatal("empty")
 	}
 	var eventErr *chatEventError
 	if !errors.As(
-		keyErrorFromEvent("context_too_large", "too large"),
+		errorFromEvent("context_too_large", "too large"),
 		&eventErr,
 	) || eventErr.Code != "context_too_large" {
 		t.Fatalf("context event did not retain its code: %#v", eventErr)
 	}
 	if !errors.As(
-		keyErrorFromEvent("invalid_scope", "invalid"),
+		errorFromEvent("invalid_scope", "invalid"),
 		&eventErr,
 	) || eventErr.Code != "invalid_scope" {
 		t.Fatalf("scope event did not retain its code: %#v", eventErr)
-	}
-}
-
-func TestBYOKWritesAreOffByDefault(t *testing.T) {
-	a := &api{} // no store: a refused write must not reach it
-	_, err := a.upsertLLMCredential(context.Background(), &upsertLLMCredentialInput{})
-	var model *huma.ErrorModel
-	if !errors.As(err, &model) || model.Status != http.StatusNotFound {
-		t.Fatalf("save with BYOK off: %v", err)
-	}
-	_, err = a.deleteLLMCredential(context.Background(), &deleteLLMCredentialInput{Provider: "openai"})
-	if !errors.As(err, &model) || model.Status != http.StatusNotFound {
-		t.Fatalf("remove with BYOK off: %v", err)
 	}
 }

@@ -42,13 +42,13 @@ func insertLLM(t *testing.T, pool *pgxpool.Pool, version int, slug string, slots
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (
 			$1, 'Test', 'Model', 'deepseek', $2,
-			true, false, 100000,
+			100000,
 			ARRAY['low','mid','high','max']::text[], 'high',
 			$3::jsonb, $4::text[], 250, 1000, 250, true, $5::text[]
 		)`, version, slug, testLLMParams, slots, defaults)
@@ -113,12 +113,12 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES ($2, 'DeepSeek', 'New Flash version', 'deepseek', 'deepseek-flash',
-			true, true, 1000000,
+			1000000,
 			ARRAY['low','mid','high','max']::text[], 'high',
 			$1::jsonb, ARRAY['chat','editor','ingest'], 250, 1000, 250, true, ARRAY['chat'])`, testLLMParams, nextVersion)
 	if err != nil {
@@ -222,13 +222,13 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (
 			1, 'Ghost', 'Ghost', 'embedtest', 'ghost',
-			true, false, 0, ARRAY[]::text[], '',
+			0, ARRAY[]::text[], '',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
 			ARRAY['retrieval'], 50, 50, 0, false,
 			ARRAY[]::text[])`)
@@ -269,12 +269,12 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 	_, err = tx.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Lock', 'Embed', 'embedtest', $1,
-			true, false, 0, ARRAY[]::text[], '',
+			0, ARRAY[]::text[], '',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_other_1"}'::jsonb,
 			ARRAY['retrieval'], 50, 50, 0, true,
 			ARRAY[]::text[])`, embedSlug)
@@ -310,12 +310,12 @@ func TestOneDefaultPerSlot(t *testing.T) {
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Dup', 'Dup', 'deepseek', $1,
-			true, false, 100000,
+			100000,
 			ARRAY['high']::text[], 'high',
 			$2::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY['chat'])`, slug, testLLMParams)
 	if err == nil {
@@ -340,27 +340,6 @@ func TestResolveUserRequiresAnEnabledPreference(t *testing.T) {
 	}
 	if got.Ref() != flashRef {
 		t.Fatalf("got %#v", got)
-	}
-}
-
-func TestAuthRouting(t *testing.T) {
-	flash := Config{PlatformEnabled: true, ByokEnabled: true, ProviderSlug: "deepseek"}
-	if !flash.Available(false) || flash.UsesUserKey(false) {
-		t.Fatal("deepseek without a key stays platform")
-	}
-	if !flash.UsesUserKey(true) {
-		t.Fatal("deepseek with a key uses the key")
-	}
-	gpt := Config{PlatformEnabled: false, ByokEnabled: true, ProviderSlug: "openai"}
-	if gpt.Available(false) || gpt.UsesUserKey(false) {
-		t.Fatal("openai without a key is locked")
-	}
-	if !gpt.Available(true) || !gpt.UsesUserKey(true) {
-		t.Fatal("openai with a key is selectable and billed to the user")
-	}
-	embed := Config{PlatformEnabled: true, ByokEnabled: false, ProviderSlug: "deepinfra"}
-	if embed.UsesUserKey(true) {
-		t.Fatal("platform rows never use a user key")
 	}
 }
 
@@ -413,12 +392,12 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Bad', 'Bad', 'deepseek', $1,
-			true, false, 100000, ARRAY[]::text[], '',
+			100000, ARRAY[]::text[], '',
 			'{}'::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, slug)
 	if err == nil {
 		t.Fatal("chat row without thinking")
@@ -426,12 +405,12 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Bad', 'Default', 'deepseek', $1,
-			true, false, 100000, ARRAY['instant','low']::text[], 'high',
+			100000, ARRAY['instant','low']::text[], 'high',
 			'{}'::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, slug+"-default")
 	if err == nil {
 		t.Fatal("default thinking not in levels")
@@ -439,12 +418,12 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Bad', 'Chat', 'deepseek', $1,
-			true, false, 100000, ARRAY['instant','high']::text[], 'high',
+			100000, ARRAY['instant','high']::text[], 'high',
 			'{}'::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, slug+"-chat")
 	if err == nil {
 		t.Fatal("chat row with instant")
@@ -452,12 +431,11 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled,
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Bad', 'Window', 'deepseek', $1,
-			true, false, ARRAY['instant']::text[], 'instant',
+			ARRAY['instant']::text[], 'instant',
 			'{}'::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, slug+"-window")
 	if err == nil {
 		t.Fatal("llm row without explicit context window")
@@ -479,23 +457,22 @@ func TestSeedOmitsAnthropicModels(t *testing.T) {
 func TestSeededGLMKeepsZAIIdentityAndServesCertifiedChat(t *testing.T) {
 	pool, _ := openRegistry(t)
 	var (
-		platformEnabled, byokEnabled bool
-		contextWindow                int
-		thinkingLevels, slots        []string
-		defaultThinking              string
+		contextWindow         int
+		thinkingLevels, slots []string
+		defaultThinking       string
 	)
 	if err := pool.QueryRow(context.Background(), `
-		SELECT platform_enabled, byok_enabled, context_window_tokens,
+		SELECT context_window_tokens,
 		       thinking_levels, default_thinking, slots
 		  FROM model_configs
 		 WHERE provider_slug='zai' AND model_slug='glm-5.3-flash' AND version=1`).Scan(
-		&platformEnabled, &byokEnabled, &contextWindow,
+		&contextWindow,
 		&thinkingLevels, &defaultThinking, &slots,
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !platformEnabled || byokEnabled || contextWindow != 1048576 {
-		t.Fatalf("routed GLM auth/window = %v/%v/%d", platformEnabled, byokEnabled, contextWindow)
+	if contextWindow != 1048576 {
+		t.Fatalf("routed GLM window = %d", contextWindow)
 	}
 	if !slices.Equal(thinkingLevels, []string{"low", "high", "max"}) || defaultThinking != "low" {
 		t.Fatalf("routed GLM thinking = %v default %q", thinkingLevels, defaultThinking)

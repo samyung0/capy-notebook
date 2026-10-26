@@ -2850,58 +2850,6 @@ components:
         - count
         - recent
       type: object
-    LLMCredential:
-      additionalProperties: false
-      properties:
-        last4:
-          type: string
-        providerSlug:
-          type: string
-      required:
-        - providerSlug
-        - last4
-      type: object
-    LLMCredentialProvider:
-      additionalProperties: false
-      properties:
-        eligible:
-          type: boolean
-        last4:
-          type: string
-        providerSlug:
-          type: string
-        reason:
-          type: string
-        unlocks:
-          items:
-            type: string
-          type: array
-      required:
-        - providerSlug
-        - eligible
-        - unlocks
-      type: object
-    LLMCredentialsResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/LLMCredentialsResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        credentials:
-          items:
-            $ref: "#/components/schemas/LLMCredential"
-          type: array
-        providers:
-          items:
-            $ref: "#/components/schemas/LLMCredentialProvider"
-          type: array
-      required:
-        - credentials
-        - providers
-      type: object
     Label:
       additionalProperties: false
       properties:
@@ -3418,8 +3366,6 @@ components:
     ModelOption:
       additionalProperties: false
       properties:
-        available:
-          type: boolean
         isDefault:
           type: boolean
         modelName:
@@ -3432,15 +3378,11 @@ components:
           type: string
         thinking:
           $ref: "#/components/schemas/ModelThinking"
-        usesUserKey:
-          type: boolean
       required:
         - providerName
         - modelName
         - modelSlug
         - isDefault
-        - available
-        - usesUserKey
         - providerSlug
       type: object
     ModelSlotsOutputBody:
@@ -7162,24 +7104,6 @@ components:
         shareRole:
           $ref: "#/components/schemas/ShareRole"
       type: object
-    UpsertLLMCredentialReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpsertLLMCredentialReq.json
-          format: uri
-          readOnly: true
-          type: string
-        apiKey:
-          maxLength: 512
-          type: string
-        providerSlug:
-          type: string
-      required:
-        - providerSlug
-        - apiKey
-      type: object
     UsageBucket:
       additionalProperties: false
       properties:
@@ -10376,66 +10300,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Actor ingest slot remaining
-      tags:
-        - Account
-  /api/me/llm-credentials:
-    get:
-      operationId: listLLMCredentials
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LLMCredentialsResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Saved provider keys
-      tags:
-        - Account
-    put:
-      operationId: upsertLLMCredential
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpsertLLMCredentialReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Save a provider key
-      tags:
-        - Account
-  /api/me/llm-credentials/{provider}:
-    delete:
-      operationId: deleteLLMCredential
-      parameters:
-        - in: path
-          name: provider
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Remove a provider key
       tags:
         - Account
   /api/me/locale:

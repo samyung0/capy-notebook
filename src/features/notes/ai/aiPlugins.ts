@@ -21,7 +21,6 @@ import {
 } from '@/api/plateAiTransport';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
-import { llmKeyUserMessage } from '@/lib/errors';
 import { useEditorRuntime } from '../EditorRuntime';
 import { commandRange, openAiMenu } from './aiMenuState';
 import { getAiPreview, setAiPreview } from './aiPreviewState';
@@ -224,10 +223,9 @@ function createCopilotPlugin(workspaceId: string) {
         api: plateAiCopilotUrl(workspaceId),
         body: { instructions: COPILOT_INSTRUCTIONS },
         fetch: plateAiFetch,
-        onError: (error: unknown) => {
+        onError: () => {
           userToast({
-            description:
-              llmKeyUserMessage(error) ?? m.editor_ai_suggestion_body(),
+            description: m.editor_ai_suggestion_body(),
             id: 'plate-copilot-error',
             title: m.editor_ai_suggestion_title(),
             variant: 'error',

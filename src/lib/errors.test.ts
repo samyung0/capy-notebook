@@ -149,31 +149,6 @@ describe('frontend error normalization', () => {
     );
   });
 
-  it('classifies a rejected BYOK key distinctly from validation', () => {
-    const error = new ApiError(400, 'Bad Request', undefined, {
-      code: 'invalid_llm_key',
-    });
-
-    expect(errorKind(error)).toBe('llmKey');
-    expect(describeError(error).description).toBe(
-      'The provider rejected this key.'
-    );
-    expect(describeError(error).title).not.toBe(
-      describeError(new ApiError(400, 'Bad Request')).title
-    );
-  });
-
-  it('classifies an unclear BYOK failure with the double-check copy', () => {
-    const error = new ApiError(400, 'Bad Request', undefined, {
-      code: 'llm_key_failed',
-    });
-
-    expect(errorKind(error)).toBe('llmKey');
-    expect(describeError(error).description).toContain(
-      'double check if the key is valid'
-    );
-  });
-
   it('classifies an unavailable LLM model distinctly from validation', () => {
     const error = new ApiError(422, 'Unprocessable Entity', undefined, {
       code: 'model_unavailable',

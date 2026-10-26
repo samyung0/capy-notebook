@@ -1,8 +1,7 @@
 """Workload limits and telemetry for the chat agent.
 
-These are workload limits, not billing. Platform-paid and BYOK turns share
-the same planning and tool caps; the credit guard is a platform-paid billing
-cutoff and bounds nothing else. Provider-call, query-embedding, and cumulative
+These are workload limits, not billing. The credit guard is a billing cutoff
+and bounds nothing else. Provider-call, query-embedding, and cumulative
 input counts are measurements. The pinned model input budget bounds each call.
 """
 

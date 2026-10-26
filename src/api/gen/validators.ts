@@ -4173,50 +4173,6 @@ export const GetIngestSlotsResponse = zod.object({
 
 
 /**
- * @summary Saved provider keys
- */
-export const ListLLMCredentialsResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "credentials": zod.array(zod.object({
-  "last4": zod.string(),
-  "providerSlug": zod.string()
-})),
-  "providers": zod.array(zod.object({
-  "eligible": zod.boolean(),
-  "last4": zod.string().optional(),
-  "providerSlug": zod.string(),
-  "reason": zod.string().optional(),
-  "unlocks": zod.array(zod.string())
-}))
-})
-
-
-/**
- * @summary Save a provider key
- */
-export const upsertLLMCredentialBodyApiKeyMax = 512;
-
-
-
-export const UpsertLLMCredentialBody = zod.object({
-  "apiKey": zod.string().max(upsertLLMCredentialBodyApiKeyMax),
-  "providerSlug": zod.string()
-})
-
-export const UpsertLLMCredentialResponse = zod.void()
-
-
-/**
- * @summary Remove a provider key
- */
-export const DeleteLLMCredentialParams = zod.object({
-  "provider": zod.string()
-})
-
-export const DeleteLLMCredentialResponse = zod.void()
-
-
-/**
  * @summary Set account locale
  */
 export const SetLocaleBody = zod.object({
@@ -4285,7 +4241,6 @@ export const ListModelsResponse = zod.object({
   "providerSlug": zod.string()
 }),
   "models": zod.array(zod.object({
-  "available": zod.boolean(),
   "isDefault": zod.boolean(),
   "modelName": zod.string(),
   "modelSlug": zod.string(),
@@ -4294,8 +4249,7 @@ export const ListModelsResponse = zod.object({
   "thinking": zod.object({
   "default": zod.string(),
   "levels": zod.array(zod.string())
-}).optional(),
-  "usesUserKey": zod.boolean()
+}).optional()
 })),
   "selectedModel": zod.object({
   "modelSlug": zod.string(),

@@ -326,11 +326,7 @@ async def open_call(
     receipt_timeout_s = (
         max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
     )
-    gated = (
-        capacity is not None
-        if spec is None
-        else registry.current_request_llm().paid_by != "user"
-    )
+    gated = spec is not None or capacity is not None
     admission_mode = state.settlement_mode if gated else None
     while True:
         admission = asyncio.ensure_future(
@@ -828,7 +824,6 @@ def _settle_ingest_call_sync(
 ) -> None:
     """LLM calls made by ingest (summaries, standalone image captions) bill
     their tokens; a VLM page read bills its page rate instead."""
-    from .. import registry
     from ..store import db
 
     if credit_micros is None:

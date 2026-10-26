@@ -52,8 +52,6 @@ def _spec(**overrides) -> ModelConfig:
         "model_name": "Flash",
         "provider_slug": "deepseek",
         "model_slug": "deepseek-v4-flash",
-        "platform_enabled": True,
-        "byok_enabled": True,
         "thinking_levels": ("instant", "low", "mid", "high", "max"),
         "default_thinking": "instant",
         "slots": ("chat",),
@@ -64,7 +62,7 @@ def _spec(**overrides) -> ModelConfig:
 
 
 def test_anthropic_uses_first_party_url_and_slug():
-    bind_request_llm(paid_by="platform")
+    bind_request_llm()
     spec = _spec(provider_slug="anthropic", model_slug="claude-opus-5")
     os.environ["ANTHROPIC_API_KEY"] = "sk-ant-platform"
     try:
@@ -113,19 +111,6 @@ def test_a_tools_off_call_keeps_the_tools_and_forbids_calling_them():
         tool_choice="none",
     )
     assert glm["tools"] == [tool] and glm["tool_choice"] == "none"
-
-
-def test_anthropic_byok_uses_user_key():
-    bind_request_llm(paid_by="user", user_api_key="sk-ant")
-    spec = _spec(
-        provider_slug="anthropic",
-        model_slug="claude-opus-5",
-        platform_enabled=True,
-        byok_enabled=True,
-    )
-    url, headers = anthropic_endpoint(spec)
-    assert url == ANTHROPIC_URL
-    assert headers["x-api-key"] == "sk-ant"
 
 
 def test_openai_mid_maps_to_medium_and_max_to_xhigh():
@@ -215,7 +200,6 @@ async def test_glm_complete_posts_to_openrouter_with_its_key(
     spec = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        byok_enabled=False,
         thinking_levels=("low", "high", "max"),
         default_thinking="high",
         slots=("chat", "captioning"),
@@ -229,7 +213,7 @@ async def test_glm_complete_posts_to_openrouter_with_its_key(
             "usage": {"prompt_tokens": 1, "completion_tokens": 1},
         }
 
-    bind_request_llm(paid_by="platform")
+    bind_request_llm()
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
     monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
 
@@ -264,7 +248,6 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
     spec = _spec(
         provider_slug="openrouter",
         model_slug=model_slug,
-        byok_enabled=False,
         thinking_levels=("instant",),
         slots=("ingest", "captioning"),
     )
@@ -277,7 +260,7 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
             "usage": {"prompt_tokens": 1, "completion_tokens": 1},
         }
 
-    bind_request_llm(paid_by="platform")
+    bind_request_llm()
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
     monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
 
@@ -307,7 +290,6 @@ def test_minimax_runs_on_together_then_wafer_at_the_chat_pins_effort():
     spec = _spec(
         provider_slug="openrouter",
         model_slug="minimax/minimax-m3.1-flash",
-        byok_enabled=False,
         thinking_levels=("low", "mid", "high"),
         slots=("chat",),
     )
@@ -357,7 +339,6 @@ async def test_glm_stream_sends_its_default_effort_to_openrouter(
     spec = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        byok_enabled=False,
         thinking_levels=("low", "high", "max"),
         default_thinking="high",
         slots=("chat", "captioning"),
@@ -368,7 +349,7 @@ async def test_glm_stream_sends_its_default_effort_to_openrouter(
         seen.update(url=url, headers=headers, body=body)
         yield {"choices": [{"delta": {"content": "ok"}}]}
 
-    bind_request_llm(paid_by="platform")
+    bind_request_llm()
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
     monkeypatch.setattr("pipeline.elitellm.client._stream_sse", stream_sse)
 
@@ -400,7 +381,6 @@ async def test_qwen_embedding_uses_exact_deepinfra_route(
     spec = _spec(
         provider_slug="deepinfra",
         model_slug="Qwen/Qwen3-Embedding-4B",
-        byok_enabled=False,
         thinking_levels=(),
         default_thinking="",
         slots=("retrieval",),
@@ -449,7 +429,6 @@ async def test_qwen_rerank_uses_the_deepinfra_inference_route(monkeypatch):
     spec = _spec(
         provider_slug="deepinfra",
         model_slug="Qwen/Qwen3-Reranker-4B",
-        byok_enabled=False,
         thinking_levels=(),
         default_thinking="",
         slots=("rerank",),
@@ -595,7 +574,7 @@ def test_anthropic_platform_env_is_first_party():
 
 
 def test_platform_key_for_anthropic_reads_anthropic_env(monkeypatch):
-    bind_request_llm(paid_by="platform")
+    bind_request_llm()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")
     key = provider_api_key_for(
         _spec(provider_slug="anthropic", model_slug="claude-opus-5")

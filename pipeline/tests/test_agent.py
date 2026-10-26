@@ -1897,7 +1897,6 @@ async def test_a_client_drop_after_a_tool_leaves_a_checkpoint_with_it(monkeypatc
     [
         ("agent_failed", RuntimeError("provider disconnected"), None),
         ("provider_busy", agent.elitellm.ProviderBusy("busy", retry_after=1), None),
-        ("invalid_key", agent.models.UserKeyError("invalid_key", "rejected"), None),
         ("source_changed", pending.SourceChanged(), None),
         ("invalid_answer", _assembled(""), None),
         ("response_flagged", _assembled(_LEAKED_TOOL_CALL), None),
@@ -2576,7 +2575,6 @@ async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypat
         modelSlug="deepseek-v4-flash",
         configVersion=1,
         userId="u_1",
-        paidBy="platform",
         thinking="high",
         query="q",
         workspaceId="ws_1",
@@ -2609,7 +2607,6 @@ async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
         modelSlug="deepseek-v4-flash",
         configVersion=1,
         userId="u_1",
-        paidBy="platform",
         thinking="high",
         query="q",
         workspaceId="ws_1",

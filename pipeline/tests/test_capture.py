@@ -458,8 +458,6 @@ def test_injected_captures_keep_their_estimate_without_a_decode(monkeypatch):
         model_name="GLM",
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=("low", "high"),
         default_thinking="high",
     )
@@ -557,8 +555,6 @@ def test_a_request_after_a_drop_counts_only_its_attached_images():
         model_name="GLM",
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=("low", "high"),
         default_thinking="high",
     )
