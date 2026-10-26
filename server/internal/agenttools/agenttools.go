@@ -281,10 +281,13 @@ const (
 )
 
 // UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
-// room holds its Yjs items while the step is live (Epo 2026-10-20).
+// room holds its Yjs items while the step is live (Epo 2026-10-20). An edit
+// step's is offered until ExpiresAt, 24 h after its agent edit (Q385), when
+// the chat hides it; a file step's has none.
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
 	Status      UndoStatus `json:"status" enum:"available,unavailable"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
 }
 
 // EffectOperation names what a mutation did to a resource.

@@ -1,5 +1,6 @@
 import { YjsPlugin } from '@platejs/yjs/react';
 import { captureException } from '@sentry/react';
+import type { YHistoryEditor } from '@slate-yjs/core';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Path } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
@@ -49,6 +50,7 @@ import {
   type PresenceStore,
 } from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
+import { limitUndo } from '@/features/collaboration/undo';
 import { FileLoading } from '@/features/files/FileStates';
 import {
   createMaterialDocument,
@@ -69,6 +71,7 @@ import {
   type DraftRecorder,
   type DraftSender,
   draftSender,
+  draftsVersion,
   dropLostDrafts,
   type EditDraft,
   recordDrafts,
@@ -150,6 +153,13 @@ function roomProvider(editor: PlateEditor) {
     ._providers.find((candidate) =>
       USE_MSW ? candidate.type === 'mock' : candidate.type === 'capy'
     ) as StatelessProviderWrapper | undefined;
+}
+
+/** The capy room provider (none under MSW), which knows the stored version
+ * the tab reports (in-place collection). */
+function capyRoom(editor: PlateEditor) {
+  const provider = roomProvider(editor)?.provider;
+  return provider instanceof RoomProvider ? provider : undefined;
 }
 
 /**
@@ -1093,6 +1103,11 @@ export function NoteEditorCore({
                     },
                     // Stored drafts not yet covered by a receipt (Q236).
                     unsent: () => !!recorder.current?.unsaved,
+                    // The restored rows' version: the tab reports no newer
+                    // one until the room took them.
+                    unsentFrom: restored.length
+                      ? draftsVersion(restored)
+                      : undefined,
                     url: collaborationToken.url,
                   },
                   // The capy-sync room provider (features/collaboration/platePlugin).
@@ -1128,6 +1143,7 @@ export function NoteEditorCore({
     qc,
     rejectDocument,
     reportPresence,
+    restored,
     saveDelay,
     setStatus,
     ydoc,
@@ -1150,6 +1166,9 @@ export function NoteEditorCore({
     plugins,
     value: initialValue,
   });
+  // Undo reaches back 24 h (in-place collection, Epo 2026-10-23); the Yjs
+  // history made its manager with the editor.
+  limitUndo((editor as PlateEditor & YHistoryEditor).undoManager);
   // Provider callbacks are configured before the editor exists.
   const editorRef = useRef(editor);
   editorRef.current = editor;
@@ -1182,6 +1201,7 @@ export function NoteEditorCore({
       },
       report: reportIncident,
       token: () => lastToken.current,
+      version: () => capyRoom(editorRef.current)?.reportedVersion,
     });
     recorder.current = current;
     return () => {
@@ -1295,6 +1315,9 @@ export function NoteEditorCore({
       const room = roomProvider(editor)?.provider;
       heldSteps.current = true;
       heldEpisode.current = true;
+      // Marked first, so the Leave says unsent and the session (this Y.Doc)
+      // stays (review r1 N3).
+      capyRoom(editor)?.unsentFrom(draftsVersion(pending));
       room?.disconnect();
       recorder.current?.disconnected(true);
       applyDrafts(ydoc, pending, RESTORE_ORIGIN);

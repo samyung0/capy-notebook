@@ -73,8 +73,58 @@ async fn start_with(env: &Env, api: Option<&str>) -> Server {
 }
 
 /// The server with `api` as its gateway and `extra` settings.
-#[allow(clippy::zombie_processes)]
 async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) -> Server {
+    let stdout = if std::env::var_os("CAPY_IT_LOGS").is_some() {
+        Stdio::inherit()
+    } else {
+        Stdio::null()
+    };
+    launch(env, api, extra, stdout).await
+}
+
+/// The server, its log lines kept for the test to read (`Logs`).
+async fn start_logged(env: &Env) -> (Server, Logs) {
+    let mut server = launch(env, env.api.as_deref(), &[], Stdio::piped()).await;
+    let logs = Logs::default();
+    let stdout = server.child.stdout.take().expect("piped output");
+    let lines = logs.0.clone();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+        {
+            lines.lock().expect("logs").push(line);
+        }
+    });
+    (server, logs)
+}
+
+/// A server's log lines (`start_logged`).
+#[derive(Default)]
+struct Logs(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+impl Logs {
+    /// Whether a line holding every one of `parts` comes within 10 s.
+    async fn has(&self, parts: &[&str]) -> bool {
+        for _ in 0..100 {
+            let found = self
+                .0
+                .lock()
+                .expect("logs")
+                .iter()
+                .any(|line| parts.iter().all(|part| line.contains(part)));
+            if found {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        false
+    }
+}
+
+#[allow(clippy::zombie_processes)]
+async fn launch(env: &Env, api: Option<&str>, extra: &[(&str, &str)], stdout: Stdio) -> Server {
     // A free port per server, so the tests run in parallel.
     let port = std::net::TcpListener::bind(("127.0.0.1", 0))
         .and_then(|listener| listener.local_addr())
@@ -101,11 +151,7 @@ async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) 
         .env("COLLABORATION_SOURCE_DISK_DIR", disk_dir(port))
         .env("COLLABORATION_SOURCE_DISK_BYTES", "5368709120")
         .envs(extra.iter().copied())
-        .stdout(if std::env::var_os("CAPY_IT_LOGS").is_some() {
-            Stdio::inherit()
-        } else {
-            Stdio::null()
-        })
+        .stdout(stdout)
         .spawn()
         .expect("the server starts");
     for _ in 0..100 {
@@ -360,14 +406,28 @@ fn join_payload(room: &str, token: &str, protocol: Option<u64>) -> Vec<u8> {
     join_payload_as(room, &token, protocol, client)
 }
 
-/// A JOIN's payload naming the session's client id `client`.
+/// A JOIN's payload naming the session's client id `client`, a new session
+/// holding no stored version.
 fn join_payload_as(room: &str, token: &str, protocol: Option<u64>, client: u64) -> Vec<u8> {
+    join_payload_at(room, token, protocol, client, 0)
+}
+
+/// A JOIN's payload naming the session's client id and the stored version
+/// it holds (in-place collection).
+fn join_payload_at(
+    room: &str,
+    token: &str,
+    protocol: Option<u64>,
+    client: u64,
+    version: u64,
+) -> Vec<u8> {
     let mut payload = Vec::new();
     varbytes(&mut payload, room.as_bytes());
     varbytes(&mut payload, token.as_bytes());
     if let Some(protocol) = protocol {
         var(&mut payload, protocol);
         var(&mut payload, client);
+        var(&mut payload, version);
     }
     payload
 }
@@ -475,10 +535,18 @@ impl Client {
     }
 
     /// Leaves its channel as a browser tab does (Q236): `unsent` when it
-    /// still holds unsent edits for the document. Later JOINs go on the next
-    /// channel of the same socket.
+    /// still holds unsent edits for the document, naming its session. Later
+    /// JOINs go on the next channel of the same socket.
     async fn leave(&mut self, unsent: bool) {
-        self.send(3, &[u8::from(unsent)]).await;
+        let session = self.id();
+        self.leave_naming(unsent, session).await;
+    }
+
+    /// A Leave naming the session `session`.
+    async fn leave_naming(&mut self, unsent: bool, session: u64) {
+        let mut payload = vec![u8::from(unsent)];
+        var(&mut payload, session);
+        self.send(3, &payload).await;
         self.channel += 1;
         self.inbox.clear();
     }
@@ -1454,15 +1522,21 @@ async fn an_update_that_panics_yrs_costs_neither_the_process_nor_the_room() {
     assert!(b.until(6).await.is_some());
 }
 
+/// A panic discards the room and moves its lineage; the old lineage's
+/// sessions end with it (review r2 L3: their tabs never rejoin the new one).
 #[tokio::test]
 async fn a_panic_inside_a_transaction_discards_the_room_and_moves_its_lineage() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
-    let (user, material) = note(&env, "durable").await;
+    let (user, material) = note(&env, "xdurable").await;
     let room = format!("material:{material}:schema:1");
     let mut a = Client::open(server.port).await;
     a.joined(&room, &token(&room, &user, "write")).await;
-    assert!(a.settle(|c| c.block_text() == "durable").await);
+    assert!(a.settle(|c| c.block_text() == "xdurable").await);
+    let answered = a.stored_past(0).await;
+    a.delete_in_block(0, 1, true).await;
+    a.stored_past(answered).await;
+    assert!(session_row(&env, &material, a.id()).await.1);
     // The debug build's panic inside an open write transaction, outside the
     // sync path: the room is discarded, not left dead in the registry.
     let request = serde_json::json!({ "type": "capy-it-panic" }).to_string();
@@ -1508,6 +1582,8 @@ async fn a_panic_inside_a_transaction_discards_the_room_and_moves_its_lineage() 
         "{}",
         b.block_text()
     );
+    let (_, seen, held) = session_row(&env, &material, a.id()).await;
+    assert_eq!((seen, held.is_empty()), (false, true));
 }
 
 #[tokio::test]
@@ -2883,6 +2959,9 @@ async fn a_room_left_right_after_a_first_write_unloads_once_its_row_is_in() {
     lock.rollback().await.expect("unlock");
     wait_unloaded(server.port).await;
     assert_eq!(id_rows(&env, &room, id).await, 1);
+    // Its session, which the store passed over while the row was queued, is
+    // written once the row is in (review r1: no deadlock with that insert).
+    assert!(session_row(&env, material_of(&room), id).await.1);
 }
 
 /// Security regression (r2 S4): a channel stays its user's: a token refresh
@@ -9394,6 +9473,21 @@ async fn crafted_draft_bodies_are_refused_and_the_room_survives() {
             "{answer}"
         );
     }
+    // Review r2 N2: an unreadable version is refused, not taken as none.
+    let (got, answer) = send_drafts_over(
+        server.port,
+        &room,
+        Some(&write),
+        Some(ORIGIN),
+        &[("x-capy-version", "seven")],
+        drafted(&reader.doc, typed_into_note(" late")),
+    )
+    .await;
+    assert_eq!(
+        (got, answer["class"].as_str()),
+        (400, Some("malformed")),
+        "{answer}"
+    );
     // The room still takes a writer's drafts.
     let (status, answer) = send(drafted(&reader.doc, typed_into_note(" kept"))).await;
     assert_eq!(status, 200, "{answer}");
@@ -9528,6 +9622,7 @@ async fn a_draft_preflight_answers_an_allowed_origin_alone() {
         "x-capy-base",
         "x-capy-protocol",
         "x-capy-grants",
+        "x-capy-version",
     ] {
         assert!(
             header("access-control-allow-headers").contains(name),
@@ -10352,4 +10447,924 @@ async fn a_repeated_block_id_is_repaired_at_save_with_no_reset() {
     assert!(a.settle(distinct).await);
     assert!(b.settle(distinct).await);
     assert_eq!(room_schema(&env, &material).await, 1);
+}
+
+// ------------------------------------------------- note sessions (in-place collection)
+
+/// A note session's row (`sessions.rs`): its acknowledged version, whether
+/// it is a live session (seen), and the deletions it holds.
+async fn session_row(env: &Env, material: &str, client: u64) -> (i64, bool, yrs::IdSet) {
+    let row = db(env)
+        .await
+        .query_one(
+            "SELECT acked_version, seen_at IS NOT NULL, held FROM material_yjs_client_ids
+             WHERE material_id=$1 AND document='content' AND client_id=$2",
+            &[&material, &(client as i64)],
+        )
+        .await
+        .expect("the session's row");
+    let held: Option<Vec<u8>> = row.get(2);
+    (
+        row.get(0),
+        row.get(1),
+        held.map_or_else(yrs::IdSet::new, |bytes| held_ids(&bytes)),
+    )
+}
+
+/// The deletions a stored `held` column holds: batches of an arrival time
+/// and a Yjs delete set.
+fn held_ids(bytes: &[u8]) -> yrs::IdSet {
+    let mut at = 0;
+    let mut ids = yrs::IdSet::new();
+    for _ in 0..read_var(bytes, &mut at) {
+        let _arrived = read_var(bytes, &mut at);
+        let len = read_var(bytes, &mut at) as usize;
+        ids.merge_with(yrs::IdSet::decode_v1(&bytes[at..at + len]).expect("ids"));
+        at += len;
+    }
+    ids
+}
+
+impl Client {
+    /// The next `stored` notice past `version`: the version it names.
+    async fn stored_past(&mut self, version: i64) -> i64 {
+        loop {
+            let (notice, _) = self.stateless("stored").await;
+            let stored = notice["version"].as_i64().expect("a version");
+            if stored > version {
+                return stored;
+            }
+        }
+    }
+
+    /// Acknowledges a stored version, as a tab does on each `stored`.
+    async fn ack_version(&mut self, version: i64) {
+        let ack = serde_json::json!({ "type": "ack", "version": version }).to_string();
+        let mut payload = Vec::new();
+        varbytes(&mut payload, ack.as_bytes());
+        self.send(9, &payload).await;
+    }
+
+    /// Deletes `len` units at `index` of the first block, sent at once when
+    /// `send`: the deletions it made.
+    async fn delete_in_block(&mut self, index: u32, len: u32, send: bool) -> yrs::IdSet {
+        let before = self.doc.transact().state_vector();
+        let deleted = {
+            let root = self.doc.get_or_insert_text("content");
+            let mut txn = self.doc.transact_mut();
+            let block = root
+                .diff(&txn, yrs::types::text::YChange::identity)
+                .into_iter()
+                .find_map(|chunk| match chunk.insert {
+                    yrs::Out::YXmlText(block) => Some(block),
+                    _ => None,
+                })
+                .expect("a block");
+            block.remove_range(&mut txn, index, len);
+            txn.commit();
+            txn.delete_set().clone()
+        };
+        if send {
+            let update = self.doc.transact().encode_state_as_update_v1(&before);
+            self.send(5, &sync(2, &update)).await;
+        }
+        deleted
+    }
+
+    /// Joins again as the same session (its own id, offered by `token`)
+    /// naming `version`, and syncs: its step 2 carries all it holds.
+    async fn rejoin_at(&mut self, room: &str, token: &str, version: u64) {
+        let payload = join_payload_at(room, token, Some(client_protocol()), self.id(), version);
+        self.send(0, &payload).await;
+        self.until(1).await.expect("joined");
+        let sv = self.doc.transact().state_vector().encode_v1();
+        self.send(5, &sync(0, &sv)).await;
+    }
+}
+
+/// In-place collection, step 1 (Epo 2026-10-23): a note room tells a synced
+/// editor the stored version it holds once it answered its step 1 and after
+/// each store; the session counts at the version its JOIN named, then at
+/// each `ack` (never above the room's version), and its row keeps that with
+/// the next store.
+#[tokio::test]
+async fn a_note_session_counts_at_its_join_and_acknowledged_versions() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = Client::open(server.port).await;
+    let offered = fresh_client_id();
+    a.doc = Doc::with_options(ydoc::doc_options(offered));
+    a.rejoin_at(&room, &token_offering(&room, &user, "write", offered), 1)
+        .await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    assert_eq!(a.stored_past(0).await, 1, "the answer's stored version");
+    a.type_text("-a").await;
+    let second = a.stored_past(1).await;
+    assert_eq!(session_row(&env, &material, a.id()).await.0, 1);
+    // An acknowledgement above the room counts as the room's version.
+    a.ack_version(second + 50).await;
+    a.type_text("-b").await;
+    a.stored_past(second).await;
+    let (version, seen, held) = session_row(&env, &material, a.id()).await;
+    assert_eq!((version, seen, held.is_empty()), (second, true, true));
+}
+
+/// In-place collection, step 1: a session holds the deletions its own
+/// updates made. A reconnect's step 2 resends the whole delete set and adds
+/// only what the room held undeleted: the session's offline deletions,
+/// never another writer's that it heard. Fails if a held set takes the
+/// resent deletions too, or the live ones go unheld.
+#[tokio::test]
+async fn a_step_2_holds_only_the_sessions_own_deletions() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "abcdef").await;
+    let material = material_of(&room).to_owned();
+    let mut a = Client::open(server.port).await;
+    let offered = fresh_client_id();
+    a.doc = Doc::with_options(ydoc::doc_options(offered));
+    let a_token = token_offering(&room, &owner, "write", offered);
+    a.rejoin_at(&room, &a_token, 0).await;
+    let mut b = Client::open(server.port).await;
+    b.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(a.settle(|c| c.block_text() == "abcdef").await);
+    assert!(b.settle(|c| c.block_text() == "abcdef").await);
+    // B deletes "ab" live; A hears it.
+    let bs = b.delete_in_block(0, 2, true).await;
+    let stored = b.stored_past(1).await;
+    assert!(a.settle(|c| c.block_text() == "cdef").await);
+    // A leaves with unsent edits, deletes "ef" offline and comes back.
+    a.leave(true).await;
+    let a_deleted = a.delete_in_block(2, 2, false).await;
+    a.rejoin_at(&room, &a_token, stored as u64).await;
+    // Reading up to a sync message answers the room's step 1 (its step 2);
+    // syncs never wait in the inbox, unlike the old channel's notices.
+    a.until(5).await.expect("a sync");
+    assert!(b.settle(|c| c.block_text() == "cd").await);
+    b.stored_past(stored).await;
+    assert_eq!(session_row(&env, &material, a.id()).await.2, a_deleted);
+    assert_eq!(session_row(&env, &material, b.id()).await.2, bs);
+}
+
+/// Security regression (in-place collection, plan section 8): a clean Leave
+/// ends only the session bound to the leaving channel. One naming another
+/// user's session ends nothing, so that session stays counted and keeps the
+/// deletions its Undo restores. Fails if a Leave ends whichever session it
+/// names.
+#[tokio::test]
+async fn a_leave_ends_only_the_leaving_channels_own_session() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "abcdef").await;
+    let material = material_of(&room).to_owned();
+    let mut victim = Client::open(server.port).await;
+    victim.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(victim.settle(|c| c.block_text() == "abcdef").await);
+    let held = victim.delete_in_block(0, 2, true).await;
+    let stored = victim.stored_past(1).await;
+    assert_eq!(session_row(&env, &material, victim.id()).await.2, held);
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(other.settle(|c| c.block_text() == "cdef").await);
+    other.leave_naming(false, victim.id()).await;
+    // The victim's next store writes its session as it stands.
+    victim.type_text("-x").await;
+    victim.stored_past(stored).await;
+    let (_, seen, kept) = session_row(&env, &material, victim.id()).await;
+    assert!(seen, "the victim's session ended");
+    assert_eq!(kept, held);
+}
+
+/// Editor 2026-10-26 (in-place collection, step 1): the version a room sends
+/// after answering a step 1 is the latest one already committed. A session
+/// joining while a store is pending hears the committed version, holding
+/// more, and the pending one only once it commits. Fails if the notice names
+/// a store that has not committed.
+#[tokio::test]
+async fn a_session_joining_while_a_store_is_pending_hears_the_committed_version() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    let committed = writer.stored_past(0).await;
+    let mut lock = db(&env).await;
+    let held = lock.transaction().await.expect("transaction");
+    held.batch_execute("LOCK TABLE material_yjs_updates IN EXCLUSIVE MODE")
+        .await
+        .expect("lock");
+    writer.type_text("-a").await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let waiting = db(&env)
+            .await
+            .query_one(
+                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' \
+                 AND query ILIKE '%material_yjs_updates%'",
+                &[],
+            )
+            .await
+            .expect("activity")
+            .get::<_, i64>(0);
+        if waiting > 0 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the store never reached the lock"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let mut joining = Client::open(server.port).await;
+    joining.joined(&room, &token(&room, &user, "write")).await;
+    assert!(joining.settle(|c| c.block_text() == "base-a").await);
+    let (notice, _) = joining.stateless("stored").await;
+    assert_eq!(notice["version"], committed, "the pending store's version");
+    held.rollback().await.expect("release");
+    assert_eq!(joining.stored_past(committed).await, committed + 1);
+}
+
+/// Editor 2026-10-26 (in-place collection, step 1): a session that never
+/// wrote is counted in its room's memory only and gets no row, so the next
+/// room life does not count it; it holds no deletions and no unsent edits,
+/// so a collection passing it costs it only a remount (the late path), and
+/// it comes back with its document whole. Fails if such a session gets a
+/// row.
+#[tokio::test]
+async fn a_session_that_never_wrote_is_counted_only_while_its_room_lives() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    writer.type_text("-w").await;
+    let stored = writer.stored_past(1).await;
+    let offered = fresh_client_id();
+    let mut reader = Client::open(server.port).await;
+    reader.doc = Doc::with_options(ydoc::doc_options(offered));
+    reader
+        .rejoin_at(&room, &token_offering(&room, &user, "write", offered), 0)
+        .await;
+    assert!(reader.settle(|c| c.block_text() == "base-w").await);
+    assert_eq!(reader.stored_past(0).await, stored);
+    let kept = reader
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    drop(reader);
+    drop(writer);
+    wait_unloaded(server.port).await;
+    let rows: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM material_yjs_client_ids WHERE material_id=$1 AND client_id=$2",
+            &[&material, &(offered as i64)],
+        )
+        .await
+        .expect("count")
+        .get(0);
+    assert_eq!(rows, 0, "a session that never wrote has no row");
+    let mut back = Client::open(server.port).await;
+    back.doc = Doc::with_options(ydoc::doc_options(offered));
+    back.doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&kept).expect("state"))
+        .expect("apply");
+    back.rejoin_at(
+        &room,
+        &token_offering(&room, &user, "write", offered),
+        stored as u64,
+    )
+    .await;
+    assert!(back.settle(|c| c.block_text() == "base-w").await);
+}
+
+/// Review r1 H1 (Editor 2026-10-26, plan change): a tab keeps an edit
+/// unsent until the second store's `stored` after the edit's ACK, which
+/// holds only if nothing but a store announces. An agent edit (whose
+/// service edit may fold the note) announces nothing; the next store's
+/// notice names a version past it. Fails if a service edit announces its
+/// version.
+#[tokio::test]
+async fn an_agent_edit_announces_no_stored_version() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "hello world").await;
+    let material = material_of(&room).to_owned();
+    let committed = writer.stored_past(0).await;
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "hello", "text": "hi" }],
+            "operation": { "id": format!("h1_{material}"), "requestHash": "h1" },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(writer.settle(|c| c.block_text() == "hi world").await);
+    while let Ok(Some(event)) =
+        tokio::time::timeout(Duration::from_millis(500), writer.until(9)).await
+    {
+        let event = text_payload(&event);
+        assert!(!event.contains("\"stored\""), "{event}");
+    }
+    writer.type_text("-x").await;
+    assert!(writer.stored_past(committed).await > committed + 1);
+}
+
+/// Q382 (Epo 2026-10-26): a session row whose held deletions cannot be read
+/// is dropped alone, as if that session had ended: the note loads, that
+/// row's session columns are cleared, and another session's row stays.
+/// Fails if one damaged row keeps the note from loading.
+#[tokio::test]
+async fn a_damaged_session_row_drops_only_that_session() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    let committed = writer.stored_past(0).await;
+    let held = writer.delete_in_block(0, 1, true).await;
+    writer.stored_past(committed).await;
+    let good = writer.id();
+    let damaged = fresh_client_id();
+    db(&env)
+        .await
+        .execute(
+            "INSERT INTO material_yjs_client_ids
+               (material_id, document, client_id, user_id, acked_version, seen_at, held)
+             VALUES ($1, 'content', $2, $3, 1, now(), '\\x09'::bytea)",
+            &[&material, &(damaged as i64), &user],
+        )
+        .await
+        .expect("a damaged row");
+    // Dropped, not left: the session stays counted across the unload.
+    drop(writer);
+    wait_unloaded(server.port).await;
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    assert!(reader.settle(|c| c.block_text() == "ase").await);
+    let (version, seen, kept) = session_row(&env, &material, damaged).await;
+    assert_eq!((version, seen, kept.is_empty()), (-1, false, true));
+    let (_, seen, kept) = session_row(&env, &material, good).await;
+    assert_eq!((seen, kept), (true, held));
+    let message = format!("session {damaged}: unreadable held deletions");
+    assert!(logs.has(&["captured error", &message]).await, "reported");
+    // Review r2 M1: its tab returns as late, whatever version it names (its
+    // record, and so its held deletions, were lost).
+    assert!(!logs.has(&["late session joined"]).await);
+    let mut back = Client::open(server.port).await;
+    let join = token(&room, &user, "write");
+    let payload = join_payload_at(&room, &join, Some(client_protocol()), damaged, 99);
+    back.send(0, &payload).await;
+    back.until(1).await.expect("joined");
+    assert!(logs.has(&["late session joined"]).await, "late");
+    // Review r3 L4: so is a draft group written under the lost id, which
+    // the room admits through its record without any grant.
+    let lost = Doc::with_options(ydoc::doc_options(damaged));
+    let state = reader
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    lost.transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    typed_into_note(" offline")(&lost);
+    let body = lost
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let (status, answer) = send_drafts(server.port, &room, Some(&join), Some(ORIGIN), body).await;
+    assert!(logs.has(&["late draft group"]).await, "{status} {answer}");
+}
+
+/// Q386 (Epo 2026-10-26): agent holds that cannot be read are dropped and
+/// reported, the note loads, and the sessions' holds stay; the next store
+/// writes the agent holds cleared. Fails if the load fails or drops more.
+#[tokio::test]
+async fn unreadable_agent_holds_are_dropped_and_reported() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    let committed = writer.stored_past(0).await;
+    let held = writer.delete_in_block(0, 1, true).await;
+    writer.stored_past(committed).await;
+    let session = writer.id();
+    drop(writer);
+    wait_unloaded(server.port).await;
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE material_yjs_documents SET agent_held='\\x09'::bytea WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("damaged agent holds");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    assert!(reader.settle(|c| c.block_text() == "ase").await);
+    assert!(
+        logs.has(&["captured error", "unreadable agent holds"])
+            .await
+    );
+    let answered = reader.stored_past(0).await;
+    reader.type_text("!").await;
+    reader.stored_past(answered).await;
+    let agent: Option<Vec<u8>> = client
+        .query_one(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0);
+    assert_eq!(agent, None);
+    assert_eq!(session_row(&env, &material, session).await.2, held);
+}
+
+/// Review r3 L1: a store never locks a deleting account among its session
+/// users, so the purge holding that account's row (PurgeUser updates the
+/// account's materials, then its row) never waits on a store that waits on
+/// the material. Fails if the store share-locks the deleting account.
+#[tokio::test]
+async fn a_store_never_locks_a_deleting_session_user() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "abcdef").await;
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &owner, "write")).await;
+    let mut b = Client::open(server.port).await;
+    b.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(b.settle(|c| c.block_text() == "abcdef").await);
+    let answered = b.stored_past(0).await;
+    b.delete_in_block(0, 1, true).await;
+    let stored = b.stored_past(answered).await;
+    db(&env)
+        .await
+        .execute(
+            "UPDATE users SET deletion_requested_at=now(), purge_after=now() WHERE id=$1",
+            &[&editor],
+        )
+        .await
+        .expect("deletion");
+    // The purge's lock on the account's row, held while A's store runs.
+    let purge = db(&env).await;
+    purge.execute("BEGIN", &[]).await.expect("begin");
+    purge
+        .execute("SELECT 1 FROM users WHERE id=$1 FOR UPDATE", &[&editor])
+        .await
+        .expect("account row");
+    // B's session changes, so A's next store carries it.
+    b.ack_version(stored).await;
+    assert!(a.settle(|c| c.block_text() == "bcdef").await);
+    a.type_text("-a").await;
+    let next = tokio::time::timeout(Duration::from_secs(8), a.stored_past(stored)).await;
+    purge.execute("ROLLBACK", &[]).await.expect("rollback");
+    assert!(next.is_ok(), "the store waited on the deleting account");
+}
+
+/// Q389 (Epo 2026-10-26): a server edit whose committed row the open room
+/// cannot apply (a debug-only failure) reloads the room from the stored
+/// document: its channels close as the room is reset, and the next room
+/// holds the edit. Fails if the room carries on without it.
+#[tokio::test]
+async fn a_server_edit_the_room_cannot_apply_reloads_the_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut person) = writer(&env, server.port, "hello world").await;
+    let material = material_of(&room).to_owned();
+    let edit = format!("capy-it-fail-service-edit-{material}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    let closed = person.until(4).await.expect("the channel closes");
+    let closed = String::from_utf8_lossy(&closed);
+    assert!(closed.contains("being reset"), "{closed}");
+    assert_eq!(person.block_text(), "hello world");
+    wait_unloaded(server.port).await;
+    let mut next = Client::open(server.port).await;
+    next.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        next.settle(|c| c.block_text() == "hello there").await,
+        "{}",
+        next.block_text()
+    );
+}
+
+/// Q389 (Epo 2026-10-26): a quiz edit's step ends as a whole once either
+/// room's 24 h passed (shortened here; the keys room's stamped 10 s later by
+/// a debug-only hook): its Undo is refused and neither room changes. Fails
+/// if the room still holding it reverts alone.
+#[tokio::test]
+async fn a_quiz_step_ends_as_a_whole() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_AGENT_UNDO_MS", "1500")],
+    )
+    .await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let content_room = format!("material:{quiz}:schema:1");
+    let keys_room = format!("keys:{quiz}:schema:1");
+    let mut content = Client::open(server.port).await;
+    let mut keys = Client::open(server.port).await;
+    content
+        .joined(&content_room, &token(&content_room, &owner, "write"))
+        .await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
+    let has_q3 = |c: &Client| map_at(&c.doc, &["questions", "q3"]).is_some();
+    let has_keys = |c: &Client| map_at(&c.doc, &["keys", "q3-p"]).is_some();
+    assert!(
+        content
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_some())
+            .await
+    );
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q2-p"]).is_some())
+            .await
+    );
+    let edit = format!("capy-it-keys-later-{quiz}");
+    let question = serde_json::json!({
+        "type": "quiz_question", "id": "q3", "children": [{ "text": "" }],
+        "question": {
+            "id": "q3", "layout": "paper", "labels": "letters", "stem": [],
+            "parts": [{
+                "id": "q3-p", "blocks": [{ "type": "text", "text": "Order these." }],
+                "answer": { "type": "ordering", "items": ["a", "b"] }, "marks": 1, "solution": [],
+            }],
+        },
+    });
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": owner,
+            "commands": [{ "type": "insert_child", "parentType": "quiz", "afterNodeId": "q2", "node": question }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": content_room,
+            "target": { "id": quiz, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["effect"]["undo"]["operationId"], edit.as_str());
+    assert!(content.settle(has_q3).await);
+    assert!(keys.settle(has_keys).await);
+    // The content room's part ended and went; the keys room's has 10 s left.
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&owner, &edit, &format!("u_{quiz}"), &quiz),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("undo_unavailable")),
+        "{refusal}"
+    );
+    let _ = keys.hears(200, 1000).await;
+    assert!(has_q3(&content) && has_keys(&keys), "a room reverted alone");
+}
+
+/// Review r1 L5: a room never writes back the session row of an account
+/// whose deletion began: the purge deletes the account's client-id rows, and
+/// the room still holding its session writes none again. Fails if the next
+/// store re-inserts it.
+#[tokio::test]
+async fn a_deleted_accounts_session_row_is_never_written_back() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "abcdef").await;
+    let material = material_of(&room).to_owned();
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &owner, "write")).await;
+    let mut b = Client::open(server.port).await;
+    b.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(b.settle(|c| c.block_text() == "abcdef").await);
+    let answered = b.stored_past(0).await;
+    b.delete_in_block(0, 1, true).await;
+    let stored = b.stored_past(answered).await;
+    assert!(session_row(&env, &material, b.id()).await.1);
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE users SET deletion_requested_at=now(), purge_after=now() WHERE id=$1",
+            &[&editor],
+        )
+        .await
+        .expect("deletion");
+    client
+        .execute(
+            "DELETE FROM material_yjs_client_ids WHERE user_id=$1",
+            &[&editor],
+        )
+        .await
+        .expect("purge");
+    // B's session changes after the purge; A's next store writes changes.
+    b.ack_version(stored).await;
+    assert!(a.settle(|c| c.block_text() == "bcdef").await);
+    a.type_text("-a").await;
+    a.stored_past(stored).await;
+    let rows: i64 = client
+        .query_one(
+            "SELECT count(*) FROM material_yjs_client_ids WHERE material_id=$1 AND client_id=$2",
+            &[&material, &(b.id() as i64)],
+        )
+        .await
+        .expect("rows")
+        .get(0);
+    assert_eq!(rows, 0);
+}
+
+/// Review r1 L6: what a session did after its room's last store (an
+/// acknowledgement, a departure) reaches its row when the room unloads.
+/// Fails if the unload writes nothing.
+#[tokio::test]
+async fn an_unloading_room_writes_its_sessions_last_state() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, room, mut writer) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    let committed = writer.stored_past(0).await;
+    writer.delete_in_block(0, 1, true).await;
+    let stored = writer.stored_past(committed).await;
+    let id = writer.id();
+    assert_ne!(session_row(&env, &material, id).await.0, stored);
+    writer.ack_version(stored).await;
+    // The acknowledgement lands before the socket goes.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    drop(writer);
+    wait_unloaded(server.port).await;
+    let (version, seen, _) = session_row(&env, &material, id).await;
+    assert_eq!((version, seen), (stored, true));
+}
+
+/// Review r1 M3 (Editor 2026-10-26, plan change): what an agent step the
+/// room keeps for its Undo deleted is held for 24 h, and written beside the
+/// document (with the next store, or as the room unloads). Fails if the
+/// agent's deletions are not held.
+#[tokio::test]
+async fn an_agent_steps_deletions_are_held_beside_the_document() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut person) = writer(&env, server.port, "hello world").await;
+    let material = material_of(&room).to_owned();
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": format!("m3_{material}"), "requestHash": "m3" },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(
+        receipt["effect"]["undo"]["operationId"].is_string(),
+        "{receipt}"
+    );
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    drop(person);
+    wait_unloaded(server.port).await;
+    let agent: Option<Vec<u8>> = db(&env)
+        .await
+        .query_one(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0);
+    let held = held_ids(&agent.expect("agent holds"));
+    assert!(!held.is_empty());
+}
+
+/// The agent holds as stored: each batch's arrival (Unix seconds) and ids.
+async fn agent_held(env: &Env, material: &str) -> Vec<(u64, yrs::IdSet)> {
+    let bytes: Option<Vec<u8>> = db(env)
+        .await
+        .query_one(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0);
+    let bytes = bytes.expect("agent holds");
+    let mut at = 0;
+    let mut batches = Vec::new();
+    for _ in 0..read_var(&bytes, &mut at) {
+        let arrived = read_var(&bytes, &mut at);
+        let len = read_var(&bytes, &mut at) as usize;
+        let ids = yrs::IdSet::decode_v1(&bytes[at..at + len]).expect("ids");
+        at += len;
+        batches.push((arrived, ids));
+    }
+    batches
+}
+
+/// All the ids of stored agent holds.
+fn all_ids(batches: &[(u64, yrs::IdSet)]) -> yrs::IdSet {
+    let mut ids = yrs::IdSet::new();
+    for (_, batch) in batches {
+        ids.merge_with(batch.clone());
+    }
+    ids
+}
+
+/// Whether `inner` is inside `outer` and smaller.
+fn grew(inner: &yrs::IdSet, outer: &yrs::IdSet) -> bool {
+    let mut both = outer.clone();
+    both.merge_with(inner.clone());
+    &both == outer && inner != outer
+}
+
+/// Q385 (Epo 2026-10-26): the agent holds cover what an agent edit, its
+/// Undo and then its Redo deleted, each held from the agent edit's time (an
+/// Undo or Redo does not restart its 24 h). Fails if a step's deletions are
+/// not held, or are held from their own time.
+#[tokio::test]
+async fn an_agent_edits_undo_and_redo_are_held_from_the_edit() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut person) = writer(&env, server.port, "hello world").await;
+    let material = material_of(&room).to_owned();
+    let (edit, undo, redo) = (
+        format!("e_{material}"),
+        format!("u_{material}"),
+        format!("r_{material}"),
+    );
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    let edited = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("time")
+        .as_secs()
+        + 1;
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    // A person's store writes the edit's holds.
+    let answered = person.stored_past(0).await;
+    person.type_at(0, "A").await;
+    person.stored_past(answered).await;
+    let after_edit = all_ids(&agent_held(&env, &material).await);
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &edit, &undo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let after_undo = all_ids(&agent_held(&env, &material).await);
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &undo, &redo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let batches = agent_held(&env, &material).await;
+    assert!(grew(&after_edit, &after_undo), "the Undo's deletions");
+    assert!(
+        grew(&after_undo, &all_ids(&batches)),
+        "the Redo's deletions"
+    );
+    assert!(
+        batches.iter().all(|(arrived, _)| *arrived <= edited),
+        "held from the edit ({edited}): {:?}",
+        batches
+            .iter()
+            .map(|(arrived, _)| arrived)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Q385 (Epo 2026-10-26): an agent edit's Undo is offered until 24 h after
+/// the edit (shortened here), its receipt says until when, and then the
+/// room drops the step: it no longer shows as live, and its Undo is refused
+/// as a step the room no longer has. Fails if a loaded room keeps the step.
+#[tokio::test]
+async fn an_agent_step_goes_24_hours_after_its_edit() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_AGENT_UNDO_MS", "1500")],
+    )
+    .await;
+    let (user, room, mut person) = writer(&env, server.port, "hello world").await;
+    let material = material_of(&room).to_owned();
+    let edit = format!("e_{material}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(
+        receipt["effect"]["undo"]["expiresAt"].is_string(),
+        "{receipt}"
+    );
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    assert_eq!(
+        live_steps(server.port, &[&edit]).await,
+        serde_json::json!([edit])
+    );
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    assert_eq!(
+        live_steps(server.port, &[&edit]).await,
+        serde_json::json!([])
+    );
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &edit, &format!("u_{material}"), &material),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("undo_unavailable")),
+        "{refusal}"
+    );
+    assert_eq!(person.block_text(), "hello there");
+}
+
+/// Review r1 L1: a viewer whose token turns writable (a role upgrade, then a
+/// refresh) gets a session at its first write like any session: its
+/// deletions are held and its id recorded. Fails if a channel that joined as
+/// a viewer holds nothing.
+#[tokio::test]
+async fn a_viewer_whose_token_turns_writable_gets_a_session_at_its_first_write() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, _, room) = shared_note(&env, "abcdef").await;
+    let material = material_of(&room).to_owned();
+    let viewer = user(&env).await;
+    let client = db(&env).await;
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, role)
+             SELECT workspace_id, $2, 'viewer' FROM materials WHERE id=$1",
+            &[&material, &viewer],
+        )
+        .await
+        .expect("viewer");
+    let mut v = Client::open(server.port).await;
+    assert_eq!(v.joined(&room, &token(&room, &viewer, "read")).await, 0);
+    assert!(v.settle(|c| c.block_text() == "abcdef").await);
+    // A role change evicts the channel (its outbox row); dropped here, in
+    // the same transaction, to reach a token turned writable on a live one.
+    let upgrade = format!(
+        "BEGIN; UPDATE workspace_members SET role='editor' WHERE user_id='{viewer}';
+         DELETE FROM collaboration_eviction_outbox; COMMIT;"
+    );
+    client.batch_execute(&upgrade).await.expect("upgrade");
+    let mut refresh = Vec::new();
+    varbytes(&mut refresh, token(&room, &viewer, "write").as_bytes());
+    v.send(11, &refresh).await;
+    // The refresh lands before the edit.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let held = v.delete_in_block(0, 2, true).await;
+    v.until(6).await.expect("the deletion is acknowledged");
+    let answered = v.stored_past(0).await;
+    v.stored_past(answered).await;
+    assert_eq!(session_row(&env, &material, v.id()).await.2, held);
 }

@@ -33,6 +33,7 @@ import {
   draftGroups,
   draftKey,
   draftSender,
+  dropExpiredGroup,
   type EditDraft,
   readDrafts,
   recordDrafts,
@@ -43,7 +44,7 @@ import { editIncidentReporter } from '@/lib/editIncidents';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
-import { type UndoTarget, undoTarget } from './undo';
+import { limitUndo, type UndoTarget, undoTarget } from './undo';
 import { markUnsent } from './unsentItems';
 import { LOCAL_EDIT } from './yText';
 
@@ -74,6 +75,8 @@ export type ItemRoomStatus =
 
 export interface ItemRecovery {
   doc: Y.Doc;
+  /** Past the 7-day expiry: shown once, its rows deleted as it opened. */
+  expired: boolean;
   /** Refused for good (otherwise: the room moved on meanwhile). */
   refused: boolean;
   rows: EditDraft[];
@@ -242,6 +245,8 @@ export class ItemRoom {
       captureTimeout: 500,
       trackedOrigins: new Set([LOCAL_EDIT]),
     });
+    // Undo reaches back 24 h (Epo 2026-10-23).
+    limitUndo(this.undo);
     this.history = undoTarget(this.undo);
     this.reconnector = roomReconnector({
       // Still not back after the grace period: the room is offline. A join
@@ -564,14 +569,22 @@ export class ItemRoom {
     });
     for (;;) {
       if (this.destroyed) return false;
-      const { current, recovery, refused } = await draftGroups(rows, this.room);
+      const { current, expired, recovery, refused } = await draftGroups(
+        rows,
+        this.room
+      );
       // Destroyed while the drafts worker answered: nothing starts (r6 S1).
       if (this.destroyed) return false;
       if (recovery.length) {
         const doc = recoveryDocument(recovery);
         if (doc) {
+          if (expired)
+            dropExpiredGroup(
+              recovery,
+              editIncidentReporter('material', this.materialId)
+            );
           this.set({
-            recovery: { doc, refused, rows: recovery },
+            recovery: { doc, expired, refused, rows: recovery },
             status: 'saved',
             synced: true,
           });

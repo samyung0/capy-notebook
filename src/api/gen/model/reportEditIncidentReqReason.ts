@@ -14,6 +14,7 @@ export const ReportEditIncidentReqReason = {
   epoch_changed: 'epoch_changed',
   paused: 'paused',
   base_missing: 'base_missing',
+  expired: 'expired',
   quota: 'quota',
   unavailable: 'unavailable',
   write: 'write',

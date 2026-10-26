@@ -154,10 +154,10 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 18;
+pub const CLIENT_PROTOCOL: u32 = 20;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets).
-pub const MIN_MATERIAL: u32 = 18;
+pub const MIN_MATERIAL: u32 = 20;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
 pub const MIN_SOURCE: u32 = 18;
@@ -182,13 +182,18 @@ pub struct Join {
     /// The session's Yjs client id (Q213): its first joined token's, the
     /// only id it writes document changes and awareness under.
     pub client: Option<u64>,
+    /// The last stored version the session holds, never above the version
+    /// its oldest unsent edit was made at (in-place collection; 0: a new
+    /// session holding nothing). None from a source tab of an older build.
+    pub version: Option<u64>,
     /// An embedded quiz's or set's note channel on the same socket, inside
     /// which it joins (Epo 2026-10-20).
     pub parent: Option<u64>,
 }
 
 /// JOIN's payload: the room name, the token, then optionally the client
-/// protocol, the session's client id and an embed's note channel.
+/// protocol, the session's client id, the stored version it holds and an
+/// embed's note channel.
 pub fn decode_join(payload: &[u8]) -> Result<Join, FrameError> {
     let mut at = 0;
     let room = read_string(payload, &mut at)?.to_owned();
@@ -206,14 +211,33 @@ pub fn decode_join(payload: &[u8]) -> Result<Join, FrameError> {
         }
     };
     let client = next()?;
+    let version = next()?;
     let parent = next()?;
     Ok(Join {
         room,
         token,
         protocol,
         client,
+        version,
         parent,
     })
+}
+
+/// LEAVE's payload: one byte, 0 when the tab holds no unsent edits for the
+/// document (Q236; anything else keeps its rows), then the session's client
+/// id (in-place collection: the session a clean Leave ends; none from a
+/// source tab of an older build).
+pub fn decode_leave(payload: &[u8]) -> (bool, Option<u64>) {
+    let clean = payload.first() == Some(&0);
+    let mut at = 1;
+    let session = if payload.len() > 1 {
+        read_var(payload, &mut at)
+            .ok()
+            .filter(|_| at == payload.len())
+    } else {
+        None
+    };
+    (clean, session)
 }
 
 /// A varstring payload (REFUSED, STATELESS, TOKEN).
@@ -375,31 +399,48 @@ mod tests {
     }
 
     #[test]
-    fn join_carries_the_protocol_client_id_and_an_embeds_note_channel_after_the_token() {
+    fn join_carries_the_protocol_client_id_version_and_an_embeds_note_channel_after_the_token() {
         let mut payload = Vec::new();
         write_string(&mut payload, "material:abc:schema:1");
         write_string(&mut payload, "token");
-        let join = |protocol, client, parent| Join {
+        let join = |protocol, client, version, parent| Join {
             room: "material:abc:schema:1".into(),
             token: "token".into(),
             protocol,
             client,
+            version,
             parent,
         };
         // A client from before the gate sends two fields.
-        assert_eq!(decode_join(&payload).unwrap(), join(None, None, None));
+        assert_eq!(decode_join(&payload).unwrap(), join(None, None, None, None));
         write_var(&mut payload, 300);
-        assert_eq!(decode_join(&payload).unwrap(), join(Some(300), None, None));
         write_var(&mut payload, 4_000_000_000);
+        // A source tab of an older build sends no version.
         assert_eq!(
             decode_join(&payload).unwrap(),
-            join(Some(300), Some(4_000_000_000), None)
+            join(Some(300), Some(4_000_000_000), None, None)
+        );
+        write_var(&mut payload, 12);
+        assert_eq!(
+            decode_join(&payload).unwrap(),
+            join(Some(300), Some(4_000_000_000), Some(12), None)
         );
         write_var(&mut payload, 7);
         assert_eq!(
             decode_join(&payload).unwrap(),
-            join(Some(300), Some(4_000_000_000), Some(7))
+            join(Some(300), Some(4_000_000_000), Some(12), Some(7))
         );
+    }
+
+    #[test]
+    fn leave_says_whether_the_tab_is_clean_and_names_its_session() {
+        assert_eq!(decode_leave(&[0]), (true, None));
+        assert_eq!(decode_leave(&[1]), (false, None));
+        assert_eq!(decode_leave(&[0, 0x80, 0x01]), (true, Some(128)));
+        // A malformed session id names none.
+        assert_eq!(decode_leave(&[0, 0x80]), (true, None));
+        assert_eq!(decode_leave(&[0, 5, 6]), (true, None));
+        assert_eq!(decode_leave(&[]), (false, None));
     }
 
     #[test]

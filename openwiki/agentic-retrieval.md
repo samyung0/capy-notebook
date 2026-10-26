@@ -4416,9 +4416,21 @@ edit's transaction (`ydoc::undo::Captured`), as an undo step under the edit's
 operation id (`Room.agent_changes`, indexed by `app.agent_steps`). The
 receipt commits without an Undo ref; once every room the edit wrote answers
 that it took the step (`ServiceEdit.taken`), the server stores
-`undo: {operationId, status: "available"}` on it and returns it so
+`undo: {operationId, status: "available", expiresAt}` on it and returns it so
 (`offer_undo` in `edits.rs`; a source's receipt is Go's checkpoint receipt,
-which never sets the ref). An edit of a file or material no room has loaded
+which never sets the ref). The step lasts 24 h from the edit whether or not
+its room stays loaded (Q385, Epo 2026-10-26): `expiresAt` says when, the
+room drops the step then (`Room::expire_agent_steps`, releasing it from
+`app.agent_steps`), an Undo or Redo arriving later is refused as one the
+room no longer has (`undo_unavailable`), and the chat hides the receipt's
+button at that time (`UndoButton` in `ChatTrace.tsx`). A step spanning rooms
+(a quiz's content and keys, each stamping its own time) ends as a whole at
+the earliest of them (Q389): the Undo handler refuses it once that passed,
+so neither room reverts alone. An Undo or Redo keeps
+the edit's 24 h, and the room's Undo answer names it for the next receipt.
+What the step and its reverses deleted is held an hour longer (in-place
+collection's agent holds, see [editing
+sessions](frontend/plate-editor.md#editing-sessions)). An edit of a file or material no room has loaded
 gets no Undo: nothing opens or holds a room for it, and its receipt shows
 none. A room that loaded after the edit committed already holds its items and
 takes no step either. An edit may remove or replace any note block, media

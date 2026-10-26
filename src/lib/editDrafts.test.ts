@@ -68,12 +68,14 @@ vi.mock('@/api/client', async (load) => ({
 
 import {
   applyDrafts,
+  DRAFT_EXPIRY_MS,
   deleteDocumentDrafts,
   deleteDrafts,
   draftBytes,
   draftGroups,
   draftSender,
   draftSendTimeout,
+  dropExpiredGroup,
   dropLostDrafts,
   type EditDraft,
   markDraftsReported,
@@ -114,7 +116,7 @@ function draft(id: string, overrides: Partial<EditDraft> = {}): EditDraft {
     key: 'u_1:material:mat_1',
     kind: 'update',
     lineage: ROOM,
-    savedAt: 0,
+    savedAt: Date.now(),
     seq: 1,
     session: id,
     ...overrides,
@@ -615,6 +617,43 @@ describe('lineage', () => {
     ).toEqual(['old-hash']);
   });
 
+  // Late merge M5 (Epo 2026-10-24), by session (review r1 L4): a session's
+  // rows expire 7 days after its last edit and open once copy-only, never as
+  // current rows, while another session's newer rows in the lineage stay
+  // current. Fails if the expiry groups a lineage or ignores old rows.
+  it('opens a session whose last edit is over 7 days old as an expired group', async () => {
+    const now = Date.now();
+    const old = now - DRAFT_EXPIRY_MS - 1;
+    const rows = [
+      draft('dead:1', { accepted: true, savedAt: old - 5, session: 'dead' }),
+      draft('live:1', { accepted: true, savedAt: now - 1000, session: 'live' }),
+      draft('dead:2', { accepted: true, savedAt: old, session: 'dead' }),
+    ];
+    const opened = await draftGroups(rows, ROOM, undefined, now);
+    expect(opened).toMatchObject({ expired: true, refused: false });
+    expect(opened.current.map((row) => row.id)).toEqual(['live:1']);
+    expect(opened.recovery.map((row) => row.id)).toEqual(['dead:1', 'dead:2']);
+    // One recent edit keeps its session's rows current.
+    const recent = draft('dead:3', {
+      accepted: true,
+      savedAt: now - 1000,
+      session: 'dead',
+    });
+    const kept = await draftGroups([rows[0], recent], ROOM, undefined, now);
+    expect(kept.expired).toBe(false);
+    expect(kept.current.map((row) => row.id)).toEqual(['dead:1', 'dead:3']);
+  });
+
+  it('drops an expired group it opened, reporting its bytes', async () => {
+    const key = 'u_expired:material:mat_1';
+    const rows = [draft('gone', { data: new Uint8Array([1, 2, 3]), key })];
+    await putDrafts(rows);
+    const report = vi.fn();
+    dropExpiredGroup(rows, report);
+    expect(report).toHaveBeenCalledWith('draft_unrestorable', 'expired', 3);
+    await vi.waitFor(async () => expect(await readDrafts(key)).toEqual([]));
+  });
+
   it('cannot draw update rows whose base was never stored', () => {
     const { client } = syncedClient('base');
     let update: Uint8Array = new Uint8Array();
@@ -746,6 +785,20 @@ describe('recording a note session', () => {
       'token-2',
     ]);
     expect(rows.find((row) => row.seq === 1)).toBeUndefined();
+  });
+
+  it('keeps the stored version the tab reported on each row, and a merged run its oldest (in-place collection)', async () => {
+    const key = 'u_1:material:versions';
+    let version = 4;
+    const { client } = noteRecorder(key, 'base ', { version: () => version });
+    const text = client.getText('content');
+    text.insert(text.length, 'a');
+    version = 7;
+    for (let index = 0; index < 64; index++) text.insert(text.length, 'b');
+    const rows = await readDrafts(key);
+    // The first 64 edits merged into one row: its oldest version.
+    expect(rows.find((row) => row.seq === 64)?.version).toBe(4);
+    expect(rows.find((row) => row.seq === 65)?.version).toBe(7);
   });
 
   it("marks a session's rows accepted at the first receipt covering one of its own edits, not an adopted row's (Q326)", async () => {
@@ -1495,6 +1548,33 @@ describe('the draft sweep sending', () => {
     ]);
   });
 
+  // Review r1 L4: an expired session's rows wait for the next open while a
+  // newer session's rows of the same lineage go. Fails if they go with them
+  // or keep them back.
+  it('sends no session whose last edit is over 7 days old, and keeps its rows for the next open', async () => {
+    const key = 'u_old:material:mat_1';
+    const old = new Y.Doc();
+    old.getText('content').insert(0, 'old');
+    await putDrafts([
+      draft('old:state', {
+        data: Y.encodeStateAsUpdate(old),
+        key,
+        kind: 'state',
+        savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
+        session: 'old',
+      }),
+    ]);
+    await leftRows(key);
+    requests.length = 0;
+    storeNext();
+    await sweepDrafts('u_old', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, requests[0].body);
+    expect(doc.getText('content').toString()).toBe('base typed');
+    expect((await readDrafts(key)).map((row) => row.id)).toEqual(['old:state']);
+  });
+
   it('skips a document an editor has open, and sends it once the editor closed', async () => {
     const key = 'u_open:material:mat_1';
     await leftRows(key);
@@ -2021,8 +2101,8 @@ describe('the draft sweep sending', () => {
       grant(3),
     ];
     await putDrafts([
-      { ...state, grants: [older, a], savedAt: 1 },
-      { ...update, grants: [newer, b], savedAt: 2 },
+      { ...state, grants: [older, a], savedAt: Date.now() - 2 },
+      { ...update, grants: [newer, b], savedAt: Date.now() - 1 },
     ]);
     requests.length = 0;
     storeNext();
@@ -2032,6 +2112,24 @@ describe('the draft sweep sending', () => {
     expect(requests[0].headers.get('x-capy-grants')).toBe(
       [b, newer, a].join(',')
     );
+  });
+
+  it("names the stored version the group's oldest row was made at, a row from before versions or before the first stored version as 1 (in-place collection, review r1 L8)", async () => {
+    for (const [key, versions, sent] of [
+      ['u_ver:material:mat_1', [9, 6], '6'],
+      ['u_ver:material:mat_2', [9, undefined], '1'],
+      ['u_ver:material:mat_3', [9, 0], '1'],
+    ] as const) {
+      const [state, update] = await leftRows(key);
+      await putDrafts([
+        { ...state, version: versions[0] },
+        { ...update, version: versions[1] },
+      ]);
+      requests.length = 0;
+      storeNext();
+      await sweepDrafts('u_ver', tokens(ROOM));
+      expect(requests[0].headers.get('x-capy-version')).toBe(sent);
+    }
   });
 
   it('sends the client protocol, and stops for the page load once refused as outdated, marking no row', async () => {

@@ -83,6 +83,21 @@ export function acceptedOf(rows: { accepted?: true }[]): {
   return rows.every((row) => row.accepted) ? { accepted: true } : {};
 }
 
+/** The `version` field of a row made at `version` (in-place collection). */
+export function versionOf(
+  version: number | undefined
+): Pick<EditDraft, 'version'> {
+  return version === undefined ? {} : { version };
+}
+
+/** The stored version rows were made at: their oldest's. A row from before
+ * rows carried one counts as 1, older than every collection, so its edits
+ * never pass for newer than they are; so does one made before the tab's
+ * first stored version (0: new, review r1 L8). */
+export function draftsVersion(rows: { version?: number }[]) {
+  return Math.min(...rows.map((row) => row.version || 1));
+}
+
 /** The `grants` field of rows holding the edits of `rows` (or of one
  * token): each stored token once. */
 export function grantsOf(
@@ -417,6 +432,7 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
               ...rest,
               ...acceptedOf(found),
               ...grantsOf(found),
+              ...versionOf(draftsVersion(found)),
               data: Y.mergeUpdates(pieces),
             });
             for (const row of found)
@@ -482,6 +498,7 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
               ...rest,
               ...acceptedOf(found),
               ...grantsOf(found),
+              ...versionOf(draftsVersion(found)),
               data,
             });
             for (const row of found.slice(0, -1)) stores.drafts.delete(row.id);

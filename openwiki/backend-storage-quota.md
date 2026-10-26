@@ -949,6 +949,27 @@ shape bounds measure the content, not its history. A heavily edited note
 costs load time and memory instead, and a full answer of at least 256 KiB
 waits behind its user's spent open budget (`rate.rs`).
 
+The in-place collection Epo approved on 2026-10-23 is to collect a note's
+stored state when its room folds it, keeping what an open session or an Undo
+may still name; Q274 (2026-10-24) limits it to notes. Its first step keeps
+the bookkeeping without collecting anything ([editing
+sessions](frontend/plate-editor.md#editing-sessions), `sessions.rs`): each
+editing session's last acknowledged stored version, when it was last seen
+and the deletions its own updates made, each kept 25 h after it arrived (Undo
+reaches back 24 h, Q2), as columns of the session's client-id row (migration
+0117), written with the store that holds them, and the deletions of agent
+steps the room keeps for their Undo or Redo, each kept 25 h from its agent
+edit, an hour past the room's offer of that Undo (`material_yjs_documents.agent_held`;
+review r1 M3, Editor 2026-10-26; Q385; review r3 N8). A
+session counts while connected and 24 h after it was last seen. A fold reads
+from it the oldest version every counted session reached and the held
+deletions (`Sessions::holds`), logged until the collection lands. A session
+row whose held deletions cannot be read is dropped alone, written lost (its
+tab returns as late) and reported, and the note loads (Q382, Q385); so are
+agent holds that cannot be read (Q386). The rows are bounded by the document: a held deletion
+is one the room held undeleted, and the record's 7-day scan clears an unused
+id's row with its session. Not charged, as note history is not.
+
 Source text states grow the same way. Their history grows with the number of
 separate edits (and the contributor markers each save writes and clears), not
 with the file's size: garbage collection drops deleted content and merges
