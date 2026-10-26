@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
@@ -64,20 +65,35 @@ func operationsOf(t *testing.T, body map[string]json.RawMessage) []string {
 	return ops
 }
 
-// The library tools are reachable only through the turn's operations: the
-// Library switch grants library.read to any role that can chat, and a viewer
-// still gets no write operations with it.
-func TestLibrarySwitchGrantsLibraryRead(t *testing.T) {
+// Workspace only never changes what a turn is offered: library.read comes
+// with every chat (a viewer still gets no write operations), and the switch
+// rides with its message, on the turn and in the message's replay as history.
+func TestWorkspaceOnlyKeepsTheOperationsAndReplaysWithItsMessage(t *testing.T) {
 	h, _, bodies := streamCapture(t)
+	const path = "/api/workspaces/ws_e2e_private/chat/stream"
+	rec := doAsUser(t, h, http.MethodPost, path, "u_editor",
+		map[string]any{"text": "teach me regression", "workspaceOnly": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first turn: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var convID string
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		var ev struct {
+			Type           string `json:"type"`
+			ConversationID string `json:"conversationId"`
+		}
+		if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &ev) == nil && ev.Type == "start" {
+			convID = ev.ConversationID
+		}
+	}
 	for _, turn := range []struct {
 		user string
 		body map[string]any
 	}{
-		{"u_editor", map[string]any{"text": "teach me regression"}},
-		{"u_editor", map[string]any{"library": true, "text": "teach me regression from the library"}},
-		{"u_viewer", map[string]any{"library": true, "text": "teach me regression as a viewer"}},
+		{"u_editor", map[string]any{"conversationId": convID, "text": "teach me more"}},
+		{"u_viewer", map[string]any{"text": "teach me regression as a viewer"}},
 	} {
-		rec := doAsUser(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/chat/stream", turn.user, turn.body)
+		rec := doAsUser(t, h, http.MethodPost, path, turn.user, turn.body)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("stream %v: status = %d body=%s", turn.body, rec.Code, rec.Body.String())
 		}
@@ -85,15 +101,23 @@ func TestLibrarySwitchGrantsLibraryRead(t *testing.T) {
 	if len(*bodies) != 3 {
 		t.Fatalf("relayed turns = %d, want 3", len(*bodies))
 	}
-	off, on, viewer := operationsOf(t, (*bodies)[0]), operationsOf(t, (*bodies)[1]), operationsOf(t, (*bodies)[2])
-	if slices.Contains(off, "library.read") || string((*bodies)[0]["library"]) != "false" {
-		t.Fatalf("a turn with Library off was granted the library: %v", off)
+	for i, want := range []string{"true", "false", "false"} {
+		if got := string((*bodies)[i]["workspaceOnly"]); got != want {
+			t.Fatalf("turn %d workspaceOnly = %s, want %s", i, got, want)
+		}
+		if !slices.Contains(operationsOf(t, (*bodies)[i]), "library.read") {
+			t.Fatalf("turn %d was not granted library.read", i)
+		}
 	}
-	if !slices.Contains(on, "library.read") || string((*bodies)[1]["library"]) != "true" {
-		t.Fatalf("a turn with Library on was not granted library.read: %v", on)
+	if slices.Contains(operationsOf(t, (*bodies)[2]), "material.create") {
+		t.Fatal("a viewer was granted material.create")
 	}
-	if !slices.Contains(viewer, "library.read") || slices.Contains(viewer, "material.create") {
-		t.Fatalf("viewer operations with Library on = %v", viewer)
+	var history []map[string]any
+	if err := json.Unmarshal((*bodies)[1]["history"], &history); err != nil {
+		t.Fatal(err)
+	}
+	if len(history) == 0 || history[0]["role"] != "user" || history[0]["workspaceOnly"] != true {
+		t.Fatalf("history = %v, want the first message with its switch", history)
 	}
 }
 

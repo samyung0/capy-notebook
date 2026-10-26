@@ -330,10 +330,10 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	var workspaces []map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &workspaces)
+	var page struct{ Items []map[string]any }
+	_ = json.Unmarshal(rec.Body.Bytes(), &page)
 	names := map[string]map[string]any{}
-	for _, ws := range workspaces {
+	for _, ws := range page.Items {
 		if n, ok := ws["name"].(string); ok {
 			names[n] = ws
 		}
@@ -354,9 +354,9 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	workspaces = nil
-	_ = json.Unmarshal(rec.Body.Bytes(), &workspaces)
-	for _, ws := range workspaces {
+	page.Items = nil
+	_ = json.Unmarshal(rec.Body.Bytes(), &page)
+	for _, ws := range page.Items {
 		if ws["name"] == "E2E Public Workspace" && (ws["canClone"] != true || ws["isOwner"] != true || ws["role"] != "owner") {
 			t.Fatalf("owner explore row = %#v", ws)
 		}
@@ -518,7 +518,7 @@ func TestEditorPaysForTheImageItUploadsIntoAnotherPayersNote(t *testing.T) {
 	}
 	ownerBefore, editorBefore := usage("u_owner"), usage("u_editor")
 
-	image := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{7}, 100)...)
+	image := testPNG(108)
 	rec := postUpload(t, h, "/api/materials/"+note.ID+"/editor-assets/uploads", "u_editor", map[string]any{
 		"name": "figure.png", "purpose": "image", "sizeBytes": len(image), "contentType": "image/png",
 	}, "image/png", image)

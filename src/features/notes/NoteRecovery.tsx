@@ -2,7 +2,7 @@ import { yTextToSlateElement } from '@slate-yjs/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import type { Material } from '@/api/types';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { recoveryBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import type {
   MaterialDocument,
   MaterialValue,
@@ -12,10 +12,12 @@ import {
   deleteDrafts,
   draftBytes,
   draftGroups,
+  dropExpiredGroup,
   type EditDraft,
   readDrafts,
   recoveryDocument,
   reportRecoveryGroup,
+  splitOpenDrafts,
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
@@ -23,20 +25,32 @@ import { afterPaint, type NoteView } from './roomSwap';
 import { toastDraftsLost } from './saveFailure';
 
 export interface NoteDrafts {
-  /** Rows of the current lineage, merged into the live note. */
+  /** Rows of the current lineage the editor applies: its accepted
+   * sessions' (Q326). */
   current: EditDraft[];
   /** The room and mount the rows were read for. */
   for: string;
-  /** One refused or other-lineage group, shown read-only first. */
-  recovery: { doc: Y.Doc; refused: boolean; rows: EditDraft[] } | null;
+  /** Rows of never-accepted sessions with stored tokens: the draft send
+   * takes them while the editor joins (Q319). */
+  pending: EditDraft[];
+  /** One refused, other-lineage or expired group, shown read-only first
+   * (an expired one once: its rows are deleted as it opens). */
+  recovery: {
+    doc: Y.Doc;
+    expired: boolean;
+    refused: boolean;
+    rows: EditDraft[];
+  } | null;
 }
 
 /**
  * Reads a note's stored edits for the room it opens (`for`: room and mount
- * generation, so a remount reads what the old mount wrote). A recovery group
+ * generation, so a remount reads what the old mount wrote), split by who
+ * sends them (`splitOpenDrafts`, Q326). A recovery group
  * nothing can draw is dropped with a toast and the next one is read. Both
- * are reported (edit_incidents): a group of another lineage once
- * (reportRecoveryGroup), a dropped group once per page load.
+ * are reported (edit_incidents): a group of another lineage or held rows
+ * shown copy-only once (reportRecoveryGroup), a dropped group once per page
+ * load.
  */
 export function useNoteDrafts(
   materialId: string,
@@ -55,24 +69,31 @@ export function useNoteDrafts(
         return [] as EditDraft[];
       });
       for (;;) {
-        const { current, recovery } = draftGroups(rows, room);
+        const { current, expired, recovery, refused } = await draftGroups(
+          rows,
+          room
+        );
         if (!recovery.length) {
-          if (active)
-            setDrafts({
-              current,
-              for: `${room}:${generation}`,
-              recovery: null,
-            });
+          if (!active) return;
+          const { apply, send } = splitOpenDrafts(current);
+          setDrafts({
+            current: apply,
+            for: `${room}:${generation}`,
+            pending: send,
+            recovery: null,
+          });
           return;
         }
         const doc = recoveryDocument(recovery);
         if (doc) {
-          reportRecoveryGroup(recovery, report);
+          if (expired) dropExpiredGroup(recovery, report);
+          else reportRecoveryGroup(recovery, report, refused);
           if (active)
             setDrafts({
               current,
               for: `${room}:${generation}`,
-              recovery: { doc, refused: !!recovery[0].refused, rows: recovery },
+              pending: [],
+              recovery: { doc, expired, refused, rows: recovery },
             });
           return;
         }
@@ -144,7 +165,7 @@ export function NoteRecovery({
             .then(onReload);
         }}
         reloading={reloading}
-        state={recovery.refused ? 'refused' : 'changed'}
+        state={recoveryBanner(recovery)}
       />
       <div
         className="min-h-0 flex-1 overflow-auto"

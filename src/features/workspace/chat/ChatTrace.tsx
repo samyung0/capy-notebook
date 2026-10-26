@@ -4,6 +4,7 @@ import { useUndoEdit } from '@/api/hooks';
 import type {
   ChatMessage,
   ChatSteps,
+  ChatWaitingPhase,
   Citation,
   MaterialRefType,
   ResourceEffect,
@@ -176,19 +177,24 @@ const UNKNOWN_ERROR = { code: 'outcome_unknown', message: '' };
 function ThinkingRow({
   running,
   seconds,
+  waiting,
 }: {
   running: boolean;
   seconds?: number;
+  waiting?: ChatWaitingPhase;
 }) {
   return (
     <div className={ROW}>
       <ActivityIcon kind="think" running={running} />
       <span className="min-w-0 truncate">
-        {running
-          ? m.chat_trace_thinking()
-          : seconds
-            ? m.chat_trace_thought_for({ seconds })
-            : m.chat_trace_thought()}
+        {/* The limiter's and an AI slot's waits read the same (Q300). */}
+        {waiting
+          ? m.chat_trace_waiting()
+          : running
+            ? m.chat_trace_thinking()
+            : seconds
+              ? m.chat_trace_thought_for({ seconds })
+              : m.chat_trace_thought()}
       </span>
     </div>
   );
@@ -300,11 +306,26 @@ function toastRefusal(effect: Undoable, code: string) {
  * showing the step, waits for the first one's answer. */
 const undoing = new Set<string>();
 
+/** Whether `at` (an ISO time; none: never) has passed, re-rendering when it does. */
+function usePassed(at: string | undefined): boolean {
+  const end = at ? Date.parse(at) : Number.POSITIVE_INFINITY;
+  const [passed, setPassed] = useState(() => Date.now() >= end);
+  useEffect(() => {
+    const left = end - Date.now();
+    setPassed(left <= 0);
+    if (left <= 0 || !Number.isFinite(left)) return;
+    const timer = setTimeout(() => setPassed(true), left);
+    return () => clearTimeout(timer);
+  }, [end]);
+  return passed;
+}
+
 /** Undo on created, edited and restored effects; Redo once undone. Hidden
- * unless the server says the step is available. A refusal hides it for the
- * session; an unknown outcome (no answer, a server error) or a refusal for a
- * moment (the Office pause, a busy room) keeps it, and the server answers a
- * retry with the step's receipt if the first one landed. */
+ * unless the server says the step is available, and once its edit's 24 h
+ * passed (Q385). A refusal hides it for the session; an unknown outcome (no
+ * answer, a server error) or a refusal for a moment (the Office pause, a busy
+ * room) keeps it, and the server answers a retry with the step's receipt if
+ * the first one landed. */
 function UndoButton({
   effect,
   handlers,
@@ -314,8 +335,10 @@ function UndoButton({
 }) {
   const { mutate: undo, isPending } = useUndoEdit();
   const redo = undoAction(effect.operation) === 'redo';
-  const { operationId, status } = effect.undo;
-  if (status !== 'available') return null;
+  const { operationId, status, expiresAt } = effect.undo;
+  // An edit's Undo and Redo are offered 24 h after the edit (Q385).
+  const expired = usePassed(expiresAt);
+  if (status !== 'available' || expired) return null;
   return (
     <Button
       className="px-1.5 py-1"
@@ -478,7 +501,13 @@ function Row({
         </div>
       );
     case 'thinking':
-      return <ThinkingRow running={row.running} seconds={row.seconds} />;
+      return (
+        <ThinkingRow
+          running={row.running}
+          seconds={row.seconds}
+          waiting={row.waiting}
+        />
+      );
     case 'step':
       return <StepRow state={row.state} tool={row.tool} />;
     case 'group':
@@ -645,6 +674,11 @@ export function ChatTrace({
     startedAt: msg.createdAt,
     stopped: msg.status === 'aborted',
     thinking,
+    waiting:
+      live &&
+      (msg.phase === 'waiting_limit' || msg.phase === 'waiting_capacity')
+        ? msg.phase
+        : undefined,
   };
   const answering = !live || msg.phase === 'answering' || !!msg.content;
 

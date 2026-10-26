@@ -58,24 +58,20 @@ func (a *api) getFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*fl
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
 	res, err := a.s.GetFlashcardSet(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	res.IsOwner = role == store.RoleOwner
-	if res.CanEdit, res.CanEditContent, err = a.canEditMaterial(ctx, in.ID, role); err != nil {
-		return nil, hErr(err)
+	out, err := a.flashcardSetOutputWithAccess(ctx, in.ID, res)
+	if err != nil {
+		return nil, err
 	}
 	author, err := a.s.MaterialAuthorOf(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	res.Author = &author
-	return &flashcardSetOutput{Body: res}, nil
+	out.Body.Author = &author
+	return out, nil
 }
 
 func (a *api) updateFlashcardSet(ctx context.Context, in *updateFlashcardSetInput) (*flashcardSetOutput, error) {
@@ -118,6 +114,9 @@ func (a *api) flashcardSetOutputWithAccess(ctx context.Context, id string, set s
 	set.IsOwner = role == store.RoleOwner
 	if set.CanEdit, set.CanEditContent, err = a.canEditMaterial(ctx, id, role); err != nil {
 		return nil, hErr(err)
+	}
+	if set.RemovedAssetIDs, err = a.s.MaterialRemovedAssetIDs(ctx, id); err != nil {
+		return nil, storedContentError(ctx, id, err)
 	}
 	return &flashcardSetOutput{Body: set}, nil
 }

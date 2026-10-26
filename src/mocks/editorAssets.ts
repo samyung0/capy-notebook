@@ -1,5 +1,5 @@
 import { HttpResponse, http } from 'msw';
-import type { LostEditorAsset } from '@/api/types';
+import type { EditorAssetItem } from '@/api/types';
 
 // Inline SVG so the seed needs no binary fixture or network.
 const cellDiagram = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
@@ -24,15 +24,29 @@ const assets: Record<string, { name: string; url: string }> = {
 // Uploads keep their bytes as an object URL so resolve serves them back.
 const uploads = new Map<string, { contentType: string; name: string }>();
 
-/** The viewer's images and audio in notes it can no longer open (M16). */
-const lostMedia: LostEditorAsset[] = [
+/** The viewer's images and audio (M16): one in a set it can open, one in a
+ * note it can no longer open. */
+const embeds: EditorAssetItem[] = [
+  {
+    assetId: 'asset_mock_cell_diagram',
+    createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    lostAccess: false,
+    materialId: 'dk_1',
+    materialTitle: 'Cell organelles',
+    name: 'animal-cell.svg',
+    purpose: 'image',
+    sizeBytes: 1240,
+    workspaceName: 'Biology 101',
+  },
   {
     assetId: 'asset_mock_lost_figure',
     createdAt: new Date(Date.now() - 12 * 86_400_000).toISOString(),
+    lostAccess: true,
     materialTitle: 'Cell division recap',
     name: 'mitosis-stages.png',
     purpose: 'image',
     sizeBytes: 482_000,
+    workspaceName: 'Study group',
   },
 ];
 
@@ -76,13 +90,18 @@ export const editorAssetHandlers = [
       { status: 201 }
     );
   }),
-  http.get('/api/editor-assets/lost', () =>
-    HttpResponse.json({ items: lostMedia })
-  ),
+  http.get('/api/editor-assets', ({ request }) => {
+    const access = new URL(request.url).searchParams.get('access');
+    return HttpResponse.json({
+      items: embeds.filter(
+        (item) => !access || item.lostAccess === (access === 'lost')
+      ),
+    });
+  }),
   http.delete('/api/editor-assets/:id', ({ params }) => {
-    const i = lostMedia.findIndex((item) => item.assetId === params.id);
+    const i = embeds.findIndex((item) => item.assetId === params.id);
     if (i < 0) return new HttpResponse(null, { status: 404 });
-    lostMedia.splice(i, 1);
+    embeds.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/editor-assets/:id/resolve', ({ params }) => {

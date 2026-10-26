@@ -89,7 +89,7 @@ network and no pin.
 
 | Module | Slot | What it builds |
 | --- | --- | --- |
-| `chat.py` | `chat` | Agent system prompt (one prompt for every turn, library rules appended only with Library on) and full message list; the checkpoint compaction prompt |
+| `chat.py` | `chat` | Agent system prompt (one prompt for every turn and both modes of the Workspace only switch) and full message list, a message led by a mode note where the switch is first known or changes; the Q221 send-back texts; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `ingest.py` | `ingest` | File descriptor |
@@ -104,8 +104,10 @@ Agent tool descriptions come from the shared contract
 (`retrieval/contract.py`) alone; `tools.schemas_for` only appends the
 library's subject list to `search_knowledge` and the skill list to
 `read_skill`, and drops
-`excerpt_ids` from the write tools when the library is not a source this turn
-(the model otherwise fills it with workspace passage ids). Curate mode's prompt module
+`excerpt_ids` from the write tools when the library is not ready this turn
+(not configured, down or empty, as its tools drop out; the model otherwise
+fills it with workspace passage ids). The Workspace only switch never changes
+the list. Curate mode's prompt module
 (`prompts/curate.py`) was deleted on 2026-10-04. Almost nothing model-facing is
 written in `retrieval/`: `LANG_RULE` lives in `chat.py`, and `retrieval/`
 keeps tool results and refusal strings, which the model reads as data rather
@@ -234,6 +236,22 @@ Both stages get one retry (two total attempts), exponential backoff
 process does not leave the row `running` forever. Unknown errors retry;
 `TerminalError` (missing file, unresolvable pins, locked account, confirmed
 parser quarantine) does not. Policy lives in `pipeline/jobs.py`, not on the row.
+
+Every queue consumer (`parse`, `ingest` and `import`) claims through
+`db.claim_job`, round-robin by actor (Epo 2026-10-24, rate-limit audit M14):
+of the due pending jobs of its type, the one whose `actorUserId` has the fewest
+jobs of that type `running` goes first, the oldest (`created_at`) among those,
+under `FOR UPDATE OF j SKIP LOCKED`, so concurrent workers still take different
+rows. Jobs without an `actorUserId` count as one shared actor (every enqueue
+sets one; only an account purge strips it, after the deletion request has
+failed that account's pending and running jobs). One account's backlog therefore waits behind another account's newer
+upload instead of ahead of it; the per-actor cap of 20 open ingest sessions
+(Go) still bounds what each account has queued. A job re-pended for a busy
+provider or a full parser keeps its `created_at`, so it keeps its place among
+jobs of actors with as many running. The pending rows of a type are read
+through `jobs_claim_idx` and sorted by that rank: on a local database with
+20,000 pending ingest jobs (1,000 actors) a claim took about 27 ms, with 2,000
+about 2 ms (oldest-first took 0.1 ms).
 
 A reclaimed lease does not stop the old worker: cancellation is cooperative and
 a heartbeat can simply fail. So `attempts` doubles as a fencing token — it is
@@ -2368,9 +2386,10 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
 - `catalog(conn)`: the subjects that hold at least one searchable verified excerpt on a
   current book version, `[{id, label, aliases, area, excerpts}]` sorted by
   label, for `search_knowledge`'s description, whose `subject` takes those
-  ids. It is read once per turn with Library on, before the first model call,
-  which is also how a configured but unreachable or empty library leaves that
-  turn on the workspace instead of failing on the first tool call. The loader
+  ids. It is read once per turn, whatever the Workspace only switch says,
+  before the first model call, which is also how a configured but unreachable
+  or empty library leaves that turn without the library tools instead of
+  failing on the first tool call. The loader
   keeps topic ids apart from subject ids: a topic whose id is a subject id
   refuses the publish naming both. `pool()` takes a lock so two turns
   starting together cannot each build a pool, and waits at most ten seconds
@@ -2428,8 +2447,8 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
   plain search lands on the expected topic for every first hit but reaches
   an expected role 58 of 110 times; role wording in the query does not move
   that; tag predicates do, and expose gaps. The chat offers these as
-  `search_knowledge` and `read_knowledge` on turns with the
-  Library switch on (Build flow and the Library switch, below).
+  `search_knowledge` and `read_knowledge` (Build flow and the Workspace only
+  switch, below).
 
 Delegated Sol reviews follow `lab/knowledge/review.md`. The optional `retrieval`
 object holds a description of at most 400 characters, applicability of at most
@@ -2442,9 +2461,9 @@ is explicitly unknown. `non_teaching` is a successful role classification used
 alone and excluded from search and retrieval coverage counts. Classification
 confidence and extraction quality remain separate.
 
-With Library on, the model searches with the learner's subject or without one,
+With Workspace only off, the model searches with the learner's subject or without one,
 and keeps the learner's constraints when a subject search misses and it
-searches again without the subject. The library rules (`LIBRARY_RULES` in `prompts/chat.py`)
+searches again without the subject. The library lines of the all sources rules (`ALL_SOURCES_RULES` in `prompts/chat.py`)
 require explicit applicability and distinguish source exercises from adapted
 practice. Once a write lands the turn context shows the responses left under the
 stall guard. Search continuation caching is absent.
@@ -2728,7 +2747,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    last with tools off (raised from 8 on 2026-10-08: the intake comparison lost
    22 of 150 runs to a refused write with no response left to redo it); once a
    write lands the turn runs under the build budget (Limits, under Build flow
-   and the Library switch, below). Completion, compaction, query-embedding, and cumulative input counts
+   and the Workspace only switch, below). Completion, compaction, query-embedding, and cumulative input counts
    remain telemetry. They do not stop a turn.
 4. Independent reads in one response run concurrently (max 4, at most 1
    `search_workspace`). Any mutating call keeps that whole response serial.
@@ -2743,7 +2762,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
    `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`, `Plot`,
-   `Mermaid`, `HtmlEmbed`, `AskUser` and their
+   `HtmlEmbed`, `AskUser` and their
    items; the embed components carry their kind's name from the embed
    catalog, `openwiki/embeds.md`, and `HtmlEmbed` quotes the catalog's HTML
    rules, as the note format does). The catalog lives in
@@ -2774,7 +2793,11 @@ current pending changes applied. Embedded source instructions remain untrusted.
    Tool invocations belong in the API `tool_calls` field; the prompt explicitly
    forbids embedding tool calls or tool-protocol markup in programs or prose.
    Plain Markdown is kept; a prose preface followed by a program keeps both parts and
-   recovers the program's citations locally. The browser's official parser keeps
+   recovers the program's citations locally. An answer with no root statement
+   treats its first `Answer([...])` as root (`openui.with_root`, Epo
+   2026-10-25): GLM writes the call bare, alone or glued to prose, and the
+   pipeline puts `root = ` on its own line before it, so the browser's preface
+   split renders it. The browser's official parser keeps
    recoverable partial programs. Missing references, dropped content, invalid
    chart data show an inline interruption notice; excess empty placeholders do
    not, while excess content does. Unusable programs show the chat error, never
@@ -2811,8 +2834,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    clipping. The target is 4,000 to 10,000 tokens with a hard 12,000-token output
    limit. Empty or oversized output does not advance the checkpoint.
 
-   Before every agent model call, live admission measures the provider-shaped
-   request against the selected model's input budget. The system prompt, tool
+   Before every agent model call, live admission sums the request's kept
+   per-message estimates ([Process capacity](#process-capacity)) against the
+   selected model's input budget. The system prompt, tool
    schemas, current query, and the last two tool exchanges of the turn (an
    assistant `tool_calls` message with its tool results, provider continuity
    items included) remain exact. Compaction starts only when the request would
@@ -2890,7 +2914,10 @@ current pending changes applied. Embedded source instructions remain untrusted.
    generator, which marks the client: Python stops writing SSE but finishes
    the in-flight provider call, settles usage when it arrives, and does not
    start another planning step.
-9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
+9. SSE events: `phase` (`planning` | `running_tools` | `answering`, and the
+   waiting phases: `waiting_limit` from the API while a send waits for the
+   per-user limiter, `waiting_capacity` from the pipeline while it waits for an
+   AI process slot; [observability-metering.md](observability-metering.md)),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
    `tool_start` / `tool_progress` / `tool_end`, versioned `citations`
    (`final: true` on the answer's own list), `done` | `error`.
@@ -2932,7 +2959,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    The chat panel shows a turn's work as trace rows
    (`src/features/workspace/chat/ChatTrace.tsx`, logic in `trace.ts`). Each
    row is an 18px CSS-animated icon chosen by tool family (`ActivityIcon.tsx`:
-   hourglass for thinking, a lens over a book for searches, a page turn for
+   hourglass for thinking, a lens over a book for searches (a web search
+   too, quoting its query like the others; its copy, `chat_step_search_web_*`,
+   is a draft for Epo's review), a page turn for
    reads and inspect, a viewfinder for captures, fanned files for listings, a
    pen for anything that edits, creates or adds, pacman for trash and restore,
    ldrs bouncy for any other tool) and a sentence: present tense while
@@ -3000,6 +3029,172 @@ kind or index state, and agent creates no longer return `invalid_scope` or
 `scope_has_no_indexed_content`. A deck's PPTX keeps the same names in
 `files.scope_file_names` (migration `0100`), not exposed by the API; a file
 copy (single or workspace clone) keeps them as a material copy does.
+
+### Process capacity
+
+The retrieval service is one uvicorn process for chat, generate and the editor
+AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
+`retrieval/limits.py`):
+
+- **Model calls.** At most 64 model calls are in flight at once (`CALL_SLOTS`;
+  Epo 2026-10-24, inner-turn slots). Every model call (an agent response, the
+  compaction summarizer, a generate or editor AI call) takes a slot for its
+  request and response, retries included (`models.call_slot`), and gives it
+  back once the call is settled and its lease released (`_tracked_call`, Q359),
+  so while a turn runs tools another user's call can use the slot. A slow or
+  failing settlement keeps its call's slot until it ends, at most the receipt
+  deadline, and calls then queue behind settlements rather than provider
+  work. A chat turn's call that finds the slots full waits up to 60 s
+  (`CHAT_SLOT_WAIT_S`, Q293) behind the calls already waiting: it joins the
+  queue the moment it is refused (`Slots.join`, Q359), and a freed slot passes
+  straight to the one waiting longest (`Slots.wait_for`). The stream sends
+  `{"type":"phase","phase":"waiting_capacity"}` each time a call waits, and
+  `{"type":"phase","phase":"planning"}` the moment it gets its slot, before
+  anything of the call (Q359; a chat's model calls all run in the planning
+  phase): from the response step, or around the checkpoint and compaction for
+  the summarizer (`agent._while_waiting`). The SPA shows a waiting phase until
+  the next event; a non-phase event puts back the phase from before the wait,
+  for a wait that ends some other way (`chatStream.streamChat`, Q300). Past
+  the 60 s the stream ends with the in-stream `provider_busy` error a busy
+  model call sends (`retryAfterSeconds` 5). A call waiting when the Go hop
+  drops or the user presses Stop leaves the queue at once and starts nothing,
+  and after that no call starts, the summarizer's included, and no slot phase
+  is sent (`ClientDrop.left`, Q359). A waiting call cancelled as a slot
+  is handed to it passes the slot to the next waiter. Generate and the editor
+  AI routes have no waiting status (Q268): past the 64 their call answers the
+  existing 503 `provider_busy` at once, before reaching the provider. Embedding
+  and rerank calls inside tools take no slot, and the ingest worker binds no
+  slot policy.
+- **Turns in progress.** At most 96 chat turns and generate requests run
+  at once in production and 48 on UAT (`TURN_SLOTS` from `CAPY_TURN_SLOTS`,
+  which compose takes from the rendered `RETRIEVAL_TURN_SLOTS`; Q338, Q343): a
+  turn holds its history and captures in memory while it waits or runs tools,
+  so the ceiling comes from a memory measurement (below), halved for UAT's
+  1.5 GiB. Past it a generate request is answered before any work
+  with the existing 503 `provider_busy` (`retryAfterSeconds` and `Retry-After`
+  5 s), which Go maps to the same retryable error as a busy model. A chat
+  waits instead (Epo 2026-10-24, Q268; `service._admitted_chat`): its stream
+  starts at once, sends the waiting phase and waits up to 60 s for a turn
+  slot in arrival order, sending the planning phase when it gets one (Q359); a
+  client that hangs up while waiting leaves the queue, and past the 60 s the
+  stream ends with the in-stream `provider_busy` error. A stream holds its
+  turn slot until its response ends however it ends (`service._SlotStream`).
+  The editor AI routes are not turns (Q338) but check the ceiling: at it, or
+  with every call slot taken, `/plate-ai/command` and `/plate-ai/copilot`
+  answer the 503 `provider_busy` before starting a response
+  (`ai_adapter._refuse_past_capacity`, Q339, Q359). The Go limits come first:
+  5 open chat sessions per user and the AI route class.
+- **Render pool.** Deck scripts (the checker and exporter), page renders,
+  image and Office captures and capture downloads run on two threads of their
+  own (`render_thread`), never on the default executor, where every model
+  call's accounting admission and settlement run: a slow export or a large
+  decode queues behind its own kind and never delays another user's next
+  model call. Two threads also bound side-by-side image decodes: at the
+  5-megapixel source limit (Q286) a capture peaks at most about 130 MiB
+  above the idle process (a WebP; about 85 MiB for JPEG, PNG and TIFF), a
+  2,400-pixel square image about 145 MiB; at Pillow's pixel limit
+  (89 megapixels), which bounds sources until the 5-megapixel upload check is
+  live (captures check no pixel size of their own, Q342), a JPEG capture
+  about 90 MiB, a PNG or TIFF 0.4 to 0.8 GiB, a WebP 1.3 GiB
+  (capture_page below).
+- **Office captures.** One at a time per process (`OFFICE_CAPTURE_SLOTS`; see
+  `capture_page` under Tools).
+
+A request's context estimate is kept per message (Epo 2026-10-24, Q238): a
+message's provider-shaped estimate is computed once, when it enters the
+loop's history (`models.message_tokens`, kept on the message by
+`accounting.keep_tokens` and counted again if the message changes), a request
+sums them with its tool schemas, a capture image counts by its recorded pixel
+estimate, and CJK runs are found by one regular expression instead of a
+Python step per character. Before, every model call walked its whole context
+about three times on the event loop (the compaction check, the turn's
+telemetry, the call's own measurement): about 0.1 s of loop time per step at
+80,000 characters and 0.8 to 0.9 s with a 750,000-character history and 16
+attached captures. Now a step's measuring takes 0.2 to 0.7 ms.
+
+The numbers come from a local measurement of the real provider-call path
+(accounting admission, the model gate and settlement against Postgres, the
+provider stream faked) on four cores with the deployed pools (sync 4, async 8)
+and an 8-thread default executor, as on the 4-vCPU production host. N turns
+start together, each making four model calls 3 s apart, every turn's history
+built before the clock starts. Model-call admission p95:
+
+| Turns at once | 80,000 chars, before | after | 750,000 chars + 16 captures, before | after |
+| ------------- | -------------------- | ----- | ----------------------------------- | ----- |
+| 4             | 0.32 s               | 0.06 s | 3.3 s                              | 0.07 s |
+| 8             | 0.97 s               | 0.37 s | 10.8 s                             | 0.11 s |
+| 16            | 1.6 s                | 0.08 s | 15.8 s                             | 0.34 s |
+| 32            | 4.2 s                | 0.22 s | 31.6 s (9 of 128 calls over 30 s)  | 0.86 s |
+| 64            | 7.6 s                | 0.49 s |                                    | 0.81 s |
+| 96            |                      |        |                                    | 1.26 s |
+| 128           | 16.6 s               | 0.55 s |                                    |        |
+| 192           |                      | 0.93 s |                                    |        |
+| 256           |                      | 1.24 s |                                    |        |
+
+The request cap is 64 (Epo 2026-10-24, Q292), where full-length turns pass
+about 1 s; turns of typical length stay under 1 s up to 192. After the change
+no model-call admission took over 30 s at any load. Past the cap chats wait
+(above). Measured while the wait was 30 s (Q293 made it 60 s, about one
+full-length turn): with the cap at 64, turns of four 3-second calls (about
+13 s each) arriving 128 or 192 at once all got a slot (the last waiting 25 s;
+29 s at full length); 256 at once, 128 waited out their 30 s. Turns of three
+10-second calls (about 32 s, longer than that wait) arriving 96 or 128 at
+once: every chat past the 64 timed out (32 and 64), so with real turn lengths
+a burst past the cap mostly ended busy rather than queueing. Eight 24-second
+blocking jobs on the default executor, as parallel deck exports were, held
+every admission for their whole length (p95 24 s); on the render pool
+admission was unaffected (p95 0.12 s).
+
+The cap then counted whole requests; it now counts model calls (inner-turn
+slots, above). The same harness, re-run with per-call slots on turns that
+respect the context window (a: 660,000 characters and 2 captures, near the
+window; b: 80,000 characters and 16 page captures of 360 KB; c: the typical
+80,000 characters), measured the changes that went with it (Epo 2026-10-24,
+Q297-Q299):
+
+- **Admission lock.** Admission sweeps expired leases before the model-wide
+  lock (`FOR UPDATE SKIP LOCKED`) and holds the lock for one conditional
+  insert that counts the unexpired leases it sees once the lock is held
+  (`db.acquire_provider_capacity`). With 64 admissions at once the statements
+  under the lock went from 7.0 to 3.5 ms (a) and 2.7 to 1.9 ms (c) at the
+  median; the rest of the lock's hold is the commit.
+- **Lease with the settlement.** A settled call's lease is deleted in its
+  settlement transaction (the gateway's `settleProviderCallAtomic`, or the
+  local ingest settlement), so the 256 separate release transactions of 64
+  turns' 256 calls are gone; a failed settlement or an abandoned call still
+  releases its own.
+- **Captures encoded once.** A capture's data URL is made once as a string
+  JSON leaves as it is (`elitellm.client.RawJson`), and request bodies copy it
+  in (`encode_json`). With 16 captures building a call's body on the event
+  loop went from 18.2 to 2.2 ms, and with the loop no longer holding the GIL
+  for it the database steps sped up: the statements under the lock from 18.7
+  to 3.5 ms, admission p95 from 1.9 to 1.1 s.
+- **Sync pool.** At 4 connections the default executor's eight threads
+  queued for one (p95 0.1 to 0.2 s); at 8 the wait is gone and 12 or 16
+  changed nothing measurable. The retrieval service's pool is 8
+  (`CAPY_DB_SYNC_POOL_MAX_SIZE` in compose).
+
+With all of it, 64 calls admitted at once still take about 1 s at p95 (0.8
+to 1.6 s across the shapes and runs), so 64 stays; most of each admission's time
+under the lock is the commit, which waits on the test container's disk.
+With 1.5 s of tools between calls, 96 or 128 turns keep at most 64 calls in
+flight: admission p95 stays at 0.6 to 1.7 s and the waits move to the call
+slots (p95 3.3 to 4.2 s).
+
+Memory per turn (tracemalloc): while it waits or runs tools a turn holds
+7.4 MiB with 16 captures, 1.6 MiB near the window and 0.1 MiB for a typical
+turn; its call adds the request's text and bytes while it runs, 14.9, 3.2 and
+0.2 MiB. In the process (RSS) 64 calls with 16 captures at once added about
+21 MiB each, and glibc kept freed buffers, so after bursts the process stayed
+near its high-water mark. The ceiling of 96 turns in progress (Q338)
+keeps the live worst case, 96 turns with 16 captures each, 64 of them in a
+call, beside two worst-case 5-megapixel captures, at about 2.4 GiB of the
+3 GiB container; the measured peaks of such a load, retained buffers
+included, were 2.7 to 3.2 GiB at 96 turns and 3.2 to 3.6 GiB at 128. The
+process runs with the collaboration server's allocator settings
+(`MALLOC_ARENA_MAX=2`, `MALLOC_TRIM_THRESHOLD_` and `MALLOC_MMAP_THRESHOLD_`
+131072, Q343), with which the idle level after 64 capture-heavy calls was
+2.24 GiB instead of 2.97.
 
 ### How a turn's work is saved
 
@@ -3206,18 +3401,43 @@ error or Sentry event carries the audio, the transcript or the key. Credits
 and the rate class are in
 [observability-metering.md](observability-metering.md).
 
-### Build flow and the Library switch
+### Build flow and the Workspace only switch
 
 Curate mode, a thread flag fixed at creation (`conversations.curate`), was
 replaced on 2026-10-04 by one build flow on every turn and a per-turn Library
 switch (`todo-learning.md`, Part 2); migration
 `0052_drop_conversation_curate.sql` drops the column. Any turn can answer or
-build, and the knowledge library is one more source while the switch is on.
+build. On 2026-10-24 (Epo) the Library switch became the Workspace only switch,
+off by default: off, the workspace comes first and the library, `search_web`
+and the model's own knowledge may expand it; on, only the workspace's files and
+materials are sources.
 
-- **Library switch.** A chip in the chat input
-  (`src/features/workspace/ChatPanel.tsx`), on by default and never locked: it
-  stays where the learner left it and applies to the next send. Each turn sends
-  `library` and the open item as `openResource: {id, kind}`
+- **The cache rule.** The switch never changes the system prompt or the tool
+  list, so a flip keeps the provider's cached prefix. The mode reaches the
+  model as a note before a learner message only where it is first known in the
+  request's conversation or changes (Epo 2026-10-25, as Codex and opencode send
+  a mode only at a change; `chat_prompts.MODE_LINES`, added by
+  `with_mode_line`): `[Workspace only: on. Use only this workspace's files and
+  materials.]` or `[Workspace only: off. Workspace first; the library,
+  search_web and your own knowledge may expand it.]`, and the system prompt
+  says the latest note holds until the next. Go stores the switch in the user
+  message's metadata (`workspaceOnly`, `store.AddUserMessage`) and sends it
+  with each history row; `evidence.history_turns` replays the notes where they
+  were sent, `evidence.mode_shown` gives the last one, and `chat_messages`
+  notes the query only when its switch differs. A checkpoint that drops the
+  noted messages leaves the first remaining one noted; folding all history
+  into memory (the turn-start checkpoint, live compaction) puts the note on
+  the query (`with_mode_note`). Messages saved before the switch carry
+  none. The library tools and `search_web` (`tools.OUTSIDE_TOOLS`) stay listed
+  in both modes; while the switch is on, `tools.run` answers a call to one with
+  `NOT_AVAILABLE` ("… is not available this turn: Workspace only is on …",
+  `lifecycle_rejected`) before it runs, and a write naming `excerpt_ids` or a
+  library figure is refused the same way. Earlier library reads and cited web
+  results still replay as history in both modes.
+- **Workspace only switch.** A chip in the chat input
+  (`src/features/workspace/ChatPanel.tsx`), off by default and never locked:
+  it stays where the learner left it and applies to the next send. Each turn
+  sends `workspaceOnly` and the open item as `openResource: {id, kind}`
   (`src/api/chatStream.ts`, `src/features/workspace/useChatStream.ts`); the
   title never leaves the browser. Go's `chatTurnContext`
   (`server/internal/httpapi/chat_stream.go`) looks the title up itself
@@ -3225,10 +3445,10 @@ build, and the knowledge library is one more source while the switch is on.
   untrashed file or material of this workspace, under the kind given, is kept,
   and anything else reaches the pipeline as `null`. It also reads
   `studyProgress` (`store.StudyEnabled`: the workspace override, else the
-  account default). With `library` true Go appends `library.read` to the turn's
-  operations for any role that can chat, viewers included; writes still follow
-  the role and account state (a frozen or full actor loses `material.create`
-  and `document.edit`). Go sends `library`, `openResource`, `studyProgress` and
+  account default). Go appends `library.read` to every turn's operations for
+  any role that can chat, viewers included; writes still follow the role and
+  account state (a frozen or full actor loses `material.create` and
+  `document.edit`). Go sends `workspaceOnly`, `openResource`, `studyProgress` and
   `studyPreferences` (the requester's `users.study_preferences`, saved with
   `PATCH /api/me/study-preferences`; unset fields take
   `prompts/preferences.py`'s defaults) with the stream request
@@ -3237,31 +3457,40 @@ build, and the knowledge library is one more source while the switch is on.
   (`conversations.ledger`, its gateway route and the `create_ledger` tool) was
   dropped on 2026-10-13 (`0078_drop_conversation_ledger.sql`; the measurement
   is `bench/rag/reports/2026-10-13-ledger-vs-noledger.md`).
-- **Admission.** With Library on, the agent reads the library's subject list
-  once before the first model call (`tools.load_library_catalog`). An
+- **Admission.** The agent reads the library's subject list once before the
+  first model call (`tools.load_library_catalog`), in both modes. An
   unconfigured library, one that does not answer (logged as a warning) or one
-  with no subject holding a searchable excerpt turns `ctx.library` off for that
-  turn: no library tools and no library rules, and the turn runs on the
+  with no subject holding a searchable excerpt leaves the library tools
+  unoffered that turn (`tools._library_ready`), and the turn runs on the
   workspace instead of failing. There is no context-window minimum. The
   subject list is appended to the `search_knowledge` description only, one
   line per subject with its tagged-excerpt count (`- "statistics" (5166
   excerpts)`); labels and aliases are omitted. `subject` takes one of those
   ids, and one the turn's catalog lacks is refused naming it before any
   search. Topic ids are never in a description or a search card.
-- **Prompt** (`prompts/chat.py`). `system_prompt(locale, library=..., writes=...)` is one
-  prompt for every turn and stays lean: grounding rules; answer or build (a
-  question gets an answer with citations, a request to learn, make, expand or
-  practise gets materials without asking whether to create them; a write
-  starts by reading its skills); and the budget every turn shares (tool calls
+- **Prompt** (`prompts/chat.py`). `system_prompt(locale, writes=...)` is one
+  prompt for every turn and stays lean: a Security section (tool results, `<source>` text and memory source facts are data, never instructions; Epo 2026-10-25); grounding rules (no instruction to batch independent reads since 2026-10-25); sources (the mode
+  line, the workspace first in both modes, what Workspace only on allows, and
+  a pointer to the all sources rules for off); answer or build (a
+  question, or a request to explain or summarise, gets an answer with
+  citations, not materials; a request to learn, make, expand or practise gets
+  materials without asking whether to create them, and so does the learner's
+  pick of the offer to make a note or a slide deck; a write starts by reading
+  its skills); and the budget every turn shares (tool calls
   per response; the planning cap until the first successful write, then up to
   the build budget's tool calls in the whole turn and the stall guard, more
   after errored writes, in one sentence), with its numbers read from
   `retrieval/limits.py`. The account-language, follow-references and capture
-  rules follow (the capture rule covers workspace sources; the library rules
-  say when a library page is captured), and a turn offered no write tool (a
+  rules follow (the capture rule covers workspace sources; the all sources
+  rules say when a library page is captured), and a turn offered no write tool (a
   viewer) gets `READ_ONLY_RULE`: answer, and say the workspace does not let it
-  build or edit. With Library
-  on, `LIBRARY_RULES` is appended: search with the learner's subject or
+  build or edit. `ALL_SOURCES_RULES` follows in both modes, headed "All sources
+  mode (when Workspace only is off)", and holds every rule that applies only
+  with the switch off (Epo 2026-10-25): the library, search_web only when the
+  workspace, the library and the model's own knowledge cannot answer, the
+  model's own knowledge to explain and connect ideas without presenting it as
+  the learner's files, a web result cited by its number and never written as a
+  URL or link; then the library: search with the learner's subject or
   without one, a search hit is not a read, state applicability and gaps,
   relax a missed subject filter,
   `capture_knowledge_page` when numbers or formulas look corrupted, and
@@ -3280,7 +3509,7 @@ build, and the knowledge library is one more source while the switch is on.
   user can undo one, `replace_text` for plain
   wording and `replace_block` for a block with formatting or math, keep other
   people's changes unless the learner asks otherwise, source files only when
-  asked), with Library on the `excerpt_ids` rule (name excerpts read this turn
+  asked), the `excerpt_ids` rule (name excerpts read this turn
   or retained in full, or omit them and the write credits the reads since the
   last write; Write guard, below). Since 2026-10-14 `editing` is the general
   guideline for every write: it also holds the plan (ask first only when the
@@ -3298,8 +3527,9 @@ build, and the knowledge library is one more source while the switch is on.
   interactive blocks inside it as the preferences say, knowledge checks sized
   and placed as the preferences say, growing a long note by appending
   sections after block `"end"`, the note format (`Formats` in the contract:
-  `noteMarkdownDescription`), and with Library on one primary excerpt, figure
-  placement and exercise reuse (the text earlier skills carried, unchanged).
+  `noteMarkdownDescription`), and, for Workspace only off, one primary
+  excerpt, figure placement and exercise reuse. Skill texts are the same in
+  both modes.
   `read_skill`'s catalog (`skills.catalog`) words the building skill of the
   output-files preference as the one for the chapters and the other as "only
   when the request asks for" its format. A write is refused until the skills
@@ -3358,14 +3588,21 @@ build, and the knowledge library is one more source while the switch is on.
   terminal call drops the tools, to make room. A copy not yet followed by a step is
   replaced; a turn note drops the stale copies (`compact._fold_turn`), and none
   reaches the stored conversation. It names the open item
-  (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`) followed
-  by the learner's workspace role (Go's `role`: "The learner owns / can edit /
-  can only view this workspace."), lists
-  every workspace chapter in order with its id (`store.workspace_chapters`,
-  loaded once per turn; at most 20, `MaxChaptersPerWorkspace` in Go) so "chapter
-  2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: output files (a note
-  or a deck per chapter), writing style, quiz and flashcards each more (10),
-  less (5) or off, visual aids, and knowledge checks, at most 2 questions or,
+  (`Open: <title> (<kind> <id>), in chapter <name> [<chapter id>].` or
+  `Open: nothing.`) followed by the learner's workspace role (Go's `role`: "The
+  learner owns / can edit / can only view this workspace."), and with a file
+  open `OPEN_CAUTION`: the file may have nothing to do with the request, so the
+  agent acts on the learner's message and the conversation (Epo 2026-10-25). It lists no
+  chapters (Epo 2026-10-25): the model reads them and their ids through
+  `list_sources`; the turn still loads them (`store.workspace_chapters`, at
+  most 20, `MaxChaptersPerWorkspace` in Go) for the open item's chapter and the
+  `chapter_id` checks. It lists the study preferences (`prompts/preferences.py`: output files (a note
+  or a deck per chapter), writing style (brief, normal, verbose or story, a narrated explainer from
+  three science-documentary transcripts, Epo 2026-10-25), quiz more (5 questions), less (2)
+  or off and flashcards more (10), less (5) or off (Epo 2026-10-25), visual
+  aids (more: images wherever possible; fewer: charts, plots and interactive
+  blocks only where text cannot carry the idea and fewer images; no Mermaid
+  since 2026-10-25), and knowledge checks, at most 1 question (Epo 2026-10-25) or,
   when flashcards is set higher than quiz, 3 cards, saved values over
   `DEFAULTS`), and one line per library excerpt
   read for this message. With PowerPoint as the output files it leaves out the
@@ -3601,7 +3838,7 @@ build, and the knowledge library is one more source while the switch is on.
   top-level blocks or a whole new value, never for typing. Go keeps its own
   union for the shared note (`AnonymousNote`) and the write-time family check;
   the projection stays on its idle schedule.
-- **Figures in notes.** A note written with Library on can
+- **Figures in notes.** A note written from the library can
   show a library figure as an ordinary image of that note: the model writes
   `![caption](figure:<figure id>)` in `create_material` content or an
   `insert_markdown` / `replace_block` command (the `workspace_building`
@@ -3622,7 +3859,12 @@ build, and the knowledge library is one more source while the switch is on.
   the provenance (and the note footer) exactly as a named excerpt does, and
   its caption becomes the model's text (else the printed label) followed by
   the printed credit in brackets (`(credit)`; a figure with no printed credit
-  shows none, its book still credited in the footer). After the write guard
+  shows none, its book still credited in the footer). A figure's size is
+  its image title, `![caption](figure:<id> "small")` (Epo 2026-10-25): no
+  title, an empty one or `"normal"` keeps the full image width, `"small"`
+  gives the image node `width: "50%"` at import (`agentImages` in
+  `markdownConvert.ts`), and the pipeline keeps the title through the caption
+  rewrite and refuses any other size before rendering. After the write guard
   passes, each figure's bbox is rendered as `capture_knowledge_page` renders it
   (`capture.render_knowledge`, JPEG q80, long edge `CAPY_CAPTURE_MAX_EDGE`),
   deterministic and CPU only, with no cache, and sent beside the write as
@@ -3656,10 +3898,10 @@ build, and the knowledge library is one more source while the switch is on.
   each material, not a citation.
 - **Playground.** `lab/playground` runs this loop in process with the app's
   prompt, tools, limits and write guard (`configs/chat.json`, `system_prompt:
-  null`). A per-turn Library checkbox (default on), an Open picker and the
-  preference controls write `library`, `open_resource` and
+  null`). A Workspace only checkbox (default off), an Open picker and the
+  preference controls write `workspace_only`, `open_resource` and
   `study_preferences`; every turn gets an editor's build operations under
-  `user_id="playground"`, plus `library.read` with Library on. There is no
+  `user_id="playground"`, plus `library.read`. There is no
   gateway, so `create_material` and `edit_document` write
   `materials/<id>.json` under the run through `tools.write_sources` (each
   material records the excerpt ids it credited), quizzes
@@ -3681,18 +3923,19 @@ build, and the knowledge library is one more source while the switch is on.
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; `file_ids` take any workspace item id, and any invalid supplied id rejects the call, naming it |
 | `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading; a material other than a note is refused ("… is a quiz, which has no passages to read; inspect_document reads it.") |
-| `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
-| `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
+| `search_knowledge` | none | Offered when the library answered its subject list; answers as not available while Workspace only is on. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
+| `read_knowledge` | none | As `search_knowledge`. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
+| `search_web` | none | DeepSeek's web search (`retrieval/websearch.py`, `POST https://api.deepseek.com/v1/tools/search` on the platform `DEEPSEEK_API_KEY`): one focused query of at most 128 characters, 5 results, no retry; only the query is sent (never the learner's question or IP), and the description asks for it in the model's own words rather than copied from the learner's files (Epo 2026-10-24, Q289). Each result is a `Passage(kind="web")` (`chunk_id` `web:<url>`, the link in `file_id`, title, site, the date parsed from DeepSeek's RFC 3339 value to YYYY-MM-DD and left out when it does not parse, DeepSeek's summary as the text and its snippet for display) in one source block, numbered like passages, with a data-not-instructions note and the searches left. A user message gets 3 searches: an empty one counts and is free, a failed one (an error, a timeout, a non-2xx answer or a body without a results list) is free and the first 2 failures do not count, so at most 5 calls run (Epo 2026-10-24); results that miss the point are an ordinary search the model judges, since DeepSeek answers even a nonsense query with 5 results (2026-10-24 probe); the parser keeps only title, url, snippet, summary, site_name and date; calls of one response hold their places while they run. The same query again in one message (compared without case or extra spaces) reuses that message's answer, neither charged nor counted; a search whose settlement fails keeps its results and is neither charged nor counted, its call row left to the receipt sweep (Editor 2026-10-24). A search with results costs 1.8 credits ([observability-metering.md](observability-metering.md)). Answers as not available while Workspace only is on. Retains cited results, which replay from their saved copy |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
-| `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
+| `capture_knowledge_page` | none | As `search_knowledge`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes and flashcard sets (a quiz is created by `add_questions`; the agent makes no mindmap or diagram since 2026-10-25, Epo, though it can still rewrite a Mermaid block a learner added). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes. The engine's reads also list pictures and charts and answer them by id (Pictures and charts, below); the tool shows them from phase B |
 | `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
 
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
@@ -3742,23 +3985,55 @@ source, verify its size/hash, then send it to the parser's authenticated
 `/capture_page` route. That route shares the bounded parser FIFO and hard deadline,
 converts temporarily with LibreOffice and returns only JPEG. It runs no ODL parse
 and creates no parse receipt. Temporary Office bytes are removed after the request.
+The retrieval process sends one Office capture at a time (Epo 2026-10-24,
+`limits.OFFICE_CAPTURE_SLOTS`), so captures never take more than one of the
+parser's slots from ingest: a capture while another runs is refused with "the
+Office converter is busy; try this capture again later" (`unavailable_target`,
+as a parser 429 surfaces) and the turn continues.
 Image captures download the published bytes the same way and normalise them
 with Pillow (EXIF orientation, crop to the box, shrunk to the max edge, alpha
 flattened on white, first frame only, Pillow's decompression-bomb limit bounding the
 decode); SVG and formats the Pillow build lacks refuse
-with `unsupported_format`, and the caption still covers them.
+with `unsupported_format`, and the caption still covers them. A capture decodes
+no larger than its box needs (Epo 2026-10-24, Q239; `capture._decoded`): a JPEG
+at a reduced DCT scale while it decodes, any other format whole in its own
+mode and then reduced by a whole factor before any full-size copy or colour
+conversion. The box and the capture's size are still computed from the
+full-size image, so the capture is the size it was before.
 PDF and Office routes render `CAPY_CAPTURE_MAX_EDGE` (1568 px); the image route
 crops at native resolution and only shrinks to that edge, which the tool
 description says may not help on a low-resolution image. All are JPEG q80. Images are billed
 through the ordinary LLM usage path. Context telemetry and the compaction
 budget count each attached image by its 28-px patch estimate
-(`capture.patch_tokens`), not by its base64; the captures ride outside the
+(`capture.patch_tokens`), not by its base64, taken from the capture's record
+(`estimatedImageTokens`) rather than by decoding the image for every call
+(Q238); the captures ride outside the
 compacted history, so their estimate is passed to compaction as extra weight.
-A capture is attached after its own tool result, and every capture stays
-attached until the turn's answer (Epo 2026-10-21): once live compaction folds
-its exchange into the turn note, `capture.inject_images` attaches its image
-right after the note, and `capture.image_tokens` counts every capture of the
-turn. A user message attaches 16 images, `capture_page`,
+A capture is attached after its own tool result, and live compaction drops
+none (Epo 2026-10-21): once it folds an exchange into the turn note,
+`capture.inject_images` attaches the exchange's images right after the note,
+and `capture.image_tokens` counts every image still attached.
+A turn's page captures (`capture_page`, `capture_knowledge_page`) and
+`resolve_source_change` images stay within an image budget of 35,000 tokens by
+that patch estimate (`tools.IMAGE_BUDGET`; Epo 2026-10-24, Q349; 35k and source
+change images 2026-10-25, Q368, Q369). At the 1568 px edge a full page is about
+2,200 to 2,500 tokens, so the budget holds about 15 full pages. Before each
+model call `tools.keep_images_within_budget` checks the total; only when new
+images take it past the budget does it drop the oldest images an earlier
+request carried, of either kind, at once, until at most 17,500 remains
+(`IMAGE_BUDGET_AFTER_DROP`). The images it counts are the ones the three tools
+register (`ToolContext.budget_images`). An image no request has carried yet
+(`ToolContext.images_sent`) is never dropped, so the model sees each at least
+once. Drops come in batches, so between them every request starts the same and
+the provider's cached prefix holds. A dropped image leaves
+`ToolContext.pending_images`, and its encoded part (Q299) is freed once the next
+request is built, since the request before it holds the image until then.
+Nothing takes its place: no note or hint, and its tool result keeps the ordinary
+text it always had (Epo 2026-10-25, Q370). The agent reads the page another
+way, or captures it again while under the 16 below, when it needs it.
+A dropped image still counts toward the 16 below, and a deck slide asking
+for a dropped capture finds it no longer available.
+A user message attaches 16 images, `capture_page`,
 `capture_knowledge_page` and `resolve_source_change`'s image changes together
 (`tools.MAX_IMAGES`, Epo 2026-10-22; counted in `ToolContext.images_taken` and
 checked again after the render, since a response's image calls run side by
@@ -3767,7 +4042,8 @@ do not call capture_page anymore." and later captures are refused with that
 sentence (`limit_reached`); a source change's image says nothing when it is the
 16th and fails past the cap with `tools.SOURCE_IMAGE_LIMIT` (`limit_reached`,
 Epo 2026-10-22). A `resolve_source_change` image stays attached through folds the
-same way. No capture image is carried to the next message. The chat prompt requires capture before
+same way, within the image budget above. No capture image is carried to the
+next message. The chat prompt requires capture before
 using source-specific numerical results, formulas, table cells/relationships or
 figures, regardless of extraction confidence. Low-confidence text also requires
 capture when the uncertain passage matters. The model reads the image directly
@@ -3793,8 +4069,9 @@ book's `library_books.withheld_pages` (reprinted texts the library withholds,
 written at publish from the run manifest like `figure_exclusions`) is never
 captured, also on a boundary page shared with open text or through a guessed
 excerpt id, and a request for one is refused as withheld. It shares the
-message's 16 images with `capture_page` and stays attached until the answer
-like it. It adds no citation, and its JPEG
+message's 16 images with `capture_page` and stays attached like it: through
+folds until the answer, unless the image budget drops it (Q349). It adds no
+citation, and its JPEG
 rides in the same user message after the step's tool results. An unset bucket
 leaves the tool unoffered; the five settings are validated all-or-none.
 
@@ -3809,9 +4086,11 @@ both writes; version 5 was never released. Version 7 (2026-09-19) reshapes
 or topic, and points `search_knowledge` topic ids at a subject browse. Version
 8 adds ledger upserts and material-backed excerpt retention, version 9 part
 marks and open-part mark schemes. Version 10 (2026-10-04) replaces the curate
-thread mode with the per-turn Library switch: the stream request carries
+thread mode with the per-turn Library switch: the stream request carried
 `library`, `openResource` and `studyProgress`, and the ledger and write rules
-apply to any build. Version 11 replaces `search_questions` with
+apply to any build. Version 40 (2026-10-24) adds `search_web`, replaces
+`library` with `workspaceOnly`, grants `library.read` with every chat and keeps
+the library tools and `search_web` offered in both modes of the switch. Version 11 replaces `search_questions` with
 `list_question_bank`. Version 12 (2026-10-05) adds `read_skill`, shortens every
 tool description to what the schema cannot say, and moves the note and
 question formats out of the write tools into the contract's `formats`, which
@@ -3893,8 +4172,8 @@ computes the caller's operations from the effective role
 trash.read, trash.restore`) and sends them with the chat request; Python offers
 only the tools those operations allow and rechecks on dispatch. `library.read`
 is the one operation no role grants, because the shared library is not a
-workspace resource: the gateway adds it per turn when the request's `library`
-is true, for any role that can chat, viewers included. Writing from the library
+workspace resource: the gateway adds it to every chat turn, for any role that
+can chat, viewers included. Writing from the library
 still needs the role's write operations. A `contractVersion` mismatch fails the turn with
 `contract_mismatch`.
 
@@ -4137,9 +4416,21 @@ edit's transaction (`ydoc::undo::Captured`), as an undo step under the edit's
 operation id (`Room.agent_changes`, indexed by `app.agent_steps`). The
 receipt commits without an Undo ref; once every room the edit wrote answers
 that it took the step (`ServiceEdit.taken`), the server stores
-`undo: {operationId, status: "available"}` on it and returns it so
+`undo: {operationId, status: "available", expiresAt}` on it and returns it so
 (`offer_undo` in `edits.rs`; a source's receipt is Go's checkpoint receipt,
-which never sets the ref). An edit of a file or material no room has loaded
+which never sets the ref). The step lasts 24 h from the edit whether or not
+its room stays loaded (Q385, Epo 2026-10-26): `expiresAt` says when, the
+room drops the step then (`Room::expire_agent_steps`, releasing it from
+`app.agent_steps`), an Undo or Redo arriving later is refused as one the
+room no longer has (`undo_unavailable`), and the chat hides the receipt's
+button at that time (`UndoButton` in `ChatTrace.tsx`). A step spanning rooms
+(a quiz's content and keys, each stamping its own time) ends as a whole at
+the earliest of them (Q389): the Undo handler refuses it once that passed,
+so neither room reverts alone. An Undo or Redo keeps
+the edit's 24 h, and the room's Undo answer names it for the next receipt.
+What the step and its reverses deleted is held an hour longer (in-place
+collection's agent holds, see [editing
+sessions](frontend/plate-editor.md#editing-sessions)). An edit of a file or material no room has loaded
 gets no Undo: nothing opens or holds a room for it, and its receipt shows
 none. A room that loaded after the edit committed already holds its items and
 takes no step either. An edit may remove or replace any note block, media
@@ -4473,6 +4764,115 @@ retried create gives the same bytes. The engine has every XLSX command above
 (`crates/office-service/src/xlsx.rs`) and every DOCX one
 (`crates/office-service/src/docx/agent.rs`), and every PPTX one
 (`crates/office-service/src/pptx/agent.rs`).
+
+Pictures and charts (Epo 2026-10-24, Q240, Q275 to Q280, Q283, Q284;
+2026-10-26, Q381, Q384, Q388; phase A, the engine, gateway and lane: the tool's
+argument, its renderers and the pictures' images come with phase B, so the
+tool shows none of this yet). The engine's reads list them: a DOCX page puts
+a paragraph's in `objects` (a picture, a chart, `{kind: "equation", text}`,
+`{kind: "drawing", text}` for a drawn shape or text box), a PPTX slide read
+adds them to a picture's or a chart's shape entry (the deck read only a
+picture's alt text, `viewable` and `reason`, a chart's `chartType` and
+`title`), and the XLSX sheet list gives each sheet's `objects` with their
+anchor `cell`; at most 50 a paragraph or sheet (`moreObjects`). A drawing
+part the sheet list cannot read is skipped and named in that sheet's
+`notice`, the rest of the list read, as the workbook skips its charts
+(review r1 M1). A read reads each chart part and each picture header once
+however many objects name it (`objects::Parts`; review r1 M3), and a DOCX
+page read opens the package once for its chart parts (`ObjectParts`, review
+r3 L1); a DOCX picture's header is decoded from the first 1 MiB of its data URL (as much
+as Go's upload check reads) and its bytes only when a by-id read sends them. A picture shows `id`, `alt` (1,000
+characters), `pixels` from its header (`[width, height]`; nothing is
+decoded, Q279), `crop` as fractions of the image each side leaves out (a
+side that is no finite number reads as 0), and `viewable`, or `viewable:
+false` with a `reason`: an EMF or WMF drawing, an SVG without the PNG Office
+stores beside it (an SVG with it is read as that PNG), linked to a file
+outside this one, damaged or unknown data (a media part that does not read,
+such as a wrong checksum, included; review r2 N4), its size cannot be read
+(a header naming no size, such as a TIFF's, or a width or height of 0;
+Q388), over 2,400 pixels on its long
+side (limits.json `inspectIds.pictureSide`, the upload check's limit, Q286,
+which Go's limits test and the sources crate's `pictures` tests keep equal;
+a GIF sized by the larger of its logical screen and its first frame), too
+large to send (a media part read no further than the answer's bytes). The
+size rules follow the upload check (Q381, Q384, Q388; applied with the
+read's limits, `Picture::seen`, with no fallback side), so a picture stored before
+that check whose header names a size past it, or none, is not sent; the
+header is all the engine reads, so a file whose header understates its
+pixels still reaches the AI process, whose pixel guard comes with phase B. A
+PPTX
+picture takes its file picture's alt text and crop only while it shows that
+picture's media (a picture added in the editor has none; review r1 L5). A
+chart shows `chartType` (`column`, `bar`, `line`, `pie` …, a combination
+joined), `title` and `series`, each with `name`, `refs` (`name`,
+`categories`, `values` cell references), `count` and its first 12 `points`
+as `[idx, category, value]` paired by `c:pt/@idx` (a gap stays a gap; a
+text value such as `#N/A` is kept) with `more`, at most 8 series
+(`moreSeries`); it is read again from the chart part (`objects::read_chart`),
+since the shared chart reader ignores idx and drops text points. A DOCX or
+PPTX chart's points are its part's caches (its data lives in an embedded
+workbook). An XLSX chart's `refs` and `cell` are the workbook's current ones
+(its `SheetChart`, which renames and row and column edits remap; the part's
+own when the workbook does not hold the chart), and its points and series
+name are read from the cells those references name now
+(`xlsx_parse::chart_reference_area`, `with_chart_refs`), `count` being the
+cells its values reference names and `more` the points past those shown
+plus the positions past the cells read (a literal part counting only the
+positions it gives; review r3 N2); a reference that does not read (a union, a defined name, another
+book, a two-dimensional range such as a multi-level category axis) shows
+nothing of its part instead of the file's cached one (Q381): without its
+values the series shows no points and a `reason` (naming the name too when
+it also fails); without its name or categories it keeps its values, that
+part empty and the `reason` on the series (Q384). A frame's chart is read once per sheet a call. An XLSX
+picture's or
+drawn shape's `cell` is its anchor moved along the rows and columns edited
+since, as a save moves it (`Workbook::source_axes`). Ids: a PPTX picture's
+or chart's shape id; DOCX `<story>:picture:<client>.<clock>` and
+`<story>:chart:<client>.<clock>`, the embed's Yjs item; XLSX
+`<drawing>#<anchor>:<n>`, the workbook's own image ids (`n` counting the
+anchor's embedded pictures), and `<drawing>#<anchor>:chart`.
+
+The query's `ids` (any format) reads them back (`objects::answer`): at most
+limits.json's `inspectIds.perCall` (4) a call, in an answer of at most
+`inspectIds.answerBytes` (8,384,512: Go's 8 MiB read of the collaboration
+answer, `postCollaboration`, less 4 KiB for the inspection around it). The
+answer is `items` in the order asked, a picture's with its `mimeType` and
+`data` (its stored bytes, base64) besides its read fields, a not-viewable
+picture's with its alt text and `reason`, a chart's with every point, and a
+`notice` naming the ids not found and why, the ids past the per-call count
+(which Go refuses first, so only another caller meets it), the pictures past
+the answer's bytes ("a read carries at most 6 MB of
+pictures; read them in another call"), and the points (`cut` on a series)
+and series (`seriesCut`) that did not fit, measured as JSON writes them
+(review r1 L4). Ids are trimmed of spaces, quotes and the brackets a read
+shows (a clear repair, Q277), and a DOCX paragraph id holding one picture or
+chart stands for it. The ids found are answered and a gone or malformed id
+is named in the notice (`Not found: <id> is no longer in the deck`, `… is a
+malformed picture or chart id; picture and chart ids read like …`; Q381);
+only a call naming no id at all is refused (`invalid_input`). An XLSX by-id
+read takes pictures from the package's drawing, relationship and media parts
+alone (`xlsx_drawing::by_ids`, `ooxml_opc::Package`: the package opened once
+a call and its part names indexed once, review r2 L3) without opening the
+workbook (2 to 9 s on large books), its items carrying no `cell` (the sheet
+list has it); a call naming a chart opens the workbook over the state, since
+a chart's points are its cells. Of the state the package path reads only the
+sheet order (`xlsx:sheet-order`), so a picture or chart of a sheet deleted
+since the read is named as gone ("its sheet was deleted"), as the sheet list
+no longer lists it. DOCX and PPTX by-id reads open the session over the base
+and that state as their reads do, so a picture added or removed in the
+editor answers as the read lists it. Go repairs `office.ids` as the engine
+does (trimmed, blanks and repeats dropped, in the order asked) and passes
+those alone to the inspect route (`internal_documents.go`, `officeIDs`;
+review r2 N2, r3 N3), after refusing more ids than the engine's per-call
+limit, an id over 256 bytes, or a list with no id left (422
+`invalid_input`, before the authority is called; Q381). There a by-id read is
+busy (an `unavailable_target` refusal, 409, the agent reads to ask again;
+not a 503) when its room's background engine process already holds 4 queued
+calls (`IDS_READ_QUEUE`, `EnginePool::admit`, counted per process, checked
+after the session lookup and before the base download and seed), and runs as
+a bounded call (`call_bounded`): skipped when its caller is gone by the time
+it would start, busy once it waited past 10 s (`IDS_READ_WAIT`; a rebuild
+rebase ahead of it). Every other call on the lane keeps its unbounded queue.
 
 Slides (Epo 2026-10-20, phase 3): `set_shape_text {shape_id,
 expected_text, paragraphs}` replaces a shape's whole text, `expected_text`
@@ -4814,8 +5214,8 @@ steps, accordions, callouts, label/value rows, cards, tables, SVG charts
 themed by `--chart-1..6`, plots (`Plot` with `Curve`, `RefLine` and `Point`
 marks, mapped onto the shared `plot` question block and drawn by `PlotChart`;
 numbers the block schema refuses withhold the plot like a damaged chart, and the
-text projection keeps its points and labels), reveals, and Mermaid diagrams through the notes'
-renderer, drawn once their code stops growing while the answer streams, and
+text projection keeps its points and labels), reveals (chat has no Mermaid
+block since 2026-10-25, Epo: diagram code never goes in Md), and
 interactives in the notes' sandboxed html-embed frame (`HtmlEmbed`, the same
 64 KB cap and theme variables), mounted once their html has stopped changing
 for a second while the answer streams; their text projection keeps the title
@@ -4828,14 +5228,21 @@ rules); charts stop growing at 480px and diagrams at min(60vh, 32rem) tall.
 Raised `k` markers come from
 the message's citation list by `n` and follow the last paragraph of the text
 they back (Streamdown's root is `display: contents` so that paragraph can run
-inline); tables and charts put their sources under the block, and the
-message's sources are neutral badges under the model name.
-The prompt reserves `AskUser` for required user input and excludes simple follow-up questions,
-with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
+inline); tables and charts put their own sources under the block, a table
+row's sources are raised at the end of its last cell (Q358), and the
+message's sources are neutral badges under the model name. A web result's
+entry takes a row of its own: the page title links to the page in a new tab
+(http(s) only, `chat/webCitation.ts`) beside its site, which truncates within
+the row, and its date, with the snippet as a muted line under them, clamped
+to two lines; the result's raised number moves to that entry
+(`sourceEntryId`).
+The prompt reserves `AskUser` for required user input (its line against simple
+follow-up questions removed 2026-10-25, Epo), with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
 write): on the first message of a chat, an explanation or summary request is
 answered and ends with an `AskUser` offering to turn it into a note or a slide
-deck, since users may not know the agent can; not when the user already asked
-for a material, not for small talk, not later. The rule is in the system
+deck, since users may not know the agent can; the offer never replaces the
+answer (its not-for-materials, small-talk and later-message exceptions removed
+2026-10-25, Epo). The rule is in the system
 prompt every turn, so the prompt stays a cached prefix.
 GLM sometimes calls `AskUser` as a tool instead of writing it in the answer
 (6 of 156 playground runs on 2026-10-14, against 3 written correctly). The
@@ -4851,7 +5258,28 @@ list, which left answers empty or ending on "a few questions:" with the
 questions gone. Other models get no such tool and keep writing `AskUser` in
 the answer. The credit guard's terminal call sends no tools, so AskUser is not
 listed there and a GLM call to it on DigitalOcean is still dropped; that needs
-exhausted credits and a question in the same turn.
+exhausted credits and a question in the same turn. The prose of a tool-called
+`AskUser` keeps its citations: markers naming shown passages move into the
+`Md`'s `passages` (`agent._cited`). GLM also writes the call as text in its own
+markup (`AskUser<arg_key>question</arg_key><arg_value>…`); for the `zai` pin
+only, `agent.text_ask_user` reads that back as the call it meant, and the text
+before it is the prose. That markup is checked on a prose answer once the
+response ends (`response_guard.contains_arg_markup`): recovered for `zai`,
+flagged for any other model. Inside an answer program it is no turn error:
+the program streams as written and the browser drops the statement it cannot
+parse, as before the check.
+
+**Q221 send-back** (Epo 2026-10-24). A first-turn reply (no history and no
+checkpoint) whose answer holds only `AskUser` questions goes back to the model
+once: after an answer program as a user message (`chat_prompts.SEND_BACK`),
+after a tool-called `AskUser` as each call's tool result (`SEND_BACK_TOOL`).
+A learner who cannot write gets the texts that ask for the answer alone, with
+no note or deck offer (`SEND_BACK_READ_ONLY`, `SEND_BACK_TOOL_READ_ONLY`). Until it has been sent back, a reply
+streams nothing before a statement of another part shows
+(`agent._ANSWER_PART`), so an offer-only reply never reaches the browser. The
+response after the send-back runs even past the planning cap, with tools off
+there; a credit guard terminal call or exhausted credits skip it. The next
+reply is the answer whatever it holds.
 `AskUser` blocks of the latest completed reply render nothing inline and
 replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
 one question at a time, numbered choices, a "something else" field, Skip,
@@ -4862,8 +5290,8 @@ while the panel is mounted); older or dismissed replies show their questions
 as read-only "Asked:" lines and are never re-asked.
 
 Before rendering, `retrieval/response_guard.py` holds partial protocol markers across
-stream chunks and detects known tool-call envelopes, including DSML, XML tool calls
-and JSON `tool_calls` fields. A match drains the current provider call for usage,
+stream chunks and detects known tool-call envelopes, including DSML, XML tool calls,
+and JSON `tool_calls` fields (GLM's argument markup is checked on prose answers only, above). A match drains the current provider call for usage,
 stops the turn without executing its tools or making a repair request, clears the
 current answer and citations, and returns `response_flagged`. The UI shows
 "Response flagged due to safety concern"; the error code is persisted in message

@@ -24,6 +24,7 @@ import requests
 from .. import elitellm, obs, registry
 from ..config import cfg
 from ..registry import ModelConfig
+from .lang import CJK_RUN_RE
 from .usage_extract import NormalizedUsage
 
 log = logging.getLogger("capy.accounting")
@@ -35,6 +36,11 @@ KIND_EMBEDDING = "embedding"
 KIND_RERANK = "rerank"
 # Transcribed seconds, priced per second by a resource rate.
 KIND_AUDIO = "audio"
+# A search_web call (DeepSeek's search), priced per search with results by
+# the gateway's web_search rate; an empty search settles at zero units.
+KIND_WEB_SEARCH = "web_search"
+WEB_SEARCH_PROVIDER = "deepseek"
+WEB_SEARCH_MODEL = "search"
 
 PURPOSE_AGENT = "agent"
 PURPOSE_TERMINAL = "terminal"
@@ -46,8 +52,9 @@ _SETTLE_TIMEOUT_S = 10
 _RECEIPT_SETTLEMENT_GRACE_S = 300
 # Suggested client wait when the model's gate never opened within the budget.
 BUSY_RETRY_AFTER_S = 5.0
-CONTEXT_COUNTING_METHOD = "provider_shape_cjk_chars_latin_chars_div3"
-CONTEXT_COUNTING_VERSION = 2
+# Version 3 (Q238): each message estimated once, as the loop holds it, and summed.
+CONTEXT_COUNTING_METHOD = "message_cjk_chars_latin_chars_div3"
+CONTEXT_COUNTING_VERSION = 3
 
 
 class AccountingError(RuntimeError):
@@ -147,27 +154,36 @@ def estimate_context_value(value: Any) -> int:
     )
     if not serialized:
         return 0
-    from .chunking import _is_cjk
-
-    cjk = sum(1 for char in serialized if _is_cjk(char))
+    cjk = sum(map(len, CJK_RUN_RE.findall(serialized)))
     latin = len(serialized) - cjk
     return cjk + (latin + 2) // 3
 
 
-def measure_components(
-    system: Any,
-    conversation: Any,
-    tools: Any,
-    *,
-    window_tokens: int = 0,
-) -> ContextComposition:
-    """Measure fields after the provider-specific request transformation."""
-    return ContextComposition(
-        system_tokens=estimate_context_value(system),
-        tool_tokens=estimate_context_value(tools),
-        conversation_tokens=estimate_context_value(conversation),
-        window_tokens=max(0, int(window_tokens)),
+# A message's estimate is kept on the message under this private key
+# (provider_messages drops "_" keys) with the field lengths it was computed
+# from, so a request sums kept estimates and an edited message is counted again.
+_KEPT_TOKENS = "_tokens"
+
+
+def _lengths(message: dict[str, Any]) -> tuple:
+    return tuple(
+        (key, len(value) if isinstance(value, (str, list, dict)) else value)
+        for key, value in message.items()
+        if not str(key).startswith("_")
     )
+
+
+def kept_tokens(message: dict[str, Any]) -> int | None:
+    """The estimate kept on ``message``, unless it changed since."""
+    kept = message.get(_KEPT_TOKENS)
+    if kept is not None and kept[0] == _lengths(message):
+        return kept[1]
+    return None
+
+
+def keep_tokens(message: dict[str, Any], tokens: int) -> int:
+    message[_KEPT_TOKENS] = (_lengths(message), tokens)
+    return tokens
 
 
 @dataclass
@@ -406,7 +422,8 @@ def _undo_admission_sync(call_id: str) -> None:
 
 
 async def release_call(call_id: str) -> None:
-    """Free the call's capacity lease once the provider is done. Best effort.
+    """Free the call's capacity lease once the provider is done, unless its
+    settlement freed it already (``settle``). Best effort.
 
     A lease that cannot be released expires with the receipt window.
     """
@@ -518,7 +535,7 @@ def _open_call_sync(
             )
             if lease is not None:
                 # Last, so the model-wide advisory lock covers only the
-                # delete, sum and insert, never the row locks above.
+                # lease insert, never the row locks above.
                 key, capacity = lease
                 admitted = db.acquire_provider_capacity(
                     cur,
@@ -590,7 +607,9 @@ async def settle(
     credit_micros: int | None = None,
 ) -> RequestAccounting | None:
     """``credit_micros`` replaces token pricing for an ingest call billed per
-    unit (a VLM page read)."""
+    unit (a VLM page read). An applied settlement frees the call's capacity
+    lease in its own transaction (Q298), so ``release_call`` has nothing left
+    to do; a failed one leaves the lease to ``release_call``."""
     state = current()
     if state is None:
         return None
@@ -609,6 +628,7 @@ async def settle(
                 deadline=state.receipt_deadlines.get(call_id),
             )
         )
+        state.leased_calls.discard(call_id)
         state.settled_calls += 1
         return state
     payload = {
@@ -633,6 +653,7 @@ async def settle(
         if deadline is not None
         else _post_settlement(payload)
     )
+    state.leased_calls.discard(call_id)  # the gateway freed it (Q298)
     if kind != KIND_RERANK:
         # A rerank settles in the background, so its reply can land after a
         # newer LLM settlement and must not roll these flags back.
@@ -640,6 +661,30 @@ async def settle(
         state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
     state.settled_calls += 1
     return state
+
+
+async def settle_web_search(call_id: str, *, results: int) -> None:
+    """Settle a search_web call: one charged unit when it returned results,
+    none when it was empty (decision 2026-10-24)."""
+    state = current()
+    if state is None:
+        return
+    payload = {
+        "sessionId": state.session_id,
+        "callId": call_id,
+        "kind": KIND_WEB_SEARCH,
+        "purpose": PURPOSE_AGENT,
+        "thinking": "",
+        "provider": WEB_SEARCH_PROVIDER,
+        "model": WEB_SEARCH_MODEL,
+        "units": 1 if results > 0 else 0,
+        **NormalizedUsage().as_dict(),
+    }
+    deadline = state.receipt_deadlines.get(call_id)
+    response = await _finish_known_receipt(_post_settlement(payload, deadline=deadline))
+    state.credits_exhausted = bool(response.get("creditsExhausted"))
+    state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
+    state.settled_calls += 1
 
 
 def settle_in_background(**receipt: Any) -> asyncio.Task[Any] | None:

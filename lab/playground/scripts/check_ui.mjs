@@ -33,6 +33,13 @@ const html = readFileSync(new URL('./ui.html', import.meta.url), 'utf8');
 const script = html
   .match(/<script>([\s\S]*)<\/script>/)[1]
   .replace(/loadState\(\);\s*$/, '');
+// The fake DOM makes any element on demand, so check the page has every one
+// the script looks up: a handler on a removed control stops the script.
+const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+assert.deepEqual(
+  [...script.matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]).filter((id) => !ids.has(id)),
+  []
+);
 vm.runInContext(script, context);
 vm.runInContext(
   "state = {defaults: {model: {}}, quality_files: [], target: 'local'}",
@@ -53,8 +60,8 @@ const resolvePreview = async (index, prompt) => {
       prompt,
       tool_prompts: toolPrompts,
       skills: { note_building: 'Production building' },
-      library_rules: 'Production library rules',
-      full_prompt: `${prompt}\n\n${config.library_rules ?? 'Production library rules'}`,
+      all_sources_rules: 'Production all sources rules',
+      full_prompt: `${prompt}\n\n${config.all_sources_rules ?? 'Production all sources rules'}`,
       tools: Object.entries(toolPrompts).map(([name, description]) => ({
         function: {
           name,
@@ -141,19 +148,19 @@ assert.deepEqual(JSON.parse(element('json').value).skills, {});
 await resolvePreview(9, 'Production prompt');
 assert.equal(element('skillPrompt').value, 'Production building');
 
-// Library rules are edited apart from the system prompt.
-assert.equal(element('libraryRules').value, 'Production library rules');
-type('libraryRules', 'My library rules');
-element('applyLibraryRules').onclick();
-assert.equal(JSON.parse(element('json').value).library_rules, 'My library rules');
+// All sources rules are edited apart from the system prompt.
+assert.equal(element('allSourcesRules').value, 'Production all sources rules');
+type('allSourcesRules', 'My all sources rules');
+element('applyAllSourcesRules').onclick();
+assert.equal(JSON.parse(element('json').value).all_sources_rules, 'My all sources rules');
 assert.equal(JSON.parse(element('json').value).system_prompt, null);
 await resolvePreview(10, 'Production prompt');
-assert.equal(element('libraryRules').value, 'My library rules');
-assert.equal(element('fullPrompt').textContent, 'Production prompt\n\nMy library rules');
-element('resetLibraryRules').onclick();
+assert.equal(element('allSourcesRules').value, 'My all sources rules');
+assert.equal(element('fullPrompt').textContent, 'Production prompt\n\nMy all sources rules');
+element('resetAllSourcesRules').onclick();
 await resolvePreview(11, 'Production prompt');
-assert.equal(JSON.parse(element('json').value).library_rules, null);
-assert.equal(element('libraryRules').value, 'Production library rules');
+assert.equal(JSON.parse(element('json').value).all_sources_rules, null);
+assert.equal(element('allSourcesRules').value, 'Production all sources rules');
 
 // Save persists the applied config without reloading editors over newer drafts.
 element('saveas').value = 'prompt-check';

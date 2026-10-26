@@ -109,9 +109,7 @@ function usePlateChat(workspaceId: string) {
           anchorStart: bytesToBase64(Y.encodeRelativePosition(relative.anchor)),
           anchorVersion: 1,
           blockId: data.comment.blockId,
-          contentRich: [
-            { children: [{ text: data.comment.comment }], type: 'p' },
-          ],
+          text: data.comment.comment,
         });
       }
     },

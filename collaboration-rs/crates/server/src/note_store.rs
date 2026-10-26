@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use crate::access::{self, AccessError};
 use crate::model::Model;
+use crate::sessions;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -247,7 +248,9 @@ pub async fn load(
 }
 
 /// One store: rechecks every contributor in the snapshot, then appends the
-/// row and advances `stored_version`. Returns the new version.
+/// row and advances `stored_version`, with the note sessions' changed rows
+/// (`sessions.rs`) in the same transaction, so a held deletion is durable
+/// with the state that holds it. Returns the new version.
 pub async fn append(
     pool: &Pool,
     material_id: &str,
@@ -255,11 +258,17 @@ pub async fn append(
     doc: Doc,
     row: &[u8],
     actors: &[String],
+    sessions: &sessions::Unsaved,
 ) -> Result<i64, StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
-    access::lock_boundary(&tx, material_id, actors).await?;
+    // The sessions' users are locked with the accounts, in their order,
+    // before the material (review r2 M2); none of them refuses the store.
+    let mut session_users: Vec<String> = sessions.rows.iter().map(|row| row.user.clone()).collect();
+    session_users.sort();
+    session_users.dedup();
+    access::lock_boundary(&tx, material_id, actors, &session_users).await?;
     // Frozen is enforced at admission, so updates already admitted save even
     // if their writer froze since; a writer must still hold its role.
     for actor in actors {
@@ -267,7 +276,11 @@ pub async fn append(
     }
     let current = tx
         .query(
-            "SELECT room_schema, stored_version FROM material_yjs_documents WHERE material_id=$1 FOR UPDATE",
+            // No key update: a client id's first-write insert checks its key
+            // against this row (FOR KEY SHARE) and may race the sessions'
+            // write below, so a stronger lock would deadlock with it (review
+            // r2 M1).
+            "SELECT room_schema, stored_version FROM material_yjs_documents WHERE material_id=$1 FOR NO KEY UPDATE",
             &[&material_id],
         )
         .await?;
@@ -279,8 +292,162 @@ pub async fn append(
     }
     let version = current.get::<_, i64>("stored_version") + 1;
     append_row(&tx, doc, material_id, version, row).await?;
+    save_sessions(&tx, material_id, sessions).await?;
     tx.commit().await?;
     Ok(version)
+}
+
+/// A note's sessions as stored (`sessions.rs`): those seen within the cap,
+/// the ids whose records were lost, and the agent holds. A session record
+/// that cannot be read is dropped alone (Q382, Epo 2026-10-26): its row is
+/// written lost (`sessions::LOST`, its tab late when it returns, Q385) and
+/// the caller reports it; agent holds that cannot be read are dropped and
+/// reported too, and the note loads (Q386, Epo 2026-10-26).
+pub async fn load_sessions(
+    pool: &Pool,
+    material_id: &str,
+) -> Result<(sessions::Sessions, sessions::Damaged), StoreError> {
+    let client = pool.get().await?;
+    let rows = client
+        .query(
+            "SELECT client_id, user_id, acked_version, seen_at, held FROM material_yjs_client_ids
+             WHERE material_id=$1 AND document='content' AND NOT expired
+               AND seen_at > now() - make_interval(hours => $2)",
+            &[
+                &material_id,
+                &((sessions::COUNTED_FOR.as_secs() / 3600) as i32),
+            ],
+        )
+        .await?;
+    let lost = client
+        .query(
+            "SELECT client_id FROM material_yjs_client_ids
+             WHERE material_id=$1 AND document='content' AND acked_version=$2",
+            &[&material_id, &sessions::LOST],
+        )
+        .await?;
+    let agent: Option<Vec<u8>> = client
+        .query_opt(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material_id],
+        )
+        .await?
+        .and_then(|row| row.get(0));
+    let (sessions, damaged) = sessions::Sessions::load(
+        rows.iter().map(|row| {
+            (
+                row.get::<_, i64>(0) as u64,
+                row.get(1),
+                row.get(2),
+                row.get(3),
+                row.get(4),
+            )
+        }),
+        lost.iter().map(|row| row.get::<_, i64>(0) as u64),
+        agent,
+    );
+    if !damaged.sessions.is_empty() {
+        let clients: Vec<i64> = damaged.sessions.iter().map(|&id| id as i64).collect();
+        client
+            .execute(
+                "UPDATE material_yjs_client_ids SET acked_version=$3, seen_at=NULL, held=NULL
+                 WHERE material_id=$1 AND document='content' AND client_id = ANY($2)",
+                &[&material_id, &clients, &sessions::LOST],
+            )
+            .await?;
+    }
+    Ok((sessions, damaged))
+}
+
+/// Writes what changed of a note's sessions beside their client ids'
+/// records, in one statement (review r1 L2): a live session's version and
+/// last seen, its held deletions only when they changed (review r2 L4), an
+/// ended one's cleared (the record's row is made if its first write's has
+/// not landed yet), and the agent holds when they changed. Never for an
+/// account whose deletion began or ended (review r1 L5): a store locked the
+/// live ones first (`lock_boundary`'s bystanders), so a purge waits for it
+/// and then deletes what it wrote; the unload write (`save_sessions_now`)
+/// only leaves out the accounts whose deletion began before its statement
+/// (review r3 N2).
+pub(crate) async fn save_sessions(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    unsaved: &sessions::Unsaved,
+) -> Result<(), StoreError> {
+    if !unsaved.rows.is_empty() {
+        let (mut clients, mut users, mut versions, mut seen, mut changed, mut held) = (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        for row in &unsaved.rows {
+            clients.push(row.client);
+            users.push(row.user.as_str());
+            versions.push(row.version);
+            seen.push(row.seen);
+            changed.push(row.held_changed);
+            held.push(row.held.as_deref());
+        }
+        tx.execute(
+            "INSERT INTO material_yjs_client_ids
+               (material_id, document, client_id, user_id, acked_version, seen_at, held)
+             SELECT $1, 'content', r.client, r.user_id, r.version, r.seen, r.held
+             FROM unnest($2::bigint[], $3::text[], $4::bigint[], $5::timestamptz[],
+                         $6::boolean[], $7::bytea[])
+               AS r(client, user_id, version, seen, changed, held)
+             JOIN users u ON u.id = r.user_id
+               AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+             ON CONFLICT (material_id, document, client_id) DO UPDATE
+             SET acked_version=EXCLUDED.acked_version, seen_at=EXCLUDED.seen_at,
+                 held=CASE WHEN (SELECT changed FROM unnest($2::bigint[], $6::boolean[])
+                                   AS c(client, changed) WHERE c.client=EXCLUDED.client_id)
+                      THEN EXCLUDED.held ELSE material_yjs_client_ids.held END
+             WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
+            &[
+                &material_id,
+                &clients,
+                &users,
+                &versions,
+                &seen,
+                &changed,
+                &held,
+            ],
+        )
+        .await?;
+    }
+    if let Some(agent) = &unsaved.agent {
+        tx.execute(
+            "UPDATE material_yjs_documents SET agent_held=$2 WHERE material_id=$1",
+            &[&material_id, agent],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// The sessions' rows when a note room unloads (the acknowledgements and
+/// departures after its last store): best effort, since older rows only
+/// count a session for less long or at an older version.
+pub async fn save_sessions_now(
+    pool: &Pool,
+    material_id: &str,
+    unsaved: &sessions::Unsaved,
+) -> Result<(), StoreError> {
+    let mut client = pool.get().await?;
+    let tx = client.transaction().await?;
+    // The document row first, as a store takes it (review r2 L5); the
+    // users are filtered, not locked, so no account lock follows it.
+    tx.execute(
+        "SELECT 1 FROM material_yjs_documents WHERE material_id=$1 FOR NO KEY UPDATE",
+        &[&material_id],
+    )
+    .await?;
+    save_sessions(&tx, material_id, unsaved).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Appends `row` as version `version` of `doc` under the caller's lock: the
@@ -433,6 +600,16 @@ pub async fn reset_lineage(
             &[&material_id, &schema],
         )
         .await?;
+    // The old lineage's sessions end with it: their tabs never rejoin this
+    // one (review r2 L3).
+    if moved > 0 {
+        tx.execute(
+            "UPDATE material_yjs_client_ids SET seen_at=NULL, held=NULL
+             WHERE material_id=$1 AND document='content'",
+            &[&material_id],
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(moved > 0)
 }

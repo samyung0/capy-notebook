@@ -5,6 +5,12 @@ export const EMBED_CATALOG = {
     {
       "type": "p",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -16,6 +22,12 @@ export const EMBED_CATALOG = {
     {
       "type": "h1",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -27,6 +39,12 @@ export const EMBED_CATALOG = {
     {
       "type": "h2",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -38,6 +56,12 @@ export const EMBED_CATALOG = {
     {
       "type": "h3",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -49,6 +73,12 @@ export const EMBED_CATALOG = {
     {
       "type": "h4",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -60,6 +90,12 @@ export const EMBED_CATALOG = {
     {
       "type": "h5",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -71,6 +107,12 @@ export const EMBED_CATALOG = {
     {
       "type": "h6",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -82,6 +124,12 @@ export const EMBED_CATALOG = {
     {
       "type": "blockquote",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -94,6 +142,12 @@ export const EMBED_CATALOG = {
       "type": "hr",
       "index": "none",
       "void": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -105,6 +159,12 @@ export const EMBED_CATALOG = {
     {
       "type": "code_block",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -116,6 +176,12 @@ export const EMBED_CATALOG = {
     {
       "type": "code_line",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -127,6 +193,12 @@ export const EMBED_CATALOG = {
     {
       "type": "table",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -138,6 +210,12 @@ export const EMBED_CATALOG = {
     {
       "type": "tr",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -149,6 +227,12 @@ export const EMBED_CATALOG = {
     {
       "type": "td",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -160,6 +244,12 @@ export const EMBED_CATALOG = {
     {
       "type": "th",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -172,6 +262,12 @@ export const EMBED_CATALOG = {
       "type": "toc",
       "index": "none",
       "void": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -183,6 +279,12 @@ export const EMBED_CATALOG = {
     {
       "type": "callout",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -194,6 +296,12 @@ export const EMBED_CATALOG = {
     {
       "type": "column_group",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -205,6 +313,12 @@ export const EMBED_CATALOG = {
     {
       "type": "column",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -217,6 +331,12 @@ export const EMBED_CATALOG = {
       "type": "equation",
       "index": "none",
       "void": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -230,6 +350,12 @@ export const EMBED_CATALOG = {
       "index": "none",
       "void": true,
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -242,6 +368,12 @@ export const EMBED_CATALOG = {
       "type": "a",
       "index": "text",
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -255,6 +387,12 @@ export const EMBED_CATALOG = {
       "index": "none",
       "void": true,
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -268,6 +406,12 @@ export const EMBED_CATALOG = {
       "index": "none",
       "void": true,
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -281,6 +425,12 @@ export const EMBED_CATALOG = {
       "index": "none",
       "void": true,
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -298,7 +448,11 @@ export const EMBED_CATALOG = {
       ],
       "forbidden": [
         "url",
-        "src"
+        "src",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "assets": [
         "assetId"
@@ -322,7 +476,11 @@ export const EMBED_CATALOG = {
       "forbidden": [
         "url",
         "src",
-        "width"
+        "width",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "assets": [
         "assetId"
@@ -346,7 +504,11 @@ export const EMBED_CATALOG = {
       "forbidden": [
         "assetId",
         "url",
-        "src"
+        "src",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "resizable": true,
       "materials": [
@@ -361,6 +523,12 @@ export const EMBED_CATALOG = {
       "type": "placeholder",
       "index": "none",
       "void": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -384,6 +552,12 @@ export const EMBED_CATALOG = {
         "block",
         "children",
         "width"
+      ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "sharedMap": [
         "block"
@@ -416,6 +590,12 @@ export const EMBED_CATALOG = {
         "children",
         "width"
       ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "sharedMap": [
         "block"
       ],
@@ -446,6 +626,12 @@ export const EMBED_CATALOG = {
         "block",
         "children",
         "width"
+      ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "sharedMap": [
         "block"
@@ -478,6 +664,12 @@ export const EMBED_CATALOG = {
         "caption",
         "children"
       ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -496,7 +688,11 @@ export const EMBED_CATALOG = {
       "forbidden": [
         "questions",
         "cards",
-        "code"
+        "code",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "sharedText": [
         "source"
@@ -516,6 +712,12 @@ export const EMBED_CATALOG = {
     {
       "type": "mermaid_caption",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -535,7 +737,11 @@ export const EMBED_CATALOG = {
         "refKind"
       ],
       "forbidden": [
-        "pending"
+        "pending",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "materials": [
         "note"
@@ -551,7 +757,11 @@ export const EMBED_CATALOG = {
         "questions",
         "cards",
         "code",
-        "timeLimitMin"
+        "timeLimitMin",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "children": [
         "quiz_question"
@@ -580,7 +790,11 @@ export const EMBED_CATALOG = {
         "acceptedAnswers",
         "hints",
         "correctOptionIds",
-        "correctBoolean"
+        "correctBoolean",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "assets": [
         "question.stem[].image.assetId",
@@ -600,7 +814,11 @@ export const EMBED_CATALOG = {
       "forbidden": [
         "questions",
         "cards",
-        "code"
+        "code",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "children": [
         "flashcard"
@@ -618,7 +836,11 @@ export const EMBED_CATALOG = {
       "forbidden": [
         "questions",
         "cards",
-        "code"
+        "code",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "assets": [
         "image.assetId"
@@ -634,6 +856,12 @@ export const EMBED_CATALOG = {
     {
       "type": "flashcard_front",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "flashcards"
       ]
@@ -641,6 +869,12 @@ export const EMBED_CATALOG = {
     {
       "type": "flashcard_back",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "flashcards"
       ]
@@ -970,13 +1204,11 @@ export const EMBED_CATALOG = {
         "lang": "mermaid",
         "body": "text"
       },
-      "chat": "Mermaid",
       "materials": [
         "mindmap",
         "diagram"
       ],
       "surfaces": [
-        "chat",
         "note",
         "material",
         "share",
@@ -988,7 +1220,6 @@ export const EMBED_CATALOG = {
           "material"
         ],
         "agent": [
-          "create_material",
           "edit_document"
         ]
       }

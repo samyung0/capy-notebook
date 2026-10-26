@@ -10,6 +10,7 @@ import pytest
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import accounting, models
 from pipeline.retrieval.usage_extract import NormalizedUsage
+from pipeline.store import db
 
 
 def _spec(**overrides) -> ModelConfig:
@@ -283,6 +284,79 @@ async def test_cancellation_waits_for_known_receipt_to_finish():
     with pytest.raises(asyncio.CancelledError):
         await settlement
     assert finished.is_set()
+
+
+def _counting_estimates(monkeypatch) -> list:
+    """The values the context estimator walks, in order."""
+    walked: list = []
+    real = accounting.estimate_context_value
+
+    def counting(value):
+        walked.append(value)
+        return real(value)
+
+    monkeypatch.setattr(accounting, "estimate_context_value", counting)
+    return walked
+
+
+def test_a_model_call_estimates_only_messages_it_has_not_measured(monkeypatch):
+    """(security regression: rate-limit audit Q238) A request's estimate sums
+    each message's kept estimate: the next call's request walks only the
+    message added since, never the whole context again."""
+    walked = _counting_estimates(monkeypatch)
+    messages = [
+        {"role": "system", "content": "rules " * 200},
+        {"role": "user", "content": "question " * 300},
+        {"role": "assistant", "content": "answer " * 300},
+    ]
+    first = models.measure_request_context(messages, model=_spec())
+    assert len(walked) == len(messages)
+    walked.clear()
+    added = {"role": "tool", "tool_call_id": "c1", "content": "result " * 100}
+    messages.append(added)
+
+    second = models.measure_request_context(messages, model=_spec())
+
+    assert walked == [
+        {"role": "tool", "tool_call_id": "c1", "content": "result " * 100}
+    ]
+    assert second.system_tokens == first.system_tokens
+    assert second.conversation_tokens == (
+        first.conversation_tokens + models.message_tokens(added)
+    )
+
+
+def test_a_message_estimate_is_kept_until_the_message_changes(monkeypatch):
+    """(security regression: rate-limit audit Q238) One walk per message; a
+    message edited in place (a notice appended to a tool result) is counted
+    again."""
+    walked = _counting_estimates(monkeypatch)
+    message = {"role": "tool", "tool_call_id": "c1", "content": "result " * 50}
+
+    def measure() -> int:
+        return models.measure_request_context([message], model=_spec()).total_tokens
+
+    first = measure()
+    assert measure() == measure() == first
+    assert len(walked) == 1
+
+    message["content"] += " Answer from the evidence you have now."
+    assert measure() > first
+    assert len(walked) == 2
+
+
+def test_the_estimates_count_like_the_character_walk():
+    """The CJK runs counted in C give the per-character count: kana, hangul
+    and ideographs one token each, other characters four (prose) or three
+    (provider JSON) to a token."""
+    from pipeline.retrieval.chunking import estimate_tokens
+    from pipeline.retrieval.lang import is_cjk
+
+    text = "Plain words, café, 中文字符, かなカナ, 한국어, emoji 🙂, 豈 and 中" * 7
+    cjk = sum(1 for ch in text if is_cjk(ch))
+    assert cjk > 0
+    assert estimate_tokens(text) == cjk + (len(text) - cjk + 3) // 4
+    assert accounting.estimate_context_value(text) == cjk + (len(text) - cjk + 2) // 3
 
 
 def test_measure_context_separates_system_tools_and_conversation():
@@ -588,6 +662,90 @@ async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
         await accounting.release_call("pc_never_leased")
         assert released == [(accounting._release_lease_sync, ("pc_1",))]
         assert state.leased_calls == set()
+    finally:
+        accounting.reset(token)
+
+
+def test_admission_holds_the_model_wide_lock_for_one_statement():
+    """(security regression: rate-limit audit M13, Q298) Admission sweeps
+    expired leases before it takes the model-wide lock, then holds the lock
+    for one conditional insert."""
+
+    class Cursor:
+        rowcount = 1
+
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def execute(self, sql: str, _params=None) -> None:
+            self.statements.append(sql.split()[0])
+            if "pg_advisory_xact_lock" in sql:
+                self.statements[-1] = "LOCK"
+
+    cur = Cursor()
+    assert db.acquire_provider_capacity(
+        cur, lease_id="pc_1", provider="m", units=1, capacity=4, lease_seconds=60
+    )
+    assert cur.statements == ["DELETE", "LOCK", "INSERT"]
+
+
+@pytest.mark.parametrize("ingest", [False, True], ids=["chat", "ingest"])
+async def test_a_settled_call_frees_its_lease_in_the_settlement(monkeypatch, ingest):
+    """(security regression: rate-limit audit M13, Q298) A settled call's lease
+    goes with its settlement (the gateway's transaction, or the local one for
+    ingest), so the call's end starts no release transaction of its own; a call
+    whose settlement failed still frees its lease."""
+    from pipeline import registry
+    from pipeline.retrieval.stream import AssembledResponse
+
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    jobs: list[str] = []
+    failing: list[bool] = []
+
+    async def to_thread(function, *_args):
+        jobs.append(function.__name__)
+        if function is accounting._settle_ingest_call_sync and failing:
+            raise ValueError("rejected")
+        return function is accounting._open_call_sync or None
+
+    async def post_settlement(_payload, **_kwargs):
+        jobs.append("post_settlement")
+        if failing:
+            raise accounting.SettlementError("accounting failed")
+        return {}
+
+    async def stream(*_args, **_kwargs):  # chat streams
+        return AssembledResponse(
+            text="ok", usage=NormalizedUsage(input_tokens=3, output_tokens=2)
+        )
+
+    async def complete(*_args, **_kwargs):  # ingest does not
+        return models.elitellm.chat_response(
+            {"role": "assistant", "content": "ok"},
+            finish_reason="stop",
+            usage={"prompt_tokens": 3, "completion_tokens": 2},
+        )
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    registry.bind_request_llm(paid_by="platform")
+    token = accounting.bind_ingest("cr_1", {}) if ingest else accounting.bind("cr_1")
+    settled = "_settle_ingest_call_sync" if ingest else "post_settlement"
+    try:
+        await models.complete_text([{"role": "user", "content": "q"}], model=_spec())
+        assert jobs == ["_open_call_sync", settled]
+
+        jobs.clear()
+        failing.append(True)
+        with pytest.raises(accounting.SettlementError):
+            await models.complete_text(
+                [{"role": "user", "content": "q"}], model=_spec()
+            )
+        assert jobs == ["_open_call_sync", settled, "_release_lease_sync"]
     finally:
         accounting.reset(token)
 

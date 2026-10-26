@@ -216,7 +216,6 @@ const NEW_ACCOUNT_LISTS = {
   '/api/search': [],
   '/api/tags': [],
   '/api/tasks': [],
-  '/api/thinking': [],
   '/api/trash': { items: [] },
   '/api/workspaces': [],
 };

@@ -341,13 +341,17 @@ export const qk = {
   attempts: (params?: unknown) => ['attempts', params ?? null] as const,
   attemptsRoot: ['attempts'] as const,
   billing: ['billing'] as const,
-  canvas: (id: string) => ['canvas', id] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
   chapters: (wsId: string) => ['workspace', wsId, 'chapters'] as const,
   conversations: (wsId: string) =>
     ['workspace', wsId, 'conversations'] as const,
   deletionPreflight: ['account', 'deletion'] as const,
+  /** The images and audio the caller pays for (the Embeds tab), all or one
+   * access filter. */
+  editorAssets: (access?: string) =>
+    ['editor-assets', access ?? 'all'] as const,
+  editorAssetsRoot: ['editor-assets'] as const,
   eventStream: ['event-stream'] as const,
   events: ['events'] as const,
   exploreFlashcardSets: ['explore', 'flashcardSets'] as const,
@@ -369,8 +373,6 @@ export const qk = {
   learningProgress: ['learning', 'progress'] as const,
   /** Everything under Learning: progress and plans. */
   learningRoot: ['learning'] as const,
-  /** The caller's images and audio in notes it can no longer open. */
-  lostMedia: ['editor-assets', 'lost'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,
@@ -402,7 +404,6 @@ export const qk = {
   studyPlans: (wsId: string) => ['workspace', wsId, 'study', 'plans'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
-  thinking: ['thinking'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
   usageEvents: (params?: unknown) =>

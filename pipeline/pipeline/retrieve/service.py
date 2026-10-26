@@ -30,6 +30,7 @@ from ..retrieval import (
     compact,
     contract,
     library,
+    limits,
     models,
     pending,
     scripted,
@@ -40,12 +41,14 @@ from ..retrieval.agent import (
     CLIENT_ERROR,
     CLIENT_ERROR_CODE,
     ClientDrop,
+    busy_error,
     close_cut_edits,
     run_agent,
     with_turn_state,
 )
 from ..retrieval.chunking import estimate_tokens
 from ..retrieval.events import error as client_error
+from ..retrieval.events import phase
 from ..retrieval.tools import ToolContext
 from .ai_adapter import router as plate_ai_router
 
@@ -257,8 +260,8 @@ class ChatStreamReq(LLMPin):
     spendSessionId: str
     # Account locale from the gateway (users.locale). Do not trust a browser field.
     locale: str | None = None
-    # The per-turn Library switch: the shared knowledge library is a source.
-    library: bool = False
+    # The per-message Workspace only switch: on, only the workspace is a source.
+    workspaceOnly: bool = False
     # The file or material the learner has open: {"id", "kind", "title"}.
     openResource: dict | None = None
     # The requester's saved study preferences; missing fields take defaults.
@@ -432,7 +435,7 @@ async def _chat_events(req: ChatStreamReq):
         operations=frozenset(req.operations),
         file_ids=None if req.fileIds is None else list(req.fileIds),
         assistant_message_id=req.assistantMessageId or "",
-        library=req.library,
+        workspace_only=req.workspaceOnly,
         open_resource=dict(req.openResource or {}),
         study_preferences=dict(req.studyPreferences or {}),
         study_progress=req.studyProgress,
@@ -475,10 +478,70 @@ async def _chat_events(req: ChatStreamReq):
             accounting.reset(accounting_token)
 
 
+def _busy() -> elitellm.ProviderBusy:
+    return elitellm.ProviderBusy(
+        "the retrieval service is at its turn limit",
+        retry_after=accounting.BUSY_RETRY_AFTER_S,
+    )
+
+
+def _take_turn_slot() -> None:
+    """Admit a generate request among the turns in progress, or answer the
+    existing 503 provider_busy with Retry-After at once (Q268: only chat
+    waits)."""
+    if not limits.TURN_SLOTS.take():
+        raise _busy()
+
+
+class _ChatSlot:
+    """A chat stream's turn slot: taken inside the stream, given back when the
+    response ends, however it ends (``_SlotStream``)."""
+
+    held = False
+
+    def release(self) -> None:
+        if self.held:
+            self.held = False
+            limits.TURN_SLOTS.release()
+
+
+class _SlotStream(StreamingResponse):
+    def __init__(self, content, slot: _ChatSlot, **kwargs) -> None:
+        super().__init__(content, **kwargs)
+        self.slot = slot
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.slot.release()
+
+
+async def _admitted_chat(req: ChatStreamReq, slot: _ChatSlot):
+    """The stream starts at once. Past the turns in progress it says it is
+    waiting and waits up to CHAT_SLOT_WAIT_S in arrival order (Epo 2026-10-24,
+    Q268, inner-turn slots); a client that leaves gives up its place. Past the
+    wait it ends with the provider_busy event a busy model call sends; given a
+    slot, it goes back to the phase it showed before the wait (Q359). Each of
+    the turn's model calls then takes a call slot of its own (``agent``)."""
+    slot.held = limits.TURN_SLOTS.take()
+    if not slot.held:
+        yield _sse(phase("waiting_capacity"))
+        slot.held = await limits.TURN_SLOTS.wait(limits.CHAT_SLOT_WAIT_S)
+        if not slot.held:
+            yield _sse(busy_error(_busy()))
+            return
+        yield _sse(phase("planning"))
+    async for chunk in _chat_events(req):
+        yield chunk
+
+
 @app.post("/chat/stream")
 async def chat_stream(req: ChatStreamReq):
-    return StreamingResponse(
-        _chat_events(req),
+    slot = _ChatSlot()
+    return _SlotStream(
+        _admitted_chat(req, slot),
+        slot,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -494,15 +557,22 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
     The usage envelope is attached here rather than inside each workflow so
     every generate kind reports it the same way.
     """
-    accounting_token = _bind_accounting(req.spendSessionId)
+    _take_turn_slot()
+    # Its one model call answers provider_busy at once past the call slots too.
+    slots_token = limits.bind_call_slots(limits.CallSlotPolicy(wait_s=0))
     try:
-        payload = await _generate(req)
-        usage = obs.current_usage()
-        if usage is not None and not usage.is_empty():
-            payload["usage"] = usage.as_dict()
-        return payload
+        accounting_token = _bind_accounting(req.spendSessionId)
+        try:
+            payload = await _generate(req)
+            usage = obs.current_usage()
+            if usage is not None and not usage.is_empty():
+                payload["usage"] = usage.as_dict()
+            return payload
+        finally:
+            _reset_accounting(accounting_token)
     finally:
-        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)
+        limits.TURN_SLOTS.release()
 
 
 async def _generate(req: GenerateReq) -> dict[str, Any]:

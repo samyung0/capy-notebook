@@ -80,25 +80,26 @@ const TOOL_OUTCOMES: readonly ToolOutcome[] = [
 
 export interface ChatStreamBody {
   conversationId?: string;
-  /** The per-turn Library switch: the shared knowledge library is a source. */
-  library: boolean;
   /** What the learner has open; the server looks up its title. */
   openResource?: { id: string; kind: 'file' | 'material' };
   text: string;
+  /** The per-message Workspace only switch: on, only the workspace's files
+   * and materials are sources. */
+  workspaceOnly: boolean;
 }
 
-/** The Library switch starts on in every chat panel. */
-export const LIBRARY_DEFAULT = true;
+/** Workspace only starts off in every chat panel (Epo 2026-10-24). */
+export const WORKSPACE_ONLY_DEFAULT = false;
 
 /** One turn's switches. Only the open item's id and kind leave the browser;
  * the server looks up its title. */
 export function chatTurn(
-  library: boolean,
+  workspaceOnly: boolean,
   open: { id: string; kind: 'file' | 'material' } | null | undefined
-): Pick<ChatStreamBody, 'library' | 'openResource'> {
+): Pick<ChatStreamBody, 'workspaceOnly' | 'openResource'> {
   return {
-    library,
     openResource: open ? { id: open.id, kind: open.kind } : undefined,
+    workspaceOnly,
   };
 }
 
@@ -191,6 +192,14 @@ export async function streamChat(
     return;
   }
 
+  // A wait (the limiter's or an AI slot's, Q268) can come at the start or
+  // before any model call of the turn, more than once: its phase shows until
+  // the next event of any kind, which puts back the phase before it (Q300).
+  // The pipeline sends that phase itself when the slot arrives (Q359); this
+  // covers a wait that ends some other way, and a phase event that follows a
+  // wait is shown once, not restored first.
+  let resume: ChatPhase = 'planning';
+  let waiting = false;
   const dispatch = (raw: string) => {
     const data = raw
       .split('\n')
@@ -235,6 +244,12 @@ export async function streamChat(
     } catch {
       return;
     }
+    const waits =
+      ev.type === 'phase' &&
+      (ev.phase === 'waiting_limit' || ev.phase === 'waiting_capacity');
+    if (waiting && ev.type !== 'phase') handlers.onPhase?.(resume);
+    waiting = waits;
+    if (ev.type === 'phase' && ev.phase && !waits) resume = ev.phase;
     switch (ev.type) {
       case 'start':
         handlers.onStart?.({

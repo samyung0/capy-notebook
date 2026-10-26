@@ -15,6 +15,7 @@ import { Icon } from '@/components/ui/Icon';
 import { onChildrenReady } from '@/features/notes/childrenReady';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { mediaWidth } from './document';
 import { MediaFrame } from './MediaFrame';
 
 // Loaded when used: the authenticated resolve (with the app's query client
@@ -69,16 +70,18 @@ export const RemovedAssetsContext = createContext<RemovedAssets>({
   ids: new Set(),
 });
 
-/** The RemovedAssetsContext value for a material's query result. */
+/** The RemovedAssetsContext value for a query result; `refetch` rechecks
+ * it, where fetching again is harmless (not a review session, which a new
+ * fetch would replace). */
 export function useRemovedAssets(
   removedAssetIds: readonly string[] | null | undefined,
-  refetch: (options: { cancelRefetch: boolean }) => unknown
+  refetch?: (options: { cancelRefetch: boolean }) => unknown
 ): RemovedAssets {
   return useMemo(
     () => ({
       ids: new Set(removedAssetIds),
       // Several failed images in one material share one refetch.
-      recheck: () => void refetch({ cancelRefetch: false }),
+      recheck: refetch && (() => void refetch({ cancelRefetch: false })),
     }),
     [removedAssetIds, refetch]
   );
@@ -249,13 +252,13 @@ export function MediaAssetView({
           }}
           onWidthChange={onWidthChange}
           toolbar={toolbar}
-          width={element.width}
+          width={mediaWidth(element.width)}
         >
           <img
             alt={element.name || asset.name}
             className={cn(
               'block h-auto rounded-card',
-              element.width || fill ? 'w-full' : 'max-w-full'
+              mediaWidth(element.width) || fill ? 'w-full' : 'max-w-full'
             )}
             decoding="async"
             onLoad={(event) => {

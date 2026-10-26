@@ -123,6 +123,8 @@ export default defineConfig({
       VITE_POSTHOG_KEY: '',
       VITE_RELEASE_SHA: 'e2e',
       VITE_SENTRY_DSN: '',
+      // Cloudflare's published Turnstile test site key, which always passes.
+      VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
       VITE_USE_MSW: 'false',
     },
     reuseExistingServer: false,

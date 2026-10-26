@@ -25,6 +25,10 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/ops ./cmd/ops
 
 FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
+# The server names Clerk's frontend host in its content security policy from
+# this key (server/internal/ops/config.go), the one the bundle was built with.
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 WORKDIR /app
 COPY --from=backend /out/ops /app/ops
 COPY --from=web /src/ops/dist /app/static

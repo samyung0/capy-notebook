@@ -1,5 +1,6 @@
 import { YjsPlugin } from '@platejs/yjs/react';
 import { captureException } from '@sentry/react';
+import type { YHistoryEditor } from '@slate-yjs/core';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Path } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
@@ -54,6 +55,7 @@ import {
   type PresenceStore,
 } from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
+import { limitUndo } from '@/features/collaboration/undo';
 import { FileLoading } from '@/features/files/FileStates';
 import {
   createMaterialDocument,
@@ -71,7 +73,11 @@ import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import { mergedRows } from '@/lib/draftStore';
 import {
   applyDrafts,
+  DRAFT_SEND_WAIT_MS,
   type DraftRecorder,
+  type DraftSender,
+  draftSender,
+  draftsVersion,
   dropLostDrafts,
   type EditDraft,
   recordDrafts,
@@ -127,6 +133,7 @@ import {
   pauseEdits,
 } from './roomSwap';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
+import { toastDraftsLost } from './saveFailure';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
 const RESTORE_ORIGIN = Symbol('restore');
@@ -154,6 +161,13 @@ function roomProvider(editor: PlateEditor) {
     ._providers.find((candidate) =>
       USE_MSW ? candidate.type === 'mock' : candidate.type === 'capy'
     ) as StatelessProviderWrapper | undefined;
+}
+
+/** The capy room provider (none under MSW), which knows the stored version
+ * the tab reports (in-place collection). */
+function capyRoom(editor: PlateEditor) {
+  const provider = roomProvider(editor)?.provider;
+  return provider instanceof RoomProvider ? provider : undefined;
 }
 
 /**
@@ -481,6 +495,7 @@ export function NoteEditorCore({
   draftKey,
   restored,
   late,
+  pending,
   phase = 'live',
   onPainted,
   joinStartedAt,
@@ -516,6 +531,9 @@ export function NoteEditorCore({
    * unsent edits the late merge places onto the room's current one, once
    * this editor synced; nothing of it is applied raw. */
   late?: Uint8Array;
+  /** Stored edits of never-accepted sessions: the draft send takes them
+   * while the room joins (Q319, Q327). */
+  pending: EditDraft[];
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   /** The room's other editors, for the header's avatar group (null once
    * the editor unmounts). */
@@ -526,7 +544,12 @@ export function NoteEditorCore({
    * refused draft (the remount shows them for copying), or `lost` when this
    * device could not store them. */
   onDocumentRejected?: (
-    code: MaterialLimitCode | 'invalid_document' | 'revoked' | 'late',
+    code:
+      | MaterialLimitCode
+      | 'invalid_document'
+      | 'unassigned'
+      | 'revoked'
+      | 'late',
     edits: 'none' | 'kept' | 'lost'
   ) => void;
   /** The room answered this editor's JOIN late (its session is older than
@@ -578,6 +601,8 @@ export function NoteEditorCore({
   const recorder = useRef<DraftRecorder | null>(null);
   // The room is unreachable: the editor keeps editing on this device.
   const offlineMode = useRef(false);
+  // Steps were held (Q327): the next sync ends that stored-only episode.
+  const heldEpisode = useRef(false);
   const storageOk = useRef(true);
   const overLimit = useRef(false);
   const [offlineLimit, setOfflineLimit] = useState(false);
@@ -594,6 +619,8 @@ export function NoteEditorCore({
   // The token request that failed, if one did: the provider only reports its
   // own "Failed to get token" text.
   const tokenError = useRef<unknown>(null);
+  // The last room token handed to the provider: stored drafts keep it (Q288).
+  const lastToken = useRef<string | undefined>(undefined);
   // Parsing normalizes and copies every node, so on a near-limit document this
   // costs seconds. It is the *initial* value — the room is authoritative from
   // sync onwards — so it is computed once per mount rather than on every
@@ -648,8 +675,26 @@ export function NoteEditorCore({
   // the paused note above it still on screen.
   const statusChange = useRef(onEditorStatusChange);
   statusChange.current = phase === 'paused' ? undefined : onEditorStatusChange;
+  // Stored steps of never-accepted sessions go through the draft send while
+  // the room joins (Q319): view-only until it settles. Past DRAFT_SEND_WAIT_MS
+  // the note applies them and edits on, nothing live and every JOIN waiting
+  // for the send, until the room took them (`heldSteps`, Q327, Q328). Both
+  // read as syncing.
+  const [draftsSending, setDraftsSending] = useState(pending.length > 0);
+  const sendingNow = useRef(pending.length > 0);
+  const heldSteps = useRef(false);
+  const sender = useRef<DraftSender | null>(null);
+  // Takes the pending steps once DRAFT_SEND_WAIT_MS passed and the room
+  // synced, whichever comes last.
+  const holdSteps = useRef<(() => void) | null>(null);
   const report = useCallback((saveState: NoteEditorStatus['saveState']) => {
-    const shown = phaseNow.current === 'standby' ? 'reconnecting' : saveState;
+    const shown =
+      phaseNow.current === 'standby'
+        ? 'reconnecting'
+        : (sendingNow.current || heldSteps.current) &&
+            (saveState === 'saved' || saveState === 'reconnecting')
+          ? 'syncing'
+          : saveState;
     statusChange.current?.(
       reportedSlowed.current
         ? { saveState: shown, slowed: true }
@@ -840,6 +885,28 @@ export function NoteEditorCore({
     [qc, material.id]
   );
 
+  // The room refused this editor's copy for good. Unsaved edits are kept as
+  // one refused draft: the remount shows them read-only for copying, never
+  // merged back.
+  const rejectDocument = useCallback(
+    (
+      code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked'
+    ) => {
+      if (rejected.current) return;
+      rejected.current = true;
+      const unsaved = hasUnsavedWork() || !!recorder.current?.unsaved;
+      if (unsaved) recorder.current?.refuse();
+      pendingCheckpoints.current.clear();
+      saveDelay.retain([]);
+      setStatus('error');
+      reportRejection.current?.(
+        code,
+        unsaved ? (storageOk.current ? 'kept' : 'lost') : 'none'
+      );
+    },
+    [hasUnsavedWork, saveDelay, setStatus]
+  );
+
   const handleStatelessEvent = useCallback(
     (payload: string) => {
       const event = parseCollaborationEvent(payload);
@@ -905,18 +972,8 @@ export function NoteEditorCore({
         (event.type === 'authorization-revoked' &&
           event.room === collaborationToken.room)
       ) {
-        if (rejected.current) return;
-        rejected.current = true;
-        // Unsaved edits are kept as one refused draft: the remount shows
-        // them read-only for copying, never merged back.
-        const unsaved = hasUnsavedWork() || !!recorder.current?.unsaved;
-        if (unsaved) recorder.current?.refuse();
-        pendingCheckpoints.current.clear();
-        saveDelay.retain([]);
-        setStatus('error');
-        reportRejection.current?.(
-          event.type === 'document-rejected' ? event.code : 'revoked',
-          unsaved ? (storageOk.current ? 'kept' : 'lost') : 'none'
+        rejectDocument(
+          event.type === 'document-rejected' ? event.code : 'revoked'
         );
         return;
       }
@@ -975,6 +1032,7 @@ export function NoteEditorCore({
       hasUnsavedWork,
       qc,
       material.id,
+      rejectDocument,
       saveDelay,
       setStatus,
     ]
@@ -1005,7 +1063,10 @@ export function NoteEditorCore({
         roomProvider(editorRef.current)?.disconnect();
         recorder.current?.late();
         reportLate.current?.(Y.encodeStateAsUpdate(ydoc));
-      } else if (refusal === 'outdated') {
+      }
+      // The room holds this document's client id for no one: not retried.
+      else if (refusal === 'unassigned') rejectDocument('unassigned');
+      else if (refusal === 'outdated') {
         // Capy was updated: only a page reload helps. The unsaved edits
         // stay stored (the reloaded editor applies them before it joins).
         if (stale.current) return;
@@ -1031,6 +1092,14 @@ export function NoteEditorCore({
         }
         reportUnavailable.current?.(refusal);
       }
+    };
+    // While its never-accepted steps are held, a JOIN waits for the draft
+    // send to take them (Q327), and the hold's connect asks for a send at
+    // once (Q328, Q360).
+    const beforeJoin = () => {
+      if (!heldSteps.current) return;
+      sender.current?.now();
+      return sender.current?.settled;
     };
     return [
       YjsPlugin.configure({
@@ -1064,8 +1133,9 @@ export function NoteEditorCore({
             hasSynced.current = true;
             reconnector.current?.connected();
             saveDelay.connected();
-            if (offlineMode.current) {
+            if (offlineMode.current || heldEpisode.current) {
               offlineMode.current = false;
+              heldEpisode.current = false;
               recorder.current?.connected();
               reportOffline.current?.(null);
             }
@@ -1080,11 +1150,15 @@ export function NoteEditorCore({
             resendCheckpoints.current();
             if (unsavedChanges.current) saveNow.current();
             mergeNow.current();
+            // A first sync after DRAFT_SEND_WAIT_MS still takes the held
+            // steps (Q360).
+            queueMicrotask(() => holdSteps.current?.());
           },
           providers: [
             USE_MSW
               ? ({
                   options: {
+                    beforeJoin,
                     initialValue,
                     materialId: material.id,
                     name: collaborationToken.room,
@@ -1100,6 +1174,7 @@ export function NoteEditorCore({
                 } as never)
               : ({
                   options: {
+                    beforeJoin,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
                     onClose: () => {
@@ -1115,11 +1190,12 @@ export function NoteEditorCore({
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
-                    token: async () => {
+                    token: async (previousToken?: string) => {
                       let token: MaterialCollaborationToken;
                       try {
                         token = await getMaterialCollaborationToken(
-                          material.id
+                          material.id,
+                          { previousToken }
                         );
                       } catch (error) {
                         tokenError.current = error;
@@ -1139,8 +1215,16 @@ export function NoteEditorCore({
                         readOnlyNow.current(true);
                         throw new Error(COLLABORATION_READ_ONLY_REASON);
                       }
+                      lastToken.current = token.token;
                       return token.token;
                     },
+                    // Stored drafts not yet covered by a receipt (Q236).
+                    unsent: () => !!recorder.current?.unsaved,
+                    // The restored rows' version: the tab reports no newer
+                    // one until the room took them.
+                    unsentFrom: restored.length
+                      ? draftsVersion(restored)
+                      : undefined,
                     url: collaborationToken.url,
                   },
                   // The capy-sync room provider (features/collaboration/platePlugin).
@@ -1175,7 +1259,9 @@ export function NoteEditorCore({
     material.id,
     material.workspaceId,
     qc,
+    rejectDocument,
     reportPresence,
+    restored,
     saveDelay,
     setStatus,
     ydoc,
@@ -1198,6 +1284,9 @@ export function NoteEditorCore({
     plugins,
     value: initialValue,
   });
+  // Undo reaches back 24 h (in-place collection, Epo 2026-10-23); the Yjs
+  // history made its manager with the editor.
+  limitUndo((editor as PlateEditor & YHistoryEditor).undoManager);
   // Provider callbacks are configured before the editor exists.
   const editorRef = useRef(editor);
   editorRef.current = editor;
@@ -1223,11 +1312,14 @@ export function NoteEditorCore({
         setOfflineLimit(over);
         showOffline();
       },
+      onLost: toastDraftsLost,
       onStorage: (ok) => {
         storageOk.current = ok;
         showOffline();
       },
       report: reportIncident,
+      token: () => lastToken.current,
+      version: () => capyRoom(editorRef.current)?.reportedVersion,
     });
     recorder.current = current;
     return () => {
@@ -1240,7 +1332,7 @@ export function NoteEditorCore({
     const current = roomReconnector({
       // Lost for good before the first sync: nothing to edit offline.
       onStuck: () => {
-        if (stale.current) return;
+        if (stale.current || heldSteps.current) return;
         if (hasSynced.current) goOfflineNow.current();
         else setStatus('error');
       },
@@ -1308,6 +1400,65 @@ export function NoteEditorCore({
     };
   }, [collaborationToken.room, editor, material.id, qc, seat, setStatus]);
 
+  // The draft send of never-accepted steps (Q319, Q327, Q328).
+  useEffect(() => {
+    if (!pending.length) return;
+    const current = draftSender(draftKey, () =>
+      getMaterialCollaborationToken(material.id)
+    );
+    sender.current = current;
+    let active = true;
+    void current.settled.then(() => {
+      if (!active) return;
+      const held = heldSteps.current;
+      sendingNow.current = false;
+      heldSteps.current = false;
+      setDraftsSending(false);
+      // A group the room did not take, its steps not applied here: the
+      // remount opens it copy-only (Q360). Held ones the JOIN's refusal
+      // takes there.
+      if (current.kept && !held) {
+        reportRejection.current?.('unassigned', 'kept');
+        return;
+      }
+      if (reportedStatus.current) report(reportedStatus.current);
+    });
+    // Not settled in time: the note takes the steps itself and edits on,
+    // every edit stored and nothing live until the room took them. Before
+    // a first sync the join's own 30 s error stands; the hold waits for it.
+    let waitOver = false;
+    const hold = () => {
+      if (!(active && waitOver && hasSynced.current) || current.done) return;
+      if (heldSteps.current || rejected.current || stale.current) return;
+      const room = roomProvider(editor)?.provider;
+      heldSteps.current = true;
+      heldEpisode.current = true;
+      // Marked first, so the Leave says unsent and the session (this Y.Doc)
+      // stays (review r1 N3).
+      capyRoom(editor)?.unsentFrom(draftsVersion(pending));
+      room?.disconnect();
+      recorder.current?.disconnected(true);
+      applyDrafts(ydoc, pending, RESTORE_ORIGIN);
+      recorder.current?.adopt(pending);
+      sendingNow.current = false;
+      setDraftsSending(false);
+      report('syncing');
+      void room?.connect();
+    };
+    holdSteps.current = hold;
+    const timer = setTimeout(() => {
+      waitOver = true;
+      hold();
+    }, DRAFT_SEND_WAIT_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      current.stop();
+      if (sender.current === current) sender.current = null;
+      if (holdSteps.current === hold) holdSteps.current = null;
+    };
+  }, [draftKey, editor, material.id, pending, report, ydoc]);
+
   // Out of standby: the header shows this editor's own status now.
   const lastPhase = useRef(phase);
   useEffect(() => {
@@ -1372,6 +1523,14 @@ export function NoteEditorCore({
     // back from the provider's own state; a dropped one reconnects by itself.
     const online = () => {
       if (stale.current || reportedStatus.current !== 'offline') return;
+      // Steps held for the draft send: syncing again while it goes on, the
+      // episode still unreported (Q328, Q360).
+      if (heldSteps.current) {
+        offlineMode.current = false;
+        reportOffline.current?.(null);
+        setStatus('syncing');
+        return;
+      }
       if (roomProvider(editor)?.isSynced)
         setStatus(hasUnsavedWork() ? 'syncing' : 'saved');
       // Offline mode lasts until the room syncs again.
@@ -1493,7 +1652,12 @@ export function NoteEditorCore({
   // nothing may edit until reconnect, reload or the next editor. A paused
   // editor's content stops edits without Slate's readOnly (pauseEdits).
   // A late merge in flight: no local edit before its update is applied.
-  const locked = offlineLimit || outdated || phase === 'paused' || lateMerging;
+  const locked =
+    offlineLimit ||
+    outdated ||
+    phase === 'paused' ||
+    draftsSending ||
+    lateMerging;
   return (
     <EditorHoldScope>
       <NoteSeatContext.Provider value={seat}>
@@ -1534,7 +1698,9 @@ export function NoteEditorCore({
                             <NoteEditorContent
                               discussions={discussions}
                               presence={presence}
-                              readOnly={offlineLimit || outdated}
+                              readOnly={
+                                offlineLimit || outdated || draftsSending
+                              }
                               shouldShowStats={shouldShowDocumentStats(
                                 documentStats
                               )}

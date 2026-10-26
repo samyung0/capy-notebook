@@ -1,8 +1,8 @@
 import { lazy, Suspense, useState } from 'react';
 import type * as Y from 'yjs';
-import { editorImageMaxBytes, uploadEditorAsset } from '@/api/editorAssets';
+import { uploadEditorAsset } from '@/api/editorAssets';
 import type { Question } from '@/api/types';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { recoveryBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
@@ -13,7 +13,6 @@ import { issueMessages, questionIssues } from '@/features/questions/issues';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
-import { fitImage } from '@/lib/fitImage';
 import { removeQuestion, writeQuestion } from './liveQuiz';
 import { type QuizRooms, useQuizQuestions } from './liveQuizRooms';
 import { QuizQuestionList } from './QuizPage';
@@ -39,8 +38,8 @@ export function isCompleteQuestion(question: Question): boolean {
  * next projection. */
 export function quizImageUpload(quizId: string): UploadQuestionAsset {
   return async (file, signal) => {
-    const fitted = await fitImage(file, await editorImageMaxBytes(quizId));
-    const { assetId } = await uploadEditorAsset(quizId, fitted, 'image', {
+    // Compressed by the upload itself.
+    const { assetId } = await uploadEditorAsset(quizId, file, 'image', {
       signal,
     });
     return { assetId };
@@ -196,13 +195,13 @@ export function QuizRecovery({
     recovery.content?.doc ?? rooms.content?.doc,
     recovery.keys?.doc ?? rooms.keys?.doc
   );
-  const refused = !!(recovery.content?.refused || recovery.keys?.refused);
+  const state = recoveryBanner({
+    expired: !!(recovery.content?.expired || recovery.keys?.expired),
+    refused: !!(recovery.content?.refused || recovery.keys?.refused),
+  });
   return (
     <div className="grid gap-6">
-      <SaveBanner
-        onReload={recovery.reload}
-        state={refused ? 'refused' : 'changed'}
-      />
+      <SaveBanner onReload={recovery.reload} state={state} />
       <QuizQuestionList disabled questions={questions} showAnswerKey />
     </div>
   );

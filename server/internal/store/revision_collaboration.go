@@ -2,13 +2,15 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
@@ -20,40 +22,69 @@ type CollaborationResource struct {
 }
 
 // scanRevisionComment expects the author's name and avatar between the user id
-// and the content. Mutations project them through a CTE, because RETURNING
-// cannot join the author's user row on its own.
+// and the text. Mutations project them through a CTE, because RETURNING
+// cannot join the author's user row on its own. A deleted comment's text is
+// not served.
 func scanRevisionComment(row pgx.Row) (Comment, error) {
 	var comment Comment
-	var content []byte
 	err := row.Scan(
 		&comment.ID,
 		&comment.DiscussionID,
 		&comment.UserID,
 		&comment.AuthorName,
 		&comment.AuthorAvatarURL,
-		&content,
+		&comment.Text,
 		&comment.IsEdited,
 		&comment.IsDeleted,
 		&comment.CreatedAt,
 		&comment.UpdatedAt,
 	)
 	if comment.IsDeleted {
-		comment.ContentRich = json.RawMessage("null")
-	} else {
-		comment.ContentRich = json.RawMessage(content)
+		comment.Text = ""
 	}
 	return comment, err
 }
 
-func validateRichContent(content json.RawMessage) error {
-	var value []map[string]any
-	if err := json.Unmarshal(content, &value); err != nil {
-		return fmt.Errorf("%w: %v", materialdoc.ErrInvalid, err)
+// validateCommentText accepts plain text of 1 to fieldlimits.Comment
+// characters that is not only whitespace (Epo 2026-10-24: comments are
+// strictly validated plain text; plainField).
+func validateCommentText(text string) error {
+	if strings.TrimSpace(text) == "" {
+		return fmt.Errorf("%w: a comment needs text", materialdoc.ErrInvalid)
 	}
-	return materialdoc.Validate(materialdoc.Envelope{
-		SchemaVersion: materialdoc.SchemaVersion,
-		Value:         value,
-	})
+	if utf8.RuneCountInString(text) > fieldlimits.Comment {
+		return fmt.Errorf("%w: a comment is at most %d characters", materialdoc.ErrInvalid, fieldlimits.Comment)
+	}
+	if !plainField(text) {
+		return fmt.Errorf("%w: a comment holds plain text only", materialdoc.ErrInvalid)
+	}
+	return nil
+}
+
+// plainField is whether a comment field (text, quote, block id) holds no
+// control character but a newline or tab and no bidi override or isolate
+// (U+202A-U+202E, U+2066-U+2069); zero-width joiners, which emoji and some
+// scripts need, stay (Q313).
+func plainField(s string) bool {
+	for _, r := range s {
+		if (unicode.IsControl(r) && r != '\n' && r != '\t') ||
+			(r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) {
+			return false
+		}
+	}
+	return true
+}
+
+// validateBlockID accepts a discussion's block id of 1 to 128 characters in
+// plain text (Q313).
+func validateBlockID(blockID *string) error {
+	if blockID == nil {
+		return nil
+	}
+	if n := utf8.RuneCountInString(*blockID); n < 1 || n > 128 || !plainField(*blockID) {
+		return fmt.Errorf("%w: a block id is 1 to 128 plain characters", materialdoc.ErrInvalid)
+	}
+	return nil
 }
 
 func validateRelativeAnchor(start, end []byte, version int, quote string) error {
@@ -68,6 +99,9 @@ func validateRelativeAnchor(start, end []byte, version int, quote string) error 
 	}
 	if utf8.RuneCountInString(quote) > 1000 {
 		return fmt.Errorf("%w: comment anchor quote is too large", materialdoc.ErrInvalid)
+	}
+	if !plainField(quote) {
+		return fmt.Errorf("%w: a comment anchor quote holds plain text only", materialdoc.ErrInvalid)
 	}
 	return nil
 }
@@ -119,7 +153,7 @@ func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID str
 
 func (s *Store) listDiscussionComments(ctx context.Context, discussionID string) ([]Comment, error) {
 	rows, err := s.pool.Query(ctx, `SELECT c.id, c.discussion_id, c.user_id,
-		COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), c.content_rich, c.is_edited,
+		COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), c.text, c.is_edited,
 		(c.deleted_at IS NOT NULL), c.created_at, c.updated_at
 		FROM material_comments c
 		LEFT JOIN users u ON u.id=c.user_id
@@ -335,12 +369,15 @@ func (s *Store) CreateCommentDiscussion(
 	anchorStart, anchorEnd []byte,
 	anchorVersion int,
 	anchorQuote string,
-	content json.RawMessage,
+	text string,
 ) (Discussion, error) {
-	if err := validateRichContent(content); err != nil {
+	if err := validateCommentText(text); err != nil {
 		return Discussion{}, err
 	}
 	if err := validateRelativeAnchor(anchorStart, anchorEnd, anchorVersion, anchorQuote); err != nil {
+		return Discussion{}, err
+	}
+	if err := validateBlockID(blockID); err != nil {
 		return Discussion{}, err
 	}
 	discussionID, commentID := uid("disc"), uid("com")
@@ -352,6 +389,9 @@ func (s *Store) CreateCommentDiscussion(
 	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
 		return Discussion{}, err
 	}
+	if err := assertCommentRoomTx(ctx, tx, materialID); err != nil {
+		return Discussion{}, err
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO material_discussions
 		(id, material_id, block_id, anchor_start, anchor_end, anchor_version,
 		 anchor_quote, created_by)
@@ -361,8 +401,8 @@ func (s *Store) CreateCommentDiscussion(
 		return Discussion{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO material_comments
-		(id, discussion_id, user_id, content_rich) VALUES ($1,$2,$3,$4)`,
-		commentID, discussionID, actorID, content); err != nil {
+		(id, discussion_id, user_id, text) VALUES ($1,$2,$3,$4)`,
+		commentID, discussionID, actorID, text); err != nil {
 		return Discussion{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -381,9 +421,9 @@ func nullBytes(value []byte) any {
 func (s *Store) AddComment(
 	ctx context.Context,
 	discussionID, actorID string,
-	content json.RawMessage,
+	text string,
 ) (Comment, error) {
-	if err := validateRichContent(content); err != nil {
+	if err := validateCommentText(text); err != nil {
 		return Comment{}, err
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -402,20 +442,23 @@ func (s *Store) AddComment(
 	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
 		return Comment{}, err
 	}
+	if err := assertCommentRoomTx(ctx, tx, materialID); err != nil {
+		return Comment{}, err
+	}
 	id := uid("com")
 	comment, err := scanRevisionComment(tx.QueryRow(ctx, `WITH added AS (
 			INSERT INTO material_comments
-			(id, discussion_id, user_id, content_rich)
+			(id, discussion_id, user_id, text)
 			SELECT $1,$2,$3,$4 FROM material_discussions
 			WHERE id=$2 AND deleted_at IS NULL
-			RETURNING id, discussion_id, user_id, content_rich,
+			RETURNING id, discussion_id, user_id, text,
 			          is_edited, created_at, updated_at
 		)
 		SELECT a.id, a.discussion_id, a.user_id,
-			COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), a.content_rich,
+			COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), a.text,
 			a.is_edited, false, a.created_at, a.updated_at
 		FROM added a LEFT JOIN users u ON u.id=a.user_id`,
-		id, discussionID, actorID, content))
+		id, discussionID, actorID, text))
 	if isNoRows(err) {
 		return Comment{}, ErrNotFound
 	}
@@ -431,9 +474,9 @@ func (s *Store) AddComment(
 func (s *Store) EditOwnComment(
 	ctx context.Context,
 	id, actorID string,
-	content json.RawMessage,
+	text string,
 ) (Comment, error) {
-	if err := validateRichContent(content); err != nil {
+	if err := validateCommentText(text); err != nil {
 		return Comment{}, err
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -456,15 +499,15 @@ func (s *Store) EditOwnComment(
 	}
 	comment, err := scanRevisionComment(tx.QueryRow(ctx, `WITH edited AS (
 			UPDATE material_comments
-			SET content_rich=$3, is_edited=true, updated_at=now()
+			SET text=$3, is_edited=true, updated_at=now()
 			WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL
-			RETURNING id, discussion_id, user_id, content_rich,
+			RETURNING id, discussion_id, user_id, text,
 			          is_edited, created_at, updated_at
 		)
 		SELECT e.id, e.discussion_id, e.user_id,
-			COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), e.content_rich,
+			COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), e.text,
 			e.is_edited, false, e.created_at, e.updated_at
-		FROM edited e LEFT JOIN users u ON u.id=e.user_id`, id, actorID, content))
+		FROM edited e LEFT JOIN users u ON u.id=e.user_id`, id, actorID, text))
 	if isNoRows(err) {
 		return Comment{}, ErrNotFound
 	}

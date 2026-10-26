@@ -172,14 +172,6 @@
       ]
     },
     {
-      "name": "Mermaid",
-      "props": [
-        "title",
-        "code",
-        "passages"
-      ]
-    },
-    {
       "name": "HtmlEmbed",
       "props": [
         "title",

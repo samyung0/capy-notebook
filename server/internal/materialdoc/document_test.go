@@ -970,6 +970,165 @@ func TestResizableBlocksTakeOnlyTheResizeWidth(t *testing.T) {
 	}
 }
 
+// A column stores the widths the editor writes: its layout presets and Plate's
+// normalizer's floats, a plain decimal percentage above 0 and at most 100.
+func TestColumnsTakeOnlyTheEditorWidth(t *testing.T) {
+	validate := func(width any, set bool) error {
+		column := map[string]any{"type": "column", "children": []any{
+			map[string]any{"type": "p", "children": []any{textLeaf("a")}},
+		}}
+		if set {
+			column["width"] = width
+		}
+		group := map[string]any{"type": "column_group", "id": "g", "children": []any{column, map[string]any{
+			"type": "column", "children": []any{map[string]any{"type": "p", "children": []any{textLeaf("b")}}},
+		}}}
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{group}})
+	}
+	if err := validate(nil, false); err != nil {
+		t.Fatalf("column without width: %v", err)
+	}
+	for _, width := range []string{"50%", "33.333%", "33.334%", "66.667%", "49.9995%", "33.333333333333336%", "100%", "0.5%"} {
+		if err := validate(width, true); err != nil {
+			t.Fatalf("column width %q: %v", width, err)
+		}
+	}
+	for _, width := range []any{"0%", "101%", "100.5%", "050%", "50.0%", "50.%", ".5%", "5e1%", "-5%", "50", "50px", " 50%", "50%;color:red", float64(50), nil} {
+		if err := validate(width, true); err == nil || !strings.Contains(err.Error(), "column width must be a percentage above 0 and at most 100") {
+			t.Fatalf("column width %#v: %v", width, err)
+		}
+	}
+}
+
+// A table stores the column sizes and left margin Plate's table resizing
+// writes: px as numbers of 0 or more, a column size possibly empty (null).
+func TestTablesTakeOnlyThePlateSizes(t *testing.T) {
+	validate := func(sizes map[string]any) error {
+		table := map[string]any{"type": "table", "id": "t", "children": []any{
+			map[string]any{"type": "tr", "children": []any{
+				map[string]any{"type": "td", "children": []any{
+					map[string]any{"type": "p", "children": []any{textLeaf("a")}},
+				}},
+			}},
+		}}
+		for key, value := range sizes {
+			table[key] = value
+		}
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{table}})
+	}
+	for _, sizes := range []map[string]any{
+		{},
+		{"colSizes": []any{float64(120), float64(0), 48.5, nil}},
+		{"colSizes": []any{}},
+		{"marginLeft": float64(0)},
+		{"marginLeft": float64(24)},
+	} {
+		if err := validate(sizes); err != nil {
+			t.Fatalf("table %v: %v", sizes, err)
+		}
+	}
+	for _, sizes := range []map[string]any{
+		{"colSizes": []any{"120"}},
+		{"colSizes": []any{"120px;color:red"}},
+		{"colSizes": []any{float64(-1)}},
+		{"colSizes": "120"},
+		{"colSizes": nil},
+		{"marginLeft": "24px"},
+		{"marginLeft": float64(-1)},
+		{"marginLeft": nil},
+	} {
+		if err := validate(sizes); err == nil || !strings.Contains(err.Error(), "table ") {
+			t.Fatalf("table %v: %v", sizes, err)
+		}
+	}
+}
+
+// An indent is a number (Plate draws it as a class and a margin).
+func TestIndentIsANumber(t *testing.T) {
+	validate := func(indent any) error {
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+			{"type": "p", "indent": indent, "children": []any{textLeaf("a")}},
+		}})
+	}
+	for _, indent := range []any{nil, float64(1), 1.5, float64(embeds.ListIndentMax)} {
+		if err := validate(indent); err != nil {
+			t.Fatalf("indent %#v: %v", indent, err)
+		}
+	}
+	for _, indent := range []any{"1", "1 fixed", true} {
+		if err := validate(indent); err == nil || !strings.Contains(err.Error(), "indent must be a number") {
+			t.Fatalf("indent %#v: %v", indent, err)
+		}
+	}
+}
+
+// The marks Plate draws as styles live on text: an element carrying one is
+// refused (the catalog forbids them on every element), a leaf keeps it.
+func TestTextMarksStayOnText(t *testing.T) {
+	marks := map[string]any{"color": "#c0392b", "backgroundColor": "#fdebd0", "fontSize": "20px", "fontFamily": "Georgia"}
+	leaf := textLeaf("a")
+	for key, value := range marks {
+		leaf[key] = value
+	}
+	if err := Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+		{"type": "p", "children": []any{leaf}},
+	}}); err != nil {
+		t.Fatalf("marked text: %v", err)
+	}
+	for key, value := range marks {
+		err := Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+			{"type": "p", key: value, "children": []any{textLeaf("a")}},
+		}})
+		if err == nil || !strings.Contains(err.Error(), "p cannot carry "+key) {
+			t.Fatalf("element %s: %v", key, err)
+		}
+	}
+}
+
+// A text mark's or a list's style value holds any value a browser writes but
+// no ";" and no control character (Epo Q380).
+func TestStyleValuesHoldNoSemicolon(t *testing.T) {
+	validate := func(node map[string]any) error {
+		return Validate(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{node}})
+	}
+	leaf := func(key string, value any) map[string]any {
+		text := textLeaf("a")
+		text[key] = value
+		return map[string]any{"type": "p", "children": []any{text}}
+	}
+	list := func(value any) map[string]any {
+		return map[string]any{"type": "p", "indent": float64(1), "listStyleType": value, "children": []any{textLeaf("a")}}
+	}
+	browser := map[string]string{
+		"backgroundColor": "color-mix(in srgb, red 50%, blue)",
+		"color":           "var(--accent)",
+		"fontFamily":      `"Times New Roman", serif`,
+		"fontSize":        "1.2em",
+	}
+	for key, value := range browser {
+		for _, ok := range []any{value, nil} {
+			if err := validate(leaf(key, ok)); err != nil {
+				t.Fatalf("%s %#v: %v", key, ok, err)
+			}
+		}
+		for _, bad := range []any{value + ";x:y", value + "\x00", value + "\n", value + "\x7f", []any{"red"}} {
+			if err := validate(leaf(key, bad)); err == nil || !strings.Contains(err.Error(), key+" may hold no semicolon or control character") {
+				t.Fatalf("%s %#v: %v", key, bad, err)
+			}
+		}
+	}
+	for _, ok := range []any{"decimal", "lower-alpha", `"▪ "`, nil} {
+		if err := validate(list(ok)); err != nil {
+			t.Fatalf("listStyleType %#v: %v", ok, err)
+		}
+	}
+	for _, bad := range []any{"decimal;x:y", "decimal\x1f", "decimal\x7f", float64(3)} {
+		if err := validate(list(bad)); err == nil || !strings.Contains(err.Error(), "listStyleType may hold no semicolon or control character") {
+			t.Fatalf("listStyleType %#v: %v", bad, err)
+		}
+	}
+}
+
 // The every-block note (testdata/every-block-note.json) holds each Plate type
 // a note stores. The collaboration validator and the UAT note journey read the
 // same file, so a renamed or newly strict field fails here before a saved note

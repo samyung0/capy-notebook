@@ -139,7 +139,7 @@ func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql", "0111_audio_transcription.sql"} {
+	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql", "0111_audio_transcription.sql", "0116_deepseek_chat_default.sql"} {
 		body, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -194,8 +194,9 @@ func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 	).Scan(&provider, &model); err != nil {
 		t.Fatalf("exactly one chat slot default expected: %v", err)
 	}
-	if provider != "zai" || model != "glm-5.3-flash" {
-		t.Fatalf("chat slot default = %s/%s, want zai/glm-5.3-flash", provider, model)
+	// 0116 moved it from GLM (Epo 2026-10-25).
+	if provider != "deepseek" || model != "deepseek-flash" {
+		t.Fatalf("chat slot default = %s/%s, want deepseek/deepseek-flash", provider, model)
 	}
 }
 
@@ -218,7 +219,7 @@ func TestDefaultChatModelMigrationRefusesWithoutAnEnabledGLMRow(t *testing.T) {
 	defer func() { _ = outer.Rollback(ctx) }() // leaves the shared database untouched
 	for _, stmt := range []string{
 		`UPDATE model_configs SET is_default_for = array_remove(is_default_for, 'chat')
-		   WHERE provider_slug='zai' AND model_slug='glm-5.3-flash'`,
+		   WHERE 'chat' = ANY(is_default_for)`,
 		`UPDATE model_configs SET is_default_for = array_append(is_default_for, 'chat')
 		   WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND version=1`,
 		`UPDATE model_configs SET enabled=false WHERE provider_slug='zai' AND model_slug='glm-5.3-flash'`,

@@ -355,7 +355,7 @@ func (t *sentryEvents) take() int {
 	return n
 }
 
-// A room being reset or compacted refuses an agent edit before anything
+// A room being reset refuses an agent edit before anything
 // applies (the authority's 503 unavailable_target): an expected outcome, so
 // the pipeline gets the unavailable authority's usual answer and Sentry gets
 // nothing, while any other authority 503 is still reported.

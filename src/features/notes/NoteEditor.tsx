@@ -187,10 +187,20 @@ function CollaborativeNoteEditor({
   );
   const onDocumentRejected = useCallback(
     (
-      code: MaterialLimitCode | 'invalid_document' | 'revoked' | 'late',
+      code:
+        | MaterialLimitCode
+        | 'invalid_document'
+        | 'unassigned'
+        | 'revoked'
+        | 'late',
       edits: 'none' | 'kept' | 'lost'
     ) => {
-      if (code !== 'invalid_document' && code !== 'revoked' && code !== 'late')
+      if (
+        code !== 'invalid_document' &&
+        code !== 'unassigned' &&
+        code !== 'revoked' &&
+        code !== 'late'
+      )
         userToast({
           description: m.editor_too_large_body({
             message: materialLimitMessage(code),
@@ -465,6 +475,7 @@ function CollaborativeNoteEditor({
         onReadOnly={reportReadOnly}
         onSaveDelayed={setSaveDelayed}
         onUnavailable={onUnavailable}
+        pending={mount.drafts.pending}
         phase={phase}
         restored={mount.drafts.current}
       />

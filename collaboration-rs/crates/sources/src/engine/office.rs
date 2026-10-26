@@ -203,6 +203,13 @@ pub mod calls {
     use super::Args;
     use crate::engine::{EngineError, EnginePool, Failure, Frame, Lane, Reply};
 
+    /// The agent's by-id read (pictures and charts; Epo 2026-10-24, the
+    /// Editor's lane calls) is busy when its room's background process
+    /// already holds this many queued calls (one answer's parallel reads),
+    /// and once it waited this long for a call ahead of it (a rebuild).
+    pub const IDS_READ_QUEUE: usize = 4;
+    pub const IDS_READ_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
     /// What a save-lane call needs to name its base and state.
     #[derive(Clone, Copy, Debug)]
     pub struct On<'a> {
@@ -357,7 +364,9 @@ pub mod calls {
         }
 
         /// What the agent reads of an Office file without the whole of it
-        /// (inspectOfficeScoped: an XLSX sheet list or a range's cells).
+        /// (inspectOfficeScoped: an XLSX sheet list or a range's cells; by
+        /// `ids`, pictures and charts, a bounded call waiting at most
+        /// [`IDS_READ_WAIT`]).
         pub async fn inspect_scoped(
             &self,
             on: On<'_>,
@@ -371,7 +380,14 @@ pub mod calls {
                 &request,
                 vec![on.base.to_vec(), state.to_vec()],
             );
-            Ok(self.call(Lane::Background, on.room, request).await?.value)
+            let reply = match query.ids {
+                Some(_) => {
+                    self.call_bounded(Lane::Background, on.room, request, IDS_READ_WAIT)
+                        .await?
+                }
+                None => self.call(Lane::Background, on.room, request).await?,
+            };
+            Ok(reply.value)
         }
 
         /// A new file: the format's starter with `commands` applied, exported

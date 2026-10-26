@@ -6,7 +6,7 @@
 //! idle and unloads once empty and clean. Note rooms validate Plate content
 //! (`notes`); source rooms admit and store through `sources`.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -19,6 +19,7 @@ use yrs::{Doc, ReadTxn, StateVector, Transact};
 
 use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
 use crate::auth::{Access, Context, RoomName};
+use crate::client_ids::{self, ClientIds};
 use crate::drafts::{Class, Refused};
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::markers::{self, Contributor, Markers};
@@ -26,6 +27,7 @@ use crate::note_store::{self, StoreError};
 use crate::observe::{self, Level, log};
 use crate::projection;
 use crate::protocol::{self, Kind, awareness, sync};
+use crate::sessions::Sessions;
 
 /// Broadcasts merge over this window (approved by Epo, 2026-10-04).
 pub const FLUSH_WINDOW: Duration = Duration::from_millis(30);
@@ -40,10 +42,8 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness entry a room keeps and relays.
 pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
-/// Awareness client ids one channel may hold, and a room (Epo 2026-10-19):
-/// an editor sends its document's one, a new one only when Yjs renews it.
-/// A new id past either is not kept.
-pub const MAX_CLIENTS_PER_MEMBER: usize = 4;
+/// Awareness client ids a room keeps (Epo 2026-10-19); a channel writes only
+/// its session's (Q213). A new id past the cap is not kept.
 pub const MAX_CLIENTS_PER_ROOM: usize = 256;
 /// Why a note room holding a block the embed catalog does not list refuses
 /// every writer (Epo 2026-10-13): the browser shows it for the
@@ -53,6 +53,18 @@ pub const UNSUPPORTED_BLOCK: &str = "this document has a block this version can'
 /// (`OPEN_SLOWED_TYPE` in src/features/collaboration/roomProvider.ts): the
 /// editor keeps loading and says so after a while, never offline.
 pub const OPEN_SLOWED_TYPE: &str = "open-slowed";
+/// What a note room tells a synced editor once a store committed, and once
+/// it answered its step 1: `{"type": "stored", "version": v}`, the stored
+/// version it now holds (`STORED_TYPE` in
+/// src/features/collaboration/roomProvider.ts). The editor answers
+/// `{"type": "ack", "version": v}`, never above the version its oldest
+/// unsent edit was made at, and its session counts at that (`sessions.rs`).
+/// An edit stays unsent until the second store's notice after its ACK (the
+/// first notice on a channel answers its step 1 and is no store's; review r1
+/// H1): stores run one at a time, so that store began after the edit was
+/// admitted and holds it.
+pub const STORED_TYPE: &str = "stored";
+const ACK_TYPE: &str = "ack";
 /// The room's presence (Epo 2026-10-20): the editors in it, for the avatar
 /// group and cursor labels (`PRESENCE_TYPE` in
 /// src/features/collaboration/presence.ts). It goes out a flush window after
@@ -64,6 +76,14 @@ pub const MAX_PRESENCE: usize = 64;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
+/// A client-id row batch that failed is tried again after these waits; a
+/// batch failing them all is logged as lost (r2 S3).
+const ROW_RETRIES: [Duration; 4] = [
+    Duration::from_millis(250),
+    Duration::from_secs(1),
+    Duration::from_secs(4),
+    Duration::from_secs(10),
+];
 
 pub type MemberKey = (u64, u64);
 
@@ -72,13 +92,20 @@ pub enum RoomCmd {
     Join {
         key: MemberKey,
         context: Context,
+        /// The session's client id the JOIN names (`client_ids.rs`).
+        client: Option<u64>,
+        /// The stored version the session holds (`sessions.rs`).
+        version: Option<u64>,
         out: Outbox,
         socket: String,
         /// An embed's channel inside its note's (Epo 2026-10-20).
         inside: bool,
         reply: oneshot::Sender<Result<(), String>>,
     },
-    Leave(MemberKey),
+    /// A channel's Leave; `clean`: its tab holds no unsent edits for the
+    /// document (Q236); the session it names (`sessions.rs`), which a clean
+    /// Leave ends.
+    Leave(MemberKey, bool, Option<u64>),
     Sync(MemberKey, bytes::Bytes),
     Awareness(MemberKey, bytes::Bytes),
     QueryAwareness(MemberKey),
@@ -86,6 +113,11 @@ pub enum RoomCmd {
     Token(MemberKey, Context),
     /// A store's I/O finished.
     Stored(Box<StoreDone>),
+    /// The head of the client-id row queue was written, or failed every try.
+    RowsWritten(Result<(), String>),
+    /// The client ids bound to live channels, for the server's own id draws
+    /// (r2 N7).
+    LiveIds(oneshot::Sender<HashSet<u64>>),
     /// A projection finished.
     Projected(i64, Result<(), String>),
     /// Store now (if anything is unsaved) and answer once it is durable.
@@ -156,6 +188,12 @@ pub struct Draft {
     pub update: bytes::Bytes,
     /// The base the drafts grew over (an Office file needs the room's).
     pub base: Option<String>,
+    /// Client ids the drafts' stored tokens offered (Q288), checked here
+    /// under the JOIN's rule before the drafts may write under them.
+    pub granted: Vec<u64>,
+    /// The stored version the drafts were made at, their oldest's
+    /// (`X-Capy-Version`, `sessions.rs`).
+    pub version: Option<u64>,
     pub reply: oneshot::Sender<Result<Durable, Refused>>,
 }
 
@@ -211,6 +249,15 @@ pub struct ServiceEdit {
     pub taken: Option<oneshot::Sender<bool>>,
 }
 
+/// An agent step a room keeps for its Undo or Redo: the change to revert,
+/// what its revert may send, and when its agent edit was made (Q385: it goes
+/// 24 h after that).
+struct AgentStep {
+    change: Change,
+    cost: usize,
+    edited: std::time::SystemTime,
+}
+
 /// An Undo or Redo of the agent step `step` (`edits::undo`), under the chat
 /// actor's contributor marker; the step that reverses it is kept as `next`.
 /// The reply comes once the room stored it.
@@ -251,7 +298,12 @@ struct Member {
     socket: String,
     /// An embed's channel inside its note's: it hears no room presence.
     inside: bool,
-    /// Awareness client ids this channel sent.
+    /// The session's client id, bound at join (Q213): the only id its
+    /// awareness goes under.
+    client: u64,
+    /// Its DOCX layout worker's client id, bound at join (Q219).
+    worker: Option<u64>,
+    /// Awareness client ids this channel holds (its session's, or none).
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
     unplaced: u32,
@@ -259,6 +311,12 @@ struct Member {
     acks: u64,
     /// Its step 1 and awareness query waiting for its user's open budget.
     opening: Option<Opening>,
+    /// The room answered its step 1: it holds the room's state, so it hears
+    /// each store's version (`sessions.rs`).
+    synced: bool,
+    /// The stored version it last named (its JOIN's, then each `ack`): a
+    /// session made at its first write starts there (review r1 L1).
+    version: i64,
 }
 
 /// A member's latest step 1 and awareness query while they wait on its
@@ -289,8 +347,6 @@ impl Drop for OpenTurn {
 struct AwarenessEntry {
     entry: awareness::Entry,
     owner: Option<MemberKey>,
-    /// The user whose channel set it: only their channels write it.
-    user: String,
 }
 
 /// A note room's own state.
@@ -328,6 +384,27 @@ struct Note {
     log_rows: i64,
     base_bytes: i64,
     folding: bool,
+    /// The stored version of the latest collection's window: a session or
+    /// draft group older than it is late (`sessions::late`). Nothing is
+    /// collected yet, so 0.
+    window: i64,
+    /// Versions below `stored_version` the room has not applied: service
+    /// edits whose rows committed before a later store's (`sessions::took`).
+    /// Note content rooms only.
+    gaps: std::collections::BTreeSet<i64>,
+    /// The first gap below a store the room could not announce, and whether
+    /// it was warned of (`announce_stored`).
+    stall: Option<(i64, bool)>,
+}
+
+impl Note {
+    /// A note's content room: the one whose sessions are kept and whose
+    /// stored state is to be collected (Q274: notes only).
+    fn sessioned(&self) -> bool {
+        self.model == crate::model::Model::Note
+            && self.kind == "note"
+            && self.doc == note_store::Doc::Content
+    }
 }
 
 /// A source room's own state.
@@ -339,6 +416,9 @@ struct Source {
     estimate: sources::Estimate,
     /// The room's state cap (`sources::state_cap`).
     state_cap: u64,
+    /// The picture byte cap on Word and PowerPoint edits
+    /// (`sources::Loaded::image_cap`).
+    image_cap: u64,
     /// An Office room's seed state vector (`sources::Loaded::seed`).
     seed: Option<StateVector>,
     checkpoint: u64,
@@ -385,6 +465,9 @@ pub struct StoreDone {
     durable: ydoc::Durable,
     metrics: Option<notes::limits::Metrics>,
     limit_code: Option<notes::limits::LimitCode>,
+    /// The change count of the note sessions' rows it wrote
+    /// (`Sessions::saved`).
+    sessions: Option<u64>,
 }
 
 enum Kindly {
@@ -428,11 +511,17 @@ const IT_PANIC_LOAD: &str = "capy-it-panic-load";
 /// in a quiz's keys room, in debug builds only.
 #[cfg(debug_assertions)]
 pub const IT_REFUSE_KEYS_UNDO: &str = "capy-it-refuse-keys-undo";
+/// See `service_edit`: a server edit whose step id starts with this fails to
+/// apply, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
 
-/// See `late`: every session of a note whose id holds this is late, in debug
+/// See `service_edit`: a quiz's keys room stamps a step whose id starts
+/// with this 10 s after its edit, so its rooms' 24 h end apart, in debug
 /// builds only.
 #[cfg(debug_assertions)]
-const IT_LATE: &str = "capy-it-late";
+pub const IT_KEYS_LATER: &str = "capy-it-keys-later";
+
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -442,6 +531,11 @@ pub struct Room {
     name: String,
     doc: Doc,
     members: HashMap<MemberKey, Member>,
+    /// Which user each client id was recorded to (Q213).
+    client_ids: ClientIds,
+    /// A note's editing sessions (`sessions.rs`); none in other rooms
+    /// (Q274: item rooms keep their whole history).
+    sessions: Option<Sessions>,
     awareness: HashMap<u64, AwarenessEntry>,
     changed_awareness: BTreeSet<u64>,
     /// Presence changed since it last went out; when it may go next.
@@ -471,12 +565,22 @@ pub struct Room {
     /// Children passes waiting, and whether one waits on the API.
     child_passes: std::collections::VecDeque<ChildPass>,
     child_running: bool,
+    /// Client-id rows to write, in order, one batch at a time off the room's
+    /// task (r2 S3); the room unloads only once they are written.
+    rows: VecDeque<client_ids::Rows>,
+    rows_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
+    /// The room reloads from the stored document (`reload`).
+    reloading: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
     /// items of, by operation id (`ydoc::undo`), with what each one's revert
-    /// may send (the edit's `sources::undo_cost`); gone with the room.
-    agent_changes: HashMap<String, (Change, usize)>,
+    /// may send (the edit's `sources::undo_cost`) and when the agent edit was
+    /// made: each goes 24 h after its edit (Q385, `AgentStep`), or with the
+    /// room.
+    agent_changes: HashMap<String, AgentStep>,
+    /// When the earliest of them goes.
+    agent_expiry: Option<Instant>,
     /// Steps this room reverted, by the id their reverse is kept under, so a
     /// request repeated after a lost answer gets the same answer.
     agent_reverted: HashMap<String, String>,
@@ -527,12 +631,12 @@ fn stored_bytes(kind: &Kindly) -> i64 {
     }
 }
 
-/// Picks a client id the loaded state does not hold (markers and server
-/// edits are written under it).
-fn fresh_doc(held: &StateVector) -> Doc {
+/// Picks a client id the loaded state does not hold and no user was
+/// assigned (Q226): markers and server edits are written under it.
+fn fresh_doc(held: &StateVector, assigned: &HashSet<u64>) -> Doc {
     loop {
         let doc = Doc::with_options(ydoc::doc_options(0));
-        if held.get(&doc.client_id()) == 0 {
+        if held.get(&doc.client_id()) == 0 && !assigned.contains(&doc.client_id().get()) {
             return doc;
         }
     }
@@ -556,11 +660,19 @@ impl From<String> for LoadError {
     }
 }
 
-async fn load(
-    app: &Shared,
-    name: &RoomName,
-    actor: &str,
-) -> Result<(Doc, Kindly, ydoc::Durable, Option<sources::LoadTimes>), LoadError> {
+/// What a load gives the room.
+type Loaded = (
+    Doc,
+    Kindly,
+    ydoc::Durable,
+    Option<sources::LoadTimes>,
+    ClientIds,
+    Option<Sessions>,
+);
+
+async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, LoadError> {
+    let client_ids = ClientIds::load(&app.db, name).await?;
+    let assigned = client_ids.ids();
     match name {
         RoomName::Material {
             material_id,
@@ -608,7 +720,7 @@ async fn load(
                     let state = scratch
                         .transact()
                         .encode_state_as_update_v1(&StateVector::default());
-                    let doc = fresh_doc(&held);
+                    let doc = fresh_doc(&held, &assigned);
                     {
                         let mut txn = doc.transact_mut();
                         txn.apply_update(ydoc::decode(&state).map_err(|error| error.to_string())?)
@@ -680,14 +792,46 @@ async fn load(
                 log_rows,
                 base_bytes,
                 folding: false,
+                window: 0,
+                gaps: std::collections::BTreeSet::new(),
+                stall: None,
             };
-            Ok((doc, Kindly::Note(Box::new(note)), durable, None))
+            // A note's content room keeps its sessions (Q274: notes only).
+            let sessions = if note.sessioned() {
+                let (sessions, damaged) = note_store::load_sessions(&app.db, material_id)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                // Dropped alone, the note loads (Q382, Epo 2026-10-26).
+                let room = name.to_string();
+                for client in &damaged.sessions {
+                    let message = format!("session {client}: unreadable held deletions");
+                    observe::capture(&message, None, &[("room", &room), ("stage", "sessions")]);
+                }
+                if damaged.agent {
+                    observe::capture(
+                        "unreadable agent holds",
+                        None,
+                        &[("room", &room), ("stage", "sessions")],
+                    );
+                }
+                Some(sessions)
+            } else {
+                None
+            };
+            Ok((
+                doc,
+                Kindly::Note(Box::new(note)),
+                durable,
+                None,
+                client_ids,
+                sessions,
+            ))
         }
         RoomName::Source { .. } => {
             let room = name
                 .source_room()
                 .ok_or_else(|| "invalid source room".to_owned())?;
-            let doc = Doc::with_options(ydoc::doc_options(0));
+            let doc = fresh_doc(&StateVector::default(), &assigned);
             let loaded = match app.sources.load(&room, actor, &doc).await {
                 Ok(loaded) => loaded,
                 // Expected while loaded rooms fill the disk store: logged and
@@ -734,6 +878,7 @@ async fn load(
                 format: loaded.format,
                 estimate: sources::Estimate::new(loaded.bytes),
                 state_cap: loaded.state_cap,
+                image_cap: loaded.image_cap,
                 seed: loaded.seed,
                 checkpoint: loaded.checkpoint,
                 log_bytes: loaded.row_bytes as i64,
@@ -751,6 +896,8 @@ async fn load(
                 Kindly::Source(Box::new(source)),
                 durable,
                 Some(loaded.times),
+                client_ids,
+                None,
             ))
         }
     }
@@ -805,7 +952,7 @@ async fn run(
     let room_name = name.to_string();
     let started = Instant::now();
     let loaded = load(&app, &name, &actor).await;
-    let (doc, kind, durable, times) = match loaded {
+    let (doc, kind, durable, times, client_ids, sessions) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
             let error = match error {
@@ -851,6 +998,8 @@ async fn run(
         name: room_name,
         doc,
         members: HashMap::new(),
+        client_ids,
+        sessions,
         awareness: HashMap::new(),
         changed_awareness: BTreeSet::new(),
         presence_dirty: false,
@@ -882,8 +1031,12 @@ async fn run(
         forced_unload: Vec::new(),
         child_passes: std::collections::VecDeque::new(),
         child_running: false,
+        rows: VecDeque::new(),
+        rows_running: false,
         applying: false,
+        reloading: false,
         agent_changes: HashMap::new(),
+        agent_expiry: None,
         agent_reverted: HashMap::new(),
         open_at: None,
         openings: 0,
@@ -953,6 +1106,7 @@ impl Room {
             self.idle_at,
             self.open_at,
             presence,
+            self.agent_expiry,
         ]
         .into_iter()
         .flatten()
@@ -999,6 +1153,9 @@ impl Room {
         if self.presence_dirty && self.presence_at.is_some_and(|at| at <= now) {
             self.send_presence(now);
         }
+        if self.agent_expiry.is_some_and(|at| at <= now) {
+            self.expire_agent_steps();
+        }
     }
 
     /// The handoff's view of the room, when something it reads changed.
@@ -1022,10 +1179,11 @@ impl Room {
     }
 
     fn unloadable(&self) -> bool {
+        let empty = self.members.is_empty() && self.rows.is_empty() && !self.rows_running;
         if self.discard_pending.is_some() || !self.forced_unload.is_empty() {
-            return self.members.is_empty() && !self.store.running;
+            return empty && !self.store.running;
         }
-        self.members.is_empty()
+        empty
             && self.child_passes.is_empty()
             && !self.child_running
             && !self.store.dirty
@@ -1041,14 +1199,30 @@ impl Room {
             RoomCmd::Join {
                 key,
                 context,
+                client,
+                version,
                 out,
                 socket,
                 inside,
                 reply,
             } => {
-                let _ = reply.send(self.join(key, context, out, socket, inside));
+                let (history, live) = (self.in_history(), self.live_ids());
+                let answer = self
+                    .client_ids
+                    .bind(&context, client, history, live)
+                    .and_then(|bound| self.join(key, context, bound, out, socket, inside));
+                if answer.is_ok() {
+                    self.session_joined(key, version);
+                }
+                let _ = reply.send(answer);
             }
-            RoomCmd::Leave(key) => self.leave(key),
+            RoomCmd::Leave(key, clean, session) => {
+                if clean {
+                    self.left_clean(key);
+                    self.end_session(key, session);
+                }
+                self.leave(key);
+            }
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
                 Some(since) => self.on_step1(key, since).await,
                 None => self.on_sync(key, &payload),
@@ -1058,6 +1232,8 @@ impl Room {
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
+                    // A token turned writable: the channel's bound id is its
+                    // own, recorded at its first accepted write (Q226 M1).
                     member.read_only = member.held_read_only || context.access == Access::Read;
                     // A narrowed writer of a source room leaves its presence.
                     let was = in_presence(member, &self.kind);
@@ -1071,6 +1247,15 @@ impl Room {
                 }
             }
             RoomCmd::Stored(done) => self.stored(*done),
+            RoomCmd::RowsWritten(result) => self.rows_written(result),
+            RoomCmd::LiveIds(reply) => {
+                let live: HashSet<u64> = self
+                    .members
+                    .values()
+                    .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+                    .collect();
+                let _ = reply.send(live);
+            }
             RoomCmd::Projected(version, result) => self.projected(version, result),
             RoomCmd::Persist(reply) => {
                 if !self.store.dirty
@@ -1231,16 +1416,18 @@ impl Room {
             context,
             update,
             base,
+            granted,
+            version,
             reply,
         } = draft;
-        // The group's version goes here once `/drafts` sends its base's.
-        if self.late(None) {
-            let _ = reply.send(Err(Refused::new(
-                Class::Late,
-                "the drafts grew from a state older than the collection window",
-            )));
-            return;
-        }
+        let (history, live) = (self.in_history(), self.live_ids());
+        let granted: Vec<u64> = granted
+            .into_iter()
+            .filter(|&id| {
+                self.client_ids
+                    .grantable(id, &context.user_id, &history, &live)
+            })
+            .collect();
         if let Kindly::Source(source) = &self.kind {
             // A publication handoff holds every writer read-only.
             let refused = if self.app.handoff().busy(&self.name) {
@@ -1257,6 +1444,65 @@ impl Room {
                 return;
             }
         }
+        let answer = match self.admit_draft(&context, &update, &granted, version) {
+            // Held in full, or admitted: the receipt waits for the store.
+            Ok(None | Some(Outcome::Admitted)) => Ok(self.durable().await),
+            Ok(Some(Outcome::Unheld)) => Err(Refused::new(
+                Class::Unheld,
+                "the update needs content the room does not hold",
+            )),
+            Ok(Some(Outcome::Refused { reason, class, .. })) => Err(Refused::new(class, reason)),
+            Err(refusal) => Err(refusal),
+        };
+        let _ = reply.send(answer);
+    }
+
+    /// A draft's admission, decoding it once (no await: a decoded update
+    /// may not cross one). None for a group the room already holds in full
+    /// (the sweep, an opening editor and another tab may all send it): a
+    /// no-op, with no allowance charge and no new store (Epo 2026-10-24,
+    /// Q321), whose answer still waits for the store that holds the group
+    /// (Q360), since the browser deletes its rows on it. The room handles
+    /// writes in order, so back-to-back duplicates count once.
+    fn admit_draft(
+        &mut self,
+        context: &Context,
+        update: &[u8],
+        granted: &[u64],
+        version: Option<u64>,
+    ) -> Result<Option<Outcome>, Refused> {
+        let decoded = ydoc::decode(update).ok();
+        // A group under a lost session's id is late: an id its grants name,
+        // or one it writes under, which the room admits through its record
+        // (review r3 L4). Nothing is collected yet, so nothing is late; the
+        // late path holds such a group once collection lands.
+        let mut ids = granted.to_vec();
+        if let Some(decoded) = &decoded {
+            ids.extend(client_ids::written(
+                &self.doc.transact().state_vector(),
+                decoded,
+            ));
+        }
+        if self.late(&ids, version) {
+            log(
+                Level::Info,
+                "late draft group",
+                json!({ "room": self.name, "version": version }),
+            );
+        }
+        if decoded
+            .as_ref()
+            .is_some_and(|decoded| !ydoc::contains_changes(&self.doc.transact(), decoded))
+        {
+            return Ok(None);
+        }
+        let verdict = self
+            .app
+            .allowances
+            .take(&context.user_id, update.len(), Instant::now());
+        if let Some(refusal) = Refused::timed_out(&self.app, &context.user_id, verdict) {
+            return Err(refusal);
+        }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
         let read_only = context.access != Access::Write;
         let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1265,30 +1511,25 @@ impl Room {
             if update == IT_PANIC_UPDATE {
                 panic!("integration test panic");
             }
-            self.admit_update(None, &context, read_only, &update)
+            self.admit_update(None, context, read_only, update, decoded, granted)
         }));
-        let outcome = checked.unwrap_or_else(|_| {
+        Ok(Some(checked.unwrap_or_else(|_| {
             self.update_panicked(None, update.len());
             Outcome::refused(Class::Malformed, "update cannot be checked")
-        });
-        let answer = match outcome {
-            Outcome::Admitted => {
-                let (done, durable) = oneshot::channel();
-                if self.nothing_to_store() {
-                    let _ = done.send(Ok(()));
-                } else {
-                    self.store.waiters.push(done);
-                    self.start_store().await;
-                }
-                Ok(durable)
-            }
-            Outcome::Unheld => Err(Refused::new(
-                Class::Unheld,
-                "the update needs content the room does not hold",
-            )),
-            Outcome::Refused { reason, class, .. } => Err(Refused::new(class, reason)),
-        };
-        let _ = reply.send(answer);
+        })))
+    }
+
+    /// A draft's receipt: answered once nothing is left to store, so after
+    /// the store that holds what the room took.
+    async fn durable(&mut self) -> Durable {
+        let (done, durable) = oneshot::channel();
+        if self.nothing_to_store() {
+            let _ = done.send(Ok(()));
+        } else {
+            self.store.waiters.push(done);
+            self.start_store().await;
+        }
+        durable
     }
 
     /// Starts the next waiting children pass: the update's child writes as
@@ -1392,6 +1633,8 @@ impl Room {
             expires_at: i64::MAX,
             token_id: "children-pass".into(),
             user_id: actor.to_owned(),
+            client_id: None,
+            worker_client_id: None,
             viewer: false,
             parent: None,
             identity: Default::default(),
@@ -1557,9 +1800,20 @@ impl Room {
     /// stays clean and its cover takes the edit's row in. An agent edit's own
     /// items stay here for its Undo, what it deleted kept from collection.
     fn service_edit(&mut self, edit: ServiceEdit) {
+        // Debug builds only: the integration test's server edit that fails.
+        #[cfg(debug_assertions)]
+        let failing = edit
+            .step
+            .as_ref()
+            .is_some_and(|(id, _, _)| id.starts_with(IT_FAIL_SERVICE_EDIT));
+        #[cfg(not(debug_assertions))]
+        let failing = false;
         let applied = ydoc::decode(&edit.update)
             .map_err(|error| error.to_string())
             .and_then(|update| {
+                if failing {
+                    return Err("integration test apply failure".to_owned());
+                }
                 match edit.step {
                     Some(_) => ydoc::undo::apply_kept(&self.doc, update),
                     None => ydoc::apply(&self.doc, update),
@@ -1577,6 +1831,10 @@ impl Room {
                 if let Some(reply) = edit.taken {
                     let _ = reply.send(false);
                 }
+                // Its row committed: the room reloads from the stored
+                // document, which holds it (Q389), and counts nothing past
+                // it meanwhile.
+                self.reload();
                 return;
             }
         };
@@ -1595,9 +1853,21 @@ impl Room {
             && changed
             && self.update_fits(cost)
         {
-            self.agent_changes
-                .insert(id.clone(), (items.change(&self.doc), cost));
-            self.app.agent_steps.hold(&id, &self.name);
+            let edited = std::time::SystemTime::now();
+            // Debug builds only: the integration test of a step whose rooms'
+            // 24 h end apart.
+            #[cfg(debug_assertions)]
+            let edited = if self.name.starts_with("keys:") && id.starts_with(IT_KEYS_LATER) {
+                edited + Duration::from_secs(10)
+            } else {
+                edited
+            };
+            let step = AgentStep {
+                change: items.change(&self.doc),
+                cost,
+                edited,
+            };
+            self.keep_agent_step(id, step);
             taken = true;
         }
         if let Some(reply) = edit.taken {
@@ -1612,7 +1882,13 @@ impl Room {
             Kindly::Note(note) => {
                 // Content the validator did not admit: its growth bound is stale.
                 note.validator.invalidate();
-                note.stored_version = note.stored_version.max(edit.version as i64);
+                // A store that committed after the edit may have been
+                // announced to no one yet (`announce_stored`).
+                note.stored_version = if note.sessioned() {
+                    crate::sessions::took(note.stored_version, &mut note.gaps, edit.version as i64)
+                } else {
+                    note.stored_version.max(edit.version as i64)
+                };
                 note.log_rows += 1;
                 note.log_bytes += edit.row_bytes as i64;
             }
@@ -1623,6 +1899,24 @@ impl Room {
             }
         }
         self.maybe_fold();
+    }
+
+    /// Reloads the room from the stored document (Q389: a server edit whose
+    /// committed row it cannot apply): joins wait as for a drain, every
+    /// channel closes as the room is reset (its tab rejoins and resyncs, its
+    /// unsent edits going again), and the room stores what it holds and
+    /// unloads; the next room loads every row.
+    fn reload(&mut self) {
+        if self.reloading {
+            return;
+        }
+        self.reloading = true;
+        self.app.evictions.begin(&self.name, true);
+        let keys: Vec<MemberKey> = self.members.keys().copied().collect();
+        for key in keys {
+            self.close_channel(key, None, 0, crate::edits::ROOM_RESET);
+        }
+        self.flush();
     }
 
     /// Undo or Redo of an agent step (`edits::undo`): reverted as the
@@ -1642,7 +1936,12 @@ impl Room {
             actor,
             reply,
         } = undo;
-        let Some((change, cost)) = self.agent_changes.remove(&step) else {
+        let Some(AgentStep {
+            change,
+            cost,
+            edited,
+        }) = self.agent_changes.remove(&step)
+        else {
             let answer = match self.agent_reverted.get(&step) {
                 Some(kept) => Reverted::Done(kept.clone()),
                 None => Reverted::Missing,
@@ -1673,7 +1972,14 @@ impl Room {
                 .then_some(("unavailable_target", "integration test refusal"))
         });
         if let Some((code, message)) = refused {
-            self.agent_changes.insert(step, (change, cost));
+            self.agent_changes.insert(
+                step,
+                AgentStep {
+                    change,
+                    cost,
+                    edited,
+                },
+            );
             let _ = reply.send(Ok(Reverted::Refused {
                 code,
                 message: message.into(),
@@ -1734,7 +2040,12 @@ impl Room {
                         self.broadcast_update(None, restored.update);
                         match restored.next {
                             Some(again) => {
-                                self.agent_changes.insert(step, (again, cost));
+                                let step_again = AgentStep {
+                                    change: again,
+                                    cost,
+                                    edited,
+                                };
+                                self.keep_agent_step(step, step_again);
                             }
                             None => self.app.agent_steps.release(&step, &self.name),
                         }
@@ -1762,6 +2073,8 @@ impl Room {
             expires_at: i64::MAX,
             token_id: String::new(),
             user_id: actor.clone(),
+            client_id: None,
+            worker_client_id: None,
             viewer: false,
             parent: None,
             identity: Default::default(),
@@ -1797,11 +2110,17 @@ impl Room {
         self.agent_reverted.insert(step, next.clone());
         // Its reverse (the same edit's other side) is kept only when its
         // estimate fits, as an edit's is.
+        // Its reverse keeps the agent edit's time: an Undo or Redo does not
+        // restart the 24 h (Q385).
         if let Some(back) = back
             && self.update_fits(cost)
         {
-            self.agent_changes.insert(next.clone(), (back, cost));
-            self.app.agent_steps.hold(&next, &self.name);
+            let reverse = AgentStep {
+                change: back,
+                cost,
+                edited,
+            };
+            self.keep_agent_step(next.clone(), reverse);
         }
         // The next store's snapshot holds the revert.
         let snapshot = self.store.snapshots + 1;
@@ -1975,6 +2294,7 @@ impl Room {
             note.stored_version,
             note.doc,
         );
+        self.fold_holds("threshold");
         tokio::spawn(async move {
             let folded = match note_store::fold(
                 &app.db,
@@ -2077,12 +2397,26 @@ impl Room {
         }
     }
 
-    /// Sends a step 1's answer; its bytes, or 0 when the member left.
-    fn answer(&self, key: MemberKey, diff: &[u8]) -> usize {
-        if !self.members.contains_key(&key) {
+    /// Sends a step 1's answer; its bytes, or 0 when the member left. The
+    /// member holds the room's state then: a note's editor hears the stored
+    /// version it holds, the latest one already committed when the answer
+    /// was built (Editor 2026-10-26). `stored_version` moves only once a
+    /// store or a server edit's row committed, and the room handles nothing
+    /// else between encoding the answer and sending it; a store still
+    /// pending is announced when it commits.
+    fn answer(&mut self, key: MemberKey, diff: &[u8]) -> usize {
+        let Some(member) = self.members.get_mut(&key) else {
             return 0;
-        }
+        };
+        member.synced = true;
+        let client = member.client;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff));
+        if let (Some(sessions), Kindly::Note(note)) = (&mut self.sessions, &self.kind) {
+            sessions.synced(client);
+            let version = crate::sessions::whole(note.stored_version, &note.gaps);
+            let notice = json!({ "type": STORED_TYPE, "version": version });
+            self.send(key, Kind::Stateless, &protocol::text(&notice.to_string()));
+        }
         diff.len()
     }
 
@@ -2213,39 +2547,17 @@ impl Room {
         self.look_again(wait);
     }
 
-    /// Whether a session older than the room's collection window sends this
-    /// JOIN or draft group: its document may name units a
-    /// collection discarded, so it must not sync raw. A late JOIN is refused
-    /// with `socket::LATE_REASON` and the tab merges its unsent edits in a new
-    /// session (src/features/collaboration/lateMerge); late drafts answer
-    /// `Class::Late` and wait for the editor. `version`: the stored version
-    /// the session holds. Never late until JOINs carry that version and the
-    /// in-place collection records its window: late is a version below the
-    /// latest collection's window.
-    fn late(&self, version: Option<u64>) -> bool {
-        let _ = version;
-        // Debug builds only: the integration tests' late note.
-        #[cfg(debug_assertions)]
-        if matches!(&self.kind, Kindly::Note(note) if note.material_id.contains(IT_LATE)) {
-            return true;
-        }
-        false
-    }
-
     fn join(
         &mut self,
         key: MemberKey,
         context: Context,
+        bound: client_ids::Bound,
         out: Outbox,
         socket: String,
         inside: bool,
     ) -> Result<(), String> {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
-        }
-        // The JOIN's version goes here once JOINs carry it.
-        if self.late(None) {
-            return Err(crate::socket::LATE_REASON.into());
         }
         let user = context.user_id.clone();
         // A writer of a document holding a block this version cannot edit
@@ -2276,10 +2588,14 @@ impl Room {
                 out,
                 socket,
                 inside,
+                client: bound.client,
+                worker: bound.worker,
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
                 opening: None,
+                synced: false,
+                version: 0,
             },
         );
         if self
@@ -2341,6 +2657,11 @@ impl Room {
         let Some(member) = self.members.remove(&key) else {
             return;
         };
+        if let Some(sessions) = &mut self.sessions {
+            let user = &member.context.user_id;
+            let recorded = self.client_ids.owned_by(member.client, user);
+            sessions.left(member.client, user, std::time::SystemTime::now(), recorded);
+        }
         self.view_dirty = true;
         if in_presence(&member, &self.kind) {
             self.mark_presence();
@@ -2442,12 +2763,9 @@ impl Room {
                 member.out.frame(frame.freeze());
             }
         }
-        // Removed clients are forgotten once their removal went out, or, while
-        // a presence is due, once it went out too (`send_presence`).
-        if !self.presence_dirty {
-            self.awareness
-                .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
-        }
+        // Removed clients are forgotten once their removal went out.
+        self.awareness
+            .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
     }
 
     fn broadcast_update(&mut self, sender: Option<MemberKey>, update: Vec<u8>) {
@@ -2578,7 +2896,7 @@ impl Room {
             return;
         };
         let (context, read_only) = (member.context.clone(), member.read_only);
-        match self.admit_update(Some(key), &context, read_only, bytes) {
+        match self.admit_update(Some(key), &context, read_only, bytes, None, &[]) {
             Outcome::Admitted => {}
             Outcome::Unheld => self.resync(key, step2, &context),
             Outcome::Refused {
@@ -2597,6 +2915,8 @@ impl Room {
         context: &Context,
         read_only: bool,
         bytes: &[u8],
+        decoded: Option<yrs::Update>,
+        granted: &[u64],
     ) -> Outcome {
         if self.app.evictions.blocks(&self.name, false) {
             return Outcome::refused(Class::Unavailable, "collaboration room is being reset");
@@ -2604,7 +2924,8 @@ impl Room {
         if context.expires_at <= crate::auth::now_seconds() {
             return Outcome::refused(Class::Permission, "collaboration token expired");
         }
-        let Ok(update) = ydoc::decode(bytes) else {
+        // A draft send decoded its update already (the no-op check).
+        let Some(update) = decoded.or_else(|| ydoc::decode(bytes).ok()) else {
             return Outcome::refused(Class::Malformed, "malformed update");
         };
         let changes = ydoc::contains_changes(&self.doc.transact(), &update);
@@ -2650,6 +2971,27 @@ impl Room {
                 "client update changed collaboration metadata",
             );
         }
+        // A writer adds structs only under ids its user holds (Q213): ones
+        // recorded to the user, bound to one of the user's live channels (a
+        // draft send has none of its own) or granted to a draft by its stored
+        // token (Q288). Reserved copy ids are refused until override-seed
+        // copies exist (r2 N8).
+        let state = self.doc.transact().state_vector();
+        let bound: Vec<u64> = self
+            .members
+            .values()
+            .filter(|member| member.context.user_id == context.user_id)
+            .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+            .collect();
+        if let Some(client) = client_ids::foreign(&state, &update, |id| {
+            self.client_ids.owned_by(id, &context.user_id)
+                || bound.contains(&id)
+                || granted.contains(&id)
+        }) {
+            return self.foreign_update_refused(context, client, bytes.len());
+        }
+        // Recorded once the update is accepted and applied (r2 S1).
+        let mut written = client_ids::written(&state, &update);
         // Admission and apply run off the runtime's workers while the room
         // waits, unless the update is a small edit of a few structs (REVIEW2
         // S1, REVIEW3 S1): a trial on a copy, a source's exact measure near
@@ -2691,6 +3033,7 @@ impl Room {
                     bytes,
                     &mut source.estimate,
                     source.state_cap,
+                    source.image_cap,
                 ) {
                     sources::Admission::Accept => Verdict::Accept,
                     sources::Admission::Unheld => Verdict::Unheld,
@@ -2758,14 +3101,18 @@ impl Room {
             self.broadcast_update(None, marker);
         }
         // A source room's estimate also takes off what the update's deletes
-        // freed (Epo 2026-10-19).
+        // freed (Epo 2026-10-19); a note's sessions hold what it deleted.
         let seed = match &self.kind {
             Kindly::Source(source) => Some(source.seed.as_ref()),
             Kindly::Note(_) => None,
         };
+        let sessioned = self.sessions.is_some();
         let apply = || match seed {
-            Some(seed) => ydoc::apply_freeing(&self.doc, update, seed),
-            None => ydoc::apply(&self.doc, update).map(|content| (content, 0)),
+            Some(seed) => ydoc::apply_freeing(&self.doc, update, seed)
+                .map(|(content, freed)| (content, freed, yrs::IdSet::new())),
+            None if sessioned => ydoc::apply_deleting(&self.doc, update)
+                .map(|(content, deleted)| (content, 0, deleted)),
+            None => ydoc::apply(&self.doc, update).map(|content| (content, 0, yrs::IdSet::new())),
         };
         let content = if heavy {
             tokio::task::block_in_place(apply)
@@ -2773,7 +3120,7 @@ impl Room {
             apply()
         };
         self.applying = false;
-        let (content, freed) = match content {
+        let (content, freed, deleted) = match content {
             Ok(content) => content,
             Err(error) => {
                 return Outcome::refused(
@@ -2785,6 +3132,37 @@ impl Room {
         applied += content.len();
         if let Kindly::Source(source) = &mut self.kind {
             source.estimate.applied(applied as u64, freed);
+        }
+        // A channel's own deletions are held for its session's Undo (a step
+        // 2's resent delete set adds only what the room held undeleted), and
+        // a deletion is a write that records the session's id, whose row
+        // keeps them (`sessions.rs`). A draft send's session has ended.
+        if let (Some(sessions), Some(member)) = (
+            &mut self.sessions,
+            writer.and_then(|key| self.members.get(&key)),
+        ) {
+            let now = std::time::SystemTime::now();
+            // A channel with no session (a viewer whose token turned
+            // writable) gets one at its first write (review r1 L1).
+            if !sessions.has(member.client)
+                && sessions.joined(member.client, &context.user_id, member.version, now)
+                && member.synced
+            {
+                sessions.synced(member.client);
+            }
+            if sessions.deleted(member.client, &context.user_id, deleted, now)
+                && !written.contains(&member.client)
+            {
+                written.push(member.client);
+            }
+        }
+        // The first accepted write under an id in this room's life records
+        // it as the user's (Q236), or refreshes its row once a day (M3).
+        if let Some(rows) =
+            self.client_ids
+                .first_writes(&context.user_id, &written, std::time::Instant::now())
+        {
+            self.write_rows(rows);
         }
         self.ack(writer);
         if !content.is_empty() {
@@ -2847,6 +3225,51 @@ impl Room {
             note.validator.invalidate();
         }
         self.broadcast_update(None, fix);
+    }
+
+    /// An update with structs under a client id its writer's user was not
+    /// assigned: refused on entry, as an invalid document (a note or item:
+    /// the editor keeps its unsaved edits to copy and reloads) or an
+    /// unrecoverable source update (recovery). An honest editor sends one
+    /// only after the server lost unstored state its tab holds (Q213).
+    fn foreign_update_refused(&self, context: &Context, client: u64, bytes: usize) -> Outcome {
+        log(
+            Level::Warn,
+            "update under another user's client id refused",
+            json!({ "client": client, "room": self.name, "user_id": context.user_id }),
+        );
+        incidents::record(
+            &self.app,
+            vec![Incident {
+                cause: Cause::new(IncidentKind::SaveRefused, "client_id"),
+                room: self.name.clone(),
+                size_bytes: Some(bytes as u64),
+                user_id: Some(context.user_id.clone()),
+            }],
+        );
+        // `unassigned`: the browser does not resend them as they are; it
+        // re-applies them under its assigned id (Epo 2026-10-24).
+        let payload = match &self.kind {
+            Kindly::Note(_) => json!({
+                "code": "unassigned",
+                "materialId": self.material_id(),
+                "room": self.name,
+                "type": "document-rejected",
+            }),
+            Kindly::Source(source) => json!({
+                "checkpointIds": [],
+                "code": "unassigned",
+                "epoch": source.room.epoch,
+                "fileId": source.room.file_id,
+                "recoverable": false,
+                "type": "source-checkpoint-failed",
+            }),
+        };
+        Outcome::Refused {
+            payloads: vec![payload.to_string()],
+            reason: client_ids::FOREIGN_UPDATE.into(),
+            class: Class::Unassigned,
+        }
     }
 
     /// The writer's update was placed: its channel's unplaceable count and
@@ -3035,14 +3458,12 @@ impl Room {
         // A channel's ids name its cursors in the room's presence.
         let mut clients_changed = false;
         for entry in entries {
-            let current = self.awareness.get(&entry.client);
-            // A client id is its user's: another user's channel neither
-            // writes nor removes it (Epo 2026-10-19), nor takes it once it is
-            // released until the presence after that went out, since until
-            // then co-editors still label it with its user's name.
-            if current.is_some_and(|state| state.user != member.context.user_id) {
+            // A channel writes and removes only its session's client id
+            // (Q213), which no other user's channel can hold.
+            if entry.client != member.client {
                 continue;
             }
+            let current = self.awareness.get(&entry.client);
             // y-protocols: a newer clock wins; at the same clock a removal wins.
             let take = match current {
                 None => !entry.removed(),
@@ -3062,8 +3483,8 @@ impl Room {
             // removed in a loop stay capped too.
             if !entry.removed()
                 && held != Some(key)
-                && (member.clients.len() >= MAX_CLIENTS_PER_MEMBER
-                    || (current.is_none() && self.awareness.len() >= MAX_CLIENTS_PER_ROOM))
+                && current.is_none()
+                && self.awareness.len() >= MAX_CLIENTS_PER_ROOM
             {
                 continue;
             }
@@ -3080,7 +3501,6 @@ impl Room {
                 entry.client,
                 AwarenessEntry {
                     owner: (!entry.removed()).then_some(key),
-                    user: member.context.user_id.clone(),
                     entry,
                 },
             );
@@ -3158,12 +3578,6 @@ impl Room {
             );
             self.send(*key, Kind::Stateless, &protocol::text(&payload));
         }
-        // An id released before this presence, which no longer lists it, is
-        // free for anyone now that its removal went out too (`on_awareness`).
-        let unsent = &self.changed_awareness;
-        self.awareness.retain(|client, state| {
-            !(state.entry.removed() && state.owner.is_none()) || unsent.contains(client)
-        });
     }
 
     /// Sends the room's awareness states to a channel; returns their bytes.
@@ -3215,6 +3629,19 @@ impl Room {
                 member.read_only = true;
                 member.held_read_only = true;
                 self.view_dirty = true;
+            }
+            return;
+        }
+        if event["type"] == ACK_TYPE {
+            let (client, user) = (member.client, member.context.user_id.clone());
+            if let (Some(sessions), Kindly::Note(note), Some(version)) =
+                (&mut self.sessions, &self.kind, event["version"].as_i64())
+            {
+                let version = version.clamp(0, note.stored_version);
+                sessions.acked(client, &user, version);
+                if let Some(member) = self.members.get_mut(&key) {
+                    member.version = version;
+                }
             }
             return;
         }
@@ -3346,6 +3773,18 @@ impl Room {
         let validated = self.checked().await;
         let hidden = markers::live_items(&self.doc);
         let (row, durable) = ydoc::delta_update(&self.doc.transact(), &self.durable, &hidden);
+        // The sessions as of this snapshot go in its transaction, their held
+        // deletions with the state that holds them.
+        let (session_rows, sessions) = match &mut self.sessions {
+            Some(sessions) => {
+                let ids = &self.client_ids;
+                let now = std::time::SystemTime::now();
+                let unsaved = sessions.unsaved(now, |client, user| ids.owned_by(client, user));
+                let through = unsaved.through;
+                (unsaved, Some(through))
+            }
+            None => (crate::sessions::Unsaved::default(), None),
+        };
         let (metrics, limit_code) = match validated {
             Ok(validated) => validated,
             Err(error) => {
@@ -3373,9 +3812,17 @@ impl Room {
         self.view_dirty = true;
         let app = self.app.clone();
         tokio::spawn(async move {
-            let result = note_store::append(&app.db, &material_id, schema, doc_kind, &row, &actors)
-                .await
-                .map_err(StoreFailure::Note);
+            let result = note_store::append(
+                &app.db,
+                &material_id,
+                schema,
+                doc_kind,
+                &row,
+                &actors,
+                &session_rows,
+            )
+            .await
+            .map_err(StoreFailure::Note);
             let done = StoreDone {
                 result,
                 started,
@@ -3385,6 +3832,7 @@ impl Room {
                 durable,
                 metrics: Some(metrics),
                 limit_code,
+                sessions,
             };
             let _ = handle.tx.send(RoomCmd::Stored(Box::new(done))).await;
         });
@@ -3441,6 +3889,257 @@ impl Room {
     }
 
     /// This room's registry handle (none once it unloaded).
+    /// Whether the room's state holds structs under an id (Q213).
+    fn in_history(&self) -> impl Fn(u64) -> bool + use<> {
+        let held = self.doc.transact().state_vector();
+        move |id| held.get(&yrs::block::ClientID::new(id)) > 0
+    }
+
+    /// Whether an id is bound to a live channel (a session's or its DOCX
+    /// worker's) or is the room's own (Q213, Q226).
+    fn live_ids(&self) -> impl Fn(u64) -> bool + use<> {
+        let own = self.doc.client_id().get();
+        let bound: HashSet<u64> = self
+            .members
+            .values()
+            .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+            .collect();
+        move |id| id == own || bound.contains(&id)
+    }
+
+    /// A channel joined a note's room: its session counts at the version
+    /// its JOIN names, never above the room's (a viewer, who never edits,
+    /// has none).
+    fn session_joined(&mut self, key: MemberKey, version: Option<u64>) {
+        let client = self.members.get(&key).map(|member| member.client);
+        if self.late(client.as_slice(), version) {
+            // Nothing is collected yet, so nothing is late; the late path
+            // takes such a JOIN once collection lands.
+            log(
+                Level::Info,
+                "late session joined",
+                json!({ "room": self.name, "version": version }),
+            );
+        }
+        let (Some(sessions), Kindly::Note(note), Some(member)) =
+            (&mut self.sessions, &self.kind, self.members.get_mut(&key))
+        else {
+            return;
+        };
+        let version = version
+            .map_or(0, |version| i64::try_from(version).unwrap_or(i64::MAX))
+            .min(note.stored_version);
+        member.version = version;
+        if member.context.viewer {
+            return;
+        }
+        let now = std::time::SystemTime::now();
+        if !sessions.joined(member.client, &member.context.user_id, version, now) {
+            // The binding gives an id to one user only; this is a defence.
+            log(
+                Level::Error,
+                "session of another user joined",
+                json!({ "client": member.client, "room": self.name }),
+            );
+        }
+    }
+
+    /// A clean Leave naming its session ends it, its held deletions
+    /// released. Only the session bound to the leaving channel, so a user
+    /// ends only their own (in-place collection, plan section 8): another's
+    /// would lose the deletions its Undo restores.
+    fn end_session(&mut self, key: MemberKey, named: Option<u64>) {
+        let (Some(sessions), Some(member)) = (&mut self.sessions, self.members.get(&key)) else {
+            return;
+        };
+        if named == Some(member.client) {
+            sessions.end(member.client, &member.context.user_id);
+        }
+    }
+
+    /// Whether a JOIN or draft group under `clients` naming `version` is
+    /// older than the latest collection's window, or comes under an id whose
+    /// session record was lost (`sessions::late`, Q385); notes only.
+    fn late(&self, clients: &[u64], version: Option<u64>) -> bool {
+        match (&self.kind, &self.sessions) {
+            (Kindly::Note(note), Some(sessions)) => {
+                let lost = clients.iter().any(|&client| sessions.lost(client));
+                crate::sessions::late(note.window, version.unwrap_or(0), lost)
+            }
+            _ => false,
+        }
+    }
+
+    /// After the store of `store`: every update it holds goes out first, then
+    /// each synced editor of a note hears the stored version, which it then
+    /// holds. A store past a service edit the room has not applied yet goes
+    /// unannounced (review r1 M1): its editors lack that edit, and the next
+    /// store's notice covers both. Only stores announce: a tab counts its
+    /// edit stored at the second notice after the edit's ACK (review r1 H1).
+    fn announce_stored(&mut self, store: i64) {
+        let (Some(_), Kindly::Note(note)) = (&self.sessions, &self.kind) else {
+            return;
+        };
+        let version = crate::sessions::whole(note.stored_version, &note.gaps);
+        if version < store {
+            // A gap still open at the next store stalls the sessions: warned
+            // once per gap (a server edit arriving after a later store's
+            // notice closes its own at once, review r3 N3).
+            let gap = version + 1;
+            let (seen, warned) = match note.stall {
+                Some((open, warned)) if open == gap => (true, warned),
+                _ => (false, false),
+            };
+            if seen && !warned {
+                log(
+                    Level::Warn,
+                    "store not announced",
+                    json!({ "room": self.name, "store": store, "whole": version }),
+                );
+            }
+            if let Kindly::Note(note) = &mut self.kind {
+                note.stall = Some((gap, seen));
+            }
+            return;
+        }
+        let notice = json!({ "type": STORED_TYPE, "version": version }).to_string();
+        self.flush();
+        let text = protocol::text(&notice);
+        for (key, member) in &self.members {
+            if member.synced && !member.context.viewer {
+                self.send(*key, Kind::Stateless, &text);
+            }
+        }
+    }
+
+    /// What a fold of a note must keep for its sessions (`sessions.rs`): the
+    /// collection's input once it lands; logged until then.
+    fn fold_holds(&mut self, fold: &str) {
+        let Some(sessions) = &mut self.sessions else {
+            return;
+        };
+        let holds = sessions.holds(std::time::SystemTime::now());
+        log(
+            Level::Info,
+            "fold holds",
+            json!({
+                "fold": fold,
+                "held_clients": holds.held.len(),
+                "reached": holds.reached,
+                "room": self.name,
+            }),
+        );
+    }
+
+    /// Keeps an agent step for its Undo or Redo until 24 h after its agent
+    /// edit (Q385): what it deleted is held as long (review r1 M3,
+    /// `sessions.rs`), and the step registry offers it until then.
+    fn keep_agent_step(&mut self, id: String, step: AgentStep) {
+        if let Some(sessions) = &mut self.sessions {
+            sessions.agent_deleted(step.change.deletions().clone(), step.edited);
+        }
+        let until = step.edited + self.app.config.agent_undo;
+        self.app.agent_steps.hold(&id, &self.name, until);
+        let at = instant_at(until);
+        self.agent_expiry = Some(self.agent_expiry.map_or(at, |next| next.min(at)));
+        self.agent_changes.insert(id, step);
+    }
+
+    /// Agent steps 24 h past their agent edit go (Q385), from this room and
+    /// the step registry: an Undo or Redo of one is answered as of a step
+    /// this room no longer has.
+    fn expire_agent_steps(&mut self) {
+        let now = std::time::SystemTime::now();
+        let undo = self.app.config.agent_undo;
+        let mut next = None;
+        let mut expired = Vec::new();
+        for (id, step) in &self.agent_changes {
+            let until = step.edited + undo;
+            if until <= now {
+                expired.push(id.clone());
+            } else {
+                next = Some(next.map_or(until, |at: std::time::SystemTime| at.min(until)));
+            }
+        }
+        for id in expired {
+            self.agent_changes.remove(&id);
+            self.app.agent_steps.release(&id, &self.name);
+        }
+        self.agent_expiry = next.map(instant_at);
+    }
+
+    /// A clean Leave (Q236): the channel's recorded ids its token offered
+    /// expire; an id it bound otherwise (another tab's, r2 N6) stays.
+    fn left_clean(&mut self, key: MemberKey) {
+        let Some(member) = self.members.get(&key) else {
+            return;
+        };
+        let offered = [member.context.client_id, member.context.worker_client_id];
+        let ids: Vec<u64> = std::iter::once(member.client)
+            .chain(member.worker)
+            .filter(|&id| offered.iter().flatten().any(|&own| u64::from(own) == id))
+            .collect();
+        let user = member.context.user_id.clone();
+        if let Some(rows) = self.client_ids.left_clean(&user, &ids) {
+            self.write_rows(rows);
+        }
+    }
+
+    /// Queues client-id rows (r2 S3): written in order, one batch at a time
+    /// off the room's task (Q226 M4: a slow database stalls no channel), and
+    /// the room unloads only once the queue is empty.
+    fn write_rows(&mut self, rows: client_ids::Rows) {
+        self.rows.push_back(rows);
+        self.next_rows();
+    }
+
+    /// Writes the queue's head, retrying a failure a few times.
+    fn next_rows(&mut self) {
+        if self.rows_running {
+            return;
+        }
+        let Some(rows) = self.rows.front().cloned() else {
+            return;
+        };
+        let Some(handle) = self.own_handle() else {
+            // Closing: nothing more can be written.
+            log(
+                Level::Error,
+                "client id rows lost",
+                json!({ "batches": self.rows.len(), "error": "the room has no handle", "room": self.name }),
+            );
+            self.rows.clear();
+            return;
+        };
+        self.rows_running = true;
+        let db = self.app.db.clone();
+        tokio::spawn(async move {
+            let mut result = rows.run(&db).await;
+            for delay in ROW_RETRIES {
+                if result.is_ok() {
+                    break;
+                }
+                tokio::time::sleep(delay).await;
+                result = rows.run(&db).await;
+            }
+            let _ = handle.tx.send(RoomCmd::RowsWritten(result)).await;
+        });
+    }
+
+    /// The queue's head was written, or failed every try (logged as lost).
+    fn rows_written(&mut self, result: Result<(), String>) {
+        self.rows_running = false;
+        self.rows.pop_front();
+        if let Err(error) = result {
+            log(
+                Level::Error,
+                "client id rows lost",
+                json!({ "error": error, "room": self.name }),
+            );
+        }
+        self.next_rows();
+    }
+
     fn own_handle(&self) -> Option<RoomHandle> {
         self.app
             .rooms
@@ -3575,6 +4274,7 @@ impl Room {
                 durable,
                 metrics: None,
                 limit_code: None,
+                sessions: None,
             };
             let _ = handle.tx.send(RoomCmd::Stored(Box::new(done))).await;
         });
@@ -3592,6 +4292,7 @@ impl Room {
             durable,
             metrics,
             limit_code,
+            sessions,
         } = done;
         let version = match result {
             Ok(version) => version,
@@ -3625,8 +4326,13 @@ impl Room {
         }
         match &mut self.kind {
             Kindly::Note(note) => {
-                // A service edit that landed meanwhile may be ahead.
-                note.stored_version = note.stored_version.max(version);
+                // A service edit that landed meanwhile may be ahead, or behind
+                // and not applied yet (`announce_stored`).
+                note.stored_version = if note.sessioned() {
+                    crate::sessions::took(note.stored_version, &mut note.gaps, version)
+                } else {
+                    note.stored_version.max(version)
+                };
                 note.durable_metrics = metrics;
                 note.log_bytes += row_bytes as i64;
                 note.log_rows += 1;
@@ -3663,6 +4369,10 @@ impl Room {
                 self.source_receipt(&claimed, version as u64);
             }
         }
+        if let (Some(through), Some(written)) = (sessions, &mut self.sessions) {
+            written.saved(through);
+        }
+        self.announce_stored(version);
         self.project_on_cadence();
         self.answer_stored_undos();
         if self.store.dirty || markers::pending(&self.doc) {
@@ -4095,6 +4805,10 @@ impl Room {
         );
         // The live Undo of agent edits ends with the room (Epo 2026-10-20).
         self.app.agent_steps.forget_room(&self.name);
+        // A reload's next room may load now.
+        if std::mem::take(&mut self.reloading) {
+            self.app.evictions.end(&self.name, true);
+        }
         for reply in self.forced_unload.drain(..) {
             let _ = reply.send(());
         }
@@ -4129,6 +4843,20 @@ impl Room {
             }
         };
         unlog_bytes(&self.app, note.log_bytes.max(0) as u64);
+        // What the sessions did since the last store (acknowledgements,
+        // departures) is written before the fold.
+        let session_rows = match &mut self.sessions {
+            Some(sessions) if self.discard_pending.is_none() => {
+                let ids = &self.client_ids;
+                let now = std::time::SystemTime::now();
+                sessions.unsaved(now, |client, user| ids.owned_by(client, user))
+            }
+            _ => crate::sessions::Unsaved::default(),
+        };
+        self.fold_holds("unload");
+        let Kindly::Note(note) = &self.kind else {
+            return;
+        };
         let app = self.app.clone();
         let doc = self.doc.clone();
         let (model, doc_kind) = (note.model, note.doc);
@@ -4166,6 +4894,16 @@ impl Room {
             };
             // The log folds while the room is empty (DESIGN.md 3.5).
             let folding = async {
+                if !(session_rows.rows.is_empty() && session_rows.agent.is_none())
+                    && let Err(error) =
+                        note_store::save_sessions_now(&app.db, &material_id, &session_rows).await
+                {
+                    log(
+                        Level::Warn,
+                        "unload sessions not saved",
+                        json!({ "error": error.to_string(), "room": material_id }),
+                    );
+                }
                 if let Err(error) =
                     note_store::fold(&app.db, &material_id, schema, doc_kind, None).await
                 {
@@ -4237,6 +4975,14 @@ fn validate(
         });
     }
     Ok((metrics, code))
+}
+
+/// The instant a wall-clock `time` falls at (now when it has passed).
+fn instant_at(time: std::time::SystemTime) -> Instant {
+    let now = Instant::now();
+    now + time
+        .duration_since(std::time::SystemTime::now())
+        .unwrap_or_default()
 }
 
 async fn sleep_until(deadline: Option<Instant>) {

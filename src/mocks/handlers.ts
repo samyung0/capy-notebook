@@ -80,6 +80,7 @@ import {
   clearMockThumbnailStale,
   mockAtSizeLimit,
   scenarioSourceSession,
+  seedUploadedOffice,
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
 import { voiceInputHandlers } from './voiceInput';
@@ -1134,14 +1135,6 @@ export const handlers = [
           kind: 'flashcards',
           subtitle: mt.workspaceName,
           title: mt.title,
-        });
-    for (const c of db.canvases)
-      if (c.name.toLowerCase().includes(q))
-        results.push({
-          href: `/thinking/${c.id}`,
-          id: c.id,
-          kind: 'thinking',
-          title: c.name,
         });
     return HttpResponse.json(results.slice(0, 20));
   }),
@@ -2310,7 +2303,7 @@ export const handlers = [
       anchorQuote?: string;
       anchorStart?: string;
       anchorVersion?: number;
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
+      text: string;
     };
     if (body.anchorVersion == null || body.anchorVersion < 1) {
       return HttpResponse.json(
@@ -2329,12 +2322,12 @@ export const handlers = [
       comments: [
         {
           authorName: db.user.name,
-          contentRich: body.contentRich,
           createdAt: now,
           discussionId: '',
           id: uid('comment'),
           isDeleted: false,
           isEdited: false,
+          text: body.text,
           updatedAt: now,
           userId: db.user.id,
         },
@@ -2354,18 +2347,16 @@ export const handlers = [
   http.post('/api/discussions/:id/comments', async ({ params, request }) => {
     const discussion = mockDiscussions.find((item) => item.id === params.id);
     if (!discussion) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as {
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
-    };
+    const body = (await request.json()) as { text: string };
     const now = new Date().toISOString();
     const comment: MaterialDiscussion['comments'][number] = {
       authorName: db.user.name,
-      contentRich: body.contentRich,
       createdAt: now,
       discussionId: discussion.id,
       id: uid('comment'),
       isDeleted: false,
       isEdited: false,
+      text: body.text,
       updatedAt: now,
       userId: db.user.id,
     };
@@ -2382,15 +2373,13 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/comments/:id', async ({ params, request }) => {
-    const body = (await request.json()) as {
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
-    };
+    const body = (await request.json()) as { text: string };
     for (const discussion of mockDiscussions) {
       const comment = discussion.comments.find(
         (entry) => entry.id === params.id
       );
       if (!comment) continue;
-      comment.contentRich = body.contentRich;
+      comment.text = body.text;
       comment.isEdited = true;
       comment.updatedAt = new Date().toISOString();
       return HttpResponse.json(comment);
@@ -2404,7 +2393,7 @@ export const handlers = [
       );
       if (!entry) continue;
       entry.isDeleted = true;
-      entry.contentRich = null;
+      entry.text = '';
       return new HttpResponse(null, { status: 204 });
     }
     return new HttpResponse(null, { status: 404 });
@@ -2505,6 +2494,13 @@ export const handlers = [
         workspaceId: String(params.id),
       };
       db.fileLinks[f.id] = { url: URL.createObjectURL(bytes) };
+      const office = /\.(docx|pptx|xlsx)$/i.exec(name)?.[1].toLowerCase();
+      if (office)
+        seedUploadedOffice(
+          f.id,
+          office as 'docx' | 'pptx' | 'xlsx',
+          db.fileLinks[f.id].url
+        );
       db.files.push(f);
       const ws = db.workspaces.find((w) => w.id === params.id);
       if (ws) ws.fileCount += 1;
@@ -3255,46 +3251,20 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 
-  /* ---------------- thinking space ---------------- */
-  http.get('/api/thinking', async () => HttpResponse.json(db.canvases)),
-  http.get('/api/thinking/:id', async ({ params }) => {
-    const c = db.canvases.find((x) => x.id === params.id);
-    return c ? HttpResponse.json(c) : new HttpResponse(null, { status: 404 });
-  }),
-  http.post('/api/thinking', async ({ request }) => {
-    const body = (await request.json()) as { name: string };
-    const c = {
-      id: uid('cv'),
-      name: body.name,
-      updatedAt: new Date().toISOString(),
-    };
-    db.canvases.unshift(c);
-    return HttpResponse.json(c, { status: 201 });
-  }),
-  http.put('/api/thinking/:id', async ({ params, request }) => {
-    const c = db.canvases.find((x) => x.id === params.id);
-    if (!c) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as { scene?: unknown; name?: string };
-    if (body.scene !== undefined) c.scene = body.scene;
-    if (body.name) c.name = body.name;
-    c.updatedAt = new Date().toISOString();
-    return HttpResponse.json(c);
-  }),
-
   /* ---------------- explore ---------------- */
   http.get('/api/explore/workspaces', async () =>
-    HttpResponse.json(db.publicWorkspaces)
+    HttpResponse.json({ items: db.publicWorkspaces })
   ),
   http.get('/api/explore/quizzes', async () =>
-    HttpResponse.json(
-      db.publicQuizzes.map((quiz) => ({
+    HttpResponse.json({
+      items: db.publicQuizzes.map(({ questions, ...quiz }) => ({
         ...quiz,
-        questions: quiz.questions.map(learnerView),
-      }))
-    )
+        questionCount: questions.length,
+      })),
+    })
   ),
   http.get('/api/explore/flashcards', async () =>
-    HttpResponse.json(db.publicFlashcardSets)
+    HttpResponse.json({ items: db.publicFlashcardSets })
   ),
 
   /* ---------------- billing ---------------- */

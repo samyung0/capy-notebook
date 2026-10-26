@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import type { ActivityBlock, ChatMessage, ResourceEffect } from '@/api/types';
+import { m } from '@/i18n';
 import { ChatTrace } from './ChatTrace';
 
 // An Office edit the engine cut at a per-call limit (Epo 2026-10-23, Q171).
@@ -116,4 +117,32 @@ it('ends with a warning icon whose tooltip names the commands left', () => {
   );
   expect(text(undone)).toContain('Undid the edit to grades.xlsx');
   expect(undone).not.toContain('not applied');
+});
+
+// Q268, Q300: a turn waiting for the limiter or an AI slot reads only
+// "Waiting" in the trace, the same for both.
+it('shows a waiting turn in the trace', () => {
+  for (const phase of ['waiting_limit', 'waiting_capacity'] as const) {
+    const msg: ChatMessage = {
+      content: '',
+      createdAt: at(0),
+      id: 'm1',
+      phase,
+      role: 'assistant',
+      status: 'streaming',
+    };
+    for (const mode of ['verbose', 'normal'] as const) {
+      const html = renderToStaticMarkup(
+        <QueryClientProvider client={new QueryClient()}>
+          <ChatTrace
+            handlers={{ onUndoApplied: () => {}, onUndoRefused: () => {} }}
+            live
+            mode={mode}
+            msg={msg}
+          />
+        </QueryClientProvider>
+      );
+      expect(text(html).trim()).toBe(m.chat_trace_waiting());
+    }
+  }
 });

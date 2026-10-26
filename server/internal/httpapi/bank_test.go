@@ -20,7 +20,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
-	"github.com/samyung0/capy-notebook/server/internal/mail"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -108,8 +107,7 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	sink := &bankAssetSink{}
-	sender := mail.NewRecordingSender(&mail.LogSender{})
-	config := httpapi.Config{AuthDisabled: true, DevUserID: user, Bank: bankStore, BankAssets: sink, BankAssetsURL: "https://bank.example/assets", BankCommentEmail: "review@example.test", MailSender: sender, AppURL: "https://app.example"}
+	config := httpapi.Config{AuthDisabled: true, DevUserID: user, Bank: bankStore, BankAssets: sink, BankAssetsURL: "https://bank.example/assets", BankCommentEmail: "review@example.test", AppURL: "https://app.example"}
 	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", config)
 	request := func(h http.Handler, method, path, body string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -223,17 +221,30 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 		t.Fatalf("learner upload: %d", blockedResult.Code)
 	}
 	comment := request(handler, "POST", "/api/bank/questions/q/comments", `{"text":"Please check the answer."}`)
-	if comment.Code != 204 || len(sender.Captured()) != 1 {
+	if comment.Code != 204 {
 		t.Fatalf("comment: %d %s", comment.Code, comment.Body.String())
 	}
-	if !strings.Contains(sender.Captured()[0].Text, "https://app.example/qb/t/q?mode=edit") {
-		t.Fatal("comment link missing")
+	// The comment waits as a notice for the 4-hourly digest.
+	notices := func() []string {
+		t.Helper()
+		rows, err := st.Pool().Query(ctx, `SELECT body FROM bank_comment_notices WHERE user_id=$1 AND recipient='review@example.test'`, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bodies, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bodies
+	}
+	if bodies := notices(); len(bodies) != 1 || !strings.Contains(bodies[0], "https://app.example/qb/t/q?mode=edit") {
+		t.Fatalf("comment notice: %v", bodies)
 	}
 	configNoMail := config
 	configNoMail.BankCommentEmail = ""
 	noMail := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", configNoMail)
 	comment = request(noMail, "POST", "/api/bank/questions/q/comments", `{"text":"Disabled"}`)
-	if comment.Code != 404 || len(sender.Captured()) != 1 {
+	if comment.Code != 404 || len(notices()) != 1 {
 		t.Fatalf("disabled comment: %d", comment.Code)
 	}
 	if _, err := st.Pool().Exec(ctx, `UPDATE users SET suspended_at=now(),suspended_reason='test suspension' WHERE id=$1`, user); err != nil {

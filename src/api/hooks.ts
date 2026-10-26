@@ -62,6 +62,8 @@ import type {
   Customization,
   DeletionPreflight,
   EditableQuiz,
+  EditorAssetAccess,
+  EditorAssetPage,
   FileLinks,
   FileListParams,
   FilePage,
@@ -76,7 +78,6 @@ import type {
   ItemAttempts,
   Label,
   LearningProgress,
-  LostEditorAssetPage,
   Material,
   MaterialCollaborationToken,
   MaterialComment,
@@ -97,9 +98,9 @@ import type {
   PendingWorkspaceInvite,
   PlanStepInput,
   Privacy,
-  PublicFlashcardSet,
-  PublicQuiz,
-  PublicWorkspace,
+  PublicFlashcardSetPage,
+  PublicQuizPage,
+  PublicWorkspacePage,
   Quiz,
   RateReviewItemReq,
   RequestAccountDeletionReq,
@@ -108,7 +109,6 @@ import type {
   ReviewResult,
   ReviewSession,
   ReviewStart,
-  SaveCanvasReq,
   SearchResult,
   SetModelPrefsReq,
   SetStudyItemReq,
@@ -121,7 +121,6 @@ import type {
   StudySummary,
   Tag,
   Task,
-  ThinkingCanvas,
   TopUpReq,
   TrashActionReq,
   TrashItem,
@@ -1207,24 +1206,24 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
     placeholderData: keepPreviousData,
   });
 
-/** The images and audio the caller pays for in other accounts' notes, quizzes
- * and sets it can no longer open (M16), newest first: the Files page lists
- * them for deletion only. */
-export const useLostMedia = () =>
+/** The images and audio the caller pays for (M16), newest first, each marked
+ * when its note can no longer be opened: the Files page's Embeds tab. A new
+ * access filter loads afresh, so its notice never sits over the previous
+ * filter's rows. */
+export const useEditorAssets = (access?: EditorAssetAccess) =>
   useInfiniteQuery({
-    getNextPageParam: (last: LostEditorAssetPage) =>
-      last.nextCursor || undefined,
+    getNextPageParam: (last: EditorAssetPage) => last.nextCursor || undefined,
     initialPageParam: '',
     queryFn: ({ pageParam }: { pageParam: string }) =>
-      api.get<LostEditorAssetPage>(
-        `/editor-assets/lost${listSearch({}, pageParam)}`
+      api.get<EditorAssetPage>(
+        `/editor-assets${listSearch({ access }, pageParam)}`
       ),
-    queryKey: qk.lostMedia,
+    queryKey: qk.editorAssets(access),
   });
 
-/** Deletes one of them at once: nothing restores it, and the note shows it as
- * removed by its uploader. */
-export function useDeleteLostMedia() {
+/** Deletes one of them at once, wherever it sits: nothing restores it, and
+ * its note shows it as removed by its uploader. */
+export function useDeleteEditorAsset() {
   const qc = useQueryClient();
   return useMutation({
     // Its confirmation shows the failure.
@@ -1232,7 +1231,7 @@ export function useDeleteLostMedia() {
     mutationFn: (assetId: string) =>
       api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.lostMedia });
+      qc.invalidateQueries({ queryKey: qk.editorAssetsRoot });
       qc.invalidateQueries({ queryKey: qk.usage });
     },
   });
@@ -1636,7 +1635,6 @@ export function useUploadSource(wsId: string) {
       onQueued,
       onUploadProgress,
       signal,
-      willRetry,
     }: {
       file: File;
       kind: SourceFile['kind'];
@@ -1665,8 +1663,6 @@ export function useUploadSource(wsId: string) {
       onQueued?: (position: number) => void;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
-      /** A 429 is retried with a new ticket (withUploadRetry). */
-      willRetry?: boolean;
     }) => {
       const metadata = {
         batchId,
@@ -1695,7 +1691,7 @@ export function useUploadSource(wsId: string) {
           form.append('file', file);
           return api.upload<SourceFile>(path, form, onUploadProgress, signal);
         },
-        { onQueued, signal, willRetry }
+        { onQueued, signal }
       );
     },
     onSuccess: (file, vars) => {
@@ -2321,14 +2317,22 @@ export function useDeleteMaterialDiscussion(materialId: string) {
 
 /** A room token; `keys` asks for a quiz's keys document (editors who can
  * write only, live-items), `read` for a read channel whatever the user may do
- * (a View or a study page, which never write: REVIEW5 N2). */
+ * (a View or a study page, which never write: REVIEW5 N2). `previousToken`,
+ * the session's last token for the room, asks for its client id again
+ * (Q236). */
 export const getMaterialCollaborationToken = (
   materialId: string,
-  { access, document }: { access?: 'read'; document?: 'keys' } = {}
+  {
+    access,
+    document,
+    previousToken,
+  }: { access?: 'read'; document?: 'keys'; previousToken?: string } = {}
 ) =>
   api.post<MaterialCollaborationToken>(
     `/materials/${materialId}/collaboration-token`,
-    document || access ? { access, document } : undefined
+    document || access || previousToken
+      ? { access, document, previousToken }
+      : undefined
   );
 
 export function useMaterialCollaborationToken(
@@ -3063,67 +3067,44 @@ export function useDeleteTask() {
   });
 }
 
-/* ---------------- thinking ---------------- */
-export const canvasesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<ThinkingCanvas[]>('/thinking'),
-    queryKey: qk.thinking,
-  });
-export const useCanvases = (options?: QueryUiOptions) =>
-  useQuery({ ...canvasesQuery(), meta: queryMeta(options) });
-
-export const canvasQuery = (id: string) =>
-  queryOptions({
-    enabled: !!id,
-    queryFn: () => api.get<ThinkingCanvas>(`/thinking/${id}`),
-    queryKey: qk.canvas(id),
-  });
-export const useCanvas = (id: string, options?: QueryUiOptions) =>
-  useQuery({ ...canvasQuery(id), meta: queryMeta(options) });
-export function useCreateCanvas() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      api.post<ThinkingCanvas>('/thinking', { name }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
-  });
-}
-export function useSaveCanvas(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    meta: { errorToast: false },
-    mutationFn: (body: SaveCanvasReq) =>
-      api.put<ThinkingCanvas>(`/thinking/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
-  });
-}
-
 /* ---------------- explore ---------------- */
-export const exploreWorkspacesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicWorkspace[]>('/explore/workspaces'),
-    queryKey: qk.exploreWorkspaces,
-  });
-export const useExploreWorkspaces = () => useQuery(exploreWorkspacesQuery());
+// Explore lists come 50 at a time, most cloned first.
+export const exploreWorkspacesQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicWorkspacePage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicWorkspacePage>(
+      `/explore/workspaces${listSearch({}, pageParam)}`
+    ),
+  queryKey: qk.exploreWorkspaces,
+});
+export const useExploreWorkspaces = () =>
+  useInfiniteQuery(exploreWorkspacesQuery());
 
-export const exploreQuizzesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicQuiz[]>('/explore/quizzes'),
-    queryKey: qk.exploreQuizzes,
-  });
-export const useExploreQuizzes = () => useQuery(exploreQuizzesQuery());
+export const exploreQuizzesQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicQuizPage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicQuizPage>(`/explore/quizzes${listSearch({}, pageParam)}`),
+  queryKey: qk.exploreQuizzes,
+});
+export const useExploreQuizzes = () => useInfiniteQuery(exploreQuizzesQuery());
 
-export const exploreFlashcardSetsQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicFlashcardSet[]>('/explore/flashcards'),
-    queryKey: qk.exploreFlashcardSets,
-  });
+export const exploreFlashcardSetsQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicFlashcardSetPage) =>
+    last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicFlashcardSetPage>(
+      `/explore/flashcards${listSearch({}, pageParam)}`
+    ),
+  queryKey: qk.exploreFlashcardSets,
+});
 export const useExploreFlashcardSets = () =>
-  useQuery(exploreFlashcardSetsQuery());
+  useInfiniteQuery(exploreFlashcardSetsQuery());
 
 /* ---------------- sharing & cloning ---------------- */
 

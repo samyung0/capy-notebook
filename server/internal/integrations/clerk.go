@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	clerkuser "github.com/clerk/clerk-sdk-go/v2/user"
 )
@@ -30,14 +31,19 @@ func HasGoogleDriveReadScope(scopes []string) bool {
 // ("oauth_google").
 func clerkStrategy(provider string) string { return "oauth_" + provider }
 
-// ClerkAccessToken returns a fresh provider access token from Clerk's OAuth
-// token wallet. Clerk refreshes expired tokens transparently.
+// ClerkAccessToken returns a provider access token from Clerk's OAuth token
+// wallet, cached short of its expiry (clerk_cache.go). Clerk refreshes expired
+// tokens transparently.
 func ClerkAccessToken(ctx context.Context, userID, provider string) (string, error) {
 	token, _, err := ClerkAccessTokenScopes(ctx, userID, provider)
 	return token, err
 }
 
 func ClerkAccessTokenScopes(ctx context.Context, userID, provider string) (string, []string, error) {
+	now := time.Now()
+	if cached, ok := cachedAccessToken(userID, provider, now); ok {
+		return cached.token, cached.scopes, nil
+	}
 	list, err := clerkuser.ListOAuthAccessTokens(ctx, &clerkuser.ListOAuthAccessTokensParams{
 		ID:       userID,
 		Provider: clerkStrategy(provider),
@@ -45,8 +51,15 @@ func ClerkAccessTokenScopes(ctx context.Context, userID, provider string) (strin
 	if err != nil {
 		return "", nil, fmt.Errorf("clerk oauth token (%s): %w", provider, err)
 	}
-	for _, t := range list.OAuthAccessTokens {
+	var expiries []time.Time
+	if list.Response != nil {
+		expiries = tokenExpiries(list.Response.RawJSON)
+	}
+	for i, t := range list.OAuthAccessTokens {
 		if t != nil && t.Token != "" {
+			if i < len(expiries) {
+				keepAccessToken(userID, provider, t.Token, t.Scopes, expiries[i], now)
+			}
 			return t.Token, t.Scopes, nil
 		}
 	}
@@ -56,6 +69,9 @@ func ClerkAccessTokenScopes(ctx context.Context, userID, provider string) (strin
 // ClerkConnectedProviders reports external-account links and import grants
 // separately: signing in with a provider does not grant access to its files.
 func ClerkConnectedProviders(ctx context.Context, userID string) (map[string]bool, error) {
+	if cached, ok := cachedConnectedProviders(userID, time.Now()); ok {
+		return cached, nil
+	}
 	u, err := clerkuser.Get(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("clerk user: %w", err)
@@ -77,11 +93,13 @@ func ClerkConnectedProviders(ctx context.Context, userID string) (map[string]boo
 			out["microsoftFilesRead"] = slices.Contains(strings.Fields(acc.ApprovedScopes), "Files.Read")
 		}
 	}
+	keepConnectedProviders(userID, out, time.Now())
 	return out, nil
 }
 
 // ClerkDisconnect unlinks the provider's external account from the Clerk user.
 func ClerkDisconnect(ctx context.Context, userID, provider string) error {
+	defer ForgetClerkUser(userID)
 	u, err := clerkuser.Get(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("clerk user: %w", err)

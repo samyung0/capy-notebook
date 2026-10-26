@@ -374,7 +374,13 @@ def uid(prefix: str) -> str:
 
 
 def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
-    """Claim one due pending job of exactly ``job_type`` atomically."""
+    """Claim one due pending job of exactly ``job_type`` atomically.
+
+    Round-robin by actor (Epo 2026-10-24, rate-limit audit): the job whose
+    actor has the fewest jobs of this type running goes first, the oldest
+    among those, so one account's backlog never queues everyone else's. Jobs
+    without an ``actorUserId`` count as one shared actor.
+    """
     cur.execute(
         """
         UPDATE jobs SET
@@ -384,15 +390,23 @@ def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
             attempts=attempts+1,
             lease_expires_at = now() + make_interval(secs => %s)
         WHERE id = (
-            SELECT id FROM jobs
-            WHERE status='pending'
-              AND type=%s
-              AND (not_before IS NULL OR not_before <= now())
-            ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
+            SELECT j.id FROM jobs j
+            LEFT JOIN (
+                SELECT COALESCE(payload->>'actorUserId', '') AS actor,
+                       count(*) AS running
+                FROM jobs
+                WHERE status='running' AND type=%s
+                GROUP BY 1
+            ) r ON r.actor = COALESCE(j.payload->>'actorUserId', '')
+            WHERE j.status='pending'
+              AND j.type=%s
+              AND (j.not_before IS NULL OR j.not_before <= now())
+            ORDER BY COALESCE(r.running, 0), j.created_at
+            FOR UPDATE OF j SKIP LOCKED LIMIT 1
         )
         RETURNING id, type, payload, attempts, queued_at, provider_waits
         """,
-        (lease_s, job_type),
+        (lease_s, job_type, job_type),
     )
     row = cur.fetchone()
     if not row:
@@ -1038,8 +1052,8 @@ def release_job_for_provider_busy(
 
     Like ``release_job_for_capacity`` the attempt is handed back; the re-pend is
     counted on ``provider_waits`` so the worker can cap it. ``created_at`` is
-    untouched, so the claim order puts the job ahead of anything newer once
-    ``not_before`` passes.
+    untouched, so once ``not_before`` passes the claim order puts the job
+    ahead of anything newer from actors with as many jobs running.
     """
     cur.execute(
         """
@@ -1108,30 +1122,36 @@ def acquire_provider_capacity(
     capacity: int,
     lease_seconds: int,
 ) -> bool:
-    """Atomically reserve weighted capacity across every ingest process."""
+    """Atomically reserve weighted capacity across every process.
+
+    The model-wide lock covers one statement (Epo 2026-10-24, Q298): an insert
+    that counts the unexpired leases it sees once the lock is held, so the
+    count stays exact. Expired leases are swept before the lock, each by
+    whichever admission locks it first."""
+    cur.execute(
+        """
+        DELETE FROM provider_capacity_leases WHERE id IN (
+          SELECT id FROM provider_capacity_leases
+           WHERE provider=%s AND expires_at<=now()
+           FOR UPDATE SKIP LOCKED)
+        """,
+        (provider,),
+    )
+    # A statement of its own: the insert's snapshot is taken after the lock.
     cur.execute(
         "SELECT pg_advisory_xact_lock(hashtext(%s))",
         (f"provider-capacity:{provider}",),
     )
     cur.execute(
-        "DELETE FROM provider_capacity_leases WHERE provider=%s AND expires_at<=now()",
-        (provider,),
-    )
-    cur.execute(
-        "SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases WHERE provider=%s",
-        (provider,),
-    )
-    used = int(cur.fetchone()[0])
-    if used + units > capacity:
-        return False
-    cur.execute(
         """
         INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
-        VALUES (%s,%s,%s,now()+make_interval(secs => %s))
+        SELECT %s,%s,%s,now()+make_interval(secs => %s)
+         WHERE (SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases
+                 WHERE provider=%s AND expires_at>now()) + %s <= %s
         """,
-        (lease_id, provider, units, lease_seconds),
+        (lease_id, provider, units, lease_seconds, provider, units, capacity),
     )
-    return True
+    return cur.rowcount == 1
 
 
 def provider_capacity_used(cur, provider: str) -> int:
@@ -1959,6 +1979,8 @@ def open_provider_call(
         raise RuntimeError("provider session is closed")
     if purpose == "terminal" and (kind != "llm" or exhausted_at is None):
         raise RuntimeError("terminal provider call is not allowed")
+    if kind == "web_search" and exhausted_at is not None:
+        raise RuntimeError("web search is not allowed after credits run out")
     if kind == "llm" and exhausted_at is not None:
         if purpose != "terminal":
             raise RuntimeError("only a terminal provider call is allowed")
@@ -2129,7 +2151,8 @@ def settle_ingest_provider_call(
     units: int = 0,
     unit: str = "tokens",
 ) -> str:
-    """Atomically apply one post-paid ingest provider attempt.
+    """Atomically apply one post-paid ingest provider attempt, freeing its
+    capacity lease (id ``call_id``) in the same transaction (Q298).
 
     A ``system`` session (the maintenance republish) records the usage at
     zero credits against its actor. A job pays for its audio once: a retry
@@ -2318,6 +2341,7 @@ def settle_ingest_provider_call(
     )
     if cur.rowcount != 1:
         raise ProviderSettlementRejected("ingest provider call could not be applied")
+    release_provider_capacity(cur, call_id)
     if reservation_status == "released":
         cur.execute(
             """

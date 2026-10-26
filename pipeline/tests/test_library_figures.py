@@ -189,9 +189,7 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
     assert (await library.read_excerpt("e_worked")).figures == []
 
     # No decorative or excluded id anywhere a model reads: read, search.
-    ctx = ToolContext(
-        workspace_id="ws", operations=frozenset({"library.read"}), library=True
-    )
+    ctx = ToolContext(workspace_id="ws", operations=frozenset({"library.read"}))
     text = (await tools._read_knowledge({"excerpt_id": "e_intro"}, ctx)).text()
     assert "figures: fig_1, fig_2" in text and "- fig_2: Figure 8.2" in text
     assert "fig_band" not in text and "fig_nc" not in text and "fig_page" not in text
@@ -200,9 +198,7 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
 
 
 async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):
-    ctx = ToolContext(
-        workspace_id="ws", operations=frozenset({"library.read"}), library=True
-    )
+    ctx = ToolContext(workspace_id="ws", operations=frozenset({"library.read"}))
     figures = [
         {
             "id": "fig_2",
@@ -373,3 +369,21 @@ async def test_figures_the_library_does_not_show_or_box_refuse_the_write(
     assert not placed.refused, placed.text()
     assert sent[0]["figures"][0]["id"] == "fig_1"
     assert sent[0]["commands"][0]["markdown"] == "![x](figure:fig_1)"
+
+
+async def test_a_figure_keeps_its_size_and_an_unknown_size_is_refused(
+    library_db, monkeypatch
+):
+    ctx, _, sent = _figure_writes(monkeypatch)
+    ctx.library_reads.note("e_intro", 0, "8.1")
+
+    def note(markdown: str) -> dict:
+        return {"kind": "note", "content": markdown, "_tool_call_id": "c3"}
+
+    huge = await tools._create_material(note('![x](figure:fig_1 "huge")'), ctx)
+    assert huge.refused and '"small" or "normal", not "huge"' in huge.text()
+    assert not sent
+
+    small = await tools._create_material(note('![x](figure:fig_1 "small")'), ctx)
+    assert not small.refused, small.text()
+    assert sent[0]["content"] == '![x](figure:fig_1 "small")'

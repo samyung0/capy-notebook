@@ -21,12 +21,19 @@ import {
   SyncKind,
   syncMessage,
   text,
+  tokenClientIds,
+  Writer,
 } from './protocol';
 import { type ChannelHandler, CollabSocket } from './socket';
 
 export interface RoomProviderConfig {
   /** Shared with the editor (Plate passes its own). */
   awareness?: Awareness | null;
+  /** What a JOIN waits for first, when anything (Q327): the draft send of
+   * stored steps the room never accepted, which must reach it before the
+   * document syncs. Meanwhile no socket opens for the room (Q360). Undefined
+   * joins at once. */
+  beforeJoin?: () => Promise<void> | undefined;
   document: Y.Doc;
   name: string;
   onAuthenticated?: () => void;
@@ -52,7 +59,17 @@ export interface RoomProviderConfig {
   parent?: NoteSeat;
   /** The socket to join on; the tab's shared one for the URL by default. */
   socket?: CollabSocket;
-  token: () => Promise<string>;
+  /** A room token. `previous`, the last one this provider used (even
+   * expired), asks for its client ids again (Q236): a reconnect keeps them. */
+  token: (previous?: string) => Promise<string>;
+  /** Whether the tab holds unsent edits for the document beyond the
+   * unacknowledged updates (stored drafts not yet covered by a receipt): a
+   * Leave says so, and only a clean one expires the session's ids (Q236). */
+  unsent?: () => boolean;
+  /** The stored version the stored drafts the document took before its
+   * first JOIN were made at (their oldest's): the version it holds, and an
+   * unsent edit until the room acknowledges the step 2 carrying them. */
+  unsentFrom?: number;
   url: string;
 }
 
@@ -68,12 +85,35 @@ export const OLDEST_CLOSED_REASON = 'collaboration-oldest-closed';
 /** Why the server closed an embed's channel: its note joined one past its
  * cap of embed channels (`EMBED_CLOSED_REASON`, same file). */
 export const EMBED_CLOSED_REASON = 'collaboration-embed-closed';
+/** Why the server refused a JOIN's client id: a live channel holds it
+ * (`REFUSED_REASON`, collaboration-rs/crates/server/src/client_ids.rs). */
+const CLIENT_ID_REFUSED_REASON = 'collaboration-client-id';
+/** How long JOINs refused for `CLIENT_ID_REFUSED_REASON` keep presenting the
+ * previous token (r2 S2): a dropped socket's channel holds the ids until the
+ * server closes it, at most 60 s later (`SILENT_CLOSE`,
+ * collaboration-rs/crates/server/src/socket.rs), and the reconnect then gets
+ * them again. Past it the token's ids are another session's. */
+const CLIENT_ID_HELD_MS = 70_000;
 /** Why the server closed or refused an embed's channel: its note's channel
  * is not joined (`NOTE_CLOSED_REASON`, same file). */
 const NOTE_CLOSED_REASON = 'collaboration-note-closed';
 /** Why a room stopped: an update holds a piece over the server's cap, which
  * no resend can fix. */
 export const UPDATE_TOO_LARGE_REASON = 'collaboration-update-too-large';
+/** A note room's word that this synced document holds a stored version
+ * (`STORED_TYPE`, collaboration-rs/crates/server/src/room.rs), answered
+ * with `ACK_TYPE` and the version this tab reports. */
+const STORED_TYPE = 'stored';
+const ACK_TYPE = 'ack';
+/** A step 2 with no structs and no deletions: it carries no edit. */
+const EMPTY_UPDATE = Y.encodeStateAsUpdate(new Y.Doc());
+
+function isEmptyUpdate(update: Uint8Array) {
+  return (
+    update.byteLength === EMPTY_UPDATE.byteLength &&
+    update.every((byte, at) => byte === EMPTY_UPDATE[at])
+  );
+}
 
 /**
  * One room over the tab's shared collaboration socket (capy-sync 1): join
@@ -101,6 +141,13 @@ export const UPDATE_TOO_LARGE_REASON = 'collaboration-update-too-large';
  * with it and joined again when it joins. Closed as its note's oldest embed
  * it waits like a room closed as the user's oldest, and joins again once it
  * is near the screen again (`wake`).
+ *
+ * The document writes under the client id the server assigned (Q213): until
+ * its first writable JOINED it takes the id each JOIN's token offers (a read
+ * channel, which never writes, keeps taking them), then it keeps that id for
+ * life and names it in every JOIN, so a reconnect binds the same id and its
+ * Undo stack survives. The server admits its changes only under ids it
+ * assigned to this user.
  */
 export class RoomProvider implements ChannelHandler, SeatedRoom {
   readonly awareness: Awareness;
@@ -130,12 +177,43 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private readonly socket: CollabSocket;
   private channel: number | null = null;
   private wanted = false;
+  /** The draft send a connect waits on before it attaches (`beforeJoin`). */
+  private waiting: Promise<void> | null = null;
   private destroyed = false;
   /** A note's room: the seat its embeds join inside. */
   private noteSeat: NoteSeat | null = null;
+  /** The document took a token's client id. */
+  private adopted = false;
+  /** The last token this provider used: the next token request presents it
+   * so the room keeps the session's ids (Q236). */
+  private previousToken: string | undefined;
+  /** When JOINs were first refused for a live channel holding the ids. */
+  private heldSince: number | undefined;
+  /** A DOCX session's second id, for its editor's resident layout worker
+   * (Q219): taken with the document's and kept with it. */
+  workerClientId: number | undefined;
+  /** The latest stored version the document holds: a note room's `stored`
+   * notices, or the stored drafts it started with. */
+  private storedVersion: number;
+  /** The version the oldest edit no message carried yet was made at. */
+  private unsentAt: number | null;
+  /** Updates and step 2 replies sent and not acknowledged: each send's last
+   * piece (its `sent` count) and the version its oldest edit was made at. */
+  private inFlight: { at: number; upTo: number }[] = [];
+  /** Sends the room acknowledged (admitted) and no store holds for sure
+   * yet: each stays unsent until the second store's `stored` after its ACK
+   * (review r1 H1, Editor 2026-10-26), counted by the versions it heard. */
+  private admitted: { at: number; heard: number; stores: number }[] = [];
+  /** The version this channel last reported (its JOIN's, then each
+   * `ack`): an `ack` goes when the version it may report changes. */
+  private lastReported: number | null = null;
+  /** This channel heard its answer's `stored`, which is no store's. */
+  private answered = false;
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
+    this.storedVersion = config.unsentFrom ?? 0;
+    this.unsentAt = config.unsentFrom ?? null;
     this.document = config.document;
     this.awareness = config.awareness ?? new Awareness(config.document);
     this.socket = config.socket ?? CollabSocket.for(config.url);
@@ -145,6 +223,55 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
 
   get hasUnsyncedChanges() {
     return this.unsyncedChanges > 0;
+  }
+
+  /**
+   * The stored version this tab reports (its JOIN, its acknowledgements,
+   * its stored drafts): the latest it holds, never above the version its
+   * oldest unsent edit was made at, in flight, held for a resend or not
+   * sent yet (in-place collection, Epo 2026-10-23). 0: a new document that
+   * holds nothing.
+   */
+  get reportedVersion() {
+    let version = this.storedVersion;
+    if (this.unsentAt !== null) version = Math.min(version, this.unsentAt);
+    for (const { at } of this.inFlight) version = Math.min(version, at);
+    for (const { at } of this.admitted) version = Math.min(version, at);
+    // A document holding unsent edits holds something: never new (0), even
+    // before its first `stored` (review r1 L8).
+    const holding =
+      this.unsentAt !== null ||
+      this.inFlight.length > 0 ||
+      this.admitted.length > 0;
+    return holding ? Math.max(version, 1) : version;
+  }
+
+  /** Stored drafts made at `version` go into the document now (a draft
+   * send's held steps, a late merge): an unsent edit made then. Call it
+   * before applying them: the next update sent carries the mark, which then
+   * clears as that update's own (review r1 M2). */
+  unsentFrom(version: number) {
+    this.unsentAt = Math.min(this.unsentAt ?? version, version);
+    this.report();
+  }
+
+  /** Acknowledges the version this synced channel may report whenever it
+   * changed (review r1 H2): a store's notice, an edit taken as stored. */
+  private report() {
+    if (!this.isSynced) return;
+    const version = this.reportedVersion;
+    if (version === this.lastReported) return;
+    this.lastReported = version;
+    const ack = { type: ACK_TYPE, version };
+    this.send(MessageKind.Stateless, text(JSON.stringify(ack)));
+  }
+
+  /** An edit, or applied drafts, no message carries yet. */
+  private heldBack() {
+    this.unsentAt = Math.min(
+      this.unsentAt ?? this.storedVersion,
+      this.storedVersion
+    );
   }
 
   /** The shared socket's state: open while the server closed only this room. */
@@ -166,6 +293,22 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     if (this.destroyed || this.wanted || this.stopped) return;
     this.wanted = true;
     this.config.parent?.add(this);
+    const before = this.config.beforeJoin?.();
+    if (!before) {
+      this.attach();
+      return;
+    }
+    // The room's socket waits for the draft send too: one that sent no JOIN
+    // would close at the server's join deadline and open again (Q360).
+    this.waiting = before;
+    void before.then(() => {
+      if (this.waiting !== before) return;
+      this.waiting = null;
+      if (this.wanted && !this.destroyed) this.attach();
+    });
+  }
+
+  private attach() {
     this.socket.attach(this);
     if (this.socket.status === 'connected') void this.join();
   }
@@ -173,10 +316,26 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   disconnect() {
     if (!this.wanted) return;
     this.wanted = false;
+    this.waiting = null;
     this.config.parent?.delete(this);
     this.unpark();
     const joined = this.channel !== null;
-    if (joined) this.send(MessageKind.Leave);
+    // 0: the tab holds no unsent edits for the document, so the room may
+    // expire the session's ids (Q236) and end its session, which the Leave
+    // names. Drafts marked to apply (`unsentFrom`) are unsent edits (review
+    // r1 N3: a draft send's hold keeps its session).
+    const unsent =
+      this.unsyncedChanges > 0 ||
+      this.unsentAt !== null ||
+      this.config.unsent?.() === true;
+    if (joined)
+      this.send(
+        MessageKind.Leave,
+        new Writer()
+          .byte(unsent ? 1 : 0)
+          .varUint(this.awareness.clientID)
+          .done()
+      );
     this.endChannel();
     this.socket.detach(this);
     if (joined) this.config.onDisconnect?.();
@@ -258,10 +417,19 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     if (channel !== this.channel) return;
     switch (kind) {
       case MessageKind.Joined:
-        this.joined(payload[0] === 1);
+        this.joined();
         return;
       case MessageKind.Refused: {
         const reason = readText(payload);
+        // A live channel holds the ids: retries present the previous token
+        // until that channel can have closed, then ask for fresh ids.
+        if (reason === CLIENT_ID_REFUSED_REASON) {
+          this.heldSince ??= Date.now();
+          if (Date.now() - this.heldSince >= CLIENT_ID_HELD_MS) {
+            this.previousToken = undefined;
+            this.heldSince = undefined;
+          }
+        }
         this.endChannel();
         // An embed whose note left meanwhile joins again with the note.
         if (reason !== NOTE_CLOSED_REASON)
@@ -286,6 +454,13 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       case MessageKind.Ack: {
         const count = new Reader(payload).varUint();
         this.acknowledged += count;
+        // Admitted: unsent until a store certainly holds it (H1).
+        for (const { at, upTo } of this.inFlight)
+          if (upTo <= this.acknowledged)
+            this.admitted.push({ at, heard: this.storedVersion, stores: 0 });
+        this.inFlight = this.inFlight.filter(
+          ({ upTo }) => upTo > this.acknowledged
+        );
         this.setUnsynced(Math.max(0, this.unsyncedChanges - count));
         if (this.lastPiece !== null && this.acknowledged >= this.lastPiece)
           this.setLastPiece(null);
@@ -303,6 +478,17 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
               this.slowedOpen = true;
               this.config.onSlowed?.(true);
             }
+            return;
+          }
+        }
+        if (event.includes(STORED_TYPE)) {
+          const notice = JSON.parse(event) as {
+            type?: string;
+            version?: unknown;
+          };
+          if (notice.type === STORED_TYPE) {
+            if (this.isSynced && typeof notice.version === 'number')
+              this.stored(notice.version);
             return;
           }
         }
@@ -327,8 +513,9 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       }
       case MessageKind.TokenRequest:
         void this.config
-          .token()
+          .token(this.previousToken)
           .then((token) => {
+            this.previousToken = token;
             if (this.isAuthenticated) this.send(MessageKind.Token, text(token));
           })
           // Unanswered, the server closes the room at expiry and the client
@@ -389,7 +576,35 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     setHeld(this, piece !== null);
   }
 
+  /** A `stored` notice: the version this document now holds. The first on
+   * a channel answers its step 1; each later one is a store's, and an
+   * admitted send is stored once a second store's was heard after its ACK:
+   * stores run one at a time, so that one began after the send was
+   * admitted (review r1 H1). */
+  private stored(version: number) {
+    this.storedVersion = Math.max(this.storedVersion, version);
+    if (this.answered) {
+      for (const send of this.admitted) {
+        if (version > send.heard) {
+          send.heard = version;
+          send.stores += 1;
+        }
+      }
+    } else {
+      this.answered = true;
+    }
+    this.admitted = this.admitted.filter(({ stores }) => stores < 2);
+    this.report();
+  }
+
   private resetCounts() {
+    // Sends no store certainly holds may not reach one: the next step 2
+    // carries them.
+    for (const { at } of [...this.inFlight, ...this.admitted])
+      this.unsentAt = Math.min(this.unsentAt ?? at, at);
+    this.inFlight = [];
+    this.admitted = [];
+    this.answered = false;
     this.setUnsynced(0);
     this.sent = 0;
     this.acknowledged = 0;
@@ -407,11 +622,23 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       this.stop();
       return;
     }
+    // An update is an edit made now, and takes any mark `unsentFrom` left
+    // (M2); a step 2 carries everything the room lacks, every unsent edit
+    // included. An empty step 2 (a new document's) carries no edit (H2),
+    // but takes a mark: the room holds what it marks, stored once a second
+    // store's notice came after this step 2's ACK (H1, review r2 N1).
+    const empty = kind === SyncKind.Step2 && isEmptyUpdate(update);
+    const carries = !empty || this.unsentAt !== null;
+    let at =
+      kind === SyncKind.Step2 ? this.reportedVersion : this.storedVersion;
+    at = Math.min(at, this.unsentAt ?? at);
+    this.unsentAt = null;
     for (const piece of pieces) {
       this.sent += 1;
       this.setUnsynced(this.unsyncedChanges + 1);
       this.send(MessageKind.Sync, syncMessage(kind, piece));
     }
+    if (carries) this.inFlight.push({ at, upTo: this.sent });
     if (pieces.length > 1 || this.lastPiece !== null)
       this.setLastPiece(this.sent);
   }
@@ -434,9 +661,14 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
 
   /** The channel's JOIN, with a fresh token. */
   private async sendJoin(channel: number) {
+    const before = this.config.beforeJoin?.();
+    if (before) {
+      await before;
+      if (this.channel !== channel) return;
+    }
     let token: string;
     try {
-      token = await this.config.token();
+      token = await this.config.token(this.previousToken);
     } catch (error) {
       if (this.channel !== channel) return;
       this.endChannel();
@@ -455,17 +687,60 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       this.endChannel();
       return;
     }
+    this.previousToken = token;
+    // The document keeps its ids once it wrote under them (Q236); before,
+    // it takes the token's, which a reconnect's token offers again.
+    if (!this.wrote()) {
+      try {
+        const ids = tokenClientIds(token);
+        this.adopt(ids.clientId);
+        this.workerClientId = ids.workerClientId;
+      } catch (error) {
+        this.endChannel();
+        throw error;
+      }
+    }
     this.socket.join(
       channel,
       message(
         channel,
         MessageKind.Join,
-        joinPayload(this.config.name, token, note)
+        joinPayload(
+          this.config.name,
+          token,
+          this.awareness.clientID,
+          this.joinVersion(),
+          note
+        )
       )
     );
   }
 
-  private joined(_writable: boolean) {
+  /** The version a JOIN names, which its session counts at until an ack. */
+  private joinVersion() {
+    this.lastReported = this.reportedVersion;
+    return this.lastReported;
+  }
+
+  /** Takes the client id a token offers, before the document is bound
+   * (Q213): the document and its presence go under it. Edits made before
+   * stay under the id Yjs drew; the room refuses them as they are
+   * (`unassigned`, Epo 2026-10-24) and never binds that id. */
+  private adopt(clientId: number) {
+    const { awareness, document } = this;
+    this.adopted = true;
+    document.clientID = clientId;
+    if (awareness.clientID !== clientId) {
+      const state = awareness.getLocalState();
+      removeAwarenessStates(awareness, [awareness.clientID], this);
+      awareness.clientID = clientId;
+      if (state !== null) awareness.setLocalState(state);
+    }
+  }
+
+  private joined() {
+    this.assertBound();
+    this.heldSince = undefined;
     // A join after a timeout counts afresh from here, so waiters on the
     // unsynced count see it go to zero only after the resync.
     this.resetCounts();
@@ -481,7 +756,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     if (this.awareness.getLocalState() !== null)
       this.send(
         MessageKind.Awareness,
-        encodeAwarenessUpdate(this.awareness, [this.document.clientID])
+        encodeAwarenessUpdate(this.awareness, [this.awareness.clientID])
       );
   }
 
@@ -524,7 +799,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     this.resetCounts();
     // Remote cursors go with the room.
     const remote = [...this.awareness.getStates().keys()].filter(
-      (client) => client !== this.document.clientID
+      (client) => client !== this.awareness.clientID
     );
     if (remote.length) removeAwarenessStates(this.awareness, remote, this);
     if (this.presence) {
@@ -548,6 +823,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   ) => {
     if (origin === this) return;
     if (this.parked) {
+      this.heldBack();
       // An edit here: the user came back to this room. An update applied to
       // the document (a draft restored, another room's) is no edit.
       if (!transaction.local) return;
@@ -555,9 +831,35 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       if (this.wanted && this.socket.status === 'connected') void this.join();
       return;
     }
-    if (!this.isAuthenticated || this.paused) return;
+    if (!this.isAuthenticated || this.paused) {
+      this.heldBack();
+      return;
+    }
+    this.assertBound();
     this.sendUpdate(SyncKind.Update, update);
   };
+
+  /** Whether the document (or its DOCX layout worker) wrote under the ids
+   * it took from a token. */
+  private wrote() {
+    const { store } = this.document;
+    return (
+      this.adopted &&
+      (Y.getState(store, this.awareness.clientID) > 0 ||
+        (this.workerClientId !== undefined &&
+          Y.getState(store, this.workerClientId) > 0))
+    );
+  }
+
+  /** The document writes under the id it took (Q226 L3). One Yjs moved to
+   * another id would have every change refused, so it stops here,
+   * explicitly. */
+  private assertBound() {
+    if (this.adopted && this.document.clientID !== this.awareness.clientID) {
+      this.endChannel();
+      throw new Error('The collaboration document left its assigned client id');
+    }
+  }
 
   private readonly awarenessUpdate = (
     {
@@ -573,7 +875,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     // the server outdates it.
     let clients = [...added, ...updated, ...removed];
     if (origin === this) {
-      const own = this.document.clientID;
+      const own = this.awareness.clientID;
       clients = updated.includes(own) || removed.includes(own) ? [own] : [];
     }
     if (clients.length)

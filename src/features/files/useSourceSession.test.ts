@@ -55,16 +55,23 @@ vi.mock('react', async (load) => ({
   },
 }));
 
-const { createSourceProvider, recorder, takeSourceOpen } = vi.hoisted(() => ({
-  createSourceProvider: vi.fn(),
-  recorder: {
-    covered: vi.fn(),
-    discard: vi.fn(async () => {}),
-    dispose: vi.fn(async () => {}),
-    sequence: 0,
-  },
-  takeSourceOpen: vi.fn(),
-}));
+const { createSourceProvider, recorder, sending, takeSourceOpen } = vi.hoisted(
+  () => ({
+    createSourceProvider: vi.fn(),
+    recorder: {
+      adopt: vi.fn(),
+      connected: vi.fn(),
+      covered: vi.fn(),
+      discard: vi.fn(async () => {}),
+      disconnected: vi.fn(),
+      dispose: vi.fn(async () => {}),
+      sequence: 0,
+    },
+    // The draft send of never-accepted stored steps: settled by `release`.
+    sending: { done: false, kept: false, nows: 0, release: () => {} },
+    takeSourceOpen: vi.fn(),
+  })
+);
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
@@ -76,12 +83,44 @@ vi.mock('./sourceProvider', async (load) => ({
 }));
 vi.mock('@/lib/editDrafts', async (load) => ({
   ...(await load<typeof import('@/lib/editDrafts')>()),
+  draftSender: vi.fn(() => {
+    const settled = new Promise<void>((resolve) => {
+      sending.release = () => {
+        sending.done = true;
+        resolve();
+      };
+    });
+    return {
+      get done() {
+        return sending.done;
+      },
+      get kept() {
+        return sending.kept;
+      },
+      now() {
+        sending.nows += 1;
+      },
+      settled,
+      stop() {},
+    };
+  }),
+  dropExpiredGroup: vi.fn(),
+  openRecoveryGroup: vi.fn(async () => null),
   readDrafts: vi.fn(async () => []),
   recordDrafts: vi.fn(() => recorder),
 }));
 
+import * as Y from 'yjs';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import { COLLABORATION_OUTDATED_REASON } from '@/features/notes/collaborationEvents';
+import {
+  DRAFT_EXPIRY_MS,
+  dropExpiredGroup,
+  type EditDraft,
+  openRecoveryGroup,
+  readDrafts,
+  recordDrafts,
+} from '@/lib/editDrafts';
 import type { SourceProviderConfig } from './sourceProvider';
 import { useSourceSession } from './useSourceSession';
 
@@ -141,9 +180,13 @@ async function open() {
 
 beforeEach(() => {
   hooks.reset();
+  sending.done = false;
+  sending.kept = false;
+  sending.nows = 0;
   viewReady = undefined;
   createSourceProvider.mockReset();
   createSourceProvider.mockReturnValue({
+    connect: vi.fn(),
     destroy: vi.fn(),
     disconnect: vi.fn(),
     hasUnsyncedChanges: false,
@@ -190,6 +233,40 @@ describe('an Office edit session opening while its base downloads', () => {
   });
 });
 
+// Late merge M5 (review r1 L6): an Office file's stored edits past the
+// 7-day expiry open once over their own base under the expired banner, are
+// dropped as they open, and no room joins.
+describe('an edit session opening with expired stored drafts', () => {
+  it('opens them once under the expired banner and drops them', async () => {
+    const row: EditDraft = {
+      base: SESSION.baseSourceSHA256,
+      data: Y.encodeStateAsUpdate(new Y.Doc()),
+      id: 'b:state',
+      key: 'u_1:file:f_1',
+      kind: 'state',
+      lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
+      savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
+      seq: 1,
+      session: 'b',
+    };
+    vi.mocked(readDrafts).mockResolvedValueOnce([row]);
+    vi.mocked(openRecoveryGroup).mockResolvedValueOnce({
+      base: new Uint8Array([1]),
+      doc: new Y.Doc(),
+    });
+    takeSourceOpen.mockResolvedValue({
+      base: new Promise(() => {}),
+      credentials: TOKEN,
+      session: SESSION,
+    });
+    render();
+    await vi.waitFor(() => expect(render().banner).toBe('expired'));
+    expect(render().status).toBe('recovery');
+    expect(dropExpiredGroup).toHaveBeenCalledWith([row], expect.any(Function));
+    expect(createSourceProvider).not.toHaveBeenCalled();
+  });
+});
+
 // Epo 2026-10-23: an Office join ends when its frame reports ready; one past
 // its 30 s errors, and gets its status back once the frame is ready with the
 // room synced (review r3 M1).
@@ -206,5 +283,97 @@ describe("an Office view whose frame is ready after its join's 30 s", () => {
     viewReady = true;
     render();
     expect(render().status).toBe('saved');
+  });
+});
+
+// Q319, Q326, Q327: on open an accepted session's rows apply here, a
+// never-accepted one's go through the draft send while the room joins
+// (view-only, saving); not settled 30 s on, the synced session takes them
+// itself, edits on, and every JOIN waits for the send until it settles.
+describe('an edit session opening with stored drafts', () => {
+  it('applies accepted rows, sends the others while joining, and past 30 s takes them with every JOIN waiting', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', { onLine: true });
+    const row = {
+      base: SESSION.baseSourceSHA256,
+      data: Y.encodeStateAsUpdate(new Y.Doc()),
+      key: 'u_1:file:f_1',
+      kind: 'update',
+      lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
+      savedAt: Date.now(),
+      seq: 1,
+    } as const;
+    const accepted: EditDraft = {
+      ...row,
+      accepted: true,
+      id: 'a:1',
+      session: 'a',
+    };
+    const pending: EditDraft = {
+      ...row,
+      grants: ['t'],
+      id: 'b:1',
+      session: 'b',
+    };
+    vi.mocked(readDrafts).mockResolvedValueOnce([accepted, pending]);
+    const { options } = await open();
+    expect(recordDrafts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ adopted: [accepted] })
+    );
+    expect(render().draftsSending).toBe(true);
+    options.onSynced?.({ state: true });
+    expect(render().status).toBe('saving');
+    expect(options.beforeJoin?.()).toBeUndefined();
+    vi.advanceTimersByTime(30_000);
+    expect(recorder.adopt).toHaveBeenCalledWith([pending]);
+    // The hold is no editing incident (Q360).
+    expect(recorder.disconnected).toHaveBeenLastCalledWith(true);
+    expect(render()).toMatchObject({ draftsSending: false, status: 'saving' });
+    // Its connect asks for a send at once (Q328, Q360).
+    expect(options.beforeJoin?.()).toBeInstanceOf(Promise);
+    expect(sending.nows).toBe(1);
+    // An offline blip meanwhile shows offline, then saving again once back.
+    const page = (type: string) =>
+      vi
+        .mocked(window.addEventListener)
+        .mock.calls.filter(([name]) => name === type)
+        .at(-1)?.[1] as () => void;
+    page('offline')();
+    expect(render().status).toBe('offline');
+    page('online')();
+    expect(render()).toMatchObject({ banner: null, status: 'saving' });
+    sending.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(options.beforeJoin?.()).toBeUndefined();
+  });
+
+  // Q360: settled before the 30 s with a group the room did not take, the
+  // session opens again, which shows the group copy-only.
+  it('opens again when its send settles with a group kept, the steps never applied', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', { onLine: true });
+    const pending: EditDraft = {
+      base: SESSION.baseSourceSHA256,
+      data: Y.encodeStateAsUpdate(new Y.Doc()),
+      grants: ['t'],
+      id: 'b:1',
+      key: 'u_1:file:f_1',
+      kind: 'update',
+      lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
+      savedAt: Date.now(),
+      seq: 1,
+      session: 'b',
+    };
+    vi.mocked(readDrafts).mockResolvedValueOnce([pending]);
+    recorder.adopt.mockClear();
+    takeSourceOpen.mockClear();
+    const { options } = await open();
+    options.onSynced?.({ state: true });
+    sending.kept = true;
+    sending.release();
+    await vi.advanceTimersByTimeAsync(0);
+    render();
+    await vi.waitFor(() => expect(takeSourceOpen).toHaveBeenCalledTimes(2));
+    expect(recorder.adopt).not.toHaveBeenCalled();
   });
 });

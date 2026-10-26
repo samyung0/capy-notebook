@@ -103,6 +103,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer a.releaseEventStream(userID)
+	extendDeadlines(w, eventStreamLifetime+time.Minute)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

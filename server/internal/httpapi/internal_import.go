@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,14 @@ type importCompleteReq struct {
 	JobID        string `json:"jobId"`
 	AttemptToken string `json:"attemptToken"`
 	ActualSize   int64  `json:"actualSize"`
+	// Set when the import worker shrank an image source to another format
+	// (Epo 2026-10-24): the stored name and type.
+	Name        string `json:"name"`
+	ContentType string `json:"contentType"`
+	// The pictures it removed from an Office file; absent when the attempt
+	// only completes an upload an earlier one stored (resumeComplete), which
+	// keeps that attempt's count (review S10).
+	RemovedPictures *int `json:"removedPictures"`
 }
 
 type importFailureReq struct {
@@ -171,6 +180,11 @@ func (a *api) internalAcquireSourceImport(w http.ResponseWriter, r *http.Request
 	if !a.sourceImportActorAvailable(w, r, job) {
 		return
 	}
+	limits, err := a.s.PayerPlanLimits(r.Context(), job.StorageOwnerID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 
 	acquired := map[string]any{
 		"status":            "acquired",
@@ -180,6 +194,12 @@ func (a *api) internalAcquireSourceImport(w http.ResponseWriter, r *http.Request
 		"contentType":       job.ContentType,
 		"declaredSize":      job.DeclaredSize,
 		"maxBytes":          job.MaxBytes,
+		// What the import worker compresses and checks before storing
+		// (Epo 2026-10-24): an Office file's pictures against the payer's
+		// image cap, an image source's area.
+		"name":          job.Name,
+		"kind":          job.Kind,
+		"imageMaxBytes": limits.ImageBytes,
 	}
 	if info, err := a.blob.Head(r.Context(), job.FinalPath); err == nil &&
 		info.Size == job.DeclaredSize {
@@ -299,7 +319,7 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 	}
 	var req importCompleteReq
 	if err := decode(r, &req); err != nil || req.JobID == "" ||
-		req.AttemptToken == "" || req.ActualSize < 0 {
+		req.AttemptToken == "" || req.ActualSize < 0 || (req.RemovedPictures != nil && *req.RemovedPictures < 0) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid completion"})
 		return
 	}
@@ -322,8 +342,14 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 	}
 	// The provider's declared size was only a reservation estimate. Settle the
 	// reservation on the bytes that actually landed before finalizing.
+	if req.Name != "" && !importRenameAllowed(job, req.Name, req.ContentType) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid completion"})
+		return
+	}
 	job, err = a.s.PrepareSourceImportUpload(
-		r.Context(), req.JobID, req.AttemptToken, req.ActualSize,
+		r.Context(), req.JobID, req.AttemptToken, store.ImportLanded{
+			Size: req.ActualSize, Name: req.Name, ContentType: req.ContentType, RemovedPictures: req.RemovedPictures,
+		},
 	)
 	if errors.Is(err, store.ErrImportTooLarge) {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"code": "file_too_large"})
@@ -486,4 +512,16 @@ func (a *api) internalFailSourceImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// importRenameAllowed admits the one rename an import completion may carry:
+// an image source the worker shrank to JPEG or PNG keeps its name's stem and
+// takes that format's extension and type (Epo 2026-10-24).
+func importRenameAllowed(job store.SourceImportJob, name, contentType string) bool {
+	if job.Kind != string(store.FileImage) {
+		return false
+	}
+	stem := strings.TrimSuffix(job.Name, filepath.Ext(job.Name))
+	return (name == stem+".jpg" && contentType == "image/jpeg") ||
+		(name == stem+".png" && contentType == "image/png")
 }

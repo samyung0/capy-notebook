@@ -1118,6 +1118,7 @@ export const UndoEditOperationResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -1151,23 +1152,24 @@ export const UpdateMaterialCommentParams = zod.object({
   "id": zod.string()
 })
 
+export const updateMaterialCommentBodyTextMax = 3000;
 
 
 
 export const UpdateMaterialCommentBody = zod.object({
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
+  "text": zod.string().min(1).max(updateMaterialCommentBodyTextMax)
 })
 
 export const UpdateMaterialCommentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
-  "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
+  "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
@@ -1249,6 +1251,7 @@ export const ListMessagesResponseItem = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -1275,6 +1278,7 @@ export const ListMessagesResponseItem = zod.object({
   "n": zod.int().optional(),
   "pageEnd": zod.int().optional(),
   "pageStart": zod.int().optional(),
+  "published": zod.string().optional(),
   "regions": zod.array(zod.object({
   "bbox": zod.array(zod.number()).nullable(),
   "end_ms": zod.int().optional(),
@@ -1283,7 +1287,9 @@ export const ListMessagesResponseItem = zod.object({
   "speaker": zod.int().optional(),
   "start_ms": zod.int().optional()
 })).nullish(),
-  "snippet": zod.string()
+  "siteName": zod.string().optional(),
+  "snippet": zod.string(),
+  "url": zod.string().optional()
 })).nullish(),
   "content": zod.string(),
   "conversationId": zod.string(),
@@ -1328,23 +1334,24 @@ export const CreateMaterialCommentParams = zod.object({
   "id": zod.string()
 })
 
+export const createMaterialCommentBodyTextMax = 3000;
 
 
 
 export const CreateMaterialCommentBody = zod.object({
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
+  "text": zod.string().min(1).max(createMaterialCommentBodyTextMax)
 })
 
 export const CreateMaterialCommentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
-  "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
+  "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
@@ -1366,7 +1373,7 @@ export const ReportEditIncidentBody = zod.object({
   "fileId": zod.string().min(1).max(reportEditIncidentBodyFileIdMax).regex(reportEditIncidentBodyFileIdRegExp).describe('The note (material) or source file'),
   "fileKind": zod.enum(['material', 'source_file']),
   "kind": zod.enum(['other_epoch_draft', 'draft_unrestorable', 'draft_storage_failed', 'unconfirmed_edit', 'offline_episode', 'discard_unsaved']),
-  "reason": zod.enum(['reopen', 'epoch_changed', 'paused', 'base_missing', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found']).optional(),
+  "reason": zod.enum(['reopen', 'held', 'epoch_changed', 'paused', 'base_missing', 'expired', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found']).optional(),
   "sizeBytes": zod.int().min(reportEditIncidentBodySizeBytesMin).max(reportEditIncidentBodySizeBytesMax).optional()
 })
 
@@ -1374,34 +1381,38 @@ export const ReportEditIncidentResponse = zod.void()
 
 
 /**
- * @summary List the images and audio the caller pays for in materials it can no longer open
+ * @summary List the images and audio the caller pays for, each marked when its note can no longer be opened
  */
-export const listLostEditorAssetsQueryLimitDefault = 40;
-export const listLostEditorAssetsQueryLimitMax = 100;
+export const listEditorAssetsQueryLimitDefault = 40;
+export const listEditorAssetsQueryLimitMax = 100;
 
 
 
-export const ListLostEditorAssetsQueryParams = zod.object({
-  "limit": zod.int().min(1).max(listLostEditorAssetsQueryLimitMax).default(listLostEditorAssetsQueryLimitDefault),
+export const ListEditorAssetsQueryParams = zod.object({
+  "access": zod.enum(['open', 'lost']).optional().describe('Only media in notes the caller can open, or only those it cannot'),
+  "limit": zod.int().min(1).max(listEditorAssetsQueryLimitMax).default(listEditorAssetsQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListLostEditorAssetsResponse = zod.object({
+export const ListEditorAssetsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "assetId": zod.string(),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "lostAccess": zod.boolean(),
+  "materialId": zod.string().optional(),
   "materialTitle": zod.string(),
   "name": zod.string(),
   "purpose": zod.enum(['image', 'audio']),
-  "sizeBytes": zod.int()
+  "sizeBytes": zod.int(),
+  "workspaceName": zod.string()
 })),
   "nextCursor": zod.string().optional()
 })
 
 
 /**
- * @summary Delete an image or audio clip the caller pays for in another account's material
+ * @summary Delete an image or audio clip the caller pays for in a note it can no longer open
  */
 export const DeleteEditorAssetParams = zod.object({
   "assetId": zod.string()
@@ -1507,7 +1518,13 @@ export const UpdateEventResponse = zod.object({
 /**
  * @summary Public flashcards
  */
-export const ExploreFlashcardSetsResponseItem = zod.object({
+export const ExploreFlashcardSetsQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ExploreFlashcardSetsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "author": zod.string(),
   "canClone": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -1566,101 +1583,59 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
-  "revision": zod.int(),
-  "sharePath": zod.string().optional(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
-export const ExploreFlashcardSetsResponse = zod.array(ExploreFlashcardSetsResponseItem)
-
-
-/**
- * @summary Public quizzes
- */
-export const ExploreQuizzesResponseItem = zod.object({
-  "author": zod.string(),
-  "canClone": zod.boolean(),
-  "canEdit": zod.boolean(),
-  "canEditContent": zod.boolean(),
-  "chapters": zod.array(zod.string()),
-  "clones": zod.int(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "name": zod.string(),
-  "parentMaterialId": zod.string().optional(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "provenance": zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional(),
-  "questions": zod.record(zod.string(), zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-})).optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-}).optional(),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
+})),
+  "nextCursor": zod.string().optional()
 })
-export const ExploreQuizzesResponse = zod.array(ExploreQuizzesResponseItem)
+
+
+/**
+ * @summary Public quizzes
+ */
+export const ExploreQuizzesQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ExploreQuizzesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "author": zod.string(),
+  "canClone": zod.boolean(),
+  "clones": zod.int(),
+  "id": zod.string(),
+  "name": zod.string(),
+  "questionCount": zod.int().optional(),
+  "workspaceId": zod.string()
+})),
+  "nextCursor": zod.string().optional()
+})
 
 
 /**
  * @summary Public workspaces
  */
-export const exploreWorkspacesResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
-export const exploreWorkspacesResponseCoverLineMax = 40;
+export const ExploreWorkspacesQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
 
-export const exploreWorkspacesResponseCoverSeedMax = 16;
+export const exploreWorkspacesResponseItemsItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const exploreWorkspacesResponseItemsItemCoverLineMax = 40;
+
+export const exploreWorkspacesResponseItemsItemCoverSeedMax = 16;
 
 
-export const exploreWorkspacesResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
-export const exploreWorkspacesResponseTagsItemValueMax = 35;
+export const exploreWorkspacesResponseItemsItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
+export const exploreWorkspacesResponseItemsItemTagsItemValueMax = 35;
 
 
 
-export const ExploreWorkspacesResponseItem = zod.object({
+export const ExploreWorkspacesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "author": zod.string(),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -1673,11 +1648,11 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "chapterCount": zod.int(),
   "clones": zod.int(),
   "cover": zod.object({
-  "color": zod.string().regex(exploreWorkspacesResponseCoverColorRegExp),
+  "color": zod.string().regex(exploreWorkspacesResponseItemsItemCoverColorRegExp),
   "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
-  "line": zod.string().max(exploreWorkspacesResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "line": zod.string().max(exploreWorkspacesResponseItemsItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
   "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
-  "seed": zod.string().max(exploreWorkspacesResponseCoverSeedMax).regex(exploreWorkspacesResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "seed": zod.string().max(exploreWorkspacesResponseItemsItemCoverSeedMax).regex(exploreWorkspacesResponseItemsItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
   "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
 }).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -1695,10 +1670,11 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "shareRole": zod.enum(['editor', 'viewer']),
   "tags": zod.array(zod.object({
   "id": zod.string(),
-  "value": zod.string().min(1).max(exploreWorkspacesResponseTagsItemValueMax)
+  "value": zod.string().min(1).max(exploreWorkspacesResponseItemsItemTagsItemValueMax)
 }))
+})),
+  "nextCursor": zod.string().optional()
 })
-export const ExploreWorkspacesResponse = zod.array(ExploreWorkspacesResponseItem)
 
 
 /**
@@ -2278,6 +2254,14 @@ export const CreateSourceCollaborationTokenParams = zod.object({
   "id": zod.string()
 })
 
+export const createSourceCollaborationTokenBodyPreviousTokenMax = 8192;
+
+
+
+export const CreateSourceCollaborationTokenBody = zod.object({
+  "previousToken": zod.string().max(createSourceCollaborationTokenBodyPreviousTokenMax).optional()
+})
+
 export const CreateSourceCollaborationTokenResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
@@ -2472,6 +2456,7 @@ export const CreateFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2547,6 +2532,7 @@ export const GetFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2651,6 +2637,7 @@ export const UpdateFlashcardSetResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -2730,6 +2717,7 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
   "url": zod.string()
 })).nullish()
 }).optional(),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
@@ -3477,9 +3465,14 @@ export const CreateMaterialCollaborationTokenParams = zod.object({
   "id": zod.string()
 })
 
+export const createMaterialCollaborationTokenBodyPreviousTokenMax = 8192;
+
+
+
 export const CreateMaterialCollaborationTokenBody = zod.object({
   "access": zod.enum(['read']).optional(),
-  "document": zod.enum(['content', 'keys']).optional()
+  "document": zod.enum(['content', 'keys']).optional(),
+  "previousToken": zod.string().max(createMaterialCollaborationTokenBodyPreviousTokenMax).optional()
 })
 
 export const CreateMaterialCollaborationTokenResponse = zod.object({
@@ -3512,12 +3505,12 @@ export const ListMaterialDiscussionsResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
-  "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
+  "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })),
@@ -3545,6 +3538,9 @@ export const createMaterialDiscussionBodyAnchorQuoteMax = 1000;
 export const createMaterialDiscussionBodyAnchorStartMax = 4096;
 
 
+export const createMaterialDiscussionBodyBlockIdMax = 128;
+
+export const createMaterialDiscussionBodyTextMax = 3000;
 
 
 
@@ -3553,8 +3549,8 @@ export const CreateMaterialDiscussionBody = zod.object({
   "anchorQuote": zod.string().max(createMaterialDiscussionBodyAnchorQuoteMax).optional(),
   "anchorStart": zod.string().max(createMaterialDiscussionBodyAnchorStartMax).optional(),
   "anchorVersion": zod.int().min(1),
-  "blockId": zod.string().optional(),
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
+  "blockId": zod.string().min(1).max(createMaterialDiscussionBodyBlockIdMax).optional(),
+  "text": zod.string().min(1).max(createMaterialDiscussionBodyTextMax)
 })
 
 export const CreateMaterialDiscussionResponse = zod.object({
@@ -3570,12 +3566,12 @@ export const CreateMaterialDiscussionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
-  "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
+  "text": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })),
@@ -3992,7 +3988,7 @@ export const GetMeResponse = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
 }),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -4082,7 +4078,7 @@ export const UpdateMeResponse = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
 }),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -4227,7 +4223,7 @@ export const SetStudyPreferencesBody = zod.object({
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
   "visualAids": zod.enum(['fewer', 'more']).optional(),
-  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose', 'story']).optional()
 })
 
 export const SetStudyPreferencesResponse = zod.void()
@@ -4599,11 +4595,14 @@ export const GradeAnonymousNoteQuizParams = zod.object({
 
 export const gradeAnonymousNoteQuizBodyLocalIdMax = 64;
 
+export const gradeAnonymousNoteQuizBodyTurnstileTokenMax = 2048;
+
 
 
 export const GradeAnonymousNoteQuizBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
-  "localId": zod.string().max(gradeAnonymousNoteQuizBodyLocalIdMax).optional()
+  "localId": zod.string().max(gradeAnonymousNoteQuizBodyLocalIdMax).optional(),
+  "turnstileToken": zod.string().max(gradeAnonymousNoteQuizBodyTurnstileTokenMax).optional()
 })
 
 export const GradeAnonymousNoteQuizResponse = zod.object({
@@ -4706,11 +4705,14 @@ export const GradeAnonymousQuizParams = zod.object({
 
 export const gradeAnonymousQuizBodyLocalIdMax = 64;
 
+export const gradeAnonymousQuizBodyTurnstileTokenMax = 2048;
+
 
 
 export const GradeAnonymousQuizBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
-  "localId": zod.string().max(gradeAnonymousQuizBodyLocalIdMax).optional()
+  "localId": zod.string().max(gradeAnonymousQuizBodyLocalIdMax).optional(),
+  "turnstileToken": zod.string().max(gradeAnonymousQuizBodyTurnstileTokenMax).optional()
 })
 
 export const GradeAnonymousQuizResponse = zod.object({
@@ -5490,6 +5492,7 @@ export const ResumeReviewSessionResponse = zod.object({
   "question": zod.record(zod.string(), zod.unknown()).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "total": zod.int()
 })
 
@@ -5576,7 +5579,7 @@ export const SearchResponseItem = zod.object({
   "href": zod.string(),
   "iconId": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['workspace', 'file', 'event', 'flashcards', 'thinking']),
+  "kind": zod.enum(['workspace', 'file', 'event', 'flashcards']),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A flashcard set\'s list-card preview, or {text} for a text file; see openwiki/thumbnails.md'),
   "subtitle": zod.string().optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail'),
@@ -5605,6 +5608,26 @@ export const RedeemShareLinkResponse = zod.object({
 
 
 /**
+ * @summary Grade a signed-in check of a quiz embedded in a shared note
+ */
+export const CheckSharedNoteQuizParams = zod.object({
+  "token": zod.string(),
+  "quizId": zod.string()
+})
+
+export const CheckSharedNoteQuizBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id')
+})
+
+export const CheckSharedNoteQuizResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "correct": zod.number(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "total": zod.number()
+})
+
+
+/**
  * @summary Get source upload policy
  */
 export const GetSourceUploadPolicyQueryParams = zod.object({
@@ -5618,6 +5641,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "audioMaxDurationSeconds": zod.int(),
   "audioSecondCreditMicros": zod.int(),
   "digitalParsePageCreditMicros": zod.int(),
+  "imageMaxBytes": zod.int().describe('The caller\'s plan image cap, which each picture inside an Office upload must fit'),
   "kinds": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -5742,80 +5766,6 @@ export const UpdateTaskResponse = zod.object({
 
 
 /**
- * @summary List thinking canvases
- */
-export const ListCanvasesResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string(),
-  "name": zod.string(),
-  "scene": zod.unknown().optional(),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-export const ListCanvasesResponse = zod.array(ListCanvasesResponseItem)
-
-
-/**
- * @summary Create a canvas
- */
-export const createCanvasBodyNameMax = 120;
-
-
-
-export const CreateCanvasBody = zod.object({
-  "name": zod.string().max(createCanvasBodyNameMax).optional()
-})
-
-export const CreateCanvasResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string(),
-  "name": zod.string(),
-  "scene": zod.unknown().optional(),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-
-
-/**
- * @summary Get a canvas
- */
-export const GetCanvasParams = zod.object({
-  "id": zod.string()
-})
-
-export const GetCanvasResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string(),
-  "name": zod.string(),
-  "scene": zod.unknown().optional(),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-
-
-/**
- * @summary Save a canvas
- */
-export const SaveCanvasParams = zod.object({
-  "id": zod.string()
-})
-
-export const saveCanvasBodyNameMax = 120;
-
-
-
-export const SaveCanvasBody = zod.object({
-  "name": zod.string().min(1).max(saveCanvasBodyNameMax).optional(),
-  "scene": zod.unknown().optional()
-})
-
-export const SaveCanvasResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "id": zod.string(),
-  "name": zod.string(),
-  "scene": zod.unknown().optional(),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-
-
-/**
  * @summary List trashed files and materials the caller pays for, or a workspace's it owns
  */
 export const listTrashQueryLimitDefault = 50;
@@ -5893,6 +5843,7 @@ export const PurgeTrashedResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -5950,6 +5901,7 @@ export const RestoreTrashedResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -7199,6 +7151,7 @@ export const GetWorkspaceReviewResponse = zod.object({
   "question": zod.record(zod.string(), zod.unknown()).optional()
 })),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('Omitted for a review started from the workspace list'),
+  "removedAssetIds": zod.array(zod.string()).nullish(),
   "total": zod.int()
 })
 
@@ -7362,6 +7315,7 @@ export const GetSourceImportResponse = zod.object({
   "fileId": zod.string().optional(),
   "jobId": zod.string(),
   "name": zod.string(),
+  "removedPictures": zod.int(),
   "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled'])
 })
 
@@ -7848,6 +7802,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()

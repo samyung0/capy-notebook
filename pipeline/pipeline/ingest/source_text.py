@@ -757,7 +757,8 @@ async def _finish_task(
         # nothing is charged.
         seconds, credit_micros = math.ceil(duration), 0
     # After a crash between this settlement and the job's end, the next claim
-    # settles the same receipt again, which applies once.
+    # settles the same receipt again, which applies once. The settlement frees
+    # the task's lease (Q298).
     await accounting.settle_units(
         call_id=call_id,
         kind=accounting.KIND_AUDIO,
@@ -768,7 +769,6 @@ async def _finish_task(
         unit="seconds",
         credit_micros=credit_micros,
     )
-    await accounting.release_lease(call_id)
     if not sentences:
         # Ready and unindexed, with its own reason: not a failure.
         raise InputLimitError("no_speech", "no speech was found in the recording")

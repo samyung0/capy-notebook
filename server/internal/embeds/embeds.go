@@ -13,6 +13,7 @@ package embeds
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
@@ -255,10 +256,22 @@ func figure(typ, list string) Element {
 // opaque are the bulk keys an item document never stores on its nodes.
 var opaque = []string{"questions", "cards", "code"}
 
+// textMarks are the text marks Plate draws as a style. The editor writes them
+// on text only, so no element carries one.
+var textMarks = []string{"color", "backgroundColor", "fontSize", "fontFamily"}
+
 // Elements lists every element type in a stored document or a room. Plate's
 // transient ones (a media placeholder while it uploads, the mention and slash
 // inputs while typing) are documents' nodes too, so they are listed.
 func Elements() []Element {
+	elements := elementTypes()
+	for i := range elements {
+		elements[i].Forbidden = append(slices.Clone(elements[i].Forbidden), textMarks...)
+	}
+	return elements
+}
+
+func elementTypes() []Element {
 	// An item's own elements: a note gives their text at its reference.
 	quiz := plain("quiz", IndexText)
 	quiz.Required = []string{"id"}
@@ -394,10 +407,12 @@ func Embeds() []Embed {
 		},
 		{
 			Kind: "mermaid", Class: ClassLiveSource, Element: "mermaid",
-			Fence: Fence{Lang: "mermaid", Body: "text"}, Chat: "Mermaid",
+			// No chat block: the agent makes no Mermaid (Epo 2026-10-25).
+			Fence:     Fence{Lang: "mermaid", Body: "text"},
 			Materials: []string{Mindmap, Diagram},
-			Surfaces:  []string{SurfaceChat, SurfaceNote, SurfaceMaterial, SurfaceShare, SurfaceExport},
-			Edit:      Edit{User: []string{SurfaceNote, SurfaceMaterial}, Agent: writeNote},
+			Surfaces:  []string{SurfaceNote, SurfaceMaterial, SurfaceShare, SurfaceExport},
+			// The agent only rewrites a block a learner added.
+			Edit: Edit{User: []string{SurfaceNote, SurfaceMaterial}, Agent: []string{"edit_document"}},
 		},
 		{
 			Kind: "quiz", Class: ClassItem, Element: "material_ref",

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -53,6 +54,11 @@ var (
 	// Mermaid, chart, graph) stores: what MediaFrame's resize handles write, a
 	// whole percentage from 20 to 100. Mirrors MEDIA_WIDTH in the Node validator.
 	mediaWidth = regexp.MustCompile(`^(?:[2-9][0-9]|100)%$`)
+	// columnWidth is a column's width as the editor writes it: the layout
+	// presets, or Plate's column normalizer writing a float ("49.9995%"). A
+	// plain decimal percentage above 0 and at most 100, as JavaScript writes a
+	// number. Mirrors COLUMN_WIDTH in the browser's document check.
+	columnWidth = regexp.MustCompile(`^(?:100|[1-9][0-9]?(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])%$`)
 )
 
 // Envelope is the generic versioned JSON value persisted in materials.content.
@@ -630,6 +636,11 @@ func validateNode(node map[string]any, depth int, live bool) error {
 		if _, hasChildren := node["children"]; hasChildren {
 			return errors.New("text leaf cannot contain children")
 		}
+		for _, key := range styleMarks {
+			if err := validateStyleValue(node, key); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	typ, ok := node["type"].(string)
@@ -652,10 +663,20 @@ func validateNode(node map[string]any, depth int, live bool) error {
 	if !hasTextDescendant(node) {
 		return errors.New("element must contain a text descendant")
 	}
-	// Any block's indent (lists, indented paragraphs) stops at the
-	// catalog's ListIndentMax (Epo 2026-10-18).
-	if indent, ok := number(node["indent"]); ok && indent > embeds.ListIndentMax {
-		return fmt.Errorf("indent is over %d levels", embeds.ListIndentMax)
+	// Any block's indent (lists, indented paragraphs) is a number that stops
+	// at the catalog's ListIndentMax (Epo 2026-10-18); Plate draws it as a
+	// class and a margin.
+	if raw := node["indent"]; raw != nil {
+		indent, ok := number(raw)
+		if !ok {
+			return errors.New("indent must be a number")
+		}
+		if indent > embeds.ListIndentMax {
+			return fmt.Errorf("indent is over %d levels", embeds.ListIndentMax)
+		}
+	}
+	if err := validateStyleValue(node, "listStyleType"); err != nil {
+		return err
 	}
 	element, known := elements[typ]
 	if !known {
@@ -766,6 +787,10 @@ func validateElement(node map[string]any, typ string, depth int, children []any,
 		return validateMediaWidth(node)
 	case "audio":
 		return validateMedia(node, typ)
+	case "column":
+		return validateColumnWidth(node)
+	case "table":
+		return validateTableSizes(node)
 	case RefType:
 		return validateMaterialRef(node)
 	}
@@ -848,6 +873,65 @@ func validateMediaWidth(node map[string]any) error {
 		return nil
 	}
 	return errors.New("width must be a whole percentage from 20 to 100")
+}
+
+func validateColumnWidth(node map[string]any) error {
+	raw, ok := node["width"]
+	if !ok {
+		return nil
+	}
+	if width, ok := raw.(string); ok && columnWidth.MatchString(width) {
+		return nil
+	}
+	return errors.New("column width must be a percentage above 0 and at most 100")
+}
+
+// validateTableSizes: a table's column sizes and left margin are what Plate's
+// table resizing writes, px as finite numbers of 0 or more; a column size may
+// be empty (null). Mirrors isTableSize in the browser's document check.
+func validateTableSizes(node map[string]any) error {
+	if raw, ok := node["colSizes"]; ok {
+		sizes, ok := raw.([]any)
+		if !ok {
+			return errors.New("table colSizes must be a list of sizes")
+		}
+		for _, size := range sizes {
+			if size != nil && !tableSize(size) {
+				return errors.New("table colSizes must be a list of sizes")
+			}
+		}
+	}
+	if raw, ok := node["marginLeft"]; ok && !tableSize(raw) {
+		return errors.New("table marginLeft must be a size")
+	}
+	return nil
+}
+
+func tableSize(value any) bool {
+	size, ok := number(value)
+	return ok && !math.IsInf(size, 0) && !math.IsNaN(size) && size >= 0
+}
+
+// styleMarks are the text marks Plate draws straight into a style.
+var styleMarks = []string{"color", "backgroundColor", "fontSize", "fontFamily"}
+
+// validateStyleValue: a text mark's or a list's style value is a string with
+// no ";" and no control character (Epo Q380), as it goes into a style as
+// written; any other value a browser writes stays accepted. Mirrors
+// isStyleValue in the browser's document check.
+func validateStyleValue(node map[string]any, key string) error {
+	raw := node[key]
+	if raw == nil {
+		return nil
+	}
+	if value, ok := raw.(string); ok && !strings.ContainsFunc(value, styleBreak) {
+		return nil
+	}
+	return fmt.Errorf("%s may hold no semicolon or control character", key)
+}
+
+func styleBreak(r rune) bool {
+	return r == ';' || r < 0x20 || r == 0x7f
 }
 
 func validateQuiz(node map[string]any) error {
