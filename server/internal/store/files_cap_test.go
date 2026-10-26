@@ -145,7 +145,7 @@ func TestWorkspacePayloadReportsFileLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.GetWorkspace(ctx, owner, ws.ID, false)
+	got, err := s.GetWorkspace(ctx, owner, ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

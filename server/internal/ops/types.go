@@ -436,10 +436,11 @@ type StorageBalance struct {
 }
 
 type UserWorkspace struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	FileCount      int64     `json:"fileCount"`
-	LastActivityAt time.Time `json:"lastActivityAt"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	FileCount int64  `json:"fileCount"`
+	// LastActivityAt is anyone's newest open; nil when nobody opened it.
+	LastActivityAt *time.Time `json:"lastActivityAt"`
 }
 
 type ToolCallDetail struct {

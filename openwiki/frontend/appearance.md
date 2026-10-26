@@ -13,6 +13,10 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   Search and Notifications under the app name. Its foot is your profile row,
   which opens the profile menu upwards: Settings, Billing & usage, Theme and
   Log out (`ProfileMenu trigger="row"`).
+- After onboarding, the browser that ran it shows a "Get started n/3" row
+  with a progress ring above Settings, which opens its list in a popover
+  (`GettingStartedRow`; behaviour in
+  `openwiki/authorization-permissions-lifecycles.md`).
 - The 640–1023px rail uses the same rows. The phone nav drawer's foot is a
   link to Settings → Account (avatar and name) with a danger-light Log out
   button on its right (`ProfileRow`), no menu. Phones keep the avatar menu in
@@ -81,7 +85,7 @@ strength, frosted }`:
 
 - **Pattern:** None, Arc, Mesh or Glow, all pure CSS gradients.
 - **Colours:** one of eight presets (Dawn, Dusk, Sea, Meadow, Rose, Sunset,
-  Wheat, Mist) or `custom`. Dawn is the pale one (lavender, pink, peach). Custom uses `dots`: 1–3 points on a field where x is hue
+  Wheat, Mist) or `custom`. Dawn is the pale one (lavender, pink, peach); Mist is the neutral one (slate greys). Custom uses `dots`: 1–3 points on a field where x is hue
   and y is saturation. Each preset keeps its own three colours, and also
   carries the dots and Strength that come closest to them on the field
   (fitted in Lab). Choosing a preset moves the dots and the Strength slider
@@ -92,7 +96,7 @@ strength, frosted }`:
 - **Frosted:** which panels frost over the frame, any of Left, Centre and
   Right (a toggle row under Strength). Left is the default; an empty list
   frosts none. A frame stored before the field existed takes the default.
-- **Default:** a device with no stored frame draws Arc in Dawn with the left
+- **Default:** a device with no stored frame draws Arc in Mist with the left
   panel frosted. A frame the user stored or synced, None included, wins.
   The pre-paint scripts only copy a stored frame; `ThemeProvider` applies
   the frame in a layout effect, so a brand new device still shows it with
@@ -133,6 +137,12 @@ How it is drawn:
   tiles and the flashcard study card. Cards (workspace
   cards, notices) keep their own fills. Menus and dialogs portal out of the
   panel and stay opaque.
+- Floating toolbars (`BlockToolbar`: the text, column, table, media and link
+  toolbars, and the study block's) portal out of the panel too, so the
+  stylesheet's `[data-frosted]` cannot reach them: `Panel` and `PagePanel`
+  pass their state down in `FrostedSurface` (`src/theme/theme.ts`), dialogs
+  reset it, and a toolbar inside a frosted panel marks itself `data-frost`
+  and turns frosted glass like the chat dock's field (`tailwind.css`).
 - Anything that paints its own fill across a panel hides the frost, so it
   drops it there: the workspace viewer's wrapper fills only in fullscreen,
   the note toolbar and source editor go transparent, a CSV's sticky header
@@ -140,9 +150,13 @@ How it is drawn:
 - Office views: `set-appearance` carries `frosted` (Office protocol 13) when
   the centre frosts over a shown frame and no show is presenting. The
   runtime then marks its `<html>` `data-frosted` and `office-runtime.css`
-  clears its desk, toolbar and the PPTX stage, so the frost shows around
-  pages and slides; pages, cells and slides keep their paper. A PDF view
-  stays opaque.
+  clears the desk and toolbar row: DOCX's `--doc-bg` and `--doc-toolbar-bg`
+  (also on the editor's `.oox-root`, which declares them again, and on its
+  toolbar wrapper, which fills with `--doc-surface`), and PPTX's `--pptx-bg`,
+  `--pptx-strip-bg` and `--pptx-surface` in view and edit (desk, toolbar row,
+  slide strip, notes box). The frost shows around pages and slides; pages,
+  cells, slides, menus and the DOCX editor's popups and dialogs keep their
+  fills. A PDF view stays opaque.
 - The chat dock below lg floats over the centre panel, outside its card: it
   marks itself `data-frost` when the centre frosts, and its open field is
   frosted glass (`motion-chat-dock`: translucent fill, 16px backdrop blur).

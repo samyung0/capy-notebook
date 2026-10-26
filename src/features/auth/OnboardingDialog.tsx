@@ -14,6 +14,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { useUser } from '@/features/auth/clerkHooks';
+import { startGettingStarted } from '@/features/guide/gettingStarted';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -76,10 +77,13 @@ export function OnboardingDialog() {
     !user.unsafeMetadata.onboardedAt;
   if (!open) return null;
 
-  const markOnboarded = () =>
-    user.updateMetadata({
+  // The Get started list lives only in the browser that onboarded.
+  const markOnboarded = () => {
+    startGettingStarted(me.id);
+    return user.updateMetadata({
       unsafeMetadata: { onboardedAt: new Date().toISOString() },
     });
+  };
 
   const skip = async () => {
     setDismissed(true);

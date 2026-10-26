@@ -54,8 +54,9 @@ export default function TextView({
       </Suspense>
     );
   }
+  // Laid out as SourceTextEditor's textarea, so switching modes moves nothing.
   return (
-    <article className="mx-auto max-w-175 whitespace-pre-wrap p-6 text-[0.95rem] text-fg leading-relaxed">
+    <article className="whitespace-pre-wrap p-4 font-mono text-fg text-sm leading-relaxed">
       {text}
     </article>
   );

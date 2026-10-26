@@ -140,13 +140,13 @@ export function CardDialog({
           </span>
         </span>
       }
-      width={920}
+      width={1000}
     >
       {/* Note-embedded sets pass no title: their name is never shown. */}
       {setTitle && (
         <p className="t-meta mb-3 text-fg-muted sm:-mt-3">{setTitle}</p>
       )}
-      <div className="grid gap-7 md:grid-cols-2">
+      <div className="grid gap-7 md:grid-cols-2 md:gap-x-14">
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5" htmlFor="card-front">
             <InputTitle
@@ -246,7 +246,7 @@ export function CardDialog({
             />
           </label>
         </div>
-        <div className="hidden md:block">
+        <div className="self-center">
           <CardPreview card={card} />
         </div>
       </div>

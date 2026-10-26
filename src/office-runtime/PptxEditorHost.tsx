@@ -333,6 +333,8 @@ export function PptxEditorHost({
         showProposals={false}
         showZoomControl={!narrow}
         singleRowToolbar
+        // Below desktop the slide strip goes under the slide, as in view.
+        stripBelow={narrow}
       />
     </div>
   );

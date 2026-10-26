@@ -102,7 +102,6 @@ vi.mock('@/api/hooks', () => ({
   useRateReviewItem: () => ({ mutateAsync: vi.fn() }),
   useResetWorkspaceStudy: () => ({ mutate: vi.fn() }),
   useSetStudyItem: () => ({ mutate: vi.fn() }),
-  useSetWorkspaceStudyEnabled: () => ({ mutate: vi.fn() }),
   useUpdateStudyPlan: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
   useWorkspace: () => ({ data: undefined }),
   useWorkspaceAttempts: () => ({
@@ -266,11 +265,12 @@ it('shows the picked plan: its steps as the list and its own review', () => {
   expect(html).toContain(m.plan_rename());
 });
 
-it('keeps only the settings rows while study progress is hidden', () => {
+it('points to settings and keeps the settings rows while study progress is hidden', () => {
   study.enabled = false;
   try {
     const html = render();
-    expect(html).toContain(m.study_hide_progress());
+    expect(html).toContain(m.study_hidden_here());
+    expect(html).toContain(m.study_reset_title());
     for (const gone of [m.study_start_workspace_review(), 'Cells.pdf'])
       expect(html).not.toContain(gone);
   } finally {

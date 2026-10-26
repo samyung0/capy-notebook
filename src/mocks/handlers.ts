@@ -1214,8 +1214,15 @@ export const handlers = [
         ? HttpResponse.json(shared)
         : new HttpResponse(null, { status: 404 });
     }
-    ws.lastAccessedAt = new Date().toISOString();
     return HttpResponse.json(ws);
+  }),
+  http.post('/api/workspaces/:id/visit', ({ params }) => {
+    db.visits.set(String(params.id), new Date().toISOString());
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.delete('/api/workspaces/:id/visit', ({ params }) => {
+    db.visits.delete(String(params.id));
+    return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/files/:id/process-changes', ({ params }) => {
     const id = String(params.id);
@@ -1353,7 +1360,6 @@ export const handlers = [
         `waves-${String(Math.floor(Math.random() * 11) + 1).padStart(2, '0')}`,
       id,
       isOwner: true,
-      lastAccessedAt: new Date().toISOString(),
       name: body.name ?? 'Untitled workspace',
       privacy: 'private',
       role: 'owner',
@@ -1692,7 +1698,6 @@ export const handlers = [
       iconId: body.iconId ?? source.iconId,
       id: newId,
       isOwner: true,
-      lastAccessedAt: new Date().toISOString(),
       name: body.name,
       privacy: 'private',
       sharePath: await sharePath(DEV_SHARE_LINK_SECRET, newId),
@@ -1900,13 +1905,11 @@ export const handlers = [
     const { asc, limit, list, offset, sort } = listParams(request.url);
     const kinds = list('kind');
     const wsIds = list('workspaceId');
-    const ids = list('ids');
     const rows = db.files
       .filter(
         (f) =>
           (!kinds.length || kinds.includes(f.kind)) &&
-          (!wsIds.length || wsIds.includes(f.workspaceId)) &&
-          (!ids.length || ids.includes(f.id))
+          (!wsIds.length || wsIds.includes(f.workspaceId))
       )
       .sort(
         sortBy(
@@ -1930,6 +1933,17 @@ export const handlers = [
       nextCursor:
         offset + limit < rows.length ? String(offset + limit) : undefined,
     });
+  }),
+  http.get('/api/recent', async ({ request }) =>
+    HttpResponse.json(db.listRecent(new URL(request.url)))
+  ),
+  http.post('/api/files/:id/open', ({ params }) => {
+    db.itemOpens.set(`file:${params.id}`, new Date().toISOString());
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post('/api/materials/:id/open', ({ params }) => {
+    db.itemOpens.set(`material:${params.id}`, new Date().toISOString());
+    return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/workspaces/:id/files', async ({ params }) =>
     HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id))
@@ -2078,12 +2092,10 @@ export const handlers = [
     const kinds = list('kind');
     const wsIds = list('workspaceId');
     const locations = list('location');
-    const ids = list('ids');
     const allowed = kinds.length ? kinds : ['note', 'quiz', 'flashcards'];
     const rows = db.materials
       .filter((mt) => {
         if (!allowed.includes(mt.kind)) return false;
-        if (ids.length && !ids.includes(mt.id)) return false;
         if (wsIds.length && !wsIds.includes(mt.workspaceId)) return false;
         // Embedded items live only inside their note.
         if (mt.parentMaterialId) return false;

@@ -7,6 +7,7 @@ import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { FrostedSurface } from '@/theme/theme';
 import { Button } from './Button';
 import { Spinner } from './feedback';
 import { IconButton } from './IconButton';
@@ -140,7 +141,9 @@ function DialogContent({
               cardScrollContainerClassName
             )}
           >
-            <ActionSlotContext value={actionSlot}>{children}</ActionSlotContext>
+            <ActionSlotContext value={actionSlot}>
+              <FrostedSurface value={false}>{children}</FrostedSurface>
+            </ActionSlotContext>
             {showCloseButton && (
               <DialogPrimitive.Close asChild data-slot="dialog-close">
                 <IconButton

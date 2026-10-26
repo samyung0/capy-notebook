@@ -1,10 +1,6 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link, linkOptions } from '@tanstack/react-router';
-import {
-  recentFilesQuery,
-  recentMaterialsQuery,
-  useWorkspaces,
-} from '@/api/hooks';
+import { recentQuery, useWorkspaces } from '@/api/hooks';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import {
   ItemCard,
@@ -18,36 +14,31 @@ import {
   ThumbnailPanel,
 } from '@/components/app/ThumbnailPanel';
 import { SkeletonList } from '@/components/ui/feedback';
-import { materialDetails } from '@/features/materials/MaterialListCard';
+import {
+  materialDetails,
+  relativeTime,
+} from '@/features/materials/MaterialListCard';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
   toFileActionTarget,
   toMaterialActionTarget,
 } from '@/features/workspace/contentActionTarget';
-import { getLocale, m } from '@/i18n';
+import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import {
-  mergeRecentItems,
-  RECENT_ITEM_LIMIT,
+  fromRecent,
+  type OpenedRecentItem,
   type RecentItem,
 } from './recentItems';
 
-/** The row's one hint line: when it was last added or edited, with the time
- * in the list view. Materials carry `updatedAt`; file rows carry only
- * `addedAt`. */
-function recentHint(item: RecentItem, withTime = false): string {
-  const locale = getLocale() === 'zh' ? 'zh-CN' : 'en';
-  return new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'short',
-    ...(withTime && { hour: '2-digit', minute: '2-digit' }),
-  }).format(
-    new Date(item.kind === 'file' ? item.file.addedAt : item.material.updatedAt)
-  );
+/** The row's one hint line: when the caller last opened it (creating counts),
+ * the order the list follows. */
+export function recentHint(item: OpenedRecentItem): string {
+  return relativeTime(item.openedAt);
 }
 
 export function recentIcon(item: RecentItem) {
@@ -114,26 +105,18 @@ export function recentLink(item: RecentItem) {
   });
 }
 
-/** Newest files and materials across the caller's member workspaces plus
- * their standalone materials, merged once all three lists have loaded. */
+/** The caller's newest opened (or created) files and materials, in open
+ * order, once both lists have loaded: Recent Files and the quick open. The
+ * rows come from the cache first and refetch in the background. */
 export function useRecentItems() {
-  const meta = { errorBoundary: false as const };
   const {
-    data: files,
-    error: filesError,
-    fetchStatus: filesFetchStatus,
-    isError: filesFailed,
-    isLoading: filesLoading,
-    refetch: refetchFiles,
-  } = useInfiniteQuery({ ...recentFilesQuery(), meta });
-  const {
-    data: materials,
-    error: materialsError,
-    fetchStatus: materialsFetchStatus,
-    isError: materialsFailed,
-    isLoading: materialsLoading,
-    refetch: refetchMaterials,
-  } = useInfiniteQuery({ ...recentMaterialsQuery(), meta });
+    data: recent,
+    error: recentError,
+    fetchStatus: recentFetchStatus,
+    isError: recentFailed,
+    isLoading: recentLoading,
+    refetch: refetchRecent,
+  } = useQuery({ ...recentQuery(), meta: { errorBoundary: false } });
   const {
     data: workspaces,
     error: workspacesError,
@@ -143,22 +126,15 @@ export function useRecentItems() {
     refetch: refetchWorkspaces,
   } = useWorkspaces({ sort: 'accessed' }, { errorBoundary: false });
 
-  const items = mergeRecentItems(
-    files?.pages[0]?.items ?? [],
-    materials?.pages[0]?.items ?? [],
-    workspaces ?? [],
-    RECENT_ITEM_LIMIT
-  );
+  const items = fromRecent(recent?.items ?? [], workspaces ?? []);
   const paused =
-    waitsForConnection(filesFetchStatus, files) ||
-    waitsForConnection(materialsFetchStatus, materials) ||
+    waitsForConnection(recentFetchStatus, recent) ||
     waitsForConnection(workspacesFetchStatus, workspaces);
-  const isLoading = filesLoading || materialsLoading || workspacesLoading;
+  const isLoading = recentLoading || workspacesLoading;
   // A list without data would drop its rows silently; a failed refresh keeps
   // the cached list, so only a missing one counts.
   const failed = [
-    [files, filesFailed, refetchFiles, filesError],
-    [materials, materialsFailed, refetchMaterials, materialsError],
+    [recent, recentFailed, refetchRecent, recentError],
     [workspaces, workspacesFailed, refetchWorkspaces, workspacesError],
   ] as const;
   const missing = failed.filter(([data, isError]) => !data && isError);
@@ -272,7 +248,7 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
                         </>
                       )}
                       <span className="shrink-0 whitespace-nowrap text-fg-muted">
-                        {recentHint(item, true)}
+                        {recentHint(item)}
                       </span>
                     </span>
                   </span>

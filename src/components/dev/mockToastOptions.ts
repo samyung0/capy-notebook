@@ -92,6 +92,15 @@ export const mockToastOptions: {
   },
   {
     group: 'Success and notices',
+    label: 'Back online in a workspace',
+    toast: () => ({
+      description: m.connection_online_body(),
+      title: m.connection_online_title(),
+      variant: 'success',
+    }),
+  },
+  {
+    group: 'Success and notices',
     label: 'Print truncated',
     toast: () => ({ title: m.files_office_print_truncated({ count: '50' }) }),
   },

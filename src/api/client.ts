@@ -393,6 +393,8 @@ export const qk = {
   planStudy: (wsId: string, planId: string) =>
     ['workspace', wsId, 'study', 'plan', planId] as const,
   quiz: (id: string) => ['quiz', id] as const,
+  /** GET /recent: Recent Files and the quick open share it. */
+  recent: ['recent'] as const,
   reviewOverview: ['review', 'overview'] as const,
   reviewResult: (id: string) => ['review', 'result', id] as const,
   /** Everything under Learning's Review tab, past reviews included. */

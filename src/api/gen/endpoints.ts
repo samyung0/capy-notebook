@@ -105,6 +105,7 @@ import type {
   ListOwnedFilesParams,
   ListOwnedMaterialsParams,
   ListPastReviewsParams,
+  ListRecentParams,
   ListTagsParams,
   ListTrashParams,
   ListUsageEventsParams,
@@ -137,6 +138,7 @@ import type {
   Quiz,
   RateReviewItemReq,
   ReadSourceRefreshParams,
+  RecentOutputBody,
   RedeemShareLinkInputBody,
   ReorderChaptersReq,
   ReorderContentReq,
@@ -3665,6 +3667,56 @@ export const getFileLinks = async (id: string, options?: RequestInit): Promise<g
 
 
 
+export type openFileResponse204 = {
+  data: void
+  status: 204
+}
+
+export type openFileResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type openFileResponseSuccess = (openFileResponse204) & {
+  headers: Headers;
+};
+export type openFileResponseError = (openFileResponseDefault) & {
+  headers: Headers;
+};
+
+export type openFileResponse = (openFileResponseSuccess | openFileResponseError)
+
+export const getOpenFileUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/open`
+}
+
+/**
+ * @summary Note that the caller opened a file
+ */
+export const openFile = async (id: string, options?: RequestInit): Promise<openFileResponse> => {
+
+  const res = await fetch(getOpenFileUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: openFileResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as openFileResponse
+}
+
+
+
 export type cancelSourceChangesResponse204 = {
   data: void
   status: 204
@@ -5321,6 +5373,56 @@ const res = await fetch(getUpdateMaterialUrl(id),
 
   const data: updateMaterialResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateMaterialResponse
+}
+
+
+
+export type openMaterialResponse204 = {
+  data: void
+  status: 204
+}
+
+export type openMaterialResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type openMaterialResponseSuccess = (openMaterialResponse204) & {
+  headers: Headers;
+};
+export type openMaterialResponseError = (openMaterialResponseDefault) & {
+  headers: Headers;
+};
+
+export type openMaterialResponse = (openMaterialResponseSuccess | openMaterialResponseError)
+
+export const getOpenMaterialUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/open`
+}
+
+/**
+ * @summary Note that the caller opened a material
+ */
+export const openMaterial = async (id: string, options?: RequestInit): Promise<openMaterialResponse> => {
+
+  const res = await fetch(getOpenMaterialUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: openMaterialResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as openMaterialResponse
 }
 
 
@@ -7532,6 +7634,63 @@ const res = await fetch(getUpdateQuizSharingUrl(id),
 
   const data: updateQuizSharingResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateQuizSharingResponse
+}
+
+
+
+export type listRecentResponse200 = {
+  data: RecentOutputBody
+  status: 200
+}
+
+export type listRecentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listRecentResponseSuccess = (listRecentResponse200) & {
+  headers: Headers;
+};
+export type listRecentResponseError = (listRecentResponseDefault) & {
+  headers: Headers;
+};
+
+export type listRecentResponse = (listRecentResponseSuccess | listRecentResponseError)
+
+export const getListRecentUrl = (params?: ListRecentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/recent?${stringifiedParams}` : `/api/recent`
+}
+
+/**
+ * @summary The caller's newest opened files and materials
+ */
+export const listRecent = async (params?: ListRecentParams, options?: RequestInit): Promise<listRecentResponse> => {
+
+  const res = await fetch(getListRecentUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listRecentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listRecentResponse
 }
 
 
@@ -11217,6 +11376,106 @@ const res = await fetch(getTransferWorkspaceUrl(id),
 
   const data: transferWorkspaceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as transferWorkspaceResponse
+}
+
+
+
+export type forgetWorkspaceResponse204 = {
+  data: void
+  status: 204
+}
+
+export type forgetWorkspaceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type forgetWorkspaceResponseSuccess = (forgetWorkspaceResponse204) & {
+  headers: Headers;
+};
+export type forgetWorkspaceResponseError = (forgetWorkspaceResponseDefault) & {
+  headers: Headers;
+};
+
+export type forgetWorkspaceResponse = (forgetWorkspaceResponseSuccess | forgetWorkspaceResponseError)
+
+export const getForgetWorkspaceUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/visit`
+}
+
+/**
+ * @summary Forget the caller's visit to a workspace
+ */
+export const forgetWorkspace = async (id: string, options?: RequestInit): Promise<forgetWorkspaceResponse> => {
+
+  const res = await fetch(getForgetWorkspaceUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: forgetWorkspaceResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as forgetWorkspaceResponse
+}
+
+
+
+export type visitWorkspaceResponse204 = {
+  data: void
+  status: 204
+}
+
+export type visitWorkspaceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type visitWorkspaceResponseSuccess = (visitWorkspaceResponse204) & {
+  headers: Headers;
+};
+export type visitWorkspaceResponseError = (visitWorkspaceResponseDefault) & {
+  headers: Headers;
+};
+
+export type visitWorkspaceResponse = (visitWorkspaceResponseSuccess | visitWorkspaceResponseError)
+
+export const getVisitWorkspaceUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/visit`
+}
+
+/**
+ * @summary Note that the caller opened a workspace
+ */
+export const visitWorkspace = async (id: string, options?: RequestInit): Promise<visitWorkspaceResponse> => {
+
+  const res = await fetch(getVisitWorkspaceUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: visitWorkspaceResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as visitWorkspaceResponse
 }
 
 

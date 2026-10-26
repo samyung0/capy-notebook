@@ -29,7 +29,7 @@ export const FRAME_PRESETS: Record<
   Preset,
   { stops: [string, string, string]; dots: PageFrameColor[]; strength: number }
 > = {
-  // Pale: the default frame, light enough to stay in the background.
+  // Pale: light enough to stay in the background.
   dawn: {
     dots: [
       // Just inside the field's top edge, where the fit put it.
@@ -58,6 +58,7 @@ export const FRAME_PRESETS: Record<
     stops: ['#6f80d8', '#f2c9b4', '#4f9a5c'],
     strength: 0.59,
   },
+  // Neutral slate greys: the default frame.
   mist: {
     dots: [
       { x: 0.61, y: 1 },
@@ -114,14 +115,14 @@ export const STRENGTH_MAX = 0.92;
 export const MAX_FRAME_COLORS = 3;
 export const FROST_PANELS: FrostPanel[] = ['left', 'center', 'right'];
 
-/** A new device's frame: Arc in the pale Dawn with the left panel frosted,
+/** A new device's frame: Arc in the neutral Mist with the left panel frosted,
  * so the app starts with some colour; None stays a choice. */
 export const DEFAULT_PAGE_FRAME: PageFrame = {
-  colours: 'dawn',
-  dots: FRAME_PRESETS.dawn.dots,
+  colours: 'mist',
+  dots: FRAME_PRESETS.mist.dots,
   frosted: ['left'],
   pattern: 'arc',
-  strength: FRAME_PRESETS.dawn.strength,
+  strength: FRAME_PRESETS.mist.strength,
 };
 const unit = (v: unknown): v is number =>
   typeof v === 'number' && v >= 0 && v <= 1;

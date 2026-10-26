@@ -3602,7 +3602,7 @@ materials are sources.
   `list_sources`; the turn still loads them (`store.workspace_chapters`, at
   most 20, `MaxChaptersPerWorkspace` in Go) for the open item's chapter and the
   `chapter_id` checks. It lists the study preferences (`prompts/preferences.py`: output files (a note
-  or a deck per chapter), writing style (brief, normal, verbose or story, a narrated explainer from
+  or a deck per chapter), writing style (brief by default since Epo 2026-10-26, normal, verbose or story, a narrated explainer from
   three science-documentary transcripts, Epo 2026-10-25), quiz more (5 questions), less (2)
   or off and flashcards more (10), less (5) or off (Epo 2026-10-25), visual
   aids (more: images wherever possible; fewer: charts, plots and interactive

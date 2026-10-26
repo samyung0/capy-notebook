@@ -49,6 +49,9 @@ func (s *Store) CreateBlankFile(ctx context.Context, d BlankFileDraft) (File, er
 		d.Parser, d.BlobPath, sourceupload.ParseModeNone, d.SHA256); err != nil {
 		return File{}, err
 	}
+	if err := markCreatedTx(ctx, tx, d.ActorUserID, OpenFile, fileID); err != nil {
+		return File{}, err
+	}
 	// Read before the commit, so nothing that can fail runs after it: the
 	// caller deletes the object on any error.
 	file, err := scanFile(tx.QueryRow(ctx, `SELECT `+fileCols+` FROM files WHERE id=$1`, fileID))

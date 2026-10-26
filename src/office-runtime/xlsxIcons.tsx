@@ -3,16 +3,6 @@ import {
   AlignBottomIcon,
   AlignTopIcon,
   AlignVerticalCenterIcon,
-  BorderAllIcon,
-  BorderBottomIcon,
-  BorderFullIcon,
-  BorderHorizontalIcon,
-  BorderInnerIcon,
-  BorderLeftIcon,
-  BorderNoneIcon,
-  BorderRightIcon,
-  BorderTopIcon,
-  BorderVerticalIcon,
   CheckIcon,
   ChevronDownIcon,
   DecimalsArrowLeftIcon,
@@ -43,14 +33,19 @@ import {
 import type { IconSvgElement } from '@hugeicons/react';
 import type { ComponentProps } from 'react';
 import { HugeIcon } from '@/components/ui/HugeIcon';
+import { BorderIcon, type BorderIconKind } from './borderIcons';
 import { officeIconSize } from './officeIconSize';
 
 /**
  * Every icon xlsx-react draws, from Capy's set: the same icon as Icon.tsx and
- * docxIcons.tsx for the same command. Imported one by one so the rest of
- * Hugeicons stays out of the runtime bundle.
+ * docxIcons.tsx for the same command, with the border icons drawn by hand
+ * (borderIcons.tsx). Imported one by one so the rest of Hugeicons stays out of
+ * the runtime bundle.
  */
-export const XLSX_ICONS: Record<keyof IconSet, IconSvgElement> = {
+export const XLSX_ICONS: Record<
+  keyof IconSet,
+  IconSvgElement | { border: BorderIconKind }
+> = {
   add: PlusSignIcon,
   alignCellBottom: AlignBottomIcon,
   alignCellMiddle: AlignVerticalCenterIcon,
@@ -60,17 +55,17 @@ export const XLSX_ICONS: Record<keyof IconSet, IconSvgElement> = {
   alignTextLeft: TextAlignLeftIcon,
   alignTextRight: TextAlignRightIcon,
   bold: TextBoldIcon,
-  borderAll: BorderAllIcon,
-  borderBottom: BorderBottomIcon,
-  borderHorizontal: BorderHorizontalIcon,
-  borderInner: BorderInnerIcon,
-  borderLeft: BorderLeftIcon,
-  borderNone: BorderNoneIcon,
-  borderOuter: BorderFullIcon,
-  borderRight: BorderRightIcon,
-  borders: BorderAllIcon,
-  borderTop: BorderTopIcon,
-  borderVertical: BorderVerticalIcon,
+  borderAll: { border: 'all' },
+  borderBottom: { border: 'bottom' },
+  borderHorizontal: { border: 'horizontal' },
+  borderInner: { border: 'inner' },
+  borderLeft: { border: 'left' },
+  borderNone: { border: 'none' },
+  borderOuter: { border: 'outer' },
+  borderRight: { border: 'right' },
+  borders: { border: 'all' },
+  borderTop: { border: 'top' },
+  borderVertical: { border: 'vertical' },
   check: CheckIcon,
   chevronDown: ChevronDownIcon,
   decimalDecrease: DecimalsArrowLeftIcon,
@@ -100,8 +95,15 @@ export const XLSX_ICONS: Record<keyof IconSet, IconSvgElement> = {
 export const xlsxIcons = Object.fromEntries(
   Object.entries(XLSX_ICONS).map(([name, icon]) => [
     name,
-    ({ size = 16, style }: ComponentProps<IconSet[keyof IconSet]>) => (
-      <HugeIcon icon={icon} size={officeIconSize(name, size)} style={style} />
-    ),
+    ({ size = 16, style }: ComponentProps<IconSet[keyof IconSet]>) =>
+      'border' in icon ? (
+        <BorderIcon
+          kind={icon.border}
+          size={officeIconSize(name, size)}
+          style={style}
+        />
+      ) : (
+        <HugeIcon icon={icon} size={officeIconSize(name, size)} style={style} />
+      ),
   ])
 ) as IconSet;

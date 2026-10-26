@@ -4406,9 +4406,6 @@ components:
           type: string
         isOwner:
           type: boolean
-        lastAccessedAt:
-          format: date-time
-          type: string
         name:
           type: string
         privacy:
@@ -4439,7 +4436,6 @@ components:
         - fileCount
         - filesLimit
         - createdAt
-        - lastAccessedAt
         - isOwner
         - capabilities
         - canClone
@@ -4577,6 +4573,35 @@ components:
         - materialId
         - itemId
         - rating
+      type: object
+    RecentOpen:
+      additionalProperties: false
+      properties:
+        file:
+          $ref: "#/components/schemas/File"
+        material:
+          $ref: "#/components/schemas/MaterialListItem"
+        openedAt:
+          format: date-time
+          type: string
+      required:
+        - openedAt
+      type: object
+    RecentOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RecentOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/RecentOpen"
+          type: array
+      required:
+        - items
       type: object
     RedeemShareLinkInputBody:
       additionalProperties: false
@@ -7373,9 +7398,6 @@ components:
           type: string
         isOwner:
           type: boolean
-        lastAccessedAt:
-          format: date-time
-          type: string
         name:
           type: string
         privacy:
@@ -7404,7 +7426,6 @@ components:
         - fileCount
         - filesLimit
         - createdAt
-        - lastAccessedAt
         - isOwner
         - capabilities
         - canClone
@@ -8983,13 +9004,6 @@ paths:
           schema:
             description: Comma-separated workspace ids
             type: string
-        - description: "Comma-separated file ids: only these rows (the phone quick open, ordered by the client's opens)"
-          explode: false
-          in: query
-          name: ids
-          schema:
-            description: "Comma-separated file ids: only these rows (the phone quick open, ordered by the client's opens)"
-            type: string
         - description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
           explode: false
           in: query
@@ -9341,6 +9355,27 @@ paths:
       summary: Get presigned file reads
       tags:
         - Content
+  /api/files/{id}/open:
+    post:
+      operationId: openFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Note that the caller opened a file
+      tags:
+        - Recent
   /api/files/{id}/process-changes:
     delete:
       operationId: cancelSourceChanges
@@ -9834,13 +9869,6 @@ paths:
           schema:
             description: Comma-separated workspace ids
             type: string
-        - description: "Comma-separated material ids: only these rows (the phone quick open, ordered by the client's opens)"
-          explode: false
-          in: query
-          name: ids
-          schema:
-            description: "Comma-separated material ids: only these rows (the phone quick open, ordered by the client's opens)"
-            type: string
         - description: "Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"
           explode: false
           in: query
@@ -10169,6 +10197,27 @@ paths:
       summary: Update material metadata
       tags:
         - Materials
+  /api/materials/{id}/open:
+    post:
+      operationId: openMaterial
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Note that the caller opened a material
+      tags:
+        - Recent
   /api/materials/{id}/process-changes:
     post:
       operationId: processNoteChanges
@@ -11160,6 +11209,35 @@ paths:
       summary: Update standalone quiz sharing
       tags:
         - Quizzes
+  /api/recent:
+    get:
+      operationId: listRecent
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 20
+            format: int64
+            maximum: 50
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecentOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: The caller's newest opened files and materials
+      tags:
+        - Recent
   /api/review/check:
     post:
       operationId: checkReviewItem
@@ -13048,6 +13126,47 @@ paths:
       summary: Transfer workspace ownership to another member
       tags:
         - Workspace collaboration
+  /api/workspaces/{id}/visit:
+    delete:
+      operationId: forgetWorkspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Forget the caller's visit to a workspace
+      tags:
+        - Workspaces
+    post:
+      operationId: visitWorkspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Note that the caller opened a workspace
+      tags:
+        - Workspaces
   /api/workspaces/{id}/voice-transcriptions:
     post:
       operationId: transcribeVoice

@@ -144,3 +144,60 @@ test('the panel starts open; closed, history lists archived chats', async ({
       .getByText('Lab report draft questions')
   ).toBeVisible();
 });
+
+test('a side panel handle trades width with the viewer alone, collapsing and restoring its own panel within one drag', async ({
+  page,
+}) => {
+  await openWorkspace(page, 1440);
+  const left = leftPanel(page);
+  await left.getByRole('button', { name: 'What is a cell?' }).click({
+    timeout: 60_000,
+  });
+  await expect(page.locator('#rail')).toBeVisible();
+  const width = async (id: string) =>
+    Math.round((await page.locator(`#${id}`).boundingBox())?.width ?? 0);
+  const files = await width('files');
+  const rail = await width('rail');
+  // Holds a handle and moves it to each offset in turn, then lets go.
+  const drag = async (
+    handle: number,
+    steps: [number, () => Promise<void>][]
+  ) => {
+    const box = await page
+      .locator('[data-slot=resizable-handle]')
+      .nth(handle)
+      .boundingBox();
+    if (!box) throw new Error('No handle');
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (const [dx, check] of steps) {
+      await page.mouse.move(x + dx, y, { steps: 4 });
+      await check();
+    }
+    await page.mouse.up();
+  };
+
+  // The rail grows until the viewer is at its least width; the left panel
+  // keeps its width.
+  await drag(1, [[-600, async () => expect(await width('files')).toBe(files)]]);
+  const wide = await width('rail');
+  expect(wide).toBeGreaterThan(rail);
+  // Back and forth past its least width, the rail collapses and returns.
+  await drag(1, [
+    [wide, async () => expect(await width('rail')).toBe(0)],
+    [0, async () => expect(await width('rail')).toBe(wide)],
+  ]);
+  // With the viewer at its least width the left panel cannot grow into the
+  // rail; back and forth past its own least width it collapses and returns,
+  // the rail keeping its width throughout.
+  await drag(0, [
+    [300, async () => expect(await width('rail')).toBe(wide)],
+    [-files, async () => expect(await width('files')).toBe(0)],
+    [0, async () => expect(await width('files')).toBe(files)],
+    [300, async () => expect(await width('rail')).toBe(wide)],
+  ]);
+  expect(await width('files')).toBe(files);
+  expect(await width('rail')).toBe(wide);
+});

@@ -71,6 +71,11 @@ export function useTheme(): ThemeState {
 /** Whether `panel` frosts over the page frame (`data-frosted`); the
  * stylesheet only draws it while a frame is shown. Shared pages and tests
  * render panels without a ThemeProvider, and have no frame to frost over. */
+/** Inside a panel frosted over the page frame. Popups portal out of the
+ * panel, out of reach of the stylesheet's `[data-frosted]`, so floating
+ * toolbars read this instead; dialogs reset it, being opaque. */
+export const FrostedSurface = createContext(false);
+
 export function useFrosted(panel: FrostPanel | undefined): boolean {
   const frosted = useContext(ThemeContext)?.pageFrame.frosted;
   return !!panel && !!frosted?.includes(panel);

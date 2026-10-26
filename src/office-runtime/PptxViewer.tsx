@@ -28,6 +28,8 @@ import type {
   OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
 import { runtimeNotesWindow } from './notesWindow';
 import { loadPptxDeckFonts } from './pptxFonts';
@@ -50,6 +52,7 @@ export function PptxViewer({
   citation,
   initialZoom = 'fit',
   locale,
+  narrow,
   onAnalysis,
   onError,
   onMenus,
@@ -63,6 +66,8 @@ export function PptxViewer({
   /** The level the file was last shown at; fit to the window without. */
   initialZoom?: OfficeZoom;
   locale: OfficeLocale;
+  /** Capy's window is below desktop width: the strip goes under the slide. */
+  narrow: boolean;
   onAnalysis: (analysis: PresentationAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
@@ -73,6 +78,8 @@ export function PptxViewer({
   onZoomChange: (zoom: OfficeZoom) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // As pptx-react's narrow layout: below desktop, or a frame under 640px.
+  const stripBelow = useMediaQuery('(max-width: 639.98px)') || narrow;
   const stageRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<PresentationViewerHandle | null>(null);
   const imagesRef = useRef(new PptxImageCache());
@@ -354,7 +361,7 @@ export function PptxViewer({
   };
 
   return (
-    <div className="pptx-viewer">
+    <div className={cn('pptx-viewer', stripBelow && 'pptx-viewer-narrow')}>
       <div className="pptx-viewer-workspace">
         {slides && slideCount > 0 && (
           <aside
@@ -386,38 +393,41 @@ export function PptxViewer({
                 </button>
               ))}
             </div>
-            <div className="pptx-viewer-pager">
-              <button
-                aria-label={m.files_office_previous_slide()}
-                disabled={slideIndex === 0}
-                onClick={() => selectSlide(slideIndex - 1)}
-                title={m.files_office_previous_slide()}
-                type="button"
-              >
-                <HugeIcon icon={ArrowLeft04Icon} />
-              </button>
-              <span
-                aria-atomic="true"
-                aria-live="polite"
-                data-slide={slideIndex + 1}
-                role="status"
-              >
-                {m.files_office_slide_position({
-                  current: slideIndex + 1,
-                  total: slideCount,
-                })}
-              </span>
-              <button
-                aria-label={m.files_office_next_slide()}
-                data-testid="pptx-next-slide"
-                disabled={slideIndex === slideCount - 1}
-                onClick={() => selectSlide(slideIndex + 1)}
-                title={m.files_office_next_slide()}
-                type="button"
-              >
-                <HugeIcon icon={ArrowRight04Icon} />
-              </button>
-            </div>
+            {/* The strip under the slide is pager enough. */}
+            {!stripBelow && (
+              <div className="pptx-viewer-pager">
+                <button
+                  aria-label={m.files_office_previous_slide()}
+                  disabled={slideIndex === 0}
+                  onClick={() => selectSlide(slideIndex - 1)}
+                  title={m.files_office_previous_slide()}
+                  type="button"
+                >
+                  <HugeIcon icon={ArrowLeft04Icon} />
+                </button>
+                <span
+                  aria-atomic="true"
+                  aria-live="polite"
+                  data-slide={slideIndex + 1}
+                  role="status"
+                >
+                  {m.files_office_slide_position({
+                    current: slideIndex + 1,
+                    total: slideCount,
+                  })}
+                </span>
+                <button
+                  aria-label={m.files_office_next_slide()}
+                  data-testid="pptx-next-slide"
+                  disabled={slideIndex === slideCount - 1}
+                  onClick={() => selectSlide(slideIndex + 1)}
+                  title={m.files_office_next_slide()}
+                  type="button"
+                >
+                  <HugeIcon icon={ArrowRight04Icon} />
+                </button>
+              </div>
+            )}
           </aside>
         )}
         <div className="pptx-viewer-stage">

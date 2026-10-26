@@ -15,17 +15,20 @@ import {
   usedOfficeFaces,
 } from './officeFonts';
 
-type Request = { bytes: ArrayBuffer; id: number };
+/** One layout per worker: pages, or with `reading` one column that wide. */
+type Request = {
+  bytes: ArrayBuffer;
+  reading: { padding: number; width: number } | null;
+};
 type Response =
   | {
       displayList: DisplayList;
       faces: OfficeFace[];
-      id: number;
       /** Stage times (epoch ms) for the frame to mark. */
       marks: Record<string, number>;
       type: 'ready';
     }
-  | { id: number; message: string; type: 'error' };
+  | { message: string; type: 'error' };
 
 // The viewer registers the faces the layout requires before laying out.
 configureDefaultFonts({ fonts: officeFonts });
@@ -42,9 +45,12 @@ const wasm = initWasm().then(epochNow);
 wasm.catch(() => {});
 
 self.onmessage = (event: MessageEvent<Request>) => {
-  const { bytes, id } = event.data;
+  const { bytes, reading } = event.data;
   const openStart = epochNow();
-  void openDocumentViewer(new Uint8Array(bytes)).then(
+  void openDocumentViewer(
+    new Uint8Array(bytes),
+    reading ? { reading } : {}
+  ).then(
     async (document) => {
       try {
         // A missing face would leave the fallback layout: fail instead.
@@ -56,7 +62,6 @@ self.onmessage = (event: MessageEvent<Request>) => {
           {
             displayList,
             faces,
-            id,
             marks: {
               'wasm:docx-view:end': await wasm,
               'wasm:docx-view:start': wasmStart,
@@ -70,13 +75,13 @@ self.onmessage = (event: MessageEvent<Request>) => {
           [...new Set(faces.map((face) => face.bytes))]
         );
       } catch (value) {
-        post({ id, message: toError(value).message, type: 'error' });
+        post({ message: toError(value).message, type: 'error' });
       } finally {
         document.dispose();
       }
     },
     (value: unknown) => {
-      post({ id, message: toError(value).message, type: 'error' });
+      post({ message: toError(value).message, type: 'error' });
     }
   );
 };

@@ -319,8 +319,12 @@ export function MathField({
       {!onControlsReady && (
         <span
           className={cn(
-            'absolute top-1/2 right-2 flex -translate-y-1/2 flex-col gap-0.5',
-            !displayMode && 'rounded bg-surface'
+            'absolute right-2 flex -translate-y-1/2 flex-col gap-0.5',
+            displayMode
+              ? 'top-1/2'
+              : // A pixel up to sit on the formula's line; frosted pages keep
+                // the blur the block field shows while still covering text.
+                'top-[calc(50%-1px)] rounded bg-surface frosted:bg-transparent frosted:backdrop-blur-sm'
           )}
         >
           {displayMode && (

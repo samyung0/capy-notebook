@@ -1,12 +1,10 @@
-import { type ReactNode, useState } from 'react';
-import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { type ReactNode, useCallback, useState } from 'react';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { m } from '@/i18n';
-import { CardGrid, CardSides, CardTile } from './CardView';
+import { CardGrid, CardTile } from './CardView';
 
-/** A flashcard set read as a grid of fronts; a tile opens its preview, which
- * shows the back.
+/** A flashcard set read as a grid of fronts; a click flips a tile in place to
+ * its back, as study does, and another back to the front.
  * `action` sits right of the title. */
 export function FlashcardGrid({
   title,
@@ -17,13 +15,24 @@ export function FlashcardGrid({
   title: string;
   cards: FlashcardContent[];
   action?: ReactNode;
-  /** A card to open in the preview at once, e.g. from a review summary. */
+  /** A card to show turned and scrolled to at once, e.g. from a review
+   * summary. */
   openCardId?: string;
 }) {
-  const [open, setOpen] = useState<number | null>(() => {
-    const at = cards.findIndex((card) => card.id === openCardId);
-    return at < 0 ? null : at;
-  });
+  const [turned, setTurned] = useState(
+    () => new Set(openCardId ? [openCardId] : [])
+  );
+  const scrollTo = useCallback(
+    (node: HTMLLIElement | null) => node?.scrollIntoView({ block: 'center' }),
+    []
+  );
+  function flip(id: string) {
+    setTurned((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
@@ -37,75 +46,15 @@ export function FlashcardGrid({
           {cards.map((card, index) => (
             <CardTile
               card={card}
-              face="front"
+              face={turned.has(card.id) ? 'turned' : 'front'}
               key={card.id}
-              label={card.front}
               n={index + 1}
-              onOpen={() => setOpen(index)}
+              onOpen={() => flip(card.id)}
+              ref={card.id === openCardId ? scrollTo : undefined}
             />
           ))}
         </CardGrid>
       )}
-      <CardPreviewDialog
-        cards={cards}
-        index={open}
-        onClose={() => setOpen(null)}
-        onIndexChange={setOpen}
-      />
     </div>
-  );
-}
-
-/** One card at a time, Previous and Next stepping through the set. */
-export function CardPreviewDialog({
-  cards,
-  index,
-  onIndexChange,
-  onClose,
-}: {
-  cards: FlashcardContent[];
-  index: number | null;
-  onIndexChange: (index: number) => void;
-  onClose: () => void;
-}) {
-  const card = index === null ? undefined : cards[index];
-  return (
-    <SimpleDialog
-      footer={
-        index !== null && (
-          <div className="flex w-full justify-between">
-            <Button
-              disabled={index === 0}
-              onClick={() => onIndexChange(index - 1)}
-              size="lg"
-              variant="ghost-hover"
-            >
-              {m.action_previous()}
-            </Button>
-            <Button
-              disabled={index === cards.length - 1}
-              onClick={() => onIndexChange(index + 1)}
-              size="lg"
-              variant="ghost-hover"
-            >
-              {m.action_next()}
-            </Button>
-          </div>
-        )
-      }
-      onClose={onClose}
-      open={!!card}
-      title={
-        index === null
-          ? undefined
-          : m.flashcards_card_position({
-              position: index + 1,
-              total: cards.length,
-            })
-      }
-      width={560}
-    >
-      {card && <CardSides card={card} />}
-    </SimpleDialog>
   );
 }

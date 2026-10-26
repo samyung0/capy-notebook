@@ -114,12 +114,11 @@ type Workspace struct {
 	OwnerPlanTier PlanTier `json:"-"`
 	// MemberRole is the requester's persisted membership ("" for a visitor),
 	// filled by the listing queries so capabilities need no second lookup.
-	MemberRole     WorkspaceRole `json:"-"`
-	ChapterCount   int           `json:"chapterCount"`
-	FileCount      int           `json:"fileCount"`
-	FilesLimit     int           `json:"filesLimit"`
-	CreatedAt      time.Time     `json:"createdAt"`
-	LastAccessedAt time.Time     `json:"lastAccessedAt"`
+	MemberRole   WorkspaceRole `json:"-"`
+	ChapterCount int           `json:"chapterCount"`
+	FileCount    int           `json:"fileCount"`
+	FilesLimit   int           `json:"filesLimit"`
+	CreatedAt    time.Time     `json:"createdAt"`
 }
 
 // AccessCapabilities is request-scoped authorization metadata. It is never

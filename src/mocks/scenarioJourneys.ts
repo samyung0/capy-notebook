@@ -6,6 +6,7 @@ import type { MockDialogId } from '@/components/dev/mockDialogOptions';
 import { decodeSourceState } from '@/features/files/sourceState';
 import { m } from '@/i18n';
 import { draftKey, putDrafts, sourceLineage } from '@/lib/editDrafts';
+import { PREF_KEYS, writePref } from '@/lib/localPrefs';
 import { router } from '@/router';
 import { worker } from './browser';
 import { setChaosPeers } from './chaosPeers';
@@ -578,6 +579,21 @@ export async function runJourney(
       fail();
       await go('/');
       return 'Every list is empty, as for a new account, until Reset. Open any page to see its empty state.';
+    case 'onboarding-get-started':
+      // A fresh list for the mock account, as the browser that ran onboarding
+      // keeps it; the storage event tells the open sidebar.
+      writePref(PREF_KEYS.gettingStarted, {
+        done: [],
+        hidden: false,
+        owner: db.user.id,
+      });
+      window.dispatchEvent(new StorageEvent('storage'));
+      // The list and the tour act in the latest opened workspace; Biology 101
+      // has the chats, review queue and past review every tour step shows.
+      db.visits.set('ws_bio', new Date().toISOString());
+      await queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      await go('/');
+      return 'Get started shows above Settings in the sidebar (the nav drawer on phones). Its rows and Start tour act in Biology 101, which has chats, a review queue and a past review to show.';
     case 'source-session':
     case 'source-token':
       fail();

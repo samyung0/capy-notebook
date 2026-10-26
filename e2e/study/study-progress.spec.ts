@@ -681,7 +681,7 @@ test.describe('study progress', () => {
     });
   });
 
-  test('hidden progress: the Study page keeps plain rows, Show brings it back, and settings stay in the URL', async ({
+  test('hidden progress: the Study page points to settings, whose Study switch brings it back, and settings stay in the URL', async ({
     ownerApi,
     ownerPage,
     workspaceFactory,
@@ -698,13 +698,16 @@ test.describe('study progress', () => {
     ownerPage.on('pageerror', (error) => errors.push(error.message));
 
     await ownerPage.goto(`/workspaces/${workspace.id}?study=true`);
-    await expect(
-      ownerPage.getByText(m.study_hidden_title(), { exact: true })
-    ).toBeVisible();
+    await expect(ownerPage.getByText(m.study_hidden_here())).toBeVisible();
     await ownerPage
-      .getByRole('button', { exact: true, name: m.study_show() })
+      .getByRole('button', { exact: true, name: m.workspace_settings() })
       .click();
-    await expect(ownerPage.getByText(m.study_hidden_title())).toHaveCount(0);
+    await expect(ownerPage).toHaveURL(/settings=study/);
+    await ownerPage
+      .getByRole('switch', { name: m.study_hide_progress() })
+      .click();
+    await ownerPage.keyboard.press('Escape');
+    await expect(ownerPage.getByText(m.study_hidden_here())).toHaveCount(0);
 
     // Back with settings open leaves in-app (a goto would leave the
     // document, so the router never runs) and closes the dialog once.

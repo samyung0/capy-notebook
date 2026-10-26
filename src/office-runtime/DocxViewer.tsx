@@ -15,6 +15,7 @@ import type {
   OfficeRenderedPage,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
+import { m } from '@/i18n';
 import { officeMark, officeMarkAt } from '@/lib/officeMarks';
 import { CITATION_FILL, docxCitation } from './citations';
 import { docxT, downloadMenu, printItem } from './docxMenus';
@@ -25,18 +26,79 @@ import {
   type OfficeMenuReporter,
   type OfficeRenderer,
 } from './runtimeMenus';
+import { readViewToggle, writeViewToggle } from './viewToggles';
 
 const ZOOMS = [50, 75, 90, 100, 125, 150, 200];
+/** Each side of the reading layout's column, Capy's phone gutter. */
+const READING_PADDING = 16;
+/** A frame narrower than this (a phone, or a narrow panel beside others)
+ * reads the reflowed column. */
+const READING_BELOW_PX = 768;
+/** Quiet time after a resize before the reading layout follows it. */
+const RESIZE_SETTLE_MS = 200;
+
+type Reading = { padding: number; width: number };
+
+type Layout = {
+  displayList: DisplayList;
+  faces: OfficeFace[];
+  marks: Record<string, number>;
+};
 
 type WorkerResponse =
-  | {
-      displayList: DisplayList;
-      faces: OfficeFace[];
-      id: number;
-      marks: Record<string, number>;
-      type: 'ready';
-    }
-  | { id: number; message: string; type: 'error' };
+  | (Layout & { type: 'ready' })
+  | { message: string; type: 'error' };
+
+/** Lays `bytes` out in a viewer worker of its own, as pages or, with
+ * `reading`, as one column that wide. The worker goes as soon as it answers,
+ * so the parser and engine memory are released during ordinary reading. */
+function layOut(bytes: Uint8Array, reading: Reading | null) {
+  let stop = () => {};
+  const promise = new Promise<Layout>((resolve, reject) => {
+    // Made at boot when the frame was opened for a DOCX view.
+    const worker = takeDocxViewerWorker((message) => {
+      stop();
+      reject(new Error(message));
+    });
+    let stopped = false;
+    stop = () => {
+      if (stopped) return;
+      stopped = true;
+      worker.terminate();
+    };
+    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+      stop();
+      if (event.data.type === 'error') reject(new Error(event.data.message));
+      else resolve(event.data);
+    };
+    const transferable = bytes.slice().buffer;
+    worker.postMessage({ bytes: transferable, reading }, [transferable]);
+  });
+  return { cancel: () => stop(), promise };
+}
+
+/** The frame's width, following resizes once they settle. */
+function useFrameWidth() {
+  const [width, setWidth] = useState(
+    () => document.documentElement.clientWidth
+  );
+  useEffect(() => {
+    let timer = 0;
+    const resized = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(
+        () => setWidth(document.documentElement.clientWidth),
+        RESIZE_SETTLE_MS
+      );
+    };
+    window.addEventListener('resize', resized);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', resized);
+    };
+  }, []);
+  return width;
+}
 
 export function DocxViewer({
   bytes,
@@ -73,6 +135,16 @@ export function DocxViewer({
     () => onZoomChange(zoom === 'fit' ? 'fit' : zoom / 100),
     [onZoomChange, zoom]
   );
+  // View › Page layout, one choice per person for every DOCX file.
+  const [pageLayout, setPageLayout] = useState(() =>
+    readViewToggle('docxPageLayout')
+  );
+  // A narrow frame reads the text reflowed to its width, unless View › Page
+  // layout is ticked.
+  const frameWidth = useFrameWidth();
+  const narrow = frameWidth < READING_BELOW_PX;
+  const reading = narrow && !pageLayout;
+  const readingWidth = reading ? frameWidth : 0;
 
   // View mode offers what works here: Download and Print, and the zoom.
   useEffect(() => {
@@ -88,19 +160,35 @@ export function DocxViewer({
         {
           id: 'view',
           items: [
-            {
-              icon: 'zoomIn',
-              id: 'zoom',
-              items: ZOOMS.map((value) => ({
-                checked: value === zoom,
-                edits: false,
-                id: `zoom:${value}`,
-                kind: 'item' as const,
-                label: `${value}%`,
-              })),
-              kind: 'submenu',
-              label: t('hostMenus.zoom'),
-            },
+            // The reading layout is laid out at 100% for the frame's width.
+            ...(reading
+              ? []
+              : [
+                  {
+                    icon: 'zoomIn' as const,
+                    id: 'zoom',
+                    items: ZOOMS.map((value) => ({
+                      checked: value === zoom,
+                      edits: false,
+                      id: `zoom:${value}`,
+                      kind: 'item' as const,
+                      label: `${value}%`,
+                    })),
+                    kind: 'submenu' as const,
+                    label: t('hostMenus.zoom'),
+                  },
+                ]),
+            ...(narrow
+              ? [
+                  {
+                    checked: !reading,
+                    edits: false,
+                    id: 'pageLayout',
+                    kind: 'item' as const,
+                    label: m.files_office_docx_page_layout(),
+                  },
+                ]
+              : []),
           ],
           label: t('hostMenus.view'),
         },
@@ -108,20 +196,31 @@ export function DocxViewer({
       run: (id) => {
         const [command, value] = id.split(':');
         if (command === 'zoom') setZoom(Number(value));
+        if (command === 'pageLayout') {
+          writeViewToggle('docxPageLayout', !pageLayout);
+          setPageLayout(!pageLayout);
+        }
       },
     });
     return () => onMenus(null);
-  }, [displayList, locale, onMenus, zoom]);
+  }, [displayList, locale, narrow, onMenus, pageLayout, reading, zoom]);
 
   useEffect(() => {
     if (!displayList) return;
     const resolveImage = createCanvasImageResolver();
     onRenderer(async (kind) => {
       if (kind !== 'print') throw new Error('Nothing to render');
+      // The reading layout is one column: a print takes the pages.
+      let printed = displayList;
+      if (reading) {
+        const layout = await layOut(bytes, null).promise;
+        await registerOfficeFaces(layout.faces);
+        printed = layout.displayList;
+      }
       // One page drawn, encoded and released at a time, as pptxRender does;
       // a page that cannot be drawn fails the print.
       const pages: OfficeRenderedPage[] = [];
-      for (const page of displayList.pages) {
+      for (const page of printed.pages) {
         const canvas = await rasterizeDisplayPage(page, { resolveImage });
         try {
           pages.push(await canvasPage(canvas, page.width, page.height));
@@ -133,58 +232,42 @@ export function DocxViewer({
       return pages;
     });
     return () => onRenderer(null);
-  }, [displayList, onRenderer]);
+  }, [bytes, displayList, onRenderer, reading]);
 
+  // The open's stage marks belong to the first layout of these bytes, not to
+  // a reading layout following a resize.
+  const markedRef = useRef<Uint8Array | null>(null);
   useEffect(() => {
-    const id = 1;
-    let stopped = false;
+    // The reading layout waits for the frame's width.
+    if (reading && !readingWidth) return;
     let cancelled = false;
-    const stopWorker = () => {
-      if (stopped) return;
-      stopped = true;
-      worker.terminate();
-    };
-    // Made at boot when the frame was opened for a DOCX view.
-    const worker = takeDocxViewerWorker((message) => {
-      stopWorker();
-      onError(new Error(message));
-    });
-    setDisplayList(null);
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-      if (event.data.id !== id) return;
-      if (event.data.type === 'error') {
-        stopWorker();
-        onError(new Error(event.data.message));
-        return;
-      }
-      // The display list has been cloned into the iframe. Terminate now so the
-      // parser, transient Yrs projection, and viewer WASM memory are released
-      // during ordinary reading rather than waiting for edit/unmount.
-      stopWorker();
-      const { displayList, faces, marks } = event.data;
-      for (const [stage, epoch] of Object.entries(marks))
-        officeMarkAt(stage, epoch);
-      // Paint with the faces the worker measured, under their Office names,
-      // from the bytes it fetched.
-      officeMark('fonts:start', { faces: faces.length });
-      void registerOfficeFaces(faces).then(
-        () => {
-          officeMark('fonts:end');
-          if (!cancelled) setDisplayList(displayList);
-        },
-        (value: unknown) => {
-          if (!cancelled)
-            onError(value instanceof Error ? value : new Error(String(value)));
+    const job = layOut(
+      bytes,
+      reading ? { padding: READING_PADDING, width: readingWidth } : null
+    );
+    void job.promise
+      .then(async ({ displayList, faces, marks }) => {
+        if (markedRef.current !== bytes) {
+          markedRef.current = bytes;
+          for (const [stage, epoch] of Object.entries(marks))
+            officeMarkAt(stage, epoch);
         }
-      );
-    };
-    const transferable = bytes.slice().buffer;
-    worker.postMessage({ bytes: transferable, id }, [transferable]);
+        // Paint with the faces the worker measured, under their Office
+        // names, from the bytes it fetched.
+        officeMark('fonts:start', { faces: faces.length });
+        await registerOfficeFaces(faces);
+        officeMark('fonts:end');
+        if (!cancelled) setDisplayList(displayList);
+      })
+      .catch((value: unknown) => {
+        if (!cancelled)
+          onError(value instanceof Error ? value : new Error(String(value)));
+      });
     return () => {
       cancelled = true;
-      stopWorker();
+      job.cancel();
     };
-  }, [bytes, onError]);
+  }, [bytes, onError, reading, readingWidth]);
 
   // Ready once the first pages are painted.
   useEffect(() => {
@@ -258,12 +341,17 @@ export function DocxViewer({
   }, [displayList, citation]);
 
   return displayList ? (
-    <div className="docx-runtime-viewer" ref={hostRef}>
+    <div
+      className="docx-runtime-viewer"
+      data-reading={reading || undefined}
+      ref={hostRef}
+    >
       <DocxDisplayListViewer
         displayList={displayList}
+        flush={reading}
         onZoomChange={(level) => setZoom(Math.round(level * 100))}
-        pinchZoom={compact}
-        zoom={zoom === 'fit' ? 'fit' : zoom / 100}
+        pinchZoom={compact && !reading}
+        zoom={reading ? 1 : zoom === 'fit' ? 'fit' : zoom / 100}
       />
     </div>
   ) : null;

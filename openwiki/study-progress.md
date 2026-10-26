@@ -363,16 +363,19 @@ pane's 40/64/80rem). Top to bottom:
   chapter it shows and the filter's Reset closes them all. The
   page ends with 40vh of room so the last chapters can scroll up before
   opening.
-- Rename plan (outline button, a plan only), then Hide study progress, then
-  Reset study progress and Delete plan (a plan only), the destructive ones
-  last; every control takes one 96px column, the switch centred in it, so
-  the labels line up; as Settings-style
-  rows under the chapters (`SettingRow`: title and hint, then on the right a
-  switch, on while progress is hidden, or a md large-radius borderless red
-  (danger-light) Reset; Reset's confirm dialog clears progress rows and
-  review states in the workspace; attempts and the log stay). Neither is in Workspace settings any more, which only managers
-  open (Others shows with Clone, Danger for owners). The 40vh of room sits
-  under these buttons.
+- Rename plan (outline button, a plan only), then Reset study progress and
+  Delete plan (a plan only), the destructive ones last; every control takes
+  one 96px column so the labels line up; as Settings-style rows under the
+  chapters (`SettingRow`: title and hint, then on the right a md
+  large-radius button, Reset borderless red (danger-light); Reset's confirm
+  dialog clears progress rows and review states in the workspace; attempts
+  and the log stay). The 40vh of room sits under these buttons.
+- Hide study progress is a switch in Workspace settings → Study (on while
+  progress is hidden), since it covers every plan in the workspace. Everyone
+  signed in with access opens Workspace settings: owner and editor members
+  on General, everyone else (viewers, share-role visitors) on Study, their only tab beside Others when they may clone. While progress is
+  hidden the Study page says so, with an underlined Workspace settings link
+  that opens the Study tab (`settings=study`).
 
 With study progress hidden (`workspace_study.enabled` false) recording goes
 on as before, and the page keeps only the plan select (a closed eye in

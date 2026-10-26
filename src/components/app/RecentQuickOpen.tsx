@@ -1,11 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Dialog as DialogPrimitive } from 'radix-ui';
-import {
-  openedFilesQuery,
-  openedMaterialsQuery,
-  useWorkspaces,
-} from '@/api/hooks';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
@@ -13,76 +7,25 @@ import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Dialog, DialogContent } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import {
+  recentHint,
   recentIcon,
   recentLink,
   recentThumbnail,
+  useRecentItems,
 } from '@/features/dashboard/RecentItemsCard';
-import { orderByOpens } from '@/features/dashboard/recentItems';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
-import { waitsForConnection } from '@/lib/online';
-import { readRecentOpens } from '@/lib/recentOpens';
 
 const QUICK_OPEN_LIMIT = 5;
 
-/** The files and materials this browser opened last that the caller can
- * still open, newest open first, merged once all three lists have loaded.
- * The rows come from the cache first and refetch in the background. */
-function useOpenedItems() {
-  const meta = { errorBoundary: false as const };
-  const {
-    data: files,
-    error: filesError,
-    fetchStatus: filesFetchStatus,
-    isError: filesFailed,
-    isLoading: filesLoading,
-    refetch: refetchFiles,
-  } = useQuery({ ...openedFilesQuery(), meta });
-  const {
-    data: materials,
-    error: materialsError,
-    fetchStatus: materialsFetchStatus,
-    isError: materialsFailed,
-    isLoading: materialsLoading,
-    refetch: refetchMaterials,
-  } = useQuery({ ...openedMaterialsQuery(), meta });
-  const {
-    data: workspaces,
-    error: workspacesError,
-    fetchStatus: workspacesFetchStatus,
-    isError: workspacesFailed,
-    isLoading: workspacesLoading,
-    refetch: refetchWorkspaces,
-  } = useWorkspaces({ sort: 'accessed' }, { errorBoundary: false });
-  const items = orderByOpens(
-    files ?? [],
-    materials ?? [],
-    workspaces ?? [],
-    readRecentOpens()
-  );
-  const paused =
-    waitsForConnection(filesFetchStatus, files) ||
-    waitsForConnection(materialsFetchStatus, materials) ||
-    waitsForConnection(workspacesFetchStatus, workspaces);
-  const isLoading = filesLoading || materialsLoading || workspacesLoading;
-  // A failed refresh keeps the cached list, so only a missing one counts.
-  const missing = (
-    [
-      [files, filesFailed, refetchFiles, filesError],
-      [materials, materialsFailed, refetchMaterials, materialsError],
-      [workspaces, workspacesFailed, refetchWorkspaces, workspacesError],
-    ] as const
-  ).filter(([data, isError]) => !data && isError);
-  return { isLoading, items, missing, paused, workspaces };
-}
-
-/** The phone's quick open: the five files this browser opened last. Links
+/** The phone's quick open: the five newest of Recent (the caller's opens,
+ * from any device), sharing the dashboard's cached list. Links
  * carry no mode, so each opens in the mode last used on it in this browser
  * (`readDocumentMode`). */
 export function RecentQuickOpen({ onClose }: { onClose: () => void }) {
-  const { isLoading, items, missing, paused, workspaces } = useOpenedItems();
+  const { isLoading, items, missing, paused, workspaces } = useRecentItems();
   return (
     // A centred card on phones too, closed by tapping outside it.
     <Dialog onOpenChange={(open) => !open && onClose()} open>
@@ -138,20 +81,29 @@ export function RecentQuickOpen({ onClose }: { onClose: () => void }) {
                     <span className="truncate font-semibold text-fg">
                       {item.title}
                     </span>
-                    {workspace && (
-                      <span className="flex min-w-0 items-center gap-1.5 text-fg-muted text-sm">
-                        <img
-                          alt=""
-                          className="size-4.5 shrink-0 -translate-y-px rounded-[4px]"
-                          height={18}
-                          src={iconUrl(workspace.iconId)}
-                          width={18}
-                        />
-                        <span className="min-w-0 truncate">
-                          {workspace.name}
-                        </span>
+                    {/* Like Recent Files' hint: workspace · when opened. */}
+                    <span className="flex min-w-0 items-center gap-1.5 text-fg-muted text-sm">
+                      {workspace && (
+                        <>
+                          <img
+                            alt=""
+                            className="size-4.5 shrink-0 -translate-y-px rounded-[4px]"
+                            height={18}
+                            src={iconUrl(workspace.iconId)}
+                            width={18}
+                          />
+                          <span className="min-w-0 truncate">
+                            {workspace.name}
+                          </span>
+                          <span aria-hidden className="shrink-0">
+                            ·
+                          </span>
+                        </>
+                      )}
+                      <span className="shrink-0 whitespace-nowrap">
+                        {recentHint(item)}
                       </span>
-                    )}
+                    </span>
                   </span>
                 </Link>
               );

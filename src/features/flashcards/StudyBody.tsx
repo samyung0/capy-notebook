@@ -291,7 +291,6 @@ export function StudyBody({
                   label={chapter}
                   onRate={rate}
                   rated={shown.record}
-                  size="compact"
                   stack={stack}
                 />
               </div>

@@ -9,7 +9,6 @@ import {
   useMaterials,
   usePlanStudy,
   useResetWorkspaceStudy,
-  useSetWorkspaceStudyEnabled,
   useUpdateStudyPlan,
   useWorkspace,
   useWorkspaceAttempts,
@@ -32,7 +31,6 @@ import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
-import { Switch } from '@/components/ui/Switch';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
 import { materialKindLabel } from '@/features/materials/MaterialListCard';
@@ -89,7 +87,8 @@ const titleOf = (item: WorkspaceContentItem) =>
  * title's right, Default Plan being the workspace's chapter order. The plan
  * leads the railway map, Continue, Quick review and Quick actions, then its
  * chapters with each file's read state and each quiz's and set's attempts.
- * With study progress hidden only the plan select and the settings rows stay. */
+ * With study progress hidden (workspace settings → Study) only the plan
+ * select, a line pointing there and the settings rows stay. */
 export function StudyPage({
   workspaceId,
   planId,
@@ -183,8 +182,6 @@ function StudyBody({
   const { data: attempts } = useWorkspaceAttempts(workspaceId);
   const { menuItems } = useStudyActions(workspaceId);
   const links = usePlanLinks(workspaceId, onOpenItem);
-  const { isPending: savingShown, mutate: setShown } =
-    useSetWorkspaceStudyEnabled(workspaceId);
   const { mutate: resetStudy } = useResetWorkspaceStudy(workspaceId);
   // Step saves report failures in the global toast; the rename dialog waits.
   const { mutate: saveSteps, mutateAsync: updatePlan } =
@@ -467,6 +464,27 @@ function StudyBody({
 
   return (
     <>
+      {/* The switch is the member's own, in workspace settings' Study tab. */}
+      {hidden && (
+        <p className="mt-6 flex flex-wrap items-center gap-x-2 text-fg-muted">
+          {m.study_hidden_here()}
+          <Button
+            className="underline"
+            iconRight="navigationForward"
+            onClick={() =>
+              void navigate({
+                replace: true,
+                search: (previous) => ({ ...previous, settings: 'study' }),
+                to: '.',
+              })
+            }
+            size="xs"
+            variant="ghost-link"
+          >
+            {m.workspace_settings()}
+          </Button>
+        </p>
+      )}
       {!hidden && (
         <>
           {mapItems.length > 0 && (
@@ -602,7 +620,7 @@ function StudyBody({
         </>
       )}
       {/* Settings-style rows, the destructive ones last. Every control takes
-          one 96px column, the switch centred in it, so the labels line up. */}
+          one 96px column so the labels line up. */}
       <div className="mt-8 mb-20 flex flex-col gap-6">
         {plan && (
           <SettingRow hint={plan.name} title={m.plan_rename()}>
@@ -616,19 +634,6 @@ function StudyBody({
             </Button>
           </SettingRow>
         )}
-        <SettingRow
-          hint={m.study_hide_progress_hint()}
-          title={m.study_hide_progress()}
-        >
-          <span className="flex w-[96px] justify-center">
-            <Switch
-              aria-label={m.study_hide_progress()}
-              checked={hidden}
-              disabled={savingShown}
-              onCheckedChange={(on) => setShown(!on)}
-            />
-          </span>
-        </SettingRow>
         <SettingRow
           hint={m.study_reset_confirm_body()}
           title={m.study_reset_title()}

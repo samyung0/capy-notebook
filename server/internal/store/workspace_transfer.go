@@ -115,7 +115,7 @@ func (s *Store) TransferWorkspace(
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, err
 	}
-	return s.GetWorkspace(ctx, recipientID, workspaceID, false)
+	return s.GetWorkspace(ctx, recipientID, workspaceID)
 }
 
 // WorkspacesDestroyedByDeletion lists every workspace the user owns. Ownership

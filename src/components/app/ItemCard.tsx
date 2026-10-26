@@ -229,7 +229,8 @@ export function ItemCard({
   return (
     <Card
       className={cn(
-        '@container group/card relative gap-0 p-1.5 hover:bg-item-hover',
+        // Phones drop the padding that frames the hover background.
+        '@container group/card relative gap-0 p-0 hover:bg-item-hover sm:p-1.5',
         selected &&
           'bg-tint-accent-1/60 frosted:bg-solid-accent-1/25 frosted:hover:bg-solid-accent-1/25 hover:bg-tint-accent-1/60'
       )}
@@ -248,7 +249,7 @@ export function ItemCard({
           title and the workspace name start at one edge. */}
       <div className="box-content flex min-w-0 items-start gap-1.5 px-1.5 pt-2.5 sm:h-5 sm:items-center">
         <FileIcon
-          className="mt-px size-4.5 shrink-0 sm:mt-0 sm:-translate-y-px"
+          className="size-4.5 shrink-0 -translate-y-0.5 sm:-translate-y-px"
           name={icon}
         />
         <Title
@@ -378,16 +379,20 @@ export function ItemList<S extends string = string>({
  * growing to 200px from `sm` and 240px from `xl`; each card at most 320px
  * wide and centred in a column that grows past that. */
 export function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
+  // By the grid's own width, so a narrow pane reads like a phone: one column
+  // under 280px, two with a tighter gap up to 440px (a 360px phone), then
+  // cards of at least 200px, and 240px from 1008px, where both minimums give
+  // four columns, so widening never drops one.
   return (
-    <div
-      className={cn(
-        // Cards stay at least 200px wide, so phones show one column; min() keeps
-        // a grid narrower than that from overflowing.
-        'grid w-full grid-cols-[repeat(auto-fill,minmax(min(200px,100%),1fr))] gap-4 xl:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
-        className
-      )}
-      {...rest}
-    />
+    <div className="@container/items w-full">
+      <div
+        className={cn(
+          'grid w-full @min-[1008px]/items:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] @min-[280px]/items:grid-cols-2 @min-[440px]/items:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] grid-cols-1 @min-[440px]/items:gap-4 gap-3 [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
+          className
+        )}
+        {...rest}
+      />
+    </div>
   );
 }
 
@@ -405,7 +410,7 @@ export function ItemSkeletonGrid({
   return (
     <ItemGrid aria-label={m.a11y_loading()} className={className} role="status">
       {Array.from({ length: count }, (_, i) => (
-        <div className="@container p-1.5" key={i}>
+        <div className="@container sm:p-1.5" key={i}>
           <Skeleton
             className={cn(
               'rounded-[calc(var(--radius-tile)-1px)]',

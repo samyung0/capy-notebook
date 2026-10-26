@@ -458,7 +458,7 @@ export const userDetailSchema = z.object({
     z.object({
       fileCount: countSchema,
       id: z.string(),
-      lastActivityAt: dateTimeSchema,
+      lastActivityAt: dateTimeSchema.nullable(),
       name: z.string(),
     })
   ),

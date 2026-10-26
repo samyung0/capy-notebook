@@ -15,7 +15,15 @@ import {
   useEditorSelector,
   useReadOnly,
 } from 'platejs/react';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type * as Y from 'yjs';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import { CharCount } from '@/components/ui/Input';
@@ -63,6 +71,7 @@ import { repairFigureBlock } from '@/features/questions/repair';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
+import { FrostedSurface } from '@/theme/theme';
 import { useOptionalEditorRuntime } from '../EditorRuntime';
 import {
   FLASHCARD_BACK_CLASS,
@@ -190,6 +199,7 @@ function StudyBlockToolbar({
   onDelete: () => void;
 }) {
   const editor = useEditorRef();
+  const frosted = useContext(FrostedSurface);
   const floating = useVirtualFloating({
     getBoundingClientRect: () =>
       getRangeBoundingClientRect(editor, editor.selection),
@@ -225,6 +235,7 @@ function StudyBlockToolbar({
         className="flex items-center gap-0.5 rounded-lg border border-overlay-line bg-overlay p-1 shadow-pop"
         contentEditable={false}
         data-floating-toolbar
+        data-frost={frosted || undefined}
         data-plate-prevent-deselect
         data-study-block-toolbar
         onExited={onExited}

@@ -41,7 +41,6 @@ type createStandaloneMaterialInput struct {
 type materialsListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
-	IDs         string `query:"ids" doc:"Comma-separated material ids: only these rows (the phone quick open, ordered by the client's opens)"`
 	Location    string `query:"location" doc:"Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"`
 	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones"`
 	Sort        string `query:"sort" enum:"updated,created,title,kind,workspace" default:"updated"`
@@ -182,7 +181,7 @@ func (a *api) listOwnedMaterials(ctx context.Context, in *materialsListInput) (*
 		}
 	}
 	page, err := a.s.ListOwnedMaterials(ctx, userID(ctx), store.MaterialListFilter{
-		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), IDs: csv(in.IDs), Locations: csv(in.Location), Member: in.Scope == "member",
+		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Locations: csv(in.Location), Member: in.Scope == "member",
 		Sort: in.Sort, Ascending: in.Dir == "asc", Limit: in.Limit, Cursor: in.Cursor,
 	})
 	if err != nil {

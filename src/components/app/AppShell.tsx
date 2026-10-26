@@ -2,6 +2,8 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { api } from '@/api/client';
 import { useEventStream, useMe } from '@/api/hooks';
+import { Tour } from '@/features/guide/Tour';
+import { useRunningTour } from '@/features/guide/tourStore';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { useFinishToasts } from '@/features/study/finishToasts';
 import { startDraftSweeps } from '@/lib/editDrafts';
@@ -39,6 +41,8 @@ export function AppShell() {
   useFinishToasts();
   useKeyboardHeight();
   const themeDrawer = useThemeDrawer();
+  // The guided tour walks across pages, so it lives above them.
+  const tour = useRunningTour();
 
   return (
     <div className="page-frame t-body relative flex h-dvh overflow-hidden bg-page text-fg">
@@ -62,6 +66,7 @@ export function AppShell() {
         </InShellMain.Provider>
       </main>
       <ThemeDrawer onOpenChange={themeDrawer.setOpen} open={themeDrawer.open} />
+      {tour && <Tour key={tour.workspaceId} workspaceId={tour.workspaceId} />}
     </div>
   );
 }

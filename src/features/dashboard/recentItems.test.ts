@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MaterialListItem, SourceFile, Workspace } from '@/api/types';
-import { mergeRecentItems, orderByOpens } from './recentItems';
+import { fromRecent, mergeRecentItems } from './recentItems';
 
 const workspace = {
   canClone: true,
@@ -138,17 +138,20 @@ describe('mergeRecentItems', () => {
   });
 });
 
-describe('orderByOpens', () => {
-  it('orders rows by this browser opens and skips opens the lists left out', () => {
-    const items = orderByOpens(
-      [file('f_1', '2026-04-01T00:00:00.000Z')],
-      [material('m_1', '2026-05-01T00:00:00.000Z')],
-      [workspace],
+describe('fromRecent', () => {
+  it('keeps the server open order with each open time', () => {
+    const items = fromRecent(
       [
-        { id: 'f_1', kind: 'file', openedAt: '2026-06-02T00:00:00.000Z' },
-        { id: 'f_gone', kind: 'file', openedAt: '2026-06-01T12:00:00.000Z' },
-        { id: 'm_1', kind: 'material', openedAt: '2026-06-01T00:00:00.000Z' },
-      ]
+        {
+          file: file('f_1', '2026-04-01T00:00:00.000Z'),
+          openedAt: '2026-06-02T00:00:00.000Z',
+        },
+        {
+          material: material('m_1', '2026-05-01T00:00:00.000Z'),
+          openedAt: '2026-06-01T00:00:00.000Z',
+        },
+      ],
+      [workspace]
     );
     expect(items.map((item) => [item.id, item.openedAt])).toEqual([
       ['f_1', '2026-06-02T00:00:00.000Z'],

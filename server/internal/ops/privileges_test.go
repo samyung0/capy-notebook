@@ -192,8 +192,9 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			ON user_subscriptions TO %s;
 		GRANT SELECT (
 			id, user_id, name, embedding_provider_slug, embedding_model_slug, embedding_model_version,
-			embedding_dim, last_accessed_at
+			embedding_dim
 		) ON workspaces TO %s;
+		GRANT SELECT (workspace_id, opened_at) ON workspace_visits TO %s;
 		GRANT SELECT (user_id, role) ON operators TO %s;
 		GRANT SELECT (role, permission) ON ops_permissions TO %s;
 		GRANT SELECT (
@@ -286,7 +287,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		readIdent, adminIdent,
 		readIdent, readIdent, readIdent, readIdent, readIdent, readIdent,
 		readIdent, readIdent,
-		readIdent, readIdent, readIdent, readIdent, readIdent, readIdent,
+		readIdent, readIdent, readIdent, readIdent, readIdent, readIdent, readIdent,
 		readIdent, readIdent, readIdent, readIdent, readIdent, readIdent,
 		readIdent, readIdent,
 		readIdent,
