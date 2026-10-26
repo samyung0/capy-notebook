@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +14,10 @@ if (!existsSync(path.join(officeRoot, 'package.json'))) {
   process.exit(1);
 }
 
+// Worktrees link vendor/betteroffice to a fork checkout; bun resolves workspace
+// paths differently through the link and rejects the frozen lockfile.
+const officeCwd = realpathSync(officeRoot);
+
 // The fork builder fingerprints sources and generated output. Checking only
 // whether a JS file exists would keep stale WASM after a submodule update.
 run('bun', ['install', '--frozen-lockfile']);
@@ -23,7 +27,7 @@ run('bun', ['scripts/build-office-checkpoint.ts']);
 
 function run(command, args) {
   const result = spawnSync(command, args, {
-    cwd: officeRoot,
+    cwd: officeCwd,
     stdio: 'inherit',
   });
   if (result.error) {
