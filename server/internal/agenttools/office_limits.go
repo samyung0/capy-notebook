@@ -16,7 +16,7 @@ const OfficeLimitsPath = "vendor/betteroffice/crates/office-service/limits.json"
 
 // OfficeIDsPerCall is the pictures and charts one inspect_office_document
 // by-id read names: the table's inspectIds.perCall (httpapi's test keeps them
-// equal), its ids schema's maxItems and the gateway's cap (Q278, Q381).
+// equal), named in its ids description, and the gateway's cap (Q278, Q381).
 const OfficeIDsPerCall = 4
 
 type officeLimitTable struct {

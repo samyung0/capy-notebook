@@ -431,7 +431,8 @@ if cfg.turn_slots <= 0:
 
 def require_parse_timeouts() -> None:
     """The parser request ends before its job's wall-clock limit. Checked by the
-    job worker, which runs parse jobs; retrieval reads PARSER_TIMEOUT only for
-    page captures, so a parse setting never stops it starting."""
+    job worker, which runs parse jobs; retrieval never reads PARSER_TIMEOUT
+    (Office files have no page capture, Q283), so a parse setting never stops
+    it starting."""
     if not cfg.parser_timeout < cfg.parse_job_timeout:
         raise ValueError("PARSER_TIMEOUT must be below CAPY_PARSE_JOB_TIMEOUT")

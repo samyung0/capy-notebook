@@ -898,7 +898,11 @@ A PowerPoint file's PDF keeps its hidden slides (`odl/document.py`
 `_HIDDEN_SLIDES`, LibreOffice 7.4's JSON export options on `--convert-to`;
 Epo 2026-10-24, Q276), so page N is slide N as `inspect_office_document`
 numbers slides; files parsed before keep their pages and are not reparsed
-(parser `odl-2.5.7-refined-vlm-v20`).
+(parser `odl-2.5.7-refined-vlm-v20`). Hidden slides therefore count toward
+`CAPY_PARSE_MAX_PAGES` and the per-page parse fee, are indexed, and a hidden
+slide 1 is the ingest page-1 thumbnail, as the PPTX editor draws it for the
+browser capture; the page-cap, parse-fee and thumbnail decisions count the
+converted PDF's pages and exclude none (review r1 N4).
 `CAPY_PARSE_QUEUE_DEPTH` (8) counts documents in a parse child and waiting, and
 must be at least the worker count (checked at startup); one more concurrent request is answered
 `429` and the coordinator returns its job to `pending` as a capacity wait
@@ -4888,10 +4892,11 @@ picture alt "…", W x H px (cropped)` or `… not viewable: why`, `[id] chart t
 "title"` followed by `series "name" (references), N points: [[idx, category,
 value], …] … M more`, `equation: text` and `drawing: text`; a read holding any
 explains them once in its head (`tools.OFFICE_OBJECTS_HEAD`). `ids` (any
-format, at most 4: the contract's `maxItems` and Go's cap,
-`agenttools.OfficeIDsPerCall`) sends `office.ids`; the answer's `notice` comes
-first, then the items fenced: a chart with its points (`cut` shown as not
-sent), a picture the engine marks not viewable as its alt text and why, never
+format, at most 4: named in the contract's description, counted only by Go's
+cap after its repair, `agenttools.OfficeIDsPerCall`, Q396) sends `office.ids`;
+the answer comes fenced, the `notice` its first line since it names ids and
+part paths from the file: a chart with its points (`cut` shown as not sent), a
+picture the engine marks not viewable as its alt text and why, never
 decoded, and each viewable picture decoded on the render pool and attached as
 its own image (`tools._office_picture`). A picture's image id is `<call
 id>#<n>` (`capture.picture_id`; `capture.inject_images` puts a call's images
@@ -4899,11 +4904,19 @@ after its result, in order); its record in `ToolContext.captures` carries
 `picture` and no page, so a deck slide uses it whole by its capture number
 (`deck.turn_figures`, Q278). It counts toward the message's 16 images and
 stays within the image budget like a capture; one past the 16 is named not
-attached and the result ends with `tools.PICTURE_LIMIT`. The decode
-(`capture.picture_jpeg`) clamps the crop first (`capture.crop_box`, review r1
+attached and the result ends with `tools.PICTURE_LIMIT`. A picture whose
+decode raises anything else (a garbage EXIF block raises SyntaxError) is
+named "not attached: it could not be decoded" and the read stands, the other
+pictures attached (Q396).
+`capture_page` refuses as an Office file only a `doc`, `sheet` or `slides`
+file whose name ends `.docx`, `.xlsx` or `.pptx` (Go's `SourceEditFormat`,
+`capture.is_office`); CSV, TSV and legacy `.doc`, `.xls` and `.ppt` files get
+the page-less source's "this source has no retained PDF" (`unsupported_format`).
+The decode (`capture.picture_jpeg`) clamps the crop first (`capture.crop_box`, review r1
 L1: a side that is missing or no finite number reads as 0, a negative padding
 side as 0, a side past 1 as 1, and a pair of sides that would leave nothing
-leaves that axis whole), then refuses a picture whose side, as Pillow reads
+leaves that axis whole, so a broken or crafted crop shows pixels the author
+cropped away, where Office would show none; review r1 N3), then refuses a picture whose side, as Pillow reads
 its header, is past `IMAGE_MAX_SIDE` (2,400: the upload check's limit and the
 engine's `pictureSide`) before any pixel is decoded (review r1 L3; Pillow sizes
 a GIF by its first frame too, review r2), and shrinks the rest with the Q239

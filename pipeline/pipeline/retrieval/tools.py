@@ -2965,6 +2965,11 @@ async def _office_picture(
         return f"not attached: {exc}"
     except ValueError:
         return "not attached: its crop leaves no pixels"
+    except Exception:
+        # Whatever else Pillow raises on a damaged picture (a garbage EXIF
+        # block raises SyntaxError) skips this picture, not the read (Q396).
+        log.warning("office picture %s did not decode", item.get("id"), exc_info=True)
+        return "not attached: it could not be decoded"
     # Checked again: the image calls of one response run side by side.
     if ctx.images_taken >= MAX_IMAGES:
         return "not attached: this message's image limit is reached"
@@ -3001,8 +3006,9 @@ async def _office_items(
     on the next request, counted toward MAX_IMAGES, kept and dropped by the
     image budget like a capture and usable as a deck figure by its capture
     number; a picture the model cannot see as its alt text and why (Q280); a
-    chart with every point the answer holds; the engine's notice first, so
-    the tool output limit cannot cut it."""
+    chart with every point the answer holds; the engine's notice the fence's
+    first line, so the tool output limit cannot cut it. A picture that does
+    not decode is named and the rest of the read stands (Q396)."""
     name = str(body.get("title") or "")
     call_id = str(args.get("_tool_call_id") or "")
     lines: list[str] = []
@@ -3027,8 +3033,10 @@ async def _office_items(
         "attached as capture n is on the next message and a deck slide may use it "
         "as a figure:"
     )
+    # The notice names ids and part paths from the file: fenced like the
+    # items, as its first line (review r1 N2).
     if answer.get("notice"):
-        head += f"\n{answer['notice']}"
+        lines.insert(0, str(answer["notice"]))
     text = head + "\n" + source_block("\n".join(lines))
     if ctx.images_taken >= MAX_IMAGES and pictures:
         text += "\n\n" + PICTURE_LIMIT

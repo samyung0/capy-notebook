@@ -43,8 +43,19 @@ OFFICE_NO_PAGES = (
     "a Word, Excel or PowerPoint file has no page view: inspect_office_document "
     "reads its text, tables, equations and charts, and its pictures by their ids"
 )
-# The stored kinds of Word, Excel and PowerPoint files.
+# The Word, Excel and PowerPoint files inspect_office_document reads: their
+# stored kind, and the name's suffix Go's SourceEditFormat goes by (Q396).
+# CSV and TSV (kind sheet) and legacy .doc, .xls and .ppt keep the refusal
+# they had before (a page-less source has no retained PDF).
 OFFICE_KINDS = ("doc", "sheet", "slides")
+OFFICE_SUFFIXES = (".docx", ".xlsx", ".pptx")
+
+
+def is_office(row: dict[str, Any]) -> bool:
+    return (
+        row.get("kind") in OFFICE_KINDS
+        and Path(str(row.get("name") or "")).suffix.lower() in OFFICE_SUFFIXES
+    )
 
 
 class CaptureUnavailable(Exception):
@@ -312,7 +323,7 @@ def picture_jpeg(
 async def office_file(workspace_id: str, file_id: str) -> bool:
     """Whether the file is a Word, Excel or PowerPoint file (no page view)."""
     row = await store.file_page_source(workspace_id, file_id)
-    return row is not None and row.get("kind") in OFFICE_KINDS
+    return row is not None and is_office(row)
 
 
 async def render_file(
@@ -327,7 +338,7 @@ async def render_file(
                 "the source has no stored bytes", "unavailable_target"
             )
         return await limits.render_thread(_image_capture, row, page, bbox, max_edge)
-    if row.get("kind") in OFFICE_KINDS:
+    if is_office(row):
         raise CaptureUnavailable(OFFICE_NO_PAGES)
     pdf = await pdf_path(workspace_id, file_id)
     return await limits.render_thread(render, pdf, page, bbox, max_edge)

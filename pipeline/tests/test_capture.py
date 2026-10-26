@@ -783,15 +783,30 @@ async def test_capture_names_inspect_office_document_before_asking_for_a_passage
         assert not ctx.pending_images and ctx.images_taken == 0
 
 
-@pytest.mark.parametrize("kind", ["doc", "sheet", "slides", "pdf"])
-async def test_capture_follows_the_stored_kind_not_the_name(monkeypatch, pdf, kind):
-    """The stored kind decides, whatever the file is renamed to: a PDF
-    renders, and a Word, Excel or PowerPoint file has no page view (Epo
-    2026-10-24, Q283): the refusal names inspect_office_document and nothing
-    is downloaded or sent to the parser."""
+@pytest.mark.parametrize(
+    ("kind", "name", "outcome"),
+    [
+        ("doc", "plan.docx", "office"),
+        ("sheet", "grades.XLSX", "office"),
+        ("slides", "deck.pptx", "office"),
+        ("sheet", "marks.csv", "no pdf"),
+        ("sheet", "marks.tsv", "no pdf"),
+        ("doc", "old.doc", "no pdf"),
+        ("slides", "old.ppt", "no pdf"),
+        ("pdf", "renamed.docx", "renders"),
+    ],
+)
+async def test_capture_refuses_only_the_office_files_inspect_reads(
+    monkeypatch, pdf, kind, name, outcome
+):
+    """A Word, Excel or PowerPoint file inspect_office_document reads (its
+    kind and a .docx, .xlsx or .pptx name, as Go's SourceEditFormat) has no
+    page view (Q283): the refusal names inspect_office_document. CSV, TSV and
+    legacy .doc, .xls and .ppt files keep the page-less source's refusal, and
+    a PDF renders whatever its name (Q396, review r1 L3)."""
     row = {
         "kind": kind,
-        "name": "renamed.docx" if kind == "pdf" else "renamed.pdf",
+        "name": name,
         "ever_parsed_successfully": True,
         "parse_mode": "standard",
         "blob_path": "source/blob",
@@ -800,21 +815,24 @@ async def test_capture_follows_the_stored_kind_not_the_name(monkeypatch, pdf, ki
     async def source(*_args):
         return row
 
-    async def pdf_path(*_args):
-        assert kind == "pdf", "an Office file has no PDF to capture"
-        return pdf
-
     monkeypatch.setattr(capture.store, "file_page_source", source)
-    monkeypatch.setattr(capture, "pdf_path", pdf_path)
-    if kind == "pdf":
+    assert capture.is_office(row) is (outcome == "office")
+    if outcome == "renders":
+
+        async def pdf_path(*_args):
+            return pdf
+
+        monkeypatch.setattr(capture, "pdf_path", pdf_path)
         expected = capture.render(pdf, 1, None, 100)
         assert await capture.render_file("ws_1", "f_1", 1, None, 100) == expected
         return
-    with pytest.raises(
-        capture.CaptureUnavailable, match="inspect_office_document"
-    ) as no:
+    with pytest.raises(capture.CaptureUnavailable) as no:
         await capture.render_file("ws_1", "f_1", 1, None, 100)
     assert no.value.code == "unsupported_format"
+    if outcome == "office":
+        assert str(no.value) == capture.OFFICE_NO_PAGES
+    else:
+        assert str(no.value) == "this source has no retained PDF"
 
 
 # ------------------------------------------------------------- Office pictures

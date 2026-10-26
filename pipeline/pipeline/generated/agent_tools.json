@@ -1303,12 +1303,10 @@
             "type": "string"
           },
           "ids": {
-            "description": "Any format: pictures' and charts' ids from an earlier read, copied whole; a picture comes back as an image, a chart with every point. The other arguments are then ignored.",
+            "description": "Any format, at most 4: pictures' and charts' ids from an earlier read, copied whole; a picture comes back as an image, a chart with every point. The other arguments are then ignored.",
             "items": {
               "type": "string"
             },
-            "maxItems": 4,
-            "minItems": 1,
             "type": "array"
           },
           "range": {

@@ -137,7 +137,8 @@ ALL_SOURCES_RULES = """All sources mode (when Workspace only is off):
 - If the library has nothing in the requested scope, say so plainly."""
 
 # Capture only for what the parser carries poorly (Epo 2026-10-24); an Office
-# file is read with inspect_office_document, never captured (Q278, Q280, Q283).
+# file is read with inspect_office_document, never captured (Q278, Q280, Q283;
+# the wording Q395's).
 CAPTURE_RULE = (
     "Capture a page with capture_page only for what the parser carries poorly: "
     "a figure, a table, a formula, or passage text flagged with low extraction "
@@ -148,8 +149,9 @@ CAPTURE_RULE = (
     "captured image is the source of truth. If capture is unavailable or the "
     "detail is illegible, say it could not be verified instead of guessing. "
     "Uploaded images are one page each; for a library page, see the all sources "
-    "rules. capture_page is the costly page view of PDFs and images only: a Word, "
-    "Excel or PowerPoint file has no pages to capture, and inspect_office_document "
+    "rules. capture_page is the costly view of PDF pages and image files: capture "
+    "a PDF figure or table by its region (bbox). A Word, Excel or PowerPoint file "
+    "has no pages to capture, and inspect_office_document "
     "(offered once the office_building skill is read) is its cheap read, giving "
     "its text, numbers, tables, equations and chart data, and its pictures as "
     "images by their ids. `[formula]` in passage or material text marks a formula "

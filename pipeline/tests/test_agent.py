@@ -5956,7 +5956,8 @@ async def test_office_ids_attach_each_picture_and_give_charts_every_point(
     )
     assert sent[0]["office"] == {"ids": ids}
     text = result.text()
-    assert text.index("Not found: slide:9 is gone.") < text.index("<source>")
+    # The notice names ids from the file: the fence's first line (review r1 N2).
+    assert "<source>\nNot found: slide:9 is gone.\n" in text
     assert (
         f'[{ids[0]}] picture alt "A red square", 64 x 32 px, cropped; attached as capture 1'
         in text
@@ -5987,11 +5988,85 @@ async def test_office_ids_attach_each_picture_and_give_charts_every_point(
     assert problems == {1: "", 2: ""} and set(figures) == {1, 2}
 
 
+def test_office_ids_reach_the_gateway_with_repeats_and_blanks():
+    """The contract sets no item bounds on ids, so a list the gateway repairs
+    (repeats and blanks dropped before its cap of 4 counts) is not refused
+    first (Q277, Q396, review r1 L1)."""
+    for ids in (["a", "a", "b", "c", "d"], ["a", "", "b", "c", "d"], []):
+        args = {"file_id": "f_1", "ids": ids}
+        assert contract.validate_args("inspect_office_document", args) is None
+
+
+def _bad_exif_png64() -> str:
+    """An 8 x 8 PNG with a garbage eXIf chunk, on which Pillow raises
+    SyntaxError ("not a TIFF file") while orienting it."""
+    import struct
+    import zlib
+
+    png = base64.b64decode(_png64(8, 8))
+    data = b"garbage!"
+    chunk = struct.pack(">I", len(data)) + b"eXIf" + data
+    chunk += struct.pack(">I", zlib.crc32(b"eXIf" + data))
+    return base64.b64encode(png[:33] + chunk + png[33:]).decode()
+
+
+async def test_a_picture_that_does_not_decode_is_named_and_the_read_stands(
+    monkeypatch,
+):
+    """A picture whose metadata makes Pillow raise is named as not attached;
+    the pictures before and after it stay attached, the chart is answered and
+    the call succeeds (Q396, review r1 L2)."""
+    items = [
+        {**_PHOTO, "data": _png64(8, 8)},
+        {**_PHOTO, "id": "slide:0:256:shape:7", "data": _bad_exif_png64()},
+        {**_PHOTO, "id": "slide:0:256:shape:9", "data": _png64(8, 8)},
+        _CHART,
+    ]
+    ctx, _ = _ids_ctx(monkeypatch, items)
+    result = await tools.run(
+        "inspect_office_document",
+        {"file_id": "f_1", "ids": [i["id"] for i in items], "_tool_call_id": "c"},
+        ctx,
+    )
+    text = result.text()
+    assert not result.failed and not result.refused, text
+    assert "[slide:0:256:shape:7] picture" in text
+    assert "; not attached: it could not be decoded" in text
+    assert "; attached as capture 2" in text and 'series "Revenue"' in text
+    assert list(ctx.pending_images) == ["c#1", "c#3"] and ctx.images_taken == 2
+
+
+async def test_a_carried_office_picture_drops_with_the_image_budget(monkeypatch):
+    """A by-id picture is in the image budget like a capture (Q349, review r1
+    N5): past 35k the pictures a request carried drop oldest first, and one
+    no request carried yet stays."""
+    big = {**_PHOTO, "crop": None, "pixels": [1568, 1568], "data": _png64(1568, 1568)}
+    items = [big, {**big, "id": "slide:0:256:shape:8"}]
+    ctx, _ = _ids_ctx(monkeypatch, items)
+    await tools.run(
+        "inspect_office_document",
+        {"file_id": "f_1", "ids": [i["id"] for i in items], "_tool_call_id": "c"},
+        ctx,
+    )
+    assert list(ctx.pending_images) == ["c#1", "c#2"]
+    ctx.images_sent.add("c#1")  # a request carried the first picture only
+    for n in range(10):  # later captures, not carried yet
+        ctx.captures.append({"callId": f"k{n}", "estimatedImageTokens": 3_500})
+        ctx.pending_images[f"k{n}"] = ("capture", "url")
+        ctx.budget_images.add(f"k{n}")
+    tools.keep_images_within_budget(ctx)
+    assert "c#1" not in ctx.pending_images and "c#2" in ctx.pending_images
+
+
 async def test_a_picture_the_engine_calls_not_viewable_is_never_decoded(monkeypatch):
     """Security regression (Q280, Q381): the AI process decodes only what the
     engine marks viewable, so bytes on a not-viewable item never reach Pillow."""
 
-    def decode(*_args):
+    decoded: list[tuple] = []
+
+    def decode(*args):
+        # Recorded, since a decode error is caught and named (Q396).
+        decoded.append(args)
         raise AssertionError("decoded a picture the engine calls not viewable")
 
     monkeypatch.setattr(tools.capture, "picture_jpeg", decode)
@@ -6001,6 +6076,7 @@ async def test_a_picture_the_engine_calls_not_viewable_is_never_decoded(monkeypa
         {"file_id": "f_1", "ids": [_LOGO["id"]], "_tool_call_id": "c"},
         ctx,
     )
+    assert not decoded
     assert "not viewable: an EMF or WMF drawing" in result.text()
     assert not ctx.pending_images and not ctx.captures and ctx.images_taken == 0
 

@@ -1227,9 +1227,11 @@ func Definitions() []Definition {
 				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first shape or paragraph; counting from 0."},
 				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX: paragraphs to read; PPTX: slides, or with slide shapes and paragraphs."},
 				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number, from 1."},
+				// No item bounds: the gateway repairs the list (blanks and repeats
+				// dropped) before its cap counts it (Q277, Q396).
 				"ids": map[string]any{
-					"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "maxItems": OfficeIDsPerCall,
-					"description": "Any format: pictures' and charts' ids from an earlier read, copied whole; a picture comes back as an image, a chart with every point. The other arguments are then ignored.",
+					"type": "array", "items": map[string]any{"type": "string"},
+					"description": fmt.Sprintf("Any format, at most %d: pictures' and charts' ids from an earlier read, copied whole; a picture comes back as an image, a chart with every point. The other arguments are then ignored.", OfficeIDsPerCall),
 				},
 			}, "file_id"),
 			Concurrency:        "read",
