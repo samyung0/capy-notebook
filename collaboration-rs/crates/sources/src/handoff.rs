@@ -823,8 +823,9 @@ impl Handoff {
     }
 
     /// A deferred publication: the file and its index change while every
-    /// editor keeps its document; pending effects are the latest save against
-    /// the capture on the same base; the rebuild waits for an empty room.
+    /// editor keeps its document; the count restarts from the latest save's
+    /// effects against the capture on the same base; the rebuild waits for an
+    /// empty room.
     async fn publish_deferred(
         self: &Arc<Self>,
         input: &SourcePublish,
@@ -854,6 +855,8 @@ impl Handoff {
                     .effects_of_durable(&published, None, &job)
                     .await?
             };
+            // The residual resets the count; Office effects are read on
+            // demand, never stored (Q405).
             let mut body = publication.clone();
             body.insert("deferred".into(), json!(true));
             body.insert("expectedLatestCheckpoint".into(), json!(latest.checkpoint));
@@ -861,7 +864,7 @@ impl Handoff {
                 "netTokens".into(),
                 json!(crate::effects::effect_tokens(&effects)),
             );
-            body.insert("pendingEffects".into(), json!(effects));
+            body.insert("pendingEffects".into(), json!([]));
             match self
                 .sources
                 .gateway()

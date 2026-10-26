@@ -58,8 +58,6 @@ pub struct SourceSession {
     pub format: SourceFormat,
     pub indexed_checkpoint: u64,
     pub net_tokens: i64,
-    #[serde(default)]
-    pub pending_effects: Vec<NetEffect>,
     #[serde(default, rename = "publishedSourceSHA256")]
     pub published_source_sha256: Option<String>,
     #[serde(default, rename = "publishedSourceURL")]

@@ -1,8 +1,10 @@
 //! Source documents (sourceDocuments.ts) with delta saves (Epo 2026-10-06):
 //! a room loads base + log and checks it, a store appends only the room's
 //! update since its durable state (the row) through the gateway's checkpoint
-//! CAS, and a fold merges the log into the base. Office effects come from the
-//! engine pool on the room's whole state; text effects from the change.
+//! CAS, and a fold merges the log into the base. Text effects come from the
+//! change; Office effects are read when the agent reads the file
+//! ([crate::pending], Q405), and an Office save stores only the text its
+//! edits inserted and deleted.
 //!
 //! Stored layout (DESIGN 3.1): `source_documents.state` is the base (an
 //! Office change over seed(base) with `state_seed_sha256`, or a whole text
@@ -27,6 +29,7 @@ use crate::effects::{effect_tokens, trim_effect, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
 use crate::gateway::{CheckpointBody, CheckpointSaved, Gateway, RefreshCandidate, SourceSession};
+use crate::pending::{Edits, EffectsCache};
 use crate::text::{TEXT_ROOT, TextSave, TextWindow, full_text_effects, text_doc, text_seed};
 use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceFormat, SourceRoom};
 
@@ -104,6 +107,8 @@ struct RoomRecord {
     /// Text: the indexed baseline and the last saved effect's window.
     baseline: Option<Arc<Vec<u16>>>,
     window: Option<TextWindow>,
+    /// Office: what the room's document took since its last save.
+    edits: Option<Arc<Edits>>,
 }
 
 /// A source room just loaded.
@@ -154,7 +159,7 @@ pub struct LoadTimes {
 /// effects are read from.
 pub struct Save {
     pub row: Vec<u8>,
-    /// Office: the room's whole state, which the engine reads effects from.
+    /// Office: the room's whole state, for the save's size check.
     pub state: Option<Vec<u8>>,
     /// Text: effects from the change ([`Sources::text_effects`]).
     pub text: Option<TextSave>,
@@ -196,7 +201,8 @@ pub(crate) struct Stored {
 }
 
 /// A rebase onto new bytes; none (no save after the capture) leaves the
-/// state seed(new bytes), with no effects.
+/// state seed(new bytes), with no effects. Office effects are never stored
+/// (Q405): `pending_effects` stays empty and `net_tokens` is the residual's.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceRebase {
@@ -257,7 +263,7 @@ pub struct ResolvedAsset {
     pub sha256: String,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -273,7 +279,7 @@ impl From<PutError> for SourceError {
     }
 }
 
-fn db_error(error: impl std::fmt::Display) -> SourceError {
+pub(crate) fn db_error(error: impl std::fmt::Display) -> SourceError {
     SourceError::Other(format!("source database: {error}"))
 }
 
@@ -339,6 +345,8 @@ pub struct Sources {
     disk: Arc<DiskStore>,
     rooms: Mutex<HashMap<String, RoomRecord>>,
     generations: std::sync::atomic::AtomicU64,
+    /// Office pending effects as last read ([crate::pending]).
+    pub(crate) effects: Mutex<EffectsCache>,
 }
 
 impl Sources {
@@ -368,6 +376,7 @@ impl Sources {
             disk,
             rooms: Mutex::new(HashMap::new()),
             generations: std::sync::atomic::AtomicU64::new(0),
+            effects: Mutex::default(),
         })
     }
 
@@ -689,6 +698,11 @@ impl Sources {
                 .await
                 .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
         stage(&mut times.replay);
+        // From here on every change to the room's document is counted (Q405).
+        let edits = match office(session.format) {
+            Some(_) => Some(Edits::observe(doc)?),
+            None => None,
+        };
         let mut record = RoomRecord {
             generation,
             checkpoint: stored.checkpoint,
@@ -696,6 +710,7 @@ impl Sources {
             state_cap,
             baseline: None,
             window: None,
+            edits,
             session: SourceSession {
                 state: None,
                 published_state: None,
@@ -714,6 +729,7 @@ impl Sources {
         }
         session.checkpoint = stored.checkpoint;
         lock(&self.rooms).insert(name, record);
+        lock(&self.effects).forget(&room.file_id);
         Ok(Loaded {
             format: session.format,
             checkpoint: stored.checkpoint,
@@ -767,6 +783,17 @@ impl Sources {
         }
     }
 
+    /// A loaded Office room's (generation, edit version) here: the effects
+    /// cache's key while the room holds edits it has not saved.
+    pub(crate) fn room_edits(&self, room: &str) -> Option<(u64, u64)> {
+        lock(&self.rooms).get(room).and_then(|record| {
+            record
+                .edits
+                .as_ref()
+                .map(|edits| (record.generation, edits.version()))
+        })
+    }
+
     /// The durable checkpoint this instance knows for a loaded room.
     pub fn known_checkpoint(&self, room: &SourceRoom) -> Option<u64> {
         lock(&self.rooms)
@@ -789,6 +816,7 @@ impl Sources {
             }
             rooms.remove(&name);
         }
+        lock(&self.effects).forget(&room.file_id);
         self.engines.drop_room(&name).await;
     }
 
@@ -806,7 +834,7 @@ impl Sources {
     }
 
     /// The stored document as the updates that make it, seed first.
-    async fn durable_layers(
+    pub(crate) async fn durable_layers(
         &self,
         session: &SourceSession,
         base: &[u8],
@@ -918,10 +946,10 @@ impl Sources {
         Ok(entries)
     }
 
-    /// Net effects of a whole Office `state` against the indexed baseline:
-    /// XLSX reads them off its overrides with the room's replica; DOCX and
-    /// PPTX leave out the moves an edit merely shifted (office-service
-    /// `save_effects`, API v3).
+    /// Net effects of a whole Office `state` against the indexed baseline
+    /// (an agent's read, a publication's residual): XLSX reads them off its
+    /// overrides with the room's replica; DOCX and PPTX leave out the moves
+    /// an edit merely shifted (office-service `save_effects`, API v3).
     pub(crate) async fn office_effects(
         &self,
         session: &SourceSession,
@@ -955,13 +983,12 @@ impl Sources {
         Ok(effects.into_iter().map(trim_effect).collect())
     }
 
-    /// Stores a room's update since its durable state (a delta save): its
-    /// effects measured, then appended through the checkpoint CAS. A moved
-    /// checkpoint re-reads the session and the rows saved meanwhile, measures
-    /// again over them and appends again (3 attempts); an ended epoch never
-    /// will.
+    /// Stores a room's update since its durable state (a delta save): text
+    /// effects measured, or an Office room's edited text counted, then
+    /// appended through the checkpoint CAS. A moved checkpoint re-reads the
+    /// session and the rows saved meanwhile, measures text again over them
+    /// and appends again (3 attempts); an ended epoch never will.
     pub async fn store(&self, room: &SourceRoom, save: Save) -> Result<Saved, SourceError> {
-        let name = room.name();
         if save.actors.is_empty() {
             // A receipt for an unchanged document is still a durability receipt.
             return self.current_checkpoint(room).await.map(|checkpoint| Saved {
@@ -969,6 +996,30 @@ impl Sources {
                 row_bytes: 0,
             });
         }
+        // An Office room's count since its last save (Q405); a failed save
+        // gives it back for the next.
+        let edits = lock(&self.rooms)
+            .get(&room.name())
+            .and_then(|record| record.edits.clone());
+        let count = edits.as_ref().map(|edits| edits.take()).unwrap_or_default();
+        let stored = self.store_row(room, save, count.tokens()).await;
+        if stored.is_err()
+            && let Some(edits) = edits
+        {
+            edits.put_back(count);
+        }
+        stored
+    }
+
+    /// [Self::store] of a save with writers; `office_tokens` is what an Office
+    /// save adds to the file's count.
+    async fn store_row(
+        &self,
+        room: &SourceRoom,
+        save: Save,
+        office_tokens: u64,
+    ) -> Result<Saved, SourceError> {
+        let name = room.name();
         // The loaded room's cap; a room not loaded here has only the ceiling.
         let cap = lock(&self.rooms)
             .get(&name)
@@ -1000,9 +1051,9 @@ impl Sources {
             });
         let mut text = save.text.clone();
         for attempt in 0..SAVE_ATTEMPTS {
-            let (session, expected, seeded, merged_rows) = match (&known, attempt) {
+            let (session, expected, seeded) = match (&known, attempt) {
                 (Some((session, checkpoint, seeded, _)), 0) => {
-                    (session.clone(), *checkpoint, *seeded, Vec::new())
+                    (session.clone(), *checkpoint, *seeded)
                 }
                 _ => {
                     // Authorizes the writer again and reads what landed since.
@@ -1015,29 +1066,17 @@ impl Sources {
                     let seeded =
                         stored.state.is_none() && stored.rows.is_empty() && after.is_none();
                     text = None;
-                    (session, stored.checkpoint, seeded, stored.rows)
+                    (session, stored.checkpoint, seeded)
                 }
             };
             let (base, sha) = self.bound_base(&session, reader).await?;
             let (effects, state_seed_sha256) = match office(session.format) {
+                // Office effects are read on demand, not stored (Q405).
                 Some(_) => {
-                    let state = save.state.as_deref().ok_or_else(|| {
-                        SourceError::Other("an Office save needs the room's state".into())
-                    })?;
                     let seed = self
                         .seed(session.format, &base, &sha, Some(&name), reader)
                         .await?;
-                    let effects = if merged_rows.is_empty() {
-                        self.office_effects(&session, &base, &sha, state, &name, reader)
-                            .await?
-                    } else {
-                        let mut layers = vec![state.to_vec()];
-                        layers.extend(merged_rows.iter().map(|(_, row)| row.clone()));
-                        let merged = whole(session.format, layers).await?;
-                        self.office_effects(&session, &base, &sha, &merged, &name, reader)
-                            .await?
-                    };
-                    (effects, Some(seed.sha256))
+                    (Vec::new(), Some(seed.sha256))
                 }
                 None => {
                     let effects = match &text {
@@ -1079,13 +1118,17 @@ impl Sources {
                 None => save.row.clone(),
             };
             let row_bytes = row.len();
-            // O(effect text): a text room's pending effect spans every edit
-            // since its baseline, up to the whole file twice.
-            let net_tokens = {
-                let effects = effects.clone();
-                tokio::task::spawn_blocking(move || effect_tokens(&effects))
-                    .await
-                    .map_err(|error| SourceError::Other(format!("effect tokens: {error}")))?
+            // Office: the file's count plus this save's. Text: O(effect
+            // text), its pending effect spans every edit since its baseline,
+            // up to the whole file twice.
+            let net_tokens = match office(session.format) {
+                Some(_) => session.net_tokens.max(0) as u64 + office_tokens,
+                None => {
+                    let effects = effects.clone();
+                    tokio::task::spawn_blocking(move || effect_tokens(&effects))
+                        .await
+                        .map_err(|error| SourceError::Other(format!("effect tokens: {error}")))?
+                }
             };
             let body = CheckpointBody {
                 actor_ids: save.actors.clone(),
@@ -1094,7 +1137,7 @@ impl Sources {
                 base_revision: session.base_revision,
                 update: Some(row),
                 net_tokens,
-                pending_effects: effects.clone(),
+                pending_effects: effects,
                 state_seed_sha256,
                 base_source_sha256: seed_report.0,
                 seed_bytes: seed_report.1,
@@ -1123,7 +1166,6 @@ impl Sources {
                             base_source_sha256: sha.clone(),
                             checkpoint: saved.checkpoint,
                             net_tokens: body.net_tokens as i64,
-                            pending_effects: effects,
                             ..session
                         };
                         if let Some(text) = &text {
@@ -1504,8 +1546,17 @@ impl Sources {
             .map_err(crate::edit::office_error)
     }
 
-    /// The image of a pending effect, for the API's change review.
-    pub async fn resolve(&self, input: &ResolveInput) -> Result<ResolvedAsset, SourceError> {
+    /// The image of a pending effect, for the API's change review: found
+    /// among the effects an agent's read gave ([crate::pending]) and read
+    /// from the same document, the live room's edits included.
+    pub async fn resolve<F>(
+        &self,
+        input: &ResolveInput,
+        live: F,
+    ) -> Result<ResolvedAsset, SourceError>
+    where
+        F: Fn(String) -> BoxFuture<Option<Vec<u8>>>,
+    {
         let session = self.gateway.session(&input.file_id, &input.user_id).await?;
         if session.workspace_id != input.workspace_id
             || session.epoch != input.epoch
@@ -1514,15 +1565,18 @@ impl Sources {
         {
             return Err(SourceError::request(409, "Source checkpoint changed", None));
         }
-        let object_ref: ObjectRef = session
-            .pending_effects
+        let object_ref: ObjectRef = self
+            .read_effects(&session, &live)
+            .await?
             .iter()
             .find(|effect| effect.id == input.change_id)
             .and_then(|effect| effect.asset_ref.clone())
             .ok_or_else(|| SourceError::request(404, "Source image unavailable", None))?;
         let job = Job::default();
         let (base, sha) = self.bound_base(&session, Reader::Job(&job)).await?;
-        let state = self.durable_state(&session, &base, &sha, &job).await?;
+        let state = self
+            .current_state(&session, (&base, &sha), &job, &live)
+            .await?;
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("not an Office source".into()))?;
         let (bytes, mime_type, sha256) = self
@@ -1999,9 +2053,10 @@ impl Sources {
         })
         .await
         .map_err(|error| SourceError::Other(format!("rebase: {error}")))??;
+        // The residual sets the count; its effects are read on demand (Q405).
         Ok(SourceRebase {
             net_tokens: effect_tokens(&effects),
-            pending_effects: effects,
+            pending_effects: Vec::new(),
             rebased_state: Some(change),
             rebased_state_seed_sha256: Some(seed_sha),
         })
@@ -2067,7 +2122,10 @@ pub(crate) fn text_of(bytes: &[u8]) -> Result<&str, SourceError> {
 }
 
 /// The whole state of `layers` applied in order (checked like a load).
-async fn whole(format: SourceFormat, layers: Vec<Vec<u8>>) -> Result<Vec<u8>, SourceError> {
+pub(crate) async fn whole(
+    format: SourceFormat,
+    layers: Vec<Vec<u8>>,
+) -> Result<Vec<u8>, SourceError> {
     tokio::task::spawn_blocking(move || {
         let doc = working_doc(office(format).is_some());
         replay(&doc, layers.iter().map(Vec::as_slice))?;

@@ -16,6 +16,11 @@ func (a *api) internalSourceAuthority(w http.ResponseWriter, r *http.Request) {
 	}
 	var operation string
 	switch r.URL.Path {
+	case "/api/internal/source-changes":
+		// Office files' pending effects, read on demand (Q405). Bound to the
+		// workspace like note-changes: the collaboration service reads only
+		// that workspace's files.
+		operation = "/internal/source-changes"
 	case "/api/internal/source-changes/resolve":
 		operation = "/internal/source-changes/resolve"
 	case "/api/internal/source-refresh/publish":

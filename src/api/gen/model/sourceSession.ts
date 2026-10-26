@@ -23,7 +23,6 @@ export interface SourceSession {
   imageMaxBytes?: number;
   indexedCheckpoint: number;
   netTokens: number;
-  pendingEffects: unknown;
   publishedSourceSHA256?: string;
   publishedSourceURL?: string;
   publishedState?: string;

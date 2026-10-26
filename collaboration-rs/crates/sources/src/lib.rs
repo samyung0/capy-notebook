@@ -15,6 +15,7 @@ pub mod failure;
 pub mod gateway;
 pub mod handoff;
 pub mod observe;
+pub mod pending;
 pub mod pictures;
 pub mod refresh;
 pub mod schedule;

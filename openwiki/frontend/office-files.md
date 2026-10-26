@@ -2952,8 +2952,10 @@ before, and the room relays and stores what they send.
 
 A save process keeps a replica per XLSX room: the room's source opened only to
 read pending effects (the fork's `XlsxReplicas`), without the dependency
-graph or the recalculation an editor needs. A save's pending effects pass
-the room; the engine checks the saved state exactly as an apply would and
+graph or the recalculation an editor needs. Pending effects are read when the
+agent reads the file, never at a save (Q405, see
+[agentic-retrieval](../agentic-retrieval.md)); a read passes
+the room; the engine checks the state exactly as an apply would and
 reads the effects off it beside the source, without applying it or
 recalculating the workbook (only a state whose projection holds array
 formulas is recalculated, since spilled values reach the effects). The

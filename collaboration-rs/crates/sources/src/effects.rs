@@ -1,9 +1,12 @@
 //! Pending effects of a source save (sourceDocuments.ts `textEffects`,
-//! `trimEffect`, `effectTokens`). Offsets, cuts and lengths are UTF-16 code
+//! `trimEffect`, `effectTokens`), and the text an Office edit inserted and
+//! deleted (Q405's reindex count). Offsets, cuts and lengths are UTF-16 code
 //! units, as the TS measured them and as Go and the browser read them.
 
 use office_service::{EffectKind, NetEffect, Operation};
 use unicode_script::{Script, UnicodeScript};
+use yrs::block::{Item, ItemContent};
+use yrs::{Any, BranchID, ReadTxn, TransactionMut};
 
 /// Context kept on each side of an Office text change; '…' marks a cut.
 pub const EFFECT_CONTEXT_CHARS: usize = 40;
@@ -181,6 +184,109 @@ pub fn effect_tokens(effects: &[NetEffect]) -> u64 {
             (units - changed).div_ceil(4) + changed + u64::from(effect.kind != EffectKind::Text)
         })
         .sum()
+}
+
+/// Text an Office edit inserted and deleted: UTF-16 units, but CJK
+/// characters, which count one token each.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextCount {
+    pub units: u64,
+    pub cjk: u64,
+}
+
+impl TextCount {
+    /// [`effect_tokens`]' rule: 4 UTF-16 units a token, a CJK character one.
+    pub fn tokens(self) -> u64 {
+        self.units.div_ceil(4) + self.cjk
+    }
+
+    /// The characters of `text` within UTF-16 units `from..to`.
+    fn add(&mut self, text: &str, from: u32, to: u32) {
+        let mut at = 0;
+        for character in text.chars() {
+            if at >= to {
+                break;
+            }
+            if at >= from {
+                if cjk(character) {
+                    self.cjk += 1;
+                } else {
+                    self.units += character.len_utf16() as u64;
+                }
+            }
+            at += character.len_utf16() as u32;
+        }
+    }
+
+    /// An XLSX cell's content (a stable record): its value and formula text.
+    fn add_cell(&mut self, value: &Any) {
+        let Any::String(json) = value else {
+            return;
+        };
+        let Ok(cell) = serde_json::from_str::<serde_json::Value>(json) else {
+            return;
+        };
+        let value = match &cell["value"]["value"] {
+            serde_json::Value::String(text) => text.clone(),
+            serde_json::Value::Number(number) => number.to_string(),
+            serde_json::Value::Bool(true) => "TRUE".into(),
+            serde_json::Value::Bool(false) => "FALSE".into(),
+            _ => String::new(),
+        };
+        let formula = cell["formula"]["text"].as_str().unwrap_or_default();
+        for text in [value.as_str(), formula] {
+            self.add(text, 0, u32::MAX);
+        }
+    }
+}
+
+/// Whether `item` is an XLSX cell's content: an entry of a sheet's
+/// `contents` map under `xlsx:sheets` (its `styles` map is formatting).
+fn xlsx_cell(item: &Item) -> bool {
+    let Some(contents) = item.parent_branch().and_then(|branch| branch.item()) else {
+        return false;
+    };
+    if contents.parent_sub().map(|key| &**key) != Some("contents") {
+        return false;
+    }
+    contents
+        .parent_branch()
+        .and_then(|sheet| sheet.item())
+        .and_then(|sheet| sheet.parent_branch())
+        .is_some_and(
+            |sheets| matches!(sheets.id(), BranchID::Root(name) if &*name == "xlsx:sheets"),
+        )
+}
+
+/// The text `txn` inserted and deleted (Q405, Epo 2026-10-26): Y.Text
+/// strings (Word and PowerPoint stories) and XLSX cell contents, gross, so
+/// a replacement counts both sides; formatting, attributes and structure
+/// count nothing. Read before the commit, while what it deleted still holds
+/// its content.
+pub fn edited_text(txn: &TransactionMut<'_>) -> TextCount {
+    let store = ReadTxn::store(txn);
+    let mut count = TextCount::default();
+    for set in [txn.insert_set(), txn.delete_set()] {
+        for (client, ranges) in set.iter() {
+            for range in ranges.iter() {
+                for (block, item) in store.blocks_in(client, range.clone()) {
+                    let Some(item) = item else { continue };
+                    match item.content() {
+                        ItemContent::String(text) => {
+                            let from = range.start.saturating_sub(block.clock);
+                            let to = range.end.min(block.clock + block.len) - block.clock;
+                            count.add(text.as_str(), from, to);
+                        }
+                        ItemContent::Any(values) if xlsx_cell(&item) => {
+                            values.iter().for_each(|value| count.add_cell(value));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    count
 }
 
 #[cfg(test)]

@@ -84,11 +84,11 @@ type BrowserSourceSession struct {
 	PublishedBlobPath        string  `json:"-"`
 }
 
-// SourceSession is the collaboration service's read: the browser's plus the
-// pending effects, which stay server-side.
+// SourceSession is the collaboration service's read: the browser's. Pending
+// effects stay server-side: text's in source_documents, Office's read by the
+// collaboration service when the agent reads the file (Q405).
 type SourceSession struct {
 	BrowserSourceSession
-	PendingEffects json.RawMessage `json:"pendingEffects"`
 }
 
 // sourceGrowthMarginBytes: what a room's growth stays under the export cap
@@ -435,7 +435,7 @@ const sourceStateRowsSQL = `ARRAY(SELECT u.update FROM source_document_updates u
 
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
 	out := SourceSession{BrowserSourceSession: BrowserSourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}}
-	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,`+sourceStateRowsSQL+`,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END,`+sourceGrowthSQL+` FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256, &out.GrownBytes)
+	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,`+sourceStateRowsSQL+`,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END,`+sourceGrowthSQL+` FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256, &out.GrownBytes)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err
@@ -609,9 +609,10 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 	return receipt, nil
 }
 
-// Automatic Office refresh: officeRefreshTokens trimmed net tokens after
-// officeRefreshIdle without edits, or any saved change left unedited for
-// officeRefreshStale. The collaboration scheduler query uses the same values.
+// Automatic Office refresh: officeRefreshTokens tokens of edited text (the
+// count each save adds, Q405) after officeRefreshIdle without edits, or any
+// counted change left unedited for officeRefreshStale. The collaboration
+// scheduler query uses the same values.
 const (
 	officeRefreshTokens = 3000
 	officeRefreshIdle   = 60 * time.Second
@@ -694,13 +695,12 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 		if refreshError != nil || (status == string(FileFailed) && !indexed && !manual) {
 			return result, ErrConflict
 		}
-		// An Office list of moves only (reordered entries) is worth 0 tokens
-		// and still publishes through the stale rule; an empty list never
-		// does, which is what a save whose edits only shifted entries stores
-		// (Epo 2026-10-07: shifted moves are not effects). A refused rebuild
-		// (RefuseSourceRebuild) makes the file due whatever its edits weigh.
+		// Edits worth no tokens never refresh automatically: an Office save
+		// counts the text it inserted and deleted (Q405), so one that only
+		// formatted counts 0. A refused rebuild (RefuseSourceRebuild) makes
+		// the file due whatever its edits weigh.
 		refused := rebuildRefusal != nil
-		if doc.Checkpoint <= doc.IndexedCheckpoint || (!refused && doc.NetTokens == 0 && (doc.Format == "text" || string(doc.PendingEffects) == "[]")) {
+		if doc.Checkpoint <= doc.IndexedCheckpoint || (!refused && doc.NetTokens == 0) {
 			return result, ErrConflict
 		}
 		if doc.Format == "text" {

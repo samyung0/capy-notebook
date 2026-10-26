@@ -412,7 +412,7 @@ async fn material_blocks(
 }
 
 /// This instance's live copy of `room`, when it has the room loaded.
-async fn live_state(app: &Shared, room: &str) -> Option<Vec<u8>> {
+pub(crate) async fn live_state(app: &Shared, room: &str) -> Option<Vec<u8>> {
     let handle = app.rooms.get(room)?;
     let (reply, answer) = oneshot::channel();
     handle.tx.send(RoomCmd::Snapshot(reply)).await.ok()?;

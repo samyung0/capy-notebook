@@ -25,7 +25,7 @@
 LOCK TABLE source_documents IN SHARE ROW EXCLUSIVE MODE;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM source_documents WHERE format IN ({{FORMATS}})
-      AND (checkpoint > indexed_checkpoint OR pending_effects <> '[]'::jsonb OR running_job_id IS NOT NULL OR rebuild_pending)) THEN
+      AND (checkpoint > indexed_checkpoint OR net_tokens > 0 OR running_job_id IS NOT NULL OR rebuild_pending)) THEN
     RAISE EXCEPTION 'Office reset refused: unpublished edits, a refresh in flight or a rebuild pending; run office-maintenance publish-all until status prints zero';
   END IF;
   IF EXISTS (SELECT 1 FROM source_documents WHERE format IN ({{FORMATS}}))

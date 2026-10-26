@@ -432,6 +432,90 @@ async def test_a_note_data_placeholder_resolves_to_its_block_text(gateway, monke
     )
 
 
+async def test_office_changes_are_read_on_demand_and_a_failed_read_says_so(
+    monkeypatch,
+):
+    """Q405: an Office file with unprocessed edits gets its changes from the
+    collaboration service, not the stored row; one it could not read says
+    sources may be outdated. Text keeps its stored changes."""
+    change = {"id": "c", "kind": "text", "operation": "replace", "after": "nuclei"}
+    posts = []
+
+    class Response:
+        def __init__(self, body):
+            self.headers = {}
+            self.body = body
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.body
+
+    def post(url, **kwargs):
+        posts.append((url, kwargs["json"]))
+        if url.endswith("/source-changes"):
+            return Response(
+                {
+                    "files": [
+                        {
+                            "fileId": "f_doc",
+                            "epoch": 2,
+                            "checkpoint": 6,
+                            "changes": [change],
+                        }
+                    ],
+                    "failed": ["f_sheet"],
+                }
+            )
+        return Response({"notes": []})
+
+    def row(file_id, kind, checkpoint, indexed, tokens, changes):
+        return {
+            "fileId": file_id,
+            "revision": 1,
+            "content_id": "rgc",
+            "epoch": 2,
+            "indexedCheckpoint": indexed,
+            "name": file_id,
+            "format": kind,
+            "checkpoint": checkpoint,
+            "netTokens": tokens,
+            "changes": changes,
+        }
+
+    async def snapshot(*_args, **_kwargs):
+        stale = [{"id": "old", "kind": "text", "operation": "add", "after": "stale"}]
+        return [
+            row("f_clean", "pptx", 3, 3, 0, []),
+            row("f_doc", "docx", 5, 3, 12, stale),
+            row("f_sheet", "xlsx", 2, 1, 4, []),
+            row("f_text", "text", 2, 1, 1, [change]),
+        ]
+
+    async def identities(_workspace_id, _ids):
+        return []
+
+    monkeypatch.setattr(pending.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(pending.cfg, "pipeline_secret", "test")
+    monkeypatch.setattr(pending.requests, "post", post)
+    monkeypatch.setattr(pending, "_snapshot", snapshot)
+    monkeypatch.setattr(pending, "_note_identities", identities)
+    sources = await pending.load("ws")
+    assert posts[0] == (
+        "http://gateway/api/internal/source-changes",
+        {"workspaceId": "ws", "fileIds": ["f_doc", "f_sheet"]},
+    )
+    assert [(f["fileId"], f["checkpoint"]) for f in sources.files] == [
+        ("f_doc", 6),
+        ("f_text", 2),
+    ]
+    sources.read_ids = set()
+    read = sources.for_read("f_doc")
+    assert "nuclei" in read and "stale" not in read and pending.NOTICE not in read
+    assert sources.for_read("f_sheet") == pending.NOTICE
+
+
 async def test_only_documents_read_are_validated_and_resolvable(monkeypatch):
     """Epo 2026-10-20: changes pass on only for documents read this turn, so
     only those must still pair with their published index."""

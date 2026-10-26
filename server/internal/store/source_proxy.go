@@ -18,10 +18,10 @@ import (
 // keep the client's 20 s.
 const sourcePublishTimeout = 200 * time.Second
 
-// SourceAuthority forwards only these two internal source operations through
+// SourceAuthority forwards only these three internal source operations through
 // the existing private collaboration connection.
 func (s *Store) SourceAuthority(ctx context.Context, operation string, body json.RawMessage) (json.RawMessage, int, error) {
-	if operation != "/internal/source-changes/resolve" && operation != "/internal/source-refresh/publish" {
+	if operation != "/internal/source-changes" && operation != "/internal/source-changes/resolve" && operation != "/internal/source-refresh/publish" {
 		return nil, 0, ErrForbidden
 	}
 	if s.collaborationURL == "" || s.collaborationSecret == "" {

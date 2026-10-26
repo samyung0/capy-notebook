@@ -4148,8 +4148,9 @@ impl Room {
     }
 
     /// `storeSource`: the room's update since its durable state goes to the
-    /// gateway's checkpoint with its effects (an Office room's whole state for
-    /// the engine, a text room's effects from the change).
+    /// gateway's checkpoint with a text room's effects from the change, or an
+    /// Office room's whole state for the save's size check (its edited text is
+    /// counted as the room applies it, Q405).
     async fn start_source_store(&mut self) {
         let started = Instant::now();
         // A failed store waits out its backoff; only its retry calls the engine.
@@ -4192,8 +4193,8 @@ impl Room {
             return;
         };
         let (room, format) = (source.room.clone(), source.format);
-        // O(state) for an Office room (its whole state for the engine) and up
-        // to O(text) for a text room (the pending effect spans every edit
+        // O(state) for an Office room (its whole state for the size check) and
+        // up to O(text) for a text room (the pending effect spans every edit
         // since the baseline): off the runtime's threads, while the room
         // waits as it does for a note store's validation.
         let (doc, previous, sources) = (

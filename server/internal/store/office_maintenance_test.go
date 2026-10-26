@@ -876,7 +876,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 		t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
 		for _, q := range append([]string{
 			// Other tests' rows count as published.
-			`UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',running_job_id=NULL WHERE file_id<>'` + file + `'`,
+			`UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',net_tokens=0,running_job_id=NULL WHERE file_id<>'` + file + `'`,
 		}, steps...) {
 			if _, err = tx.Exec(ctx, q); err != nil {
 				t.Fatal(q, err)
@@ -887,7 +887,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 		}
 		return tx, err
 	}
-	published := `UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]' WHERE file_id='` + file + `'`
+	published := `UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',net_tokens=0 WHERE file_id='` + file + `'`
 	if _, err = run(); err == nil || !strings.Contains(err.Error(), "unpublished edits") {
 		t.Fatalf("reset with an unpublished file: %v", err)
 	}
