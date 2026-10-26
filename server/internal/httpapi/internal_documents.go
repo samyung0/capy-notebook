@@ -190,24 +190,31 @@ const (
 	officeIDBytes    = 256
 )
 
-// officeIDsRefusal says why a by-id read's ids are refused, "" when they
-// pass: an id past its bytes, or more ids than a call reads, counted as the
-// engine repairs them (trimmed of spaces, quotes and brackets, blanks and
-// repeats dropped, Q277; review r2 N2).
-func officeIDsRefusal(ids []string) string {
-	distinct := map[string]bool{}
-	for _, id := range ids {
+// officeIDs is a by-id read's ids as the engine repairs them (trimmed of
+// spaces, quotes and brackets, blanks and repeats dropped, Q277), in the
+// order asked, which Go forwards in place of the raw list; and why they are
+// refused, "" when they pass: an id past its bytes, more ids than a call
+// reads, or none left (review r2 N2, r3 N3).
+func officeIDs(raw []string) ([]string, string) {
+	var ids []string
+	seen := map[string]bool{}
+	for _, id := range raw {
 		if len(id) > officeIDBytes {
-			return fmt.Sprintf("An id is at most %d bytes; copy each id whole from an earlier inspect_office_document read.", officeIDBytes)
+			return nil, fmt.Sprintf("An id is at most %d bytes; copy each id whole from an earlier inspect_office_document read.", officeIDBytes)
 		}
-		if id = strings.TrimSpace(strings.Trim(strings.TrimSpace(id), "[]\"'`")); id != "" {
-			distinct[id] = true
+		id = strings.TrimSpace(strings.Trim(strings.TrimSpace(id), "[]\"'`"))
+		if id == "" || seen[id] {
+			continue
 		}
-		if len(distinct) > officeIDsPerCall {
-			return fmt.Sprintf("ids names at most %d pictures and charts a call; read the rest in another call.", officeIDsPerCall)
+		seen[id] = true
+		if ids = append(ids, id); len(ids) > officeIDsPerCall {
+			return nil, fmt.Sprintf("ids names at most %d pictures and charts a call; read the rest in another call.", officeIDsPerCall)
 		}
 	}
-	return ""
+	if len(raw) > 0 && len(ids) == 0 {
+		return nil, "ids names the pictures and charts to read, each id copied from an earlier read."
+	}
+	return ids, ""
 }
 
 // officeToolsMessage answers an Office file sent to the general document
@@ -299,15 +306,16 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_operation", "message": message})
 			return
 		}
-		if message := officeIDsRefusal(req.Office.IDs); message != "" {
+		ids, message := officeIDs(req.Office.IDs)
+		if message != "" {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "invalid_input", "message": message})
 			return
 		}
 		var query *store.OfficeQuery
 		switch {
-		case len(req.Office.IDs) > 0:
+		case len(ids) > 0:
 			// Pictures and charts by id; the engine bounds the call and its answer.
-			query = &store.OfficeQuery{IDs: req.Office.IDs}
+			query = &store.OfficeQuery{IDs: ids}
 		case format == "xlsx":
 			query = &store.OfficeQuery{Sheet: req.Office.Sheet, Range: req.Office.Range}
 		case format == "docx":

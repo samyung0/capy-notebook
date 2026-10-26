@@ -127,11 +127,12 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	}
 
 	// Security regression (Epo 2026-10-26, Q381; review r1 L4): more ids
-	// than a call takes, or an id past its bytes, is refused before the
-	// authority is called; ids are counted as the engine repairs them, so a
-	// repeat, a quoted copy or a blank does not count (review r2 N2).
+	// than a call takes, an id past its bytes, or no id left, is refused
+	// before the authority is called; ids are counted as the engine repairs
+	// them, so a repeat, a quoted copy or a blank does not count (review r2
+	// N2), and the repaired ids are what Go forwards (review r3 N3).
 	long := strings.Repeat("x", httpapi.OfficeIDBytes+1)
-	for _, ids := range [][]string{{"a", "b", "c", "d", "e"}, {"a", long}, {"a", "b", "c", "d", " [`e`] "}} {
+	for _, ids := range [][]string{{"a", "b", "c", "d", "e"}, {"a", long}, {"a", "b", "c", "d", " [`e`] "}, {" ", `""`}} {
 		rec = inspect(xlsx, map[string]any{"ids": ids})
 		if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "invalid_input" {
 			t.Fatalf("ids %q = %d %s", ids, rec.Code, rec.Body.String())
@@ -141,8 +142,11 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 		t.Fatalf("refused ids reached the authority: %v", sent)
 	}
 	rec = inspect(xlsx, map[string]any{"ids": []string{"a", "a", `"b"`, "c", " ", "[d]"}})
-	if rec.Code != http.StatusOK || len(authority.sent("/internal/documents/inspect")) != 6 {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("repeated, quoted and blank ids = %d %s", rec.Code, rec.Body.String())
+	}
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 6 || string(sent[5]["office"]) != `{"ids":["a","b","c","d"]}` {
+		t.Fatalf("repaired ids' query: %v", sent)
 	}
 
 	rec = inspect(xlsx, nil)
