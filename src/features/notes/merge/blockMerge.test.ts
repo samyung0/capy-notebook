@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { MaterialElement } from '@/features/materials/document';
-import { type MergeStep, mergeBlocks, sameBlock } from './blockMerge';
+import {
+  applyToBlocks,
+  mergeBlocks,
+  mergeCopies,
+  sameBlock,
+} from './blockMerge';
 
 /* Q229: a note's copy edited before its room joined merges into the room's
  * document by top-level block id. `apply` runs the steps on plain arrays as
- * applyBlocks.ts does on the editor. */
+ * applyBlocks.ts does on the editor (`applyToBlocks`). */
 
 const p = (id: string | undefined, text: string): MaterialElement => ({
   children: [{ text }],
@@ -13,36 +18,13 @@ const p = (id: string | undefined, text: string): MaterialElement => ({
 });
 const BASE = [p('a', 'A'), p('b', 'B'), p('c', 'C'), p('d', 'D')];
 
-function apply(blocks: MaterialElement[], steps: MergeStep[]) {
-  const out = [...blocks];
-  const at = (id: string) => out.findIndex((block) => block.id === id);
-  for (const step of steps) {
-    if (step.kind === 'set') out[at(step.id)] = step.block;
-    else if (step.kind === 'remove') out.splice(at(step.id), 1);
-    else {
-      const target = step.after === null ? 0 : at(step.after) + 1;
-      if (step.kind === 'insert') out.splice(target, 0, step.block);
-      else {
-        const from = at(step.id);
-        const [block] = out.splice(from, 1);
-        out.splice(from < target ? target - 1 : target, 0, block);
-      }
-    }
-  }
-  return out;
-}
+const apply = applyToBlocks;
 
 const text = (blocks: MaterialElement[]) =>
   blocks.map((block) => (block.children[0] as { text: string }).text);
 
 function merge(mine: MaterialElement[], theirs: MaterialElement[]) {
-  let fresh = 0;
-  const { conflicts, steps } = mergeBlocks(
-    BASE,
-    mine,
-    theirs,
-    () => `new${++fresh}`
-  );
+  const { conflicts, steps } = mergeBlocks(BASE, mine, theirs);
   return { conflicts, result: apply(theirs, steps), steps };
 }
 
@@ -154,16 +136,63 @@ describe('mergeBlocks', () => {
     ).toHaveLength(1);
   });
 
-  it('matches blocks without an id by content: an equal one is unchanged, a new one goes in under a new id', () => {
-    const base = [p('a', 'A'), p(undefined, 'Loose')];
-    const mine = [p('a', 'A'), p(undefined, 'Loose'), p(undefined, 'Typed')];
-    const theirs = [p('a', 'A'), p('r', 'R')];
-    const { conflicts, steps } = mergeBlocks(base, mine, theirs, () => 'new1');
+  // Review r1 L5: a block without an id is left as the room has it, never
+  // duplicated (an edited one used to go in beside the old one).
+  it('leaves blocks without an id as the room has them', () => {
+    const base = [p(undefined, 'A'), p('b', 'B')];
+    const mine = [p(undefined, 'A edited'), p('b', 'B'), p(undefined, 'New')];
+    const theirs = [p(undefined, 'A'), p('b', 'B')];
+    const { conflicts, steps } = mergeBlocks(base, mine, theirs);
+    expect(conflicts).toEqual([]);
+    expect(steps).toEqual([]);
+  });
+
+  // Review r1 H1: the copy's elements below the block got ids from
+  // normalization, the room's have none; only the cell's text differs.
+  it('compares blocks without their inner element ids', () => {
+    const table = (text: string, ids: boolean): MaterialElement => ({
+      children: [
+        {
+          children: [
+            {
+              children: [{ children: [{ text }], type: 'p' }],
+              type: 'td',
+              ...(ids ? { id: 'cell' } : {}),
+            },
+          ],
+          type: 'tr',
+          ...(ids ? { id: 'row' } : {}),
+        },
+      ],
+      id: 't',
+      type: 'table',
+    });
+    const base = [p('a', 'A'), table('cell', true)];
+    const mine = [p('a', 'A'), table('cell fixed', true)];
+    const theirs = [p('a', 'A'), table('cell', false)];
+    const { conflicts, steps } = mergeBlocks(base, mine, theirs);
     expect(conflicts).toEqual([]);
     expect(steps).toEqual([
-      { after: 'a', block: p('new1', 'Typed'), kind: 'insert' },
+      { block: table('cell fixed', true), id: 't', kind: 'set' },
     ]);
-    expect(text(apply(theirs, steps))).toEqual(['A', 'Typed', 'R']);
+    // A deleted table goes, not left as a conflict.
+    expect(mergeBlocks(base, [p('a', 'A')], theirs).steps).toEqual([
+      { id: 't', kind: 'remove' },
+    ]);
+  });
+});
+
+describe('mergeCopies', () => {
+  // An older copy merges first; the next one meets the room as it left it.
+  it('merges copies in order, each against what the ones before left', () => {
+    const older = { base: BASE, mine: [...BASE, p('n', 'N')] };
+    const own = {
+      base: BASE,
+      mine: [p('a', 'A mine'), p('b', 'B'), p('c', 'C'), p('d', 'D')],
+    };
+    const { conflicts, steps } = mergeCopies([older, own], BASE);
+    expect(conflicts).toEqual([]);
+    expect(text(apply(BASE, steps))).toEqual(['A mine', 'B', 'C', 'D', 'N']);
   });
 });
 
@@ -178,5 +207,13 @@ describe('sameBlock', () => {
     expect(sameBlock({ a: 1, b: undefined }, { a: 1 })).toBe(true);
     expect(sameBlock({ a: [1, 2] }, { a: [2, 1] })).toBe(false);
     expect(sameBlock(undefined, null)).toBe(false);
+    // Inner ids aside; the block's own id counts.
+    expect(
+      sameBlock(
+        { children: [{ id: 'x', text: '' }], id: 'a' },
+        { children: [{ text: '' }], id: 'a' }
+      )
+    ).toBe(true);
+    expect(sameBlock({ id: 'a' }, { id: 'b' })).toBe(false);
   });
 });

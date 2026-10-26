@@ -21,7 +21,12 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
-import { NO_COPIES, type NoteCopies, noteCopies } from './merge/copyDraft';
+import {
+  heldCopies,
+  NO_COPIES,
+  type NoteCopies,
+  noteCopies,
+} from './merge/copyDraft';
 import { afterPaint, type NoteView } from './roomSwap';
 import { toastDraftsLost } from './saveFailure';
 
@@ -81,10 +86,16 @@ export function useNoteDrafts(
           room
         );
         if (!recovery.length) {
-          const copy = noteCopies(rows);
+          const copy = noteCopies(rows, await heldCopies().catch(() => null));
           if (copy.unreadable.length) {
+            // Lost work (review r1 L4): reported once, as a group nothing
+            // could draw.
+            const lost = copy.unreadable;
             toastDraftsLost();
-            await deleteDrafts(copy.unreadable).catch(() => undefined);
+            reportOnce(lost[0].id, () =>
+              report('draft_unrestorable', 'unreadable', draftBytes(lost))
+            );
+            await deleteDrafts(lost).catch(() => undefined);
           }
           // The blocks a copy's merge left, then an expired copy (shown
           // once), copy-only before the live note.

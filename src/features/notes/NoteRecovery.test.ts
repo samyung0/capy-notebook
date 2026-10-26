@@ -37,7 +37,18 @@ vi.mock('react', async (load) => ({
     return [value, (next: T) => hooks.set(at, next)];
   },
 }));
-const stored = vi.hoisted(() => ({ rows: [] as unknown[] }));
+const stored = vi.hoisted(() => ({
+  held: [] as { name: string }[],
+  reports: [] as unknown[][],
+  rows: [] as unknown[],
+}));
+vi.mock('@/lib/editIncidents', async (load) => ({
+  ...(await load<typeof import('@/lib/editIncidents')>()),
+  editIncidentReporter:
+    () =>
+    (...report: unknown[]) =>
+      stored.reports.push(report),
+}));
 vi.mock('@/lib/editDrafts', async (load) => ({
   ...(await load<typeof import('@/lib/editDrafts')>()),
   dropExpiredGroup: vi.fn(),
@@ -53,6 +64,15 @@ import {
 import { useNoteDrafts } from './NoteRecovery';
 
 const ROOM = 'material:m_1:schema:1';
+
+// Web Locks as the browser has them: the copy sessions open tabs record.
+Object.defineProperty(navigator, 'locks', {
+  configurable: true,
+  value: {
+    query: async () => ({ held: stored.held }),
+    request: async () => undefined,
+  },
+});
 
 const draft = (id: string, extra: Partial<EditDraft>): EditDraft => ({
   data: new Uint8Array(),
@@ -71,7 +91,11 @@ const render = () => {
   return useNoteDrafts('m_1', 'u_1:material:m_1', ROOM, 0);
 };
 
-beforeEach(() => hooks.reset());
+beforeEach(() => {
+  hooks.reset();
+  stored.held = [];
+  stored.reports = [];
+});
 
 // Q326: an opening note applies its accepted sessions' rows and leaves a
 // never-accepted session's rows with a stored token to the draft send.
@@ -134,6 +158,25 @@ it('hands the editor the copies it merges at the first sync', async () => {
     copies: { adopted: { copy, row }, others: [] },
     recovery: null,
   });
+});
+
+// Review r1 M1 and L4: a copy another open tab records is left to it; an
+// unreadable one is dropped with the lost-drafts notice and reported.
+it("leaves another open tab's copy alone and reports an unreadable one", async () => {
+  const copy = { base: [p('a', 'A')], mine: [p('a', 'A typed')], revision: 1 };
+  const open = copyRow('open', copy, {});
+  const broken = { ...copyRow('broken', copy, {}), data: new Uint8Array([1]) };
+  stored.rows = [open, broken];
+  stored.held = [{ name: 'capy-copy:open' }];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()).toMatchObject({
+    copies: { adopted: null, others: [] },
+    recovery: null,
+  });
+  expect(stored.reports).toEqual([
+    ['draft_unrestorable', 'unreadable', broken.data.byteLength],
+  ]);
 });
 
 // Q229: blocks of the copy someone else changed too open copy-only under

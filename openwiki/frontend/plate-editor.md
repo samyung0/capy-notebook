@@ -2169,35 +2169,75 @@ room joins (`src/features/notes/merge/`):
 
 - **The copy row.** While the editor is unbound, each value change records
   the edited tree, written at most once a second and at once at `pagehide`,
-  a pause or unmount (`recordCopy`), as one `copy` row of the draft store:
-  JSON holding the tree the copy started from (`base`, the projection, with
-  its `revision`), and the edited tree (`mine`). No Yjs reader takes a copy
-  row (`yjsRow`: `draftGroups`, the sweep), the 7-day expiry applies to it
-  from when it was written, the load sweep's lost-document delete takes it,
-  and a read-only room or lost access discards it with the other unsaved
-  edits. A reopened note shows the newest copy's `mine` before its room joins
-  and goes on with that row (same id, a higher `seq`); older copies (another
-  tab's) merge first (`noteCopies`).
+  a pause, unmount or the bind (`recordCopy`), as one `copy` row of the
+  draft store: JSON holding the tree the copy started from (`base`, the
+  projection, with its `revision`), and the edited tree (`mine`). No Yjs
+  reader takes a copy row (`yjsRow`: `draftGroups`, the sweep), the 7-day
+  expiry applies to it from when it was written, the load sweep's
+  lost-document delete takes it, and a read-only room or lost access
+  discards it with the other unsaved edits. A copy keeps the offline bound
+  drafts keep (Epo 2026-10-26, Q397): one grown more than 2 MiB over its
+  base is not written further, the editor stops under the `offline-limit`
+  strip, and the bind merges the copy as last written. An unreadable copy
+  row is dropped with the drafts-lost notice and reported
+  (`draft_unrestorable`, `unreadable`). Copy rows record the room they were
+  made in but merge into whichever room the note joins: the merge compares
+  block trees against the copy's own base, not Yjs lineages.
+- **Each tab owns its copy** (Q397). A tab holds the Web Lock
+  `capy-copy:<session>` while it is mounted (`holdCopy`), and an opening
+  editor leaves out every copy row a lock is held for (`heldCopies`,
+  `noteCopies`): another open tab's copy is never adopted, merged or
+  deleted, and merges when its own tab joins (or at the next open once that
+  tab closed). A reopened note shows the newest copy no tab holds and goes
+  on with that row (same id, a higher `seq`); older ones (closed tabs')
+  merge first. Without Web Locks no copy is adopted: each merges as an older
+  one.
+- **Undo before the bind** (Q397). The Yjs history works on the bound
+  document only, so until the bind Undo and Redo walk Slate's own history of
+  the copy (`roomBindingPlugin`).
 - **The merge** (`mergeBlocks`, pure). At the bind (`whenBound` in
   `roomBinding.ts`) the editor compares, by top-level block id, the copy's
   base, its edited tree and the room's tree; a block counts with everything
-  nested in it. A block only the copy changed (edited, inserted, deleted,
-  moved) is applied to the room's tree as ordinary Slate edits on the bound
-  editor (`applyMergeSteps`: a same-type block keeps its element and gets its
-  attributes and children replaced, another type is replaced at its index
-  keeping its id; inserts and moves go after the previous block of the copy
-  the room still holds, else at the start), one local transaction and one
-  Undo step under the session's id (`asOneStep`), so it syncs and saves as
-  any edit and the editor asks for a receipt at once. A block only the room
-  changed, or neither, stays as the room has it; one both moved keeps the
-  room's place. A block both changed differently is a conflict: the room's
-  version stays, and the copy's version (when the copy did not delete it) is
-  kept as one `refused` copy row, which the editor remounts to show copy-only
-  under the `conflict` banner (until the merge view, Q229). Blocks without an
-  id match by content; their deletion cannot be placed. The merge reads the
-  room's tree in the same task it applies, so a block changed meanwhile is
-  never overwritten (first applied wins; no lock). A merge that throws is
-  reported to Sentry (`note-copy-merge`) and the rows stay for the next open.
+  nested in it, and blocks compare without the ids of elements inside them
+  (`sameBlock`, Q397: the room holds table rows and cells, columns, toggles
+  and Mermaid captions without ids that normalization gives the copy). A
+  block without an id is left as the room has it. The diff runs in a worker
+  (`mergeOffThread`, Q397); its steps are then applied to the bound editor
+  as ordinary Slate edits (`mergeAtBind`, `applyDiffed`), one local
+  transaction and one Undo step under the session's id (`asOneStep`), so
+  they sync and save as any edit and the editor asks for a receipt at once
+  (only when a step applied). A block only the copy changed (edited,
+  inserted, deleted, moved) is applied: of the same type the block keeps its
+  element and only the changed run of each text is rewritten when the
+  children keep their shape (`replaceBlock`, Q397), so comment anchors and
+  peers' carets in it hold; otherwise its children, or the block of another
+  type at its index keeping its id, are replaced. Inserts and moves go after
+  the previous block of the copy the room still holds, else at the start. A
+  block only the room changed, or neither, stays as the room has it; one
+  both moved keeps the room's place. A block both changed differently is a
+  conflict: the room's version stays, and the copy's version (when the copy
+  did not delete it) is kept as one `refused` copy row, which the editor
+  remounts to show copy-only under the `conflict` banner (until the merge
+  view, Q229). That row is stored before the copies' rows are deleted
+  (`deleteOnceStored`, Q397): a failed write keeps the copies for the next
+  open and shows the drafts-lost notice. A block the room or the user
+  changed while the worker diffed (its object differs from the one diffed)
+  is not overwritten but becomes a conflict too. Within a tab the first
+  applied wins; two tabs whose binds race over the network can both apply,
+  and Yjs keeps both texts (accepted, as the merge view's plan does). The
+  caret is placed again by block id once the merge applied, unless it moved
+  meanwhile. A merge that throws is reported to Sentry (`note-copy-merge`)
+  and the rows stay for the next open, with the last second of typing
+  (`stop` writes what is pending).
+- **Cost** (measured 2026-10-26 on the developer PC, Chromium at CPU x4, Vite
+  dev build, the 2.0 MB load-test note of 3,652 blocks). 154 steps (125
+  edited blocks, 30 inserts): the main thread was held 0.69-1.05 s before
+  (diff 41-54 ms, apply 654-992 ms), 0.30-0.37 s after (the worker's message
+  clone 54-61 ms, which costs about what the diff did, and the apply
+  299-375 ms). 1,116 steps (817 edited, 300 inserts): 9.2-11.4 s before,
+  3.1-3.4 s after. A typical session (under 50 blocks) stays well under
+  100 ms; a long offline rework of a near-limit note still holds the tab for
+  seconds on a slow phone.
 
 ### Sending drafts without the editor open
 

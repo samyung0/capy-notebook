@@ -4714,6 +4714,7 @@ components:
             - read_only
             - forbidden
             - not_found
+            - unreadable
           type: string
         sizeBytes:
           format: int64

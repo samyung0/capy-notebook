@@ -14,12 +14,13 @@ import type { MaterialElement } from '@/features/materials/document';
  * - A block both changed differently is a conflict, left out of the steps
  *   (`theirs` keeps it): edited on both sides, edited by one and deleted by
  *   the other. Both moving it keeps the room's place.
- * - A block without an id is matched by content: one `base` holds an equal
- *   block of is unchanged, any other is inserted under a new id; its
- *   deletion cannot be placed and is dropped.
+ * - Blocks are matched by their top-level id, which every stored note block
+ *   has (`stableElementIds`); a block without one is left as `theirs` has
+ *   it, never duplicated.
  *
- * Pure: the merge view reuses it. Applying the steps (applyBlocks.ts) reads
- * `theirs` again by id, so they apply to the document as it is then.
+ * Pure: the merge view reuses it, and the bind merge runs it in a worker
+ * (`mergeCopies`). Applying the steps (applyBlocks.ts) reads the editor's
+ * blocks again by id.
  */
 
 export type MergeStep =
@@ -41,9 +42,15 @@ export interface BlockConflict {
   theirs: MaterialElement | null;
 }
 
-/** Whether two plain JSON values are equal, whatever their key order; a key
- * holding `undefined` counts as absent. */
-export function sameBlock(left: unknown, right: unknown): boolean {
+/**
+ * Whether two blocks are equal as JSON, whatever their key order; a key
+ * holding `undefined` counts as absent. Below the top level element ids are
+ * left out (REVIEW5 N1, Q397): normalization gives an element without one a
+ * random id on every parse, while the room holds some without (a Mermaid
+ * caption, table rows and cells, columns, toggles), and nothing renders
+ * differently for them.
+ */
+export function sameBlock(left: unknown, right: unknown, top = true): boolean {
   if (left === right) return true;
   if (
     typeof left !== 'object' ||
@@ -56,16 +63,19 @@ export function sameBlock(left: unknown, right: unknown): boolean {
     if (!(Array.isArray(left) && Array.isArray(right))) return false;
     return (
       left.length === right.length &&
-      left.every((item, index) => sameBlock(item, right[index]))
+      left.every((item, index) => sameBlock(item, right[index], false))
     );
   }
   const a = left as Record<string, unknown>;
   const b = right as Record<string, unknown>;
-  const keys = Object.keys(a).filter((key) => a[key] !== undefined);
+  const keys = (value: Record<string, unknown>) =>
+    Object.keys(value).filter(
+      (key) => value[key] !== undefined && (top || key !== 'id')
+    );
+  const own = keys(a);
   return (
-    keys.length ===
-      Object.keys(b).filter((key) => b[key] !== undefined).length &&
-    keys.every((key) => sameBlock(a[key], b[key]))
+    own.length === keys(b).length &&
+    own.every((key) => sameBlock(a[key], b[key], false))
   );
 }
 
@@ -119,8 +129,7 @@ function moved(base: MaterialElement[], blocks: MaterialElement[]) {
 export function mergeBlocks(
   base: MaterialElement[],
   mine: MaterialElement[],
-  theirs: MaterialElement[],
-  newId: () => string = () => crypto.randomUUID()
+  theirs: MaterialElement[]
 ): { conflicts: BlockConflict[]; steps: MergeStep[] } {
   const baseById = byId(base);
   const mineById = byId(mine);
@@ -167,22 +176,11 @@ export function mergeBlocks(
   // Inserts and moves, in the user's order.
   const ourMoves = moved(base, mine);
   const theirMoves = moved(base, theirs);
-  const unmatched = base.filter((block) => idOf(block) === undefined);
   const order: MergeStep[] = [];
   let after: string | null = null;
   for (const block of mine) {
     const id = idOf(block);
-    if (id === undefined) {
-      const equal = unmatched.findIndex((other) => sameBlock(other, block));
-      if (equal >= 0) {
-        unmatched.splice(equal, 1);
-        continue;
-      }
-      const fresh = newId();
-      order.push({ after, block: { ...block, id: fresh }, kind: 'insert' });
-      after = fresh;
-      continue;
-    }
+    if (id === undefined) continue;
     if (inserts.has(id)) {
       order.push({ after, block, kind: 'insert' });
       after = id;
@@ -194,4 +192,54 @@ export function mergeBlocks(
     after = id;
   }
   return { conflicts, steps: [...content, ...order] };
+}
+
+/** `steps` on plain blocks, as applyMergeSteps runs them on the editor: a
+ * block found by id, an insert or a move after its anchor (else at the end
+ * when the anchor is gone). */
+export function applyToBlocks(blocks: MaterialElement[], steps: MergeStep[]) {
+  const out = [...blocks];
+  const at = (id: string) => out.findIndex((block) => block.id === id);
+  for (const step of steps) {
+    if (step.kind === 'set' || step.kind === 'remove') {
+      const index = at(step.id);
+      if (index < 0) continue;
+      if (step.kind === 'set') out[index] = step.block;
+      else out.splice(index, 1);
+      continue;
+    }
+    const anchor = step.after === null ? -1 : at(step.after);
+    const target = step.after !== null && anchor < 0 ? out.length : anchor + 1;
+    if (step.kind === 'insert') {
+      out.splice(target, 0, step.block);
+      continue;
+    }
+    const from = at(step.id);
+    if (from < 0) continue;
+    const [block] = out.splice(from, 1);
+    out.splice(from < target ? target - 1 : target, 0, block);
+  }
+  return out;
+}
+
+/** Copies a bind merges, oldest first (another closed tab's, then this
+ * tab's own): each against the room's blocks as the ones before left them. */
+export interface CopyPair {
+  base: MaterialElement[];
+  mine: MaterialElement[];
+}
+
+/** The steps and conflicts of merging `pairs` in order into `theirs`. Runs
+ * in the merge worker (mergeWorker.ts, Q397), off the main thread. */
+export function mergeCopies(pairs: CopyPair[], theirs: MaterialElement[]) {
+  let current = theirs;
+  const steps: MergeStep[] = [];
+  const conflicts: BlockConflict[] = [];
+  for (const { base, mine } of pairs) {
+    const merged = mergeBlocks(base, mine, current);
+    steps.push(...merged.steps);
+    conflicts.push(...merged.conflicts);
+    current = applyToBlocks(current, merged.steps);
+  }
+  return { conflicts, steps };
 }
