@@ -402,6 +402,14 @@ button {
 .docx-runtime-viewer .canvas-pages__column {
   padding-inline: 0 !important;
 }
+/* The reading layout is one column of paper, its pages abutting: the pane is
+   the page, with room above the first line and below the last. */
+.docx-runtime-viewer[data-reading] {
+  background: #ffffff;
+}
+.docx-runtime-viewer[data-reading] .canvas-pages__column {
+  padding-block: 16px !important;
+}
 
 .office-a11y-only {
   position: absolute;
@@ -438,79 +446,37 @@ button {
   display: block;
 }
 
-.pptx-runtime {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.pptx-stage {
-  display: grid;
-  flex: 1;
-  place-items: center;
-  min-height: 0;
-  padding: 20px;
-  overflow: auto;
-  background: var(--surface-card-bg);
-}
-
-.pptx-stage canvas {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  background: #fff;
-  box-shadow: 0 3px 18px rgb(25 32 48 / 18%);
-}
-
-.pptx-canvas-layer {
-  display: grid;
-  place-items: center;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 0;
-  max-height: 100%;
-}
-
-.pptx-controls {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 12px;
-  align-items: center;
-  justify-content: center;
-  min-height: 42px;
-  font-size: 13px;
-  background: var(--surface-card-bg);
-  border-top: 1px solid var(--divider);
-}
-
-.pptx-controls button {
-  padding: 4px 10px;
-  cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--border-default);
-  border-radius: 5px;
-}
-
-.pptx-controls button:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-
 /* On a panel frosted over Capy's page frame (set-appearance's frosted flag
    sets data-frosted): the frame paints nothing of its own behind pages and
    slides, and its toolbar and lines are see-through, so the panel's frost
    shows through the frame as around it. Pages, cells, slides, menus and
    dialogs keep their fills. */
 html[data-frosted] {
-  --doc-bg: transparent;
-  --doc-toolbar-bg: transparent;
   --divider: rgb(0 0 0 / 0.08);
   background: transparent;
 }
 html[data-frosted]:is([data-theme="frappe"], [data-theme="mocha"]) {
   --divider: rgb(255 255 255 / 0.08);
 }
-html[data-frosted] .pptx-stage,
-html[data-frosted] .pptx-controls {
+/* The DOCX editor's .oox-root declares the --doc-* set again, over the
+   page's; the viewer renders outside it. PPTX's view and edit paint their
+   desk, toolbar row, slide strip and notes box from the --pptx-* three. */
+html[data-frosted],
+html[data-frosted] .oox-root,
+html[data-frosted] .oox-root .oox-root {
+  --doc-bg: transparent;
+  --doc-toolbar-bg: transparent;
+  --pptx-bg: transparent;
+  --pptx-strip-bg: transparent;
+  --pptx-surface: transparent;
+}
+/* The DOCX editor's popups and dialogs that fill from --doc-bg (the table
+   style gallery, the shortcuts dialog's footer) keep the fill. */
+html[data-frosted] .oox-root :is([data-docx-escape-layer], [role="dialog"]) {
+  --doc-bg: var(--surface-card-bg);
+}
+/* The DOCX editor's toolbar wrapper fills with --doc-surface, which its
+   dialogs and menus share. */
+html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
   background: transparent;
 }

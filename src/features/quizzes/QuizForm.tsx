@@ -89,6 +89,8 @@ export function QuizForm({
     <div className="flex justify-end">
       <Button
         className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+        // The tour opens the first question's dialog through it.
+        data-question-edit
         iconLeft="pencil"
         onClick={() => setEditing({ blank: false, id: item.id })}
         rounded="large"

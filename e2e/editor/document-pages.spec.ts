@@ -104,7 +104,10 @@ test('Blocks and Files open the shared document page in View', async ({
   ).toBeVisible();
 });
 
-test('PDF tools persist private marks, undo restores IDs, and narrow tools scroll', async ({
+// TODO: better UX for PDF highlighting and overlays. These need the PDF's
+// Edit/View switch, hidden until then (ANNOTATION_TOOLS in PdfView.tsx).
+// biome-ignore lint/suspicious/noSkippedTests: PDF tools are hidden for now.
+test.fixme('PDF tools persist private marks, undo restores IDs, and narrow tools scroll', async ({
   page,
   context,
 }) => {
@@ -333,7 +336,8 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
   await page.keyboard.press('Escape');
 });
 
-test('workspace PDF mode survives reload and retains the citation page', async ({
+// biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
+test.fixme('workspace PDF mode survives reload and retains the citation page', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio?file=f_1&page=1&mode=edit');
@@ -460,7 +464,8 @@ test('a chat citation opens the PDF, scrolls its box to the middle, then flashes
   expect(Math.abs(again.centerOffset)).toBeLessThan(4);
 });
 
-test('workspace links remember each file and material mode independently', async ({
+// biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
+test.fixme('workspace links remember each file and material mode independently', async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -525,7 +530,8 @@ test('workspace links remember each file and material mode independently', async
   });
 });
 
-test('Blocks, Files and recent links use saved modes without reloading the app', async ({
+// biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
+test.fixme('Blocks, Files and recent links use saved modes without reloading the app', async ({
   page,
 }) => {
   test.setTimeout(90_000);

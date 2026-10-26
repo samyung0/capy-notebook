@@ -281,6 +281,16 @@ export interface WorkspaceRecent {
   files: SourceFile[];
   materials: MaterialListItem[];
 }
+/** GET /recent: the caller's newest opens (creating counts), each row
+ * exactly one of file and material. */
+export interface RecentOpen {
+  file?: SourceFile;
+  material?: MaterialListItem;
+  openedAt: string;
+}
+export interface RecentPage {
+  items: RecentOpen[];
+}
 /** File rows carry the File thumbnail fields, material rows a MaterialPreview. */
 export type TrashItem = Omit<GenTrashItem, 'preview'> & {
   preview?: FileTextPreview | MaterialPreview;

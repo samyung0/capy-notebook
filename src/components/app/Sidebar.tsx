@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
 import { useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { GettingStartedRow } from '@/features/guide/GettingStartedRow';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
@@ -281,6 +282,12 @@ export function Sidebar({
 
       <div className="mt-auto" />
       <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">
+        {withAccount && (
+          <GettingStartedRow
+            className={cn(BASE_BUTTON_STYLE, ROW_CLASS, ROW_IDLE)}
+            onNavigate={onNavigate}
+          />
+        )}
         {nav.bottom.map((i) => (
           <Row
             active={isActive(pathname, i)}

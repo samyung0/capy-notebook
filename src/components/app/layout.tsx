@@ -8,7 +8,7 @@ import {
 import type { FrostPanel } from '@/api/types';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/cn';
-import { useFrosted } from '@/theme/theme';
+import { FrostedSurface, useFrosted } from '@/theme/theme';
 import { PhoneTopRow } from './Sidebar';
 
 /** The scrolling body of the page panel, the root that ListEnd watches. */
@@ -53,7 +53,7 @@ export function PagePanel({
             {header && <div className="shrink-0">{header}</div>}
             <div className="flex flex-1 flex-col items-stretch gap-2 p-0 pb-10">
               <PanelScrollRoot.Provider value={scrollRef}>
-                {children}
+                <FrostedSurface value={frosted}>{children}</FrostedSurface>
               </PanelScrollRoot.Provider>
             </div>
           </div>
@@ -125,7 +125,7 @@ export function Panel({
           )}
           ref={scrollRef}
         >
-          {children}
+          <FrostedSurface value={frosted}>{children}</FrostedSurface>
         </div>
       </El>
     </Card>

@@ -607,7 +607,7 @@ export function ChatPanel({
                   // An outlined plane: grey until there is something to send.
                   iconClassName={cn(
                     'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
-                    text.trim() ? 'text-action-accent' : 'text-fg-muted',
+                    text.trim() ? 'text-send' : 'text-fg-muted',
                     streaming
                       ? 'scale-25 opacity-0 blur-[2px]'
                       : 'scale-100 opacity-100 blur-none'

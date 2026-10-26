@@ -17,8 +17,8 @@ var ErrInvalidCursor = errors.New("invalid cursor")
 // pays for, wherever it sits, and is the storage breakdown; other people's
 // uploads in the caller's workspaces show inside the workspace. Member (Recent
 // and pickers) lists instead what the caller can open: its own workspaces,
-// those it belongs to under a live owner, and its standalone rows (Sam
-// 2026-10-19). A paid-for row the caller can no longer open is marked
+// those it belongs to or opened under a live owner (visibleWorkspacesSQL),
+// and its standalone rows (Sam 2026-10-19). A paid-for row the caller can no longer open is marked
 // LostAccess and shows only its name and size: they may only delete it.
 
 // liveWorkspaceSQL is true when wsCol names a workspace whose owner's account
@@ -63,17 +63,28 @@ type withExtra struct {
 
 func (w withExtra) Scan(dest ...any) error { return w.row.Scan(append(dest, w.extra...)...) }
 
-// visibleWorkspacesSQL lists the workspaces a Member listing shows to the
-// caller ($1): those they own, and those they are a member of whose owner's
-// account is live (not deleted, pending deletion or suspended), the same rule
-// as ListWorkspaces. Lists filter on it with IN, which Postgres looks up by
-// index; the same conditions as an OR across the joined tables read every
-// user's rows on each call (bench/gateway, 2026-10-24).
-const visibleWorkspacesSQL = `SELECT id FROM workspaces WHERE user_id=$1
+// visibleWorkspacesSQL lists the workspaces ListWorkspaces, Search and a
+// Member listing show to the caller (the parameter user names): those they
+// own, those they are a member of, and a link or public one they opened
+// (workspace_visits) while they can still open it as a nonmember (public, or
+// link with a redeemed grant), each under a live owner (not deleted, pending
+// deletion or suspended) apart from their own.
+// Lists filter on it with IN, which Postgres looks up by index; the same
+// conditions as an OR across the joined tables read every user's rows on each
+// call (bench/gateway, 2026-10-24).
+func visibleWorkspacesSQL(user string) string {
+	return `SELECT id FROM workspaces WHERE user_id=` + user + `
 	UNION ALL
 	SELECT vm.workspace_id FROM workspace_members vm
 		JOIN workspaces vw ON vw.id=vm.workspace_id JOIN users vo ON vo.id=vw.user_id
-	WHERE vm.user_id=$1 AND vo.deleted_at IS NULL AND vo.deletion_requested_at IS NULL AND vo.suspended_at IS NULL`
+	WHERE vm.user_id=` + user + ` AND vo.deleted_at IS NULL AND vo.deletion_requested_at IS NULL AND vo.suspended_at IS NULL
+	UNION ALL
+	SELECT vv.workspace_id FROM workspace_visits vv
+		JOIN workspaces vvw ON vvw.id=vv.workspace_id JOIN users vvo ON vvo.id=vvw.user_id
+	WHERE vv.user_id=` + user + ` AND vvo.deleted_at IS NULL AND vvo.deletion_requested_at IS NULL AND vvo.suspended_at IS NULL
+		AND (vvw.privacy='public' OR (vvw.privacy='link' AND EXISTS (
+			SELECT 1 FROM workspace_link_grants vg WHERE vg.workspace_id=vvw.id AND vg.user_id=` + user + `)))`
+}
 
 const listPageMax = 100
 
@@ -244,7 +255,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	where := ` WHERE m.owner_user_id=$1`
 	if f.Member {
 		where = ` WHERE m.id IN (SELECT id FROM materials WHERE workspace_id IS NULL AND owner_user_id=$1
-			UNION ALL SELECT id FROM materials WHERE workspace_id IN (` + visibleWorkspacesSQL + `))`
+			UNION ALL SELECT id FROM materials WHERE workspace_id IN (` + visibleWorkspacesSQL("$1") + `))`
 	}
 	where += ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($2)`
 	if len(f.WorkspaceIDs) > 0 {
@@ -391,7 +402,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	// Recent) what it can open (Sam 2026-10-19).
 	where := ` WHERE f.user_id=$1 AND f.trashed_at IS NULL`
 	if f.Member {
-		where = ` WHERE f.workspace_id IN (` + visibleWorkspacesSQL + `) AND f.trashed_at IS NULL`
+		where = ` WHERE f.workspace_id IN (` + visibleWorkspacesSQL("$1") + `) AND f.trashed_at IS NULL`
 	}
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)

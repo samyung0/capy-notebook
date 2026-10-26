@@ -1,4 +1,4 @@
-import { type ReactNode, useContext } from 'react';
+import { type ReactNode, type Ref, useContext, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
@@ -7,6 +7,7 @@ import {
   RemovedMedia,
   useResolvedAsset,
 } from '@/features/materials/MediaAssetView';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 /** The front as the grid, previews and study show it: the text, centred,
@@ -18,7 +19,7 @@ export function CardFront({
 }: {
   card: Pick<FlashcardContent, 'front' | 'image'>;
   className?: string;
-  size?: 'tile' | 'compact' | 'large';
+  size?: 'tile' | 'compact';
 }) {
   return (
     <div
@@ -28,13 +29,7 @@ export function CardFront({
         className
       )}
     >
-      <p
-        className={cn(
-          'whitespace-pre-line break-words',
-          size === 'large' && 't-large-card-title',
-          (size === 'tile' || size === 'compact') && 't-card-title'
-        )}
-      >
+      <p className="t-card-title whitespace-pre-line break-words">
         {card.front}
       </p>
       {card.image && (
@@ -42,8 +37,7 @@ export function CardFront({
           assetId={card.image.assetId}
           className={cn(
             size === 'tile' && 'max-h-[58%]',
-            size === 'compact' && 'h-20',
-            size === 'large' && 'h-30'
+            size === 'compact' && 'h-20'
           )}
         />
       )}
@@ -104,7 +98,7 @@ function ResolvedCardImage({
 /** The back keeps its line breaks. */
 export function CardBack({ card }: { card: Pick<FlashcardContent, 'back'> }) {
   return (
-    <p className="max-w-[52ch] whitespace-pre-line break-words text-center leading-relaxed">
+    <p className="whitespace-pre-line break-words text-center leading-relaxed">
       {card.back}
     </p>
   );
@@ -124,21 +118,25 @@ export function CardBackFace({
   card: Pick<FlashcardContent, 'back' | 'front'>;
   className?: string;
   image?: FlashcardContent['image'];
-  size: 'large' | 'compact' | 'tile';
+  size: 'compact' | 'tile';
 }) {
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
       <div
         className={cn(
           'shrink-0 border-divider border-b text-center font-bold text-fg-secondary',
-          size === 'large' && 'px-7 pt-5.5 pb-4 text-base',
           size === 'compact' && 'px-5 pt-3.5 pb-2.5 text-sm',
           size === 'tile' &&
             'scroll-fade-y overflow-y-auto px-4.5 pt-4 pb-3 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
           size === 'tile' && (image ? 'max-h-36' : 'max-h-22')
         )}
       >
-        <p className="whitespace-pre-line break-words">{card.front}</p>
+        {/* An image-only front says so where its image is left out. */}
+        {card.front.trim() || image ? (
+          <p className="whitespace-pre-line break-words">{card.front}</p>
+        ) : (
+          <p className="font-medium text-fg-muted">{m.flashcards_no_text()}</p>
+        )}
         {image && (
           <CardImage assetId={image.assetId} className="mx-auto mt-2 h-12" />
         )}
@@ -147,7 +145,6 @@ export function CardBackFace({
         className={cn(
           // Safe centring: a long answer starts at its first line and scrolls.
           'items-center-safe flex min-h-0 flex-1 justify-center overflow-auto',
-          size === 'large' && 'p-7 text-lg',
           size === 'compact' && 'p-5',
           size === 'tile' &&
             'scroll-fade-y max-h-52 px-3 py-4 text-[15px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
@@ -162,24 +159,39 @@ export function CardBackFace({
 /** A card in a grid, as the results, the edit grid and View list it: turned
  * (front header over the back) or, with `face="front"`, the front alone; its
  * number at the bottom left and `aside` (rating chips, the edit toolbar) at
- * the bottom right. `onOpen` makes it a button that lifts on hover. */
+ * the bottom right. `onOpen` makes it a button that lifts on hover. A change
+ * of `face` (View's flip) fades the new face in as the study card does. */
 export function CardTile({
   card,
   n,
   face = 'turned',
   aside,
+  headerImage,
   label,
   onOpen,
+  ref,
 }: {
   card: Pick<FlashcardContent, 'back' | 'front' | 'image'>;
   n: number;
   face?: 'turned' | 'front';
   aside?: ReactNode;
+  /** Turned, the front's image shows small in the header (the edit grid). */
+  headerImage?: boolean;
   label?: string;
   onOpen?: () => void;
+  ref?: Ref<HTMLLIElement>;
 }) {
+  // Face changes since mount: only a flip animates, never the first paint.
+  const [shown, setShown] = useState({ face, n: 0 });
+  if (shown.face !== face) setShown({ face, n: shown.n + 1 });
   const body = (
-    <>
+    <div
+      className={cn(
+        'flex flex-1 flex-col',
+        shown.n > 0 && 'motion-safe:motion-card-face-in'
+      )}
+      key={shown.n}
+    >
       {face === 'front' ? (
         <CardFront
           card={card}
@@ -189,24 +201,24 @@ export function CardTile({
         <CardBackFace
           card={card}
           className="flex-1"
-          image={onOpen ? card.image : undefined}
+          image={headerImage ? card.image : undefined}
           size="tile"
         />
       )}
       <span className="flex h-9 shrink-0 items-center px-3.5 pb-3 font-bold text-[13px] text-fg-muted">
         {n}
       </span>
-    </>
+    </div>
   );
   return (
     <Card
       asChild
       border="solid"
-      className="group/tile relative gap-0 overflow-hidden p-0 sm:min-h-52"
+      className="group/tile relative gap-0 overflow-hidden frosted:bg-(--frost-fill) p-0 sm:min-h-52"
       interactive={!!onOpen}
       radius="flashcard"
     >
-      <li>
+      <li ref={ref}>
         {onOpen ? (
           <button
             aria-label={label}
@@ -226,29 +238,6 @@ export function CardTile({
         )}
       </li>
     </Card>
-  );
-}
-
-/** Front on the top half, back on the bottom half. */
-export function CardSides({
-  card,
-  className,
-}: {
-  card: FlashcardContent;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        'grid min-h-115 grid-rows-2 overflow-hidden rounded-flashcard border border-line bg-surface',
-        className
-      )}
-    >
-      <CardFront card={card} className="p-7" size="large" />
-      <div className="flex items-center justify-center overflow-auto border-divider border-t p-7">
-        <CardBack card={card} />
-      </div>
-    </div>
   );
 }
 

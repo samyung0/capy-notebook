@@ -16,6 +16,9 @@ export const PREF_KEYS = {
    * account on the same browser starts its own) and apart on share pages. */
   flashcardRun: (owner: string, setId: string) =>
     `capy.flashcardRun.${owner}.${setId}`,
+  /** The Get started list, written only by the browser that ran onboarding
+   * (gettingStarted.ts). */
+  gettingStarted: 'capy.gettingStarted',
   /** The opened workspace's left panel (chats and files) is open. */
   leftPanel: 'capy.workspace.leftPanel',
   /** The view the left panel shows: Chats, Files or Study. */
@@ -31,13 +34,13 @@ export const PREF_KEYS = {
    * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>
     `capy.quizAttempt.${owner}.${quizId}`,
-  /** The files and materials this browser opened, newest first (recentOpens.ts). */
-  recentOpens: 'capy.recent.opens',
   recentsView: 'capy.recents.view',
   /** The opened workspace's right panel (Files, Chat, Study) is open. */
   rightPanel: 'capy.workspace.rightPanel',
   /** The view the right panel shows: Files, Chat or Study. */
   rightView: 'capy.workspace.rightView',
+  /** When each workspace, file and material open was last sent (sentOpens.ts). */
+  sentOpens: 'capy.opens.sent',
   sort: (list: SortedList) => `capy.sort.${list}`,
 } as const;
 

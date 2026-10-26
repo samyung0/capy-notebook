@@ -18,10 +18,6 @@ kind?: string;
  */
 workspaceId?: string;
 /**
- * Comma-separated file ids: only these rows (the phone quick open, ordered by the client's opens)
- */
-ids?: string;
-/**
  * owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of
  */
 scope?: ListOwnedFilesScope;

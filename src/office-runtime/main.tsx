@@ -905,6 +905,7 @@ function OfficeRuntime() {
             citation={citation}
             initialZoom={file.zoom}
             locale={locale}
+            narrow={narrow}
             onAnalysis={reportAnalysis}
             onAskPresenter={askPresenter}
             onError={reportError}

@@ -89,6 +89,10 @@ export const authScenarios = [
 export const mockScenarioOptions = [
   { id: 'none', label: 'None (reset)' },
   { id: 'new-account', label: 'New account: every list empty' },
+  {
+    id: 'onboarding-get-started',
+    label: 'Onboarding: Get started list and tour',
+  },
   ...chatFixtureOptions,
   { id: 'checkout-free', label: 'Checkout: free account + failure' },
   {
@@ -276,6 +280,7 @@ export function getMockScenarioHandlers(
         http.get(path, () => HttpResponse.json(body))
       );
     case 'none':
+    case 'onboarding-get-started':
     case 'offline':
     case 'connection-reconnecting':
       return [];

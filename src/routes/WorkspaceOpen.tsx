@@ -16,12 +16,14 @@ import {
   type GroupImperativeHandle,
   useGroupRef,
 } from 'react-resizable-panels';
+import { createStore, type StoreApi, useStore } from 'zustand';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
   useChapters,
   useFiles,
   useUpdateChapter,
+  useVisitWorkspace,
   useWorkspace,
 } from '@/api/hooks';
 import type { Citation, Region, ResourceRef } from '@/api/types';
@@ -52,6 +54,10 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { officeFormatOf } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
+import {
+  registerTourPanels,
+  type TourPanels,
+} from '@/features/guide/tourStore';
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
@@ -120,28 +126,45 @@ function railSize(groupWidth: number) {
   );
 }
 
+type Side = 'files' | 'rail';
+
+/** The side panel whose handle is being dragged. A store, so a drag
+ * re-renders the two side panels and not the workspace. */
+type HeldHandle = StoreApi<{ side: Side | null }>;
+
 /** A side panel. Closed, it collapses to nothing but stays mounted, so the
  * rail's chat keeps its thread, draft and stream. usePanelLayout places it;
- * dragging it under its least width closes it on release. */
+ * dragging it under its least width closes it on release. While the other
+ * side's handle is dragged it is disabled: the library otherwise takes space
+ * past the viewer's least width from it, shrinking or collapsing the panel
+ * across the viewer. Only during the drag: the library ignores a handle
+ * beside a disabled panel, so the other handle could not be taken. */
 function SidePanel({
   id,
+  held,
   minSize,
   maxSize,
   className,
   children,
 }: {
-  id: string;
+  id: Side;
+  held: HeldHandle;
   minSize: string;
   maxSize: string;
   className: string;
   children: ReactNode;
 }) {
+  const otherHeld = useStore(
+    held,
+    (state) => !!state.side && state.side !== id
+  );
   return (
     <ResizablePanel
       className={cn('overflow-visible!', className)}
       collapsible
       // Constant: a changing defaultSize re-registers the group.
       defaultSize="0%"
+      disabled={otherHeld}
       id={id}
       maxSize={maxSize}
       minSize={minSize}
@@ -149,6 +172,28 @@ function SidePanel({
       {children}
     </ResizablePanel>
   );
+}
+
+/** Marks which side panel's handle a press took, until the pointer lets go.
+ * The library hit-tests handles by geometry, not by the event's target, and
+ * focuses the handle it took in its document capture listener: read in the
+ * window's bubble phase, after it, the active element says which. */
+function useHeldHandle(held: HeldHandle) {
+  useEffect(() => {
+    const press = () => {
+      const side = (document.activeElement as HTMLElement | null)?.dataset.side;
+      if (side === 'files' || side === 'rail') held.setState({ side });
+    };
+    const release = () => held.setState({ side: null });
+    window.addEventListener('pointerdown', press);
+    window.addEventListener('pointerup', release, true);
+    window.addEventListener('pointercancel', release, true);
+    return () => {
+      window.removeEventListener('pointerdown', press);
+      window.removeEventListener('pointerup', release, true);
+      window.removeEventListener('pointercancel', release, true);
+    };
+  }, [held]);
 }
 
 /** Lays the side panels out whenever one opens or closes: the panel that did
@@ -226,6 +271,14 @@ export default function WorkspaceOpen() {
   } = useWorkspace(workspaceId, {
     errorBoundary: 'unlessMissing',
   });
+  // Each open is a visit: recent workspaces sort by it, and a link or public
+  // workspace a visitor opened lists with their own.
+  const visit = useVisitWorkspace();
+  const loaded = !!ws;
+  const visitor = !ws?.role;
+  useEffect(() => {
+    if (loaded) visit({ id: workspaceId, visitor });
+  }, [loaded, visit, visitor, workspaceId]);
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
@@ -252,6 +305,10 @@ export default function WorkspaceOpen() {
   const oneColumnLayout = !lg;
   const leftShown = xl && leftOpen;
   const panelGroupRef = useGroupRef();
+  const [heldHandle] = useState<HeldHandle>(() =>
+    createStore(() => ({ side: null }))
+  );
+  useHeldHandle(heldHandle);
   const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
   usePanelLayout({
     // One column has no side panels to place.
@@ -381,6 +438,49 @@ export default function WorkspaceOpen() {
   const [addSource, setAddSource] = useState<AddSourceMode | null>(
     resumeProvider ? 'import' : null
   );
+  // Get started links act once the workspace has loaded, then leave the URL.
+  const { add, chat } = search;
+  // Once per link: the panel setters change every render and the URL only
+  // drops the params after the navigation lands.
+  const linkTaken = useRef(false);
+  useEffect(() => {
+    if (!(add || chat)) {
+      linkTaken.current = false;
+      return;
+    }
+    if (!loaded || linkTaken.current) return;
+    linkTaken.current = true;
+    if (add && !readOnly) setAddSource('upload');
+    if (chat) {
+      setTab('chat');
+      setRightOpen(true);
+      setChatRequest((previous) => ({
+        id: null,
+        seq: (previous?.seq ?? 0) + 1,
+      }));
+    }
+    navigate({
+      replace: true,
+      search: (previous) => ({ ...previous, add: undefined, chat: undefined }),
+      to: '.',
+    });
+  }, [add, chat, loaded, navigate, readOnly, setRightOpen, setTab]);
+  // The tour (features/guide/Tour.tsx) opens panels through these while this
+  // page is open.
+  const tourPanels = useRef<TourPanels | null>(null);
+  useEffect(() => {
+    tourPanels.current = {
+      showChats: () => {
+        setLeftOpen(true);
+        setLeftView('chats');
+      },
+      showFiles: () => {
+        setTab('files');
+        setRightOpen(true);
+      },
+    };
+  });
+  useEffect(() => registerTourPanels(tourPanels), []);
 
   if (wsLoading) {
     return (
@@ -437,12 +537,11 @@ export default function WorkspaceOpen() {
       ]}
     />
   );
-  // Only managers have settings; everyone's own study switch and Reset live
-  // in the Study page's menu.
+  // Everyone has settings: owner and editor members open on General, viewers
+  // and share-role visitors on their own Study tab.
   const rowProps = {
-    onOpenSettings: canManageWorkspaceSettings(ws)
-      ? () => setSettingsTab('general')
-      : undefined,
+    onOpenSettings: () =>
+      setSettingsTab(canManageWorkspaceSettings(ws) ? 'general' : 'study'),
   };
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
@@ -474,15 +573,11 @@ export default function WorkspaceOpen() {
       label: m.workspace_tab_study(),
       onClick: openProgress,
     },
-    ...(rowProps.onOpenSettings
-      ? [
-          {
-            icon: 'settings' as const,
-            label: m.workspace_settings(),
-            onClick: rowProps.onOpenSettings,
-          },
-        ]
-      : []),
+    {
+      icon: 'settings',
+      label: m.workspace_settings(),
+      onClick: rowProps.onOpenSettings,
+    },
   ];
   function openFiles() {
     filesAnchor.current =
@@ -829,6 +924,7 @@ export default function WorkspaceOpen() {
             <>
               <SidePanel
                 className="pr-1.5"
+                held={heldHandle}
                 id="files"
                 maxSize="420px"
                 minSize={`${LEFT_MIN}px`}
@@ -838,6 +934,7 @@ export default function WorkspaceOpen() {
               </SidePanel>
               <ResizableHandle
                 className="group-data-files-collapsed/panels:[&>div]:hidden"
+                data-side="files"
                 disabled={!leftOpen}
                 withHandle={leftOpen}
               />
@@ -887,11 +984,13 @@ export default function WorkspaceOpen() {
             <>
               <ResizableHandle
                 className="group-data-rail-collapsed/panels:[&>div]:hidden"
+                data-side="rail"
                 disabled={!rightOpen}
                 withHandle={rightOpen}
               />
               <SidePanel
                 className="pl-1.5"
+                held={heldHandle}
                 id="rail"
                 maxSize="50%"
                 minSize={`${RAIL_MIN}px`}
@@ -935,7 +1034,7 @@ export default function WorkspaceOpen() {
       <WorkspaceSettingsDialog
         onClose={() => setSettingsTab(undefined)}
         onTabChange={setSettingsTab}
-        open={!!search.settings && !!rowProps.onOpenSettings}
+        open={!!search.settings}
         tab={search.settings}
         workspace={ws}
       />

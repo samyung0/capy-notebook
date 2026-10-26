@@ -88,8 +88,8 @@ export function QuestionRunner({
     const part = question.parts.find(
       (item) => item.id === section.partId && item.answer.type === 'gaps'
     );
-    if (part && block.type === 'text' && !section.solution)
-      return (
+    if (part && block.type === 'text' && !section.solution) {
+      const view = (
         <GapText
           block={block}
           disabled={disabled}
@@ -99,6 +99,9 @@ export function QuestionRunner({
           value={answers[part.id] ?? emptyAnswer(part)}
         />
       );
+      // The question dialog frames it as it does every block.
+      return renderBlock ? renderBlock(block, index, section, view) : view;
+    }
     return renderBlock ? (
       renderBlock(block, index, section)
     ) : (

@@ -306,8 +306,10 @@ export function MathField({
         // Its controls in a toolbar: the field, a touch taller than a tight
         // line, still leaves the line's height alone.
         onControlsReady && !displayMode && '-my-1',
+        // Centred in its height, as the formula's button centres it, so
+        // opening it does not move the formula.
         displayMode
-          ? 'block min-h-14 text-center [&_math-field::part(container)]:px-6 [&_math-field::part(container)]:py-4 [&_math-field::part(content)]:justify-center [&_math-field]:block'
+          ? 'flex min-h-14 flex-col justify-center text-center [&_math-field::part(container)]:px-6 [&_math-field::part(container)]:py-4 [&_math-field::part(content)]:justify-center [&_math-field]:block'
           : '[&_math-field::part(container)]:p-0'
       )}
       contentEditable={false}
@@ -317,8 +319,12 @@ export function MathField({
       {!onControlsReady && (
         <span
           className={cn(
-            'absolute top-1/2 right-2 flex -translate-y-1/2 flex-col gap-0.5',
-            !displayMode && 'rounded bg-surface'
+            'absolute right-2 flex -translate-y-1/2 flex-col gap-0.5',
+            displayMode
+              ? 'top-1/2'
+              : // A pixel up to sit on the formula's line; frosted pages keep
+                // the blur the block field shows while still covering text.
+                'top-[calc(50%-1px)] rounded bg-surface frosted:bg-transparent frosted:backdrop-blur-sm'
           )}
         >
           {displayMode && (

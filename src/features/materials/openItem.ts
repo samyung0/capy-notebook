@@ -40,6 +40,10 @@ export type WorkspaceOpenSearch = {
   plan?: string;
   /** Workspace settings open at this tab, over whatever the page shows. */
   settings?: SettingsTab;
+  /** One-shot actions from the Get started list, dropped once taken: open the
+   * Add file dialog, or a new chat. */
+  add?: 'upload';
+  chat?: 'new';
 };
 
 function documentModeKey(item: OpenItem): string {
@@ -84,6 +88,8 @@ export function parseWorkspaceOpenSearch(
     plan: undefined,
     study: undefined,
     ...parseOpenPage(search),
+    add: search.add === 'upload' ? 'upload' : undefined,
+    chat: search.chat === 'new' ? 'new' : undefined,
     settings: isSettingsTab(search.settings) ? search.settings : undefined,
   };
 }

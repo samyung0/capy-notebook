@@ -357,7 +357,8 @@ full-screen `AccountBlockedScreen`.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
 workspace storage status, and one while offline (also whenever the browser
-goes offline there). The status is the viewer's own account from `/me`, since
+goes offline there). Coming back online after that replaces it with a success
+toast ("You're back online"); arriving online shows nothing. The status is the viewer's own account from `/me`, since
 what the viewer adds is charged to the viewer (uploader pays, Sam 2026-10-18):
 frozen ("Account frozen"), full, grace counting as full ("Your storage is
 full"), then near the limit ("Your storage is almost full"). Near uses the

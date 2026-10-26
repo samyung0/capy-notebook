@@ -981,7 +981,7 @@ func TestExpiredPaidPeriodAppliesFreeLimitsBeforeWebhookProjection(t *testing.T)
 	if credits.PlanTier != PlanFree || credits.LimitMicros != mustPlanLimits(t, s, PlanFree).CreditMicros {
 		t.Fatalf("credits tier=%s limit=%d", credits.PlanTier, credits.LimitMicros)
 	}
-	gotWorkspace, err := s.GetWorkspace(ctx, user, workspace.ID, false)
+	gotWorkspace, err := s.GetWorkspace(ctx, user, workspace.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

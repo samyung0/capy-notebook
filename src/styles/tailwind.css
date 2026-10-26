@@ -274,6 +274,18 @@
  * wide-inset takes a section inside a normal page out to the wide gutter
  * (Question bank's topic lists). The bleeds pull edge-to-edge content (the
  * trail maps) back out to the panel's edges. */
+/* The chat send icon: the accent, made more vivid over frost (a frosted panel
+   or the dock's glass), where the plain accent fades into the glass. */
+@utility text-send {
+  color: var(--color-action-accent);
+  html[data-page-frame] :is([data-frosted], [data-frost]) & {
+    color: oklch(from var(--color-action-accent) calc(l - 0.05) calc(c * 1.5) h);
+  }
+  html.dark[data-page-frame] :is([data-frosted], [data-frost]) & {
+    color: oklch(from var(--color-action-accent) calc(l + 0.04) calc(c * 1.4) h);
+  }
+}
+
 @utility page-px {
   @apply px-4 sm:px-6;
 }
@@ -808,6 +820,19 @@ html.dark[data-page-frame] .page-frame [data-frosted] {
   --surface-field-disabled-bg: rgb(255 255 255 / 0.03);
   --border-default: rgb(255 255 255 / 0.12);
   --divider: rgb(255 255 255 / 0.08);
+  background-color: rgb(17 17 27 / 0.55);
+}
+/* Floating toolbars over a frosted panel portal out of it (data-frost from
+   FrostedSurface): frosted glass over the page, as ChatDock's open field,
+   instead of the opaque overlay. */
+html[data-page-frame] [data-floating-toolbar][data-frost] {
+  /* A button's hover tints the glass, as a frosted panel's rows do. */
+  --surface-overlay-hover-bg: rgb(0 0 0 / 0.06);
+  background-color: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(16px);
+}
+html.dark[data-page-frame] [data-floating-toolbar][data-frost] {
+  --surface-overlay-hover-bg: rgb(255 255 255 / 0.08);
   background-color: rgb(17 17 27 / 0.55);
 }
 /* An open exam's tree (ExamSection) runs over its cover's wash: translucent

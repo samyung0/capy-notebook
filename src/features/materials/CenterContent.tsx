@@ -21,6 +21,7 @@ import {
   useFile,
   useMaterial,
   useMaterials,
+  useRecordOpen,
   useWorkspaceRecent,
 } from '@/api/hooks';
 import type {
@@ -79,6 +80,7 @@ import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
+import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
@@ -91,7 +93,6 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
-import { recordRecentOpen } from '@/lib/recentOpens';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
@@ -240,16 +241,14 @@ export function CenterContent({
     if (item && requestedMode) saveDocumentMode(item, requestedMode);
   }, [item?.kind, item?.id, requestedMode]);
 
-  // The quick open's order; its rows refetch with this open when next shown.
-  const queryClient = useQueryClient();
+  // Each open orders Recent Files and the quick open (the hook sends at most
+  // one per item per few minutes).
+  const recordOpen = useRecordOpen();
+  const openKind = item?.kind;
+  const openId = item?.id;
   useEffect(() => {
-    if (!item) return;
-    recordRecentOpen(item.kind, item.id);
-    void queryClient.invalidateQueries({ queryKey: qk.ownedFiles('opened') });
-    void queryClient.invalidateQueries({
-      queryKey: qk.ownedMaterials('opened'),
-    });
-  }, [item?.kind, item?.id, queryClient]);
+    if (openKind && openId) recordOpen({ id: openId, kind: openKind });
+  }, [openKind, openId, recordOpen]);
 
   const changeMaterialMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
@@ -711,7 +710,8 @@ function MaterialContentBody({
       {readOnlyStrip}
       <div className="min-h-0 flex-1">
         {activeMode === 'view' && (
-          <div className="h-full min-h-0 overflow-auto">
+          <div className="relative h-full min-h-0 overflow-auto">
+            {material.kind === 'note' && <NoteDisplayToggles />}
             {material.kind === 'quiz' ? (
               <QuizPreview
                 content={material.content}

@@ -184,7 +184,11 @@ the block or part answer into view in the body with `scrollIntoViewWithMotion`,
 the bank and editor TOC's motion, and focuses it. Body blocks and part answers
 (`QuestionRunner`'s `frameAnswer`) select on click and show the note editor's
 portaled `FloatingBlockToolbar` (Edit, move, duplicate or remove), which never
-shifts layout and flips above a block cut off at the bottom; Enter edits. From `md` the dialog is a fixed
+shifts layout and flips above a block cut off at the bottom; a double click
+or Enter edits, and a double click on an outline row edits its block or
+answer. The answer key below the waves (an open part's sample answer and marking
+scheme) selects its part's answer. From `md`
+the dialog is a fixed
 88dvh and each column scrolls on its own; phones show sticky Outline and Body
 tabs, and a row click switches to Body first.
 Each part's worked solution is always listed in the outline (its Worked
@@ -192,6 +196,12 @@ solution row is a 36px header, not a toggle) and shown in the body under the
 part's answer, both below a `wavy-rule` line; the body's line reads "Hidden
 until checked", since learners only get the solution after checking.
 Its title names the question ("Edit question 10").
+Outline rows drag by one rule (`canDrag`, `canDrop`, `canMove`): blocks always,
+parts only when there are several; a block lands beside a block, before a
+part's Answer and marks (the end of its text) or after a Worked solution title
+(its start), a part beside another part, and the drop line shows only there.
+Move up and down, in the row menu and the floating toolbar, stay within the
+block's section or among parts and are disabled at its ends.
 What keeps the question from being marked comes from `questionIssues`
 (`src/features/questions/issues.ts`, Epo 2026-10-15): it validates
 `withoutBlanks(question)` with the schema and the hand-written rules
@@ -204,10 +214,14 @@ order and each once. An answer issue starts "Part B" (the question's own
 letters or numbers) only when there are several parts; a chart's or graph's
 issue keeps its block ("Graph error: …" with the graph rule's message);
 rules the dialog cannot break (agent-only bounds and counts, ids, awarded
-marks, image links) read "Finish the question and its answer." The dialog
+marks, image links) read "Finish the question and its answer."; an image
+block added but not uploaded yet (an empty link) reads "Image: choose an
+image file" on its row, and the asset-host rule skips it. The dialog
 shows one issue box at the top of the body with the first issue and
 "(+n more)" (`IssueSummary` in `IssueViews.tsx`, also the quiz editor's line
-under each question in `QuizForm`), a warning icon right of each affected
+under each question in `QuizForm`); an open answer or block editor shows
+the same box for its own row's issues under its inputs, so it never moves
+them (a graph lists its own), a warning icon right of each affected
 title (`IssueIcon`, through `QuestionView`'s `titleAside`: the question's for
 question-level and generic issues and for a lone part, each part's for its
 own) whose tooltip lists that title's issues, and only a warning icon on each
@@ -457,7 +471,21 @@ each item. Matching pairs and `gaps` score item by item: each right item earns i
 share of the part's marks, rounded down to a half mark; other closed parts are
 all or nothing. A `gaps` part writes numbered blanks, (1) ______, in its text, 1 to n in order
 (all three validators check this), and keeps one accepted list per blank, which
-may be several words. A blank is right only when it equals an accepted answer,
+may be several words. In the question dialog a gaps part's text shows each blank as a chip
+(`Gap` in `TextEditor`, numbered by place) that Add blank in its toolbar
+inserts and Delete removes; the text block editor lists each blank's accepted
+answers under the text, and `withGapsText` renumbers the part's later blanks
+and keeps every list with its blank (the bank stages both until Save). The toolbar
+button reads "(n) Add new blank" with the next number. Turning a part into
+blanks adds a sample text block holding one when its text has none and opens
+its editor, which keeps the Answer type select; turning it into anything
+else removes the text blocks holding blanks; removing
+a text block takes its blanks' lists with it (`withoutGapsBlock`), and a part
+left with no blank becomes a short answer. Answer and marks keeps the lists
+but no longer adds or removes blanks; it shows the part's text blocks that
+hold a blank above them ("Text with blanks"), each block selected on a click and opened in its own
+editor on a double click, whose Back returns to the question (the bank keeps
+the staged answer first). A blank is right only when it equals an accepted answer,
 ignoring case and spacing; unlike short answers there is no typo tolerance. `QuestionRunner` renders each blank as a small field inside
 the sentence, green or red on review with the accepted answers after a wrong one. It is authored only, so in-app generation does not offer it. A question with one part shows its
 marks once, in the header. Multiple-choice options sit two by two (A B / C D)

@@ -1,5 +1,6 @@
 import { Collapsible } from 'radix-ui';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
@@ -12,16 +13,17 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
-import { Field, FieldInput, SelectField } from './editorFields';
+import { Field, FieldInput, SelectField, StringList } from './editorFields';
 import { GraphEditor } from './GraphEditor';
 import { IssueIcon } from './IssueViews';
 import { QuestionBlockView } from './QuestionView';
 import { repairFigureBlock } from './repair';
-import { TextEditor } from './TextEditor';
+import { IdleFormulaTools, TextEditor } from './TextEditor';
 import {
   CHART_KINDS,
   type ChartBlock,
   type ChartKind,
+  gapNumbers,
   type PlotBlock,
   type QuestionBlock,
 } from './types';
@@ -186,6 +188,7 @@ function ChartEditor({
                             ),
                           })
                         }
+                        placeholder={m.question_ui_chart_series_placeholder()}
                         value={series.name}
                       />
                     </th>
@@ -236,6 +239,7 @@ function ChartEditor({
                             ),
                           })
                         }
+                        placeholder={m.question_ui_chart_label_placeholder()}
                         value={block.labels[row] ?? ''}
                       />
                     </td>
@@ -284,6 +288,7 @@ function ChartEditor({
                               ),
                             });
                           }}
+                          placeholder={m.question_ui_chart_value_placeholder()}
                           type="number"
                           value={series.values[row] ?? ''}
                         />
@@ -987,6 +992,7 @@ export function BlockEditor({
   onInvalidChange,
   textPlaceholder,
   toolbarTarget,
+  gaps,
 }: {
   /** A bank question: figure descriptions take the bank's longer bound. */
   bank?: boolean;
@@ -1003,8 +1009,22 @@ export function BlockEditor({
   /** The block's heading row: a graph's zoom tools and a table cell's
    * formula tools go there. */
   toolbarTarget?: HTMLElement | null;
+  /** A gaps part's text block: the number of its first blank, its blanks'
+   * accepted answers in order, and a change of either. */
+  gaps?: {
+    start: number;
+    lists: string[][];
+    onChange: (text: string, lists: string[][]) => void;
+  };
 }) {
   const [cell, setCell] = useState<string | null>(null);
+  // The text's blanks by id, in order, as the editor read them in; each
+  // change carries every list along with its blank.
+  const blankIds = useRef<string[] | null>(null);
+  if (gaps && block.type === 'text')
+    blankIds.current ??= gapNumbers([block]).map((_, i) => `g${i}`);
+  // Where the click that opened the cell landed (none from the keyboard).
+  const cellClick = useRef<{ x: number; y: number } | null>(null);
   const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -1018,12 +1038,41 @@ export function BlockEditor({
     return (
       <div className="space-y-3">
         <TextEditor
+          gapStart={gaps?.start}
           maxLength={limits.QUESTION_TEXT_MAX}
-          onChange={(text) => onChange({ ...block, text })}
+          onChange={(text, ids) => {
+            if (!gaps) return onChange({ ...block, text });
+            const before = blankIds.current ?? [];
+            const used = new Set<number>();
+            const lists = ids.map((id) => {
+              const at = before.indexOf(id);
+              if (at < 0 || used.has(at)) return [''];
+              used.add(at);
+              return gaps.lists[at] ?? [''];
+            });
+            blankIds.current = ids;
+            gaps.onChange(text, lists);
+          }}
           placeholder={textPlaceholder}
           value={block.text}
         />
-        <div className="border-divider border-t pt-4">
+        {/* Each blank's accepted answers, under the text that holds it. */}
+        {gaps?.lists.map((list, i) => (
+          <StringList
+            addLabel={m.question_ui_add_accepted_answer()}
+            className="max-w-md"
+            key={blankIds.current?.[i] ?? i}
+            label={m.question_ui_gap({ number: gaps.start + i })}
+            onChange={(values) =>
+              gaps.onChange(
+                block.text,
+                gaps.lists.map((item, j) => (j === i ? values : item))
+              )
+            }
+            values={list}
+          />
+        ))}
+        <div className="pt-2">
           <p className="t-label mb-3 text-fg-muted">
             {m.question_ui_preview()}
           </p>
@@ -1185,12 +1234,15 @@ export function BlockEditor({
     });
   // The chart's data table: a trash per row, Add row and column below, the
   // header row under Advanced. A cell's formula tools go to the block's
-  // heading row, else a row of their own while a cell is open.
+  // heading row, else a row of their own; they show disabled until a cell
+  // opens, so opening one shifts nothing.
+  const tools = toolbarTarget ?? cellTools;
   return (
     <div className="space-y-3">
       {!toolbarTarget && (
-        <div className="flex items-center empty:hidden" ref={setCellTools} />
+        <div className="flex items-center" ref={setCellTools} />
       )}
+      {cell === null && tools && createPortal(<IdleFormulaTools />, tools)}
       <div className="overflow-x-auto">
         <table className="border-collapse text-sm">
           <tbody>
@@ -1213,6 +1265,11 @@ export function BlockEditor({
                 </td>
                 {row.map((text, j) => {
                   const id = `${i}:${j}`;
+                  // What an empty cell is for, until it holds text.
+                  const placeholder =
+                    block.header && i === 0
+                      ? m.question_ui_table_heading_placeholder()
+                      : m.question_ui_table_cell_placeholder();
                   return (
                     <td
                       className={cn(
@@ -1228,10 +1285,12 @@ export function BlockEditor({
                       <div className="min-w-28 max-w-80 px-2 py-1.5">
                         {cell === id ? (
                           <TextEditor
+                            caretAt={cellClick.current}
                             compact
                             maxLength={limits.QUESTION_TEXT_MAX}
                             onChange={(value) => updateCell(i, j, value)}
-                            toolbarTarget={toolbarTarget ?? cellTools}
+                            placeholder={placeholder}
+                            toolbarTarget={tools}
                             value={text}
                           />
                         ) : (
@@ -1240,11 +1299,24 @@ export function BlockEditor({
                               column: j + 1,
                               row: i + 1,
                             })}
-                            className="min-h-8 w-full text-left"
-                            onClick={() => setCell(id)}
+                            className="min-h-8 w-full cursor-text text-left"
+                            onClick={(event) => {
+                              cellClick.current = event.detail
+                                ? { x: event.clientX, y: event.clientY }
+                                : null;
+                              setCell(id);
+                            }}
                             type="button"
                           >
-                            <QuestionBlockView block={{ text, type: 'text' }} />
+                            {text.trim() ? (
+                              <QuestionBlockView
+                                block={{ text, type: 'text' }}
+                              />
+                            ) : (
+                              <p className="font-normal text-placeholder leading-relaxed">
+                                {placeholder}
+                              </p>
+                            )}
                           </button>
                         )}
                       </div>

@@ -67,7 +67,6 @@ export const GetDeletionPreflightResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -104,7 +103,6 @@ export const GetDeletionPreflightResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -1662,7 +1660,6 @@ export const ExploreWorkspacesResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -1691,7 +1688,6 @@ export const listOwnedFilesQueryLimitMax = 100;
 export const ListOwnedFilesQueryParams = zod.object({
   "kind": zod.string().optional().describe('Comma-separated file kinds'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
-  "ids": zod.string().optional().describe('Comma-separated file ids: only these rows (the phone quick open, ordered by the client\'s opens)'),
   "scope": zod.enum(['owned', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of'),
   "sort": zod.enum(['added', 'name', 'size', 'kind', 'workspace']).default(listOwnedFilesQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedFilesQueryDirDefault),
@@ -2288,6 +2284,16 @@ export const GetFileLinksResponse = zod.object({
   "storageFull": zod.enum(['self', 'payer']).optional(),
   "url": zod.string()
 })
+
+
+/**
+ * @summary Note that the caller opened a file
+ */
+export const OpenFileParams = zod.object({
+  "id": zod.string()
+})
+
+export const OpenFileResponse = zod.void()
 
 
 /**
@@ -2973,7 +2979,6 @@ export const listOwnedMaterialsQueryLimitMax = 100;
 export const ListOwnedMaterialsQueryParams = zod.object({
   "kind": zod.string().optional().describe('Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
-  "ids": zod.string().optional().describe('Comma-separated material ids: only these rows (the phone quick open, ordered by the client\'s opens)'),
   "location": zod.string().optional().describe('Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed'),
   "scope": zod.enum(['owned', 'member']).default(listOwnedMaterialsQueryScopeDefault).describe('owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones'),
   "sort": zod.enum(['updated', 'created', 'title', 'kind', 'workspace']).default(listOwnedMaterialsQuerySortDefault),
@@ -3766,6 +3771,16 @@ export const UpdateMaterialResponse = zod.object({
   "revision": zod.int(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
+
+
+/**
+ * @summary Note that the caller opened a material
+ */
+export const OpenMaterialParams = zod.object({
+  "id": zod.string()
+})
+
+export const OpenMaterialResponse = zod.void()
 
 
 /**
@@ -5289,6 +5304,114 @@ export const UpdateQuizSharingResponse = zod.object({
 
 
 /**
+ * @summary The caller's newest opened files and materials
+ */
+export const listRecentQueryLimitDefault = 20;
+export const listRecentQueryLimitMax = 50;
+
+
+
+export const ListRecentQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listRecentQueryLimitMax).default(listRecentQueryLimitDefault)
+})
+
+export const ListRecentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "file": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
+  "hasBytes": zod.boolean(),
+  "id": zod.string(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
+  "indexed": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
+  "name": zod.string(),
+  "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
+  "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "revision": zod.int(),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string().optional()
+}).optional(),
+  "material": zod.object({
+  "cardCount": zod.int().optional(),
+  "chapterId": zod.string().nullable(),
+  "chapterName": zod.string(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "lostAccess": zod.boolean().optional().describe('The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md'),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "questionCount": zod.int().optional(),
+  "sharePath": zod.string().optional(),
+  "sizeBytes": zod.int(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+}).optional(),
+  "openedAt": zod.iso.datetime({"offset":true})
+}))
+})
+
+
+/**
  * @summary Grade and rate one question of a review session
  */
 
@@ -6078,7 +6201,6 @@ export const ListWorkspacesResponseItem = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -6170,7 +6292,6 @@ export const CreateWorkspaceResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -6237,7 +6358,6 @@ export const GetWorkspaceResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -6334,7 +6454,6 @@ export const UpdateWorkspaceResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -6494,7 +6613,6 @@ export const CloneWorkspaceResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -7344,7 +7462,6 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -7778,7 +7895,6 @@ export const TransferWorkspaceResponse = zod.object({
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
-  "lastAccessedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -7789,6 +7905,26 @@ export const TransferWorkspaceResponse = zod.object({
   "value": zod.string().min(1).max(transferWorkspaceResponseTagsItemValueMax)
 }))
 })
+
+
+/**
+ * @summary Forget the caller's visit to a workspace
+ */
+export const ForgetWorkspaceParams = zod.object({
+  "id": zod.string()
+})
+
+export const ForgetWorkspaceResponse = zod.void()
+
+
+/**
+ * @summary Note that the caller opened a workspace
+ */
+export const VisitWorkspaceParams = zod.object({
+  "id": zod.string()
+})
+
+export const VisitWorkspaceResponse = zod.void()
 
 
 /**

@@ -50,6 +50,7 @@ import {
 import { Separator } from '@/components/ui/Separator';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
+import { markGettingStarted } from '@/features/guide/gettingStarted';
 import type { OpenItem } from '@/features/materials/openItem';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -637,7 +638,7 @@ function SourceList({
           fixed && 'mt-3'
         )}
       >
-        <h3 className="t-card-title">{m.source_selected_files()}</h3>
+        <h3 className="t-subtitle">{m.source_selected_files()}</h3>
         <Popover>
           <PopoverTrigger asChild>
             <IconButton
@@ -664,8 +665,7 @@ function SourceList({
                 name={fileIconName(source)}
               />
               <span
-                // Phones: one step smaller, like the drop zone's heading.
-                className="t-body sm:t-subtitle min-w-0 flex-1 truncate font-semibold"
+                className="t-body min-w-0 flex-1 truncate"
                 title={source.name}
               >
                 {source.name}
@@ -889,7 +889,12 @@ export function AddSourceDialog({
   const retryRead = useRef<string | null>(null);
   // Mutations keep running after the dialog unmounts, so the transfer
   // runner can hold on to these.
-  const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
+  const { mutateAsync: upload } = useUploadSource(workspaceId);
+  const uploadSource: typeof upload = async (vars) => {
+    const file = await upload(vars);
+    markGettingStarted('upload');
+    return file;
+  };
   const { mutateAsync: importSources } = useImportSources(workspaceId, {
     errorToast: false,
   });

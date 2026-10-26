@@ -17,6 +17,7 @@ import type {
   UndoRef,
   WireMessage,
 } from '@/api/types';
+import { markGettingStarted } from '@/features/guide/gettingStarted';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
 import { errorCopy } from '@/lib/errors';
@@ -55,6 +56,7 @@ export function invalidateForEffects(
     if (effect.resource.kind === 'material') {
       void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
       void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+      void qc.invalidateQueries({ queryKey: qk.recent });
       if (effect.operation !== 'created') {
         void qc.invalidateQueries({
           queryKey: qk.material(effect.resource.id),
@@ -63,6 +65,7 @@ export function invalidateForEffects(
     } else {
       void qc.invalidateQueries({ queryKey: qk.files(workspaceId) });
       void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+      void qc.invalidateQueries({ queryKey: qk.recent });
       if (effect.operation !== 'created') {
         void qc.invalidateQueries({ queryKey: qk.file(effect.resource.id) });
       }
@@ -310,6 +313,7 @@ export function useChatStream(workspaceId: string) {
         });
       };
       track('chat_turn_sent', { hasScope: false, workspaceId });
+      markGettingStarted('chat');
       setThreads((prev) => ({
         ...prev,
         [key]: {

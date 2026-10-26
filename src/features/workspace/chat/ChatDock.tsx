@@ -322,9 +322,7 @@ export function ChatDock({
                   icon="send"
                   // An outlined plane, grey until there is something to send,
                   // as in the composer.
-                  iconClassName={
-                    sendDisabled ? 'text-fg-muted' : 'text-action-accent'
-                  }
+                  iconClassName={sendDisabled ? 'text-fg-muted' : 'text-send'}
                   label={m.chat_send()}
                   onClick={onSend}
                   // Keeps the field focused through the tap, so its blur

@@ -534,8 +534,11 @@ change) jumped the page back to its top.
 Quizzes and flashcard sets never render through Plate. Opened as a file (in a
 workspace or standalone) the center pane shows the quiz page's question list or
 the flashcard grid (`src/features/flashcards/FlashcardGrid.tsx`: numbered
-fronts as `CardTile`s, a preview dialog with the front over the back and
-Previous/Next), each under the material title, and flashcard edit mode is the
+fronts as `CardTile`s; a click turns a tile in place to the front header over
+the back (the image left out, an image-only front reading "No text", as on the
+study card's back), fading the new face in like the study card, and another turns it
+back; a link to a card opens with that tile turned and scrolled to), each under
+the material title, and flashcard edit mode is the
 live card grid described under authoring below, its tiles turned like the
 result pages' (front header over the back, the image small in the header,
 Edit/Remove beside the number) (`src/features/materials/CenterContent.tsx`).
@@ -2681,7 +2684,7 @@ figure).
 block editors write through `writeQuestion`
 (`src/features/quizzes/liveQuiz.ts`: the fewest changes, lists by their common
 head and tail, a move as a new order key), a chart or graph stays staged until
-the block's Done (one value per block, D8), and the footer holds Undo, Redo and
+the block's Back (one value per block, D8), and the footer holds Undo, Redo and
 the live state; there is no Save or Cancel and the dialog closes with its X or
 Esc. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
@@ -2741,9 +2744,9 @@ cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
 workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the
 old `/flashcards/$id/edit` page is gone) and inside a note. The card dialog
 (front, back on ruled lines like a quiz's written answer, one optional image
-under the front; beside them on wider screens the study card as a preview,
-turned to the answer until a click flips it to the front, `CardPreview` in
-`CardStack.tsx`) writes as you type through
+under the front; the study card as a preview, at the study size, beside them
+from `md` and under the back on narrower screens, turned to the answer until a
+click flips it to the front, `CardPreview` in `CardStack.tsx`) writes as you type through
 `useBoundText` (`src/features/collaboration/yText.ts`: the fewest changes to the
 `Y.Text`, the caret carried through remote changes) and uploads a picked image
 at once. There is no Save, Reset or Done: the dialog closes with its X or Esc,
@@ -2968,6 +2971,13 @@ show the viewer's own choice (visitors without one get capy, so Fustat)
 and carry a server-rendered Aa button that switches it with plain script
 (`src/share/main.tsx`); the edge-cached HTML stays the same for everyone.
 
+Both picks also have shortcuts in the top right corner of a note's scroll area,
+in View and Edit alike (`NoteDisplayToggles.tsx`): an Aa button flips the font
+and a ↔ button (from `md`, where the width shows) flips the width, each saving
+at once like Apply. Their icons stay the same either way; the note shows which
+pick is on. They sit in the scroll area, not the toolbar, so they scroll away
+with the note's top.
+
 Slate's editable root spans the pane at either size. A stable `as` component
 wraps its children in the width-constrained inner container, leaving margin
 clicks inside the editable root and retaining native keyboard handling and
@@ -3167,6 +3177,14 @@ validation and are not rendered.
   (`getSelectionInformation`). Drops land where the pointer is and dragging
   auto-scrolls blocks into range, so the handle shows on hover and drag and
   drop work as before (`e2e/editor/block-interactions.spec.ts`).
+- The block menu (right-click, `BlockContextMenu` in `BlockInteractions.tsx`)
+  is a non-modal `DropdownMenu` anchored by `DropdownMenuAnchor` to a
+  zero-size span at the click point inside the editor's content, so it
+  scrolls with its block and hides once the block leaves the scroll area
+  (`hideWhenDetached`), as the floating toolbars do. It takes the editor
+  popovers' look (All blocks: `rounded-lg`, 30px rows, an icon per row
+  except Turn into); its content keeps `data-slot="context-menu-content"`
+  for the specs.
 - Comment decorations must match Slate paths structurally (`Path.compare`,
   not dot-joined path strings, which put block 10 before block 3); remote
   cursors are returned at the root only. Shared-link editors may be absent from the

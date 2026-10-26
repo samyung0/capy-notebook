@@ -2,14 +2,11 @@ import type {
   FileKind,
   MaterialKind,
   MaterialListItem,
+  RecentOpen,
   SourceFile,
   Workspace,
 } from '@/api/types';
 import { fileCanClone } from '@/features/files/fileUtils';
-import type { RecentOpen } from '@/lib/recentOpens';
-
-/** The dashboard's Recent Files size. */
-export const RECENT_ITEM_LIMIT = 20;
 
 export type RecentItem =
   | {
@@ -35,7 +32,7 @@ export type RecentItem =
       workspaceId: string;
     };
 
-/** A quick open row: the item and when this browser last opened it. */
+/** A Recent row: the item and when the caller last opened it. */
 export type OpenedRecentItem = RecentItem & { openedAt: string };
 
 /** The rows as recent items; workspaces supply edit and clone rights. */
@@ -93,22 +90,18 @@ export function mergeRecentItems(
     .slice(0, limit);
 }
 
-/** The rows in the order this browser opened them, each with its open time.
- * Opens whose row the lists left out (deleted, access lost) are skipped. */
-export function orderByOpens(
-  files: SourceFile[],
-  materials: MaterialListItem[],
-  workspaces: Workspace[],
-  opens: RecentOpen[]
+/** GET /recent's rows as recent items, in its open order, each with its open
+ * time; workspaces supply edit and clone rights. */
+export function fromRecent(
+  rows: RecentOpen[],
+  workspaces: Workspace[]
 ): OpenedRecentItem[] {
-  const byKey = new Map(
-    toRecentItems(files, materials, workspaces).map((item) => [
-      `${item.kind}:${item.id}`,
-      item,
-    ])
-  );
-  return opens.flatMap((open) => {
-    const item = byKey.get(`${open.kind}:${open.id}`);
-    return item ? [{ ...item, openedAt: open.openedAt }] : [];
+  return rows.flatMap((row) => {
+    const [item] = toRecentItems(
+      row.file ? [row.file] : [],
+      row.material ? [row.material] : [],
+      workspaces
+    );
+    return item ? [{ ...item, openedAt: row.openedAt }] : [];
   });
 }

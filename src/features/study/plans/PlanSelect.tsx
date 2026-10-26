@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { markGettingStarted } from '@/features/guide/gettingStarted';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 
@@ -140,7 +141,11 @@ export function PlanSelect({
           defaultName=""
           maxLength={createStudyPlanBodyNameMax}
           onClose={() => setCreating(false)}
-          onSubmit={async (name) => open((await create(name)).id)}
+          onSubmit={async (name) => {
+            const plan = await create(name);
+            markGettingStarted('plan');
+            open(plan.id);
+          }}
           open
           submitLabel={m.action_create()}
           title={m.plan_new()}

@@ -92,7 +92,8 @@ export function UndoButtons({
   // The header copy portals out of the editor's inert wrapper.
   const held = useCollaborationHeld();
   return (
-    <span className="flex items-center">
+    // The tour outlines the pair.
+    <span className="flex items-center" data-undo-buttons>
       <ToolbarButton
         disabled={held || !canUndo}
         label={m.editor_undo()}

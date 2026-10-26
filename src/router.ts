@@ -30,8 +30,7 @@ import {
   ownedFilesQuery,
   ownedMaterialsQuery,
   quizQuery,
-  recentFilesQuery,
-  recentMaterialsQuery,
+  recentQuery,
   reviewOverviewQuery,
   tasksQuery,
   usageQuery,
@@ -226,8 +225,7 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchInfiniteQuery(recentFilesQuery());
-      qc.prefetchInfiniteQuery(recentMaterialsQuery());
+      qc.prefetchQuery(recentQuery());
     },
     path: '/',
   }),

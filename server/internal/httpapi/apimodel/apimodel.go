@@ -286,24 +286,23 @@ type (
 // IsOwner is request-scoped: false when a non-owner reads a link/public
 // workspace (the client renders it read-only with a clone action).
 type Workspace struct {
-	AutoProcess    bool                     `json:"autoProcess"`
-	Description    string                   `json:"description"`
-	ID             string                   `json:"id"`
-	Name           string                   `json:"name"`
-	IconID         string                   `json:"iconId"`
-	Cover          *cover.Cover             `json:"cover,omitempty" doc:"The card's cover art; absent means none"`
-	Privacy        store.Privacy            `json:"privacy"`
-	ShareRole      store.ShareRole          `json:"shareRole"`
-	SharePath      string                   `json:"sharePath"`
-	Tags           []Tag                    `json:"tags" nullable:"false"`
-	ChapterCount   int                      `json:"chapterCount"`
-	FileCount      int                      `json:"fileCount"`
-	FilesLimit     int                      `json:"filesLimit"`
-	CreatedAt      time.Time                `json:"createdAt"`
-	LastAccessedAt time.Time                `json:"lastAccessedAt"`
-	IsOwner        bool                     `json:"isOwner"`
-	Role           *store.WorkspaceRole     `json:"role,omitempty"`
-	Capabilities   store.AccessCapabilities `json:"capabilities"`
+	AutoProcess  bool                     `json:"autoProcess"`
+	Description  string                   `json:"description"`
+	ID           string                   `json:"id"`
+	Name         string                   `json:"name"`
+	IconID       string                   `json:"iconId"`
+	Cover        *cover.Cover             `json:"cover,omitempty" doc:"The card's cover art; absent means none"`
+	Privacy      store.Privacy            `json:"privacy"`
+	ShareRole    store.ShareRole          `json:"shareRole"`
+	SharePath    string                   `json:"sharePath"`
+	Tags         []Tag                    `json:"tags" nullable:"false"`
+	ChapterCount int                      `json:"chapterCount"`
+	FileCount    int                      `json:"fileCount"`
+	FilesLimit   int                      `json:"filesLimit"`
+	CreatedAt    time.Time                `json:"createdAt"`
+	IsOwner      bool                     `json:"isOwner"`
+	Role         *store.WorkspaceRole     `json:"role,omitempty"`
+	Capabilities store.AccessCapabilities `json:"capabilities"`
 	// CanClone: members of any role and effective editors may copy the
 	// workspace; a link/public viewer may not.
 	CanClone bool `json:"canClone"`
@@ -321,7 +320,7 @@ func FromWorkspace(w store.Workspace) Workspace {
 		SharePath: w.SharePath,
 		Tags:      WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,
-		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
+		CreatedAt:  w.CreatedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true), CanClone: true,
 	}
 	return out

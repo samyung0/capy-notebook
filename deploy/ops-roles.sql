@@ -120,8 +120,9 @@ GRANT SELECT (
 GRANT SELECT (
   id, user_id, name, embedding_provider_slug, embedding_model_slug,
   embedding_model_version,
-  embedding_dim, last_accessed_at
+  embedding_dim
 ) ON workspaces TO capy_ops;
+GRANT SELECT (workspace_id, opened_at) ON workspace_visits TO capy_ops;
 GRANT SELECT (user_id, role) ON operators TO capy_ops;
 GRANT SELECT (role, permission) ON ops_permissions TO capy_ops;
 GRANT SELECT (

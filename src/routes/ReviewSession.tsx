@@ -364,7 +364,6 @@ function Session({
                         ? SRS_RATINGS[shown.record.rating - 1]
                         : undefined
                     }
-                    size="compact"
                     stack={stack}
                   />
                 ) : (

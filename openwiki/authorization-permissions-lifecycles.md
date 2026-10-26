@@ -359,6 +359,10 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   may edit, share-role editors included, can read the collaborator directory
   behind mention autocomplete, which carries only user id, display name, and
   avatar. A user whose display name is empty is shown by user id.
+- **Everyone signed in with access** (members and share-role visitors)
+  opens Workspace settings: its Study tab holds their own Hide study
+  progress. General, Sharing, Indexing and Statistics are for
+  owners and editors; Others shows with Clone, Danger for the owner.
 - **Owner and editor members** can rename/recolor/describe/tag the workspace,
   change private/link/public visibility or `shareRole`, and view workspace
   statistics. Tags land in the owner's tag namespace whoever edits them.
@@ -1198,9 +1202,41 @@ frozen catalog, receives a persisted random Waves default, follows existing
 member owner/editor settings permissions and survives cloning. Workspace colors are removed by migration `0018_workspace_appearance.sql`; existing Slice workspace/avatar selections become Waves before the catalog constraints narrow. Help and Legal contains support cards, FAQs and contact links and links to the author,
 source, artwork license and generator notices on Credits.
 
+Confirm and Skip also start a Get started list in that browser only
+(`capy.gettingStarted` in localStorage: the account, the steps done here,
+whether it was closed); the account's other browsers never saw the dialog
+and never show it. The sidebar (the rail, the phone nav drawer) shows
+"Get started n/3" above Settings until × or all three steps are done. Its
+popover lists Upload a file, Chat with Capy and Make a study plan; a row opens
+its step in the workspace on screen, or else the latest one, through one-shot
+params the workspace page takes and drops: `?add=upload` (the Add file
+dialog), `?chat=new` (a new chat), `?study=true` (the Study page). A step ticks
+when it happens in this browser: an upload finishes, a chat message is sent, a
+plan is created. The starter workspace counts as made, so there is no create
+step.
+
+Start tour runs the guided tour app-wide (`Tour`, mounted by `AppShell` while
+one runs): ten steps across the workspace (Files panel, Chats panel with its
+view menu open, the editor, the sample quiz's question dialog, Study), a
+review, its result, Settings → Customizations and the dashboard. Each step
+opens its page, waits for it, lights a panel, a dialog or the whole page and
+outlines the buttons it names; the question dialog's Undo and Redo also get a
+held "Undo · Redo" label. The card sits beside the lit part or, without room,
+in its bottom-right corner. A step whose part this width lacks (side panels on
+phones) or whose sample is missing (no note, quiz or past review) is passed
+over. The workspace page lends its panels through `registerTourPanels`; the
+parts are found by `data-save-state`, `data-undo-buttons`,
+`data-question-edit` and `data-getting-started-row`. It is built on the app's
+Radix Popover with a virtual anchor, no tour library. The starter workspace's
+sample note, Word file and quiz (a copy of a template workspace) are decided
+but not built, so a new account's tour passes over the editor and question
+steps for now.
+
 Sources: [auth landing](../src/features/auth/AuthLanding.tsx),
 [password reset](../src/routes/ForgotPassword.tsx),
-[onboarding dialog](../src/features/auth/OnboardingDialog.tsx), and
+[onboarding dialog](../src/features/auth/OnboardingDialog.tsx),
+[Get started](../src/features/guide/GettingStartedRow.tsx),
+[tour](../src/features/guide/Tour.tsx), and
 [name endpoint](../server/internal/httpapi/huma_account.go).
 
 `GET /api/me` carries the resolved lifecycle as `account` (state, plan,
@@ -1473,13 +1509,54 @@ Listing scopes outside a workspace (Sam 2026-10-19). `GET /api/files`,
 for, wherever it sits: the Files page is the storage breakdown. Other people's
 uploads in a workspace the caller owns show inside the workspace (its trash
 with `workspaceId`, owner only), not there. `scope=member` lists instead what
-the caller can open: its own workspaces, those where it is an explicit member
-under a live owner (the workspace list's rule), and its standalone materials,
-never a row it only pays for; the dashboard's Recent uses it and offers
-Rename/Properties/Delete only where the workspace's `capabilities` allow
-editing. Global search (`Store.Search`) follows the same rule for workspaces,
-files and flashcard sets. Link or public workspaces the caller has only opened
-never appear in either. Past reviews and notifications keep the caller's
+the caller can open: the workspace list's set (`visibleWorkspacesSQL`) and its
+standalone materials, never a row it only pays for; the dashboard's Recent uses
+it and offers Rename/Properties/Delete only where the workspace's
+`capabilities` allow editing. Global search (`Store.Search`) follows the same
+set for workspaces, files and flashcard sets.
+
+Workspace visits (Epo 2026-10-26, migration `0120_workspace_visits.sql`).
+`workspace_visits (user_id, workspace_id, opened_at)` records when each
+signed-in user last opened a workspace (`POST /api/workspaces/{id}/visit`,
+sent by the workspace page; it needs read access). The workspace list's set is
+the caller's own workspaces, those where it is an explicit member under a live
+owner, and a link or public workspace it opened while it can still open it as
+a nonmember (public, or link with a redeemed grant) under a live owner;
+revoking the link or the owner's account ending drops it from the lists, and
+making the workspace private also deletes its visitors' visits (a trigger, as
+for link grants), so it never comes back without a new open. `sort=accessed` orders by the caller's
+own `opened_at`, never-opened workspaces last by creation. A workspace held
+only as a visitor (no `role`) has ⋮ Forget on its card
+(`DELETE /api/workspaces/{id}/visit`, no access needed), which deletes the row
+until the next open; study progress stays. Writes are debounced: the browser
+sends at most one visit per workspace per five minutes
+(`src/lib/sentOpens.ts`, per account, cleared by Forget or a failed send)
+except for a visitor's workspace, which always sends so a Forget on another
+device never holds back the next open; the gateway acknowledges a repeat
+within five minutes of its own last write without a database call, and the
+upsert rewrites only rows older than that. The old per-workspace
+`last_accessed_at`, which only the owner's opens moved, is gone; ops reads
+`max(opened_at)` (active workspaces in 7 days, a user's workspaces).
+
+Recent Files and the phone quick open (Epo 2026-10-26) are one list,
+`GET /api/recent`: the caller's `item_opens` (same migration), newest open
+first, kept to what a Member listing still shows them (untrashed files and
+top-level materials in the workspace list's set, their own standalone
+materials) and read back through those listings, so each row carries the same
+fields. The centre pane records an open (`POST /api/files/{id}/open`,
+`POST /api/materials/{id}/open`, read access required) with the same
+five-minute debounce on both sides; creating an item counts as opening it
+(uploads, source imports, Office blanks, new materials, a single file or
+material copy), while copying a whole workspace marks nothing, so a clone
+never fills Recent. Each row's hint is its open time, relative ("3 hours
+ago"), on the dashboard and in the quick open. A visitor's opens leave Recent with the workspace (Forget,
+private, lost link). The gateway's no-database acknowledgement holds only for
+a member's visit: a visitor's visit always re-checks access and writes, so a
+Forget or privacy change handled elsewhere never swallows the reopen. Opens of
+embedded materials or of someone else's standalone material are acknowledged
+and not stored, since Recent never lists them. In the browser every
+successful mutation marks Recent stale (`src/api/queryClient.ts`), as do chat
+agent changes and finished uploads, so it refetches wherever it shows. Past reviews and notifications keep the caller's
 history but blank the live workspace (and chapter) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.

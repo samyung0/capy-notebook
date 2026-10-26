@@ -2,7 +2,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { qk } from '@/api/client';
-import { useDeleteWorkspace, useUpdateWorkspaceSharing } from '@/api/hooks';
+import {
+  useDeleteWorkspace,
+  useForgetWorkspace,
+  useUpdateWorkspaceSharing,
+} from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Menu } from '@/components/ui/Menu';
@@ -23,6 +27,7 @@ import { Skeleton } from './feedback';
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const qc = useQueryClient();
   const { mutate: deleteWorkspace } = useDeleteWorkspace();
+  const { mutate: forget } = useForgetWorkspace();
   const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
     useUpdateWorkspaceSharing();
   const [shareOpen, setShareOpen] = useState(false);
@@ -40,13 +45,14 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const canManage = workspace.capabilities.canManageMembers;
   const canSettings = canManageWorkspaceSettings(workspace);
   const menuItems = [
+    // Everyone has settings (their own Study tab); managers also share.
+    {
+      icon: 'settings' as const,
+      label: m.workspace_settings(),
+      onClick: () => setEditOpen(true),
+    },
     ...(canSettings
       ? [
-          {
-            icon: 'settings' as const,
-            label: m.workspace_settings(),
-            onClick: () => setEditOpen(true),
-          },
           {
             icon: 'link' as const,
             label: m.action_share(),
@@ -63,6 +69,16 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
           },
         ]
       : []),
+    // A workspace held only as a visitor (no membership) can be forgotten.
+    ...(workspace.role
+      ? []
+      : [
+          {
+            icon: 'eraser' as const,
+            label: m.action_forget(),
+            onClick: () => forget(workspace.id),
+          },
+        ]),
     ...(canManage
       ? [
           {
@@ -85,23 +101,21 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       >
         <WorkspaceCardFace
           interactive
-          menuSpace={menuItems.length > 0}
+          menuSpace
           paint={paint}
           workspace={workspace}
         />
       </Link>
-      {menuItems.length > 0 && (
-        // Lifts with the card, which rises on hover (Card interactive). Below
-        // desktop widths the title clears room for it (menuSpace).
-        <CardActions
-          backing="revealed"
-          className="top-3 right-3 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)"
-          ink={ink}
-        >
-          <Menu align="start" items={menuItems} />
-        </CardActions>
-      )}
-      {editOpen && canSettings && (
+      {/* Lifts with the card, which rises on hover (Card interactive). Below
+          desktop widths the title clears room for it (menuSpace). */}
+      <CardActions
+        backing="revealed"
+        className="top-3 right-3 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)"
+        ink={ink}
+      >
+        <Menu align="start" items={menuItems} />
+      </CardActions>
+      {editOpen && (
         <WorkspaceSettingsDialog
           onClose={() => setEditOpen(false)}
           open

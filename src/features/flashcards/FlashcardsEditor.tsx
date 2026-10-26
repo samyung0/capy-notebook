@@ -107,7 +107,7 @@ export function FlashcardsEditor({
     <li className="flex">
       <Card
         border="dashed"
-        className="min-h-24 flex-1 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-52"
+        className="min-h-24 flex-1 cursor-pointer items-center justify-center frosted:bg-(--frost-fill) focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-52"
         interactive
         onClick={add}
         onKeyDown={(event) => {
@@ -164,6 +164,7 @@ export function FlashcardsEditor({
             <CardTile
               aside={toolbar(card.id)}
               card={card}
+              headerImage
               key={card.id}
               label={m.flashcards_edit_card()}
               n={index + 1}
