@@ -15,11 +15,11 @@ import type { MergePiece, PieceSource, PieceStatus } from './types';
  * (refused, other-lineage and expired drafts) goes through it.
  */
 
-const rootOf = (doc: Y.Doc) => doc.get('content', Y.XmlText);
+export const rootOf = (doc: Y.Doc) => doc.get('content', Y.XmlText);
 
 /** The top-level block an item lives in (its XmlText in `root`), or null
  * for an item outside the note's blocks. An item in the root holds a block. */
-function topBlock(item: Y.Item, root: Y.XmlText): Y.XmlText | null {
+export function topBlock(item: Y.Item, root: Y.XmlText): Y.XmlText | null {
   let current: Y.Item | null = item;
   while (current) {
     const parent: Y.Item['parent'] = current.parent;
@@ -34,7 +34,7 @@ function topBlock(item: Y.Item, root: Y.XmlText): Y.XmlText | null {
 }
 
 /** Shown: neither the item nor anything holding it is deleted. */
-function visible(item: Y.Item) {
+export function visible(item: Y.Item) {
   let current: Y.Item | null = item;
   while (current) {
     if (current.deleted) return false;
@@ -55,7 +55,7 @@ function itemAt(doc: Y.Doc, id: Y.ID): Y.Item | null {
   }
 }
 
-const blockId = (block: Y.XmlText | null) => {
+export const blockId = (block: Y.XmlText | null) => {
   const id = block?.getAttribute('id');
   return typeof id === 'string' ? id : null;
 };

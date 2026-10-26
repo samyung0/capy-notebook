@@ -2214,7 +2214,7 @@ Items, Office and text files keep copy-only recovery.
 - **Pieces** (`types.ts`). Each is one top-level block of the user's
   version (`mine`, null when the user deleted it), the block before it there
   (`after`, where a restore goes), its source (`refused`, `changed`,
-  `expired`, `conflict`) and, for a Q229 conflict, the base. A piece holds no
+  `expired`, `conflict`, `hidden`) and, for a Q229 conflict, the base. A piece holds no
   Yjs ids, so id expiry, collection and lineage moves never invalidate it;
   the room's version is read live by block id. Its status is derived, never
   stored (`pieceStatus`): `conflict`, `theirs-deleted`, `mine-deleted` or
@@ -2273,6 +2273,30 @@ Items, Office and text files keep copy-only recovery.
   with the note's: one changed since applies nothing and the row says "This
   block just changed. Review it again." (first applied wins, no lock; two
   Applies within milliseconds both land, accepted).
+- **Hidden typing** (`hiddenTyping.ts`, Q237, Q258). Typing the room never
+  saw that lands in a block someone deleted meanwhile never shows: the
+  room's deletion takes it too. After a JOIN the server sends its step 1
+  (its state vector) before its step 2, and `RoomProvider` hands that vector
+  over (`onStep1`) before it replies, so whatever the tab holds past it is
+  what the room never saw. With nothing past it the watch stays idle;
+  otherwise, until the sync, each room transaction first marks the typed
+  content past the vector (text, embeds, inserted elements; not attributes
+  or formats, Q259) shown inside a top-level block the room already holds
+  and draws that block once, and afterwards (Yjs emits it before collecting
+  deleted content) a marked item the transaction deleted makes its drawn
+  block a `hidden` piece. Rows that were pending until the sync (restored
+  without a state row) and integrate into a deleted block keep only their
+  text: a `plain` piece, a paragraph that can be inserted or copied, never
+  applied over the block. This covers restored rows at mount, an offline
+  episode, a socket blip and typing between the two steps; a new block can
+  never be hidden, and text the room had seen and then deleted is never a
+  piece. A draft send cannot see this (it holds no room state), so the
+  service refuses a note's draft whose typing would land in a deleted
+  holder, or next to a unit the room collected with its deleted container
+  (`ydoc::inspect`'s `hidden_units`), as `hidden` (409); the sweep holds the
+  group for the editor's next open, whose join finds it. Live typing over a
+  socket into a block someone just deleted is ordinary collaboration and
+  admitted. Hidden typing is never an incident (Q261).
 - **Lifecycle.** The live mount's store is the sheet's, and a paused one's
   while it is on screen, its choices off; a standby mount registers none, and
   the sheet's open state lives in `NoteEditor`, so it survives a room swap.
@@ -2364,7 +2388,10 @@ class
   once per open, not per page load;
 - `unheld` (409, the room lacks the update's base), `unassigned` (409,
   structs under a client id not assigned to the user, Epo 2026-10-24),
-  `too_large` (413) and `lineage` (409, a token for another room, a schema
+  `hidden` (409, a note's typing into a block the room deleted since, which
+  the room would never show; only the editor's join finds it, see [hidden
+  typing](#the-merge-view), Q237), `too_large` (413) and `lineage` (409, a
+  token for another room, a schema
   or epoch that moved on, another Office base): marked `held`, left for the
   editor's next open, which applies a held group of an accepted session and
   shows any other as pieces or copy-only (see opening with stored drafts,

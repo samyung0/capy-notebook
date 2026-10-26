@@ -193,6 +193,35 @@ it('opens no socket while the before-join promise holds, joins once it settles, 
   provider.destroy();
 });
 
+// Hidden typing (Q237): the server's vector reaches the editor before this
+// client's step 2 reply, so the watch is armed before anything syncs.
+it("hands the server's step 1 vector over before replying to it", async () => {
+  const seen: { replies: number; vector: Uint8Array }[] = [];
+  const { join, socket } = await joined({
+    onStep1: (vector) =>
+      seen.push({
+        replies: socket.sent.filter((sent) => sent.kind === MessageKind.Sync)
+          .length,
+        vector,
+      }),
+  });
+  const server = new Y.Doc();
+  server.getText('content').insert(0, 'hello');
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  // Only this client's own step 1 went before it.
+  expect(seen).toEqual([{ replies: 1, vector: Y.encodeStateVector(server) }]);
+  expect(
+    socket.take(MessageKind.Sync).map((sent) => readSync(sent.payload).kind)
+  ).toEqual([SyncKind.Step1, SyncKind.Step2]);
+});
+
 it('joins with its token, syncs both ways and counts unacknowledged updates', async () => {
   const { document, events, join, provider, socket } = await joined();
   const reader = new Reader(join.payload);

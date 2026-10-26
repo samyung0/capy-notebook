@@ -3020,12 +3020,15 @@ impl Room {
             }
         };
         let mut admit = || match &mut self.kind {
-            Kindly::Note(note) => match note.validator.admit(&self.doc, &update) {
-                crate::model::Admitted::Accepted => Verdict::Accept,
-                crate::model::Admitted::Unheld => Verdict::Unheld,
-                crate::model::Admitted::Limit(code, metrics) => Verdict::Limit(code, metrics),
-                crate::model::Admitted::Refused(message) => Verdict::Refused(message),
-            },
+            Kindly::Note(note) => {
+                match note.validator.admit(&self.doc, &update, writer.is_none()) {
+                    crate::model::Admitted::Accepted => Verdict::Accept,
+                    crate::model::Admitted::Unheld => Verdict::Unheld,
+                    crate::model::Admitted::Hidden => Verdict::Hidden,
+                    crate::model::Admitted::Limit(code, metrics) => Verdict::Limit(code, metrics),
+                    crate::model::Admitted::Refused(message) => Verdict::Refused(message),
+                }
+            }
             Kindly::Source(source) => {
                 match sources::admit_update(
                     &self.doc,
@@ -3048,6 +3051,13 @@ impl Room {
         };
         match verdict {
             Verdict::Unheld => return Outcome::Unheld,
+            // A draft send only: the editor's join shows it for review.
+            Verdict::Hidden => {
+                return Outcome::refused(
+                    Class::Hidden,
+                    "the drafts type into a block the room deleted",
+                );
+            }
             Verdict::Accept => {}
             Verdict::Source(sources::Refusal::Malformed(message)) => {
                 return Outcome::refused(Class::Malformed, message);
@@ -4923,6 +4933,8 @@ impl Room {
 enum Verdict {
     Accept,
     Unheld,
+    /// A note draft typing into a block the room deleted (Q237).
+    Hidden,
     /// A material room's limit (`document-rejected` with the code).
     Limit(notes::limits::LimitCode, notes::limits::Metrics),
     /// A material room's refusal for any other reason.

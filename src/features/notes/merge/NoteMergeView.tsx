@@ -21,6 +21,7 @@ const SOURCE: Record<PieceSource, () => string> = {
   changed: () => m.merge_source_changed(),
   conflict: () => m.merge_source_conflict(),
   expired: () => m.merge_source_expired(),
+  hidden: () => m.merge_source_hidden(),
   refused: () => m.merge_source_refused(),
 };
 
@@ -60,6 +61,14 @@ const CHOICES: Record<PieceStatus, { action: Action; label: () => string }[]> =
       { action: 'copy', label: () => m.merge_copy() },
     ],
   };
+
+/** Hidden text alone, not its whole block: inserted or copied, never
+ * applied over the block. */
+const PLAIN: { action: Action; label: () => string }[] = [
+  { action: 'insert', label: () => m.merge_insert() },
+  { action: 'keep', label: () => m.merge_discard() },
+  { action: 'copy', label: () => m.merge_copy() },
+];
 
 /**
  * The merge view's sheet (Epo 2026-10-24, Q252): the user's edits that could
@@ -170,6 +179,8 @@ function PieceRow({
   );
   const yours = useRef<HTMLDivElement>(null);
   const chip = STATUS[status];
+  const choices =
+    piece.plain && status !== 'resolved' ? PLAIN : CHOICES[status];
   const act = (action: Action) => {
     if (action === 'keep') store.dismiss(piece.block);
     else if (action === 'copy') void copyBlock(excerpt, yours.current);
@@ -213,9 +224,9 @@ function PieceRow({
             deleted={m.merge_current_deleted()}
             label={m.merge_current()}
           />
-          {CHOICES[status].length > 0 && (
+          {choices.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {CHOICES[status].map(({ action, label }) => (
+              {choices.map(({ action, label }) => (
                 <Button
                   disabled={action !== 'keep' && action !== 'copy' && !canApply}
                   key={action}

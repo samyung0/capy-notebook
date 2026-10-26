@@ -251,7 +251,7 @@ pub struct Stats {
     pub awareness: AtomicU64,
     pub log_bytes: AtomicU64,
     /// Draft sends refused, by `drafts::Class` (its index in `Class::ALL`).
-    pub draft_refusals: [AtomicU64; 10],
+    pub draft_refusals: [AtomicU64; crate::drafts::Class::ALL.len()],
     /// JOINs and draft sends refused for their client protocol: material
     /// rooms, then source rooms (stale tabs left after a deploy).
     pub outdated_refusals: [AtomicU64; 2],

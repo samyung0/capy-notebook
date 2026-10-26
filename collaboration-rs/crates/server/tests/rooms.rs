@@ -9386,6 +9386,84 @@ async fn draft_sends_are_refused_with_their_class() {
     }
 }
 
+/// Hidden typing (Q237): a closed tab's drafts typing into a block someone
+/// deleted since are refused `hidden` (409, counted), nothing stored, so the
+/// editor's join shows them for review; the same update over a socket is
+/// ordinary collaboration and admitted. Fails without the draft-only refusal.
+#[tokio::test]
+async fn a_draft_typing_into_a_deleted_block_is_refused_hidden_and_a_socket_takes_it() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut peer = synced(server.port, &room, &user, "base").await;
+    peer.insert_blocks(
+        1,
+        &[serde_json::json!({ "type": "p", "id": "second", "children": [{ "text": "second" }] })],
+    )
+    .await;
+    assert!(peer.until(6).await.is_some(), "the peer's ack");
+    let mut writer = synced(server.port, &room, &user, "base").await;
+    assert!(writer.settle(|c| c.block("second").is_some()).await);
+    // Typed into the first block while offline; the peer then deletes it.
+    let drafts = drafted(&writer.doc, typed_into_note(" hidden"));
+    peer.write(|doc| {
+        let root = doc.get_or_insert_text("content");
+        root.remove_range(&mut doc.transact_mut(), 0, 1);
+    })
+    .await;
+    assert!(peer.until(6).await.is_some(), "the peer's ack");
+
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        drafts.clone(),
+    )
+    .await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (409, Some("hidden")),
+        "{answer}"
+    );
+    let id = writer.id();
+    let fresh = synced(server.port, &room, &user, "second").await;
+    assert_eq!(
+        fresh
+            .doc
+            .transact()
+            .state_vector()
+            .get(&yrs::block::ClientID::new(id)),
+        0,
+        "nothing of the drafts is stored"
+    );
+    let line = "capy_collaboration_draft_refusals_total{class=\"hidden\"} 1";
+    assert!(
+        metrics_text(server.port)
+            .await
+            .lines()
+            .any(|known| known == line),
+        "{line}"
+    );
+
+    // Live: the same typing over the writer's socket is admitted.
+    writer.send(5, &sync(2, &drafts)).await;
+    assert!(writer.until(6).await.is_some(), "the writer's ack");
+    let mut later = synced(server.port, &room, &user, "second").await;
+    assert!(
+        later
+            .settle(|c| c
+                .doc
+                .transact()
+                .state_vector()
+                .get(&yrs::block::ClientID::new(id))
+                > 0)
+            .await,
+        "the room holds the socket's update"
+    );
+}
+
 /// Security regression (drafts-send S1): a draft send writes only with the
 /// editor's write token for a note its user may edit, from an allowed origin.
 #[tokio::test]

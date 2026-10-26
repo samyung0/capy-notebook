@@ -7,9 +7,16 @@ import type { MaterialElement } from '@/features/materials/document';
  * - `changed`: edits made on a version of the note that moved on;
  * - `expired`: unsent edits past the 7-day expiry, never applied raw;
  * - `conflict`: a block of the saved copy edited before the room joined
- *   that someone else changed too (Q229).
+ *   that someone else changed too (Q229);
+ * - `hidden`: typing the room never saw that landed in a block someone
+ *   deleted meanwhile, so it never shows (Q237, Q258).
  */
-export type PieceSource = 'refused' | 'changed' | 'expired' | 'conflict';
+export type PieceSource =
+  | 'refused'
+  | 'changed'
+  | 'expired'
+  | 'conflict'
+  | 'hidden';
 
 /**
  * One top-level block of the user's version that could not sync into the
@@ -30,6 +37,9 @@ export interface MergePiece {
   insertedAs?: string;
   /** The user's version; null when the user deleted the block. */
   mine: MaterialElement | null;
+  /** Only hidden text survived, not the whole block (`mine` is a paragraph
+   * of it): it can be inserted or copied, never applied over the block. */
+  plain?: true;
   source: PieceSource;
 }
 

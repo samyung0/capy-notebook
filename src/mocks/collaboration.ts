@@ -684,6 +684,8 @@ interface MockCollaborationOptions {
   onPresence?: (connections: PresenceConnection[]) => void;
   onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
+  /** As the room provider's: the room's state vector before the sync. */
+  onStep1?: (stateVector: Uint8Array) => void;
 }
 
 const outdated = { reason: COLLABORATION_OUTDATED_REASON };
@@ -781,6 +783,8 @@ class MockCollaborationProvider implements UnifiedProvider {
     const room = materialRoom(this.options.name, this.options.initialValue);
     this.room = room;
     materialProviders.add(this);
+    // As the service: its step 1, the room's vector, before anything syncs.
+    this.options.onStep1?.(Y.encodeStateVector(room.document));
     this.leave = join(room, {
       awareness: this.awareness,
       document: this.document,

@@ -213,6 +213,57 @@ test('a choice on a block that just changed applies nothing and says so', async 
   await expect(editor).toContainText('Mine, from before.');
 });
 
+// Q237: typing the room never saw, in a block a co-editor deleted while the
+// tab was offline, never shows; the reconnect's sync finds it and the merge
+// view offers it back.
+test('typing hidden in a block someone deleted comes back to restore', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const editor = await openNote(page);
+  await joinPeer(page);
+  // A second block, so the note keeps one when the intro goes.
+  await page.evaluate(() =>
+    (window as unknown as { peer: Peer }).peer.append([
+      {
+        children: [{ text: 'Second block.' }],
+        id: 'mock-scenario-second',
+        type: 'p',
+      },
+    ])
+  );
+  await expect(editor).toContainText('Second block.');
+  await setOnline(page, false);
+  await editor.getByText(seed).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Typed offline.');
+  await page.evaluate(
+    (intro) => (window as unknown as { peer: Peer }).peer.remove(intro),
+    INTRO
+  );
+  await setOnline(page, true);
+  await expect(strip(page)).toBeVisible({ timeout: 30_000 });
+  await expect(editor).not.toContainText('Typed offline.');
+  await review(page);
+  const row = piece(page, INTRO);
+  await expect(row).toHaveAttribute('data-status', 'theirs-deleted');
+  await expect(row).toContainText('Typed offline.');
+  await expect(row).toContainText(m.merge_source_hidden());
+  await row.getByRole('button').first().click();
+  await row.getByRole('button', { name: m.merge_restore() }).click();
+  await expect(editor).toContainText('Typed offline.');
+  // In the room: the peer reads it.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        String(
+          (window as unknown as { peer: Peer }).peer.document.get('content')
+        )
+      )
+    )
+    .toContain('Typed offline.');
+});
+
 // Q255: a choice edits the note only while it is live and synced; a room
 // swap's paused note keeps the sheet with its choices off.
 test('the sheet stays through a room swap, its choices off while the note is paused', async ({

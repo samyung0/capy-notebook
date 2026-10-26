@@ -52,6 +52,10 @@ export interface RoomProviderConfig {
    * ended with its channel, closed or parked unsynced (false). */
   onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
+  /** The server's step 1 (its state vector), before this client replies and
+   * before the room's step 2: what the client holds past it, the room has
+   * never seen (hidden typing, Q237). */
+  onStep1?: (stateVector: Uint8Array) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;
   /** An embedded quiz's or set's room: it joins inside its note's channel
@@ -763,6 +767,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private sync(payload: Uint8Array) {
     const { body, kind } = readSync(payload);
     if (kind === SyncKind.Step1) {
+      this.config.onStep1?.(body);
       // The server asks for everything it lacks: this reply carries this
       // client's offline or restored edits, and an unplaced update's resend.
       this.sendUpdate(

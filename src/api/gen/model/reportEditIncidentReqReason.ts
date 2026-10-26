@@ -26,4 +26,5 @@ export const ReportEditIncidentReqReason = {
   refused: 'refused',
   changed: 'changed',
   conflict: 'conflict',
+  hidden: 'hidden',
 } as const;

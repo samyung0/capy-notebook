@@ -2514,6 +2514,7 @@
   "merge_source_changed": "Made on an older version",
   "merge_source_conflict": "Made before the note connected",
   "merge_source_expired": "More than 7 days old",
+  "merge_source_hidden": "Typed where someone else deleted",
   "merge_source_refused": "Couldn't be saved",
   "merge_stale": "This block just changed. Review it again.",
   "merge_status_conflict": "Changed by someone else",

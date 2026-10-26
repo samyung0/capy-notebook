@@ -165,6 +165,8 @@ pub enum Admitted {
     /// A limit: the writer hears `document-rejected` with the code.
     Limit(notes::limits::LimitCode, Metrics),
     Refused(String),
+    /// A note draft typing into a block the room deleted (Q237).
+    Hidden,
 }
 
 pub enum RoomValidator {
@@ -173,14 +175,21 @@ pub enum RoomValidator {
 }
 
 impl RoomValidator {
-    pub fn admit(&mut self, doc: &yrs::Doc, update: &yrs::Update) -> Admitted {
+    /// `draft`: a draft send's update, refused when a note's typing would be
+    /// hidden in a deleted block (live typing there is collaboration).
+    pub fn admit(&mut self, doc: &yrs::Doc, update: &yrs::Update, draft: bool) -> Admitted {
         match self {
-            RoomValidator::Note(validator) => match validator.admit(doc, update) {
+            RoomValidator::Note(validator) => match if draft {
+                validator.admit_draft(doc, update)
+            } else {
+                validator.admit(doc, update)
+            } {
                 Ok(notes::limits::Admission::Accepted) => Admitted::Accepted,
                 Ok(notes::limits::Admission::Unheld) => Admitted::Unheld,
                 Err(notes::limits::Refusal::Limit { code, metrics }) => {
                     Admitted::Limit(code, metrics)
                 }
+                Err(notes::limits::Refusal::Hidden) => Admitted::Hidden,
                 Err(error) => Admitted::Refused(error.to_string()),
             },
             RoomValidator::Item(validator) => match validator.admit(doc, update) {

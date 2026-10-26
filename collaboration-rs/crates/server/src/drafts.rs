@@ -73,6 +73,10 @@ pub enum Class {
     /// Structs under a client id not assigned to the sender's user: the
     /// editor re-applies them under its own id (Epo 2026-10-24).
     Unassigned,
+    /// A note's typing into a block the room deleted, which the room would
+    /// never show (Q237): held for the editor, whose join shows it for
+    /// review.
+    Hidden,
     /// The room or a lookup is busy or failing: try at a later page load.
     Unavailable,
     /// The page's client protocol is outside its room family's (a stale
@@ -84,7 +88,7 @@ pub enum Class {
 }
 
 impl Class {
-    pub const ALL: [Class; 10] = [
+    pub const ALL: [Class; 11] = [
         Class::Lineage,
         Class::Limit,
         Class::Permission,
@@ -92,6 +96,7 @@ impl Class {
         Class::TooLarge,
         Class::Unheld,
         Class::Unassigned,
+        Class::Hidden,
         Class::Unavailable,
         Class::Outdated,
         Class::TooFast,
@@ -106,6 +111,7 @@ impl Class {
             Class::TooLarge => "too_large",
             Class::Unheld => "unheld",
             Class::Unassigned => "unassigned",
+            Class::Hidden => "hidden",
             Class::Unavailable => "unavailable",
             Class::Outdated => "outdated",
             Class::TooFast => "too_fast",
@@ -114,7 +120,9 @@ impl Class {
 
     fn status(self) -> StatusCode {
         match self {
-            Class::Lineage | Class::Unheld | Class::Unassigned => StatusCode::CONFLICT,
+            Class::Lineage | Class::Unheld | Class::Unassigned | Class::Hidden => {
+                StatusCode::CONFLICT
+            }
             Class::Limit => StatusCode::UNPROCESSABLE_ENTITY,
             Class::Permission => StatusCode::FORBIDDEN,
             Class::Malformed => StatusCode::BAD_REQUEST,

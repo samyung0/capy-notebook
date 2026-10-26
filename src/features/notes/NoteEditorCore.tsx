@@ -114,6 +114,7 @@ import { registerLiveNote } from './liveNoteHandover';
 import { applyMergeSteps, asOneStep } from './merge/applyBlocks';
 import { type BlockConflict, mergeBlocks } from './merge/blockMerge';
 import { type NoteCopies, type NoteCopy, recordCopy } from './merge/copyDraft';
+import { watchHiddenTyping } from './merge/hiddenTyping';
 import { createMergeStore, type MergeStore } from './merge/mergeStore';
 import type { NoteDrafts } from './merge/noteDrafts';
 import {
@@ -121,6 +122,7 @@ import {
   piecesFromCopy,
   piecesFromDrafts,
 } from './merge/pieces';
+import type { MergePiece } from './merge/types';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
@@ -586,6 +588,19 @@ export function NoteEditorCore({
     () => new Y.Doc({ gc: true }),
     [collaborationToken.room]
   );
+  // Typing the room never saw that a join's step 2 hides in a deleted block
+  // (Q237): armed by the room's step 1, read at each sync.
+  const hiddenTyping = useMemo(
+    () =>
+      watchHiddenTyping(ydoc, (origin) => {
+        const provider = roomProvider(editorRef.current);
+        return (
+          !!provider && (origin === provider || origin === provider.provider)
+        );
+      }),
+    [ydoc]
+  );
+  useEffect(() => () => hiddenTyping.dispose(), [hiddenTyping]);
   const checkpointTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Every unacknowledged receipt has to be tracked: a second edit before the
   // service answers the first must not orphan the earlier request.
@@ -717,6 +732,8 @@ export function NoteEditorCore({
   // store exists), and whether the editor is locked.
   const canApplyNow = useRef(() => {});
   const lockedNow = useRef(false);
+  // Adds pieces to the merge view (set once the store exists).
+  const addPieces = useRef((_pieces: MergePiece[]) => {});
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
       setHandshaking(next === 'connecting');
@@ -1065,7 +1082,11 @@ export function NoteEditorCore({
           onSyncChange: ({ isSynced }) => {
             roomSynced.current = isSynced;
             // A bind Plate tried before the first sync happens now.
-            if (isSynced) bindSyncedRoom(editorRef.current);
+            if (isSynced) {
+              bindSyncedRoom(editorRef.current);
+              const hidden = hiddenTyping.synced();
+              if (hidden.length) addPieces.current(hidden);
+            }
             if (!isSynced || rejected.current) return;
             markSlowed(false);
             hasSynced.current = true;
@@ -1108,6 +1129,7 @@ export function NoteEditorCore({
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
+                    onStep1: hiddenTyping.armed,
                   },
                   type: 'mock',
                 } as never)
@@ -1129,6 +1151,7 @@ export function NoteEditorCore({
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
+                    onStep1: hiddenTyping.armed,
                     token: async (previousToken?: string) => {
                       let token: MaterialCollaborationToken;
                       try {
@@ -1193,6 +1216,7 @@ export function NoteEditorCore({
     discussions,
     handleStatelessEvent,
     hasUnsavedWork,
+    hiddenTyping,
     markSlowed,
     material.id,
     material.workspaceId,
@@ -1306,6 +1330,7 @@ export function NoteEditorCore({
     [editor]
   );
   useEffect(() => () => store.dispose(), [store]);
+  addPieces.current = (found) => store.add(found);
   // Choices that edit the note need it live, synced, bound and editable
   // (Q255): never paused, refused, locked, held or offline.
   canApplyNow.current = () =>

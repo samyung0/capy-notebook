@@ -1120,6 +1120,9 @@ async function sendPiece(
     case 'limit':
     case 'malformed':
       return 'refused';
+    // `hidden`: typing into a block the room deleted, which only the
+    // editor's join can show (Q237).
+    case 'hidden':
     case 'lineage':
     case 'too_large':
     case 'unassigned':

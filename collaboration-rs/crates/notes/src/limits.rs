@@ -252,6 +252,11 @@ pub enum Refusal {
     /// metrics do not see (Epo, 2026-10-08): refused, not stored unmetered.
     #[error("a note cannot hold {0}")]
     Content(&'static str),
+    /// Typing into a block the room deleted, which the room would never show
+    /// (Q237): a draft send's admission refuses it, so the editor's join
+    /// shows it for review.
+    #[error("the update types into a block the room deleted")]
+    Hidden,
 }
 
 /// Where an item of an update sits: in a sequence (a text, a root) of its
@@ -1885,6 +1890,21 @@ impl Validator {
     /// option: yrs cannot undo a peer's update, so the only remedy left would
     /// be discarding the whole room.
     pub fn admit(&mut self, doc: &yrs::Doc, update: &Update) -> Result<Admission, Refusal> {
+        self.check(doc, update, false)
+    }
+
+    /// [Validator::admit] for a draft send: typing the room would never show
+    /// is refused as [Refusal::Hidden] (Q237).
+    pub fn admit_draft(&mut self, doc: &yrs::Doc, update: &Update) -> Result<Admission, Refusal> {
+        self.check(doc, update, true)
+    }
+
+    fn check(
+        &mut self,
+        doc: &yrs::Doc,
+        update: &Update,
+        draft: bool,
+    ) -> Result<Admission, Refusal> {
         use yrs::Transact;
         let txn = doc.transact();
         crate::validate::assert_roots(&txn)?;
@@ -1892,6 +1912,9 @@ impl Validator {
         let inspection = ydoc::inspect(&txn, &incoming)?;
         if inspection.unheld {
             return Ok(Admission::Unheld);
+        }
+        if draft && inspection.hidden_units > 0 {
+            return Err(Refusal::Hidden);
         }
         // An update outside the roots goes to the exact check, which refuses
         // it as such; one inside them must hold only what the editor writes.

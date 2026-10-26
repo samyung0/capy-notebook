@@ -2514,6 +2514,7 @@
   "merge_source_changed": "在较旧的版本上编辑",
   "merge_source_conflict": "在笔记连接前编辑",
   "merge_source_expired": "超过 7 天",
+  "merge_source_hidden": "在他人删除的位置输入",
   "merge_source_refused": "无法保存",
   "merge_stale": "此块刚刚有变化，请重新审阅。",
   "merge_status_conflict": "已被他人修改",
