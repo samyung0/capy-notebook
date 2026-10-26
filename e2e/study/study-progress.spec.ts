@@ -695,7 +695,10 @@ test.describe('study progress', () => {
 
     await ownerPage.goto(`/workspaces/${workspace.id}?study=true`);
     await expect(ownerPage.getByText(m.study_hidden_here())).toBeVisible();
+    // The notice's own link: the left panel and the rail carry gears of the
+    // same name.
     await ownerPage
+      .locator('p', { hasText: m.study_hidden_here() })
       .getByRole('button', { exact: true, name: m.workspace_settings() })
       .click();
     await expect(ownerPage).toHaveURL(/settings=study/);
