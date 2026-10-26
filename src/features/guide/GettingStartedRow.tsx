@@ -199,7 +199,7 @@ function ListPopover({
         </ul>
         {/* A quiet text action, apart from closing the popover. */}
         <button
-          className="mt-0.5 mb-1 ml-2 w-fit cursor-pointer text-fg-muted text-xs hover:text-fg hover:underline"
+          className="mt-2 mb-1 ml-2 w-fit cursor-pointer text-fg-muted text-xs hover:text-fg hover:underline"
           onClick={hideGettingStarted}
           type="button"
         >
