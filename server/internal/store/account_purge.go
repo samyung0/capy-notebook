@@ -229,9 +229,6 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM tasks WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM canvases WHERE user_id=$1`, userID); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(ctx, `DELETE FROM labels WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
@@ -249,7 +246,14 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE author_id=$1`, userID); err != nil {
 		return err
 	}
-	for _, table := range []string{"review_sessions", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants"} {
+	for _, table := range []string{"review_sessions", "study_plans", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants", "bank_comment_notices",
+		// Open Checkout pages and the daily grading and invite counters
+		// (Q315).
+		"credit_checkouts", "grading_usage", "invite_usage",
+		// The Yjs client ids assigned to it in documents it does not own
+		// (Q226): the ids it wrote stay in those documents' state, so no one
+		// takes them.
+		"material_yjs_client_ids", "source_document_client_ids"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}
@@ -273,8 +277,19 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM source_import_jobs WHERE actor_user_id=$1`, userID); err != nil {
 		return err
 	}
+	// The agent's receipts matter only in the actor's own chats, deleted
+	// above; those without a conversation, in other owners' workspaces too,
+	// go with them. Only the actor can Undo or read one (Epo 2026-10-24, Q355).
+	if _, err := tx.Exec(ctx, `DELETE FROM agent_operations WHERE actor_user_id=$1`, userID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `UPDATE jobs SET payload=payload-'actorUserId'
 		WHERE payload->>'actorUserId'=$1`, userID); err != nil {
+		return err
+	}
+	// A refresh it requested of another owner's file keeps no id (Q315).
+	if _, err := tx.Exec(ctx, `UPDATE jobs SET payload=payload-'requestedBy'
+		WHERE payload->>'requestedBy'=$1`, userID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM user_llm_credentials WHERE user_id=$1`, userID); err != nil {

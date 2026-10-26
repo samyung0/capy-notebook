@@ -13,7 +13,7 @@ invisible and the user is silently not charged for it.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
+import functools
 import logging
 import math
 import random
@@ -28,13 +28,13 @@ from ..config import cfg
 from ..prompts.captioning import VLM_PAGE_PROMPT
 from ..prompts.retrieval import qwen3_query
 from ..registry import ModelConfig
-from . import accounting, capture
+from . import accounting, capture, limits
 from .stream import (
     AssembledResponse,
     ChatCompletionsAssembler,
     OpenAIResponsesAssembler,
 )
-from .usage_extract import NormalizedUsage, extract_usage
+from .usage_extract import NormalizedUsage, extract_usage, response_usage
 
 log = logging.getLogger("capy.models")
 
@@ -87,6 +87,85 @@ def classify_user_key_error(exc: BaseException) -> UserKeyError | None:
     return UserKeyError(KEY_FAILED, KEY_FAILED_MSG)
 
 
+class _StreamReceipt:
+    """What one provider stream has sent so far."""
+
+    def __init__(self) -> None:
+        self.seen = False
+        # The last usage block, None until the provider sends one.
+        self.usage: NormalizedUsage | None = None
+
+
+CALL_LIMIT_BUSY = "the AI process is at its model call limit"
+
+
+class CallNotStarted(Exception):
+    """A call whose client left (a Stop or a lost hop) before it started:
+    nothing was sent."""
+
+
+@asynccontextmanager
+async def call_slot():
+    """One model call's process slot (Epo 2026-10-24, inner-turn slots), held
+    for its request and response, retries included, and its settlement and
+    lease release (``_tracked_call``), under the request's slot policy
+    (``limits.bind_call_slots``). Past a full CALL_SLOTS the call waits in
+    arrival order up to the policy's wait, or answers provider_busy at once;
+    with no policy bound the call takes no slot. Once the client has left, no
+    call starts and no waiting status is sent (Q359)."""
+    policy = limits.call_slot_policy()
+    if policy is None:
+        yield
+        return
+    if policy.left is not None and policy.left.is_set():
+        raise CallNotStarted("the client left before the call started")
+    slots = limits.CALL_SLOTS
+    granted = None
+    if not slots.take():
+        if policy.wait_s <= 0:
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        waiter = slots.join()  # in the queue from its refusal on (Q359)
+        if not await slots.wait_for(waiter, policy.wait_s, policy.left, policy.on_wait):
+            if policy.left is not None and policy.left.is_set():
+                raise CallNotStarted("the client left while the call waited")
+            raise elitellm.ProviderBusy(
+                CALL_LIMIT_BUSY, retry_after=accounting.BUSY_RETRY_AFTER_S
+            )
+        granted = policy.on_granted
+    # Both callbacks run where a failure still gives the slot back.
+    try:
+        if granted is not None:
+            granted()
+        yield
+    finally:
+        slots.release()
+
+
+def _slotted(call):
+    """``call`` (a coroutine function) runs holding its call slot."""
+
+    @functools.wraps(call)
+    async def slotted(*args, **kwargs):
+        async with call_slot():
+            return await call(*args, **kwargs)
+
+    return slotted
+
+
+def _slotted_stream(stream):
+    """``stream`` (an async generator function) yields holding its call slot."""
+
+    @functools.wraps(stream)
+    async def slotted(*args, **kwargs):
+        async with call_slot():
+            async for item in stream(*args, **kwargs):
+                yield item
+
+    return slotted
+
+
 @asynccontextmanager
 async def _tracked_call(
     *,
@@ -97,7 +176,15 @@ async def _tracked_call(
     spec: ModelConfig | None = None,
     deadline: float | None = None,
     capacity: tuple[str, int] | None = None,
+    stream: _StreamReceipt | None = None,
 ):
+    """Open one provider call around its request; free its lease on the way out.
+
+    ``stream`` marks a streamed call. A stream that fails at any point (no
+    first event, silence, an error event, transport loss, cancellation) is
+    over, and nothing can settle its call id later, so it closes at once: the
+    usage it sent is billed, and with none it is abandoned unbilled.
+    """
     call_id = accounting.new_call_id()
     await accounting.open_call(
         call_id,
@@ -111,14 +198,28 @@ async def _tracked_call(
     )
     try:
         yield call_id
-    except asyncio.CancelledError:
-        # Cancellation stops this request locally but does not prove that the
-        # provider stopped before spending. Keep the exact call id open for a
-        # late receipt or the receipt-deadline sweeper.
+    except accounting.SettlementError:
+        # The receipt exists but could not apply; the deadline sweep closes it.
         raise
     except BaseException as exc:
-        if not isinstance(exc, accounting.SettlementError) and (
-            accounting.definitive_provider_failure(exc)
+        if stream is not None and stream.usage is not None and spec is not None:
+            try:
+                await accounting.settle(
+                    call_id=call_id,
+                    kind=kind,
+                    purpose=purpose,
+                    thinking=thinking,
+                    spec=spec,
+                    usage=stream.usage,
+                )
+            except Exception:
+                log.exception("failed stream %s could not settle its usage", call_id)
+        elif stream is not None or (
+            # Cancellation stops a request locally but does not prove that the
+            # provider stopped before spending, so a non-streamed call keeps
+            # its call id open for the receipt-deadline sweeper.
+            not isinstance(exc, asyncio.CancelledError)
+            and accounting.definitive_provider_failure(exc)
         ):
             await accounting.abandon_call(call_id, exc)
         raise
@@ -273,14 +374,6 @@ async def _call_with_retry(
                 ),
             )
     raise AssertionError("retry loop must return or raise")
-
-
-class _ByteFlag:
-    def __init__(self) -> None:
-        self.seen = False
-
-    def mark(self) -> None:
-        self.seen = True
 
 
 def _raise_user_key(exc: BaseException) -> None:
@@ -481,6 +574,7 @@ async def complete(
     return elitellm.message_from_response(resp)
 
 
+@_slotted
 async def complete_response(
     messages: list[dict[str, Any]],
     *,
@@ -509,11 +603,11 @@ async def complete_response(
         model=spec,
         tools=tools,
         response_format=response_format,
-        reasoning=reasoning,
     )
     streamed = _interactive()
 
     async def _one(deadline: float) -> Any:
+        receipt = _StreamReceipt() if streamed else None
         async with _tracked_call(
             kind=accounting.KIND_LLM,
             purpose=call_purpose,
@@ -521,15 +615,17 @@ async def complete_response(
             context=context,
             spec=spec,
             deadline=deadline,
+            stream=receipt,
         ) as call_id:
             try:
-                if streamed:
+                if receipt is not None:
                     assembled = await _stream_via_adapter(
                         spec,
                         submitted_messages,
                         tools,
                         temperature,
                         None,
+                        receipt=receipt,
                         max_tokens=max_tokens,
                         reasoning=reasoning,
                         response_format=response_format,
@@ -564,9 +660,7 @@ async def complete_response(
                         )
                         else None,
                     )
-                    usage = extract_usage(
-                        getattr(resp, "usage", None), provider=spec.provider_slug
-                    )
+                    usage = response_usage(resp, provider=spec.provider_slug)
             except Exception as exc:  # noqa: BLE001
                 _raise_user_key(exc)
             obs.record_normalized(
@@ -629,41 +723,42 @@ def provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def message_tokens(message: dict[str, Any]) -> int:
+    """One message's estimate, computed when it is first measured and kept on
+    the message (Epo 2026-10-24, Q238), so no model call walks the whole
+    context again. Attached page captures count by pixel size, not base64."""
+    kept = accounting.kept_tokens(message)
+    if kept is not None:
+        return kept
+    (text,), image_tokens = capture.split_images(provider_messages([message]))
+    return accounting.keep_tokens(
+        message, accounting.estimate_context_value(text) + image_tokens
+    )
+
+
 def measure_request_context(
     messages: list[dict[str, Any]],
     *,
     model: ModelConfig,
     tools: list[dict[str, Any]] | None = None,
     response_format: dict[str, Any] | None = None,
-    reasoning: bool | None = None,
 ) -> accounting.ContextComposition:
-    """Measure the same provider-shaped fields the outbound call will use.
-
-    Attached page captures are counted by pixel size, not by their base64.
-    """
+    """A request's estimate: its messages' kept estimates summed, plus its tool
+    schemas. Telemetry, the model input budget and compaction read it; exact
+    counts are not needed in real time (Q238)."""
     spec = _as_spec(model)
-    submitted, image_tokens = capture.split_images(provider_messages(messages))
-    input_items = (
-        messages_to_responses_input(submitted)
-        if elitellm.uses_responses(spec, tools=bool(tools), reasoning=reasoning)
-        else None
-    )
-    system, conversation, schemas = elitellm.context_components(
-        spec,
-        submitted,
-        tools=tools,
-        response_format=response_format,
-        reasoning=reasoning,
-        input_items=input_items,
-    )
-    measured = accounting.measure_components(
-        system,
-        conversation,
-        schemas,
-        window_tokens=spec.context_window_tokens,
-    )
-    return dataclasses.replace(
-        measured, conversation_tokens=measured.conversation_tokens + image_tokens
+    system = conversation = 0
+    for message in messages:
+        if message.get("role") == "system":
+            system += message_tokens(message)
+        else:
+            conversation += message_tokens(message)
+    schemas = [*(tools or []), *([response_format] if response_format else [])]
+    return accounting.ContextComposition(
+        system_tokens=system,
+        tool_tokens=accounting.estimate_context_value(schemas) if schemas else 0,
+        conversation_tokens=conversation,
+        window_tokens=max(0, int(spec.context_window_tokens)),
     )
 
 
@@ -727,6 +822,7 @@ def _responses_content(message: dict[str, Any]) -> Any:
     return parts
 
 
+@_slotted
 async def stream_agent_response(
     messages: list[dict[str, Any]],
     *,
@@ -759,7 +855,7 @@ async def stream_agent_response(
     policy = retry_policy()
     deadline = time.monotonic() + policy.budget_s
     for attempt in range(policy.attempts):
-        received = _ByteFlag()
+        received = _StreamReceipt()
         try:
             async with _tracked_call(
                 kind=accounting.KIND_LLM,
@@ -768,6 +864,7 @@ async def stream_agent_response(
                 context=context,
                 spec=spec,
                 deadline=deadline,
+                stream=received,
             ) as call_id:
                 assembled = await _stream_via_adapter(
                     spec,
@@ -775,7 +872,7 @@ async def stream_agent_response(
                     tools,
                     temperature,
                     on_event,
-                    on_provider_byte=received.mark,
+                    receipt=received,
                     response_format=response_format,
                 )
                 obs.record_normalized(
@@ -829,8 +926,8 @@ async def _stream_via_adapter(
     tools: list[dict[str, Any]] | None,
     temperature: float | None,
     on_event: Any | None,
-    on_provider_byte: Any | None = None,
     *,
+    receipt: _StreamReceipt | None = None,
     max_tokens: int | None = None,
     reasoning: bool | None = None,
     response_format: dict[str, Any] | None = None,
@@ -854,14 +951,17 @@ async def _stream_via_adapter(
         response_format=response_format,
     )
     async for chunk in stream:
-        if on_provider_byte is not None:
-            on_provider_byte()
+        if receipt is not None:
+            receipt.seen = True
         for item in assembler.push(chunk):
+            if receipt is not None and item.usage is not None:
+                receipt.usage = item.usage
             if on_event is not None:
                 on_event(item)
     return assembler.finish()
 
 
+@_slotted_stream
 async def stream_text(
     messages: list[dict[str, Any]],
     *,
@@ -874,15 +974,11 @@ async def stream_text(
     spec = _as_spec(model)
     thinking = elitellm.resolve_thinking(spec, reasoning)
     submitted_messages = provider_messages(messages)
-    context = measure_request_context(
-        messages,
-        model=spec,
-        reasoning=reasoning,
-    )
+    context = measure_request_context(messages, model=spec)
     policy = retry_policy()
     deadline = time.monotonic() + policy.budget_s
     for attempt in range(policy.attempts):
-        received = _ByteFlag()
+        received = _StreamReceipt()
         try:
             async with _tracked_call(
                 kind=accounting.KIND_LLM,
@@ -891,6 +987,7 @@ async def stream_text(
                 context=context,
                 spec=spec,
                 deadline=deadline,
+                stream=received,
             ) as call_id:
                 usage = NormalizedUsage()
                 stream = elitellm.stream(
@@ -904,13 +1001,13 @@ async def stream_text(
                     else None,
                 )
                 async for chunk in stream:
-                    received.mark()
+                    received.seen = True
                     obs.record_stream_chunk(
                         spec.provider_slug, _record_name(spec), chunk
                     )
-                    block = getattr(chunk, "usage", None)
-                    if block is not None:
-                        usage = extract_usage(block, provider=spec.provider_slug)
+                    if getattr(chunk, "usage", None) is not None:
+                        usage = response_usage(chunk, provider=spec.provider_slug)
+                        received.usage = usage
                     choices = getattr(chunk, "choices", None) or []
                     delta = ""
                     if choices:
@@ -959,6 +1056,7 @@ async def stream_text(
 VLM_PAGE_MAX_TOKENS = 2_000
 
 
+@_slotted
 async def read_page(
     data_url: str, *, credit_micros: int, scripted: str | None = None
 ) -> str | None:
@@ -982,7 +1080,7 @@ async def read_page(
             "content": [{"type": "image_url", "image_url": {"url": data_url}}],
         },
     ]
-    context = measure_request_context(messages, model=spec, reasoning=False)
+    context = measure_request_context(messages, model=spec)
 
     async def _one(deadline: float) -> str:
         async with _tracked_call(
@@ -1002,9 +1100,7 @@ async def read_page(
                 )
                 obs.record_completion(spec.provider_slug, _record_name(spec), resp)
                 read = _usable_text(resp)
-                usage = extract_usage(
-                    getattr(resp, "usage", None), provider=spec.provider_slug
-                )
+                usage = response_usage(resp, provider=spec.provider_slug)
             else:
                 read, usage = scripted, NormalizedUsage()
             await accounting.settle(
@@ -1032,6 +1128,7 @@ async def read_page(
         return None
 
 
+@_slotted
 async def caption_image(data_url: str, prompt: str) -> str:
     """Describe a standalone image upload so it becomes searchable text.
 
@@ -1052,7 +1149,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
             "content": [{"type": "image_url", "image_url": {"url": data_url}}],
         },
     ]
-    context = measure_request_context(messages, model=spec, reasoning=False)
+    context = measure_request_context(messages, model=spec)
 
     async def _one(deadline: float) -> str:
         async with _tracked_call(
@@ -1073,9 +1170,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
                 purpose="image_caption",
                 thinking=caption_thinking,
                 spec=spec,
-                usage=extract_usage(
-                    getattr(resp, "usage", None), provider=spec.provider_slug
-                ),
+                usage=response_usage(resp, provider=spec.provider_slug),
             )
         caption = _usable_text(resp)
         # Raised after settling, so it counts as one of the attempts.

@@ -15,6 +15,7 @@ func TestInitialPipelineJobType(t *testing.T) {
 		{name: "document", route: sourceupload.RouteDocumentParse, want: "parse"},
 		{name: "text", route: sourceupload.RouteRawText, want: "ingest"},
 		{name: "image", route: sourceupload.RouteImageCaption, want: "ingest"},
+		{name: "audio", route: sourceupload.RouteAudioTranscript, want: "ingest"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

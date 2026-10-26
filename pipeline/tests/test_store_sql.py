@@ -190,6 +190,263 @@ def test_provider_capacity_leases_enforce_weighted_limit(workspace):
         )
 
 
+def test_two_admissions_racing_for_the_last_unit_admit_one(workspace):
+    """(security regression: rate-limit audit M13, Q298) With the expired-lease
+    sweep outside the model-wide lock the count stays exact: of two admissions
+    racing for a gate's last unit one is admitted, and an expired lease frees
+    no extra unit."""
+    import psycopg
+
+    key = f"capacity-race:{secrets.token_hex(4)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            """
+            INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
+            VALUES (%s,%s,1,now()+interval '1 minute'),
+                   (%s,%s,1,now()-interval '1 second')
+            """,
+            (f"{key}:held", key, f"{key}:expired", key),
+        )
+
+    def admit(conn, lease_id: str) -> bool:
+        with conn.cursor() as cur:
+            return db.acquire_provider_capacity(
+                cur,
+                lease_id=lease_id,
+                provider=key,
+                units=1,
+                capacity=2,
+                lease_seconds=60,
+            )
+
+    with (
+        psycopg.connect(workspace.dsn) as first,
+        psycopg.connect(workspace.dsn) as second,
+        psycopg.connect(workspace.dsn, autocommit=True) as watch,
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+        assert admit(first, f"{key}:first")  # holds the lock until its commit
+        racing = executor.submit(admit, second, f"{key}:second")
+        pid = second.info.backend_pid
+        for _ in range(1000):  # until the second waits on the lock (or ends)
+            waiting = watch.execute(
+                "SELECT wait_event='advisory' FROM pg_stat_activity WHERE pid=%s",
+                (pid,),
+            ).fetchone()[0]
+            if waiting or racing.done():
+                break
+            time.sleep(0.01)
+        first.commit()
+        assert racing.result(timeout=10) is False
+        second.commit()
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        leases = conn.execute(
+            "SELECT id FROM provider_capacity_leases WHERE provider=%s ORDER BY id",
+            (key,),
+        ).fetchall()
+        conn.execute("DELETE FROM provider_capacity_leases WHERE provider=%s", (key,))
+    assert leases == [(f"{key}:first",), (f"{key}:held",)]
+
+
+def test_an_applied_ingest_receipt_frees_its_capacity_lease(workspace):
+    """(security regression: rate-limit audit M13, Q298) The local settlement
+    frees the call's lease in its own transaction; other leases stay."""
+    import psycopg
+
+    call_id = f"pc_{secrets.token_hex(6)}"
+    running = f"pc_{secrets.token_hex(6)}"
+    key = f"capacity-settle:{secrets.token_hex(4)}"
+    file_id = workspace.add_file("provider-lease.txt")
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        db.open_provider_call(
+            cur,
+            reservation_id,
+            call_id,
+            "llm",
+            "ingest_summary",
+            "high",
+            job_attempt_id=attempt_id,
+        )
+        for lease in (call_id, running):
+            assert db.acquire_provider_capacity(
+                cur,
+                lease_id=lease,
+                provider=key,
+                units=1,
+                capacity=2,
+                lease_seconds=60,
+            )
+        applied = db.settle_ingest_provider_call(
+            cur,
+            session_id=reservation_id,
+            call_id=call_id,
+            kind="llm",
+            purpose="ingest_summary",
+            thinking="high",
+            provider="openai",
+            model="gpt-test",
+            catalog_provider_slug="openai",
+            catalog_model_slug="gpt-test",
+            model_version=7,
+            usage=NormalizedUsage(input_tokens=1, output_tokens=1),
+            credit_micros=1,
+        )
+        leases = cur.execute(
+            "SELECT id FROM provider_capacity_leases WHERE provider=%s", (key,)
+        ).fetchall()
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM provider_capacity_leases WHERE provider=%s", (key,))
+        conn.execute("DELETE FROM usage_events WHERE provider_call_id = %s", (call_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+    assert applied == "applied"
+    assert leases == [(running,)]
+
+
+def test_an_audio_job_keeps_its_task_across_re_pends_and_a_crash(workspace):
+    """A stored transcription task survives the re-pend (which hands the
+    attempt back) and a worker's death (lease reclaim, which spends one), so
+    the next claim polls it; an audio job has three attempts where any other
+    ingest job has two."""
+    import psycopg
+
+    from pipeline.jobs import AUDIO_ROUTE, POLICIES
+
+    caps = {name: policy.max_attempts for name, policy in POLICIES.items()}
+    bases = {name: policy.backoff_base_s for name, policy in POLICIES.items()}
+    task = {"taskId": "task-1", "callId": "pc_1", "providerFailures": 0}
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        audio, _attempt, _reservation = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=workspace.add_file("lecture.mp3"),
+            actor_user_id=workspace.user_id,
+        )
+        other, _attempt, _reservation = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=workspace.add_file("notes.pdf"),
+            actor_user_id=workspace.user_id,
+        )
+        cur.execute(
+            """UPDATE jobs SET payload = payload || jsonb_build_object(
+                 'processingPlan', jsonb_build_object('route', %s::text))
+               WHERE id=%s""",
+            (AUDIO_ROUTE, audio),
+        )
+        assert not db.set_job_filetrans(cur, audio, 2, task)  # not this claim
+        assert db.set_job_filetrans(cur, audio, 1, task)
+        db.release_job_for_capacity(cur, audio, 1, backoff_s=2)
+        conn.commit()
+        assert workspace.scalar("SELECT attempts FROM jobs WHERE id=%s", (audio,)) == 0
+
+        # Both are claimed again, and their workers die.
+        for job_id, attempts in ((audio, 1), (other, 1)):
+            cur.execute(
+                """UPDATE jobs SET status='running', attempts=%s,
+                     lease_expires_at=now()-interval '1 second' WHERE id=%s""",
+                (attempts, job_id),
+            )
+        db.reclaim_expired_leases(cur, max_attempts=caps, backoff_base_s=bases)
+        conn.commit()
+        for job_id in (audio, other):
+            cur.execute(
+                """UPDATE jobs SET status='running', attempts=2,
+                     lease_expires_at=now()-interval '1 second' WHERE id=%s""",
+                (job_id,),
+            )
+        db.reclaim_expired_leases(cur, max_attempts=caps, backoff_base_s=bases)
+        conn.commit()
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        rows = {
+            row[0]: row[1:]
+            for row in conn.execute(
+                "SELECT id, status, attempts, payload->'filetrans' FROM jobs "
+                "WHERE id IN (%s,%s)",
+                (audio, other),
+            )
+        }
+    assert rows[audio] == ("pending", 2, task)
+    assert rows[other][:2] == ("failed", 2)
+
+
+def test_the_filetrans_gate_holds_twelve_tasks_across_re_pends(workspace):
+    """A task's lease lives from its submit to its end, renewed by each poll
+    claim with its call's receipt window: a thirteenth task waits until one
+    ends or a dead job's lease expires."""
+    import psycopg
+
+    key = f"filetrans-test-{secrets.token_hex(4)}"
+
+    def admit(cur, call_id: str) -> bool:
+        return db.acquire_provider_capacity(
+            cur, lease_id=call_id, provider=key, units=1, capacity=12, lease_seconds=60
+        )
+
+    file_id = workspace.add_file("lecture.mp3")
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        _job, attempt_id, reservation = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        calls = [f"pc_{secrets.token_hex(6)}" for _ in range(14)]
+        for call_id in calls:
+            db.open_provider_call(
+                cur, reservation, call_id, "audio", "transcription", "",
+                job_attempt_id=attempt_id, receipt_timeout_seconds=60,
+            )  # fmt: skip
+        assert all(admit(cur, call_id) for call_id in calls[:12])
+        assert not admit(cur, calls[12])
+
+        # A poll claim renews the call and its lease past the queue's wait.
+        assert db.renew_provider_call(cur, calls[0], key, 3600) == "open"
+        expiry = conn.execute(
+            "SELECT expires_at - now() > interval '59 minutes' "
+            "FROM provider_capacity_leases WHERE id=%s",
+            (calls[0],),
+        ).fetchone()[0]
+        assert expiry
+        assert not admit(cur, calls[12])
+
+        # A task that ended frees its slot.
+        db.release_provider_capacity(cur, calls[1])
+        assert admit(cur, calls[12])
+        assert not admit(cur, calls[13])
+
+        # A dead job's lease frees itself; its call has run out too, so a
+        # late claim finds the task lost rather than taking the slot back.
+        cur.execute(
+            "UPDATE provider_capacity_leases SET expires_at=now()-interval '1 second' WHERE id=%s",
+            (calls[2],),
+        )
+        cur.execute(
+            "UPDATE provider_calls SET receipt_deadline_at=now() WHERE id=%s",
+            (calls[2],),
+        )
+        assert admit(cur, calls[13])
+        assert db.renew_provider_call(cur, calls[2], key, 3600) == ""
+
+        # A settled call is reported as such, for a claim after a crash.
+        cur.execute(
+            "UPDATE provider_calls SET status='applied' WHERE id=%s", (calls[3],)
+        )
+        assert db.renew_provider_call(cur, calls[3], key, 3600) == "applied"
+        conn.rollback()
+
+
 def test_model_capacity_changes_apply_to_each_admission(workspace):
     import psycopg
 
@@ -280,6 +537,119 @@ def test_model_capacity_changes_apply_to_each_admission(workspace):
             )
             conn.execute("DELETE FROM provider_sessions WHERE id=%s", (session_id,))
             conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+
+
+@pytest.mark.parametrize(
+    "parts",
+    [
+        # Headers, then nothing: the GLM first-event timeouts on UAT (2026-10-22).
+        [(5.0, b'data: {"choices": []}\n\n')],
+        # One reasoning chunk, then silence.
+        [
+            (
+                0.0,
+                b'data: {"choices": [{"index": 0, "delta": {"reasoning": "hm"}}]}\n\n',
+            ),
+            (5.0, b'data: {"choices": []}\n\n'),
+        ],
+    ],
+    ids=["no-first-event", "silent-after-start"],
+)
+async def test_a_failed_stream_leaves_no_open_call_or_lease(
+    workspace, monkeypatch, parts
+):
+    """Once a failed provider stream raises, its provider_calls rows are closed
+    and their capacity leases freed, instead of waiting for the receipt
+    deadline (15 minutes for chat)."""
+    import asyncio
+
+    import httpx
+    import psycopg
+
+    from pipeline.elitellm import client as transport
+    from pipeline.registry import ModelConfig, bind_request_llm
+    from pipeline.retrieval import accounting, models
+
+    class Chunks(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for delay, chunk in parts:
+                await asyncio.sleep(delay)
+                yield chunk
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _r: httpx.Response(200, stream=Chunks()))
+    )
+    monkeypatch.setattr(transport, "_client", lambda: client)
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.2)
+    monkeypatch.setattr(cfg, "interactive_stream_idle_s", 0.2)
+    monkeypatch.setattr(cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(cfg, "pipeline_secret", "secret")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    settled: list[dict] = []
+
+    async def post_settlement(payload, **_kwargs):
+        settled.append(payload)
+        return {}
+
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    bind_request_llm(paid_by="platform", thinking="high")
+    spec = ModelConfig(
+        version=1,
+        provider_name="Z.ai",
+        model_name="GLM-5.3-Flash",
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        platform_enabled=True,
+        byok_enabled=False,
+        thinking_levels=("low", "high", "max"),
+        default_thinking="high",
+        slots=("chat",),
+    )
+    session_id = f"cr_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            """
+            INSERT INTO provider_sessions
+              (id, actor_user_id, workspace_id, surface, reserved_micros, expires_at)
+            VALUES (%s, %s, %s, 'chat', 0, now() + interval '30 minutes')
+            """,
+            (session_id, workspace.user_id, workspace.id),
+        )
+        capacity_added = conn.execute(
+            "INSERT INTO model_capacities VALUES ('zai','glm-5.3-flash',4,0) "
+            "ON CONFLICT DO NOTHING RETURNING 1"
+        ).fetchone()
+    token = accounting.bind(session_id)
+    try:
+        with pytest.raises(TimeoutError):
+            await models.stream_agent_response(
+                [{"role": "user", "content": "hi"}], model=spec
+            )
+    finally:
+        accounting.reset(token)
+        await client.aclose()
+        with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+            calls = conn.execute(
+                "SELECT id, status, error_code FROM provider_calls "
+                "WHERE reservation_id=%s",
+                (session_id,),
+            ).fetchall()
+            leases = conn.execute(
+                "SELECT count(*) FROM provider_capacity_leases WHERE id = ANY(%s)",
+                ([call[0] for call in calls],),
+            ).fetchone()[0]
+            conn.execute("DELETE FROM provider_sessions WHERE id=%s", (session_id,))
+            if capacity_added:
+                conn.execute(
+                    "DELETE FROM model_capacities "
+                    "WHERE provider='zai' AND model='glm-5.3-flash'"
+                )
+    assert calls
+    assert {(status, code) for _id, status, code in calls} == {
+        ("abandoned", "provider_timeouterror")
+    }
+    assert leases == 0
+    assert settled == []
 
 
 def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
@@ -622,12 +992,10 @@ def test_applied_ingest_provider_receipt_conflicting_replays_are_rejected(worksp
         field: NormalizedUsage(
             **{
                 **usage.__dict__,
-                field: "other_anomaly"
-                if field == "anomaly"
-                else getattr(usage, field) + 1,
+                field: f"other_{value}" if isinstance(value, str) else value + 1,
             }
         )
-        for field in usage.__dict__
+        for field, value in usage.__dict__.items()
     }
     conflicts = [
         {"session_id": other_reservation_id},
@@ -754,6 +1122,111 @@ def test_ingest_provider_receipt_expires_even_before_sweeper(workspace):
         conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
 
 
+def test_every_index_limit_code_is_one_a_file_can_hold(workspace):
+    """The API's FileIndexLimit codes (no_speech included) and the files
+    table's check list agree, so a job's outcome can always be recorded."""
+    from pathlib import Path
+
+    import psycopg
+    import yaml
+
+    spec = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "openapi.yaml").read_text("utf-8")
+    )
+    codes = spec["components"]["schemas"]["FileIndexLimit"]["enum"]
+    file_id = workspace.add_file("lecture.mp3")
+    assert "no_speech" in codes
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        for code in codes:
+            db.set_file_index_limit(conn.cursor(), file_id, code)
+            assert (
+                workspace.scalar(
+                    "SELECT index_limit FROM files WHERE id=%s", (file_id,)
+                )
+                == code
+            )
+
+
+def test_a_job_pays_for_its_audio_seconds_once(workspace):
+    """Two transcriptions in one ingest session (a retry whose cached
+    transcript was lost) both record their seconds; only the first is charged,
+    and replaying it is a duplicate at its original credits."""
+    import psycopg
+
+    file_id = workspace.add_file("lecture.mp3")
+    first, second = (f"pc_{secrets.token_hex(6)}" for _ in range(2))
+    receipt = {
+        "kind": "audio",
+        "purpose": "transcription",
+        "thinking": "",
+        "provider": "alibaba",
+        "model": "qwen-audio-3.1-asr-flash-filetrans",
+        "catalog_provider_slug": "",
+        "catalog_model_slug": "",
+        "model_version": 0,
+        "usage": NormalizedUsage(),
+        "credit_micros": 61 * 16_667,
+        "units": 61,
+        "unit": "seconds",
+    }
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        for call_id in (first, second):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                call_id,
+                "audio",
+                "transcription",
+                "",
+                job_attempt_id=attempt_id,
+            )
+            assert (
+                db.settle_ingest_provider_call(
+                    cur, session_id=reservation_id, call_id=call_id, **receipt
+                )
+                == "applied"
+            )
+        assert (
+            db.settle_ingest_provider_call(
+                cur, session_id=reservation_id, call_id=first, **receipt
+            )
+            == "duplicate"
+        )
+        conn.commit()
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        events = {
+            row[0]: row[1:]
+            for row in conn.execute(
+                """SELECT provider_call_id, kind, units, unit, credit_micros
+                   FROM usage_events WHERE reservation_id=%s""",
+                (reservation_id,),
+            ).fetchall()
+        }
+        assert events == {
+            first: ("audio", 61, "seconds", 1_016_687),
+            second: ("audio", 61, "seconds", 0),
+        }
+        calls = conn.execute(
+            """SELECT units, unit, credit_micros FROM provider_calls
+               WHERE reservation_id=%s ORDER BY credit_micros DESC""",
+            (reservation_id,),
+        ).fetchall()
+        assert calls == [(61, "seconds", 1_016_687), (61, "seconds", 0)]
+        conn.execute(
+            "DELETE FROM usage_events WHERE reservation_id=%s", (reservation_id,)
+        )
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+
+
 def test_provider_call_open_enforces_terminal_slot_and_idempotency(workspace):
     import psycopg
 
@@ -786,6 +1259,16 @@ def test_provider_call_open_enforces_terminal_slot_and_idempotency(workspace):
                 "llm",
                 "agent",
                 "instant",
+            )
+        # A paid search after the credits ran out would spend past them.
+        with pytest.raises(RuntimeError, match="web search is not allowed"):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "web_search",
+                "agent",
+                "",
             )
 
         db.open_provider_call(
@@ -907,6 +1390,47 @@ def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
         )
 
 
+def test_an_audio_cost_is_held_to_the_upload_estimate_headroom(workspace):
+    """An audio task's measured cost passes while it lands at most 30% of the
+    monthly limit past what is available, the browser upload's gate."""
+    import psycopg
+
+    uid = workspace.user_id
+    credit = 1_000_000
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            limit = db._credit_limit_micros(cur, uid)
+        before = conn.execute(
+            "SELECT used_micros, purchased_micros FROM user_credits WHERE user_id = %s",
+            (uid,),
+        ).fetchone()
+        try:
+            conn.execute(
+                """
+                INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+                VALUES (%s, %s, 0)
+                ON CONFLICT (user_id) DO UPDATE
+                  SET used_micros = EXCLUDED.used_micros, purchased_micros = 0
+                """,
+                (uid, limit - 10 * credit),
+            )
+            headroom = limit * 3 // 10
+            with conn.cursor() as cur:
+                assert db.actor_has_credits(cur, uid, 10 * credit + headroom)
+                assert not db.actor_has_credits(cur, uid, 10 * credit + headroom + 1)
+                assert db.actor_has_credits(cur, uid)
+        finally:
+            conn.execute(
+                "UPDATE user_credits SET used_micros = %s, purchased_micros = %s"
+                " WHERE user_id = %s",
+                (
+                    before[0] if before else 0,
+                    before[1] if before else 800 * credit,
+                    uid,
+                ),
+            )
+
+
 def test_actor_credits_spend_purchased_balance_and_admit_a_pending_reload(workspace):
     import psycopg
 
@@ -971,7 +1495,7 @@ def test_actor_credits_spend_purchased_balance_and_admit_a_pending_reload(worksp
                 """,
                 (
                     before[0] if before else 0,
-                    before[1] if before else 800 * credit,
+                    before[1] if before else 0,
                     uid,
                 ),
             )
@@ -1766,6 +2290,103 @@ def test_claim_selects_only_the_requested_stage(workspace):
     )
 
 
+def test_claims_go_round_robin_by_actor(workspace):
+    """(security regression: rate-limit audit M14) The job whose actor has the
+    fewest jobs running goes first, oldest among those, so one account's
+    backlog does not hold back another's newer upload; two workers claiming
+    at once still get different jobs."""
+    from pipeline.store import db
+
+    suffix = workspace.id[-8:]
+    a, b = f"u_a_{suffix}", f"u_b_{suffix}"
+    actors = (a, a, a, b)
+    ids = [f"job_{n}_{suffix}" for n in range(len(actors))]
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        for age, job_id, actor in zip((40, 30, 20, 10), ids, actors, strict=True):
+            cur.execute(
+                """
+                INSERT INTO jobs (id, type, payload, created_at)
+                VALUES (%s, 'ingest', jsonb_build_object('actorUserId', %s::text),
+                        now() - make_interval(mins => %s))
+                """,
+                (job_id, actor, age),
+            )
+        cur.execute(
+            """
+            UPDATE jobs SET not_before = now() + interval '7 days'
+            WHERE status = 'pending' AND NOT (id = ANY(%s))
+            """,
+            (ids,),
+        )
+        conn.commit()
+
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        claimed = []
+        for _ in ids:
+            claimed.append(db.claim_job(cur, "ingest", 180)["id"])
+            conn.commit()
+    # a1, then b's newer job (a has one running), then a's backlog.
+    assert claimed == [ids[0], ids[3], ids[1], ids[2]]
+
+    with workspace._connect() as conn:
+        conn.execute("UPDATE jobs SET status='pending' WHERE id = ANY(%s)", (ids,))
+        conn.commit()
+    with workspace._connect() as first, workspace._connect() as second:
+        one = db.claim_job(first.cursor(), "ingest", 180)
+        two = db.claim_job(second.cursor(), "ingest", 180)
+        first.commit()
+        second.commit()
+    assert one["id"] == ids[0]
+    assert two is not None and two["id"] in ids[1:]
+
+
+def test_actorless_jobs_round_robin_as_one_actor(workspace):
+    """(security regression: rate-limit audit M14) Jobs without an actorUserId
+    share one actor: with one of them running, an actor's newer job is claimed
+    before the next actor-less one instead of behind it."""
+    from pipeline.store import db
+
+    suffix = workspace.id[-8:]
+    running, older, old = (f"job_none_{n}_{suffix}" for n in range(3))
+    actor_job = f"job_actor_{suffix}"
+    ids = [running, older, old, actor_job]
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        for job_id, payload, status, age in (
+            (running, "{}", "running", 50),
+            (older, "{}", "pending", 40),
+            (old, "{}", "pending", 30),
+            (actor_job, f'{{"actorUserId": "u_c_{suffix}"}}', "pending", 10),
+        ):
+            cur.execute(
+                """
+                INSERT INTO jobs (id, type, payload, status, created_at)
+                VALUES (%s, 'ingest', %s::jsonb, %s, now() - make_interval(mins => %s))
+                """,
+                (job_id, payload, status, age),
+            )
+        cur.execute(
+            """
+            UPDATE jobs SET not_before = now() + interval '7 days'
+            WHERE status = 'pending' AND NOT (id = ANY(%s))
+            """,
+            (ids,),
+        )
+        conn.commit()
+
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        claimed = []
+        for _ in range(3):
+            claimed.append(db.claim_job(cur, "ingest", 180)["id"])
+            conn.commit()
+        cur.execute("UPDATE jobs SET status='done' WHERE id = ANY(%s)", (ids,))
+        conn.commit()
+    assert claimed == [actor_job, older, old]
+
+
 def test_requeue_then_claim(workspace):
     from pipeline.store import db
 
@@ -1820,6 +2441,48 @@ def test_capacity_yield_does_not_spend_an_attempt(workspace):
     assert claimed is not None
     assert claimed["id"] == job_id
     assert claimed["attempts"] == 1
+
+
+def test_a_transcription_poll_is_its_own_outcome_and_queued_once_due(workspace):
+    """An audio job re-pending to poll its task again: no attempt spent, its
+    attempt recorded as a poll rather than a capacity wait, and its delay
+    not counted as queue time."""
+    from pipeline.store import db
+
+    job_id = f"job_poll_{workspace.id[-8:]}"
+    workspace.scalar(
+        "INSERT INTO jobs (id, type, payload) VALUES (%s, 'ingest', '{}'::jsonb)"
+        " RETURNING id",
+        (job_id,),
+    )
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        _isolate_job(cur, job_id)
+        claimed = db.claim_job(cur, "ingest", 180)
+        assert claimed is not None and claimed["id"] == job_id
+        attempt_id = db.start_job_attempt(
+            cur,
+            job=claimed,
+            trace_id="trace-poll",
+            environment="uat",
+            host_id="ingest-1",
+            worker_instance_id="ingest-1",
+            release_sha="a" * 40,
+        )
+        db.release_job_for_capacity(cur, job_id, 1, backoff_s=30, poll=True)
+        db.finish_job_attempt(cur, attempt_id=attempt_id, outcome="transcription_poll")
+        cur.execute(
+            "SELECT attempts, queued_at = not_before, not_before > now()"
+            " FROM jobs WHERE id=%s",
+            (job_id,),
+        )
+        assert cur.fetchone() == (0, True, True)
+        cur.execute(
+            "SELECT status, error_category FROM ingest_job_attempts WHERE id=%s",
+            (attempt_id,),
+        )
+        assert cur.fetchone() == ("transcription_poll", "")
+        conn.commit()
 
 
 def test_job_attempt_records_claim_metrics_and_terminal_outcome(workspace):

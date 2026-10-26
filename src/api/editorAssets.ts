@@ -1,4 +1,6 @@
-import { fitImage } from '@/lib/fitImage';
+import { m } from '@/i18n';
+import { CopyError } from '@/lib/errors';
+import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { api } from './client';
 import { materialQuery } from './hooks';
 import { queryClient } from './queryClient';
@@ -31,8 +33,8 @@ export interface ResolvedEditorAsset {
   url: string;
 }
 
-/** A workspace material's assets belong to (and bill) the workspace owner; a
- * standalone material's belong to its owner. The server picks the scope. */
+/** An asset belongs to the material it is added to and bills its uploader
+ * (M16). The server picks the scope. */
 const uploadsPath = (materialId: string) =>
   `/materials/${encodeURIComponent(materialId)}/editor-assets/uploads`;
 
@@ -41,35 +43,46 @@ export interface EditorAssetUploadOptions {
   signal?: AbortSignal;
 }
 
-/** The plan image cap of the account paying for the material's assets. The
+/** The reader's plan cap, by purpose: what they add is charged to them. The
  * editors already hold the material, so this reads the cache. */
-export async function editorImageMaxBytes(materialId: string) {
-  const { imageMaxBytes } = await queryClient.ensureQueryData(
+async function editorAssetMaxBytes(
+  materialId: string,
+  purpose: EditorAssetPurpose
+) {
+  const { audioMaxBytes, imageMaxBytes } = await queryClient.ensureQueryData(
     materialQuery(materialId)
   );
-  return imageMaxBytes;
+  return purpose === 'image' ? imageMaxBytes : audioMaxBytes;
 }
 
 // Streams the file through the gateway once its ticket's turn comes, and the
-// gateway stores it and returns only stable metadata (Epo 2026-10-22). Plate documents should persist assetId,
-// never a resolved short-lived URL. An image over the plan cap is shrunk first.
+// gateway stores it and returns only stable metadata (Epo 2026-10-22). Plate
+// documents should persist assetId, never a resolved short-lived URL. An
+// image is compressed first, off the main thread; a file still over the cap is refused
+// before anything is sent (Epo 2026-10-22), naming the limit. The gateway
+// checks the cap again. The stored file takes the compressor's extension, but
+// the asset comes back with the name the user picked, which a note's image
+// shows as its alt text (Q371).
 export async function uploadEditorAsset(
   materialId: string,
   picked: File,
   purpose: EditorAssetPurpose,
   options: EditorAssetUploadOptions = {}
 ): Promise<EditorAsset> {
+  const maxBytes = await editorAssetMaxBytes(materialId, purpose);
   const file =
-    purpose === 'image'
-      ? await fitImage(picked, await editorImageMaxBytes(materialId))
-      : picked;
+    purpose === 'image' ? await fitImageOffThread(picked, maxBytes) : picked;
+  if (file.size > maxBytes)
+    throw new CopyError(
+      m.editor_import_too_large({ mb: Math.round(maxBytes / 1024 / 1024) })
+    );
   const metadata = {
     contentType: file.type,
     name: file.name,
     purpose,
     sizeBytes: file.size,
   };
-  return uploadWithTicket(
+  const asset = await uploadWithTicket(
     uploadsPath(materialId),
     metadata,
     (path) => {
@@ -87,6 +100,7 @@ export async function uploadEditorAsset(
     },
     { signal: options.signal }
   );
+  return { ...asset, name: picked.name };
 }
 
 // Resolve at render/download time. Callers must not persist or cache the URL.

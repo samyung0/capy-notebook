@@ -151,12 +151,13 @@ func TestDownloadGoogleNativeFixtureBytes(t *testing.T) {
 				}
 				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{item.mime}}, Body: io.NopCloser(bytes.NewReader(fixture))}, nil
 			})}
-			actual, mime, err := DownloadImportFile(context.Background(), ProviderGoogle, "fixture-token", ImportRef{ID: "file_1"}, int64(len(fixture)))
+			var actual bytes.Buffer
+			mime, err := DownloadImportFile(context.Background(), ProviderGoogle, "fixture-token", ImportRef{ID: "file_1"}, int64(len(fixture)), &actual)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if calls != 2 || mime != item.mime || !bytes.Equal(actual, fixture) {
-				t.Fatalf("export bytes/MIME changed: calls=%d mime=%s bytes=%d", calls, mime, len(actual))
+			if calls != 2 || mime != item.mime || !bytes.Equal(actual.Bytes(), fixture) {
+				t.Fatalf("export bytes/MIME changed: calls=%d mime=%s bytes=%d", calls, mime, actual.Len())
 			}
 		})
 	}
@@ -256,12 +257,13 @@ func TestDownloadImportFileBoundsGoogleExport(t *testing.T) {
 		},
 	)}
 
-	_, _, err := DownloadImportFile(
+	_, err := DownloadImportFile(
 		context.Background(),
 		ProviderGoogle,
 		"token",
 		ImportRef{ID: "file_1"},
 		4,
+		io.Discard,
 	)
 	if !errors.Is(err, ErrImportFileTooLarge) {
 		t.Fatalf("error = %v, want ErrImportFileTooLarge", err)
@@ -306,18 +308,20 @@ func TestDownloadImportFileUsesMicrosoftPreauthenticatedURL(t *testing.T) {
 		},
 	)}
 
-	data, contentType, err := DownloadImportFile(
+	var data bytes.Buffer
+	contentType, err := DownloadImportFile(
 		context.Background(),
 		ProviderMicrosoft,
 		"token",
 		ImportRef{ID: "item", DriveID: "drive"},
 		int64(len(fixture)),
+		&data,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(data, fixture) || contentType != "application/vnd.openxmlformats-officedocument.presentationml.presentation" {
-		t.Fatalf("downloaded %d bytes with contentType=%q", len(data), contentType)
+	if !bytes.Equal(data.Bytes(), fixture) || contentType != "application/vnd.openxmlformats-officedocument.presentationml.presentation" {
+		t.Fatalf("downloaded %d bytes with contentType=%q", data.Len(), contentType)
 	}
 }
 
@@ -532,9 +536,9 @@ func TestDownloadRequestAndBodyFailuresAreRetryable(t *testing.T) {
 					}, nil
 				},
 			)}
-			_, _, err := DownloadImportFile(
+			_, err := DownloadImportFile(
 				context.Background(), ProviderGoogle, "token",
-				ImportRef{ID: "file_1"}, 4,
+				ImportRef{ID: "file_1"}, 4, io.Discard,
 			)
 			if !IsRetryableImportProviderError(err) {
 				t.Fatalf("error=%v, want retryable provider error", err)
@@ -576,9 +580,9 @@ func TestDownloadImportFileRejectsUnsafeRedirect(t *testing.T) {
 		},
 	)}
 
-	if _, _, err := DownloadImportFile(
+	if _, err := DownloadImportFile(
 		context.Background(), ProviderMicrosoft, "token",
-		ImportRef{ID: "item"}, 4,
+		ImportRef{ID: "item"}, 4, io.Discard,
 	); !errors.Is(err, ErrImportFileUnavailable) {
 		t.Fatalf("error = %v, want ErrImportFileUnavailable", err)
 	}
@@ -639,14 +643,15 @@ func TestDownloadImportFileStripsGoogleBearerOnCrossOriginRedirect(t *testing.T)
 		},
 	)}
 
-	data, contentType, err := DownloadImportFile(
-		context.Background(), ProviderGoogle, "token", ImportRef{ID: "file_1"}, 4,
+	var data bytes.Buffer
+	contentType, err := DownloadImportFile(
+		context.Background(), ProviderGoogle, "token", ImportRef{ID: "file_1"}, 4, &data,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "text" || contentType != "text/plain" {
-		t.Fatalf("data=%q contentType=%q", data, contentType)
+	if data.String() != "text" || contentType != "text/plain" {
+		t.Fatalf("data=%q contentType=%q", data.String(), contentType)
 	}
 }
 

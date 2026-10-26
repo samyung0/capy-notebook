@@ -1,0 +1,144 @@
+interactions:
+  - request:
+      body:
+        '{"model":"minimax/minimax-m3.1-flash","messages":[{"role":"user","content":"Call
+        search_workspace with query photosynthesis. Do not answer until the tool result
+        is available."}],"provider":{"order":["together","wafer"],"allow_fallbacks":false},"reasoning":{"effort":"high"},"temperature":0.0,"tools":[{"type":"function","function":{"name":"search_workspace","description":"Search
+        the user''s notes.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}}],"tool_choice":"auto","stream":true,"stream_options":{"include_usage":true}}'
+      headers:
+        accept:
+          - "*/*"
+        accept-encoding:
+          - gzip, deflate
+        connection:
+          - keep-alive
+        content-length:
+          - "562"
+        content-type:
+          - application/json
+        host:
+          - openrouter.ai
+        user-agent:
+          - python-httpx/0.28.1
+      method: POST
+      uri: https://openrouter.ai/api/v1/chat/completions
+    response:
+      body:
+        string:
+          'data: {"id":"gen-1792815657-Fm9sdrduH0sYPqyTj1RF","object":"chat.completion.chunk","created":1792815657,"model":"minimax/minimax-m3.1-flash","provider":"Together","system_fingerprint":"default","choices":[{"index":0,"delta":{"content":"","role":"assistant","reasoning":"We
+          need call tool and wait.","reasoning_details":[{"type":"reasoning.text","text":"We
+          need call tool and wait.","format":"unknown","index":0}]},"finish_reason":null,"native_finish_reason":null}]}
+
+
+          data: {"id":"gen-1792815657-Fm9sdrduH0sYPqyTj1RF","object":"chat.completion.chunk","created":1792815657,"model":"minimax/minimax-m3.1-flash","provider":"Together","system_fingerprint":"default","choices":[{"index":0,"delta":{"content":null,"role":"assistant","tool_calls":[{"index":0,"id":"call_01a16c23f2967c42ac45c579","type":"function","function":{"name":"search_workspace","arguments":""}}]},"finish_reason":null,"native_finish_reason":null}]}
+
+
+          data: {"id":"gen-1792815657-Fm9sdrduH0sYPqyTj1RF","object":"chat.completion.chunk","created":1792815657,"model":"minimax/minimax-m3.1-flash","provider":"Together","system_fingerprint":"default","choices":[{"index":0,"delta":{"content":null,"role":"assistant","tool_calls":[{"index":0,"function":{"arguments":"{\"query\":\"photosynthesis\"}"}}]},"finish_reason":null,"native_finish_reason":null}]}
+
+
+          data: {"id":"gen-1792815657-Fm9sdrduH0sYPqyTj1RF","object":"chat.completion.chunk","created":1792815657,"model":"minimax/minimax-m3.1-flash","provider":"Together","system_fingerprint":"default","choices":[{"index":0,"delta":{"content":"","role":"assistant","reasoning":null},"finish_reason":"tool_calls","native_finish_reason":"tool_calls"}]}
+
+
+          data: {"id":"gen-1792815657-Fm9sdrduH0sYPqyTj1RF","object":"chat.completion.chunk","created":1792815657,"model":"minimax/minimax-m3.1-flash","provider":"Together","system_fingerprint":"default","service_tier":null,"choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":"tool_calls","native_finish_reason":"tool_calls"}],"usage":{"prompt_tokens":435,"completion_tokens":38,"total_tokens":473,"cost":0.00008805,"is_byok":false,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0,"audio_tokens":0,"video_tokens":0},"cost_details":{"upstream_inference_cost":0.00008805,"upstream_inference_prompt_cost":0.00006525,"upstream_inference_completions_cost":0.0000228},"completion_tokens_details":{"reasoning_tokens":6,"image_tokens":0,"audio_tokens":0}}}
+
+
+          data: [DONE]
+
+
+          '
+      headers:
+        access-control-allow-origin:
+          - "*"
+        access-control-expose-headers:
+          - X-Generation-Id,X-Provider-Name,request-id,cf-ray
+        cache-control:
+          - no-cache
+        cf-ray:
+          - a4f631211a269176-FRA
+        connection:
+          - keep-alive
+        content-type:
+          - text/event-stream
+        date:
+          - Sat, 24 Oct 2026 04:20:57 GMT
+        permissions-policy:
+          - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+            "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+        referrer-policy:
+          - no-referrer, strict-origin-when-cross-origin
+        server:
+          - cloudflare
+        transfer-encoding:
+          - chunked
+        x-content-type-options:
+          - nosniff
+        x-generation-id:
+          - gen-1792815657-Fm9sdrduH0sYPqyTj1RF
+      status:
+        code: 200
+        message: OK
+  - request:
+      body:
+        '{"model":"minimax/minimax-m3.1-flash","messages":[{"role":"user","content":"Call
+        search_workspace with query photosynthesis. Do not answer until the tool result
+        is available."},{"role":"assistant","content":"","tool_calls":[{"id":"call_01a16c23f2967c42ac45c579","type":"function","function":{"name":"search_workspace","arguments":"{\"query\":\"photosynthesis\"}"}}],"reasoning":"We
+        need call tool and wait."},{"role":"tool","tool_call_id":"call_01a16c23f2967c42ac45c579","content":"{\"passages\":[]}"}],"provider":{"order":["together","wafer"],"allow_fallbacks":false},"reasoning":{"effort":"high"},"temperature":0.0,"tools":[{"type":"function","function":{"name":"search_workspace","description":"Search
+        the user''s notes.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}}],"tool_choice":"auto","stream":true,"stream_options":{"include_usage":true}}'
+      headers:
+        accept:
+          - "*/*"
+        accept-encoding:
+          - gzip, deflate
+        connection:
+          - keep-alive
+        content-length:
+          - "887"
+        content-type:
+          - application/json
+        host:
+          - openrouter.ai
+        user-agent:
+          - python-httpx/0.28.1
+      method: POST
+      uri: https://openrouter.ai/api/v1/chat/completions
+    response:
+      body:
+        string:
+          "data: {\"id\":\"gen-1792815657-VLbPL0p2LNtgFXu4nP3Y\",\"object\":\"chat.completion.chunk\",\"created\":1792815657,\"model\":\"minimax/minimax-m3.1-flash\",\"provider\":\"Together\",\"system_fingerprint\":\"default\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"The
+          search for \u201Cphotosynthesis\u201D returned no matching passages in your
+          workspace.\",\"role\":\"assistant\"},\"finish_reason\":null,\"native_finish_reason\":null}]}\n\ndata:
+          {\"id\":\"gen-1792815657-VLbPL0p2LNtgFXu4nP3Y\",\"object\":\"chat.completion.chunk\",\"created\":1792815657,\"model\":\"minimax/minimax-m3.1-flash\",\"provider\":\"Together\",\"system_fingerprint\":\"default\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\",\"native_finish_reason\":\"stop\"}]}\n\ndata:
+          {\"id\":\"gen-1792815657-VLbPL0p2LNtgFXu4nP3Y\",\"object\":\"chat.completion.chunk\",\"created\":1792815657,\"model\":\"minimax/minimax-m3.1-flash\",\"provider\":\"Together\",\"system_fingerprint\":\"default\",\"service_tier\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\",\"native_finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":493,\"completion_tokens\":17,\"total_tokens\":510,\"cost\":0.00008415,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.00008415,\"upstream_inference_prompt_cost\":0.00007395,\"upstream_inference_completions_cost\":0.0000102},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}\n\ndata:
+          [DONE]\n\n"
+      headers:
+        access-control-allow-origin:
+          - "*"
+        access-control-expose-headers:
+          - X-Generation-Id,X-Provider-Name,request-id,cf-ray
+        cache-control:
+          - no-cache
+        cf-ray:
+          - a4f63125dcae9176-FRA
+        connection:
+          - keep-alive
+        content-type:
+          - text/event-stream
+        date:
+          - Sat, 24 Oct 2026 04:20:58 GMT
+        permissions-policy:
+          - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+            "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+        referrer-policy:
+          - no-referrer, strict-origin-when-cross-origin
+        server:
+          - cloudflare
+        transfer-encoding:
+          - chunked
+        x-content-type-options:
+          - nosniff
+        x-generation-id:
+          - gen-1792815657-VLbPL0p2LNtgFXu4nP3Y
+      status:
+        code: 200
+        message: OK
+version: 1

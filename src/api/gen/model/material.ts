@@ -17,6 +17,7 @@ import type { WorkspaceRole } from './workspaceRole.ts';
 export interface Material {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  audioMaxBytes: number;
   capabilities: AccessCapabilities;
   /** @nullable */
   chapterId: string | null;
@@ -36,6 +37,8 @@ export interface Material {
   position: number;
   privacy: Privacy;
   provenance?: Provenance;
+  /** @nullable */
+  removedAssetIds?: string[] | null;
   revision: number;
   role?: WorkspaceRole;
   scopeChapters: string[];

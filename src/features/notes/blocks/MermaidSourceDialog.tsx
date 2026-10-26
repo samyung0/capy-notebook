@@ -6,7 +6,7 @@ import {
   EditorSaveStatus,
   EditorStatusStoreContext,
 } from '@/features/materials/CenterContentHeader';
-import { HTML_EMBED_MAX_BYTES } from '@/features/materials/document';
+import { MERMAID_SOURCE_MAX } from '@/features/materials/document';
 import {
   MERMAID_TYPING_DELAY_MS,
   Mermaid,
@@ -40,22 +40,16 @@ export default function MermaidSourceDialog({
   const [code, setCode] = useState(() => text.toString());
   // The preview keeps the last diagram that parsed; the error shows in the source.
   const [failure, setFailure] = useState<MermaidFailure | null>(null);
-  // An edit past the HTML embed source's 64 KB bound was refused.
-  const [tooLarge, setTooLarge] = useState(false);
+  // An edit past the source cap (MERMAID_SOURCE_MAX) was refused.
+  const [tooLong, setTooLong] = useState(false);
   const [history] = useState(editorHistory);
   const status = useContext(EditorStatusStoreContext);
   const phone = useIsPhone();
   return (
     <SimpleDialog
-      // Autosaved: phones show the save status and Undo where Save would be.
-      action={
-        phone && (
-          <div className="flex items-center gap-1">
-            {status && <EditorSaveStatus labelled store={status} />}
-            <UndoButtons manager={history.target} />
-          </div>
-        )
-      }
+      // Autosaved: phones show the save status by the title and Undo where Save
+      // would be.
+      action={phone && <UndoButtons manager={history.target} />}
       footer={
         !phone && (
           <div className="mr-auto flex items-center gap-2">
@@ -66,29 +60,30 @@ export default function MermaidSourceDialog({
       }
       onClose={onClose}
       open
+      status={status && <EditorSaveStatus labelled store={status} />}
       title={m.editor_diagram()}
       width={880}
     >
       <div className="grid gap-4 md:grid-cols-2">
         <div className="flex min-w-0 flex-col">
           <MermaidCodeEditor
-            className="h-72 rounded-card border border-line bg-field [--code-editor-bg:var(--color-field)]"
+            className="h-72 overflow-hidden rounded-card border border-line bg-field [--code-editor-bg:var(--color-field)]"
             errorLine={failure?.line ?? null}
             label={m.editor_mermaid_source()}
-            maxBytes={HTML_EMBED_MAX_BYTES}
+            maxLength={MERMAID_SOURCE_MAX}
             onChange={(next) => {
               setCode(next);
-              setTooLarge(false);
+              setTooLong(false);
             }}
-            onRefused={() => setTooLarge(true)}
+            onRefused={() => setTooLong(true)}
             onView={history.attach}
             origin={DIALOG_EDIT}
             text={text}
             value={code}
           />
-          {tooLarge && (
+          {tooLong && (
             <p className="mt-1 font-semibold text-solid-error text-xs">
-              {m.html_embed_too_large()}
+              {mermaidFailureMessage({ line: null, reason: 'tooLong' })}
             </p>
           )}
           {/* A blamed line is marked in the source instead. */}

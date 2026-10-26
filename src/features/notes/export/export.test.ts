@@ -5,6 +5,7 @@ import {
   flashcardsNode,
   htmlEmbedNode,
   type MaterialValue,
+  mermaidNode,
   quizNode,
 } from '@/features/materials/document';
 import {
@@ -211,6 +212,24 @@ describe('readable note exports', () => {
       `<p><a href="${noteUrl.replace('&', '&amp;')}&amp;block=e1">Interactive snippet</a></p>`
     );
     expect(draw).not.toHaveBeenCalled();
+  });
+
+  // Epo 2026-10-23: a diagram that cannot be drawn (here the renderer
+  // refuses it, as for a source error or a browser without the worker)
+  // exports as its source in a code block instead of failing the export.
+  it('writes a Mermaid diagram that cannot be drawn as its source in Word', async () => {
+    const value = [mermaidNode('flowchart LR\n  A[<b> --> B', 'Flow', 'm1')];
+    const word = await renderExport(
+      value,
+      'docx',
+      labels,
+      {},
+      'https://capy.test/materials/note',
+      () => Promise.reject(new Error('Syntax error on line 2'))
+    );
+    expect(word.content).toBe(
+      '<p style="font-family:Consolas;background-color:#f5f4f2">flowchart LR<br/>  A[&lt;b&gt; --&gt; B</p><p>Flow</p>'
+    );
   });
 
   it('fails on unreadable study references and unsupported nodes instead of dropping them', async () => {

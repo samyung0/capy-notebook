@@ -34,7 +34,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   store's `validate_catalog_keys` and room admission refuse anything else,
   Epo 2026-10-18), `inline`, `topLevel` (only a top-level block), `required` keys besides
   `type` and `children`, `fields` (the closed key set, when there is one),
-  `forbidden` keys, `sharedText` keys (held as a Y.Text so typing merges;
+  `forbidden` keys (every element's include the text marks Plate draws as a
+  style, `color`, `backgroundColor`, `fontSize` and `fontFamily`, which the
+  editor writes on text only; the read-only and editor kits inject them on
+  leaves only), `sharedText` keys (held as a Y.Text so typing merges;
   only `mermaid.source`), `sharedMap` keys (held as a Y.Map, each entry
   replaced whole; a chart's, plot's and graph's `block`) and their
   `sharedLists` (keys of that value held as a Y.Array of Y.Maps: `series`,
@@ -70,8 +73,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   to one, whatever `type` the update writes beside it, which may lose Yjs's
   conflict order: checked on a copy of the room, as media are); a value the
   store refuses (a reference's `refKind`, a video's provider and id, a
-  width, an interactive block's html size and caption, a figure's `block`, a
-  Mermaid source); an eleventh interactive block (counted on the copy when
+  width, a table's `colSizes` and `marginLeft`, an indent that is not a
+  number, a `listStyleType` holding `;` or a control character (a text mark
+  holding one is refused as `MARK_VALUE`, Epo Q380), an interactive block's html size and caption, a figure's `block`, a
+  Mermaid source, past `MERMAID_SOURCE_MAX` too); an eleventh interactive block (counted on the copy when
   an update makes one); or an element left without a key it requires
   (`OWN_KEYS`: the catalog's `required`, less the top-level `id` every block
   needs and a media block's `assetId`, which the media check reads). The
@@ -135,7 +140,11 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   Users edit chart and graph in notes and quizzes, plot in notes only (a
   quiz's question dialog shows one, Epo 2026-10-17), html_embed in notes, and
   mermaid, quiz and flashcards in notes and as their own materials
-  (`edit.user`).
+  (`edit.user`). Any Mermaid source within the cap is stored; the browser
+  draws only the diagram types its geometry check covers (`MERMAID_TYPES`,
+  every type mermaid 11.16.1 registers) and shows any other as an
+  unsupported-type error (Epo 2026-10-23,
+  [plate-editor](frontend/plate-editor.md)).
 
   A **value** is an attribute of its node, replaced whole. A **live map**
   keeps its value in a shared map (below, [Live figures](#live-figures)). A
@@ -157,7 +166,16 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   item (quiz, flashcards).
 - **`limits`**: `HTML_EMBED_MAX_BYTES`, `HTML_EMBED_MAX_COUNT`,
   `BLOCK_CAPTION_MAX` (an interactive block's caption),
-  `MEDIA_WIDTH_MIN`/`MAX`, `LIST_INDENT_MAX` (any block's indent, 8: the
+  `MERMAID_SOURCE_MAX` (a Mermaid source, 50,000 UTF-16 units, mermaid's own
+  `maxTextSize`; Epo 2026-10-22: the note dialog and the diagram file's editor
+  refuse an edit past it, `renderMermaid` refuses to draw a longer source, the
+  browser's document check, Go's `validateDiagram` and the store's
+  `validate_diagram` refuse a longer one, and room admission refuses an
+  update that takes one past it, measured on a copy of the room only when the
+  source's held length plus what the update types into it is over the cap,
+  `LONG_SOURCE`),
+  `MEDIA_WIDTH_MIN`/`MAX`, `LIST_INDENT_MAX` (any block's indent, a number
+  up to 8: the
   editor's Tab stops there; Go's validator, `createMaterialDocument`, the
   store and room admission refuse more, Epo 2026-10-18; a Markdown, DOCX or
   JSON import and an agent's markdown clamp a deeper one to it on entry,

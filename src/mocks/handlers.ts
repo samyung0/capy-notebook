@@ -65,10 +65,12 @@ import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
 import {
   mockMaterialRoom,
+  noteTokenDelay,
   savedSourceState,
   sourceRoom,
   sourceRoomName,
   sourceRoomState,
+  sourceSessionHeld,
 } from './collaboration';
 import * as db from './db';
 import { uid } from './db';
@@ -78,8 +80,10 @@ import {
   clearMockThumbnailStale,
   mockAtSizeLimit,
   scenarioSourceSession,
+  seedUploadedOffice,
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
+import { voiceInputHandlers } from './voiceInput';
 
 /** Query parsing shared by the owner-scoped list mocks; the cursor is an offset. */
 function listParams(href: string) {
@@ -208,6 +212,61 @@ export const mockWorkspaceMembers: WorkspaceMember[] = [
     name: 'Morgan Lee',
     role: 'editor',
     userId: 'u_mock_collaborator',
+    workspaceId: 'ws_bio',
+  },
+  // A fuller Biology 101 roster so the panel foot's avatar group overflows.
+  {
+    avatarUrl: '/icons/avataaars-04.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Priya Nair',
+    role: 'editor',
+    userId: 'u_mock_priya',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Tom Becker',
+    role: 'viewer',
+    userId: 'u_mock_tom',
+    workspaceId: 'ws_bio',
+  },
+  {
+    avatarUrl: '/icons/avataaars-07.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Aiko Tanaka',
+    role: 'editor',
+    userId: 'u_mock_aiko',
+    workspaceId: 'ws_bio',
+  },
+  {
+    avatarUrl: '/icons/avataaars-12.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Diego Alvarez',
+    role: 'viewer',
+    userId: 'u_mock_diego',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Sara Okafor',
+    role: 'viewer',
+    userId: 'u_mock_sara',
+    workspaceId: 'ws_bio',
+  },
+  {
+    avatarUrl: '/icons/avataaars-15.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Liam Walsh',
+    role: 'editor',
+    userId: 'u_mock_liam',
+    workspaceId: 'ws_bio',
+  },
+  {
+    avatarUrl: '/icons/avataaars-18.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Hana Kim',
+    role: 'viewer',
+    userId: 'u_mock_hana',
     workspaceId: 'ws_bio',
   },
 ];
@@ -612,11 +671,13 @@ const mockCreditSettings: CreditSettings = {
   reloadThresholdMicros: 0,
   spendingLimitCents: 5000,
   spentThisMonthCents: 1800,
+  starterAvailable: false,
 };
 
 export const handlers = [
   ...questionBankHandlers,
   ...editorAssetHandlers,
+  ...voiceInputHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
       ? new HttpResponse(null, { status: 503 })
@@ -701,6 +762,12 @@ export const handlers = [
         { status: 503 }
       );
     }
+    // A hung edit open (`holdSourceSessions`): never answered.
+    if (
+      sourceSessionHeld() &&
+      new URL(request.url).searchParams.get('view') !== 'true'
+    )
+      await new Promise(() => {});
     const session = await mockSourceSession(String(params.id));
     return session
       ? HttpResponse.json(session)
@@ -828,12 +895,6 @@ export const handlers = [
       return HttpResponse.json({ detail: 'invalid sendKey' }, { status: 422 });
     if (steps) db.user.chatSteps = steps;
     if (sendKey) db.user.chatSendKey = sendKey;
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.patch('/api/me/study-progress', async ({ request }) => {
-    db.user.studyProgress = (
-      (await request.json()) as { enabled: boolean }
-    ).enabled;
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/models', async ({ request }) => {
@@ -1074,14 +1135,6 @@ export const handlers = [
           kind: 'flashcards',
           subtitle: mt.workspaceName,
           title: mt.title,
-        });
-    for (const c of db.canvases)
-      if (c.name.toLowerCase().includes(q))
-        results.push({
-          href: `/thinking/${c.id}`,
-          id: c.id,
-          kind: 'thinking',
-          title: c.name,
         });
     return HttpResponse.json(results.slice(0, 20));
   }),
@@ -2169,6 +2222,12 @@ export const handlers = [
     async ({ params, request }) => {
       const material = db.materials.find((item) => item.id === params.id);
       if (!material) return new HttpResponse(null, { status: 404 });
+      // A held token request (`holdNoteTokens`): late, or never answered.
+      const delay = noteTokenDelay(material.id);
+      if (delay !== null)
+        await new Promise((resolve) => {
+          if (Number.isFinite(delay)) setTimeout(resolve, delay);
+        });
       const body = (await request.json().catch(() => null)) as {
         access?: string;
         document?: string;
@@ -2244,7 +2303,7 @@ export const handlers = [
       anchorQuote?: string;
       anchorStart?: string;
       anchorVersion?: number;
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
+      text: string;
     };
     if (body.anchorVersion == null || body.anchorVersion < 1) {
       return HttpResponse.json(
@@ -2263,12 +2322,12 @@ export const handlers = [
       comments: [
         {
           authorName: db.user.name,
-          contentRich: body.contentRich,
           createdAt: now,
           discussionId: '',
           id: uid('comment'),
           isDeleted: false,
           isEdited: false,
+          text: body.text,
           updatedAt: now,
           userId: db.user.id,
         },
@@ -2288,18 +2347,16 @@ export const handlers = [
   http.post('/api/discussions/:id/comments', async ({ params, request }) => {
     const discussion = mockDiscussions.find((item) => item.id === params.id);
     if (!discussion) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as {
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
-    };
+    const body = (await request.json()) as { text: string };
     const now = new Date().toISOString();
     const comment: MaterialDiscussion['comments'][number] = {
       authorName: db.user.name,
-      contentRich: body.contentRich,
       createdAt: now,
       discussionId: discussion.id,
       id: uid('comment'),
       isDeleted: false,
       isEdited: false,
+      text: body.text,
       updatedAt: now,
       userId: db.user.id,
     };
@@ -2316,15 +2373,13 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/comments/:id', async ({ params, request }) => {
-    const body = (await request.json()) as {
-      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
-    };
+    const body = (await request.json()) as { text: string };
     for (const discussion of mockDiscussions) {
       const comment = discussion.comments.find(
         (entry) => entry.id === params.id
       );
       if (!comment) continue;
-      comment.contentRich = body.contentRich;
+      comment.text = body.text;
       comment.isEdited = true;
       comment.updatedAt = new Date().toISOString();
       return HttpResponse.json(comment);
@@ -2338,7 +2393,7 @@ export const handlers = [
       );
       if (!entry) continue;
       entry.isDeleted = true;
-      entry.contentRich = null;
+      entry.text = '';
       return new HttpResponse(null, { status: 204 });
     }
     return new HttpResponse(null, { status: 404 });
@@ -2349,6 +2404,11 @@ export const handlers = [
   // The mock gateway always has a free slot: every ticket's turn is now.
   http.post('/api/workspaces/:id/sources/uploads/tickets', () =>
     HttpResponse.json({ position: 0, ticketId: 'utk_mock' }, { status: 201 })
+  ),
+  // A file removed before it was sent counts in its batch; mocks keep none.
+  http.post(
+    '/api/workspaces/:id/sources/batches/:batchId/removed',
+    () => new HttpResponse(null, { status: 204 })
   ),
   // Mirrors the streamed upload: one multipart request, metadata then file.
   http.post(
@@ -2434,6 +2494,13 @@ export const handlers = [
         workspaceId: String(params.id),
       };
       db.fileLinks[f.id] = { url: URL.createObjectURL(bytes) };
+      const office = /\.(docx|pptx|xlsx)$/i.exec(name)?.[1].toLowerCase();
+      if (office)
+        seedUploadedOffice(
+          f.id,
+          office as 'docx' | 'pptx' | 'xlsx',
+          db.fileLinks[f.id].url
+        );
       db.files.push(f);
       const ws = db.workspaces.find((w) => w.id === params.id);
       if (ws) ws.fileCount += 1;
@@ -3184,46 +3251,20 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 
-  /* ---------------- thinking space ---------------- */
-  http.get('/api/thinking', async () => HttpResponse.json(db.canvases)),
-  http.get('/api/thinking/:id', async ({ params }) => {
-    const c = db.canvases.find((x) => x.id === params.id);
-    return c ? HttpResponse.json(c) : new HttpResponse(null, { status: 404 });
-  }),
-  http.post('/api/thinking', async ({ request }) => {
-    const body = (await request.json()) as { name: string };
-    const c = {
-      id: uid('cv'),
-      name: body.name,
-      updatedAt: new Date().toISOString(),
-    };
-    db.canvases.unshift(c);
-    return HttpResponse.json(c, { status: 201 });
-  }),
-  http.put('/api/thinking/:id', async ({ params, request }) => {
-    const c = db.canvases.find((x) => x.id === params.id);
-    if (!c) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as { scene?: unknown; name?: string };
-    if (body.scene !== undefined) c.scene = body.scene;
-    if (body.name) c.name = body.name;
-    c.updatedAt = new Date().toISOString();
-    return HttpResponse.json(c);
-  }),
-
   /* ---------------- explore ---------------- */
   http.get('/api/explore/workspaces', async () =>
-    HttpResponse.json(db.publicWorkspaces)
+    HttpResponse.json({ items: db.publicWorkspaces })
   ),
   http.get('/api/explore/quizzes', async () =>
-    HttpResponse.json(
-      db.publicQuizzes.map((quiz) => ({
+    HttpResponse.json({
+      items: db.publicQuizzes.map(({ questions, ...quiz }) => ({
         ...quiz,
-        questions: quiz.questions.map(learnerView),
-      }))
-    )
+        questionCount: questions.length,
+      })),
+    })
   ),
   http.get('/api/explore/flashcards', async () =>
-    HttpResponse.json(db.publicFlashcardSets)
+    HttpResponse.json({ items: db.publicFlashcardSets })
   ),
 
   /* ---------------- billing ---------------- */

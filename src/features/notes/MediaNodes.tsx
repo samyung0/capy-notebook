@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/Popover';
 import { Separator } from '@/components/ui/Separator';
 import { userToast } from '@/components/ui/userToast';
+import { mediaWidth } from '@/features/materials/document';
 import {
   type MediaAssetNode,
   MediaAssetView,
@@ -323,7 +324,7 @@ export function MediaAssetElement(props: PlateElementProps) {
         caption={
           <Caption
             className={MEDIA_CAPTION_CLASS}
-            style={{ width: element.width }}
+            style={{ width: mediaWidth(element.width) }}
           >
             <CaptionTextarea
               className="w-full resize-none overflow-hidden bg-transparent text-center outline-none placeholder:text-placeholder"
@@ -503,7 +504,7 @@ export function YouTubeEmbedElement(props: PlateElementProps) {
                 )}
               </>
             }
-            width={element.width}
+            width={mediaWidth(element.width)}
           >
             <YouTubeEmbed videoId={videoId} />
           </MediaFrame>

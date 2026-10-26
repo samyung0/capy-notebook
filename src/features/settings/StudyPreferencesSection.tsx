@@ -1,8 +1,4 @@
-import {
-  useMe,
-  useSetStudyPreferences,
-  useSetStudyProgressDefault,
-} from '@/api/hooks';
+import { useMe, useSetStudyPreferences } from '@/api/hooks';
 import type { StudyPreferences } from '@/api/types';
 import { SectionTitle, SettingRow, TabHeader } from '@/components/app/tabPanel';
 import {
@@ -106,6 +102,7 @@ const ROWS: Row[] = [
       { label: m.study_pref_writing_brief, value: 'brief' },
       { label: m.study_pref_writing_normal, value: 'normal' },
       { label: m.study_pref_writing_verbose, value: 'verbose' },
+      { label: m.study_pref_writing_story, value: 'story' },
     ],
     field: 'writingStyle',
     hint: m.study_pref_writing_hint,
@@ -134,12 +131,11 @@ const ROWS: Row[] = [
   },
 ];
 
-/** Settings → Study: progress tracking, how reviews are put together, and
- * how the chat builds notes and practice. */
+/** Settings → Study: how reviews are put together and how the chat builds
+ * notes and practice. */
 export function StudyPreferencesSection() {
   const { data: me } = useMe();
   const { mutate: save } = useSetStudyPreferences();
-  const { mutate: setProgressDefault } = useSetStudyProgressDefault();
   const saved = me?.studyPreferences;
   const current = { ...DEFAULTS, ...saved };
   const set = (patch: StudyPreferences) => {
@@ -160,18 +156,6 @@ export function StudyPreferencesSection() {
     <>
       <TabHeader title={m.settings_tab_study()} />
       <div className="flex flex-col gap-6">
-        <SettingRow
-          hint={m.study_progress_default_hint()}
-          title={m.study_progress_default()}
-        >
-          <Switch
-            aria-label={m.study_progress_default()}
-            checked={!!me?.studyProgress}
-            disabled={!me}
-            onCheckedChange={(checked) => setProgressDefault(checked)}
-          />
-        </SettingRow>
-        <div className="border-divider border-t" />
         <SectionTitle title={m.study_pref_review_title()} />
         {REVIEW_ROWS.map(choiceRow)}
         <div className="border-divider border-t" />

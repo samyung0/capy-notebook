@@ -3,8 +3,9 @@
 //! merges it, lands in the room keeping what it deleted, and reverting it
 //! there restores the content. An XLSX formula reading the edited cell
 //! computes from the restored value, as an editor's engine recalculates it;
-//! structural XLSX commands (a row delete, a sheet delete) and DOCX and PPTX
-//! paragraph inserts and deletes undo the same way.
+//! structural XLSX commands (a row delete, a sheet delete), DOCX and PPTX
+//! paragraph inserts and deletes and PPTX slide deletes and moves undo the
+//! same way.
 
 #![allow(clippy::unwrap_used)]
 
@@ -14,7 +15,7 @@ use betteroffice_xlsx::{CalculationOptions, CellRef, CellValue, Workbook};
 use office_service::{Checkpoint, Command, Determinism, Format, InspectQuery};
 use ydoc::undo::{Captured, Change};
 use yrs::updates::decoder::Decode;
-use yrs::{Doc, ReadTxn, StateVector, Transact, Update};
+use yrs::{Doc, Map, MapRef, ReadTxn, StateVector, Transact, Update, WriteTxn};
 
 struct File {
     format: Format,
@@ -180,6 +181,42 @@ impl File {
             ..InspectQuery::default()
         };
         office_service::inspect_scoped(&self.base, self.checkpoint(&state(room)), &query).unwrap()
+    }
+
+    /// The agent's scoped PPTX read: the slide list, or slide `number`'s
+    /// shapes and paragraphs (200 a page, more than the fixtures hold).
+    fn deck(&self, room: &Doc, number: Option<u32>) -> serde_json::Value {
+        let query = InspectQuery {
+            slide: number,
+            start: Some(0),
+            count: Some(200),
+            ..InspectQuery::default()
+        };
+        office_service::inspect_scoped(&self.base, self.checkpoint(&state(room)), &query).unwrap()
+    }
+
+    /// The slides' ids, in order.
+    fn slides(&self, room: &Doc) -> Vec<String> {
+        self.deck(room, None)["slides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|slide| slide["id"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// Slide `number`'s text, a line a paragraph, then its notes as the
+    /// read shows them (delete_slide's expected).
+    fn slide_text(&self, room: &Doc, number: u32) -> String {
+        let read = self.deck(room, Some(number));
+        let mut lines: Vec<&str> = read["paragraphs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|paragraph| paragraph["text"].as_str().unwrap())
+            .collect();
+        lines.extend(read["slide"]["notes"].as_str());
+        lines.join("\n")
     }
 
     /// The sheets' (id, name), in order.
@@ -394,8 +431,48 @@ fn many_runs_pptx() -> (File, String) {
     )
 }
 
+/// lesson.pptx with its Comparison layout grown to nine text placeholders
+/// whose names run 200 characters (review H1), and its owner sentence one
+/// run of six formats (review M3).
+fn rich_pptx() -> File {
+    let lesson = File::open(Format::Pptx, LESSON_PPTX);
+    let extra: String = (0..4)
+        .map(|n| {
+            format!(
+                r#"<p:sp><p:nvSpPr><p:cNvPr id="{}" name="{}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" sz="quarter" idx="{}"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="457200" y="{}"/><a:ext cx="4000000" cy="300000"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>"#,
+                100 + n,
+                format!("Extra body placeholder {n} ").repeat(8)[..200].to_owned(),
+                40 + n,
+                5_000_000 + 320_000 * n
+            )
+        })
+        .collect();
+    let owner = "<a:p><a:r><a:t>Owner sentence: The launch code is LARCH-17.</a:t></a:r></a:p>";
+    let rich = r#"<a:p><a:r><a:rPr lang="en-US" b="1" i="1" u="sng" strike="sngStrike" sz="2800"><a:solidFill><a:srgbClr val="1F4E79"/></a:solidFill><a:latin typeface="Georgia"/></a:rPr><a:t>Owner sentence: The launch code is LARCH-17.</a:t></a:r></a:p>"#;
+    let parts: Vec<(String, Vec<u8>)> = ooxml_opc::unzip_parts(&lesson.base)
+        .unwrap()
+        .into_iter()
+        .map(|(name, bytes)| {
+            let xml = String::from_utf8_lossy(&bytes).into_owned();
+            match name.as_str() {
+                "ppt/slideLayouts/slideLayout5.xml" => {
+                    let xml = xml.replacen("</p:spTree>", &format!("{extra}</p:spTree>"), 1);
+                    (name, xml.into_bytes())
+                }
+                "ppt/slides/slide1.xml" => {
+                    assert!(xml.contains(owner));
+                    (name, xml.replacen(owner, rich, 1).into_bytes())
+                }
+                _ => (name, bytes),
+            }
+        })
+        .collect();
+    File::of(Format::Pptx, ooxml_opc::rezip_parts(&parts).unwrap())
+}
+
 /// Review M1's tables: a plain 1x1, a 10x10 of shaded cells holding three
-/// formatted paragraphs each, and a 3x3 whose cells hold 20 list items.
+/// formatted paragraphs each, a 3x3 whose cells hold 20 list items, and a
+/// 50x10 of short cells (delete_table counts tables, Epo 2026-10-22).
 fn tables_docx() -> File {
     let table = |rows: usize, columns: usize, cell: &dyn Fn(usize, usize) -> String| {
         let grid: String = (0..columns).map(|_| r#"<w:gridCol w:w="900"/>"#).collect();
@@ -436,7 +513,7 @@ fn tables_docx() -> File {
             .collect()
     };
     lesson_docx_with(&format!(
-        "{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}",
         table(1, 1, &|_, _| "<w:p><w:r><w:t>Only</w:t></w:r></w:p>"
             .to_owned()),
         gap(1),
@@ -444,6 +521,10 @@ fn tables_docx() -> File {
         gap(2),
         table(3, 3, &listed),
         gap(3),
+        table(50, 10, &|r, c| format!(
+            "<w:p><w:r><w:t>Cell {r}.{c}</w:t></w:r></w:p>"
+        )),
+        gap(4),
     ))
 }
 
@@ -518,6 +599,46 @@ fn undo_restores_a_docx_and_a_pptx_paragraph() {
         assert_eq!(text(&room), entry.value, "{path}");
         ydoc::undo::revert(&room, redo).unwrap();
         assert_eq!(text(&room), edited, "{path}");
+    }
+}
+
+/// PPTX `delete_slide` and `move_slide`: Undo puts the slide back in its
+/// place with its shapes, text and speaker notes (a person wrote them before
+/// the agent's read; Epo 2026-10-22), and the room saves the file it saved
+/// before the edit.
+#[test]
+fn undo_restores_a_deleted_and_a_moved_slide() {
+    let file = File::open(Format::Pptx, LESSON_PPTX);
+    let room = file.room();
+    let first = file.slides(&room).remove(0);
+    {
+        let mut txn = room.transact_mut();
+        let slides = txn.get_or_insert_map("pptx:slides");
+        let slide: MapRef = slides.get(&txn, &first).unwrap().cast().unwrap();
+        slide.insert(&mut txn, "notes", "Greet the room.\nThen the demo.");
+    }
+    let before = file.export(&room);
+    let slides = file.slides(&room);
+    let texts = [file.slide_text(&room, 1), file.slide_text(&room, 2)];
+    assert!(texts[0].ends_with("Greet the room.\nThen the demo."));
+    for command in [
+        Command::DeleteSlide {
+            slide_id: slides[0].clone(),
+            expected_text: texts[0].clone(),
+        },
+        Command::MoveSlide {
+            slide_id: slides[0].clone(),
+            after_slide: Some(slides[1].clone()),
+            before_slide: None,
+        },
+    ] {
+        let change = file.agent_edit(&room, std::slice::from_ref(&command));
+        assert_ne!(file.slides(&room), slides, "{command:?}");
+        ydoc::undo::revert(&room, change).unwrap();
+        assert_eq!(file.slides(&room), slides, "{command:?}");
+        let now = [file.slide_text(&room, 1), file.slide_text(&room, 2)];
+        assert_eq!(now, texts, "{command:?}");
+        assert!(file.export(&room) == before, "{command:?}");
     }
 }
 
@@ -858,7 +979,7 @@ fn docx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
         (
             "format_text",
             command(serde_json::json!({
-                "type": "format_text", "targetId": first["id"], "expectedText": first["text"],
+                "type": "format_text", "targetId": first["id"], "text": first["text"],
                 "bold": true, "italic": true, "underline": true, "strikethrough": true,
                 "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
             })),
@@ -881,6 +1002,85 @@ fn docx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
             "delete_table",
             command(serde_json::json!({
                 "type": "delete_table", "id": table_id, "expected": table,
+            })),
+        ),
+    ]
+}
+
+/// The PPTX shape and slide commands on lesson.pptx: a shape's text
+/// rewritten longer and emptied, a span given every format, an alignment, a
+/// slide added after the first on its layout, a text box of 19 long
+/// paragraphs (4,864 characters, near a box's 5,000), a slide moved and one
+/// deleted.
+fn pptx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
+    let slides = file.slides(room);
+    let read = file.deck(room, Some(1));
+    let paragraphs = read["paragraphs"].as_array().unwrap();
+    let shape_text = |shape: &serde_json::Value| {
+        paragraphs
+            .iter()
+            .filter(|p| p["shape"] == shape["id"])
+            .map(|p| p["text"].as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let shapes = read["shapes"].as_array().unwrap();
+    let owner = paragraphs
+        .iter()
+        .find(|p| p["text"].as_str().unwrap().starts_with("Owner sentence"))
+        .unwrap();
+    let long = "a new paragraph from the agent, ".repeat(8);
+    vec![
+        (
+            "set_shape_text (longer)",
+            command(serde_json::json!({
+                "type": "set_shape_text", "shapeId": shapes[0]["id"],
+                "expectedText": shape_text(&shapes[0]), "paragraphs": [long, long, long],
+            })),
+        ),
+        (
+            "set_shape_text (emptied)",
+            command(serde_json::json!({
+                "type": "set_shape_text", "shapeId": shapes[1]["id"],
+                "expectedText": shape_text(&shapes[1]), "paragraphs": [""],
+            })),
+        ),
+        (
+            "format_text",
+            command(serde_json::json!({
+                "type": "format_text", "targetId": owner["id"], "text": "launch code",
+                "bold": true, "italic": true, "underline": true, "strikethrough": true,
+                "color": "#1F4E79", "fontSize": 28, "fontFamily": "Georgia",
+            })),
+        ),
+        (
+            "set_alignment",
+            command(serde_json::json!({
+                "type": "set_alignment", "targetId": owner["id"], "alignment": "center",
+            })),
+        ),
+        (
+            "add_slide",
+            command(serde_json::json!({ "type": "add_slide", "afterSlide": slides[0] })),
+        ),
+        (
+            "add_text_box",
+            command(serde_json::json!({
+                "type": "add_text_box", "slideId": slides[0], "paragraphs": vec![long.clone(); 19],
+                "x": 36, "y": 36, "w": 400, "h": 300,
+            })),
+        ),
+        (
+            "move_slide",
+            command(serde_json::json!({
+                "type": "move_slide", "slideId": slides[0], "afterSlide": slides[1],
+            })),
+        ),
+        (
+            "delete_slide",
+            command(serde_json::json!({
+                "type": "delete_slide", "slideId": slides[0],
+                "expectedText": file.slide_text(room, 1),
             })),
         ),
     ]
@@ -1145,12 +1345,32 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 );
             }
         }
-        if format == Format::Docx {
-            for (name, case) in docx_cases(&file, &room) {
-                let (cost, change) = file.costed_edit(&room, &[case]);
+        let cases = match format {
+            Format::Docx => docx_cases(&file, &room),
+            _ => pptx_cases(&file, &room),
+        };
+        for (name, case) in cases {
+            let (cost, change) = file.costed_edit(&room, &[case]);
+            covers_closely(
+                &mut short,
+                &format!("{path} {name}"),
+                cost,
+                undo_and_redo(&room, change),
+            );
+        }
+        if format == Format::Pptx {
+            // A slide on each of the deck's layouts: Blank's has no text
+            // placeholder, Comparison's the most (five).
+            for layout in file.deck(&room, None)["layouts"].as_array().unwrap() {
+                let (cost, change) = file.costed_edit(
+                    &room,
+                    &[command(
+                        serde_json::json!({ "type": "add_slide", "layout": layout["id"] }),
+                    )],
+                );
                 covers_closely(
                     &mut short,
-                    &format!("{path} {name}"),
+                    &format!("{path} add_slide ({})", layout["name"].as_str().unwrap()),
                     cost,
                     undo_and_redo(&room, change),
                 );
@@ -1191,16 +1411,33 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 },
             ),
         ];
+        let mut format = serde_json::json!({
+            "type": "format_text", "targetId": id, "text": text,
+            "bold": true, "italic": true, "underline": true, "strikethrough": true,
+            "color": "#1F4E79", "fontSize": 14, "fontFamily": "Georgia",
+        });
         if file.format == Format::Docx {
+            format["highlight"] = "yellow".into();
+        } else {
+            // The shape's whole text rewritten: its many-run paragraph and
+            // the owner sentence.
+            let read = file.deck(&room, Some(1));
+            let paragraphs = read["paragraphs"].as_array().unwrap();
+            let shape = &paragraphs.iter().find(|p| p["text"] == **text).unwrap()["shape"];
+            let lines: Vec<&str> = paragraphs
+                .iter()
+                .filter(|p| p["shape"] == *shape)
+                .map(|p| p["text"].as_str().unwrap())
+                .collect();
             cases.push((
-                "format_text",
+                "set_shape_text",
                 command(serde_json::json!({
-                    "type": "format_text", "targetId": id, "expectedText": text,
-                    "bold": true, "italic": true, "underline": true, "strikethrough": true,
-                    "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
+                    "type": "set_shape_text", "shapeId": shape,
+                    "expectedText": lines.join("\n"), "paragraphs": ["short"],
                 })),
             ));
         }
+        cases.push(("format_text", command(format)));
         for (case, command) in cases {
             let (cost, change) = file.costed_edit(&room, &[command]);
             covers_closely(
@@ -1210,6 +1447,45 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 undo_and_redo(&room, change),
             );
         }
+    }
+
+    // Review H1 and M3 (PPTX): a slide on a layout of nine text placeholders
+    // with 200-character names, on Blank, and 50 short paragraphs over a run
+    // of six formats.
+    let rich = rich_pptx();
+    let room = rich.room();
+    let read = rich.deck(&room, Some(1));
+    let owner = read["paragraphs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["text"] == "Owner sentence: The launch code is LARCH-17.")
+        .unwrap()["shape"]
+        .clone();
+    for (name, case) in [
+        (
+            "add_slide (nine placeholders, long names)",
+            command(serde_json::json!({
+                "type": "add_slide", "layout": "ppt/slideLayouts/slideLayout5.xml",
+            })),
+        ),
+        (
+            "add_slide (Blank)",
+            command(serde_json::json!({
+                "type": "add_slide", "layout": "ppt/slideLayouts/slideLayout7.xml",
+            })),
+        ),
+        (
+            "set_shape_text (50 short paragraphs on a run of six formats)",
+            command(serde_json::json!({
+                "type": "set_shape_text", "shapeId": owner,
+                "expectedText": "Owner sentence: The launch code is LARCH-17.",
+                "paragraphs": (0..50).map(|n| format!("p{n}")).collect::<Vec<_>>(),
+            })),
+        ),
+    ] {
+        let (cost, change) = rich.costed_edit(&room, &[case]);
+        covers_closely(&mut short, name, cost, undo_and_redo(&room, change));
     }
 
     // Review r2 H1: a header's and a footnote's text replaced whole, each
@@ -1264,7 +1540,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
     let (cost, change) = file.costed_edit(
         &room,
         &[command(serde_json::json!({
-            "type": "format_text", "targetId": id, "expectedText": "ab",
+            "type": "format_text", "targetId": id, "text": "ab",
             "bold": true, "italic": true, "underline": true, "strikethrough": true,
             "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
         }))],
@@ -1277,7 +1553,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
     );
 
     // Tables of several sizes (review M1): 1x1, 10x10 of three formatted
-    // paragraphs a cell, 3x3 of 20 list items a cell, deleted.
+    // paragraphs a cell, 3x3 of 20 list items a cell, 50x10, deleted.
     let file = tables_docx();
     let room = file.room();
     for (id, grid) in file.tables(&room) {

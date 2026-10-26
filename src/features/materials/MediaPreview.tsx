@@ -17,17 +17,20 @@ const ZOOM_BUTTON_CLASS =
 /**
  * Full-screen look at an image or diagram on a deep backdrop: name on top,
  * caption below. Wheel, pinch, double-click and the header buttons zoom up to
- * 8×; dragging pans. A click on empty space or Escape closes it.
+ * `maxScale` (8× by default); dragging pans. A click on empty space or Escape
+ * closes it.
  */
 export function MediaPreview({
   caption,
   children,
+  maxScale = MAX_SCALE,
   onOpenChange,
   open,
   title,
 }: {
   caption?: string;
   children: ReactNode;
+  maxScale?: number;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   title: string;
@@ -64,7 +67,7 @@ export function MediaPreview({
           <TransformWrapper
             doubleClick={{ mode: 'toggle', step: 1 }}
             keyboard={{ disabled: false }}
-            maxScale={MAX_SCALE}
+            maxScale={maxScale}
             minScale={1}
             onTransform={(_, state) => setScale(state.scale)}
             // Multiplied by deltaY (~100 per mouse notch): ~30% a notch.
@@ -96,7 +99,7 @@ export function MediaPreview({
                   <button
                     aria-label={m.material_zoom_in()}
                     className={ZOOM_BUTTON_CLASS}
-                    disabled={scale >= MAX_SCALE}
+                    disabled={scale >= maxScale}
                     onClick={() => zoomIn()}
                     type="button"
                   >
@@ -149,22 +152,38 @@ export function MermaidPreview({
 }) {
   const material = useMaterialRender();
   const named = title ?? (material?.isStandalone ? material.title : undefined);
+  const box = useRef<HTMLDivElement>(null);
+  // A diagram fitted far below its natural size zooms back to it (Epo
+  // 2026-10-22): past 8× when the fit is smaller than 1/8.
+  const [maxScale, setMaxScale] = useState(MAX_SCALE);
+  const measureFit = (drawn: boolean) =>
+    drawn &&
+    requestAnimationFrame(() => {
+      const svg = box.current?.querySelector('svg');
+      const fitted = svg?.getBoundingClientRect().width;
+      const natural = svg?.viewBox.baseVal.width;
+      if (fitted && natural) setMaxScale(Math.max(MAX_SCALE, natural / fitted));
+    });
   return (
     <MediaPreview
       caption={caption}
+      maxScale={maxScale}
       onOpenChange={onOpenChange}
       open={open}
       title={named?.trim() ? named : m.editor_mermaid()}
     >
       {/* Height drives the size; the width follows from the SVG's viewBox. */}
-      <Mermaid
-        className="[&>svg]:max-h-none [&>svg]:w-auto"
-        code={code}
-        fill
-        // Mermaid's own p-3 on each side.
-        svgHeight={(width, height) => previewHeight(width, height, '1.5rem')}
-        theme={theme}
-      />
+      <div className="contents" ref={box}>
+        <Mermaid
+          className="[&>svg]:max-h-none [&>svg]:w-auto"
+          code={code}
+          fill
+          onDrawn={measureFit}
+          // Mermaid's own p-3 on each side.
+          svgHeight={(width, height) => previewHeight(width, height, '1.5rem')}
+          theme={theme}
+        />
+      </div>
     </MediaPreview>
   );
 }

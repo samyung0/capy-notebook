@@ -4,6 +4,12 @@
     {
       "type": "p",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -15,6 +21,12 @@
     {
       "type": "h1",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -26,6 +38,12 @@
     {
       "type": "h2",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -37,6 +55,12 @@
     {
       "type": "h3",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -48,6 +72,12 @@
     {
       "type": "h4",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -59,6 +89,12 @@
     {
       "type": "h5",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -70,6 +106,12 @@
     {
       "type": "h6",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -81,6 +123,12 @@
     {
       "type": "blockquote",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -93,6 +141,12 @@
       "type": "hr",
       "index": "none",
       "void": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -104,6 +158,12 @@
     {
       "type": "code_block",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -115,6 +175,12 @@
     {
       "type": "code_line",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -126,6 +192,12 @@
     {
       "type": "table",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -137,6 +209,12 @@
     {
       "type": "tr",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -148,6 +226,12 @@
     {
       "type": "td",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -159,6 +243,12 @@
     {
       "type": "th",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -171,6 +261,12 @@
       "type": "toc",
       "index": "none",
       "void": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -182,6 +278,12 @@
     {
       "type": "callout",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -193,6 +295,12 @@
     {
       "type": "column_group",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -204,6 +312,12 @@
     {
       "type": "column",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -216,6 +330,12 @@
       "type": "equation",
       "index": "none",
       "void": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -229,6 +349,12 @@
       "index": "none",
       "void": true,
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -241,6 +367,12 @@
       "type": "a",
       "index": "text",
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -254,6 +386,12 @@
       "index": "none",
       "void": true,
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -267,6 +405,12 @@
       "index": "none",
       "void": true,
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -280,6 +424,12 @@
       "index": "none",
       "void": true,
       "inline": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -297,7 +447,11 @@
       ],
       "forbidden": [
         "url",
-        "src"
+        "src",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "assets": [
         "assetId"
@@ -321,7 +475,11 @@
       "forbidden": [
         "url",
         "src",
-        "width"
+        "width",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "assets": [
         "assetId"
@@ -345,7 +503,11 @@
       "forbidden": [
         "assetId",
         "url",
-        "src"
+        "src",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "resizable": true,
       "materials": [
@@ -360,6 +522,12 @@
       "type": "placeholder",
       "index": "none",
       "void": true,
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -383,6 +551,12 @@
         "block",
         "children",
         "width"
+      ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "sharedMap": [
         "block"
@@ -415,6 +589,12 @@
         "children",
         "width"
       ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "sharedMap": [
         "block"
       ],
@@ -445,6 +625,12 @@
         "block",
         "children",
         "width"
+      ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "sharedMap": [
         "block"
@@ -477,6 +663,12 @@
         "caption",
         "children"
       ],
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -495,7 +687,11 @@
       "forbidden": [
         "questions",
         "cards",
-        "code"
+        "code",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "sharedText": [
         "source"
@@ -515,6 +711,12 @@
     {
       "type": "mermaid_caption",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "note",
         "quiz",
@@ -534,7 +736,11 @@
         "refKind"
       ],
       "forbidden": [
-        "pending"
+        "pending",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "materials": [
         "note"
@@ -550,7 +756,11 @@
         "questions",
         "cards",
         "code",
-        "timeLimitMin"
+        "timeLimitMin",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "children": [
         "quiz_question"
@@ -579,7 +789,11 @@
         "acceptedAnswers",
         "hints",
         "correctOptionIds",
-        "correctBoolean"
+        "correctBoolean",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "assets": [
         "question.stem[].image.assetId",
@@ -599,7 +813,11 @@
       "forbidden": [
         "questions",
         "cards",
-        "code"
+        "code",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "children": [
         "flashcard"
@@ -617,7 +835,11 @@
       "forbidden": [
         "questions",
         "cards",
-        "code"
+        "code",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
       ],
       "assets": [
         "image.assetId"
@@ -633,6 +855,12 @@
     {
       "type": "flashcard_front",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "flashcards"
       ]
@@ -640,6 +868,12 @@
     {
       "type": "flashcard_back",
       "index": "text",
+      "forbidden": [
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
       "materials": [
         "flashcards"
       ]
@@ -969,13 +1203,11 @@
         "lang": "mermaid",
         "body": "text"
       },
-      "chat": "Mermaid",
       "materials": [
         "mindmap",
         "diagram"
       ],
       "surfaces": [
-        "chat",
         "note",
         "material",
         "share",
@@ -987,7 +1219,6 @@
           "material"
         ],
         "agent": [
-          "create_material",
           "edit_document"
         ]
       }
@@ -1083,6 +1314,7 @@
     "LIST_INDENT_MAX": 8,
     "MEDIA_WIDTH_MAX": 100,
     "MEDIA_WIDTH_MIN": 20,
+    "MERMAID_SOURCE_MAX": 50000,
     "QUESTION_ANSWERS_MAX": 100,
     "QUESTION_ASSET_URL_MAX": 4096,
     "QUESTION_BLOCKS_MAX": 40,

@@ -172,7 +172,7 @@ async def test_a_created_word_file_reads_back_and_a_stale_delete_shows_the_parag
     bold = {
         "type": "format_text",
         "target_id": method,
-        "expected_text": "Method",
+        "text": "Method",
         "bold": True,
     }
     limited = await tools.run(
@@ -184,3 +184,89 @@ async def test_a_created_word_file_reads_back_and_a_stale_delete_shows_the_parag
         "Not applied: the command at index 30 (counting from 0), past the limit of "
         "30 formatted spans a call; send them in another call."
     )
+
+
+async def test_a_deck_reads_by_slide_and_a_stale_shape_write_shows_its_text(run):
+    import office
+
+    deck = (
+        Path(__file__).resolve().parents[2] / "e2e/fixtures/files/basic/lesson.pptx"
+    ).read_bytes()
+    run.setdefault("office", {})["f_local_deck"] = {
+        "id": "f_local_deck",
+        "name": "lesson.pptx",
+        "format": "pptx",
+        "chapter_id": None,
+        "base": deck,
+        "checkpoint": await office.call("seedOffice", "pptx", office.wire(deck)),
+        "edits": [],
+    }
+    ctx = tools.ToolContext(
+        workspace_id="ws_playground",
+        user_id="playground",
+        operations=frozenset({"source.read", "document.edit"}),
+        assistant_message_id="run",
+        office_tools=True,
+    )
+    ctx.skills_read = {"editing", "office_building"}
+    slides = (
+        await tools.run("inspect_office_document", {"file_id": "f_local_deck"}, ctx)
+    ).text_parts[0]
+    assert "1. [slide:0:" in slides and "2. [slide:1:" in slides
+    assert ": Owner sentence: The launch code is LARCH-17." in slides
+    read = (
+        await tools.run(
+            "inspect_office_document", {"file_id": "f_local_deck", "slide": 1}, ctx
+        )
+    ).text_parts[0]
+    lines = read.splitlines()
+    owner = next(i for i, line in enumerate(lines) if line.endswith("LARCH-17."))
+    shape = next(
+        line.split("]")[0][1:]
+        for line in reversed(lines[:owner])
+        if not line.startswith("  ")
+    )
+    text = "Owner sentence: The launch code is LARCH-17."
+
+    written = await tools.run(
+        "edit_office_document",
+        {
+            "_tool_call_id": "c1",
+            "file_id": "f_local_deck",
+            "commands": [
+                {
+                    "type": "set_shape_text",
+                    "shape_id": shape,
+                    "expected_text": text,
+                    "paragraphs": ["First point", "Second point"],
+                }
+            ],
+        },
+        ctx,
+    )
+    assert not written.refused, written.error
+    read = (
+        await tools.run(
+            "inspect_office_document", {"file_id": "f_local_deck", "slide": 1}, ctx
+        )
+    ).text_parts[0]
+    assert "] First point\n" in read and "] Second point\n" in read
+
+    stale = await tools.run(
+        "edit_office_document",
+        {
+            "_tool_call_id": "c2",
+            "file_id": "f_local_deck",
+            "commands": [
+                {
+                    "type": "set_shape_text",
+                    "shape_id": shape,
+                    "expected_text": text,
+                    "paragraphs": ["x"],
+                }
+            ],
+        },
+        ctx,
+    )
+    assert stale.refused and stale.error_code == "stale_target"
+    assert f"Shape {shape} now reads:\nFirst point\nSecond point" in stale.detail

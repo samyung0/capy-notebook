@@ -1,12 +1,12 @@
 import {
   type CSSProperties,
   type KeyboardEvent,
+  useEffect,
   useRef,
   useState,
 } from 'react';
 import { useSyncCustomization } from '@/api/hooks';
 import type { PageFrame, PageFrameColor, PageFramePattern } from '@/api/types';
-import grain from '@/assets/paint/grain.webp';
 import { Button } from '@/components/ui/Button';
 import { InputTitle } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
@@ -17,22 +17,19 @@ import {
   FRAME_PATTERNS,
   FRAME_PRESET_NAMES,
   FRAME_PRESETS,
-  frameStops,
+  frameColors,
   MAX_FRAME_COLORS,
-  patternLayers,
+  patternImage,
   STRENGTH_MAX,
-  strengthen,
+  shuffleFrame,
 } from '@/theme/pageFrame';
 import { useTheme } from '@/theme/theme';
 
 const PATTERN_LABEL: Record<PageFramePattern, () => string> = {
   arc: m.page_frame_pattern_arc,
-  contours: m.page_frame_pattern_contours,
   glow: m.page_frame_pattern_glow,
   mesh: m.page_frame_pattern_mesh,
   none: m.page_frame_pattern_none,
-  painted: m.page_frame_pattern_painted,
-  waves: m.page_frame_pattern_waves,
 };
 
 const PRESET_LABEL: Record<(typeof FRAME_PRESET_NAMES)[number], () => string> =
@@ -48,27 +45,90 @@ const PRESET_LABEL: Record<(typeof FRAME_PRESET_NAMES)[number], () => string> =
 
 const clamp = (v: number, max = 1) => Math.max(0, Math.min(max, v));
 const STEP = 0.05;
+/** While a dot or slider drags, the page frame takes every third value
+ * (~20 a second) and the stylesheet glides between them, so the whole
+ * window repaints from a few samples instead of on every pointer move. */
+const SAMPLE_FRAMES = 3;
+
+/** The frame being edited: `set` applies at once, `drag` shows each value in
+ * the drawer but hands the page frame a sample every few frames, `end`
+ * commits the last one. */
+function useLiveFrame() {
+  const { pageFrame, setPageFrame } = useTheme();
+  const [draft, setDraft] = useState<PageFrame | null>(null);
+  const latest = useRef<PageFrame | null>(null);
+  const dirty = useRef(false);
+  const raf = useRef(0);
+  const stop = () => {
+    cancelAnimationFrame(raf.current);
+    raf.current = 0;
+    delete document.documentElement.dataset.pageFrameLive;
+  };
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.pageFrameEdit = '';
+    return () => {
+      stop();
+      delete root.dataset.pageFrameEdit;
+    };
+  }, []);
+  const end = () => {
+    if (!raf.current) return;
+    stop();
+    if (latest.current) setPageFrame(latest.current);
+    latest.current = null;
+    setDraft(null);
+  };
+  return {
+    drag: (next: PageFrame) => {
+      latest.current = next;
+      dirty.current = true;
+      setDraft(next);
+      if (raf.current) return;
+      document.documentElement.dataset.pageFrameLive = '';
+      let frames = 0;
+      const tick = () => {
+        if (++frames % SAMPLE_FRAMES === 0 && dirty.current && latest.current) {
+          dirty.current = false;
+          setPageFrame(latest.current);
+        }
+        raf.current = requestAnimationFrame(tick);
+      };
+      raf.current = requestAnimationFrame(tick);
+    },
+    end,
+    frame: draft ?? pageFrame,
+    set: (next: PageFrame) => {
+      stop();
+      latest.current = null;
+      setDraft(null);
+      setPageFrame(next);
+    },
+  };
+}
 
 /**
  * The Theme drawer's Page frame section (openwiki/frontend/appearance.md):
  * pattern, colours (a preset or up to three custom colours on a hue and
- * saturation field), Strength and Grain, each change kept on this device;
- * then Sync, which stores the style, theme and frame on the account for the
- * user's other devices.
+ * saturation field) and Strength, each change kept on this device; then
+ * Sync, which stores the style, theme and frame on the account for the
+ * user's other devices, and Shuffle, a random set of colours and Strength.
  */
 export function PageFrameSection() {
-  const { pageFrame: frame, setPageFrame, style, theme } = useTheme();
+  const { style, theme } = useTheme();
+  const live = useLiveFrame();
+  const { frame } = live;
   const { isPending, mutate: sync } = useSyncCustomization();
-  const set = (patch: Partial<PageFrame>) =>
-    setPageFrame({ ...frame, ...patch });
-  const stops = frameStops(frame);
-  const shown = strengthen(stops, frame.strength);
+  const set = (patch: Partial<PageFrame>) => live.set({ ...frame, ...patch });
+  const shown = frameColors(frame);
+  const pale = frameColors(frame, 0);
+  const full = frameColors(frame, STRENGTH_MAX);
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
         <InputTitle>{m.page_frame_title()}</InputTitle>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-4 gap-2">
           {FRAME_PATTERNS.map((pattern) => (
             <button
               aria-pressed={frame.pattern === pattern}
@@ -88,7 +148,9 @@ export function PageFrameSection() {
                     'ring-2 ring-action ring-offset-2 ring-offset-surface'
                 )}
                 style={
-                  pattern === 'none' ? undefined : patternStyle(pattern, shown)
+                  pattern === 'none'
+                    ? undefined
+                    : { backgroundImage: patternImage(pattern, shown) }
                 }
               />
               <span className="t-muted font-medium">
@@ -104,12 +166,13 @@ export function PageFrameSection() {
             <InputTitle>{m.page_frame_colours()}</InputTitle>
             <div className="flex flex-wrap gap-2">
               {FRAME_PRESET_NAMES.map((preset) => {
-                const [a, b, c] = FRAME_PRESETS[preset];
+                const { dots, stops, strength } = FRAME_PRESETS[preset];
+                const [a, b, c] = stops;
                 return (
                   <Swatch
                     key={preset}
                     label={PRESET_LABEL[preset]()}
-                    onClick={() => set({ colours: preset })}
+                    onClick={() => set({ colours: preset, dots, strength })}
                     pressed={frame.colours === preset}
                     style={{
                       background: `linear-gradient(135deg, ${a}, ${b} 55%, ${c})`,
@@ -130,9 +193,13 @@ export function PageFrameSection() {
             <ColorField
               dots={frame.dots}
               onChange={(dots) => set({ colours: 'custom', dots })}
+              onDrag={(dots) =>
+                live.drag({ ...frame, colours: 'custom', dots })
+              }
+              onDragEnd={live.end}
             />
           </div>
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3">
             <span className="t-muted font-semibold">
               {m.page_frame_strength()}
             </span>
@@ -140,60 +207,49 @@ export function PageFrameSection() {
               label={m.page_frame_strength()}
               max={STRENGTH_MAX}
               onChange={(strength) => set({ strength })}
+              onDrag={(strength) => live.drag({ ...frame, strength })}
+              onDragEnd={live.end}
               style={{
-                background: `linear-gradient(90deg, ${strengthen(stops, 0)[1]}, ${strengthen(stops, 0)[2]} 20%, ${stops[1]} 55%, ${stops[2]})`,
+                background: `linear-gradient(90deg, ${pale[1]}, ${pale[2]} 20%, ${full[1]} 55%, ${full[2]})`,
               }}
               value={frame.strength}
-            />
-            <span className="t-muted font-semibold">
-              {m.page_frame_grain()}
-            </span>
-            <Track
-              label={m.page_frame_grain()}
-              onChange={(value) => set({ grain: value })}
-              style={{
-                background: `linear-gradient(90deg, var(--color-surface), transparent), url("${grain}") 0 0 / 48px 48px, #c8c8cc`,
-              }}
-              value={frame.grain}
             />
           </div>
         </>
       )}
-      <Button
-        className="self-start"
-        disabled={isPending}
-        iconRight="cloudSync"
-        onClick={() =>
-          sync(
-            { pageFrame: frame, style, theme },
-            {
-              onSuccess: () =>
-                userToast({
-                  title: m.customization_synced(),
-                  variant: 'success',
-                }),
-            }
-          )
-        }
-        size="sm"
-      >
-        {m.customization_sync()}
-      </Button>
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          disabled={isPending}
+          iconRight="cloudSync"
+          onClick={() =>
+            sync(
+              { pageFrame: frame, style, theme },
+              {
+                onSuccess: () =>
+                  userToast({
+                    title: m.customization_synced(),
+                    variant: 'success',
+                  }),
+              }
+            )
+          }
+          size="sm"
+        >
+          {m.customization_sync()}
+        </Button>
+        {frame.pattern !== 'none' && (
+          <Button
+            iconLeft="shuffle"
+            onClick={() => live.set(shuffleFrame(frame))}
+            size="sm"
+            variant="outline"
+          >
+            {m.page_frame_shuffle()}
+          </Button>
+        )}
+      </div>
     </div>
   );
-}
-
-function patternStyle(
-  pattern: Exclude<PageFramePattern, 'none'>,
-  stops: string[]
-): CSSProperties {
-  const { blend, image, size } = patternLayers(pattern, stops);
-  return {
-    backgroundBlendMode: blend,
-    backgroundImage: image,
-    backgroundPosition: 'center',
-    backgroundSize: size,
-  };
 }
 
 function Swatch({
@@ -224,21 +280,31 @@ function Swatch({
 }
 
 /** Up to three colours as dots on a field: hue across, saturation down. A
- * dot drags, a click elsewhere moves the selected one, arrow keys nudge it. */
+ * dot drags, a click elsewhere moves the selected one, arrow keys nudge it.
+ * Dots glide to a preset's or a shuffle's places, and follow a drag at once. */
 function ColorField({
   dots,
   onChange,
+  onDrag,
+  onDragEnd,
 }: {
   dots: PageFrameColor[];
   onChange: (dots: PageFrameColor[]) => void;
+  onDrag: (dots: PageFrameColor[]) => void;
+  onDragEnd: () => void;
 }) {
   const field = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const sel = Math.min(selected, dots.length - 1);
+  const endDrag = () => {
+    setDragging(false);
+    onDragEnd();
+  };
   const moveTo = (index: number, clientX: number, clientY: number) => {
     const box = field.current?.getBoundingClientRect();
     if (!box) return;
-    onChange(
+    onDrag(
       dots.map((d, i) =>
         i === index
           ? {
@@ -269,12 +335,14 @@ function ColorField({
       <div
         aria-label={m.page_frame_field()}
         className="relative h-32 touch-none overflow-hidden rounded-card [background:radial-gradient(circle,rgb(255_255_255/.35)_1px,transparent_1.4px)_0_0/9px_9px,linear-gradient(to_bottom,rgb(255_255_255/0),rgb(128_128_128/.88)),linear-gradient(to_right,#f05a5a,#f0b45a,#c8e05a,#5ae08c,#5ad2e0,#5a8cf0,#a05af0,#f05ac8,#f05a5a)]"
+        onLostPointerCapture={endDrag}
         onPointerDown={(event) => {
           const dot = (event.target as HTMLElement).closest<HTMLElement>(
             '[data-dot]'
           );
           const index = dot ? Number(dot.dataset.dot) : sel;
           setSelected(index);
+          setDragging(true);
           event.currentTarget.setPointerCapture(event.pointerId);
           moveTo(index, event.clientX, event.clientY);
         }}
@@ -291,7 +359,9 @@ function ColorField({
             aria-pressed={i === sel}
             className={cn(
               'absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-3 border-white shadow-pop',
-              i === sel && 'size-7'
+              i === sel && 'size-7',
+              !dragging &&
+                'transition-[left,top,background-color] duration-(--motion-duration-slow) ease-(--motion-ease-smooth-out)'
             )}
             data-dot={i}
             key={i}
@@ -344,23 +414,28 @@ function ColorField({
 }
 
 /** A slider whose track shows its effect: Strength from pale to the chosen
- * colours, Grain from smooth to grainy. */
+ * colours. Its thumb glides to a preset's or a shuffle's value. */
 function Track({
   label,
   max = 1,
   onChange,
+  onDrag,
+  onDragEnd,
   style,
   value,
 }: {
   label: string;
   max?: number;
   onChange: (value: number) => void;
+  onDrag: (value: number) => void;
+  onDragEnd: () => void;
   style: CSSProperties;
   value: number;
 }) {
+  const [dragging, setDragging] = useState(false);
   const set = (event: React.PointerEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
-    onChange(clamp((event.clientX - box.left) / box.width, max));
+    onDrag(clamp((event.clientX - box.left) / box.width, max));
   };
   return (
     <div
@@ -375,7 +450,12 @@ function Track({
         event.preventDefault();
         onChange(clamp(value + delta, max));
       }}
+      onLostPointerCapture={() => {
+        setDragging(false);
+        onDragEnd();
+      }}
       onPointerDown={(event) => {
+        setDragging(true);
         event.currentTarget.setPointerCapture(event.pointerId);
         set(event);
       }}
@@ -387,7 +467,11 @@ function Track({
       tabIndex={0}
     >
       <span
-        className="absolute -top-1 h-7 w-3 -translate-x-1/2 rounded-full bg-white shadow-pop ring-1 ring-black/10"
+        className={cn(
+          'absolute -top-1 h-7 w-3 -translate-x-1/2 rounded-full bg-white shadow-pop ring-1 ring-black/10',
+          !dragging &&
+            'transition-[left] duration-(--motion-duration-slow) ease-(--motion-ease-smooth-out)'
+        )}
         style={{ left: `${value * 100}%` }}
       />
     </div>

@@ -118,17 +118,6 @@ describe('local answer recovery', () => {
     ).toBe(true);
   });
 
-  it('projects a diagram as a mermaid fence', () => {
-    const result = parseAnswer(
-      'root = Answer([Mermaid("Cycle", "flowchart TD\\nA --> B", [3])])'
-    );
-    expect(inspectAnswer(result)).toEqual({
-      gap: false,
-      invalidCharts: new Set(),
-      text: 'Cycle\n\n```mermaid\nflowchart TD\nA --> B\n```',
-    });
-  });
-
   it('withholds a plot whose points the plot block refuses', () => {
     for (const curve of ['Curve("Vm", [[0, -70], [1]])', 'Curve("Vm", "x")']) {
       const inspected = inspectAnswer(

@@ -54,8 +54,12 @@ jobs:
           }
           echo "revision=$CANDIDATE_REVISION" >> "$GITHUB_OUTPUT"
 
+  # A called workflow cannot raise the token scope: its images job pushes to GHCR.
   restage_uat:
     needs: validate_candidate
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment_name: uat
@@ -83,13 +87,19 @@ jobs:
       revision: ${{ needs.validate_candidate.outputs.revision }}
 
   # Code review and agent scans run locally and are not a promotion gate.
+  # Production runs the image digests UAT ran, not whatever the tags name now.
   deploy_production:
     needs:
       - validate_candidate
+      - restage_uat
       - uat_quality_gate
       - editor_perf
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment_name: production
       revision: ${{ needs.validate_candidate.outputs.revision }}
+      image_digests: ${{ needs.restage_uat.outputs.image_digests }}
     secrets: inherit

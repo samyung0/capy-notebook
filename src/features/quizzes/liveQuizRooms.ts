@@ -46,6 +46,8 @@ export interface QuizRooms {
     keys: ItemRecovery | null;
     reload: () => void;
   } | null;
+  /** Either room's stored steps are in the draft send (Q319). */
+  sending: boolean;
   /** An open waits on the user's open budget (either room's). */
   slowed: boolean;
   status: ItemRoomStatus;
@@ -134,6 +136,7 @@ export function useQuizRooms(
     readOnlyCode: content.snapshot.readOnlyCode,
     ready,
     recovery,
+    sending: content.snapshot.sending || (wantKeys && keys.snapshot.sending),
     slowed: content.snapshot.slowed || (wantKeys && keys.snapshot.slowed),
     status: wantKeys
       ? combined(content.snapshot.status, keys.snapshot.status)

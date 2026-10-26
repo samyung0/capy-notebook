@@ -16,7 +16,9 @@ import type {
   GradedQuestion,
   Provenance,
 } from '@/api/types';
-import { BANK_IMAGE_MAX_BYTES, fitImage } from '@/lib/fitImage';
+import { m } from '@/i18n';
+import { BANK_IMAGE_MAX_BYTES } from '@/lib/fitImage';
+import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import type { LearnerQuestion, Question } from './types';
 
 export type BankTopic = {
@@ -271,6 +273,14 @@ export const BANK_STATUSES = [
 ] as const;
 export type BankStatus = (typeof BANK_STATUSES)[number];
 
+/** The Status filter's option labels. */
+export const statusLabels: Record<BankStatus, () => string> = {
+  correct: m.question_ui_status_correct,
+  notDone: m.question_ui_status_not_done,
+  partial: m.question_ui_status_partial,
+  wrong: m.question_ui_status_wrong,
+};
+
 /** Full marks is correct, none is wrong, anything between is partially wrong. */
 export function bankStatus(score: number | undefined): BankStatus {
   if (score === undefined) return 'notDone';
@@ -279,6 +289,6 @@ export function bankStatus(score: number | undefined): BankStatus {
 
 export async function uploadBankAsset(file: File): Promise<{ url: string }> {
   const body = new FormData();
-  body.append('file', await fitImage(file, BANK_IMAGE_MAX_BYTES));
+  body.append('file', await fitImageOffThread(file, BANK_IMAGE_MAX_BYTES));
   return api.upload('/bank/assets', body);
 }

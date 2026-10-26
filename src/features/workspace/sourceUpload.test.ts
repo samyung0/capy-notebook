@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { ApiError } from '@/api/client';
 import { m } from '@/i18n';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 
@@ -14,9 +13,7 @@ import {
   mapWithConcurrency,
   needsIngestJob,
   parseModeIssues,
-  retryAfterMs,
   splitSourceWave,
-  withUploadRetry,
 } from './sourceUpload';
 
 const file = (name: string, size = 1) => ({ name, size }) as File;
@@ -127,7 +124,7 @@ describe('upload batch limits', () => {
     expect(needsIngestJob('image.avif', 'image', 'none')).toBe(true);
     expect(needsIngestJob('data.csv', 'sheet', 'none')).toBe(true);
     expect(needsIngestJob('archive.bin', 'unknown', 'none')).toBe(false);
-    expect(needsIngestJob('recording.mp3', 'audio', 'none')).toBe(false);
+    expect(needsIngestJob('recording.mp3', 'audio', 'none')).toBe(true);
   });
 
   it('detects a terminal ingest status from the file cache', () => {
@@ -153,42 +150,5 @@ describe('upload batch limits', () => {
     expect(
       results.map((r) => (r.status === 'fulfilled' ? r.value : 0))
     ).toEqual([10, 20, 30, 40, 50]);
-  });
-
-  it('backs off 429s using retryAfterSeconds', async () => {
-    const waits: number[] = [];
-    let calls = 0;
-    const value = await withUploadRetry(
-      async () => {
-        calls += 1;
-        if (calls < 3) {
-          throw new ApiError(429, 'Too Many Requests', undefined, {
-            retryAfterSeconds: 2,
-          });
-        }
-        return 'ok';
-      },
-      async (ms) => {
-        waits.push(ms);
-      }
-    );
-    expect(value).toBe('ok');
-    expect(calls).toBe(3);
-    expect(waits).toEqual([2000, 2000]);
-    expect(
-      retryAfterMs(new ApiError(403, 'Forbidden', undefined, { code: 'x' }))
-    ).toBeNull();
-  });
-
-  it('gives a reservation answered 429 three attempts in all', async () => {
-    const error = new ApiError(429, 'Too Many Requests', undefined, {
-      retryAfterSeconds: 2,
-    });
-    const reserve = vi.fn().mockRejectedValue(error);
-    const wait = vi.fn().mockResolvedValue(undefined);
-
-    await expect(withUploadRetry(reserve, wait)).rejects.toBe(error);
-    expect(reserve).toHaveBeenCalledTimes(3);
-    expect(wait.mock.calls).toEqual([[2000], [2000]]);
   });
 });

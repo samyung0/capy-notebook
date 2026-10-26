@@ -114,6 +114,7 @@ jobs:
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
           # Exactly the secrets this render reads; test_config.py checks the list.
+          CAPY_SECRET_ALIBABA_MODELSTUDIO_KEY: ${{ secrets.ALIBABA_MODELSTUDIO_KEY }}
           CAPY_SECRET_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CAPY_SECRET_B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
           CAPY_SECRET_B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
@@ -142,6 +143,7 @@ jobs:
           CAPY_SECRET_SHARE_LINK_SECRET: ${{ secrets.SHARE_LINK_SECRET }}
           CAPY_SECRET_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           CAPY_SECRET_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          CAPY_SECRET_TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
           DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
         run: python3 scripts/env/config.py render --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-config"

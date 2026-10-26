@@ -30,6 +30,10 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
+import {
+  RemovedAssetsContext,
+  useRemovedAssets,
+} from '@/features/materials/MediaAssetView';
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
@@ -39,6 +43,7 @@ import { ratingQueue, reviewCard } from '@/features/study/ratings';
 import type { ReviewSearch } from '@/features/study/reviewSearch';
 import { groupName, itemCount, REVIEW_MODE } from '@/features/study/reviewText';
 import { StepNav } from '@/features/study/StepNav';
+import { StudyPosition } from '@/features/study/StudyPosition';
 import {
   currentStep,
   type Step,
@@ -215,6 +220,9 @@ function Session({
     void ratings.saved().then(() => finish(sessionId));
   }, [ended, answeredAny, sessionId, ratings, finish]);
   const { data: overview } = useReviewOverview();
+  // Images their uploader deleted read as removed (M16). No recheck: fetching
+  // a new session again would replace this one.
+  const removed = useRemovedAssets(data?.removedAssetIds);
   const nextSuggestion = overview?.suggestions.find(
     (s) =>
       !(
@@ -239,7 +247,13 @@ function Session({
   function back() {
     if (search.from === 'review')
       navigate({ search: { tab: 'review' }, to: '/learning' });
-    else navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });
+    // A workspace review starts on its Study page and returns there.
+    else
+      navigate({
+        params: { workspaceId },
+        search: { study: true },
+        to: '/workspaces/$workspaceId',
+      });
   }
   async function more() {
     // The next batch is chosen from every rating saved so far.
@@ -263,137 +277,152 @@ function Session({
   }
 
   return (
-    <PagePanel
-      header={
-        <QuizPageHeader
-          meta={item?.materialTitle}
-          onBack={back}
-          title={m.review_title({ workspace: ws?.name ?? '' })}
-          trail={[
-            search.from === 'review'
-              ? {
-                  label: m.nav_learning(),
-                  link: linkOptions({
-                    search: { tab: 'review' },
-                    to: '/learning',
-                  }),
+    <RemovedAssetsContext.Provider value={removed}>
+      <PagePanel
+        header={
+          <QuizPageHeader
+            meta={item?.materialTitle}
+            onBack={back}
+            title={m.review_title({ workspace: ws?.name ?? '' })}
+            trail={[
+              search.from === 'review'
+                ? {
+                    label: m.nav_learning(),
+                    link: linkOptions({
+                      search: { tab: 'review' },
+                      to: '/learning',
+                    }),
+                  }
+                : {
+                    label: ws?.name ?? '',
+                    link: linkOptions({
+                      params: { workspaceId },
+                      search: { study: true },
+                      to: '/workspaces/$workspaceId',
+                    }),
+                  },
+            ]}
+          />
+        }
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-5 sm:px-6 lg:px-10 xl:px-16">
+          {session === null || loadingMore ? (
+            isError ? (
+              <ErrorState
+                action={
+                  <ErrorAction onClick={() => void refetch()}>
+                    {m.action_retry()}
+                  </ErrorAction>
                 }
-              : {
-                  label: ws?.name ?? '',
-                  link: linkOptions({
-                    params: { workspaceId },
-                    to: '/workspaces/$workspaceId',
-                  }),
-                },
-          ]}
-        />
-      }
-    >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-5 sm:px-6 lg:px-10 xl:px-16">
-        {shown && !shown.past && (
-          <span className="t-meta self-end text-fg-muted">
-            {m.review_left({ count: steps.steps.queue.length })}
-          </span>
-        )}
-        {session === null || loadingMore ? (
-          isError ? (
-            <ErrorState
-              action={
-                <ErrorAction onClick={() => void refetch()}>
-                  {m.action_retry()}
-                </ErrorAction>
-              }
-              errorId={unexpectedErrorId(error)}
-              title={m.review_load_failed()}
-              variant="panel"
-            />
-          ) : (
-            <SkeletonList count={3} rowHeight={64} />
-          )
-        ) : item && shown ? (
-          <div
-            className={cn(
-              'mx-auto flex w-full flex-col gap-4',
-              item.kind === 'card' ? 'max-w-160' : 'max-w-3xl'
-            )}
-          >
-            {item.kind === 'card' ? (
-              <CardStack
-                card={reviewCard(item)}
-                onRate={(rating) => {
-                  const value = SRS_RATINGS.indexOf(rating) + 1;
-                  ratings.rate({
-                    itemId: item.itemId,
-                    materialId: item.materialId,
-                    rating: value,
-                    session: session.ref,
-                  });
-                  animate(steps.answer({ rating: value }), false);
-                }}
-                rated={
-                  shown.record?.rating
-                    ? SRS_RATINGS[shown.record.rating - 1]
-                    : undefined
-                }
-                size="large"
-                stack={stack}
-              />
-            ) : shown.record?.question || !liveItem ? (
-              <CheckedQuestion
-                answers={shown.record?.answers ?? {}}
-                question={shown.record?.question}
-                title={item.materialTitle}
+                errorId={unexpectedErrorId(error)}
+                title={m.review_load_failed()}
+                variant="panel"
               />
             ) : (
-              <QuestionItem
-                item={liveItem}
-                key={shown.key}
-                onChecked={(graded, answers) =>
-                  steps.answer(
-                    {
-                      answers,
-                      correct: graded.correct,
-                      question: graded.question,
-                      total: graded.total,
-                    },
-                    { stay: true }
-                  )
-                }
-                session={session.ref}
+              <SkeletonList count={3} rowHeight={64} />
+            )
+          ) : item && shown ? (
+            <div className="flex w-full flex-col gap-4">
+              {/* The card's width for every item, so it never jumps. */}
+              <StudyPosition
+                className="mx-auto mb-1 w-full max-w-160"
+                position={session.order.indexOf(shown.key) + 1}
+                total={session.order.length}
               />
-            )}
-            <StepNav
-              canNext
-              canPrevious={steps.steps.cursor > 0}
-              className="pt-4"
-              onNext={() => animate(steps.next(), false)}
-              onPrevious={() => animate(steps.previous(), true)}
+              <div
+                className={cn(
+                  'mx-auto flex w-full flex-col gap-4',
+                  item.kind === 'card' && 'max-w-160'
+                )}
+              >
+                {item.kind === 'card' ? (
+                  <CardStack
+                    card={reviewCard(item)}
+                    onRate={(rating) => {
+                      const value = SRS_RATINGS.indexOf(rating) + 1;
+                      ratings.rate({
+                        itemId: item.itemId,
+                        materialId: item.materialId,
+                        rating: value,
+                        session: session.ref,
+                      });
+                      animate(steps.answer({ rating: value }), false);
+                    }}
+                    rated={
+                      shown.record?.rating
+                        ? SRS_RATINGS[shown.record.rating - 1]
+                        : undefined
+                    }
+                    size="large"
+                    stack={stack}
+                  />
+                ) : (
+                  // Questions differ in height: each one, and the step row under
+                  // it, reveal with the text-swap tokens instead of jumping.
+                  <div
+                    className="motion-safe:motion-text-in flex flex-col gap-4"
+                    key={shown.key}
+                  >
+                    {shown.record?.question || !liveItem ? (
+                      <CheckedQuestion
+                        answers={shown.record?.answers ?? {}}
+                        question={shown.record?.question}
+                      />
+                    ) : (
+                      <QuestionItem
+                        item={liveItem}
+                        onChecked={(graded, answers) =>
+                          steps.answer(
+                            {
+                              answers,
+                              correct: graded.correct,
+                              question: graded.question,
+                              total: graded.total,
+                            },
+                            { stay: true }
+                          )
+                        }
+                        session={session.ref}
+                        source={false}
+                      />
+                    )}
+                  </div>
+                )}
+                <StepNav
+                  canNext
+                  canPrevious={steps.steps.cursor > 0}
+                  className="motion-safe:motion-text-in pt-4"
+                  key={`nav-${shown.key}`}
+                  onNext={() => animate(steps.next(), false)}
+                  onPrevious={() => animate(steps.previous(), true)}
+                />
+              </div>
+            </div>
+          ) : session.order.length === 0 ? (
+            <p className="t-card-title m-auto">{m.review_nothing()}</p>
+          ) : (
+            <SessionResult
+              next={nextSuggestion}
+              onMore={() => void more()}
+              onNext={(s) =>
+                navigate({
+                  params: { workspaceId: s.workspaceId },
+                  search: {
+                    chapterId: s.chapterId,
+                    from: search.from,
+                    group: s.group,
+                    reviewMode: s.mode,
+                  },
+                  to: '/learning/review/$workspaceId',
+                })
+              }
+              saved={answeredAny ? ratings.saved : undefined}
+              sessionId={session.ref.id}
             />
-          </div>
-        ) : session.order.length === 0 ? (
-          <p className="t-card-title m-auto">{m.review_nothing()}</p>
-        ) : (
-          <SessionResult
-            next={nextSuggestion}
-            onMore={() => void more()}
-            onNext={(s) =>
-              navigate({
-                params: { workspaceId: s.workspaceId },
-                search: {
-                  chapterId: s.chapterId,
-                  from: search.from,
-                  group: s.group,
-                  reviewMode: s.mode,
-                },
-                to: '/learning/review/$workspaceId',
-              })
-            }
-            saved={answeredAny ? ratings.saved : undefined}
-            sessionId={session.ref.id}
-          />
-        )}
-      </div>
-    </PagePanel>
+          )}
+        </div>
+      </PagePanel>
+    </RemovedAssetsContext.Provider>
   );
 }
 

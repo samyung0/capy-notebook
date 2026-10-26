@@ -15,6 +15,13 @@ anything else is a failed decode.
 - ``caption``: an image as the JPEG the caption model reads.
 - ``thumbnail``: an image's first frame as the list card's WebP.
 - ``page``: the parser's page-1 PNG from the bundle as the card's WebP.
+- ``picture``: one picture of an imported Office file compressed (images.py,
+  Epo 2026-10-24), within ``_PICTURE_LIMITS`` (Q347).
+- ``source_image``: an imported image source shrunk to 5 megapixels, or
+  re-saved as JPEG or PNG when it is not a PNG, JPEG, GIF or WebP (Q344).
+
+``audio_seconds`` runs ffmpeg itself, not this module, under the same policy,
+and ``heic_jpeg`` runs libheif's decode-only tool within ``_PICTURE_LIMITS``.
 """
 
 from __future__ import annotations
@@ -26,8 +33,10 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unicodedata
 import warnings
 from pathlib import Path
@@ -40,6 +49,12 @@ _TIMEOUT_S = 120
 # largest real document (1,475 pages) and 22 KiB for the densest page
 # (Korean), so 32 MiB holds that page density over 1,400 pages.
 _MAX_ANSWER = 32 << 20
+# One picture of an Office file, or a HEIC source, has 10 s of CPU (Q347,
+# the limit Claude picked): a 12 MP HEIC converts in about 0.4 s, a picture
+# compresses in about a second. Its wall deadline is twice that, since the
+# ingest host's parsers share its cores.
+_PICTURE_CPU_S = 10
+_MODE_LIMITS = {"picture": _PICTURE_CPU_S}
 _SYSTEM = ("/usr", "/lib", "/lib64", "/etc/ld.so.cache")
 # The card thumbnail: 200 px wide, cropped from the top at twice that (the
 # parser's page1.png follows the same rule, parser/odl/capture.py).
@@ -59,10 +74,11 @@ class PixelLimit(ValueError):
 # ------------------------------------------------------------ worker side
 
 
-def _policy(source: Path | None) -> capy_sandbox.Policy:
-    """The helper's sandbox: its interpreter and code, plus ``source``."""
+def _policy(source: Path | None, cpu_s: int | None = None) -> capy_sandbox.Policy:
+    """The helper's sandbox: its interpreter and code, plus ``source``;
+    ``cpu_s`` narrows its CPU time, with a wall deadline twice that."""
     return capy_sandbox.Policy(
-        limits=_LIMITS,
+        limits={**_LIMITS, "CPU": cpu_s} if cpu_s else _LIMITS,
         blocked=frozenset({"setsid", "setpgid", "fork"}),
         read=(
             *capy_sandbox.python_paths(),
@@ -70,7 +86,7 @@ def _policy(source: Path | None) -> capy_sandbox.Policy:
             *([str(source)] if source is not None else []),
         ),
         env={key: os.environ[key] for key in ("PYTHONPATH",) if key in os.environ},
-        timeout_s=_TIMEOUT_S,
+        timeout_s=2 * cpu_s if cpu_s else _TIMEOUT_S,
     )
 
 
@@ -102,12 +118,33 @@ def _pixel_limit(value: object) -> bool:
     return type(value) is str and value in _PIXEL_LIMITS
 
 
+def _count(value: object) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _format(value: object) -> bool:
+    return value in ("png", "jpeg")
+
+
 # Each mode's possible answers: their keys and what each key holds.
 _ANSWERS = {
     "evidence": ({"page_texts": _texts, "visible_headings": _indices},),
     "caption": ({"limit": _pixel_limit}, {"raw": _true}, {"jpeg": _string}),
     "thumbnail": ({"none": _true}, {"webp": _string}),
     "page": ({"webp": _string},),
+    "picture": (
+        {"keep": _true},
+        {"unreadable": _true},
+        {"too_large": _true},
+        {"image": _string, "format": _format},
+    ),
+    "source_image": (
+        {"keep": _true},
+        {"unreadable": _true},
+        {"too_large": _true},
+        {"too_many_pixels": _true},
+        {"image": _string, "format": _format},
+    ),
 }
 
 
@@ -115,14 +152,18 @@ def _decode(
     mode: str, *args: object, source: Path | None = None, data: bytes | None = None
 ) -> dict:
     argv = [sys.executable, "-m", __name__, mode, *map(str, args)]
+    limit = _MAX_ANSWER
+    cpu_s = _MODE_LIMITS.get(mode)
     try:
         completed = capy_sandbox.run(
-            argv, _policy(source), input=data, max_output=_MAX_ANSWER
+            argv, _policy(source, cpu_s), input=data, max_output=limit
         )
     except subprocess.TimeoutExpired:
-        raise DecodeFailed(f"{mode} decode exceeded {_TIMEOUT_S} seconds") from None
+        raise DecodeFailed(
+            f"{mode} decode exceeded {2 * cpu_s if cpu_s else _TIMEOUT_S} seconds"
+        ) from None
     except capy_sandbox.OutputLimit:
-        raise DecodeFailed(f"{mode} decode answered over {_MAX_ANSWER} bytes") from None
+        raise DecodeFailed(f"{mode} decode answered over {limit} bytes") from None
     if completed.returncode != 0:
         detail = completed.stderr.decode(errors="replace").strip()[-500:]
         raise DecodeFailed(f"{mode} decode exited {completed.returncode}: {detail}")
@@ -178,6 +219,126 @@ def thumbnail_webp(path: Path, format_name: str, *, max_pixels: int) -> bytes | 
 def page_webp(png: bytes) -> bytes:
     """The parser's page-1 PNG as the card WebP."""
     return _bytes(_decode("page", data=png), "webp")
+
+
+def office_picture(
+    data: bytes, *, image_max_bytes: int, max_pixels: int
+) -> tuple[bytes, str] | str:
+    """One picture of an imported Office file compressed, as (bytes, "png" or
+    "jpeg"), or "keep", "too_large" (no size fits) or "unreadable": Pillow
+    cannot decode it, or it ran past its 10 s or memory (Q347), so it is
+    removed like an unreadable one."""
+    try:
+        answer = _decode("picture", image_max_bytes, max_pixels, data=data)
+    except DecodeFailed:
+        return "unreadable"
+    if "image" in answer:
+        return _bytes(answer, "image"), answer["format"]
+    return next(iter(answer))
+
+
+def source_image(
+    data: bytes, *, max_bytes: int, max_pixels: int
+) -> tuple[bytes, str] | str:
+    """An imported image source shrunk to 5 megapixels, or re-saved when it is
+    not a PNG, JPEG, GIF or WebP, as (bytes, "png" or "jpeg"), or "keep",
+    "unreadable" (Pillow cannot decode it), "too_large" (no size fits the
+    per-file cap) or "too_many_pixels" (an animated GIF past 5 MP)."""
+    answer = _decode("source_image", max_bytes, max_pixels, data=data)
+    if "image" in answer:
+        return _bytes(answer, "image"), answer["format"]
+    return next(iter(answer))
+
+
+# libheif's decode-only tool (Debian libheif-examples with the libde265
+# plugin, both LGPL-3.0; no x265 encoder): Q353.
+_HEIF_DEC = "heif-dec"
+_HEIC_JPEG_QUALITY = 90
+_HEIC_MAX_OUTPUT = 64 << 20
+
+
+def heic_jpeg(data: bytes) -> bytes:
+    """A HEIC/HEIF picture as a JPEG (Epo 2026-10-24, Q353), which the source
+    rule then shrinks. heif-dec runs under the decode policy with the
+    picture's 10 s of CPU (20 s wall), writing only into its own temporary
+    folder."""
+    tool = shutil.which(_HEIF_DEC)
+    if tool is None:
+        raise DecodeFailed(f"{_HEIF_DEC} is not installed")
+    with tempfile.TemporaryDirectory(prefix="capy-heic-") as temp:
+        source, target = Path(temp) / "in.heic", Path(temp) / "out.jpg"
+        source.write_bytes(data)
+        policy = capy_sandbox.Policy(
+            limits={**_LIMITS, "CPU": _PICTURE_CPU_S, "FSIZE": _HEIC_MAX_OUTPUT},
+            blocked=frozenset({"setsid", "setpgid", "fork"}),
+            read=(*_SYSTEM, str(source)),
+            write=(temp, "/dev/null"),
+            timeout_s=2 * _PICTURE_CPU_S,
+        )
+        argv = [tool, "-q", str(_HEIC_JPEG_QUALITY), str(source), str(target)]
+        try:
+            completed = capy_sandbox.run(argv, policy, max_output=1 << 20)
+        except subprocess.TimeoutExpired:
+            raise DecodeFailed(
+                f"heic decode exceeded {2 * _PICTURE_CPU_S} seconds"
+            ) from None
+        except capy_sandbox.OutputLimit:
+            raise DecodeFailed("heic decode answered too much") from None
+        if completed.returncode != 0 or not target.is_file():
+            detail = completed.stderr.decode(errors="replace").strip()[-500:]
+            raise DecodeFailed(f"heic decode exited {completed.returncode}: {detail}")
+        return target.read_bytes()
+
+
+# ffmpeg's progress report: a few key=value blocks, the last one ending with
+# progress=end.
+_MAX_PROGRESS = 1 << 20
+
+
+def audio_seconds(path: Path) -> float:
+    """The length of the first audio stream, in seconds, measured from its
+    packets: ffmpeg copies every packet to the null muxer (nothing is
+    decoded) and reports where the last one ends. A container that names no
+    duration (a browser recording's WebM) or a wrong one (edited MP4 header
+    boxes) is measured all the same. An MP4 edit list still applies, as it
+    does when the file plays."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise DecodeFailed("ffmpeg is not installed")
+    argv = [
+        ffmpeg,
+        "-nostdin",
+        "-v",
+        "error",
+        "-i",
+        str(path),
+        "-map",
+        "0:a:0",
+        "-c",
+        "copy",
+        "-f",
+        "null",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+        "-",
+    ]
+    try:
+        completed = capy_sandbox.run(argv, _policy(path), max_output=_MAX_PROGRESS)
+    except subprocess.TimeoutExpired:
+        raise DecodeFailed(f"audio probe exceeded {_TIMEOUT_S} seconds") from None
+    except capy_sandbox.OutputLimit:
+        raise DecodeFailed("audio probe answered too much") from None
+    if completed.returncode != 0:
+        detail = completed.stderr.decode(errors="replace").strip()[-500:]
+        raise DecodeFailed(f"audio probe exited {completed.returncode}: {detail}")
+    lines = completed.stdout.decode(errors="replace").split()
+    times = [
+        line[len("out_time_us=") :] for line in lines if line.startswith("out_time_us=")
+    ]
+    if not lines or lines[-1] != "progress=end" or not times or not times[-1].isdigit():
+        raise DecodeFailed("audio probe found no packet times")
+    return int(times[-1]) / 1_000_000
 
 
 # ------------------------------------------------------------ helper side
@@ -387,6 +548,45 @@ def _page(png: bytes) -> dict:
         return {"webp": _webp(image.convert("RGB"))}
 
 
+def _picture(data: bytes, image_max_bytes: int, max_pixels: int) -> dict:
+    from PIL import Image
+
+    from . import images
+
+    try:
+        result = images.compress(data, image_max_bytes, max_pixels)
+    except images.TooLarge:
+        return {"too_large": True}
+    except (OSError, ValueError, RuntimeWarning, Image.DecompressionBombError):
+        return {"unreadable": True}
+    if result is None:
+        return {"keep": True}
+    encoded, kind = result
+    return {"image": base64.b64encode(encoded).decode(), "format": kind}
+
+
+def _source_image(data: bytes, max_bytes: int, max_pixels: int) -> dict:
+    from PIL import UnidentifiedImageError
+
+    from ..generated.limits import SOURCE_IMAGE_MAX_PIXELS
+    from . import images
+
+    try:
+        result = images.compress(
+            data, max_bytes, max_pixels, max_pixels=SOURCE_IMAGE_MAX_PIXELS
+        )
+    except images.TooManyPixels:
+        return {"too_many_pixels": True}
+    except images.TooLarge:
+        return {"too_large": True}
+    except (OSError, UnidentifiedImageError, ValueError):
+        return {"unreadable": True}
+    if result is None:
+        return {"keep": True}
+    encoded, kind = result
+    return {"image": base64.b64encode(encoded).decode(), "format": kind}
+
+
 def main(argv: list[str]) -> None:
     mode, *args = argv
     if mode == "evidence":
@@ -397,6 +597,10 @@ def main(argv: list[str]) -> None:
         answer = _thumbnail(args[0], args[1], int(args[2]))
     elif mode == "page":
         answer = _page(sys.stdin.buffer.read())
+    elif mode == "picture":
+        answer = _picture(sys.stdin.buffer.read(), int(args[0]), int(args[1]))
+    elif mode == "source_image":
+        answer = _source_image(sys.stdin.buffer.read(), int(args[0]), int(args[1]))
     else:
         raise SystemExit(f"unknown decode mode {mode!r}")
     sys.stdout.write(json.dumps(answer))

@@ -7,7 +7,7 @@ import { FileError, FileUnavailable, SourceBanners } from './FileStates';
 import { useReportEditorStatus } from './fileModeContext';
 import { OfficeHeader } from './OfficeMenuBar';
 import type { OfficeCitation } from './officeProtocol';
-import { useOfficeRuntime } from './useOfficeRuntime';
+import { type OfficeSwap, useOfficeRuntime } from './useOfficeRuntime';
 import { sourceHeaderStatus } from './useSourceSession';
 
 export default function PptxView({
@@ -16,12 +16,14 @@ export default function PptxView({
   file,
   onDirtyChange,
   startEditing = false,
+  swap,
 }: {
   canEdit: boolean;
   citation?: OfficeCitation;
   file: SourceFile;
   onDirtyChange?: (dirty: boolean) => void;
   startEditing?: boolean;
+  swap?: OfficeSwap;
 }) {
   const runtime = useOfficeRuntime({
     canEdit,
@@ -30,6 +32,7 @@ export default function PptxView({
     format: 'pptx',
     initialMode: startEditing ? 'edit' : 'view',
     revision: file.revision,
+    swap,
   });
 
   useEffect(() => {
@@ -87,7 +90,9 @@ export default function PptxView({
         pausedAtOpen={runtime.pausedAtOpen}
         readOnly={runtime.readOnly}
         reloading={runtime.discarding}
-        replaced={runtime.replaced}
+        // A newer version swaps the view (OfficeFileView); only the
+        // maintenance pause keeps its banner.
+        replaced={runtime.replaced && runtime.paused}
         storageFull={runtime.storageFull}
       />
       <OfficeHeader

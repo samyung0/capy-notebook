@@ -2,7 +2,8 @@
 inbound by default on the app host with every new connection from its public
 interface into a container dropped (IPv4 and IPv6), and the ingest host's
 nftables input and forward chains denying by default. SSH and WireGuard stay
-open on both. The ingest host's Docker build cache stays bounded."""
+open on both. The app host's CI deploy key runs only its deploy command. The
+ingest host's Docker build cache stays bounded."""
 
 from __future__ import annotations
 
@@ -95,20 +96,106 @@ def test_the_app_host_opens_ssh_and_wireguard_before_enabling_ufw() -> None:
     assert max(ssh, wireguard) < enable
 
 
-def test_the_app_host_lets_docker_networks_reach_it_but_not_all_of_10_8() -> None:
-    play = _play("app-host")
-    networks = play["vars"]["app_docker_host_networks"]
-    rules = _ufw(play)
+def _copied(play: dict, dest: str) -> dict:
+    (task,) = [
+        task["ansible.builtin.copy"]
+        for task in _tasks(play, "ansible.builtin.copy")
+        if task["ansible.builtin.copy"]["dest"] == dest
+    ]
+    return task
 
-    assert {
-        "rule": "allow",
-        "direction": "in",
-        "from_ip": "{{ item }}",
-        "comment": "Docker networks to the host",
-    } in rules
-    assert "10.0.0.0/16" in networks
-    # The WireGuard link also lives in 10/8: never open the whole pool.
-    assert "10.0.0.0/8" not in networks
+
+def test_the_ci_deploy_key_runs_only_the_deploy_command_through_the_tunnel() -> None:
+    """Security regression (Coolify removal, Epo 2026-10-23): the key is
+    restricted (no forwarding, PTY or agent), works only from loopback, where
+    cloudflared's Access tunnel connects, and can only run the deploy command
+    through sudo; the inventory value can add neither options nor lines."""
+    play = _play("app-host")
+    keys = _copied(play, "/var/lib/capy-deploy/.ssh/authorized_keys")
+    (assertion,) = [
+        task["ansible.builtin.assert"]
+        for task in play["pre_tasks"]
+        if "app_deploy_ssh_public_key" in str(task)
+    ]
+
+    assert keys["content"] == (
+        'restrict,from="127.0.0.1,::1",'
+        'command="/usr/bin/sudo -n /usr/local/sbin/capy-app-deploy" '
+        "{{ app_deploy_ssh_public_key }}\n"
+    )
+    assert (keys["owner"], keys["mode"]) == ("root", "0644")
+    assert assertion["that"] == [
+        (
+            "app_deploy_ssh_public_key | default('') is match("
+            "'^ssh-ed25519 [A-Za-z0-9+/]+=* [A-Za-z0-9._@-]+$')"
+        )
+    ]
+
+
+def test_the_deploy_user_may_run_one_root_script_and_has_no_docker_access() -> None:
+    """Security regression (Coolify removal, Epo 2026-10-23): sudoers names
+    exactly one root-owned script, with no arguments, keeping only
+    SSH_ORIGINAL_COMMAND; the user is in no group (so not docker) and owns
+    nothing it could change."""
+    play = _play("app-host")
+    sudoers = _copied(play, "/etc/sudoers.d/capy-deploy")
+    script = _copied(play, "/usr/local/sbin/capy-app-deploy")
+    (user,) = [
+        task["ansible.builtin.user"] for task in _tasks(play, "ansible.builtin.user")
+    ]
+    folders = [
+        task["ansible.builtin.file"] for task in _tasks(play, "ansible.builtin.file")
+    ]
+
+    assert sudoers["content"].splitlines() == [
+        'Defaults!/usr/local/sbin/capy-app-deploy env_keep = "SSH_ORIGINAL_COMMAND"',
+        'capy-deploy ALL=(root) NOPASSWD: /usr/local/sbin/capy-app-deploy ""',
+    ]
+    assert sudoers["validate"] == "/usr/sbin/visudo -cf %s"
+    assert (sudoers["owner"], sudoers["mode"]) == ("root", "0440")
+    assert script["src"].endswith("/scripts/deploy/app-host-deploy.sh")
+    assert (script["owner"], script["mode"]) == ("root", "0755")
+    assert user["name"] == "capy-deploy"
+    assert user["groups"] == ""
+    assert {"path": "/opt/capy", "mode": "0700", "owner": "root"}.items() <= next(
+        folder for folder in folders if folder["path"] == "/opt/capy"
+    ).items()
+
+
+def test_the_deploy_command_reads_the_wireguard_address_from_a_root_file() -> None:
+    """Security regression (Epo 2026-10-23): the deploy command allows private
+    binds only on the address the playbook writes, root-owned, in the deploy
+    tag; the deploy's env file cannot move it."""
+    play = _play("app-host")
+    address = _copied(play, "/etc/capy/private-bind-address")
+    (folder,) = [
+        task
+        for task in _tasks(play, "ansible.builtin.file")
+        if task["ansible.builtin.file"]["path"] == "/etc/capy"
+    ]
+    (task,) = [
+        task
+        for task in _tasks(play, "ansible.builtin.copy")
+        if task["ansible.builtin.copy"]["dest"] == "/etc/capy/private-bind-address"
+    ]
+
+    assert (
+        address["content"]
+        == "{{ app_wireguard_address | regex_replace('/.*$', '') }}\n"
+    )
+    assert (address["owner"], address["group"], address["mode"]) == (
+        "root",
+        "root",
+        "0644",
+    )
+    assert (
+        folder["ansible.builtin.file"]["owner"],
+        folder["ansible.builtin.file"]["mode"],
+    ) == (
+        "root",
+        "0755",
+    )
+    assert "deploy" in task["tags"] and "deploy" in folder["tags"]
 
 
 def test_the_app_host_drops_every_new_public_connection_into_containers() -> None:

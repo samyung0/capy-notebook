@@ -22,6 +22,8 @@ type providerCallReq struct {
 	ReasoningTokens  int64  `json:"reasoningTokens"`
 	CacheAnomaly     string `json:"cacheAnomaly"`
 	ModelVersion     int    `json:"modelVersion"`
+	ServedBy         string `json:"servedBy"`
+	Units            int64  `json:"units"`
 }
 
 func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +35,12 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 	if err := decode(r, &req); err != nil {
 		a.fail(w, err)
 		return
+	}
+	// The pipeline settles units only for a web search, counted in searches;
+	// audio seconds are the gateway's own (voice input).
+	unit := ""
+	if req.Kind == store.KindWebSearch {
+		unit = "search"
 	}
 	settlement, err := a.s.SettleProviderCall(r.Context(), req.SessionID, store.ProviderCallUsage{
 		CallID:           req.CallID,
@@ -48,6 +56,9 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 		ReasoningTokens:  req.ReasoningTokens,
 		CacheAnomaly:     req.CacheAnomaly,
 		ModelVersion:     req.ModelVersion,
+		ServedBy:         req.ServedBy,
+		Units:            req.Units,
+		Unit:             unit,
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "spend session not found"})

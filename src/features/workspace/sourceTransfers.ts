@@ -1,18 +1,23 @@
 import { create } from 'zustand';
 import { USE_MSW } from '@/api/auth';
-import { api, qk } from '@/api/client';
+import { api, isApiError, qk } from '@/api/client';
 import type { useImportSources, useUploadSource } from '@/api/hooks';
 import { ingestSlotsQuery } from '@/api/hooks';
+import { FILE_NAME_CHARACTER_LIMIT } from '@/api/limits.generated';
 import { queryClient } from '@/api/queryClient';
 import type {
   FileKind,
   SourceFile,
   SourceImportAcceptedResponse,
+  SourceUploadPolicy,
 } from '@/api/types';
+import { uploadRemoved } from '@/api/uploadTurn';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/analytics';
+import { CopyError } from '@/lib/copyError';
 import { deferStorageRefusal, describeError } from '@/lib/errors';
+import { compressSource } from './sourceCompress';
 import {
   parseSourceImportAcceptedResponse,
   SourceImportFailedError,
@@ -27,8 +32,8 @@ import {
   needsIngestJob,
   type ParseMode,
   SOURCE_UPLOAD_CONCURRENCY,
+  sourceCompression,
   splitSourceWave,
-  withUploadRetry,
 } from './sourceUpload';
 
 export type SourceProvider = 'google' | 'microsoft';
@@ -37,6 +42,7 @@ export type SourceProvider = 'google' | 'microsoft';
  * file's own status (parsing, ready, failed) comes from the files cache. */
 export type TransferStage =
   | 'waiting'
+  | 'compressing'
   | 'uploading'
   | 'importing'
   | 'added'
@@ -67,6 +73,7 @@ interface TransferRequest {
 }
 
 export interface LocalTransferRequest extends TransferRequest {
+  durationSeconds?: number;
   estimatedCreditMicros: number;
   file: File;
   pageCount?: number;
@@ -83,8 +90,14 @@ type StartTransfer = {
   uploadSource: ReturnType<typeof useUploadSource>['mutateAsync'];
   workspaceId: string;
 } & (
-  | { local: LocalTransferRequest[]; remote?: never }
-  | { local?: never; remote: RemoteTransferRequest[] }
+  | {
+      /** The uploader's caps the browser compresses to and checks before
+       * sending (Epo 2026-10-24). */
+      limits: Pick<SourceUploadPolicy, 'imageMaxBytes' | 'maxBytes'>;
+      local: LocalTransferRequest[];
+      remote?: never;
+    }
+  | { limits?: never; local?: never; remote: RemoteTransferRequest[] }
 );
 
 interface TransferState {
@@ -100,6 +113,8 @@ export const useSourceTransfers = create<TransferState>(() => ({
 }));
 
 const running = new Set<AbortController>();
+/** Each row's own cancel while its transfer runs (removeSourceTransfer). */
+const rowAborts = new Map<string, AbortController>();
 
 function patchTransfer(key: string, patch: Partial<SourceTransfer>) {
   useSourceTransfers.setState((state) => ({
@@ -118,6 +133,18 @@ function releaseUnsent(count: number) {
 /** Hides the panel. Running transfers keep going; their rows are gone. */
 export function dismissSourceTransfers() {
   useSourceTransfers.setState({ transfers: [] });
+}
+
+/** Removes one row, cancelling its upload (Epo 2026-10-22): a file not yet
+ * sent is never sent and counts as removed in its batch at once, one waiting in the gateway's line
+ * gives its ticket back as removed, so its place goes to the next file, and
+ * an upload in flight is aborted (the gateway counts it failed). An import
+ * already queued on the server keeps going, and a finished row only hides. */
+export function removeSourceTransfer(key: string) {
+  rowAborts.get(key)?.abort(uploadRemoved);
+  useSourceTransfers.setState((state) => ({
+    transfers: state.transfers.filter((transfer) => transfer.key !== key),
+  }));
 }
 
 /** Stops every transfer, for the mock scenario reset. */
@@ -143,9 +170,24 @@ export function sourceImportFailureReason(code: string) {
     case 'provider_download_refused':
       return m.source_import_file_unavailable();
     case 'invalid_name':
-      return m.source_import_invalid_name();
+      return m.source_import_invalid_name({ max: FILE_NAME_CHARACTER_LIMIT });
     case 'source_import_cancelled':
       return m.source_import_cancelled();
+    // Its pictures ran past the import's time limit (Q363).
+    case 'import_too_slow':
+      return m.source_import_too_slow();
+    // The import worker's image checks (Epo 2026-10-24).
+    case 'office_image_too_large':
+      return m.error_office_image_too_large_title();
+    case 'office_vector_image':
+    case 'office_image_unsupported':
+      return m.error_office_picture_unsupported_title();
+    case 'office_unreadable':
+      return m.error_office_unreadable_title();
+    case 'source_image_too_large':
+      return m.error_source_image_too_large_title();
+    case 'image_unreadable':
+      return m.source_image_unreadable();
     case 'import_result_missing':
     case 'invalid_import_response':
     case 'unknown_import_status':
@@ -158,9 +200,11 @@ export function sourceImportFailureReason(code: string) {
 /** Short reason for a panel row and the merged toast: import codes by their
  * own copy, everything else by the app-wide error title. */
 function transferFailureReason(error: unknown) {
-  return error instanceof SourceImportFailedError
-    ? sourceImportFailureReason(error.code)
-    : describeError(error).title;
+  if (error instanceof SourceImportFailedError)
+    return sourceImportFailureReason(error.code);
+  // A refusal the browser makes before sending: its own copy.
+  if (error instanceof CopyError) return error.message;
+  return describeError(error).title;
 }
 
 /** One error toast per submission: each failure adds its file name under its
@@ -237,6 +281,18 @@ export function startSourceTransfer(start: StartTransfer) {
   const controller = new AbortController();
   const { signal } = controller;
   running.add(controller);
+  // A row's transfer stops with the whole transfer or its own remove (a
+  // listener rather than AbortSignal.any, which Safari has only from 17.4).
+  for (const request of requests) {
+    const row = new AbortController();
+    signal.addEventListener('abort', () => row.abort(signal.reason), {
+      once: true,
+    });
+    rowAborts.set(request.key, row);
+  }
+  function rowSignal(key: string) {
+    return rowAborts.get(key)?.signal ?? signal;
+  }
   const toastFailure = failureToast(
     `source-transfer-failed-${crypto.randomUUID()}`
   );
@@ -260,6 +316,17 @@ export function startSourceTransfer(start: StartTransfer) {
 
   // One notification batch for the whole submission.
   const batchId = crypto.randomUUID();
+  /** Counts a file the user removed before the server heard of it as removed
+   * in the batch, so its notification does not wait for the idle sweep. */
+  function countRemoved(cancel: AbortSignal) {
+    if (cancel.reason !== uploadRemoved) return;
+    api
+      .post(`/workspaces/${workspaceId}/sources/batches/${batchId}/removed`, {
+        source: start.local ? 'upload' : 'import',
+        total: requests.length,
+      })
+      .catch(() => undefined);
+  }
   let unsent = requests.length;
   function sent() {
     unsent -= 1;
@@ -267,7 +334,7 @@ export function startSourceTransfer(start: StartTransfer) {
   }
 
   function fail(key: string, name: string, error: unknown) {
-    if (signal.aborted) return;
+    if (signal.aborted || rowAborts.get(key)?.signal.aborted) return;
     trackQuotaBlocked(error, 'upload');
     const reason = transferFailureReason(error);
     patchTransfer(key, { error: reason, stage: 'failed' });
@@ -275,7 +342,24 @@ export function startSourceTransfer(start: StartTransfer) {
     if (!deferStorageRefusal(error)) toastFailure(name, reason);
   }
 
-  async function sendLocal(local: LocalTransferRequest[]) {
+  /** Tells the user how many pictures nothing can show left a file (Epo
+   * 2026-10-24, Q337). */
+  function picturesRemovedToast(name: string, count: number) {
+    if (count > 0)
+      userToast({
+        description:
+          count === 1
+            ? m.source_pictures_removed_body_one()
+            : m.source_pictures_removed_body({ count }),
+        title: m.source_pictures_removed({ name }),
+        variant: 'warning',
+      });
+  }
+
+  async function sendLocal(
+    local: LocalTransferRequest[],
+    limits: Pick<SourceUploadPolicy, 'imageMaxBytes' | 'maxBytes'>
+  ) {
     let remaining = local;
     while (remaining.length > 0 && !signal.aborted) {
       const { wave, rest } = splitSourceWave(
@@ -290,35 +374,70 @@ export function startSourceTransfer(start: StartTransfer) {
         wave,
         SOURCE_UPLOAD_CONCURRENCY,
         async (request) => {
-          patchTransfer(request.key, { stage: 'uploading' });
+          const cancel = rowSignal(request.key);
+          // Whether the server holds the upload's ticket, whose give-back
+          // then counts a removed file.
+          let ticketed = false;
           try {
-            const file = await withUploadRetry(() =>
-              start.uploadSource({
-                batchId,
-                batchTotal: requests.length,
-                chapterId: request.chapterId,
-                chapterName: request.chapterName,
-                estimatedCreditMicros: request.estimatedCreditMicros,
-                file: request.file,
-                kind: request.kind,
-                onQueued: (queuePosition) =>
-                  patchTransfer(request.key, { queuePosition }),
-                onUploadProgress: (uploadPct) =>
-                  patchTransfer(request.key, { uploadPct }),
-                pageCount: request.pageCount,
-                parseMode: request.parseMode,
-                signal,
-              })
-            );
+            if (cancel.aborted) {
+              countRemoved(cancel);
+              return;
+            }
+            // Compressed first; the per-file cap applies to what is sent.
+            let picked = request.file;
+            let removed = 0;
+            const compression = sourceCompression(request.name, request.kind);
+            if (compression) {
+              patchTransfer(request.key, { stage: 'compressing' });
+              ({ file: picked, removed } = await compressSource(
+                { compression, file: picked, ...limits },
+                (uploadPct) => patchTransfer(request.key, { uploadPct }),
+                cancel
+              ));
+            }
+            if (picked.size > limits.maxBytes)
+              throw new CopyError(
+                m.source_files_too_large({
+                  mb: Math.round(limits.maxBytes / 1024 / 1024),
+                })
+              );
+            patchTransfer(request.key, {
+              name: picked.name,
+              stage: 'uploading',
+              uploadPct: 0,
+            });
+            // An upload past the upload rate class waits in the gateway's
+            // line (queuePosition); the browser never retries one (Q282).
+            const file = await start.uploadSource({
+              batchId,
+              batchTotal: requests.length,
+              chapterId: request.chapterId,
+              chapterName: request.chapterName,
+              durationSeconds: request.durationSeconds,
+              estimatedCreditMicros: request.estimatedCreditMicros,
+              file: picked,
+              kind: request.kind,
+              onQueued: (queuePosition) => {
+                ticketed = true;
+                patchTransfer(request.key, { queuePosition });
+              },
+              onUploadProgress: (uploadPct) =>
+                patchTransfer(request.key, { uploadPct }),
+              pageCount: request.pageCount,
+              parseMode: request.parseMode,
+              signal: cancel,
+            });
             patchTransfer(request.key, {
               fileId: file.id,
               stage: 'added',
               uploadPct: 100,
             });
+            picturesRemovedToast(picked.name, removed);
             if (needsIngestJob(request.name, request.kind, request.parseMode)) {
               waits.push(waitForFileTerminal(workspaceId, file.id, signal));
             }
           } catch (error) {
+            if (!ticketed) countRemoved(cancel);
             fail(request.key, request.name, error);
           } finally {
             sent();
@@ -339,10 +458,13 @@ export function startSourceTransfer(start: StartTransfer) {
       jobId,
       // Mock imports give up sooner, so a pending scenario reaches the
       // background state.
-      USE_MSW ? { maxWaitMilliseconds: 12_000, signal } : { signal }
+      USE_MSW
+        ? { maxWaitMilliseconds: 12_000, signal: rowSignal(key) }
+        : { signal: rowSignal(key) }
     ).then(
-      (fileId) => {
-        patchTransfer(key, { fileId, stage: 'added' });
+      ({ fileId, name: stored, removedPictures }) => {
+        patchTransfer(key, { fileId, name: stored, stage: 'added' });
+        picturesRemovedToast(stored, removedPictures);
         void queryClient.invalidateQueries({ queryKey: qk.files(workspaceId) });
       },
       (error: unknown) => {
@@ -368,32 +490,59 @@ export function startSourceTransfer(start: StartTransfer) {
         wave,
         SOURCE_UPLOAD_CONCURRENCY,
         async (request) => {
+          const cancel = rowSignal(request.key);
+          if (cancel.aborted) {
+            countRemoved(cancel);
+            sent();
+            return;
+          }
           patchTransfer(request.key, { stage: 'importing' });
           // One id per request, so the request retries below stay idempotent.
           const requestId = crypto.randomUUID();
+          // Whether the server may hold the item: an attempt was sent and not
+          // refused with a status the server leaves uncounted (408, 429,
+          // 5xx). A removal while it may be held is not counted here, since
+          // the server counts the import itself.
+          let held = false;
           let accepted: SourceImportAcceptedResponse;
           try {
             accepted = await withSourceImportRequestRetry(
-              async () =>
-                parseSourceImportAcceptedResponse(
-                  await start.importSources({
-                    batchId,
-                    batchTotal: requests.length,
-                    chapterId: request.chapterId,
-                    chapterName: request.chapterName,
-                    ...(request.driveId ? { driveIds: [request.driveId] } : {}),
-                    fileIds: [request.fileId],
-                    parseMode: request.parseMode,
-                    provider: request.provider,
-                    requestId,
-                    signal,
-                  }),
-                  request.fileId
-                ),
+              async () => {
+                held = true;
+                try {
+                  return parseSourceImportAcceptedResponse(
+                    await start.importSources({
+                      batchId,
+                      batchTotal: requests.length,
+                      chapterId: request.chapterId,
+                      chapterName: request.chapterName,
+                      ...(request.driveId
+                        ? { driveIds: [request.driveId] }
+                        : {}),
+                      fileIds: [request.fileId],
+                      parseMode: request.parseMode,
+                      provider: request.provider,
+                      requestId,
+                      signal: cancel,
+                    }),
+                    request.fileId
+                  );
+                } catch (error) {
+                  if (
+                    isApiError(error) &&
+                    (error.status === 408 ||
+                      error.status === 429 ||
+                      error.status >= 500)
+                  )
+                    held = false;
+                  throw error;
+                }
+              },
               undefined,
-              signal
+              cancel
             );
           } catch (error) {
+            if (!held) countRemoved(cancel);
             fail(request.key, request.name, error);
             return;
           } finally {
@@ -441,7 +590,11 @@ export function startSourceTransfer(start: StartTransfer) {
     }
   }
 
-  void (start.local ? sendLocal(start.local) : sendRemote(start.remote))
+  void (
+    start.local
+      ? sendLocal(start.local, start.limits)
+      : sendRemote(start.remote)
+  )
     .catch((error: unknown) => {
       // An unexpected runner error would otherwise leave rows spinning.
       const keys = requests.map((request) => request.key);
@@ -459,6 +612,7 @@ export function startSourceTransfer(start: StartTransfer) {
     })
     .finally(() => {
       running.delete(controller);
+      for (const request of requests) rowAborts.delete(request.key);
       if (unsent > 0) releaseUnsent(unsent);
     });
 }

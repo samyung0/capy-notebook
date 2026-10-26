@@ -195,9 +195,11 @@ peer's 8,000-cell paste (1,000 rows by 8 columns from the fixture's cell) and
 row insert (a whole recalculation) straight to the runtime as host updates;
 the XLSX engine in Node (the fork's loader) makes each from the fixture and
 its room's state under its own client id, so the room never sees them. Then
-it pastes the same block from the clipboard and runs Insert › Row above as a
-menu command: per operation the longest and summed long tasks and the delay
-to the painted grid. `typing while a peer pastes and inserts a row` types
+it pastes the same block one row on from the clipboard, so every cell
+changes, and runs Insert › Row above as a menu command: per operation the
+longest and summed long tasks and the delay to the painted grid (a peer's)
+or until the formula bar shows the result (the user's; the paste keeps its
+top-left cell active). `typing while a peer pastes and inserts a row` types
 twenty values with Enter into the gradebook's column while the same kind of
 updates arrive, checks the selection walked on by twenty and every value is
 in its cell, and reports the typing span and the long tasks meanwhile.
@@ -255,6 +257,19 @@ run); run it by hand when MathLive is upgraded. It uses the editor e2e seed
 (`VITE_E2E_EDITOR_SEED`, [`playwright.formula.config.ts`](../bench/editor/scripts/playwright.formula.config.ts))
 and writes each case's captures and the geometry JSON to the gitignored
 `bench/editor/.results/formula-parity/`. No workflow runs it.
+
+## Mermaid rendering (`node bench/editor/scripts/mermaid-probe.mjs`)
+
+Mermaid draws in a Web Worker (see
+[frontend/plate-editor.md](frontend/plate-editor.md)), so the page's main
+thread only sanitizes and inserts the SVG. With the app's dev server running,
+`node bench/editor/scripts/mermaid-probe.mjs` (`MERMAID_PROBE_URL`) draws the
+near-limit flowchart and mindmap (`src/mocks/nearLimits.ts`) on the page, as
+before the worker, and in the worker, at 1x and 4x CPU throttle, and prints the
+longest main-thread task and frame gap. CDP throttles the page's thread only:
+a device 4x slower also draws 4x slower in the worker, which puts the
+near-limit flowchart past the 30 s render limit there. No budget gates it.
+Numbers: [2026-10-22-mermaid-worker.md](../bench/editor/reports/2026-10-22-mermaid-worker.md).
 
 ## Collaboration stress (`pnpm bench:stress`)
 
@@ -466,6 +481,8 @@ First dispatch has nothing to diff. That is expected. After that, GHA-vs-GHA
 only. Do not check in a laptop JSON.
 
 You can dispatch from any branch. Baselines are not automatically `main`.
+`share_pages` is the exception: its `uat` environment admits only `main`, so
+on another branch GitHub rejects that job before it starts.
 
 ## What the relative table includes
 

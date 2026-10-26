@@ -44,9 +44,9 @@ const selectTriggerVariants = cva(
     },
     variants: {
       // At the end of a SettingRow: the sharing tab's 144px on phones, long
-      // values ellipsized (the list shows them whole); 224px from sm.
+      // values ellipsized (the list shows them whole); 176px from sm.
       layout: {
-        row: 'w-36 shrink-0 sm:w-56',
+        row: 'w-36 shrink-0 sm:w-44',
       },
       size: {
         // Same heights as Button md and Input md.

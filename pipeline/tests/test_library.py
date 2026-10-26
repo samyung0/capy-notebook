@@ -338,7 +338,7 @@ async def test_the_last_page_of_an_excerpt_names_its_neighbours_in_the_book(
     assert (await library.read_excerpt("e_worked", count=1)).following is None, (
         "only the last page"
     )
-    ctx = tools.ToolContext(workspace_id="ws", library=True)
+    ctx = tools.ToolContext(workspace_id="ws")
     text = (
         await tools._read_knowledge(
             {"excerpt_id": "e_worked", "start": 2, "count": 1}, ctx

@@ -11,7 +11,7 @@ import { Card } from '../ui/Card';
 import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
 import { IconButton } from '../ui/IconButton';
 import { LogoMark } from '../ui/Logo';
-import { ProfileMenu } from './ProfileMenu';
+import { ProfileMenu, ProfileRow } from './ProfileMenu';
 import { SearchDialog } from './SearchDialog';
 
 interface NavItem {
@@ -75,15 +75,6 @@ function tools(): NavItem[] {
     { icon: 'filesNav', label: m.nav_files(), to: '/files' },
     ...(features.tasks
       ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
-      : []),
-    ...(features.thinking
-      ? [
-          {
-            icon: 'notes' as IconName,
-            label: m.nav_thinking(),
-            to: '/thinking',
-          },
-        ]
       : []),
   ];
 }
@@ -175,7 +166,8 @@ const NOTIFICATIONS = '/notifications';
 /**
  * The app nav. With `account` it also carries search and notifications under
  * the app name and, at its foot, your profile row, which opens the profile
- * menu (Settings, Billing, Theme, Log out).
+ * menu (Settings, Billing, Theme, Log out); in the phone drawer the row links
+ * to account settings and has its own Log out button instead.
  *
  * `rail` is the 640–1023px sidebar: the same rows clipped to 70px, where a
  * row's icon already sits at the rail's centre, without section labels. On
@@ -294,11 +286,15 @@ export function Sidebar({
             onNavigate={onNavigate}
           />
         ))}
-        {withAccount && (
-          <div className="flex flex-col">
-            <ProfileMenu trigger="row" />
-          </div>
-        )}
+        {withAccount &&
+          (onNavigate ? (
+            // The phone drawer: a link to account settings and Log out.
+            <ProfileRow onNavigate={onNavigate} />
+          ) : (
+            <div className="flex flex-col">
+              <ProfileMenu trigger="row" />
+            </div>
+          ))}
       </div>
     </nav>
   );

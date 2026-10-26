@@ -1,5 +1,7 @@
 import 'fake-indexeddb/auto';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { parseHTML } from 'linkedom';
+import { act, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { api } from '@/api/client';
@@ -9,12 +11,14 @@ import type {
   OperationReceipt,
   ResourceEffect,
 } from '@/api/types';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { localUndoPayload } from '@/lib/localDb';
 import { keepUndoPayloads, undoPayload } from '@/lib/undoPayloads';
 import { ChatTrace, type UndoHandlers } from './ChatTrace';
 
-// No DOM: each render records the buttons' props, and the test calls onClick.
+// Each render records the buttons' props, and the test calls onClick; a
+// mounted trace (linkedom, set before react-dom/client loads, the locale
+// first) shows their labels.
 const buttons = vi.hoisted(
   () => [] as { children?: unknown; onClick?: () => void }[]
 );
@@ -22,9 +26,15 @@ vi.mock('@/components/ui/Button', async (original) => ({
   ...(await original<typeof import('@/components/ui/Button')>()),
   Button: (props: (typeof buttons)[number]) => {
     buttons.push(props);
-    return null;
+    return <button type="button">{props.children as ReactNode}</button>;
   },
 }));
+getLocale();
+const { document, window } = parseHTML(
+  '<!doctype html><html><body><div id="root"></div></body></html>'
+);
+Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
+const { createRoot } = await import('react-dom/client');
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -41,13 +51,13 @@ const payload = (operationId: string) => ({
   updates: { content: 'dW5kbw==' },
 });
 
-/** The Undo button of an edit's receipt, if it shows one. */
-function maybeUndoButton(handlers: UndoHandlers, id: string) {
+/** An edit's receipt in a finished turn. */
+function trace(handlers: UndoHandlers, id: string, expiresAt?: string) {
   const edit: ResourceEffect = {
     operation: 'edited',
     operationId: id,
     resource: { id: 'mat_1', kind: 'material', title: 'Cells' },
-    undo: { operationId: id, status: 'available' },
+    undo: { expiresAt, operationId: id, status: 'available' },
   };
   const msg = {
     activity: [
@@ -68,12 +78,21 @@ function maybeUndoButton(handlers: UndoHandlers, id: string) {
     role: 'assistant',
     status: 'complete',
   } as ChatMessage;
-  buttons.length = 0;
-  renderToStaticMarkup(
+  return (
     <QueryClientProvider client={new QueryClient()}>
       <ChatTrace handlers={handlers} live={false} mode="verbose" msg={msg} />
     </QueryClientProvider>
   );
+}
+
+/** The Undo button of an edit's receipt, if it shows one. */
+function maybeUndoButton(
+  handlers: UndoHandlers,
+  id: string,
+  expiresAt?: string
+) {
+  buttons.length = 0;
+  renderToStaticMarkup(trace(handlers, id, expiresAt));
   return buttons.find(({ children }) => children === m.chat_undo_edit())
     ?.onClick;
 }
@@ -87,6 +106,33 @@ function undoButton(handlers: UndoHandlers, id: string) {
 const handlers = () => ({
   onUndoApplied: vi.fn(),
   onUndoRefused: vi.fn(),
+});
+
+it('hides an Undo 24 h after its edit (Q385)', () => {
+  keepUndoPayloads([payload('op_fresh'), payload('op_expired')]);
+  const now = Date.now();
+  const soon = new Date(now + 60_000).toISOString();
+  const past = new Date(now - 1).toISOString();
+  expect(maybeUndoButton(handlers(), 'op_fresh', soon)).toBeDefined();
+  expect(maybeUndoButton(handlers(), 'op_expired', past)).toBeUndefined();
+});
+
+it('hides a mounted Undo when its 24 h end (Q385)', async () => {
+  keepUndoPayloads([payload('op_mounted')]);
+  vi.useFakeTimers();
+  try {
+    const end = new Date(Date.now() + 60_000).toISOString();
+    const root = createRoot(document.getElementById('root') as never);
+    await act(async () => root.render(trace(handlers(), 'op_mounted', end)));
+    expect(document.body.textContent).toContain(m.chat_undo_edit());
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(document.body.textContent).not.toContain(m.chat_undo_edit());
+    await act(async () => root.unmount());
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('sends one Undo, with its payload, for two clicks while the first is out', async () => {

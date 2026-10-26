@@ -22,7 +22,12 @@ import { userToast } from '@/components/ui/userToast';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import type { FlashcardContent } from '@/features/materials/blocks';
+import {
+  RemovedAssetsContext,
+  useRemovedAssets,
+} from '@/features/materials/MediaAssetView';
 import { blockHomeCrumb } from '@/features/quizzes/crumbs';
+import { useChapterNames } from '@/features/study/useChapterNames';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -45,6 +50,7 @@ function Study({ setId }: { setId: string }) {
     fetchStatus: setFetchStatus,
     isFetchedAfterMount: setFetched,
     error: setError,
+    refetch: refetchSet,
   } = useFlashcardSet(setId, { errorBoundary: 'unlessMissing', fresh: true });
   const {
     data: cards,
@@ -62,10 +68,12 @@ function Study({ setId }: { setId: string }) {
   const { data: workspace } = useWorkspace(set?.workspaceId ?? '', {
     errorBoundary: false,
   });
+  const chapter = useChapterNames(set?.workspaceId)(setId);
   const frozen = useAccountFrozen();
   const navigate = useNavigate();
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  const removed = useRemovedAssets(set?.removedAssetIds, refetchSet);
 
   if (setFetchStatus === 'paused' || cardsFetchStatus === 'paused') {
     return (
@@ -89,77 +97,80 @@ function Study({ setId }: { setId: string }) {
     );
 
   return (
-    <StudyBody
-      actions={
-        !set.canEdit &&
-        !set.parentMaterialId &&
-        (!set.workspaceId || workspace?.canClone) && (
-          <>
-            <Button
-              disabled={frozen}
-              iconLeft="plus"
-              onClick={() => setCloning(true)}
-              rounded="large"
-              size="sm"
-              variant="outline"
-            >
-              {m.action_clone_flashcards()}
-            </Button>
-            {cloning && (
-              <CloneItemDialog
-                item={{
-                  id: set.id,
-                  kind: 'flashcards',
-                  name: set.name,
-                  type: 'material',
-                  workspaceId: set.workspaceId,
-                }}
-                onClose={() => setCloning(false)}
-              />
-            )}
-          </>
-        )
-      }
-      cards={liveCards}
-      frame={PagePanel}
-      name={set.name}
-      onBack={() =>
-        canGoBack
-          ? router.history.back()
-          : void navigate({ search: { tab: 'blocks' }, to: '/files' })
-      }
-      onFinished={(total) =>
-        track('flashcards_study_finished', {
-          cardCountBucket: cardCountBucket(total),
-          source: flashcardsStudySource(window.location.pathname),
-        })
-      }
-      onRate={(card, rating, attempt) =>
-        // Every reader records their own progress, except in a set embedded in
-        // a note, which records nothing; the server keeps the attempt for a
-        // workspace set. One toast however many ratings fail in a row.
-        !set.parentMaterialId &&
-        rateItem({
-          attempt,
-          itemId: card.id,
-          materialId: setId,
-          rating: SRS_RATINGS.indexOf(rating) + 1,
-        }).catch(() =>
-          userToast({
-            id: 'flashcard-review-failed',
-            title: m.flashcards_review_failed(),
-            variant: 'error',
+    <RemovedAssetsContext.Provider value={removed}>
+      <StudyBody
+        actions={
+          !set.canEdit &&
+          !set.parentMaterialId &&
+          (!set.workspaceId || workspace?.canClone) && (
+            <>
+              <Button
+                disabled={frozen}
+                iconLeft="plus"
+                onClick={() => setCloning(true)}
+                rounded="large"
+                size="sm"
+                variant="outline"
+              >
+                {m.action_clone_flashcards()}
+              </Button>
+              {cloning && (
+                <CloneItemDialog
+                  item={{
+                    id: set.id,
+                    kind: 'flashcards',
+                    name: set.name,
+                    type: 'material',
+                    workspaceId: set.workspaceId,
+                  }}
+                  onClose={() => setCloning(false)}
+                />
+              )}
+            </>
+          )
+        }
+        cards={liveCards}
+        chapter={chapter}
+        frame={PagePanel}
+        name={set.name}
+        onBack={() =>
+          canGoBack
+            ? router.history.back()
+            : void navigate({ search: { tab: 'blocks' }, to: '/files' })
+        }
+        onFinished={(total) =>
+          track('flashcards_study_finished', {
+            cardCountBucket: cardCountBucket(total),
+            source: flashcardsStudySource(window.location.pathname),
           })
-        )
-      }
-      provenance={set.provenance}
-      trail={[blockHomeCrumb(set)]}
-      usePrevious={
-        set.workspaceId && !set.parentMaterialId
-          ? usePreviousAttempt
-          : undefined
-      }
-    />
+        }
+        onRate={(card, rating, attempt) =>
+          // Every reader records their own progress, except in a set embedded in
+          // a note, which records nothing; the server keeps the attempt for a
+          // workspace set. One toast however many ratings fail in a row.
+          !set.parentMaterialId &&
+          rateItem({
+            attempt,
+            itemId: card.id,
+            materialId: setId,
+            rating: SRS_RATINGS.indexOf(rating) + 1,
+          }).catch(() =>
+            userToast({
+              id: 'flashcard-review-failed',
+              title: m.flashcards_review_failed(),
+              variant: 'error',
+            })
+          )
+        }
+        provenance={set.provenance}
+        trail={[blockHomeCrumb(set)]}
+        usePrevious={
+          set.workspaceId && !set.parentMaterialId
+            ? usePreviousAttempt
+            : undefined
+        }
+      />
+    </RemovedAssetsContext.Provider>
   );
 }
 

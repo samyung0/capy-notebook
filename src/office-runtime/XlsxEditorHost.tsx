@@ -1,4 +1,5 @@
 import {
+  type AwarenessCursor,
   type AwarenessPeer,
   type CollaborationAwareness,
   colorForClientId,
@@ -33,6 +34,7 @@ import { type CursorChannel, mappedPeers } from './officePresence';
 import type {
   OfficeCaptureScope,
   OfficeMenuReporter,
+  OfficePositioner,
   OfficeRenderer,
   OfficeThumbnailer,
 } from './runtimeMenus';
@@ -48,7 +50,10 @@ import './xlsx-runtime.css';
 
 /** The XLSX editor's presence over the frame's cursor channel: co-editors'
  * cell ranges under the names Capy gives them. */
-function xlsxAwareness(channel: CursorChannel): CollaborationAwareness {
+function xlsxAwareness(
+  channel: CursorChannel,
+  onOwn: (cursor: AwarenessCursor | null) => void
+): CollaborationAwareness {
   const peers = mappedPeers(channel, (peer): AwarenessPeer | null =>
     'sheet' in peer.cursor
       ? {
@@ -71,7 +76,10 @@ function xlsxAwareness(channel: CursorChannel): CollaborationAwareness {
     get peers() {
       return peers();
     },
-    setCursor: (cursor) => channel.send(cursor),
+    setCursor: (cursor) => {
+      onOwn(cursor);
+      channel.send(cursor);
+    },
   };
 }
 
@@ -84,6 +92,7 @@ export function XlsxEditorHost({
   onFlusher,
   onMenus,
   onNotice,
+  onPositioner,
   onRenderer,
   narrow,
   onPendingChange,
@@ -109,6 +118,7 @@ export function XlsxEditorHost({
   onMenus: OfficeMenuReporter;
   /** An edit past the engine's update cap, or a copy past its ceiling: nothing changed. */
   onNotice: (notice: OfficeNotice) => void;
+  onPositioner: (positioner: OfficePositioner | null) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onPendingChange: (pending: boolean) => void;
   fileName: string;
@@ -127,10 +137,14 @@ export function XlsxEditorHost({
   sending?: boolean;
 }) {
   const apiRef = useRef<XlsxEditorApi | null>(null);
+  // The editor's own selection, as it tells the room.
+  const ownCursor = useRef<AwarenessCursor | null>(null);
   const editorCollaboration = useMemo(
     () => ({
       ...collaboration,
-      provider: xlsxAwareness(collaboration.cursors),
+      provider: xlsxAwareness(collaboration.cursors, (cursor) => {
+        ownCursor.current = cursor;
+      }),
     }),
     [collaboration]
   );
@@ -163,6 +177,26 @@ export function XlsxEditorHost({
     });
   }, [commandState, locale, onMenus]);
   useEffect(() => () => onMenus(null), [onMenus]);
+  // A room swap (Epo 2026-10-22): the sheet, by id, and its selected cells.
+  useEffect(() => {
+    onPositioner({
+      read: () => {
+        const cursor = ownCursor.current;
+        return cursor && { format: 'xlsx', ...cursor };
+      },
+      show: (position) => {
+        const api = apiRef.current;
+        if (!api || position.format !== 'xlsx') return;
+        const sheet = api.sheetInfo()?.sheetIds.indexOf(position.sheet) ?? -1;
+        if (sheet >= 0)
+          void api.selectCells(sheet, {
+            anchor: position.anchor,
+            focus: position.head,
+          });
+      },
+    });
+    return () => onPositioner(null);
+  }, [onPositioner]);
   const zoom = commandState?.zoom;
   useEffect(() => {
     if (zoom) onZoomChange(zoom);

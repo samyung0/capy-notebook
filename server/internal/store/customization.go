@@ -15,9 +15,9 @@ func (c Customization) Validate() error {
 	f := c.PageFrame
 	ok := slices.Contains([]string{"classroom", "notion"}, c.Style) &&
 		slices.Contains([]string{"latte", "frappe", "mocha"}, c.Theme) &&
-		slices.Contains([]string{"none", "arc", "mesh", "glow", "painted", "waves", "contours"}, f.Pattern) &&
+		slices.Contains([]string{"none", "arc", "mesh", "glow"}, f.Pattern) &&
 		slices.Contains([]string{"dusk", "sea", "meadow", "rose", "sunset", "wheat", "mist", "custom"}, f.Colours) &&
-		len(f.Dots) >= 1 && len(f.Dots) <= 3 && unit(f.Strength) && unit(f.Grain)
+		len(f.Dots) >= 1 && len(f.Dots) <= 3 && unit(f.Strength)
 	for _, d := range f.Dots {
 		ok = ok && unit(d.X) && unit(d.Y)
 	}

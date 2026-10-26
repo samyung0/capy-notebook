@@ -8,6 +8,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/ratelimit"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -27,8 +29,9 @@ import (
 type chatStreamReq struct {
 	ConversationID string `json:"conversationId"`
 	Text           string `json:"text"`
-	// Library is the per-turn switch: the shared knowledge library is a source.
-	Library bool `json:"library"`
+	// WorkspaceOnly is the per-message switch: on, only the workspace's files
+	// and materials are sources (Epo 2026-10-24).
+	WorkspaceOnly bool `json:"workspaceOnly"`
 	// OpenResource is the file or material the learner has open, if any.
 	OpenResource *chatOpenResource `json:"openResource"`
 }
@@ -41,6 +44,12 @@ type chatOpenResource struct {
 const (
 	chatQueryMaxEstimatedTokens = 8192
 	chatQueryMaxBytes           = 65_536
+	// chatStreamBodyMaxBytes bounds the request body before it is decoded: the
+	// longest allowed message escaped as JSON fits with room to spare.
+	chatStreamBodyMaxBytes = 128 << 10
+	// chatStreamDeadline bounds how long one relay of a turn (chat or an
+	// editor AI command) stays open.
+	chatStreamDeadline = time.Hour
 )
 
 func estimateChatQueryTokens(text string) int {
@@ -69,8 +78,8 @@ func chatQueryTooLong(text string) bool {
 
 // pipeChatEvent is one event line from the Python retrieval service.
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
-// tool_end | citations | checkpoint | turn_checkpoint | pending_sources | done |
-// error.
+// tool_progress | tool_end | citations | checkpoint | turn_checkpoint |
+// pending_sources | done | error.
 type pipeChatEvent struct {
 	Type          string                      `json:"type"`
 	SentryEventID string                      `json:"sentryEventId,omitempty"`
@@ -91,6 +100,8 @@ type pipeChatEvent struct {
 	UndoPayloads      []json.RawMessage     `json:"undoPayloads,omitempty"`
 	StartedAt         string                `json:"startedAt,omitempty"` // tool_start
 	EndedAt           string                `json:"endedAt,omitempty"`   // tool_end
+	Applied           *int                  `json:"applied,omitempty"`   // tool_progress; tool_end with commands unapplied
+	Total             *int                  `json:"total,omitempty"`     // pointers so 0 survives
 	Citations         []store.Citation      `json:"citations,omitempty"`
 	Version           int                   `json:"version,omitempty"`
 	TokenCount        int                   `json:"tokenCount,omitempty"`
@@ -126,8 +137,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req chatStreamReq
-	if err := decode(r, &req); err != nil {
-		a.fail(w, err)
+	if err := decodeBoundedJSON(w, r, &req, chatStreamBodyMaxBytes); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{
+				"code": "query_too_long", "message": "The message is too long. Shorten it and try again.",
+			})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid chat request"})
 		return
 	}
 	if chatQueryTooLong(req.Text) {
@@ -141,6 +159,8 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
+	// The relay outlives the server's timeouts; the turn itself is detached.
+	extendDeadlines(w, chatStreamDeadline)
 	// A turn outlives its browser connection, and runs no periodic check:
 	// only a stop request or the pipeline's own bounds end it early, and lost
 	// permission surfaces through each tool call's own check (Epo 2026-10-21).
@@ -195,7 +215,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := a.s.AddUserMessage(ctx, userID, conv.ID, req.Text); err != nil {
+	if _, err := a.s.AddUserMessage(ctx, userID, conv.ID, req.Text, req.WorkspaceOnly); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -240,8 +260,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		"modelDisplayName": cfg.DisplayName(),
 	})
 
-	// library.read is granted per turn with the Library switch, to any role
-	// that can chat; writing from it still needs the role's write operations.
+	// library.read is granted to any role that can chat, whatever the
+	// Workspace only switch says: the pipeline answers the library tools as
+	// unavailable while it is on, so the offered tools never change with it.
+	// Writing from the library still needs the role's write operations.
 	operations := agenttools.OperationsForRole(string(access.role))
 	turn.role = string(access.role)
 	if access.readOnly || access.full {
@@ -253,48 +275,64 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				(access.readOnly && op == agenttools.OpTrashRestore)
 		})
 	}
-	if req.Library {
-		operations = append(operations, agenttools.OpLibraryRead)
-	}
+	operations = append(operations, agenttools.OpLibraryRead)
 
-	streamErr := a.relayChat(pipeCtx, userID, operations, conv, turn, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
-		run.mu.Lock()
-		forward := run.state.hear(ev)
-		activity, toolEvidence := run.state.activity, run.state.toolEvidence
-		run.mu.Unlock()
-		switch ev.Type {
-		case "checkpoint":
-			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := a.s.PersistCheckpoint(cpCtx, conv.ID, store.ConversationCheckpoint{
-				ThroughMessageID: ev.ThroughMessageID,
-				Summary:          ev.Summary,
-				ProviderSlug:     ev.ProviderSlug,
-				ModelSlug:        ev.ModelSlug,
-				ModelVersion:     ev.ModelVersion,
-				EstimatedTokens:  ev.EstimatedTokens,
-			}); err != nil {
-				log.Printf("persist checkpoint conv=%s: %v", conv.ID, err)
+	// A send its AI buckets admit within ratelimit.MaxWait waits here, shown
+	// to the browser as the waiting_limit phase (a stop ends the wait); past
+	// the wait the turn ends with the limiter's refusal.
+	var streamErr error
+	if wait := ratelimit.PendingWait(r.Context()); wait != nil {
+		send(pipeChatEvent{Type: "phase", Phase: "waiting_limit"})
+		var refusal *ratelimit.Refusal
+		if err := wait(pipeCtx); errors.As(err, &refusal) {
+			streamErr = &chatEventError{
+				Code: refusal.Code, Message: "too many requests",
+				RetryAfterSeconds: max(int(math.Ceil(refusal.RetryAfter.Seconds())), 1),
 			}
-			cpCancel()
-		case "turn_checkpoint":
-			// Saved on the streaming row so a crash of this process keeps the
-			// turn so far too (Epo 2026-10-21).
-			cpCtx, cpCancel := obs.Detach(ctx, 5*time.Second)
-			if err := a.s.CheckpointAssistantMessage(cpCtx, assistant.ID, activity, toolEvidence); err != nil {
-				log.Printf("persist turn checkpoint msg=%s: %v", assistant.ID, err)
-			}
-			cpCancel()
-		case "pending_sources":
-			// Viewers never learn that sources have pending edits.
-			forward = access.canEdit
-			if ev.Omitted != nil && *ev.Omitted {
-				a.notifyPendingOverflow(ctx, wsID, ev.FileIDs)
-			}
+		} else if err != nil {
+			streamErr = err
 		}
-		if forward {
-			send(withinUndoLimit(ev))
-		}
-	})
+	}
+	if streamErr == nil {
+		streamErr = a.relayChat(pipeCtx, userID, operations, conv, turn, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+			run.mu.Lock()
+			forward := run.state.hear(ev)
+			activity, toolEvidence := run.state.activity, run.state.toolEvidence
+			run.mu.Unlock()
+			switch ev.Type {
+			case "checkpoint":
+				cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := a.s.PersistCheckpoint(cpCtx, conv.ID, store.ConversationCheckpoint{
+					ThroughMessageID: ev.ThroughMessageID,
+					Summary:          ev.Summary,
+					ProviderSlug:     ev.ProviderSlug,
+					ModelSlug:        ev.ModelSlug,
+					ModelVersion:     ev.ModelVersion,
+					EstimatedTokens:  ev.EstimatedTokens,
+				}); err != nil {
+					log.Printf("persist checkpoint conv=%s: %v", conv.ID, err)
+				}
+				cpCancel()
+			case "turn_checkpoint":
+				// Saved on the streaming row so a crash of this process keeps the
+				// turn so far too (Epo 2026-10-21).
+				cpCtx, cpCancel := obs.Detach(ctx, 5*time.Second)
+				if err := a.s.CheckpointAssistantMessage(cpCtx, assistant.ID, activity, toolEvidence); err != nil {
+					log.Printf("persist turn checkpoint msg=%s: %v", assistant.ID, err)
+				}
+				cpCancel()
+			case "pending_sources":
+				// Viewers never learn that sources have pending edits.
+				forward = access.canEdit
+				if ev.Omitted != nil && *ev.Omitted {
+					a.notifyPendingOverflow(ctx, wsID, ev.FileIDs)
+				}
+			}
+			if forward {
+				send(withinUndoLimit(ev))
+			}
+		})
+	}
 
 	saveCtx, cancel := obs.Detach(ctx, 10*time.Second)
 	defer cancel()
@@ -364,11 +402,11 @@ func withinUndoLimit(ev pipeChatEvent) pipeChatEvent {
 }
 
 // chatTurn is the trusted per-turn context the pipeline receives beside the
-// query: the Library switch, the open item as stored (never the browser's
+// query: the Workspace only switch, the open item as stored (never the browser's
 // title), whether study progress is on for the requester here, and their
 // study preferences.
 type chatTurn struct {
-	library bool
+	workspaceOnly bool
 	// The requester's workspace role, said on the turn context's open line.
 	role             string
 	openResource     map[string]string
@@ -377,7 +415,7 @@ type chatTurn struct {
 }
 
 func (a *api) chatTurnContext(ctx context.Context, userID, wsID string, req chatStreamReq) (chatTurn, error) {
-	turn := chatTurn{library: req.Library}
+	turn := chatTurn{workspaceOnly: req.WorkspaceOnly}
 	if o := req.OpenResource; o != nil && o.ID != "" {
 		title, found, err := a.s.ChatOpenResource(ctx, wsID, o.Kind, o.ID)
 		if err != nil {
@@ -445,6 +483,9 @@ func (a *api) relayChat(
 		if len(m.ToolEvidence) > 0 {
 			row["toolEvidence"] = m.ToolEvidence
 		}
+		if m.WorkspaceOnly != nil {
+			row["workspaceOnly"] = *m.WorkspaceOnly
+		}
 		history = append(history, row)
 	}
 	body := map[string]any{
@@ -457,7 +498,7 @@ func (a *api) relayChat(
 		"assistantMessageId": assistantID,
 		"spendSessionId":     spendSessionID,
 		"locale":             a.userLocale(ctx, userID),
-		"library":            turn.library,
+		"workspaceOnly":      turn.workspaceOnly,
 		"openResource":       turn.openResource,
 		"role":               turn.role,
 		"studyProgress":      turn.studyProgress,

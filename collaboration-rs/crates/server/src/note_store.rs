@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use crate::access::{self, AccessError};
 use crate::model::Model;
+use crate::sessions;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -247,7 +248,9 @@ pub async fn load(
 }
 
 /// One store: rechecks every contributor in the snapshot, then appends the
-/// row and advances `stored_version`. Returns the new version.
+/// row and advances `stored_version`, with the note sessions' changed rows
+/// (`sessions.rs`) in the same transaction, so a held deletion is durable
+/// with the state that holds it. Returns the new version.
 pub async fn append(
     pool: &Pool,
     material_id: &str,
@@ -255,11 +258,17 @@ pub async fn append(
     doc: Doc,
     row: &[u8],
     actors: &[String],
+    sessions: &sessions::Unsaved,
 ) -> Result<i64, StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
-    access::lock_boundary(&tx, material_id, actors).await?;
+    // The sessions' users are locked with the accounts, in their order,
+    // before the material (review r2 M2); none of them refuses the store.
+    let mut session_users: Vec<String> = sessions.rows.iter().map(|row| row.user.clone()).collect();
+    session_users.sort();
+    session_users.dedup();
+    access::lock_boundary(&tx, material_id, actors, &session_users).await?;
     // Frozen is enforced at admission, so updates already admitted save even
     // if their writer froze since; a writer must still hold its role.
     for actor in actors {
@@ -267,7 +276,11 @@ pub async fn append(
     }
     let current = tx
         .query(
-            "SELECT room_schema, stored_version FROM material_yjs_documents WHERE material_id=$1 FOR UPDATE",
+            // No key update: a client id's first-write insert checks its key
+            // against this row (FOR KEY SHARE) and may race the sessions'
+            // write below, so a stronger lock would deadlock with it (review
+            // r2 M1).
+            "SELECT room_schema, stored_version FROM material_yjs_documents WHERE material_id=$1 FOR NO KEY UPDATE",
             &[&material_id],
         )
         .await?;
@@ -279,8 +292,162 @@ pub async fn append(
     }
     let version = current.get::<_, i64>("stored_version") + 1;
     append_row(&tx, doc, material_id, version, row).await?;
+    save_sessions(&tx, material_id, sessions).await?;
     tx.commit().await?;
     Ok(version)
+}
+
+/// A note's sessions as stored (`sessions.rs`): those seen within the cap,
+/// the ids whose records were lost, and the agent holds. A session record
+/// that cannot be read is dropped alone (Q382, Epo 2026-10-26): its row is
+/// written lost (`sessions::LOST`, its tab late when it returns, Q385) and
+/// the caller reports it; agent holds that cannot be read are dropped and
+/// reported too, and the note loads (Q386, Epo 2026-10-26).
+pub async fn load_sessions(
+    pool: &Pool,
+    material_id: &str,
+) -> Result<(sessions::Sessions, sessions::Damaged), StoreError> {
+    let client = pool.get().await?;
+    let rows = client
+        .query(
+            "SELECT client_id, user_id, acked_version, seen_at, held FROM material_yjs_client_ids
+             WHERE material_id=$1 AND document='content' AND NOT expired
+               AND seen_at > now() - make_interval(hours => $2)",
+            &[
+                &material_id,
+                &((sessions::COUNTED_FOR.as_secs() / 3600) as i32),
+            ],
+        )
+        .await?;
+    let lost = client
+        .query(
+            "SELECT client_id FROM material_yjs_client_ids
+             WHERE material_id=$1 AND document='content' AND acked_version=$2",
+            &[&material_id, &sessions::LOST],
+        )
+        .await?;
+    let agent: Option<Vec<u8>> = client
+        .query_opt(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material_id],
+        )
+        .await?
+        .and_then(|row| row.get(0));
+    let (sessions, damaged) = sessions::Sessions::load(
+        rows.iter().map(|row| {
+            (
+                row.get::<_, i64>(0) as u64,
+                row.get(1),
+                row.get(2),
+                row.get(3),
+                row.get(4),
+            )
+        }),
+        lost.iter().map(|row| row.get::<_, i64>(0) as u64),
+        agent,
+    );
+    if !damaged.sessions.is_empty() {
+        let clients: Vec<i64> = damaged.sessions.iter().map(|&id| id as i64).collect();
+        client
+            .execute(
+                "UPDATE material_yjs_client_ids SET acked_version=$3, seen_at=NULL, held=NULL
+                 WHERE material_id=$1 AND document='content' AND client_id = ANY($2)",
+                &[&material_id, &clients, &sessions::LOST],
+            )
+            .await?;
+    }
+    Ok((sessions, damaged))
+}
+
+/// Writes what changed of a note's sessions beside their client ids'
+/// records, in one statement (review r1 L2): a live session's version and
+/// last seen, its held deletions only when they changed (review r2 L4), an
+/// ended one's cleared (the record's row is made if its first write's has
+/// not landed yet), and the agent holds when they changed. Never for an
+/// account whose deletion began or ended (review r1 L5): a store locked the
+/// live ones first (`lock_boundary`'s bystanders), so a purge waits for it
+/// and then deletes what it wrote; the unload write (`save_sessions_now`)
+/// only leaves out the accounts whose deletion began before its statement
+/// (review r3 N2).
+pub(crate) async fn save_sessions(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    unsaved: &sessions::Unsaved,
+) -> Result<(), StoreError> {
+    if !unsaved.rows.is_empty() {
+        let (mut clients, mut users, mut versions, mut seen, mut changed, mut held) = (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        for row in &unsaved.rows {
+            clients.push(row.client);
+            users.push(row.user.as_str());
+            versions.push(row.version);
+            seen.push(row.seen);
+            changed.push(row.held_changed);
+            held.push(row.held.as_deref());
+        }
+        tx.execute(
+            "INSERT INTO material_yjs_client_ids
+               (material_id, document, client_id, user_id, acked_version, seen_at, held)
+             SELECT $1, 'content', r.client, r.user_id, r.version, r.seen, r.held
+             FROM unnest($2::bigint[], $3::text[], $4::bigint[], $5::timestamptz[],
+                         $6::boolean[], $7::bytea[])
+               AS r(client, user_id, version, seen, changed, held)
+             JOIN users u ON u.id = r.user_id
+               AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+             ON CONFLICT (material_id, document, client_id) DO UPDATE
+             SET acked_version=EXCLUDED.acked_version, seen_at=EXCLUDED.seen_at,
+                 held=CASE WHEN (SELECT changed FROM unnest($2::bigint[], $6::boolean[])
+                                   AS c(client, changed) WHERE c.client=EXCLUDED.client_id)
+                      THEN EXCLUDED.held ELSE material_yjs_client_ids.held END
+             WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
+            &[
+                &material_id,
+                &clients,
+                &users,
+                &versions,
+                &seen,
+                &changed,
+                &held,
+            ],
+        )
+        .await?;
+    }
+    if let Some(agent) = &unsaved.agent {
+        tx.execute(
+            "UPDATE material_yjs_documents SET agent_held=$2 WHERE material_id=$1",
+            &[&material_id, agent],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// The sessions' rows when a note room unloads (the acknowledgements and
+/// departures after its last store): best effort, since older rows only
+/// count a session for less long or at an older version.
+pub async fn save_sessions_now(
+    pool: &Pool,
+    material_id: &str,
+    unsaved: &sessions::Unsaved,
+) -> Result<(), StoreError> {
+    let mut client = pool.get().await?;
+    let tx = client.transaction().await?;
+    // The document row first, as a store takes it (review r2 L5); the
+    // users are filtered, not locked, so no account lock follows it.
+    tx.execute(
+        "SELECT 1 FROM material_yjs_documents WHERE material_id=$1 FOR NO KEY UPDATE",
+        &[&material_id],
+    )
+    .await?;
+    save_sessions(&tx, material_id, unsaved).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Appends `row` as version `version` of `doc` under the caller's lock: the
@@ -433,6 +600,16 @@ pub async fn reset_lineage(
             &[&material_id, &schema],
         )
         .await?;
+    // The old lineage's sessions end with it: their tabs never rejoin this
+    // one (review r2 L3).
+    if moved > 0 {
+        tx.execute(
+            "UPDATE material_yjs_client_ids SET seen_at=NULL, held=NULL
+             WHERE material_id=$1 AND document='content'",
+            &[&material_id],
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(moved > 0)
 }
@@ -564,294 +741,4 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
         kind,
         keys,
     }))
-}
-
-/// A lineage compaction candidate.
-pub struct Candidate {
-    pub material_id: String,
-    pub schema: i64,
-    pub bytes: i64,
-    pub kind: String,
-}
-
-/// Idle rooms whose stored bytes (base + log) passed
-/// `max(floor, materials.size_bytes × multiplier)` and whose projection is
-/// current: lineage compaction candidates, oldest first, less `skip` (quizzes
-/// found unrebuildable, which would otherwise hold the head of the queue).
-pub async fn compaction_candidates(
-    pool: &Pool,
-    idle_seconds: f64,
-    floor: i64,
-    multiplier: i64,
-    limit: i64,
-    skip: &[String],
-) -> Result<Vec<Candidate>, StoreError> {
-    let client = pool.get().await?;
-    let rows = client
-        .query(
-            "SELECT d.material_id, d.room_schema, (octet_length(d.state) + d.log_bytes)::bigint AS bytes, m.kind
-             FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
-             WHERE d.updated_at < now() - make_interval(secs => $1)
-               AND d.projected_version = d.stored_version
-               AND octet_length(d.state) + d.log_bytes >= GREATEST($2, m.size_bytes * $3)
-               AND NOT d.material_id = ANY($5)
-             ORDER BY d.updated_at LIMIT $4",
-            &[&idle_seconds, &floor, &multiplier, &limit, &skip],
-        )
-        .await?;
-    Ok(rows
-        .iter()
-        .map(|row| Candidate {
-            material_id: row.get("material_id"),
-            schema: i64::from(row.get::<_, i32>("room_schema")),
-            bytes: row.get("bytes"),
-            kind: row.get("kind"),
-        })
-        .collect())
-}
-
-/// A quiz's content and keys states.
-type QuizStates = (Vec<u8>, Vec<u8>);
-
-/// A quiz's two documents replayed from their base and log each.
-fn replayed_quiz(
-    content: (&[u8], &[Vec<u8>]),
-    keys: (&[u8], &[Vec<u8>]),
-) -> Result<(yrs::Doc, yrs::Doc), StoreError> {
-    let replay = |(base, rows): (&[u8], &[Vec<u8>])| {
-        let doc = ydoc::scratch_doc();
-        ydoc::replay(&doc, base, rows).map_err(|error| StoreError::Other(error.to_string()))?;
-        Ok::<_, StoreError>(doc)
-    };
-    Ok((replay(content)?, replay(keys)?))
-}
-
-/// Whether neither document holds a block this version cannot read, which a
-/// rebuild would drop.
-fn readable_quiz(content: &yrs::Doc, keys: &yrs::Doc) -> bool {
-    use yrs::Transact;
-    !items::quiz::holds_unknown_block(&content.transact())
-        && !items::quiz::holds_unknown_block(&keys.transact())
-}
-
-/// A quiz's two documents rebuilt from what they hold (base and log each):
-/// every question as typed with its keys, complete or not, since the
-/// projection keeps only the complete ones (Epo 2026-10-14). `None` when
-/// either holds a block this version cannot read ([readable_quiz]).
-fn rebuilt_quiz(
-    content: (&[u8], &[Vec<u8>]),
-    keys: (&[u8], &[Vec<u8>]),
-) -> Result<Option<QuizStates>, StoreError> {
-    use yrs::Transact;
-    let (content, keys) = replayed_quiz(content, keys)?;
-    if !readable_quiz(&content, &keys) {
-        return Ok(None);
-    }
-    let value = items::quiz::editor_value(&content.transact(), &keys.transact());
-    Ok(Some(items::quiz::states_from_value(&value, 0)))
-}
-
-/// A quiz's content and keys logs through `stored` and its keys base, read
-/// with `lock` (` FOR UPDATE` or empty) on the keys row.
-async fn quiz_logs(
-    tx: &Transaction<'_>,
-    material_id: &str,
-    stored: i64,
-    lock: &str,
-) -> Result<(Vec<Vec<u8>>, Vec<u8>, Vec<Vec<u8>>), StoreError> {
-    let updates = |rows: Vec<(i64, Vec<u8>)>| rows.into_iter().map(|(_, update)| update).collect();
-    let log = updates(rows(tx, material_id, Some(stored)).await?);
-    let found = tx
-        .query(
-            &format!("SELECT state FROM material_yjs_keys WHERE material_id=$1{lock}"),
-            &[&material_id],
-        )
-        .await?;
-    let Some(keys) = found.first() else {
-        return Err(StoreError::Other("quiz keys document missing".into()));
-    };
-    let key_log = updates(doc_rows(tx, Doc::Keys, material_id, Some(stored)).await?);
-    Ok((log, keys.get("state"), key_log))
-}
-
-/// Whether compaction could rebuild this quiz now ([readable_quiz]), read
-/// without locks or the eviction lease so its readers stay connected when it
-/// cannot. A missing document counts as rebuildable: [compact] decides.
-pub async fn quiz_rebuildable(pool: &Pool, material_id: &str) -> Result<bool, StoreError> {
-    let mut client = pool.get().await?;
-    let tx = client.transaction().await?;
-    let found = tx
-        .query(
-            "SELECT stored_version, state FROM material_yjs_documents WHERE material_id=$1",
-            &[&material_id],
-        )
-        .await?;
-    let Some(row) = found.first() else {
-        return Ok(true);
-    };
-    let base: Vec<u8> = row.get("state");
-    let (log, key_base, key_log) =
-        quiz_logs(&tx, material_id, row.get("stored_version"), "").await?;
-    let (content, keys) = replayed_quiz((&base, &log), (&key_base, &key_log))?;
-    Ok(readable_quiz(&content, &keys))
-}
-
-/// Lineage compaction: rebuilds the document under the next room schema
-/// (fresh item identities, so earlier agent edits lose their Undo) from its
-/// projection, or a quiz from its own two documents ([rebuilt_quiz]). `None`
-/// when the room moved or its projection lags.
-pub async fn compact(
-    pool: &Pool,
-    material_id: &str,
-    schema: i64,
-) -> Result<Option<(String, i64)>, StoreError> {
-    let mut client = pool.get().await?;
-    let tx = client.transaction().await?;
-    access::lock_material(&tx, material_id).await?;
-    let found = tx
-        .query(
-            "SELECT room_schema, stored_version, projected_version, state FROM material_yjs_documents
-             WHERE material_id=$1 FOR UPDATE",
-            &[&material_id],
-        )
-        .await?;
-    let Some(row) = found.first() else {
-        return Ok(None);
-    };
-    let stored: i64 = row.get("stored_version");
-    if i64::from(row.get::<_, i32>("room_schema")) != schema
-        || stored != row.get::<_, i64>("projected_version")
-    {
-        return Ok(None);
-    }
-    let content = tx
-        .query(
-            "SELECT content, kind FROM materials WHERE id=$1 FOR UPDATE",
-            &[&material_id],
-        )
-        .await?;
-    let Some(content) = content.first() else {
-        return Err(StoreError::Other("material not found".into()));
-    };
-    let kind: String = content.get("kind");
-    let (state, keys) = if kind == "quiz" {
-        let base: Vec<u8> = row.get("state");
-        let (log, key_base, key_log) = quiz_logs(&tx, material_id, stored, " FOR UPDATE").await?;
-        match rebuilt_quiz((&base, &log), (&key_base, &key_log))? {
-            Some((content, keys)) => (content, Some(keys)),
-            None => return Ok(None),
-        }
-    } else {
-        let content: Value = content.get("content");
-        let value = envelope_value(&content)?;
-        (Model::of(&kind).state_from_value(value), None)
-    };
-    let next_schema = i32::try_from(schema + 1)
-        .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
-    tx.execute(
-        "UPDATE material_yjs_documents
-         SET room_schema=$2, state=$3, stored_version=$4, projected_version=$4, log_bytes=0, log_rows=0,
-             projection_error=NULL, updated_at=now(), projected_at=now()
-         WHERE material_id=$1",
-        &[&material_id, &next_schema, &state, &(stored + 1)],
-    )
-    .await?;
-    tx.execute(
-        "DELETE FROM material_yjs_updates WHERE material_id=$1",
-        &[&material_id],
-    )
-    .await?;
-    if let Some(keys) = keys {
-        tx.execute(
-            "UPDATE material_yjs_keys SET state=$2, log_bytes=0, log_rows=0 WHERE material_id=$1",
-            &[&material_id, &keys],
-        )
-        .await?;
-        tx.execute(
-            "DELETE FROM material_yjs_key_updates WHERE material_id=$1",
-            &[&material_id],
-        )
-        .await?;
-    }
-    tx.commit().await?;
-    Ok(Some((
-        format!("material:{material_id}:schema:{next_schema}"),
-        state.len() as i64,
-    )))
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used)]
-
-    use serde_json::{Value, json};
-    use yrs::{ReadTxn, StateVector, Transact};
-
-    use super::rebuilt_quiz;
-
-    fn question(id: &str, text: &str, answer: Value) -> Value {
-        json!({
-            "id": id, "labels": "letters", "layout": "paper", "stem": [],
-            "parts": [{
-                "id": format!("{id}p1"), "marks": 1,
-                "blocks": [{ "type": "text", "text": text }],
-                "answer": answer,
-                "solution": [{ "type": "text", "text": "" }],
-            }],
-        })
-    }
-
-    fn quiz(questions: &[Value]) -> Vec<Value> {
-        let children: Vec<Value> = questions
-            .iter()
-            .map(|q| json!({ "type": "quiz_question", "id": q["id"], "question": q, "children": [{ "text": "" }] }))
-            .collect();
-        vec![json!({ "type": "quiz", "id": "quiz", "children": children })]
-    }
-
-    fn doc(base: &[u8], rows: &[Vec<u8>]) -> yrs::Doc {
-        let doc = ydoc::scratch_doc();
-        ydoc::replay(&doc, base, rows).unwrap();
-        doc
-    }
-
-    /// Compaction keeps a quiz's incomplete questions and their keys (Epo
-    /// 2026-10-14): an mcq with no correct option, typed into the log after
-    /// the base, whose part text and solution are blank, survives the
-    /// rebuild with its options, while the projection drops it. Fails if the
-    /// rebuild reads from the projection or loses a blank block or a key.
-    #[test]
-    fn a_quiz_rebuild_keeps_its_incomplete_questions_and_their_keys() {
-        let complete = question("q1", "True?", json!({ "type": "boolean", "correct": true }));
-        let (base, key_base) =
-            items::quiz::states_from_value(&quiz(std::slice::from_ref(&complete)), 0);
-        let (content, keys) = (doc(&base, &[]), doc(&key_base, &[]));
-        let incomplete = question(
-            "q2",
-            "",
-            json!({ "type": "mcq", "options": ["", "Paris"], "correct": [] }),
-        );
-        let (before, key_before) = (
-            content.transact().state_vector(),
-            keys.transact().state_vector(),
-        );
-        {
-            let (mut content, mut keys) = (content.transact_mut(), keys.transact_mut());
-            items::quiz::set_questions(&mut content, &mut keys, &[complete, incomplete]).unwrap();
-        }
-        let typed = |doc: &yrs::Doc, since: &StateVector| doc.transact().encode_diff_v1(since);
-        let (row, key_row) = (typed(&content, &before), typed(&keys, &key_before));
-
-        let typed_value = items::quiz::editor_value(&content.transact(), &keys.transact());
-        let projected = items::quiz::value(&content.transact(), &keys.transact());
-        assert_eq!(items::quiz::questions_from_value(&projected).len(), 1);
-
-        let (state, key_state) = rebuilt_quiz((&base, &[row]), (&key_base, &[key_row]))
-            .unwrap()
-            .unwrap();
-        let (content, keys) = (doc(&state, &[]), doc(&key_state, &[]));
-        let rebuilt = items::quiz::editor_value(&content.transact(), &keys.transact());
-        assert_eq!(rebuilt, typed_value);
-        assert_eq!(items::quiz::questions_from_value(&rebuilt).len(), 2);
-    }
 }

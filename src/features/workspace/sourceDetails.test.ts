@@ -21,19 +21,49 @@ describe('unified source details', () => {
       [new Uint8Array(sourceUploadPolicy.maxBytes + 1)],
       'large.pdf'
     );
+    const atCap = new File(
+      [new Uint8Array(sourceUploadPolicy.maxBytes)],
+      'full.pdf'
+    );
 
     const result = validateLocalSourceSelection(
-      [accepted, unsupported, oversized],
+      [accepted, unsupported, oversized, atCap],
       sourceUploadPolicy
     );
 
     expect(result.accepted.map((item) => item.file.name)).toEqual([
       'notes.pdf',
       'archive.exe',
+      'full.pdf',
     ]);
     expect(
       result.rejected.map((item) => [item.file.name, item.reason])
     ).toEqual([['large.pdf', 'file_too_large']]);
+  });
+
+  it('accepts a picture or Office pick over the cap for compression, up to 256 MB', () => {
+    // Q345 (review S11): a larger one is never read whole into a worker.
+    const sized = (name: string, size: number) => {
+      const file = new File(['x'], name);
+      Object.defineProperty(file, 'size', { value: size });
+      return file;
+    };
+    const cap = sourceUploadPolicy.maxBytes;
+    const result = validateLocalSourceSelection(
+      [
+        sized('deck.pptx', cap + 1),
+        sized('photo.jpg', 256 * 1024 * 1024),
+        sized('huge.pptx', 256 * 1024 * 1024 + 1),
+      ],
+      sourceUploadPolicy
+    );
+    expect(result.accepted.map((item) => item.file.name)).toEqual([
+      'deck.pptx',
+      'photo.jpg',
+    ]);
+    expect(
+      result.rejected.map((item) => [item.file.name, item.reason])
+    ).toEqual([['huge.pptx', 'file_too_large']]);
   });
 
   it('totals analyzed text and OCR pages for the dialog summary', () => {

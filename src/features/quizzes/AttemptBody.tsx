@@ -6,10 +6,11 @@ import {
   useRef,
   useState,
 } from 'react';
-import { isAnonymousGradingLimit } from '@/api/anonymous';
+import { captchaCopy, isAnonymousGradingLimit } from '@/api/anonymous';
 import type { Provenance, Question } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
+import { InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type {
@@ -76,12 +77,17 @@ function stillAnswers(before: AnyPart, after: AnyPart, value: Answer): boolean {
 const EmbeddedBody = ({ children }: { children: ReactNode }) => (
   <div>{children}</div>
 );
+/** A page's body, running to the wide gutter. */
+const WideBody = ({ children }: { children: ReactNode }) => (
+  <TabContent fill>{children}</TabContent>
+);
 /** An attempt graded on the server: its questions with their keys and each
  * part's award, and the marks over the quiz's total. */
 export type Graded = { questions: Question[]; awarded: number; max: number };
 
 export function AttemptBody({
   actions,
+  belowSubmit,
   byline,
   embedded,
   emptyAction,
@@ -97,6 +103,9 @@ export function AttemptBody({
   trail,
 }: {
   actions?: ReactNode;
+  /** Under Submit while taking the quiz: the shared pages' Turnstile
+   * challenge (Q372). */
+  belowSubmit?: ReactNode;
   /** The owner, on shared links. */
   byline?: ReactNode;
   /** Inside a note: no header, frame or page padding; the note around it
@@ -124,12 +133,13 @@ export function AttemptBody({
   trail: Crumb[];
 }) {
   const Shell = frame ?? NoFrame;
-  const Body = embedded ? EmbeddedBody : TabContent;
+  const Body = embedded ? EmbeddedBody : WideBody;
   const [answers, setAnswers] = useState<Answers>({});
   const [startedAt, setStartedAt] = useState(() => new Date().toISOString());
   const [graded, setGraded] = useState<Graded | null>(null);
   const [minutes, setMinutes] = useState<string>();
   const [grading, setGrading] = useState(false);
+  const [checkError, setCheckError] = useState<string>();
   const setAnswer = useCallback(
     (partId: string, value: Answer) =>
       setAnswers((current) => ({ ...current, [partId]: value })),
@@ -193,6 +203,7 @@ export function AttemptBody({
 
   async function finish() {
     setGrading(true);
+    setCheckError(undefined);
     try {
       const result = await grade(answers, startedAt);
       const pct = result.max > 0 ? (result.awarded / result.max) * 100 : 0;
@@ -203,6 +214,11 @@ export function AttemptBody({
       setGraded(result);
       onGraded?.(answers, result);
     } catch (err) {
+      const captcha = captchaCopy(err);
+      if (captcha) {
+        setCheckError(captcha);
+        return;
+      }
       if (isAnonymousGradingLimit(err)) {
         toastSignInRequired(
           m.quiz_anonymous_limit_title(),
@@ -311,6 +327,8 @@ export function AttemptBody({
             {grading ? m.quiz_grading() : m.quiz_submit()}
           </Button>
         </div>
+        {belowSubmit}
+        {checkError && <InputError className="mt-2">{checkError}</InputError>}
         {footer}
         <SourcesLine
           className={embedded ? 'mt-3' : 'mt-16 pb-4'}

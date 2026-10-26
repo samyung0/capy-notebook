@@ -15,6 +15,7 @@ type (
 	WorkspaceName        string
 	WorkspaceDescription string
 	ChapterName          string
+	StudyPlanName        string
 	FileName             string
 	MaterialTitle        string
 	ConversationTitle    string
@@ -26,6 +27,7 @@ type (
 	Email                string
 	UserName             string
 	LLMAPIKey            string
+	CommentText          string
 )
 
 func withMax(s *huma.Schema, max int) *huma.Schema {
@@ -41,6 +43,9 @@ func (WorkspaceDescription) TransformSchema(_ huma.Registry, s *huma.Schema) *hu
 }
 func (ChapterName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.ChapterName)
+}
+func (StudyPlanName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	return withMax(s, fieldlimits.StudyPlanName)
 }
 func (FileName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.FileName)
@@ -74,6 +79,9 @@ func (UserName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 }
 func (LLMAPIKey) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.LLMAPIKey)
+}
+func (CommentText) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	return withMax(s, fieldlimits.Comment)
 }
 
 // Str dereferences an optional bounded field.

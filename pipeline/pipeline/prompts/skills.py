@@ -5,6 +5,7 @@ call. ``retrieval/skills.py`` offers them; Epo tunes this text in the playground
 
 from __future__ import annotations
 
+from ..retrieval.contract import OFFICE_SHAPE_TEXT
 from ..retrieval.limits import WRITE_ERROR_GRACE, WRITE_ERROR_GRACE_MAX
 
 EDITING_WHEN = (
@@ -24,19 +25,18 @@ OFFICE_BUILDING_WHEN = (
 )
 
 # The general guideline for every write (Epo 2026-10-14): the build plan, the
-# quiz, flashcards, mindmap and diagram formats, and how to edit. A note's and
+# quiz and flashcards formats, and how to edit; no Mermaid (Epo 2026-10-25). A note's and
 # a deck's own instructions are note_building and deck_building.
 _EDITING = f"""How to write to the workspace: build study materials, add to them and edit files.
 
 Plan:
-- Ask before building only when the request lacks the learning scope or the learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question. Otherwise build directly, following the study preferences.
-- Survey first with read-only tools: list_sources, and the library when it is a source this turn.
-- Search where the need is: the workspace for the learner's own material, the library for textbook explanations, examples and exercises.
+- You MUST ALWAYS identify the requirement first before building: the learning scope and learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question.
 
 What to build:
 - Each chapter gets one main explainer, a note or a deck as the output-files preference says; note_building or deck_building says how to write it.
-- Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id in the turn context.
-- Make other materials, a standalone mindmap or diagram included, as the study preferences and what teaching the chapter needs say.
+- Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id from list_sources.
+- Always add images. Images catch the learner's attention and make ideas easier to explain. A picture need not carry the explanation itself; it only needs to be relevant. Make an image that is likely decorative, such as a logo or an icon, smaller.
+- For a request to learn a chapter or topic, make other materials as the study preferences and what teaching it needs say. A request that names one material (a short note, a quiz) gets only that, with the knowledge checks the preferences put inside notes.
 - Follow the study preferences in the turn context unless the request says otherwise.
 
 Budget:
@@ -49,24 +49,23 @@ Precautions:
 - After you read a document you see its most recent changes. Edits not yet in search show up as hints with the user's message, and a search passage whose document has newer edits says so: read that document before relying on the passage.
 - In a note, change plain wording with replace_text. Rewrite a block that has formatting or math ($…$ in inspect_document) with replace_block, writing the whole block as note markdown (a heading keeps its #).
 - Keep changes other people made to a document unless the learner asks otherwise.
-- Edit the learner's own source files only when asked. Such an edit takes no excerpt_ids.
+- Be careful about editing existing files. Edit the learner's own source files only when asked. Such an edit takes no excerpt_ids.
 
 Quizzes: add_questions writes multiple-choice, short-answer and open (written-answer, with a markscheme) questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; options are shown shuffled, so never refer to an option by its letter or position (A, B, "the first", "all of the above") in a question, option or explanation; add_question_media puts a chart, a plot or a library figure under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
 
 Flashcards: cards, a list of {{front, back}}.
 
-Mindmaps and diagrams: content is one ```mermaid fence; edit_document replace_block rewrites it whole, expecting the source inspect shows as its text; its caption, width and theme stay.
-
-When done, answer with the materials made, what each covers and its size, and the work still open."""
+When done, answer briefly on what was made.
+ALWAYS read the document again to see if you need to adjust the visuals to meet the user preferences."""
 
 # Reading, editing and creating Office files (Epo 2026-10-20): required for
 # every Office read and write, and what offers the two Office tools.
-_OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and PowerPoint (PPTX) files with inspect_office_document and edit_office_document.
+_OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and PowerPoint (PPTX) files with inspect_office_document and edit_office_document. Editing or creating one also needs the editing skill: read it with read_skill before the first edit_office_document call.
 
 Read:
 - XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
-- DOCX: paragraphs with their target ids, each with its style (unless the default) and list, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines; they take replace_text only. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an anchor. The first page lists the paragraph styles by id and name.
-- PPTX: shapes with their target ids and text, count at a time from start.
+- DOCX: paragraphs with their target ids, each with its style (unless the default) and list, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines; they take replace_text only. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an anchor. The first page lists the paragraph styles by id and name. A command copies an id whole, as the read shows it.
+- PPTX: without slide, the slides count at a time from start, each with its layout and its first shapes (id, kind, placeholder type, first line of text) and how many more it holds; the first page lists the deck's layouts. With slide (its number), that slide's shapes and paragraphs count at a time from start, each shape with its name and box in points from the slide's top left corner and then its paragraphs with their target ids, levels and table cells; the first page also gives the slide's speaker notes, cut past a length with a marker. A shape marked equation takes no edits.
 
 Edit, one file a call; one stale expectation refuses the whole call:
 - set_range writes a rectangle of cells: expected holds the range's inputs exactly as the read shows them ("" for an empty cell), values the new inputs ("=..." for a formula, "" to clear), both in the range's shape.
@@ -78,18 +77,26 @@ Edit, one file a call; one stale expectation refuses the whole call:
 - delete_paragraph (DOCX, PPTX) removes one paragraph naming its whole text, never a story's or shape's last. In DOCX the paragraph after it keeps its own id and style, and takes the table the deleted one followed; it refuses a locked paragraph (but one that only follows a table), the paragraph after a table that ends the body or a cell, and one that ends a section.
 - set_list makes paragraphs bulleted or numbered, or ends their list (none, which also ends a list the paragraph's style gives); a document has one bulleted and one numbered list, so numbering continues across them.
 - insert_table adds a table of text, at most 20 rows of 10 cells, after after_id (in call order) or at the body's end; an empty paragraph follows it only where Word needs one (the table ends the body or comes before another table). delete_table names the table's id and its cells' text as rows of cells.
-- format_text formats the one occurrence of expected_text in a paragraph (bold, italic, underline, strikethrough, colour, highlight, size, font); set_alignment aligns one paragraph.
+- format_text (DOCX, PPTX) formats text, its one occurrence in a paragraph (bold, italic, underline, strikethrough, colour, size, font; highlight in DOCX only); set_alignment (DOCX, PPTX) aligns one paragraph.
+- set_shape_text (PPTX) replaces a shape's whole text: expected_text is its paragraphs as the slide read shows them, joined by line breaks; paragraphs is the new text, one string a paragraph (at most {shape_paragraphs}, {shape_characters} characters together). Its paragraphs keep their level and bullet, added ones continue the last. A table's text is edited by paragraph with replace_text, insert_paragraph and delete_paragraph.
+- add_slide (PPTX) adds a slide right after after_slide or right before before_slide, last with neither, holding its layout's title and text placeholders, empty; layout is a layout id from the deck read, by default the layout of the slide it follows. Read the slide afterwards for its placeholders' ids and fill them with set_shape_text. A slide on a blank layout (every slide of a deck made with create_deck) has none: add_text_box puts text on it.
+- add_text_box (PPTX) adds a text box of paragraphs (one string each) at x, y with width w and height h, in points from the slide's top left corner and inside the slide; the slide read gives the slide's size and each shape's box.
+- delete_slide (PPTX) names the slide's text as its slide read shows it, every paragraph one a line in shape order and then its speaker notes as shown, cut marker included (blank lines and the spaces around a line are not compared), and never deletes the deck's only slide; move_slide puts a slide right after after_slide or right before before_slide.
+- A call's later commands cannot name the slides and shapes its earlier ones add: read again for their ids.
 
 Create: a new Excel or Word file is a create command first, without file_id, followed by the commands that fill it; a new Word file's insert_paragraph and insert_table commands omit after_id and build it in order. A deck is made with create_deck (the deck_building skill).
 
-Limits: edit_office_document's description lists a call's limits, per command kind (commands, cells, paragraphs, table cells, formatted spans, list and alignment paragraphs, rows, sheets); past one, the commands before it apply and the rest come back unapplied, by index, to send in another call. A call's commands are at most 256 KB; a larger call is refused, so split it."""
+Limits: edit_office_document's description lists a call's limits, per command kind (commands, cells, paragraphs, table cells, formatted spans, list and alignment paragraphs, rows, sheets, slides, text boxes, shape text); past one, the commands before it apply and the rest come back unapplied, by index, to send in another call. A call's commands are at most 256 KB; a larger call is refused, so split it.""".format(
+    shape_paragraphs=f"{OFFICE_SHAPE_TEXT['paragraphs']:,}",
+    shape_characters=f"{OFFICE_SHAPE_TEXT['characters']:,}",
+)
 
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""
 
 _NOTE_BUILDING = """How to write a note, a chapter's main explainer when the output-files preference says Capy Note.
 
-- Mindmaps, diagrams and interactive blocks go inside the note where they help an idea, as the study preferences say.
+- Images, charts, plots and interactive blocks go inside the note where they help an idea, as the study preferences say.
 - A quiz or flashcards fence inside a note is a knowledge check, sized and placed as the study preferences say.
 - Grow a long note section by section: create it with its first sections, then append each next section with one edit_document insert_markdown command after block "end" rather than rewriting the note.
 
@@ -97,24 +104,25 @@ Note format (create_material content, edit_document insert_markdown and replace_
 
 _BUILDING_LIBRARY = """
 
-Practice from the library:
+Practice from the library (Workspace only off):
 - Use one primary excerpt per section, and keep one book's notation unless another fills a gap you can name.
-- To show a figure read_knowledge listed this turn, put `![caption](figure:<figure id>)` on its own line in a note: the note stores the picture with its printed credit and credits its book. Any other image URL becomes a plain link.
+- To show a figure read_knowledge listed this turn, put `![caption](figure:<figure id>)` on its own line in a note, or `![caption](figure:<figure id> "small")` for a half-width one: the note stores the picture with its printed credit and credits its book. Any other image URL becomes a plain link.
+- Always add images. Images catch the learner's attention and make ideas easier to explain. A picture need not carry the explanation itself; it only needs to be relevant. Make an image that is likely decorative, such as a logo or an icon, small.
 - Reuse library exercises and worked examples before writing new questions. Keep a worked example's question, givens, model and solution together, and never splice numbers from different examples. Label adapted or new practice as such; call it a source exercise only when the source asks it."""
 
 
-def editing(*, library: bool) -> str:
-    return _EDITING + (_EDITING_LIBRARY if library else "")
+def editing() -> str:
+    """The same text in both modes of the Workspace only switch, so a skill
+    replayed from history never changes with it."""
+    return _EDITING + _EDITING_LIBRARY
 
 
 def office_building() -> str:
     return _OFFICE_BUILDING
 
 
-def note_building(formats: dict[str, str], *, library: bool) -> str:
-    return _NOTE_BUILDING.format(note=formats["note"]) + (
-        _BUILDING_LIBRARY if library else ""
-    )
+def note_building(formats: dict[str, str]) -> str:
+    return _NOTE_BUILDING.format(note=formats["note"]) + _BUILDING_LIBRARY
 
 
 def deck_rules(viewbox: str) -> str:
@@ -122,6 +130,7 @@ def deck_rules(viewbox: str) -> str:
     return f"""Write one slide as a single SVG; ppt-master's exporter turns it into native PowerPoint shapes.
 - Root: <svg xmlns="http://www.w3.org/2000/svg" viewBox="{viewbox}" lang="<the deck's BCP-47 language>" data-pptx-page-role="cover|toc|section|content|ending" font-family=... font-size=...>, then a background <rect id="background" data-pptx-role="background" .../>.
 - Every visible part sits in a module: a root-level <g id="..." data-pptx-bounds="x y width height"> whose bounds enclose its children. Modules do not overlap. A checker measures every text line against its module's bounds and the canvas and refuses the slide when text spills out, so write each sentence first, estimate its width from the style's characters-per-100px table, then size the module.
+- Anchor a label inside a box at the box's centre (text-anchor="middle") or right edge (text-anchor="end"), so text near the canvas's right side grows inward. A refused slide moves or reflows its text, or widens its module, before cutting words.
 - Allowed: rect, circle, ellipse, line, polyline, polygon, path, text and tspan, g, defs with linearGradient, and image. Each text has x and y; set font-size, font-weight and fill on it or inherit them from its module. Write raw Unicode; escape & < > as &amp; &lt; &gt;. No style element, class, foreignObject, textPath, filters, animation, script, symbol or use, and no HTML entities.
 - A figure is <image href="../images/c<n>.jpg" x y width height preserveAspectRatio="xMidYMid meet"/> for capture n of this turn, made with a bbox around the figure (its result names n).
 - Write the slide for one audience move (what the student knows before it and after it) and lay its points out by how they relate: order as a numbered sequence, contrast side by side, membership as parallel cards. Use only facts from what you read; the footer names the source."""

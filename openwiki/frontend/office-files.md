@@ -252,7 +252,17 @@ worker lays the updates out as it lays out a keystroke (changed paragraphs
 re-measured, changed pages rebuilt) and answers with a delta of the changed
 pages. Frame requests run one at a time and a burst costs one request in flight
 plus one more; every reply is applied in place, only the newest is rendered,
-and a page whose positions shifted rebuilds its mirror. A request's timeout
+and a page whose positions only shifted keeps its mirror and content-control
+overlay nodes and rewrites their position attributes (`data-doc-start`,
+`data-doc-end`, `data-sdt-pos`) in place; a page with new content rebuilds them.
+Charts, shapes and text boxes are named by their embed's yrs item and block
+content controls by their child story (inline ones by their embed's item), not
+by their position, so text typed before them leaves their layout equal and the
+layout settles after the edited page (Epo 2026-10-24, Q351). A block control's
+widget finds its control by that story. The main thread's position projection
+(display positions to stories and paragraphs) follows typed text in place: one
+transaction that only inserted text into one story moves the positions after
+it, and any other change reads the stories again. A request's timeout
 starts when the worker begins it; a request the worker never starts gives up
 after 60 s. Either way the main thread then takes over, and editing continues on
 the main thread's frames rather than failing the editor. Range and caret queries
@@ -385,16 +395,76 @@ checkpoint receipt and keeps the editor mounted. The workspace keeps the viewer
 under one parent at every breakpoint, since moving an iframe reloads it, so
 resizing never reopens the document. Ordinary metadata refetches do
 not recreate an active editor, and a publication leaves it alone (Deferred
-publication below). Only a maintenance handoff replaces its base: a saved
-editor keeps its current view read-only under a persistent banner that says a
-newer version is available and its changes were saved; the banner's Reload
-button reloads the page, which opens the new epoch with empty Undo/Redo. Starting Edit from a PDF citation creates the editor directly
-without warming the native Office viewer.
+publication below). Only a maintenance handoff (or a discard's epoch reset)
+replaces its base, and a saved editor then swaps renderers instead of showing
+a reload banner (Epo 2026-10-22, the [room swap](#room-swap) below); the new
+epoch opens with empty Undo/Redo. Starting Edit from a PDF citation creates
+the editor directly without warming the native Office viewer.
+
+### Room swap
+
+`OfficeSwap` (`FileViewer.tsx`) keys each view (`DocxView`, `SheetView`,
+`PptxView`, each with its own frame and source session) by generation. When
+the view on screen learns of a newer epoch while saved (`replaced` without the
+maintenance pause: a handoff's `source-epoch-changed` or a token naming
+another epoch), `useOfficeRuntime` reports it (`swap.onReplaced`) and it
+stays as it is, paused (read-only and selectable, as any pause), reporting no
+status any more; a second view opens the new epoch in a slot beside it,
+`invisible absolute inset-0` and `inert`, out of the header but for its status
+(`OfficeSlot` gives it no mode control, menu or header-action targets; the
+replaced view leaves the avatar group and the floating bar's inset to it).
+The header shows the building view's status as a first join's (Epo
+2026-10-23): Reconnecting until it takes the screen (`swap.building`), with a
+slowed open's line; Offline and an error as they come. Any answer settles the build: painted with its
+replica ready, or the server's answer (refused, unavailable, outdated, an
+error, recovery), which then shows in place of the paused view. When nothing
+arrives it waits as a first join does. Every join, first or after a reload,
+has 30 s from its start (Epo 2026-10-23; `RECONNECT_GRACE_MS`, one
+`roomReconnector` watch from `started`, which `useSourceSession` arms before
+its session request): a hung source-session request, a JOIN never answered
+on the open socket, an Office view whose frame never reports its replica
+ready (the join ends at `collaboration-ready`, a text view's at the room's
+first sync), or a dropped connection errors at `onStuck`, which settles the
+build and unmounts the paused view. Offline, and an open waiting on the open
+budget, wait without a timeout, as a first join does. On settling, the host asks the replaced
+frame where its reader is (`position-request`, answered by `position` within
+a second, else nothing) and gives it to the new one (`set-position`, answered
+by `position` once the editor is there, which the swap waits for): DOCX the
+scroll offset, the first body paragraph showing at the top by `w14:paraId`
+(its fragment by first line, from the page mirrors' `data-para-id`) with its
+distance below the top edge, and the selection by paragraph id and offset;
+XLSX the sheet by id and the selected cells; PPTX the slide. Yrs positions are
+not used, since the new epoch has new ones. BetterOffice going read-only and
+a document's first frame never move the view (Epo 2026-10-22; fork
+`layoutPassOrigin`, `shouldScrollCaretIntoView`): a layout pass nobody
+scheduled is laid out as a peer's and a session's first caret pass never
+scrolls, so the paused view (the maintenance pause's too) stays where its
+reader is and answers from there. Reader actions keep the caret in view
+(Epo 2026-10-23): a header or footer save and the hidden-text toggle lay out
+as a local pass, and a resident edit's caret pass counts as local, so forward
+Delete or a collapsed Ctrl+B still brings an off-screen caret into view. The
+DOCX editor sets the selection first, waits two frames for the caret's own
+scroll into view, then sets the scroll offset and, a frame later, puts that
+paragraph back at its height. The new slot then loses its hidden classes (the
+frame is never moved, which would reload it) and the replaced view unmounts. A
+hidden tab or a phone (below sm, one frame) swaps at once: the position is read
+first and given to the new view once it has painted; a tab hidden during the
+build does the same (review L2). Only the maintenance
+pause keeps the paused view under its banner (`SourceReplacedBanner`, Reload
+reloads the page); text sources keep the newer-version banner.
 
 The parent owns the room provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
-and shared state, never an authentication token or protected source URL.
+and shared state, never an authentication token or protected source URL. An
+edit `load` names the session's Yjs client id (`collaboration.clientId`,
+Office protocol 13), the one the room assigned the parent's Y.Doc, and the
+replica writes under it; a DOCX load also names its resident layout worker's
+(`collaboration.workerClientId`, Q219), which the worker writes under, and
+a DOCX edit load without one fails explicitly (Q226 L4); the parent applies
+the replica's updates as its own
+(`applyOwnUpdate`), since the room admits a session's changes only under its
+assigned id ([plate-editor](plate-editor.md#client-ids)).
 Cursors cross the same way: the editor's own goes to the room's awareness and
 the co-editors' come back under the names the room's presence gives them
 ([plate-editor](plate-editor.md#office-cursors)). Input in the frame reaches
@@ -671,7 +741,9 @@ step. One edit writes its format items in key order (the attribute map's hash
 order differs per replica, so concurrent edits beside them integrated
 differently), and a transaction's update and events read its insert set
 instead of before and after state vectors, so applying a peer's keystroke
-costs the same however many clients wrote the document. The native viewer,
+costs the same however many clients wrote the document. Placing an edit
+(`find_position`) takes each item's length as its UTF-16 length instead of
+counting its string again (speed round 2026-10-22). The native viewer,
 Python bindings and fuzz workspaces use that same copy, including the native
 viewer's UTF-8 validation in both update decoders. WASM fingerprints include
 the vendored source so changes rebuild the engines.
@@ -976,11 +1048,15 @@ waits for the editor's replica, as the old Save button did. A click sends
 the frame no user activation, and the file goes over as `menu-file`. Every
 inserted image (that file, one picked from the editor's own toolbar button, or
 a DOCX picture watermark) passes the editor's `prepareImage` first: the runtime
-shrinks one over the payer's plan image cap, which the edit `load` carries as
-`imageMaxBytes` (protocol v10; an edit session without one fails with the file
-error instead of loading), and re-encodes any type but PNG, JPEG and GIF, to
-JPEG or PNG (`fitImage` with `office`;
-[backend-storage-quota.md](../backend-storage-quota.md)). It also shrinks one
+compresses it within 2,400 px and the payer's plan image cap, which the edit
+`load` carries as `imageMaxBytes` (protocol v10; an edit session without one
+fails with the file error instead of loading), as JPEG or PNG
+(`fitImage` with `office`;
+[backend-storage-quota.md](../backend-storage-quota.md#image-compression-and-checks)).
+The collaboration server refuses an edit that adds a picture past the plan
+image cap or 2,400 px, or one that is not a PNG, JPEG or GIF by its bytes, so
+only a client that skipped this meets it.
+It also shrinks one
 into the room's growth budget: the edit read's `growthBudgetBytes` (Go's
 `SourceGrowthBudget`: the export cap (the largest plan source file) less the
 base file, the 1 MiB margin, admission's 64 KiB reserve and the durable change
@@ -1708,6 +1784,36 @@ production the runtime is a separate origin inside Capy's page, so browsers
 keep that storage partitioned under Capy's site, and Safari may clear it after
 some days without a visit, after which the notes start hidden again.
 
+A person's speaker notes hold at most 4,000 characters a slide (Epo
+2026-10-22), counted in Unicode code points as the collaboration server
+counts them (an emoji is one, though it is two UTF-16 units). The notes panel
+(`NotesPanel` and `fitNotes` in pptx-react's `PptxEditor.tsx`,
+`MAX_NOTES_CHARS`) cuts what an input would insert past the cap, found as
+the text between what the notes and the input share at the start and the
+end: typing at the cap changes nothing and keeps the caret, and a paste, drop
+or autocorrect keeps what fits with the caret after it. The label's row then
+shows "Speaker notes hold at most 4,000 characters per slide." (`notes.tooLong`
+in pptx-i18n, English and Chinese; role `alert`, in the error colour of the
+XLSX refusal line) until an input fits again. From 3,600 code points (90% of
+the cap) the same row ends in an x/4,000 counter (`NOTES_COUNT_FROM`; Epo
+2026-10-22), copied from Capy's `CharCount` in `src/components/ui/Input.tsx`:
+muted, in the error colour at or over the cap (`data-full`). Both sit on the
+label's row, one fixed 16px line at 11px (notes-cap review r2 M1): the panel's
+height sets the slide's fit, so neither may grow it. The label and the
+counter never shrink and the limit line ends in an ellipsis where the row is
+too narrow (its full text stays in its title and the alert); a headless
+Chromium test at 360px checks the slide's box stays the same when a cut paste
+brings both. An
+IME composition that would pass the cap is shown but not sent until it ends,
+then cut the same way (cutting it while the IME holds it would break the
+composition); one that fits is sent as it goes. Notes already over the cap,
+from an uploaded deck (uploads get no special handling, Epo 2026-10-22), may
+shrink or be retyped to the same length, never grow, and an Undo that would
+bring such notes back is refused like any growth (the editor goes to
+recovery). The server refuses an update that
+grows a slide's notes past the cap (see the root rule below), so no client
+gets around the panel.
+
 Below lg the workspace's chat button sits at the frame's bottom right, 8px
 above its bottom chrome; the open chat field sits at the same 16px gap from
 the viewer's bottom as on every other file, over that chrome. The runtime reports that chrome's height
@@ -1838,8 +1944,28 @@ Strip thumbnails paint off screen and show only their latest paint.
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the fork's document roots, the contributor
 map included) or, in PPTX, writes or deletes anything in `pptx:meta` other
-than `commentFlavor`. The refusal is the unrecoverable
-`source-checkpoint-failed` message, like an oversized update. An update the
+than `commentFlavor`, or leaves a slide's speaker notes over 4,000 code points
+and longer than before (`notes_violation`, `MAX_SLIDE_NOTES_CHARS`; Epo
+2026-10-22). Notes are a string at a slide map's `notes` key, written whole,
+so that check reads only the update's own string entries over 4,000 bytes
+that it does not delete itself (bytes bound code points), each placed where
+yrs places it (`slot_of`, notes-cap review H1): its left is its origin, or the
+last unit the room holds of its client when the room holds its first units
+already (yrs splits those off), and its right is its right origin; its map is
+the one it names, else its left's, else its right's, and its key is its
+left's, else its right's, else its own, so an entry naming another key or none
+still counts where it lands. The update's entries it refers to are placed
+first, each once, without recursion. A `notes` entry of a nested map (only
+slides have one) is held to the value that map has now, or to none for a slide
+the update creates. An
+entry that loses to a concurrent write is held too, since only a client past
+the notes panel's cap writes one. So typing elsewhere costs one content match
+per struct, an over-cap note from an upload may shrink or keep its length,
+other slides stay editable beside it, and an Undo bringing back an upload's
+over-cap notes (of a cut, or of the slide's deletion) is refused like any
+growth. The refusal is
+the unrecoverable `source-checkpoint-failed` message, like an oversized
+update. An update the
 room cannot integrate yet is dropped instead, and that connection gets the
 room's sync step 1: its step 2 reply carries everything the room lacks, the
 dropped update included, with no disconnect (`crates/sources/src/admit.rs`,
@@ -1971,9 +2097,10 @@ citation scrolling.
 ## Upload and import analysis
 
 Local selection and Google Drive/OneDrive selection both lead to the same
-details dialog. Files above the workspace owner's 10 MiB/30 MiB cap are
-rejected before they enter the list; unknown and legacy formats remain eligible
-for store-only upload. Cloud metadata comes
+details dialog. Files above the uploader's 10 MiB/30 MiB cap are
+rejected before they enter the list, except DOCX, PPTX, XLSX and raster
+images, whose cap is checked after the compression below; unknown and legacy
+formats remain eligible for store-only upload. Cloud metadata comes
 from `sources/import-inspect`; the analysis worker reads provider bytes through
 a bounded, authenticated same-origin proxy, so provider tokens never enter the
 browser. The proxy accepts only editor access, bounds response bytes, validates
@@ -2021,12 +2148,37 @@ refuses the file if it really is over. Office text-less estimates miss
 slide-master text, so they warn from 95% and never block. The upload sends the
 page count, and the gateway refuses a fast-parse reservation above `maxPages`. Images and audio do not enter the
 browser page analysis queue: the ingest worker captions images (a cost
-deliberately absent from the page-based estimate) and stores audio without indexing.
+deliberately absent from the page-based estimate) and transcribes audio. A
+local audio row reads its length from the file's metadata instead: it shows
+"reading", the minutes and expected credits at `audioSecondCreditMicros`, or
+"unreadable" (the worker checks it), and blocks submit while reading or past
+`audioMaxDurationSeconds` (two hours). The upload sends the whole seconds as
+`durationSeconds`, which the gateway refuses past the same limit.
 The server-owned page rates (0.4 credits per page with a text layer,
 `digitalParsePageCreditMicros`, and 1.0 credit per page the VLM reads,
 `vlmIngestPageCreditMicros`) are returned by `source-upload-policy`; the
 estimate charges each text-less page the VLM rate instead of the digital one.
 Parser receipts and the VLM reads remain authoritative for settlement.
+
+**Compression before the upload** (Epo 2026-10-24,
+[backend-storage-quota.md](../backend-storage-quota.md#image-compression-and-checks)).
+When a local DOCX, PPTX or XLSX row starts its transfer, a worker
+(`src/features/workspace/sourceCompress.ts`) compresses the pictures inside it
+and removes its EMF and WMF pictures with the drawings or objects that show
+them; an image row is shrunk to 5 megapixels the same way, HEIC/HEIF, TIFF and
+JPEG 2000 through decoders loaded only for them. The row reads "Compressing
+images…" meanwhile, then uploads the result, which is what is stored, charged,
+downloaded and opened: its SHA-256 is the base the edit session names. A
+picture whose format changes is renamed inside the package (`image1.png` to
+`image1.jpeg`), its relationships and content types following; an image source
+that changes format is stored as `<stem>.jpg` or `<stem>.png`. The per-file
+cap applies to the result. A file still over it or an image source that
+cannot be decoded fails in its row before anything is sent; a picture the
+worker could not read or fit stays as it is, and the gateway's header check
+refuses the file if it is still past the limits. Every such failure shows its
+reason in the row and is final. A warning toast after the upload names how many EMF or WMF pictures
+were removed. Cloud imports get the same treatment in the import worker before
+the file is stored, and the import status carries the same count.
 
 The same dialog submits each cloud row with its own chapter and parse mode;
 there is no caption toggle, because embedded figure captioning was retired.
@@ -2433,8 +2585,9 @@ group read-only for copying (see
 [error handling](error-handling.md#collaborative-source-failures)); its Reload
 removes only those exact rows and advances to the next retained group, then
 the current file. A client whose changes were all saved when it learns about a
-completed handoff (from the room or on reconnect) shows the newer-version
-banner instead; a client with unsaved changes enters recovery.
+completed handoff (from the room or on reconnect) swaps to the new epoch
+(Office, [room swap](#room-swap)) or shows the newer-version banner (text);
+a client with unsaved changes enters recovery.
 
 A text source edits its `source` Y.Text through a plain textarea
 (`bindSourceTextarea` in `src/features/files/sourceTextBinding.ts`). Typing,
@@ -2470,7 +2623,8 @@ gateway to move the file to its next editing epoch before the room opens
 again (`POST /internal/collaboration/files/{id}/epoch-reset`, an epoch that
 already moved on is left alone). A client that missed the discard then sees
 a new epoch and opens recovery instead of resyncing the thrown-away state;
-a fully saved one sees the newer-version banner. A refresh captured under the
+a fully saved one swaps to the new epoch (Office) or sees the newer-version
+banner (text). A refresh captured under the
 old epoch could never be claimed or published again, so the reset cancels it
 as superseded in the same transaction (`ResetSourceEpoch`, before the epoch
 moves): its job, candidate, provider session and reserved credits close, no
@@ -2582,7 +2736,7 @@ it authenticates shows one. Other authentication failures show at once. The
 current checkpoint can remain ahead of the indexed checkpoint, with later edits
 retained as pending effects. A concurrent save retries only the local rebase
 against the same parsed candidate. A connected editor that answered ready
-counts as saved and keeps its view under the newer-version banner; a disconnect
+counts as saved and swaps to the new epoch ([room swap](#room-swap)); a disconnect
 clears that, so an editor that loses its connection before the completion goes
 to recovery. The new epoch starts with empty Undo/Redo, as it does after a
 rebuild.
@@ -2857,8 +3011,9 @@ handoff, and a flushed room refuses updates from any writer that slipped
 through. Saves of rooms that were already open still land, so the flush and
 failed-store retries persist. After `resume`, the next writer's authentication
 clears a room's refusal at once. A client whose changes were all saved keeps its
-view read-only under the same banner as a completed handoff, saying editing is
-paused and its changes were saved; one with unsaved changes goes to recovery.
+view read-only under the paused banner (`SourceReplacedBanner`), saying editing
+is paused and its changes were saved (no swap: the pause opens no new epoch);
+one with unsaved changes goes to recovery.
 A client refused on reconnect (a token request answered 423, or the
 authentication reason) takes the same path; opening Edit during the pause shows
 the paused error. Viewing (`source-session?view=true`) and text sources are
@@ -2989,6 +3144,6 @@ text and stable positions, image hashes and references, and hashes of visual
 metadata and is derived from the base, never stored (while a rebuild is
 pending, from the published capture on the old base). A rebuild, or a
 maintenance handoff, stores the rebased saved state as its change over
-seed(export); only the handoff shows open editors the newer-version banner. The maintenance window's reset migration
+seed(export); only the handoff moves open editors (a swap to the new epoch). The maintenance window's reset migration
 (`0034_office_window_reset.sql`, from the template) drops every Office state
 of the old engine so rooms reseed on the new one.

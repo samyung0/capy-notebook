@@ -621,7 +621,6 @@ def _library_ctx(monkeypatch) -> ToolContext:
         user_id="u1",
         operations=frozenset(contract.OPERATIONS),
         assistant_message_id="m_1",
-        library=True,
     )
     ctx._scope_outline = {
         "chapters": [],
@@ -1504,9 +1503,10 @@ async def test_checkpoint_rewrite_does_not_duplicate_the_question(monkeypatch):
 
     assert any(e["type"] == "checkpoint" for e in events)
     contents = [m.get("content") for m in seen[0]["messages"]]
-    assert contents.count("current question") == 1
+    asked = agent.chat_prompts.with_mode_line("current question", False)
+    assert contents.count(asked) == 1
     assert len(folded["turns"]) == len(history)
-    assert folded["current_user_message"] == "current question"
+    assert folded["current_user_message"] == asked
 
 
 async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypatch):
@@ -3295,7 +3295,7 @@ async def test_a_mermaid_expectation_is_its_stored_source(monkeypatch):
 async def test_a_write_naming_unread_excerpts_credits_them(monkeypatch):
     """Named excerpts are credited whether this turn read them or not (Epo
     2026-10-14): no refusal sends the model back to read them."""
-    ctx = ToolContext(workspace_id="ws", library=True)
+    ctx = ToolContext(workspace_id="ws")
 
     async def _provenance(excerpt_ids):
         return [_book(*excerpt_ids)]
@@ -3636,6 +3636,229 @@ async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
     assert with_image.total_tokens - without.total_tokens == 2
 
 
+# A capture at the 1568 px edge: 56 x 56 patches, 3,136 tokens.
+_SIDE = 1568
+_PATCHES = (_SIDE // 28) ** 2
+
+
+def _image_turn(monkeypatch, steps: list[list[str]]):
+    """A turn whose responses each take the named images side by side
+    (``k<page>`` a page capture, ``s<n>`` a source change's image), through the
+    real tools with a fake render of a full-edge square, then answer. Returns
+    the requests, the context and each request's compaction extra."""
+    jpeg = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(jpeg, "JPEG")
+    full = (jpeg.getvalue(), [0.0, 0.0, 1000.0, 1000.0], (_SIDE, _SIDE))
+
+    async def _render_file(*_args):
+        return full
+
+    async def _resolve(**_kwargs):
+        return jpeg.getvalue()
+
+    def call(name: str) -> ToolCall:
+        if name.startswith("s"):
+            args = {"file_id": "f_1", "change_id": f"c{name[1:]}", "checkpoint": 3}
+            return _call("resolve_source_change", json.dumps(args), name)
+        return _call("capture_page", f'{{"file_id":"f_1","page":{name[1:]}}}', name)
+
+    stream, seen = _script_stream(
+        [_assembled("", [call(name) for name in step]) for step in steps]
+        + [_assembled(_answer(("Seen.", [1])))]
+    )
+
+    async def _run(name, args, ctx):
+        if name == "resolve_source_change":
+            return await agent.tools._resolve_source_change(args, ctx)
+        return await agent.tools._capture_page(args, ctx)
+
+    extras: list[int] = []
+    compact = agent.compact.compact_messages
+
+    async def _compact(messages, spec, *, extra=0, **kwargs):
+        extras.append(extra)
+        return await compact(messages, spec, extra=extra, **kwargs)
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    monkeypatch.setattr(agent.capture, "render_file", _render_file)
+    monkeypatch.setattr(agent.capture, "image_jpeg", lambda *_args: full)
+    monkeypatch.setattr(agent.tools.pending, "resolve", _resolve)
+    monkeypatch.setattr(agent.compact, "compact_messages", _compact)
+    ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 1}],
+    }
+    agent.tools.assign_citations(
+        ctx,
+        [_passage(chunk_id=f"c{n}", page_start=n, page_end=n) for n in range(1, 16)],
+    )
+    return seen, ctx, extras
+
+
+def _request_parts(request: dict) -> list[dict]:
+    return [
+        part
+        for message in request["messages"]
+        if isinstance(message.get("content"), list)
+        for part in message["content"]
+    ]
+
+
+def _image_labels(request: dict) -> list[str]:
+    """The labels of the request's images, in request order."""
+    found = _request_parts(request)
+    return [
+        found[i - 1]["text"].split("\n")[0]
+        for i, part in enumerate(found)
+        if part["type"] == "image_url"
+    ]
+
+
+def _extra_texts(request: dict) -> list[str]:
+    """Text in the images messages besides their headers, image labels and
+    closing tags: a dropped image's note would show here (Q370: none)."""
+    return [
+        part["text"]
+        for part in _request_parts(request)
+        if part["type"] == "text"
+        and not part["text"].startswith("Images from ")
+        and not part["text"].endswith("\n<source>")
+        and part["text"] != "</source>"
+    ]
+
+
+def _tool_text(request: dict, call_id: str) -> str:
+    (message,) = [m for m in request["messages"] if m.get("tool_call_id") == call_id]
+    return message["content"]
+
+
+async def test_captures_past_the_image_budget_drop_the_oldest_in_one_batch(
+    monkeypatch,
+):
+    """(Q349, Q368, Q370) A turn's images stay within 35k patch tokens: under
+    it every capture rides in the request; the capture batch that takes the
+    turn past it drops the oldest captures earlier requests carried, at once,
+    until at most 17.5k remains; a dropped capture's image leaves the request,
+    the turn and the compaction budget with no note in its place, its tool
+    result keeping its ordinary text, and the next request starts the same,
+    with no further drop."""
+    seen, ctx, extras = _image_turn(
+        monkeypatch,
+        [
+            ["k1", "k2", "k3", "k4"],
+            ["k5", "k6", "k7", "k8"],
+            ["k9", "k10", "k11", "k12"],  # 37,632 tokens: past the budget
+            ["k13"],
+        ],
+    )
+    events = await _collect("q", ctx)
+    assert events[-1]["type"] == "done"
+    # Side-by-side captures are numbered as they finish: the oldest seven by
+    # capture order go, the five newest (15,680 tokens) stay.
+    order = [record["callId"] for record in ctx.captures]
+    label = {
+        c: f"capture_page result {n}: bio.pdf page {c[1:]}"
+        for n, c in enumerate(order, 1)
+    }
+    assert [_image_labels(request) for request in seen[:3]] == [
+        [],
+        [label[f"k{n}"] for n in range(1, 5)],
+        [label[f"k{n}"] for n in range(1, 9)],
+    ]
+    dropped, kept = order[:7], order[7:12]
+    assert set(dropped) > {"k1", "k2", "k3", "k4"} and set(kept) > {"k9", "k12"}
+    assert sorted(_image_labels(seen[3])) == sorted(label[c] for c in kept)
+    assert _image_labels(seen[4]) == _image_labels(seen[3]) + [label["k13"]]
+    assert set(ctx.pending_images) == {*kept, "k13"}
+    # No note: a dropped capture's result is the text it always had.
+    assert [_extra_texts(request) for request in seen] == [[]] * 5
+    for call_id in dropped:
+        text = _tool_text(seen[2], call_id)
+        assert text.startswith(f"Captured bio.pdf page {call_id[1:]} as capture")
+        assert _tool_text(seen[3], call_id) == _tool_text(seen[4], call_id) == text
+    # The request after the drop starts as the drop's own request did.
+    before = seen[3]["messages"][:-1]  # its turn context comes last
+    assert seen[4]["messages"][: len(before)] == before
+    # The compaction budget counts the five kept captures, not all twelve.
+    assert abs(extras[3] - extras[0] - 5 * _PATCHES) < 100
+
+
+async def test_source_change_images_share_the_image_budget(monkeypatch):
+    """(Q369, Q370) resolve_source_change images count toward the budget with
+    page captures and drop with them, oldest of either kind first: a dropped
+    source change image leaves the request with no note, its tool result
+    keeping its ordinary text, while one no request carried yet stays."""
+    seen, ctx, _extras = _image_turn(
+        monkeypatch,
+        [
+            ["s1", "k2", "k3", "k4"],
+            ["k5", "k6", "k7", "k8"],
+            ["s9", "k10", "k11", "k12"],  # 37,632 tokens: past the budget
+        ],
+    )
+    await _collect("q", ctx)
+    order = [record["callId"] for record in ctx.captures]
+    dropped, kept = order[:7], order[7:]
+    assert "s1" in dropped and "s9" in kept
+    after = seen[3]
+    labels = _image_labels(after)
+    assert sorted(labels) == sorted(ctx.pending_images[c][0] for c in kept)
+    assert "resolve_source_change result: change c1 of file f_1" not in labels
+    assert "resolve_source_change result: change c9 of file f_1" in labels
+    assert _extra_texts(after) == []
+    ordinary = (
+        "The pending source image is attached to the next message; read it directly."
+    )
+    assert _tool_text(seen[1], "s1") == _tool_text(after, "s1") == ordinary
+
+
+async def test_a_dropped_image_whose_exchange_was_folded_leaves_nothing(monkeypatch):
+    """(Q349, Q370) Live compaction folded the first step's exchange into the
+    turn note as the budget dropped its four captures: nothing of theirs
+    follows the note, image or note; of the second step's captures, the one
+    kept still rides after that step's tool results, and the third step's
+    four after theirs."""
+    seen, ctx, _extras = _image_turn(
+        monkeypatch,
+        [
+            ["k1", "k2", "k3", "k4"],
+            ["k5", "k6", "k7", "k8"],
+            ["k9", "k10", "k11", "k12"],  # past the budget, and folded
+        ],
+    )
+
+    def _full(messages, *_args, **_kwargs):
+        """Too large once the third step's results are in, until folded."""
+        kinds = [m.get("_kind") for m in messages]
+        return (
+            "turn_note" not in kinds
+            and sum(m["role"] == "tool" for m in messages) == 12
+        )
+
+    async def _note(**_kwargs):
+        return "Captured pages 1 to 4 of bio.pdf."
+
+    monkeypatch.setattr(agent.compact, "needs_compact", _full)
+    monkeypatch.setattr(agent.compact, "summarize_checkpoint", _note)
+    await _collect("q", ctx)
+
+    request = seen[3]["messages"]
+    note = next(i for i, m in enumerate(request) if m.get("_kind") == "turn_note")
+    assert not any(m.get("tool_call_id") in {"k1", "k2", "k3", "k4"} for m in request)
+    assert request[note + 1]["role"] == "assistant"  # no images message after it
+    order = [record["callId"] for record in ctx.captures]
+    images = [
+        [p for p in m["content"] if p["type"] == "image_url"]
+        for m in request
+        if m["role"] == "user" and isinstance(m.get("content"), list)
+    ]
+    assert [len(found) for found in images if found] == [1, 4]
+    assert {"k1", "k2", "k3", "k4"} <= set(order[:7])
+    assert _extra_texts(seen[3]) == []
+
+
 async def test_a_compacted_turn_still_sends_every_capture(monkeypatch):
     """Live compaction folds the capture's exchange into the turn note; its
     image still rides with every later request of the turn, and the budget
@@ -3752,6 +3975,10 @@ async def test_attached_captures_count_against_the_compaction_budget(monkeypatch
                 "estimatedImageTokens": 2240,
             }
         )
+        ctx.pending_images[args["_tool_call_id"]] = (
+            "capture_page result 1",
+            agent.capture.data_url(b"jpeg"),
+        )
         return ToolResult(text_parts=["Captured page 1."])
 
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
@@ -3792,7 +4019,6 @@ def _build_ctx(**kwargs) -> ToolContext:
         user_id="u1",
         operations=frozenset(contract.OPERATIONS),
         assistant_message_id="m_1",
-        library=True,
         **kwargs,
     )
 
@@ -3820,7 +4046,7 @@ async def test_a_library_that_is_down_or_empty_leaves_the_turn_on_the_workspace(
         events = await _collect("teach me regression", ctx)
 
         offered = {tool["function"]["name"] for tool in seen[0]["tools"]}
-        assert not ctx.library and "search_knowledge" not in offered
+        assert "search_knowledge" not in offered
         assert events[-1]["telemetry"]["stopReason"] == "answer"
     assert "pool timeout" in caplog.text
 
@@ -4241,7 +4467,9 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         m["content"] for m in seen[0]["messages"] if m.get("_kind") == "turn_context"
     )
     assert ("- a Section" in context) == (followup == "reuse")
-    assert bool(second[-1]["toolEvidence"]["libraryExcerpts"]) == (followup == "reuse")
+    assert bool(second[-1]["toolEvidence"].get("libraryExcerpts")) == (
+        followup == "reuse"
+    )
     ordinary = await agent.evidence.history_turns(
         history, ToolContext(workspace_id="ws_1")
     )
@@ -4503,7 +4731,7 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
         ("Where should we start?", ["Beginner", "I code already"])
     ]
     assert "One quick question" in openui.to_text(program)
-    assert agent.ask_user_answer([_call("AskUser", "{}")], "x") is None, (
+    assert agent.ask_user_answer([_call("AskUser", "{}")], "x", 0) is None, (
         "no question, no answer"
     )
     # Every AskUser call is a question, up to the format's three (Epo 2026-10-14).
@@ -4511,7 +4739,7 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
         _call("AskUser", json.dumps({"question": f"Q{n}?", "choices": []}), f"a{n}")
         for n in range(1, 5)
     ]
-    program = openui.parse(agent.ask_user_answer(many, ""), strict=True)
+    program = openui.parse(agent.ask_user_answer(many, "", 0), strict=True)
     asked = [c.prop("question") for c in openui.walk(program) if c.name == "AskUser"]
     assert asked == ["Q1?", "Q2?", "Q3?"]
 
@@ -4804,7 +5032,9 @@ async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeyp
     assert ctx.hinted == {("f_1", "c1")}
     messages = seen[0]["messages"]
     query = next(i for i, m in enumerate(messages) if m.get("_kind") == "query")
-    assert messages[query]["content"] == "How many phases does mitosis have?"
+    assert messages[query]["content"] == agent.chat_prompts.with_mode_line(
+        "How many phases does mitosis have?", False
+    )
     hint = messages[query + 1]
     assert hint["_kind"] == agent.pending_hints.KIND
     assert (
@@ -5136,6 +5366,51 @@ async def test_reading_office_building_appends_the_office_tools(monkeypatch):
     assert events[-1]["toolEvidence"]["officeTools"] is True
 
 
+async def test_an_office_edit_after_office_building_alone_needs_editing(monkeypatch):
+    """UAT 2026-10-22: the agent read office_building alone, inspected and
+    edited; the write was refused for the editing skill, as every write is.
+    office_building now says an edit needs editing too."""
+    _gateway(monkeypatch)
+    run = agent.tools.run
+
+    async def _run(name, args, ctx):
+        if name == "inspect_office_document":
+            return ToolResult(text_parts=["[body:paragraph:body:p0] Intro"])
+        return await run(name, args, ctx)
+
+    edit = json.dumps(
+        {
+            "file_id": "f_1",
+            "commands": [
+                {
+                    "type": "set_alignment",
+                    "target_id": "body:paragraph:body:p0",
+                    "alignment": "center",
+                }
+            ],
+        }
+    )
+    stream, _seen = _script_stream(
+        [
+            _assembled("", [_call("read_skill", '{"name": "office_building"}', "c1")]),
+            _assembled(
+                "", [_call("inspect_office_document", '{"file_id":"f_1"}', "c2")]
+            ),
+            _assembled("", [_call("edit_office_document", edit, "c3")]),
+            _assembled(_answer(("Not edited.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("Center the intro", _owner_ctx())
+    refused = next(e for e in events if e["type"] == "tool_end" and e["callId"] == "c3")
+    assert refused["error"]["message"] == skills.refusal([skills.EDITING], write=True)
+    assert (
+        "Editing or creating one also needs the editing skill"
+        in skills.SKILLS[skills.OFFICE_BUILDING].text()
+    )
+
+
 async def test_office_tools_need_the_office_building_skill(monkeypatch):
     ctx = _office_ctx(monkeypatch)
     ctx.skills_read = {skills.EDITING}
@@ -5253,10 +5528,93 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             {
                 "format": "pptx",
                 "title": "deck.pptx",
-                "supportedOperations": ["replace_text"],
-                "entries": [{"id": "s1", "label": "Slide 1, Title", "value": "Cells"}],
-                "total": 1,
-                "nextStart": None,
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slides": [
+                        {
+                            "id": "slide:0:256",
+                            "number": 1,
+                            "layout": "Title Slide",
+                            "shapes": [
+                                {
+                                    "id": "slide:0:256:shape:0",
+                                    "kind": "text",
+                                    "placeholder": "ctrTitle",
+                                    "text": "Cells",
+                                },
+                                {"id": "slide:0:256:shape:1", "kind": "picture"},
+                            ],
+                            "moreShapes": 3,
+                        }
+                    ],
+                    "total": 12,
+                    "nextStart": 1,
+                    "layouts": [
+                        {
+                            "id": "ppt/slideLayouts/slideLayout1.xml",
+                            "name": "Title Slide",
+                        },
+                        {"id": "ppt/slideLayouts/slideLayout2.xml", "name": "Blank"},
+                    ],
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slide": {
+                        "id": "slide:1:257",
+                        "number": 2,
+                        "layout": {
+                            "id": "ppt/slideLayouts/slideLayout2.xml",
+                            "name": "Blank",
+                        },
+                        "notes": "Greet the room.\nThen the demo.",
+                    },
+                    "slides": 12,
+                    "shapes": [
+                        {
+                            "id": "slide:1:257:shape:0",
+                            "kind": "text",
+                            "name": "Title 1",
+                            "placeholder": "title",
+                            "box": [36.0, 20.5, 888.0, 90.0],
+                        },
+                        {
+                            "id": "slide:1:257:shape:1",
+                            "kind": "table",
+                            "name": "Table 2",
+                            "box": [36.0, 120.0, 400.0, 200.0],
+                        },
+                        {
+                            "id": "slide:1:257:shape:2",
+                            "kind": "text",
+                            "name": "Equation",
+                            "equation": True,
+                            "box": [36.0, 400.0, 100.0, 30.0],
+                        },
+                    ],
+                    "paragraphs": [
+                        {
+                            "id": "para:story:slide:1:257:shape:0:0:0",
+                            "shape": "slide:1:257:shape:0",
+                            "text": "Cells",
+                        },
+                        {
+                            "id": "para:story:slide:1:257:shape:1:table:0:1:0",
+                            "shape": "slide:1:257:shape:1",
+                            "text": "Nucleus",
+                            "level": 1,
+                            "row": 0,
+                            "column": 1,
+                        },
+                    ],
+                    "total": 6,
+                    "nextStart": 5,
+                },
             },
         ]
     )
@@ -5301,7 +5659,8 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                 "content control, locked: why replace_text and format_text refuse "
                 "it, and delete_paragraph unless it only follows a table) text; after "
                 "the body, headers, footers and notes under == part == lines, which "
-                "take replace_text only:"
+                "take replace_text only; a command names a paragraph by its whole "
+                "[id], copied exactly:"
             ),
             source_block(
                 "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
@@ -5319,8 +5678,158 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
         ]
     )
     assert sent[2]["office"] == {"start": 0, "count": 60}
-    shapes = (await inspect(start=0, count=60)).text()
-    assert "[s1] Slide 1, Title: Cells" in shapes and "styles" not in shapes
+    # A PPTX read lists slides with their layouts and shapes, the first page
+    # the deck's layouts; a slide read its shapes and paragraphs (Epo
+    # 2026-10-20). What the file names sits inside the fence.
+    deck = (await inspect(count=1)).text()
+    assert deck == "\n".join(
+        [
+            "deck.pptx format=pptx",
+            (
+                "slide size 960 x 540 points; slides as N. [id] (layout), each shape as "
+                "[id] kind (placeholder): its first line of text (… when longer); read "
+                "one slide by its number for all its shapes and its paragraphs:"
+            ),
+            source_block(
+                "layouts as [id] name: [ppt/slideLayouts/slideLayout1.xml] Title Slide, "
+                "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                "1. [slide:0:256] (Title Slide)\n"
+                "  [slide:0:256:shape:0] text (ctrTitle placeholder): Cells\n"
+                "  [slide:0:256:shape:1] picture\n"
+                "  … and 3 more shapes"
+            ),
+            "(next start = 1 of 12 slides)",
+        ]
+    )
+    slide = (await inspect(slide=2)).text()
+    assert sent[4]["office"] == {"slide": 2}
+    assert slide == "\n".join(
+        [
+            "deck.pptx format=pptx",
+            (
+                'slide size 960 x 540 points; shapes as [id] kind "name" (marks) at x, y '
+                "size w x h points from the top left corner (shapes in a group show no "
+                "box), each followed by its paragraphs as [id] (level, table cell) text; "
+                "a page counts shapes and paragraphs:"
+            ),
+            source_block(
+                "slide 2 of 12 [slide:1:257], layout "
+                "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                "speaker notes:\nGreet the room.\nThen the demo.\n"
+                '[slide:1:257:shape:0] text "Title 1" (title placeholder) at 36, 20.5 '
+                "size 888 x 90\n"
+                "  [para:story:slide:1:257:shape:0:0:0] Cells\n"
+                '[slide:1:257:shape:1] table "Table 2" at 36, 120 size 400 x 200\n'
+                "  [para:story:slide:1:257:shape:1:table:0:1:0] (level 1, row 1 column 2) "
+                "Nucleus\n"
+                '[slide:1:257:shape:2] text "Equation" (equation, not editable) at 36, '
+                "400 size 100 x 30"
+            ),
+            "(next start = 5 of 6 shapes and paragraphs)",
+        ]
+    )
+
+
+async def test_a_long_pptx_read_shows_the_slides_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A deck page over the tool output limit is cut between slides, its next
+    start the first slide not shown."""
+    slides = [
+        {
+            "id": f"slide:{i}:{256 + i}",
+            "number": i + 1,
+            "layout": "Title and Content",
+            "shapes": [
+                {
+                    "id": f"slide:{i}:{256 + i}:shape:{j}",
+                    "kind": "text",
+                    "text": "word " * 16,
+                }
+                for j in range(12)
+            ],
+        }
+        for i in range(60)
+    ]
+    body = {
+        "format": "pptx",
+        "title": "deck.pptx",
+        "scoped": {"width": 720.0, "height": 540.0, "slides": slides, "total": 60},
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "count": 60, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    shown = re.findall(r"^(\d+)\. \[slide:", text, re.MULTILINE)
+    assert 0 < len(shown) < 60 and shown == [str(i + 1) for i in range(len(shown))]
+    assert text.endswith(
+        "</source>\n(page cut at the tool output limit; "
+        f"next start = {len(shown)} of 60 slides)"
+    )
+
+
+async def test_a_long_slide_read_shows_the_shapes_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A slide page over the tool output limit, its notes at the cap, is cut
+    between its shapes and paragraphs, its next start the first not shown; a
+    page that begins inside a shape names the shape its first paragraphs
+    continue (review M1)."""
+    shapes = [
+        {"id": f"s:{i}", "kind": "text", "name": "Box " * 10, "box": [0, 0, 72, 36]}
+        for i in range(1, 100)
+    ]
+    paragraphs = [{"id": "p:0:0", "shape": "s:0", "text": "word " * 400}] + [
+        {"id": f"p:{i}:0", "shape": f"s:{i}", "text": "word " * 400}
+        for i in range(1, 100)
+    ]
+    body = {
+        "format": "pptx",
+        "title": "deck.pptx",
+        "scoped": {
+            "width": 720.0,
+            "height": 540.0,
+            # Notes at the cap and its marker (Epo 2026-10-22).
+            "slide": {
+                "id": "slide:0:256",
+                "number": 1,
+                "notes": "n" * 2_000 + "… [notes cut: 9 more characters]",
+            },
+            "slides": 1,
+            "shapes": shapes,
+            "paragraphs": paragraphs,
+            "total": 1201,
+            "nextStart": 600,
+        },
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {
+                "file_id": "f_1",
+                "slide": 1,
+                "start": 401,
+                "count": 199,
+                "_tool_call_id": "c",
+            },
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    assert "slide 1 of 1 [slide:0:256]\nspeaker notes:\nnnn" in text
+    assert "… [notes cut: 9 more characters]\n[s:0] continued:\n  [p:0:0] word" in text
+    shown = len(re.findall(r"^\[s:\d+\] text|^  \[p:", text, re.MULTILINE))
+    assert 0 < shown < 199
+    assert text.endswith(
+        "</source>\n(slide cut at the tool output limit; "
+        f"next start = {401 + shown} of 1201 shapes and paragraphs)"
+    )
 
 
 async def test_a_long_docx_read_shows_the_paragraphs_that_fit_and_where_to_go_on(
@@ -5539,3 +6048,152 @@ async def test_undo_payloads_reach_tool_end_only(monkeypatch):
     elsewhere = [e for e in events if e is not ends[0]]
     assert marker not in json.dumps(elsewhere)
     assert marker not in json.dumps([call["messages"] for call in seen], default=str)
+
+
+def _office_edit(rid: str) -> dict:
+    return {
+        "operation": "edited",
+        "operationId": f"op_{rid}",
+        "resource": {"kind": "source_file", "id": rid, "title": f"{rid}.xlsx"},
+    }
+
+
+def _office_turn(monkeypatch, results: dict[str, ToolResult], files: list[str]):
+    """A turn of one edit_office_document call per response, on these files,
+    each answered by its call id's result, then an answer."""
+    stream, _ = _script_stream(
+        [
+            _assembled(
+                "",
+                [_call("edit_office_document", json.dumps({"file_id": f}), f"c{n}")],
+            )
+            for n, f in enumerate(files, 1)
+        ]
+        + [_assembled(_answer(("Done.", [])))]
+    )
+
+    async def _run(_name, args, _ctx):
+        return results[args["_tool_call_id"]]
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+
+
+def _frames(events: list[dict]) -> list[tuple]:
+    return [
+        (e["type"], e["callId"], e.get("applied"), e.get("total"))
+        for e in events
+        if e["type"] in ("tool_start", "tool_progress", "tool_end")
+    ]
+
+
+async def test_a_cut_office_edit_stays_open_until_the_next_edit_of_its_file(
+    monkeypatch,
+):
+    """Epo 2026-10-23, Q171: the cut call's row stays in progress, applied of
+    total, and closes as done after the next landed edit of the same file; an
+    edit of another file in between leaves it open."""
+    cut = ToolResult(
+        text_parts=["Edited."], effects=[_office_edit("f_1")], progress=(30, 32)
+    )
+    _office_turn(
+        monkeypatch,
+        {
+            "c1": cut,
+            "c2": ToolResult(effects=[_office_edit("f_2")]),
+            "c3": ToolResult(refused=True, error="stale", error_code="stale_target"),
+            "c4": ToolResult(effects=[_office_edit("f_1")]),
+        },
+        ["f_1", "f_2", "f_1", "f_1"],
+    )
+    # As the SSE writer serializes them, at once.
+    events = [
+        json.loads(json.dumps(e))
+        async for e in agent.run_agent(
+            query="q", ctx=_build_ctx(), history=None, model=_model()
+        )
+    ]
+
+    assert _frames(events) == [
+        ("tool_start", "c1", None, None),
+        ("tool_progress", "c1", 30, 32),
+        ("tool_start", "c2", None, None),
+        ("tool_end", "c2", None, None),
+        ("tool_start", "c3", None, None),
+        ("tool_end", "c3", None, None),
+        ("tool_start", "c4", None, None),
+        ("tool_end", "c4", None, None),
+        ("tool_end", "c1", None, None),
+    ]
+    closed = [e for e in events if e["type"] == "tool_end" and e["callId"] == "c1"]
+    assert closed[0]["outcome"] == "succeeded" and closed[0]["effects"] == [
+        _office_edit("f_1")
+    ]
+    # A checkpoint before the follow-up keeps the counts; the turn's record
+    # ends as a plain edit.
+    checkpoint = next(e for e in events if e["type"] == "turn_checkpoint")
+    assert (
+        checkpoint["activity"][0]["applied"],
+        checkpoint["activity"][0]["total"],
+    ) == (
+        30,
+        32,
+    )
+    first = events[-1]["activity"][0]
+    assert first["callId"] == "c1" and first["outcome"] == "succeeded"
+    assert "applied" not in first and "total" not in first
+
+
+async def test_a_turn_ending_with_commands_unapplied_closes_the_row_with_them(
+    monkeypatch,
+):
+    cut = ToolResult(effects=[_office_edit("f_1")], progress=(30, 32))
+    _office_turn(monkeypatch, {"c1": cut}, ["f_1"])
+    events = await _collect("q", _build_ctx())
+
+    assert _frames(events) == [
+        ("tool_start", "c1", None, None),
+        ("tool_progress", "c1", 30, 32),
+        ("tool_end", "c1", 30, 32),
+    ]
+    assert events[-1]["type"] == "done"
+    block = events[-1]["activity"][0]
+    assert (block["outcome"], block["applied"], block["total"]) == ("succeeded", 30, 32)
+
+
+async def test_an_office_edit_reads_what_the_engine_left_unapplied(monkeypatch):
+    """The engine alone counts the limits (Epo 2026-10-22): its notice's first
+    unapplied index is how many commands it applied, a create counting."""
+    notices = iter(
+        [
+            (
+                "Not applied: the commands at indexes 30 to 31 (counting from 0), "
+                "past the limit of 30 formatted spans a call; send them in another call."
+            ),
+            (
+                "Not applied: the command at index 50 (counting from 0), past the "
+                "limit of 50 commands a call; send them in another call."
+            ),
+            "",
+        ]
+    )
+
+    def _post(url, **_kwargs):
+        body = _receipt(
+            "created" if url.endswith("/create") else "edited", "source_file", "f_1"
+        )
+        body["notice"] = next(notices)
+        return _JsonResp(body)
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    span = {"type": "format_text", "target_id": "p1", "text": "a", "bold": True}
+
+    def edit(call, **args):
+        return tools.run("edit_office_document", {**args, "_tool_call_id": call}, ctx)
+
+    edited = await edit("c1", file_id="f_1", commands=[span] * 32)
+    assert edited.progress == (30, 32)
+    create = {"type": "create", "format": "docx", "title": "Notes"}
+    created = await edit("c2", commands=[create] + [span] * 50)
+    assert created.progress == (50, 51)
+    assert (await edit("c3", file_id="f_1", commands=[span])).progress is None

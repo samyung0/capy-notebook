@@ -16,11 +16,7 @@ import {
 const { uploadEditorAsset } = vi.hoisted(() => ({
   uploadEditorAsset: vi.fn(async () => ({ assetId: 'asset_1' })),
 }));
-vi.mock('@/api/editorAssets', () => ({
-  editorImageMaxBytes: async () => 1 << 20,
-  uploadEditorAsset,
-}));
-vi.mock('@/lib/fitImage', () => ({ fitImage: async (file: File) => file }));
+vi.mock('@/api/editorAssets', () => ({ uploadEditorAsset }));
 
 describe('shared question editing', () => {
   it('round-trips every answer through both document and markdown boundaries', () => {

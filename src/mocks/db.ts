@@ -5,6 +5,7 @@
    ============================================================ */
 import type {
   AccountStatus,
+  ActivityBlock,
   AppNotification,
   Attempt,
   AttemptCard,
@@ -28,7 +29,6 @@ import type {
   ReportEditIncidentReq,
   SourceFile,
   Task,
-  ThinkingCanvas,
   TrashItem,
   User,
   WireMessage,
@@ -61,6 +61,7 @@ import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import { gradeQuestions, learnerView } from './answerKeys';
 import { biologyQuizQuestions } from './biologyQuiz';
 import {
+  type ChatFixture,
   chatFixtures,
   fixtureCitations,
   fixtureResult,
@@ -73,7 +74,14 @@ import {
   EDITOR_WORKSPACE_ID,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
+import {
+  nearLimitCards,
+  nearLimitFlowchart,
+  nearLimitMindmap,
+  nearLimitQuestions,
+} from './nearLimits';
 import { seedNotes } from './noteContent';
+import { bioNearLimitNotes } from './noteContent/bio';
 import { embeddedSeeds, equation } from './noteContent/helpers';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
 import { biologyOfficeFixtures } from './officeFixtures';
@@ -183,7 +191,6 @@ export const user: Omit<User, 'account'> = {
   planTier: 'pro',
   streak: 0,
   studyPreferences: {},
-  studyProgress: true,
   subscriptionStatus: 'active',
 };
 
@@ -1874,11 +1881,6 @@ export const accountStatus: AccountStatus = {
   userId: user.id,
 };
 
-export const canvases: ThinkingCanvas[] = [
-  { id: 'cv_1', name: 'Bio mind map', updatedAt: hours(4) },
-  { id: 'cv_2', name: 'Essay brainstorm', updatedAt: days(2) },
-];
-
 /* ---------------- study materials (mindmaps / diagrams) ---------------- */
 const ownerCapabilities = {
   canEdit: true,
@@ -1893,6 +1895,7 @@ type MaterialMetrics = 'contentBytes' | 'maxDepth' | 'nodeCount';
 
 /** Wire fields with an obvious default for authored content. */
 type MaterialDefaults =
+  | 'audioMaxBytes'
   | 'imageMaxBytes'
   | 'isOwner'
   | 'position'
@@ -1923,6 +1926,7 @@ export function makeMaterial(draft: MaterialDraft): Material {
     nodeCount: 0,
   };
   return {
+    audioMaxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
     imageMaxBytes: PLAN_LIMITS.free.imageMaxBytes,
     isOwner: true,
     position: nextContentPosition(draft.workspaceId, draft.chapterId),
@@ -2324,6 +2328,43 @@ export const chatMessages: WireMessage[] = [
 const after = (iso: string, ms: number) =>
   new Date(new Date(iso).getTime() + ms).toISOString();
 
+/** A fixture's Office edits as history keeps them: a cut call the turn
+ * followed with an edit of its file closed as done, one it never followed
+ * keeps its counts (Epo 2026-10-23, Q171). */
+function officeActivity(
+  conversationId: string,
+  createdAt: string,
+  edits: ChatFixture['edits'] = []
+): ActivityBlock[] {
+  const office = edits.filter(({ tool }) => tool === 'edit_office_document');
+  return office.flatMap(({ changes, cut }, index) => {
+    const file = files.find(({ id }) => id === changes[0]?.id);
+    if (!file) return [];
+    const followed = office
+      .slice(index + 1)
+      .some((next) => next.changes[0]?.id === file.id);
+    const callId = `${conversationId}_office_${index}`;
+    return {
+      ...(cut && !followed ? cut : {}),
+      callId,
+      detail: file.name,
+      effects: [
+        {
+          operation: 'edited',
+          operationId: callId,
+          resource: { id: file.id, kind: 'source_file', title: file.name },
+        },
+      ],
+      endedAt: after(createdAt, 4000 + index * 3000),
+      id: callId,
+      kind: 'tool',
+      name: 'edit_office_document',
+      outcome: 'succeeded',
+      startedAt: after(createdAt, 3200 + index * 3000),
+    };
+  });
+}
+
 // Every preview is also a saved conversation, so history needs no streamed turn.
 chatFixtures.forEach((fixture, index) => {
   const conversationId = `conv_${fixture.id}`;
@@ -2360,6 +2401,11 @@ chatFixtures.forEach((fixture, index) => {
           outcome: 'succeeded',
           startedAt: after(createdAt, 1800),
         },
+        ...officeActivity(
+          conversationId,
+          createdAt,
+          (fixture as ChatFixture).edits
+        ),
       ],
       citations:
         result.errorCode === 'response_flagged'
@@ -2407,29 +2453,26 @@ export const publicWorkspaces: PublicWorkspace[] = [
     sharePath: '/w/pub_ws_2.IT_5zt_99G56MWnD',
   },
 ];
-/** Explore's quizzes with their keys; the route sends learner views. */
-export const publicQuizzes: (Omit<PublicQuiz, 'questions'> & {
-  questions: Question[];
-})[] = [
+/** Explore's quizzes with their keys (clone sources); the route sends the
+ * question count only. */
+export const publicQuizzes: (PublicQuiz & { questions: Question[] })[] = [
   {
-    ...seedQuizzes[0],
     author: 'mrslee',
     canClone: true,
     clones: 540,
     id: 'pub_qz_1',
-    isOwner: false,
     name: 'Cell biology — 50 questions',
-    privacy: 'public',
+    questions: seedQuizzes[0].questions,
+    workspaceId: seedQuizzes[0].workspaceId,
   },
   {
-    ...seedQuizzes[2],
     author: 'mathpro',
     canClone: true,
     clones: 410,
     id: 'pub_qz_2',
-    isOwner: false,
     name: 'Calculus II mega quiz',
-    privacy: 'public',
+    questions: seedQuizzes[2].questions,
+    workspaceId: seedQuizzes[2].workspaceId,
   },
 ];
 export const publicFlashcardSets: PublicFlashcardSet[] = [
@@ -2654,6 +2697,60 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
     })
   );
 }
+
+/* ---------------- near-limit fixtures ---------------- */
+// Every embed at its limits (mocks/nearLimits.ts), seeded last so they sit at
+// the bottom of Biology 101's tree and out of Recent Files, under the rows
+// specs click. The diagrams take seconds to draw.
+const nearLimitSet = nearLimitCards('fc_near');
+for (const card of nearLimitSet)
+  flashcardCards[card.id] = { materialId: 'dk_bio_near' };
+for (const [id, kind, title, value] of [
+  ...bioNearLimitNotes.map(
+    (note) => [note.id, 'note', note.title, note.value] as const
+  ),
+  [
+    'mat_bio_near_diagram',
+    'diagram',
+    'Near-limit diagram',
+    [mermaidNode(nearLimitFlowchart())],
+  ],
+  [
+    'mat_bio_near_mindmap',
+    'mindmap',
+    'Near-limit mindmap',
+    [mermaidNode(nearLimitMindmap())],
+  ],
+  [
+    'qz_bio_near',
+    'quiz',
+    'Near-limit quiz',
+    [quizNode({ questions: nearLimitQuestions('qz_near') }, 'qz_bio_near')],
+  ],
+  [
+    'dk_bio_near',
+    'flashcards',
+    'Near-limit flashcards',
+    [flashcardsNode(nearLimitSet, 'dk_bio_near')],
+  ],
+] as const)
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument(value as MaterialValue),
+      createdAt: days(30),
+      id,
+      kind,
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title,
+      workspaceId: 'ws_bio',
+      workspaceName: 'Biology 101',
+    })
+  );
 
 /* Embedded quiz and flashcard rows referenced from the note fixtures. */
 for (const seed of embeddedSeeds) {

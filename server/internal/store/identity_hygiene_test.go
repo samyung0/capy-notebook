@@ -136,7 +136,9 @@ func TestInviteEmailTokenIsMintedAtSend(t *testing.T) {
 		}
 	}
 
-	// A re-sent invite replaces the token, so the older email cannot mint.
+	// A re-sent invite (past the resend cooldown) replaces the token, so the
+	// older email cannot mint.
+	ageInvitesPastCooldown(t, s, ws.ID)
 	if err := s.CreateWorkspaceInvite(ctx, ws.ID, "u_other", RoleEditor, "u_owner"); err != nil {
 		t.Fatal(err)
 	}

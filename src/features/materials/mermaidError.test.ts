@@ -39,4 +39,15 @@ describe('mermaidFailure', () => {
       )
     ).toEqual({ line: null });
   });
+
+  it('names the edge limit, which has its own message', () => {
+    expect(
+      mermaidFailure(
+        new Error(
+          'Edge limit exceeded. 501 edges found, but the limit is 500.\nIf you would like to increase the limit, set maxEdges.'
+        ),
+        'flowchart LR'
+      )
+    ).toEqual({ line: null, reason: 'edges' });
+  });
 });

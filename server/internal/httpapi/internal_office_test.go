@@ -57,12 +57,27 @@ func TestNormalizeOfficeCommands(t *testing.T) {
 			`{"rows":[["Name","Score"],["Ann","91"]],"type":"insert_table"}`},
 		{"docx", `{"type":"delete_table","id":"body:t0:r0c0:paragraph:p9","expected":[["Name","a\nb"]]}`,
 			`{"expected":[["Name","a\nb"]],"id":"body:t0:r0c0:paragraph:p9","type":"delete_table"}`},
-		{"docx", `{"type":"format_text","target_id":"body:paragraph:p1","expected_text":"key","bold":true,"underline":false,` +
+		{"docx", `{"type":"format_text","target_id":"body:paragraph:p1","text":"key","bold":true,"underline":false,` +
 			`"color":"#1F4E79","highlight":"yellow","font_size":14,"font_family":"Arial"}`,
-			`{"bold":true,"color":"#1F4E79","expectedText":"key","fontFamily":"Arial","fontSize":14,"highlight":"yellow",` +
-				`"targetId":"body:paragraph:p1","type":"format_text","underline":false}`},
+			`{"bold":true,"color":"#1F4E79","fontFamily":"Arial","fontSize":14,"highlight":"yellow",` +
+				`"targetId":"body:paragraph:p1","text":"key","type":"format_text","underline":false}`},
 		{"docx", `{"type":"set_alignment","target_id":"body:paragraph:p1","alignment":"justify"}`,
 			`{"alignment":"justify","targetId":"body:paragraph:p1","type":"set_alignment"}`},
+		{"pptx", `{"type":"set_shape_text","shape_id":"slide:0:256:shape:1","expected_text":"a\nb","paragraphs":["c",""]}`,
+			`{"expectedText":"a\nb","paragraphs":["c",""],"shapeId":"slide:0:256:shape:1","type":"set_shape_text"}`},
+		{"pptx", `{"type":"add_slide","after_slide":"slide:0:256","layout":"ppt/slideLayouts/slideLayout2.xml"}`,
+			`{"afterSlide":"slide:0:256","layout":"ppt/slideLayouts/slideLayout2.xml","type":"add_slide"}`},
+		{"pptx", `{"type":"add_slide"}`, `{"type":"add_slide"}`},
+		// A slide_id the model adds to add_slide does not reach the engine (review L3).
+		{"pptx", `{"type":"add_slide","slide_id":"slide:0:256"}`, `{"type":"add_slide"}`},
+		{"pptx", `{"type":"delete_slide","slide_id":"slide:1:257","expected_text":"Title\nBody"}`,
+			`{"expectedText":"Title\nBody","slideId":"slide:1:257","type":"delete_slide"}`},
+		{"pptx", `{"type":"move_slide","slide_id":"slide:1:257","before_slide":"slide:0:256"}`,
+			`{"beforeSlide":"slide:0:256","slideId":"slide:1:257","type":"move_slide"}`},
+		{"pptx", `{"type":"add_text_box","slide_id":"slide:0:256","paragraphs":["Note"],"x":36,"y":400.5,"w":300,"h":40}`,
+			`{"h":40,"paragraphs":["Note"],"slideId":"slide:0:256","type":"add_text_box","w":300,"x":36,"y":400.5}`},
+		{"pptx", `{"type":"format_text","target_id":"para:s:0","text":"key","italic":true}`,
+			`{"italic":true,"targetId":"para:s:0","text":"key","type":"format_text"}`},
 	} {
 		out, err := NormalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
 		if err != nil {
@@ -98,12 +113,20 @@ func TestNormalizeOfficeCommandsRefusesTheWrongFormat(t *testing.T) {
 			agenttools.ErrInvalidInput, "delete_columns needs expected: the band's current inputs as a grid of rows, [] when it is empty"},
 		{"xlsx", `{"type":"set_list","ids":["x"],"list":"bullet"}`,
 			agenttools.ErrUnsupportedOperation, "set_list applies to DOCX files, not XLSX"},
-		{"pptx", `{"type":"set_alignment","target_id":"x","alignment":"left"}`,
-			agenttools.ErrUnsupportedOperation, "set_alignment applies to DOCX files, not PPTX"},
+		{"pptx", `{"type":"insert_table","rows":[["x"]]}`,
+			agenttools.ErrUnsupportedOperation, "insert_table applies to DOCX files, not PPTX"},
+		{"xlsx", `{"type":"format_text","target_id":"x","text":"a","bold":true}`,
+			agenttools.ErrUnsupportedOperation, "format_text applies to DOCX and PPTX files; write cells with set_range"},
 		{"docx", `{"type":"insert_table","rows":"Name, Score"}`,
 			agenttools.ErrInvalidInput, "insert_table needs rows: the cells' text as a grid of rows"},
 		{"docx", `{"type":"delete_table","id":"body:t0:r0c0:paragraph:p9"}`,
 			agenttools.ErrInvalidInput, "delete_table needs expected: the table's cells' text as a grid of rows"},
+		{"docx", `{"type":"set_shape_text","shape_id":"s","expected_text":"","paragraphs":["x"]}`,
+			agenttools.ErrUnsupportedOperation, "set_shape_text applies to PPTX files, not DOCX"},
+		{"pptx", `{"type":"set_shape_text","shape_id":"s","expected_text":"","paragraphs":"x"}`,
+			agenttools.ErrInvalidInput, "set_shape_text needs paragraphs: the shape's new text, one string a paragraph"},
+		{"pptx", `{"type":"add_text_box","slide_id":"s","paragraphs":["x"],"x":0,"y":0,"w":10}`,
+			agenttools.ErrInvalidInput, "add_text_box needs x, y, w and h in points"},
 	} {
 		_, err := NormalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
 		var refused *store.EditRefusal

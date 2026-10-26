@@ -1,7 +1,8 @@
 import type { RowProps, TableProps } from '../schema';
-import { CiteFooter, elements } from './Cite';
+import { CiteFooter, Cites, elements } from './Cite';
 
-/** A read-only table. Citations sit under the block, never inside a cell. */
+/** A read-only table. A row's citations are raised numbers at the end of its
+ * last cell, as in running text; the table's own sources sit under it. */
 export function ChatTable({ props }: { props: TableProps }) {
   const rows = elements<RowProps>(props.rows);
   const columns = props.columns ?? [];
@@ -36,6 +37,9 @@ export function ChatTable({ props }: { props: TableProps }) {
                     key={cell}
                   >
                     {row.props.cells[cell] ?? ''}
+                    {cell === columns.length - 1 ? (
+                      <Cites passages={row.props.passages} />
+                    ) : null}
                   </td>
                 ))}
               </tr>
@@ -43,13 +47,7 @@ export function ChatTable({ props }: { props: TableProps }) {
           </tbody>
         </table>
       </div>
-      <CiteFooter
-        passages={props.passages}
-        rows={rows.map((row, index) => ({
-          index,
-          passages: row.props.passages,
-        }))}
-      />
+      <CiteFooter passages={props.passages} />
     </div>
   );
 }

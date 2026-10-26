@@ -1,4 +1,3 @@
-import { isApiError } from '@/api/client';
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { m } from '@/i18n';
@@ -38,6 +37,23 @@ export function isTextKind(
   return policy.kinds.some((entry) => entry.kind === kind && entry.text);
 }
 
+/** What a source gets before its upload (Epo 2026-10-24): an Office file's
+ * pictures compressed and its EMF and WMF pictures removed, or an image
+ * file shrunk to at most 5 megapixels. */
+export type SourceCompression = 'office' | 'image';
+
+/** The compression a picked file gets, if any; an SVG image is drawn as a
+ * PNG first (Q364). Such a file's per-file cap applies once it is
+ * compressed. */
+export function sourceCompression(
+  name: string,
+  kind: FileKind
+): SourceCompression | null {
+  const ext = fileExt(name);
+  if (ext === 'docx' || ext === 'pptx' || ext === 'xlsx') return 'office';
+  return kind === 'image' ? 'image' : null;
+}
+
 export function parseModeIssues(
   file: Pick<File, 'name' | 'size'>,
   kind: FileKind,
@@ -55,7 +71,7 @@ export function parseModeIssues(
     ) {
       return 'format not supported';
     }
-    if (file.size > rule.maxBytes) {
+    if (file.size > rule.maxBytes && !sourceCompression(file.name, kind)) {
       return `over ${Math.round(rule.maxBytes / 1024 / 1024)} MB`;
     }
     if (analysisError === 'too_many_pages') {
@@ -95,6 +111,7 @@ export function needsIngestJob(
     kind === 'md' ||
     kind === 'json' ||
     kind === 'image' ||
+    kind === 'audio' ||
     ext === 'csv' ||
     ext === 'tsv' ||
     mode !== 'none'
@@ -181,30 +198,4 @@ export async function mapWithConcurrency<T, R>(
     })
   );
   return results;
-}
-
-/** An upload reservation answered 429 gets 3 attempts in all. */
-const UPLOAD_ATTEMPTS = 3;
-
-export function retryAfterMs(error: unknown): number | null {
-  if (!isApiError(error) || error.status !== 429) return null;
-  const seconds = Number(error.body?.retryAfterSeconds);
-  if (!Number.isFinite(seconds) || seconds <= 0) return 1000;
-  return Math.min(30_000, Math.ceil(seconds) * 1000);
-}
-
-export async function withUploadRetry<T>(
-  fn: () => Promise<T>,
-  wait: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms))
-): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      const delay = retryAfterMs(error);
-      if (delay == null || attempt + 1 >= UPLOAD_ATTEMPTS) throw error;
-      await wait(delay);
-    }
-  }
 }

@@ -71,7 +71,7 @@ import (
 // v23: chart media and fences lose unit (it goes in the title); plot media and
 // fences take kind line or scatter.
 // v24: the embed catalog (server/internal/embeds) names each embed kind once
-// per layer: chat's Diagram and Interactive are Mermaid and HtmlEmbed, and the
+// per layer: chat's Interactive is HtmlEmbed (chat's Mermaid went in v41), and the
 // html-embed rules the note format and chat quote come from the catalog.
 // v25: add_open_question is gone (Epo 2026-10-14): add_questions items take
 // an open question too (marks, markscheme, model_answer, hints?), the item's
@@ -120,7 +120,25 @@ import (
 // (a Mermaid block's theme too) on the replacement's first block of its type,
 // unless that shows a different picture, which brings its own caption and
 // credit (Epo 2026-10-22).
-const ContractVersion = 37
+// v38: inspect_office_document reads a PPTX by slide (its slides with their
+// layouts and shapes, the deck's layouts; a slide's shapes and paragraphs);
+// edit_office_document's set_shape_text, add_slide, delete_slide,
+// move_slide and add_text_box edit PowerPoint files, and format_text and
+// set_alignment take PPTX paragraphs too (Epo 2026-10-20); the slide read
+// pages shapes with paragraphs and gives the slide's speaker notes, which
+// delete_slide names (Epo 2026-10-22).
+// v39: format_text names its span text, not expected_text, and delete_table
+// takes a table's short id (body:t0) that names one table (Epo 2026-10-23).
+// v40: search_web searches the web, its cited results kept like passages; the
+// stream request carries workspaceOnly instead of library, library.read is
+// granted with every chat, and the library tools and search_web stay offered
+// whatever the switch says, answering as unavailable while it is on (Epo
+// 2026-10-24).
+// v41: the agent makes no Mermaid: create_material takes flashcards or a note
+// (no mindmap or diagram) and the note format names no mermaid fence; a
+// Mermaid block a learner added still rewrites through replace_block (Epo
+// 2026-10-25).
+const ContractVersion = 41
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -263,10 +281,13 @@ const (
 )
 
 // UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
-// room holds its Yjs items while the step is live (Epo 2026-10-20).
+// room holds its Yjs items while the step is live (Epo 2026-10-20). An edit
+// step's is offered until ExpiresAt, 24 h after its agent edit (Q385), when
+// the chat hides it; a file step's has none.
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
 	Status      UndoStatus `json:"status" enum:"available,unavailable"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
 }
 
 // EffectOperation names what a mutation did to a resource.
@@ -323,6 +344,9 @@ type Contract struct {
 	// MediaBlocks are the JSON Schemas add_question_media checks its media
 	// against; the model is not shown them.
 	MediaBlocks map[string]any `json:"mediaBlocks"`
+	// OfficeShapeText is the engine's per-shape text bound, which Marshal
+	// adds for the office_building skill.
+	OfficeShapeText *ShapeText `json:"officeShapeText,omitempty"`
 }
 
 func Export() Contract {
@@ -352,15 +376,17 @@ func Export() Contract {
 // edit_office_document's description ending with the Office engine's
 // per-call limits from officeLimits (the file at OfficeLimitsPath).
 func Marshal(officeLimits []byte) ([]byte, error) {
-	sentence, err := officeLimitsSentence(officeLimits)
+	limits, err := parseOfficeLimits(officeLimits)
 	if err != nil {
 		return nil, err
 	}
 	contract := Export()
+	contract.OfficeShapeText = &limits.ShapeText
 	for i := range contract.Tools {
 		if contract.Tools[i].Name == "edit_office_document" {
 			contract.Tools[i].Description = strings.Replace(contract.Tools[i].Description,
-				"(Marshal adds the engine's per-call limits.)", sentence, 1)
+				"(Marshal adds the engine's per-call limits.)", officeLimitsSentence(limits), 1)
+			withShapeText(contract.Tools[i].InputSchema, limits.ShapeText)
 		}
 	}
 	out, err := json.MarshalIndent(contract, "", "  ")
@@ -538,6 +564,15 @@ func officeCommandSchema() map[string]any {
 	paragraph := str("A paragraph's target id from inspect_office_document.")
 	after := str("The body paragraph it follows; several inserts after one paragraph keep their order. Omit to add it at the end of the document.")
 	flag := map[string]any{"type": "boolean"}
+	slideID := str("A slide's id from inspect_office_document.")
+	// A shape's text, bounded by the engine's limits.json (Marshal).
+	shapeText := func(desc string) map[string]any {
+		return map[string]any{
+			"type": "array", "minItems": 1, shapeTextKey: true, "items": map[string]any{"type": "string"},
+			"description": desc + " At most " + shapeParagraphs + " paragraphs and " + shapeCharacters + " characters together.",
+		}
+	}
+	points := map[string]any{"type": "number", "minimum": 0, "description": "Points from the slide's left or top edge."}
 	return map[string]any{
 		"oneOf": []any{
 			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
@@ -626,25 +661,51 @@ func officeCommandSchema() map[string]any {
 				"id":       str("The table's id from inspect_office_document."),
 				"expected": band("The table's cells' text as inspect_office_document shows them, one array per row; a cell's paragraphs joined by line breaks."),
 			}, "id", "expected"),
-			variant("format_text", "DOCX: format text inside one paragraph; fields left out stay as they are.", map[string]any{
+			variant("format_text", "DOCX, PPTX: format text inside one paragraph; fields left out stay as they are.", map[string]any{
 				"target_id":     paragraph,
-				"expected_text": str("The exact text to format as inspect_office_document shows it; must occur once in the paragraph."),
+				"text":          str("The exact text to format as inspect_office_document shows it; must occur once in the paragraph."),
 				"bold":          flag,
 				"italic":        flag,
 				"underline":     flag,
 				"strikethrough": flag,
 				"color":         str(`A hex colour, like "#1F4E79".`),
-				"highlight": map[string]any{"type": "string", "enum": []string{
+				"highlight": map[string]any{"type": "string", "description": "DOCX only.", "enum": []string{
 					"none", "yellow", "green", "cyan", "magenta", "blue", "red", "darkBlue", "darkCyan",
 					"darkGreen", "darkMagenta", "darkRed", "darkYellow", "darkGray", "lightGray", "black", "white",
 				}},
 				"font_size":   map[string]any{"type": "number", "minimum": 1, "maximum": 1638, "description": "Points."},
 				"font_family": str(`A font name, like "Arial".`),
-			}, "target_id", "expected_text"),
-			variant("set_alignment", "DOCX: align one paragraph.", map[string]any{
+			}, "target_id", "text"),
+			variant("set_alignment", "DOCX, PPTX: align one paragraph.", map[string]any{
 				"target_id": paragraph,
 				"alignment": map[string]any{"type": "string", "enum": []string{"left", "center", "right", "justify"}},
 			}, "target_id", "alignment"),
+			variant("set_shape_text", "PPTX: replace a shape's whole text; its paragraphs keep their level and bullet, added ones continue the last.", map[string]any{
+				"shape_id":      str("The shape's id from inspect_office_document's slide read."),
+				"expected_text": map[string]any{"type": "string", "description": "The shape's whole text as the slide read shows it, its paragraphs joined by line breaks."},
+				"paragraphs":    shapeText(`The new text, one string a paragraph without line breaks; [""] empties the shape.`),
+			}, "shape_id", "expected_text", "paragraphs"),
+			variant("add_slide", "PPTX: add a slide with its layout's title and text placeholders, empty, right after after_slide or right before before_slide (at most one), last with neither.", map[string]any{
+				"after_slide":  slideID,
+				"before_slide": slideID,
+				"layout":       str("A layout id the deck read lists; omit for the layout of the slide it follows (the first slide's when it goes first)."),
+			}),
+			variant("delete_slide", "PPTX: delete a slide, never the deck's only one.", map[string]any{
+				"slide_id":      slideID,
+				"expected_text": map[string]any{"type": "string", "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order, then its speaker notes as the read shows them (cut marker included); blank lines and the spaces around a line are not compared."},
+			}, "slide_id", "expected_text"),
+			variant("move_slide", "PPTX: move a slide right after after_slide or right before before_slide (exactly one).", map[string]any{
+				"slide_id":     slideID,
+				"after_slide":  slideID,
+				"before_slide": slideID,
+			}, "slide_id"),
+			variant("add_text_box", "PPTX: add a text box to a slide, its box in points from the slide's top left corner, inside the slide.", map[string]any{
+				"slide_id":   slideID,
+				"paragraphs": shapeText("The text, one string a paragraph without line breaks."),
+				"x":          points, "y": points,
+				"w": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Width in points."},
+				"h": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Height in points."},
+			}, "slide_id", "paragraphs", "x", "y", "w", "h"),
 		},
 	}
 }
@@ -664,14 +725,13 @@ var noteFigureFences = fmt.Sprintf("```chart fences comparing labelled categorie
 
 // noteMarkdownDescription is the fence format notes are written in; the
 // editor's markdown import reads the same fences (src/features/notes/blocks).
-var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
-	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
+var noteMarkdownDescription = "Markdown. A note may also hold, where they help an idea: " +
 	noteFigureFences +
 	"```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check sized " +
 	"and placed as the study preferences say; and " + fmt.Sprintf("```html-embed fences for an interactive (YAML: a quoted `caption`, "+
 	"`html: |`), at most %d per note. ", embeds.HTMLEmbedMaxCount) + embeds.RulesOf("html_embed") +
-	" Use an interactive only where moving something teaches more than a diagram."
+	" Use an interactive only where moving something teaches more than a still picture."
 
 // The agent writes questions in small shapes (Epo 2026-10-13): multiple-choice,
 // short-answer and open questions through add_questions (one tool since
@@ -889,6 +949,24 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
 		chatTool(Definition{
+			Name:      "search_web",
+			Retention: RetainCitedPassages,
+			Description: "Search the web. Expensive: each search costs the learner credits, so " +
+				"call it only when the workspace, the library and your own knowledge cannot " +
+				"answer (recent events, facts they lack). At most 3 searches per learner " +
+				"message, one focused query each, written in your own words rather than " +
+				"copied from the learner's files. Results are pages anyone can publish.",
+			InputSchema: obj(map[string]any{
+				"query": map[string]any{
+					"type": "string", "minLength": 1, "maxLength": 128,
+					"description": "One focused query. site:, -site:, lang:, after: and " +
+						"before: narrow it.",
+				},
+			}, "query"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead},
+		}),
+		chatTool(Definition{
 			Name:      "read_skill",
 			Retention: RetainNone,
 			Description: "Read a skill: the full instructions for one kind of work, listed " +
@@ -909,7 +987,7 @@ func Definitions() []Definition {
 			InputSchema: obj(map[string]any{
 				"kind": map[string]any{
 					"type": "string",
-					"enum": []string{"flashcards", "mindmap", "diagram", "note"},
+					"enum": []string{"flashcards", "note"},
 				},
 				"title": map[string]any{"type": "string", "maxLength": fieldlimits.MaterialTitle},
 				"cards": map[string]any{
@@ -922,7 +1000,7 @@ func Definitions() []Definition {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "note, mindmap or diagram only: markdown.",
+					"description": "note only: markdown.",
 				},
 				"sources":     sourcesSchema("The "),
 				"chapter_id":  str("The chapter to file it in; omit to leave it unfiled."),
@@ -1061,8 +1139,8 @@ func Definitions() []Definition {
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
 				"the whole call. Edits save directly; replace_block rewrites a note " +
-				"block with formatting or math, and a mermaid block (a mindmap's or diagram's " +
-				"one block) as one ```mermaid fence, expecting the source inspect shows as its text. " +
+				"block with formatting or math, and a Mermaid block a learner added as one " +
+				"```mermaid fence, expecting the source inspect shows as its text. " +
 				"Any note block may be removed or replaced, media included; the only media an edit " +
 				"adds are library figures. A block rewritten as one of its own type keeps its " +
 				"caption and width (a diagram its theme too); an image swapped for a different " +
@@ -1130,15 +1208,17 @@ func Definitions() []Definition {
 				"cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and " +
 				"table cells, the body's and then the headers', footers' and notes', which take replace_text " +
 				"only; the first page also lists the file's paragraph styles. " +
-				"PPTX: without slide, shapes with their target ids and text, count from start; " +
-				"with slide, that slide's shapes.",
+				"PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, " +
+				"first line), the first page also listing the deck's layouts; with slide, count of that " +
+				"slide's shapes and paragraphs from start, each shape followed by its paragraphs with their " +
+				"target ids, the first page also giving the slide's speaker notes.",
 			InputSchema: obj(map[string]any{
 				"file_id": str(""),
 				"sheet":   str("XLSX: the sheet's id or name."),
 				"range":   str(`XLSX: an A1 range on that sheet, like "A1:H40".`),
-				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX, PPTX: first target index."},
-				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX, PPTX: targets to read."},
-				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number."},
+				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first shape or paragraph; counting from 0."},
+				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX: paragraphs to read; PPTX: slides, or with slide shapes and paragraphs."},
+				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number, from 1."},
 			}, "file_id"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead},

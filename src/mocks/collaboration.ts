@@ -608,6 +608,31 @@ export function setCollaborationSlowed(value: boolean) {
   window.dispatchEvent(new Event(REACHABILITY));
 }
 
+// A note whose collaboration-token requests hang, or answer after `delayMs`
+// (the join's 30 s, Epo 2026-10-23); kept across page loads, so a first open
+// starts held.
+const TOKENS_HELD = 'capy.mock.collaboration.tokensHeld';
+
+export function holdNoteTokens(materialId: string | null, delayMs?: number) {
+  if (materialId)
+    sessionStorage.setItem(
+      TOKENS_HELD,
+      JSON.stringify({ delayMs: delayMs ?? null, materialId })
+    );
+  else sessionStorage.removeItem(TOKENS_HELD);
+}
+
+/** How long a note's token request waits: null at once, Infinity for ever. */
+export function noteTokenDelay(materialId: string): number | null {
+  if (!browser) return null;
+  const held = JSON.parse(sessionStorage.getItem(TOKENS_HELD) ?? 'null') as {
+    delayMs: number | null;
+    materialId: string;
+  } | null;
+  if (held?.materialId !== materialId) return null;
+  return held.delayMs ?? Number.POSITIVE_INFINITY;
+}
+
 // A note's current room schema, as the service's material_yjs_documents
 // row names it (1 until a room moves).
 const SCHEMA = 'capy.scenario.schema.';
@@ -620,10 +645,9 @@ export function mockMaterialRoom(materialId: string) {
 
 /**
  * The service moved a note's room to its next schema while a client was
- * away: a discard of unsaved room state keeps the saved state (`keepState`),
- * a compaction reseeds it from the projection with fresh identities.
+ * away: a discard of unsaved room state keeps the saved state.
  */
-export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
+export function moveMockMaterialRoom(materialId: string) {
   const old = mockMaterialRoom(materialId);
   const schema = Number(old.split(':').at(-1)) + 1;
   const next = `material:${materialId}:schema:${schema}`;
@@ -638,7 +662,7 @@ export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
     live.retired = true;
   }
   const saved = checkpoints.get(old);
-  if (keepState && saved) {
+  if (saved) {
     checkpoints.set(next, {
       updates: [...saved.updates],
       version: saved.version,
@@ -649,6 +673,8 @@ export function moveMockMaterialRoom(materialId: string, keepState: boolean) {
 }
 
 interface MockCollaborationOptions {
+  /** As the room provider's: no JOIN until it settles (Q360). */
+  beforeJoin?: () => Promise<void> | undefined;
   initialValue: MaterialValue;
   materialId: string;
   name: string;
@@ -666,7 +692,11 @@ let buildRefused = false;
 class MockCollaborationProvider implements UnifiedProvider {
   readonly awareness: UnifiedProvider['awareness'];
   readonly document: Y.Doc;
+  // The room channel the editor reaches through the wrapper, as the capy
+  // provider's (a held draft send closes and reopens it, Q327).
   readonly provider = {
+    connect: () => this.connect(),
+    disconnect: () => this.disconnect(),
     sendStateless: (payload: string) => this.handleStateless(payload),
   };
   readonly type = 'mock';
@@ -682,6 +712,8 @@ class MockCollaborationProvider implements UnifiedProvider {
   private leave?: () => void;
   // Connected unless disconnected on purpose: a lost service reconnects.
   private wanted = false;
+  // The page's beforeJoin holding the JOIN (a held draft send, Q360).
+  private waiting: Promise<void> | null = null;
   private readonly onReachability = () => {
     if (!reachable()) this.drop();
     else if (this.wanted) this.connect();
@@ -713,7 +745,20 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   connect = () => {
     this.wanted = true;
-    if (this.isConnected || !reachable()) return;
+    if (this.isConnected || this.waiting) return;
+    // As the room provider: the JOIN waits until it settles, and a connect
+    // meanwhile asks nothing more.
+    const before = this.options.beforeJoin?.();
+    if (before) {
+      this.waiting = before;
+      void before.then(() => {
+        if (this.waiting !== before) return;
+        this.waiting = null;
+        if (this.wanted) this.connect();
+      });
+      return;
+    }
+    if (!reachable()) return;
     if (buildRefused) {
       this.options.onAuthenticationFailed?.(outdated);
       return;
@@ -730,6 +775,7 @@ class MockCollaborationProvider implements UnifiedProvider {
       this.options.onSlowed?.(true);
       return;
     }
+    if (roomJoinsHeld) return;
     const room = materialRoom(this.options.name, this.options.initialValue);
     this.room = room;
     materialProviders.add(this);
@@ -757,6 +803,7 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   disconnect = () => {
     this.wanted = false;
+    this.waiting = null;
     this.drop();
   };
 
@@ -782,6 +829,26 @@ class MockCollaborationProvider implements UnifiedProvider {
   announceOutdated() {
     this.disconnect();
     this.options.onAuthenticationFailed?.(outdated);
+  }
+
+  /** The service closed this note's channel (an eviction): the editor
+   * rejoins at once, as its reconnector does on the shared socket. */
+  evicted(materialId: string) {
+    if (this.options.materialId !== materialId || !this.isConnected) return;
+    this.drop();
+    this.connect();
+  }
+
+  /** A room event the service sends this note's editors. */
+  announce(materialId: string, event: Record<string, unknown>) {
+    if (this.options.materialId !== materialId || !this.isConnected) return;
+    this.options.onStateless?.({
+      payload: JSON.stringify({
+        materialId,
+        room: this.options.name,
+        ...event,
+      }),
+    });
   }
 
   announceReadOnly() {
@@ -837,6 +904,8 @@ class MockCollaborationProvider implements UnifiedProvider {
  * saves without publishing; View reads it through the viewer's session. */
 class MockSourceProvider implements SourceProvider {
   readonly awareness: Awareness;
+  /** A DOCX editor's layout worker id (Q219): the mock room checks none. */
+  readonly workerClientId = crypto.getRandomValues(new Uint32Array(1))[0] || 2;
   // The in-page room applies updates synchronously.
   readonly hasUnsyncedChanges = false;
   isAuthenticated = true;
@@ -865,7 +934,9 @@ class MockSourceProvider implements SourceProvider {
         String(Number(sessionStorage.getItem(SOURCE_JOINS) ?? 0) + 1)
       );
     sourceProviders.add(this);
-    queueMicrotask(() => config.onSynced?.({ state: true }));
+    // A held JOIN is never answered on the open socket: no sync, no close.
+    if (!roomJoinsHeld)
+      queueMicrotask(() => config.onSynced?.({ state: true }));
   }
 
   sendStateless(payload: string) {
@@ -950,6 +1021,13 @@ class MockSourceProvider implements SourceProvider {
     });
   }
 
+  announcePaused(fileId: string) {
+    if (this.room.target.id !== fileId) return;
+    this.config.onStateless?.({
+      payload: JSON.stringify({ fileId, type: 'source-editing-paused' }),
+    });
+  }
+
   announceEpoch(fileId: string, newEpoch: number) {
     if (this.room.target.id !== fileId) return;
     this.room.retired = true;
@@ -978,6 +1056,24 @@ export function refuseThisBuild() {
   ])
     provider.announceOutdated();
 }
+/** The service discarded unsaved state in an open note's room (a writer's
+ * update it threw away): the room moves to its next schema with its saved
+ * state and closes its editors' channels, whose rejoin names the next room
+ * and swaps the editor onto it (Epo 2026-10-22's room swap). */
+export function discardMockMaterialRoom(materialId: string) {
+  const providers = [...materialProviders];
+  moveMockMaterialRoom(materialId);
+  for (const provider of providers) provider.evicted(materialId);
+}
+/** The room refuses an open note's update for good (over a limit): its
+ * editors keep their unsaved edits as a refused draft. */
+export function rejectMockNoteUpdate(materialId: string) {
+  for (const provider of [...materialProviders])
+    provider.announce(materialId, {
+      code: 'document_size_exceeded',
+      type: 'document-rejected',
+    });
+}
 /** The collaboration service's refusal once the account freezes: every open
  * room turns read-only for its writer. */
 export function announceReadOnly() {
@@ -1004,11 +1100,31 @@ export function holdSourceSaveReceipts(hold: boolean) {
   heldSaveReceipts = null;
   for (const send of held) send();
 }
+let roomJoinsHeld = false;
+/** Note, Office and text room JOINs from now on are never answered, the
+ * socket staying open (the join's 30 s, then its error); joins already in
+ * rooms are untouched. */
+export function holdRoomJoins(hold: boolean) {
+  roomJoinsHeld = hold;
+}
+let sourceSessionsHeld = false;
+/** Office and text edit opens' source-session requests from now on hang. */
+export function holdSourceSessions(hold: boolean) {
+  sourceSessionsHeld = hold;
+}
+export const sourceSessionHeld = () => sourceSessionsHeld;
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
     provider.announceEpoch(fileId, epoch);
 }
+/** The maintenance window paused Office editing: open editors keep their
+ * view read-only under the paused banner. */
+export function announceSourcePaused(fileId: string) {
+  for (const provider of [...sourceProviders]) provider.announcePaused(fileId);
+}
 export function resetScenarioRooms() {
+  roomJoinsHeld = false;
+  sourceSessionsHeld = false;
   failedSourceSaves.clear();
   refusedSourceSaves.clear();
   holdSourceSaveReceipts(false);

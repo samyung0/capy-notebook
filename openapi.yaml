@@ -85,6 +85,9 @@ components:
     ActivityBlock:
       additionalProperties: false
       properties:
+        applied:
+          format: int64
+          type: integer
         callId:
           type: string
         capture:
@@ -123,6 +126,9 @@ components:
           type: string
         text:
           type: string
+        total:
+          format: int64
+          type: integer
       required:
         - id
         - kind
@@ -782,6 +788,11 @@ components:
           type: integer
         preview:
           type: string
+        reviewedAt:
+          description: When an editor last marked the question reviewed; null when not reviewed
+          format: date-time
+          nullable: true
+          type: string
         score:
           description: The latest answer's score for the current content, 0 to 1; null when not answered
           format: double
@@ -794,6 +805,7 @@ components:
         - marks
         - answerTypes
         - score
+        - reviewedAt
       type: object
     BillingCheckoutReq:
       additionalProperties: false
@@ -974,28 +986,6 @@ components:
         - netTokens
         - access
       type: object
-    Canvas:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/Canvas.json
-          format: uri
-          readOnly: true
-          type: string
-        id:
-          type: string
-        name:
-          type: string
-        scene: {}
-        updatedAt:
-          format: date-time
-          type: string
-      required:
-        - id
-        - name
-        - updatedAt
-      type: object
     Card:
       additionalProperties: false
       properties:
@@ -1103,6 +1093,22 @@ components:
         - itemId
         - answers
       type: object
+    CheckSharedNoteQuizReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CheckSharedNoteQuizReq.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          description: The learner's answers by part id
+          type: object
+      required:
+        - answers
+      type: object
     Citation:
       additionalProperties: false
       properties:
@@ -1125,12 +1131,18 @@ components:
         pageStart:
           format: int64
           type: integer
+        published:
+          type: string
         regions:
           items:
             $ref: "#/components/schemas/Region"
           nullable: true
           type: array
+        siteName:
+          type: string
         snippet:
+          type: string
+        url:
           type: string
       required:
         - fileId
@@ -1260,7 +1272,6 @@ components:
           type: string
         authorName:
           type: string
-        contentRich: {}
         createdAt:
           format: date-time
           type: string
@@ -1272,6 +1283,8 @@ components:
           type: boolean
         isEdited:
           type: boolean
+        text:
+          type: string
         updatedAt:
           format: date-time
           type: string
@@ -1282,7 +1295,7 @@ components:
         - discussionId
         - userId
         - authorName
-        - contentRich
+        - text
         - isEdited
         - isDeleted
         - createdAt
@@ -1432,19 +1445,6 @@ components:
       required:
         - answers
       type: object
-    CreateCanvasReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateCanvasReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 120
-          type: string
-      type: object
     CreateCommentReq:
       additionalProperties: false
       properties:
@@ -1454,15 +1454,12 @@ components:
           format: uri
           readOnly: true
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
-        - contentRich
+        - text
       type: object
     CreateConversationReq:
       additionalProperties: false
@@ -1503,17 +1500,16 @@ components:
           minimum: 1
           type: integer
         blockId:
+          maxLength: 128
+          minLength: 1
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
         - anchorVersion
-        - contentRich
+        - text
       type: object
     CreateEmbeddedMaterialReq:
       additionalProperties: false
@@ -1655,6 +1651,22 @@ components:
         workspaceId:
           type: string
       type: object
+    CreateStudyPlanReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateStudyPlanReq.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          maxLength: 60
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
     CreateWorkspaceInviteReq:
       additionalProperties: false
       properties:
@@ -1733,6 +1745,8 @@ components:
         spentThisMonthCents:
           format: int64
           type: integer
+        starterAvailable:
+          type: boolean
       required:
         - autoReload
         - reloadAmountCents
@@ -1740,6 +1754,7 @@ components:
         - paymentMethodInstant
         - spentThisMonthCents
         - reload
+        - starterAvailable
       type: object
     Customization:
       additionalProperties: false
@@ -1920,6 +1935,60 @@ components:
         - createdAt
         - updatedAt
         - comments
+      type: object
+    EditorAssetItem:
+      additionalProperties: false
+      properties:
+        assetId:
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        lostAccess:
+          type: boolean
+        materialId:
+          type: string
+        materialTitle:
+          type: string
+        name:
+          type: string
+        purpose:
+          enum:
+            - image
+            - audio
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+        workspaceName:
+          type: string
+      required:
+        - assetId
+        - name
+        - purpose
+        - sizeBytes
+        - createdAt
+        - materialTitle
+        - workspaceName
+        - lostAccess
+      type: object
+    EditorAssetPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/EditorAssetPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/EditorAssetItem"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
       type: object
     Envelope:
       additionalProperties: false
@@ -2159,8 +2228,10 @@ components:
         - scanned_page_limit
         - element_limit
         - image_pixel_limit
+        - audio_duration_limit
         - tabular_column_limit
         - tabular_text_limit
+        - no_speech
       type: string
     FileKind:
       enum:
@@ -2291,6 +2362,11 @@ components:
           $ref: "#/components/schemas/Privacy"
         provenance:
           $ref: "#/components/schemas/Provenance"
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         revision:
           format: int64
           type: integer
@@ -2408,6 +2484,9 @@ components:
           type: object
         localId:
           maxLength: 64
+          type: string
+        turnstileToken:
+          maxLength: 2048
           type: string
       required:
         - answers
@@ -2869,6 +2948,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        audioMaxBytes:
+          format: int64
+          type: integer
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
         chapterId:
@@ -2913,6 +2995,11 @@ components:
           $ref: "#/components/schemas/Privacy"
         provenance:
           $ref: "#/components/schemas/Provenance"
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         revision:
           format: int64
           type: integer
@@ -2960,6 +3047,7 @@ components:
         - isOwner
         - capabilities
         - imageMaxBytes
+        - audioMaxBytes
       type: object
     MaterialAuthor:
       additionalProperties: false
@@ -3050,6 +3138,9 @@ components:
           enum:
             - content
             - keys
+          type: string
+        previousToken:
+          maxLength: 8192
           type: string
       type: object
     MaterialIndexOutputBody:
@@ -3657,20 +3748,12 @@ components:
           minItems: 1
           nullable: true
           type: array
-        grain:
-          format: double
-          maximum: 1
-          minimum: 0
-          type: number
         pattern:
           enum:
             - none
             - arc
             - mesh
             - glow
-            - painted
-            - waves
-            - contours
           type: string
         strength:
           format: double
@@ -3682,7 +3765,6 @@ components:
         - colours
         - dots
         - strength
-        - grain
       type: object
     PageFrameColor:
       additionalProperties: false
@@ -3815,11 +3897,86 @@ components:
         - sentAt
         - expiresAt
       type: object
+    PlanStep:
+      additionalProperties: false
+      properties:
+        kind:
+          enum:
+            - workspace
+            - unfiled
+            - chapter
+            - file
+            - material
+          type: string
+        locked:
+          type: boolean
+        targetId:
+          description: The chapter, file or material
+          type: string
+        title:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - kind
+        - workspaceId
+        - title
+        - locked
+      type: object
+    PlanStepInput:
+      additionalProperties: false
+      properties:
+        kind:
+          enum:
+            - workspace
+            - unfiled
+            - chapter
+            - file
+            - material
+          type: string
+        targetId:
+          description: The chapter, file or material; omitted for workspace and unfiled steps
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - kind
+        - workspaceId
+      type: object
     PlanTier:
       enum:
         - free
         - pro
       type: string
+    PlanWorkspace:
+      additionalProperties: false
+      properties:
+        chapters:
+          items:
+            $ref: "#/components/schemas/ProgressChapter"
+          type: array
+        cover:
+          $ref: "#/components/schemas/Cover"
+        hidden:
+          type: boolean
+        iconId:
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/ProgressItem"
+          type: array
+        name:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - name
+        - iconId
+        - hidden
+        - chapters
+        - items
+      type: object
     PreviousAttempt:
       additionalProperties: false
       properties:
@@ -3918,6 +4075,8 @@ components:
         done:
           format: int64
           type: integer
+        hidden:
+          type: boolean
         iconId:
           type: string
         lastStudiedAt:
@@ -4073,6 +4232,11 @@ components:
           $ref: "#/components/schemas/Privacy"
         provenance:
           $ref: "#/components/schemas/Provenance"
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         revision:
           format: int64
           type: integer
@@ -4098,6 +4262,24 @@ components:
         - canEdit
         - canEditContent
       type: object
+    PublicFlashcardSetPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicFlashcardSetPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicFlashcardSet"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
+      type: object
     PublicQuiz:
       additionalProperties: false
       properties:
@@ -4105,62 +4287,43 @@ components:
           type: string
         canClone:
           type: boolean
-        canEdit:
-          type: boolean
-        canEditContent:
-          type: boolean
-        chapters:
-          items:
-            type: string
-          type: array
         clones:
           format: int64
           type: integer
-        createdAt:
-          format: date-time
-          type: string
         id:
           type: string
-        isOwner:
-          type: boolean
         name:
           type: string
-        parentMaterialId:
-          type: string
-        privacy:
-          $ref: "#/components/schemas/Privacy"
-        provenance:
-          $ref: "#/components/schemas/Provenance"
-        questions:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-        revision:
+        questionCount:
           format: int64
           type: integer
-        sharePath:
-          type: string
         workspaceId:
           type: string
-        workspaceName:
-          type: string
       required:
-        - author
-        - clones
-        - canClone
-        - revision
         - id
         - name
         - workspaceId
-        - workspaceName
-        - chapters
-        - questions
-        - createdAt
-        - privacy
-        - isOwner
-        - canEdit
-        - canEditContent
+        - author
+        - clones
+        - canClone
+      type: object
+    PublicQuizPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicQuizPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicQuiz"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
       type: object
     PublicWorkspace:
       additionalProperties: false
@@ -4237,6 +4400,24 @@ components:
         - capabilities
         - canClone
       type: object
+    PublicWorkspacePage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicWorkspacePage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicWorkspace"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
+      type: object
     QuestionCredit:
       additionalProperties: false
       properties:
@@ -4292,6 +4473,11 @@ components:
           items:
             additionalProperties: {}
             type: object
+          type: array
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
           type: array
         revision:
           format: int64
@@ -4384,11 +4570,20 @@ components:
             type: number
           nullable: true
           type: array
+        end_ms:
+          format: int64
+          type: integer
         page:
           format: int64
           type: integer
         space:
           type: string
+        speaker:
+          format: int64
+          type: integer
+        start_ms:
+          format: int64
+          type: integer
       required:
         - page
         - bbox
@@ -4509,9 +4704,11 @@ components:
         reason:
           enum:
             - reopen
+            - held
             - epoch_changed
             - paused
             - base_missing
+            - expired
             - quota
             - unavailable
             - write
@@ -4812,6 +5009,11 @@ components:
             - fading
             - learned
           type: string
+        removedAssetIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         total:
           format: int64
           type: integer
@@ -4963,28 +5165,12 @@ components:
         - reviewedBy
         - reviewerName
       type: object
-    SaveCanvasReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SaveCanvasReq.json
-          format: uri
-          readOnly: true
-          type: string
-        name:
-          maxLength: 120
-          minLength: 1
-          type: string
-        scene: {}
-      type: object
     SearchKind:
       enum:
         - workspace
         - file
         - event
         - flashcards
-        - thinking
       type: string
     SearchResult:
       additionalProperties: false
@@ -5387,6 +5573,19 @@ components:
         - expiresAt
         - epoch
       type: object
+    SourceCollaborationTokenBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceCollaborationTokenBody.json
+          format: uri
+          readOnly: true
+          type: string
+        previousToken:
+          maxLength: 8192
+          type: string
+      type: object
     SourceEpochReset:
       additionalProperties: false
       properties:
@@ -5482,6 +5681,9 @@ components:
           type: string
         name:
           type: string
+        removedPictures:
+          format: int64
+          type: integer
         status:
           enum:
             - pending
@@ -5494,6 +5696,7 @@ components:
         - jobId
         - status
         - name
+        - removedPictures
       type: object
     SourceProcessResult:
       additionalProperties: false
@@ -5850,7 +6053,17 @@ components:
           type: string
         allowNoExtension:
           type: boolean
+        audioMaxDurationSeconds:
+          format: int64
+          type: integer
+        audioSecondCreditMicros:
+          format: int64
+          type: integer
         digitalParsePageCreditMicros:
+          format: int64
+          type: integer
+        imageMaxBytes:
+          description: The caller's plan image cap, which each picture inside an Office upload must fit
           format: int64
           type: integer
         kinds:
@@ -5872,9 +6085,12 @@ components:
         - parseModes
         - accept
         - maxBytes
+        - imageMaxBytes
         - allowNoExtension
         - digitalParsePageCreditMicros
         - vlmIngestPageCreditMicros
+        - audioSecondCreditMicros
+        - audioMaxDurationSeconds
       type: object
     SpendingLimitReq:
       additionalProperties: false
@@ -5923,6 +6139,60 @@ components:
       required:
         - state
         - updatedAt
+      type: object
+    StudyPlan:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyPlan.json
+          format: uri
+          readOnly: true
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        steps:
+          items:
+            $ref: "#/components/schemas/PlanStep"
+          type: array
+        updatedAt:
+          format: date-time
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - id
+        - workspaceId
+        - name
+        - createdAt
+        - updatedAt
+        - steps
+      type: object
+    StudyPlans:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyPlans.json
+          format: uri
+          readOnly: true
+          type: string
+        plans:
+          items:
+            $ref: "#/components/schemas/StudyPlan"
+          type: array
+        workspaces:
+          items:
+            $ref: "#/components/schemas/PlanWorkspace"
+          type: array
+      required:
+        - plans
+        - workspaces
       type: object
     StudyPreferences:
       additionalProperties: false
@@ -5983,6 +6253,7 @@ components:
             - brief
             - normal
             - verbose
+            - story
           type: string
       type: object
     StudySummary:
@@ -6443,6 +6714,9 @@ components:
     UndoRef:
       additionalProperties: false
       properties:
+        expiresAt:
+          format: date-time
+          type: string
         operationId:
           type: string
         status:
@@ -6518,15 +6792,12 @@ components:
           format: uri
           readOnly: true
           type: string
-        contentRich:
-          items:
-            additionalProperties: {}
-            type: object
-          minItems: 1
-          nullable: true
-          type: array
+        text:
+          maxLength: 3000
+          minLength: 1
+          type: string
       required:
-        - contentRich
+        - text
       type: object
     UpdateConversationReq:
       additionalProperties: false
@@ -6703,6 +6974,25 @@ components:
           description: Visibility for a standalone material
       required:
         - privacy
+      type: object
+    UpdateStudyPlanReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateStudyPlanReq.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          maxLength: 60
+          minLength: 1
+          type: string
+        steps:
+          items:
+            $ref: "#/components/schemas/PlanStepInput"
+          maxItems: 50
+          type: array
       type: object
     UpdateTaskReq:
       additionalProperties: false
@@ -6943,8 +7233,6 @@ components:
           type: integer
         studyPreferences:
           $ref: "#/components/schemas/StudyPreferences"
-        studyProgress:
-          type: boolean
         subscriptionStatus:
           $ref: "#/components/schemas/SubscriptionStatus"
       required:
@@ -6954,7 +7242,6 @@ components:
         - email
         - streak
         - locale
-        - studyProgress
         - studyPreferences
         - chatSteps
         - chatSendKey
@@ -6978,6 +7265,20 @@ components:
         - chat
         - editor
       type: string
+    VoiceTranscription:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/VoiceTranscription.json
+          format: uri
+          readOnly: true
+          type: string
+        text:
+          type: string
+      required:
+        - text
+      type: object
     Workspace:
       additionalProperties: false
       properties:
@@ -8364,6 +8665,73 @@ paths:
       summary: Report an editing incident
       tags:
         - Editing
+  /api/editor-assets:
+    get:
+      operationId: listEditorAssets
+      parameters:
+        - description: Only media in notes the caller can open, or only those it cannot
+          explode: false
+          in: query
+          name: access
+          schema:
+            description: Only media in notes the caller can open, or only those it cannot
+            enum:
+              - open
+              - lost
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 40
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EditorAssetPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List the images and audio the caller pays for, each marked when its note can no longer be opened
+      tags:
+        - Content
+  /api/editor-assets/{assetId}:
+    delete:
+      operationId: deleteEditorAsset
+      parameters:
+        - in: path
+          name: assetId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete an image or audio clip the caller pays for in a note it can no longer open
+      tags:
+        - Content
   /api/events:
     get:
       operationId: listEvents
@@ -8463,14 +8831,20 @@ paths:
   /api/explore/flashcards:
     get:
       operationId: exploreFlashcardSets
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicFlashcardSet"
-                type: array
+                $ref: "#/components/schemas/PublicFlashcardSetPage"
           description: OK
         default:
           content:
@@ -8484,14 +8858,20 @@ paths:
   /api/explore/quizzes:
     get:
       operationId: exploreQuizzes
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicQuiz"
-                type: array
+                $ref: "#/components/schemas/PublicQuizPage"
           description: OK
         default:
           content:
@@ -8505,14 +8885,20 @@ paths:
   /api/explore/workspaces:
     get:
       operationId: exploreWorkspaces
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicWorkspace"
-                type: array
+                $ref: "#/components/schemas/PublicWorkspacePage"
           description: OK
         default:
           content:
@@ -8846,6 +9232,11 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceCollaborationTokenBody"
       responses:
         "201":
           content:
@@ -9309,6 +9700,25 @@ paths:
       summary: Update a label
       tags:
         - Schedule
+  /api/learning/plans:
+    get:
+      operationId: listLearningPlans
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyPlans"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Every study plan of the user
+      tags:
+        - Study
   /api/learning/progress:
     get:
       operationId: getLearningProgress
@@ -9320,6 +9730,13 @@ paths:
           schema:
             description: A listed workspace whose map to return instead of the most recently studied one
             type: string
+        - description: Also list workspaces hiding study progress, marked hidden
+          explode: false
+          in: query
+          name: all
+          schema:
+            description: Also list workspaces hiding study progress, marked hidden
+            type: boolean
       responses:
         "200":
           content:
@@ -9959,27 +10376,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Save study preferences
-      tags:
-        - Study
-  /api/me/study-progress:
-    patch:
-      operationId: setStudyProgressDefault
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetStudyEnabledReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Default study progress setting
       tags:
         - Study
   /api/model-slots:
@@ -10959,6 +11355,42 @@ paths:
       summary: Open a signed share link once
       tags:
         - Sharing
+  /api/shared/notes/{token}/quizzes/{quizId}/check:
+    post:
+      operationId: checkSharedNoteQuiz
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: quizId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckSharedNoteQuizReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GradedQuiz"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Grade a signed-in check of a quiz embedded in a shared note
+      tags:
+        - Sharing
   /api/source-upload-policy:
     get:
       operationId: getSourceUploadPolicy
@@ -10984,6 +11416,55 @@ paths:
       summary: Get source upload policy
       tags:
         - Content
+  /api/study/plans/{id}:
+    delete:
+      operationId: deleteStudyPlan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a study plan
+      tags:
+        - Study
+    patch:
+      operationId: updateStudyPlan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStudyPlanReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Rename a study plan or replace its steps
+      tags:
+        - Study
   /api/tags:
     get:
       operationId: listTags
@@ -11085,106 +11566,6 @@ paths:
       summary: Update a task
       tags:
         - Schedule
-  /api/thinking:
-    get:
-      operationId: listCanvases
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Canvas"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List thinking canvases
-      tags:
-        - Thinking
-    post:
-      operationId: createCanvas
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCanvasReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Create a canvas
-      tags:
-        - Thinking
-  /api/thinking/{id}:
-    get:
-      operationId: getCanvas
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get a canvas
-      tags:
-        - Thinking
-    put:
-      operationId: saveCanvas
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SaveCanvasReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Canvas"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Save a canvas
-      tags:
-        - Thinking
   /api/trash:
     get:
       operationId: listTrash
@@ -12413,7 +12794,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Turn study progress on or off in a workspace
+      summary: Show or hide study progress in a workspace
       tags:
         - Study
   /api/workspaces/{id}/study/items:
@@ -12441,6 +12822,61 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Mark a file or material read, unread or removed
+      tags:
+        - Study
+  /api/workspaces/{id}/study/plans:
+    get:
+      operationId: listWorkspacePlans
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyPlans"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Plans kept in a workspace, then plans elsewhere with a step in it
+      tags:
+        - Study
+    post:
+      operationId: createStudyPlan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStudyPlanReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyPlan"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Add an empty study plan to a workspace
       tags:
         - Study
   /api/workspaces/{id}/study/reset:
@@ -12495,6 +12931,51 @@ paths:
       summary: Transfer workspace ownership to another member
       tags:
         - Workspace collaboration
+  /api/workspaces/{id}/voice-transcriptions:
+    post:
+      operationId: transcribeVoice
+      parameters:
+        - description: Workspace id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Workspace id
+            type: string
+      requestBody:
+        content:
+          audio/mp4:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+          audio/ogg:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+          audio/webm:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceTranscription"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Transcribe a chat voice recording for the composer
+      tags:
+        - Chat
   /internal/collaboration/files/{id}/access:
     get:
       operationId: checkSourceAccess

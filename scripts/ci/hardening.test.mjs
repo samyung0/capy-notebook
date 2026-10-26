@@ -2,8 +2,8 @@
 // third-party actions pinned by commit, a limited token per workflow, no token
 // left in git config after checkout, no expression expanded inside a run
 // script, secrets only on the steps that use them and each by name, a
-// vulnerability job per ecosystem, and no workers.dev or preview URL for any
-// Worker.
+// vulnerability job per ecosystem on every push and daily, an image scan, and
+// no workers.dev or preview URL for any Worker.
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -147,18 +147,149 @@ test('the SPA build job renders only the build values; the deploy job renders th
   assert.deepEqual(renders(jobs.deploy), ['render']);
 });
 
-test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies', () => {
-  const steps = Object.values(parse(read('.github/workflows/ci.yml')).jobs)
-    .filter((job) => !job['continue-on-error'])
-    .flatMap((job) => job.steps)
-    .filter((step) => !step['continue-on-error'])
-    .map((step) => step.run ?? '');
+// The jobs that build and push the deploy images: the job's own token pushes,
+// so nothing in them names a secret, and their build arguments are these
+// public values only (security regression: no secrets in images or build args).
+const IMAGE_JOBS = [
+  ['.github/workflows/deploy-environment.yml', 'images', ['RELEASE_SHA']],
+  [
+    '.github/workflows/deploy-ops.yml',
+    'image',
+    [
+      'VITE_CLERK_PUBLISHABLE_KEY',
+      'VITE_SENTRY_DSN',
+      'VITE_APP_ENV',
+      'VITE_RELEASE_SHA',
+    ],
+  ],
+];
+const MATRIX_BUILD_ARGS = `${EXPRESSION} matrix.build-args }}`;
+
+test('the image jobs name no secret and pass only allow-listed build arguments', () => {
+  for (const [file, name, allowed] of IMAGE_JOBS) {
+    const job = parse(read(file)).jobs[name];
+    const where = `${file}: ${name}`;
+    assert(!SECRET.test(JSON.stringify(job)), where);
+    const lines = [
+      ...(job.strategy?.matrix?.include ?? []).map(
+        (entry) => entry['build-args'] ?? ''
+      ),
+      ...job.steps.map((step) => step.with?.['build-args'] ?? ''),
+    ]
+      .flatMap((value) => value.split('\n'))
+      .map((line) => line.trim())
+      .filter((line) => line && line !== MATRIX_BUILD_ARGS);
+    assert(lines.length > 0, where);
+    for (const line of lines) {
+      assert(allowed.includes(line.split('=')[0]), `${where}: ${line}`);
+    }
+  }
+});
+
+// The app host's SSH key and pinned host key sit only on the step that writes
+// them, and the Access service token only on the step that connects; each of
+// the two deploy jobs has both steps (security regression: the deploy key
+// works only through Access, each step holds its own secrets).
+const APP_HOST_STEP =
+  /^scripts\/deploy\/app-host-release\.sh (configure|deploy)\b/;
+const APP_HOST_SECRETS = {
+  configure: ['APP_HOST_KNOWN_HOSTS', 'APP_HOST_SSH_PRIVATE_KEY'],
+  deploy: ['APP_HOST_ACCESS_CLIENT_ID', 'APP_HOST_ACCESS_CLIENT_SECRET'],
+};
+
+test('the app host SSH secrets sit only on their own SSH step', () => {
+  let found = 0;
+  for (const [where, step] of steps) {
+    const named = [
+      ...JSON.stringify(step.env ?? {}).matchAll(/\bsecrets\.(\w+)/g),
+    ].map((match) => match[1]);
+    const mode = step.run?.match(APP_HOST_STEP)?.[1];
+    if (mode) {
+      found += 1;
+      assert.deepEqual(named.sort(), APP_HOST_SECRETS[mode], where);
+    } else {
+      assert(!named.some((name) => name.startsWith('APP_HOST_')), where);
+    }
+  }
+  assert.equal(found, 4);
+});
+
+// The host runs a compose file only when it hashes to the anchor image's
+// label, and each image by digest; production runs the digests UAT ran
+// (security regression, review H1/M2).
+const COMPOSE_LABEL =
+  /^org\.capynotebook\.compose\.sha256=\$\{\{ steps\.compose\.outputs\.sha256 \}\}$/m;
+
+test('the deploy images carry their compose hash and production runs the digests UAT ran', () => {
+  for (const [file, name] of IMAGE_JOBS) {
+    const build = parse(read(file)).jobs[name].steps.find((step) =>
+      step.uses?.startsWith('docker/build-push-action@')
+    );
+    assert.match(build.with.labels, COMPOSE_LABEL, file);
+  }
+  const promotion = parse(read('.github/workflows/promote-production.yml'));
+  assert.equal(
+    promotion.jobs.deploy_production.with.image_digests,
+    `${EXPRESSION} needs.restage_uat.outputs.image_digests }}`
+  );
+});
+
+// Deploy Ops checks the revision is on main before its image builds, and the
+// job holding the deploy secrets reads nothing but code and packages
+// (security regression, review L2/L3).
+const ON_MAIN = /git merge-base --is-ancestor "\$revision" origin\/main/;
+const OPS_CLERK_ARG = /^ARG VITE_CLERK_PUBLISHABLE_KEY$/m;
+const OPS_CLERK_ENV =
+  /^ENV VITE_CLERK_PUBLISHABLE_KEY=\$VITE_CLERK_PUBLISHABLE_KEY$/m;
+
+test('Deploy Ops checks the revision before building and its deploy job reads only code and packages', () => {
+  const { jobs } = parse(read('.github/workflows/deploy-ops.yml'));
+  const resolve = jobs.resolve_revision.steps.find(
+    (step) => step.id === 'resolve'
+  );
+  assert.match(resolve.run, ON_MAIN);
+  assert.equal(jobs.image.needs, 'resolve_revision');
+  assert.deepEqual(jobs.deploy.permissions, {
+    contents: 'read',
+    packages: 'read',
+  });
+});
+
+test('the Ops server image keeps the Clerk key its content security policy names Clerk from', () => {
+  const dockerfile = read('ops/Dockerfile');
+  const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+  assert.match(runtime, OPS_CLERK_ARG);
+  assert.match(runtime, OPS_CLERK_ENV);
+});
+
+test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies, on every push and daily', () => {
+  const audit = parse(read('.github/workflows/audit.yml'));
+  assert.deepEqual(
+    ['push', 'pull_request', 'schedule'].filter(
+      (event) => !(event in audit.on)
+    ),
+    []
+  );
+  const jobs = Object.values(audit.jobs).filter(
+    (job) => !job['continue-on-error']
+  );
+  const runs = (selected) =>
+    selected
+      .flatMap((job) => job.steps)
+      .filter((step) => !step['continue-on-error'])
+      .map((step) => step.run ?? '');
+  // The ecosystem audits run on every event, not only the schedule.
+  const everyEvent = runs(jobs.filter((job) => job.if === undefined));
   for (const command of AUDITS) {
     assert(
-      steps.some((run) => command.test(run)),
+      everyEvent.some((run) => command.test(run)),
       String(command)
     );
   }
+  assert(
+    runs(jobs).some((run) => run.includes('scripts/ci/trivy-image.sh')),
+    'image scan'
+  );
 });
 
 test('no Worker publishes a workers.dev or preview URL, with or without --env', () => {

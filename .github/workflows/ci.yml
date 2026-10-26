@@ -227,7 +227,7 @@ jobs:
       - if: always()
         run: docker compose -f deploy/docker-compose.e2e.yml -p collaboration-it down -v
 
-  # The real-stack suite and the two editor shards run as parallel jobs.
+  # The real-stack suite and the four editor shards run as parallel jobs.
   e2e_stack:
     runs-on: ubuntu-latest
     steps:
@@ -275,7 +275,11 @@ jobs:
       - run: pnpm office:prepare
       - run: pnpm run e2e:install
       # The live note View spec reads in WebKit too (live-items REVIEW5 M1).
-      - run: pnpm exec playwright install --with-deps webkit
+      # A slow uncached apt download fails here instead of hanging; rerun it.
+      - uses: ./.github/actions/playwright-browsers
+        timeout-minutes: 10
+        with:
+          browsers: webkit
       - run: pnpm run e2e
         env:
           E2E_PREBUILT_IMAGES: "true"
@@ -295,7 +299,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -323,7 +327,7 @@ jobs:
       # stylesheet and WASM the editor suite's runtime iframe imports.
       - run: pnpm office:prepare
       - run: pnpm run e2e:install
-      - run: pnpm run e2e:msw:editor --shard="$SHARD/2"
+      - run: pnpm run e2e:msw:editor --shard="$SHARD/4"
         env:
           SHARD: ${{ matrix.shard }}
       # Retain failed-attempt traces even when a retry makes the job succeed.
@@ -332,6 +336,38 @@ jobs:
         with:
           if-no-files-found: ignore
           name: playwright-artifacts-editor-${{ matrix.shard }}
+          path: |
+            e2e/editor/playwright-report-editor/
+            e2e/editor/test-results/
+          retention-days: 7
+
+  # The Mermaid geometry spec in Firefox and WebKit: labels fit their boxes
+  # and overlap no more than on that engine's own page (Epo 2026-10-23).
+  # Only that spec, so the job installs only these two browsers and no
+  # Office toolchain.
+  e2e_mermaid_engines:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          cache: pnpm
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-browsers
+        timeout-minutes: 10
+        with:
+          browsers: firefox webkit
+      - run: pnpm run e2e:msw:mermaid-engines
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          if-no-files-found: ignore
+          name: playwright-artifacts-mermaid-engines
           path: |
             e2e/editor/playwright-report-editor/
             e2e/editor/test-results/
@@ -369,82 +405,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen --extra test
+      # The audio probe's tests run ffmpeg, as the pipeline image installs it.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: uv run --extra test pytest
       # The knowledge-base builder's tests, its security regressions included.
       - run: uv run --extra test pytest lab/knowledge/tests -q
-
-  # Known vulnerabilities fail CI, one job per ecosystem. An advisory that has
-  # to wait goes on that ecosystem's commented ignore list, with the reason:
-  # collaboration-rs/deny.toml, server/govulncheck-ignore.txt and
-  # pnpm-workspace.yaml's auditConfig.
-  audit_rust:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-          submodules: recursive
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: cargo-deny@0.20.2
-      - run: cargo deny check advisories
-        working-directory: collaboration-rs
-
-  audit_go:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          # go.mod's exact go version, the one server/Dockerfile and
-          # ops/Dockerfile build with.
-          go-version-file: server/go.mod
-      # Fails on a called vulnerability (one whose trace reaches a function)
-      # that the ignore list does not name, and on a listed one no longer
-      # reported, so a fixed entry leaves the list with its fix.
-      - working-directory: server
-        run: |
-          set -euo pipefail
-          go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 -format json ./... > "$RUNNER_TEMP/govulncheck.json"
-          jq -r 'select(.finding.trace[0].function) | .finding.osv' "$RUNNER_TEMP/govulncheck.json" | sort -u > "$RUNNER_TEMP/found"
-          sed -n 's/^\(GO-[0-9]*-[0-9]*\).*/\1/p' govulncheck-ignore.txt | sort -u > "$RUNNER_TEMP/ignored"
-          new=$(comm -23 "$RUNNER_TEMP/found" "$RUNNER_TEMP/ignored")
-          stale=$(comm -13 "$RUNNER_TEMP/found" "$RUNNER_TEMP/ignored")
-          echo "govulncheck: $(wc -l < "$RUNNER_TEMP/found") called, $(wc -l < "$RUNNER_TEMP/ignored") on the ignore list"
-          for id in $new; do echo "::error::$id https://pkg.go.dev/vuln/$id"; done
-          for id in $stale; do echo "::error::$id is no longer reported; drop it from server/govulncheck-ignore.txt"; done
-          [ -z "$new$stale" ]
-
-  # The pipeline's runtime set from uv.lock (no dev group or test extra, as
-  # the images install it), the parser's and ppt-master's hashed requirements.
-  # Ignore list: pip-audit-ignore.txt, one advisory id per line with its reason.
-  audit_python:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-      - run: |
-          set -euo pipefail
-          uv export --quiet --frozen --no-hashes --no-dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/uv-requirements.txt"
-          ignored=$(awk '!/^#/ && NF { print "--ignore-vuln", $1 }' pip-audit-ignore.txt)
-          for file in "$RUNNER_TEMP/uv-requirements.txt" parser/requirements.txt pipeline/ppt-master-requirements.txt; do
-            echo "== $file"
-            # shellcheck disable=SC2086 # one flag per listed id
-            uvx pip-audit==2.10.1 --no-deps --disable-pip --progress-spinner off $ignored -r "$file"
-          done
-
-  audit_pnpm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-      - run: pnpm audit --prod

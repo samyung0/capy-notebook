@@ -27,7 +27,7 @@ describe('frontend error normalization', () => {
     expect(errorKind(error)).toBe(kind);
   });
 
-  it('names an upload the gateway cut off after 5 minutes', () => {
+  it('names an upload the gateway cut off past its deadline', () => {
     const error = new ApiError(408, 'Request Timeout', undefined, {
       code: 'upload_timeout',
     });
@@ -48,6 +48,21 @@ describe('frontend error normalization', () => {
       title: m.error_upload_ticket_gone(),
     });
     expect(errorCopy(error, 'fallback')).toBe(m.error_upload_ticket_gone());
+  });
+
+  it.each([
+    ['grading_limit', 429, m.error_grading_limit_title()],
+    ['invite_recently_sent', 429, m.error_invite_recently_sent_title()],
+    ['invite_limit', 429, m.error_invite_limit_title()],
+    ['comment_limit', 409, m.error_comment_limit_title()],
+    ['annotation_limit', 409, m.error_annotation_limit_title()],
+    ['event_limit', 409, m.error_event_limit_title()],
+    ['checkout_limit', 429, m.error_checkout_limit_title()],
+    ['rate_limit_unavailable', 503, m.error_rate_limit_unavailable_title()],
+  ] as const)('names the %s refusal', (code, status, title) => {
+    const error = new ApiError(status, 'Refused', undefined, { code });
+    expect(describeError(error).title).toBe(title);
+    expect(unexpectedErrorId(error)).toBeNull();
   });
 
   it('explains captured source changes as a manually retryable request', () => {

@@ -59,6 +59,8 @@ type CheckoutSession struct {
 	URL string
 	// Status is Stripe's: open, complete or expired.
 	Status string
+	// ExpiresAt is when Stripe expires the page (set on credit Checkouts).
+	ExpiresAt time.Time
 }
 
 func CreateCheckoutSession(

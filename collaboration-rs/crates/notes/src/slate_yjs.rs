@@ -858,9 +858,8 @@ pub fn insert_nodes(txn: &mut TransactionMut, parent: BranchPtr, index: u32, nod
 }
 
 /// A fresh document state (v1 update) holding `value`: the first open of a
-/// note from `materials.content` (`load`'s bootstrap) and the compaction
-/// rebuild. `client_id` 0 picks a random one, as the Node server's scratch
-/// document does.
+/// note from `materials.content` (`load`'s bootstrap). `client_id` 0 picks a
+/// random one, as the Node server's scratch document does.
 pub fn state_from_value(value: &[Value], client_id: u64) -> Vec<u8> {
     use yrs::{ReadTxn, Transact};
     let doc = yrs::Doc::with_options(ydoc::doc_options(client_id));

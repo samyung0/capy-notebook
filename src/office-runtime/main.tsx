@@ -52,6 +52,7 @@ import { prewarmRuntime, runtimeChunks } from './prewarm';
 import {
   type OfficeCaptureScope,
   type OfficeMenuSource,
+  type OfficePositioner,
   type OfficeRenderer,
   type OfficeThumbnailer,
   pausedMenus,
@@ -97,6 +98,8 @@ const DocxEditorHost = lazy(() =>
 
 interface LoadedFile {
   bytes: Uint8Array;
+  /** Edit loads only: the session's Yjs client id (Q213). */
+  clientId?: number;
   epoch?: number;
   fileName: string;
   format: OfficeFormat;
@@ -106,6 +109,8 @@ interface LoadedFile {
   imageMaxBytes?: number;
   initialUpdate?: Uint8Array;
   revision: number;
+  /** A DOCX edit load's id for the editor's layout worker (Q219). */
+  workerClientId?: number;
   /** Where the viewer or editor opens; the format's default without. */
   zoom?: OfficeZoom;
 }
@@ -123,6 +128,7 @@ function OfficeRuntime() {
   const [locale, setLocaleState] = useState<OfficeLocale>('en');
   const menuSourceRef = useRef<OfficeMenuSource | null>(null);
   const rendererRef = useRef<OfficeRenderer | null>(null);
+  const positionerRef = useRef<OfficePositioner | null>(null);
   const thumbnailerRef = useRef<OfficeThumbnailer | null>(null);
   // Whether a local edit may change the capture; every edit without one.
   const captureScopeRef = useRef<OfficeCaptureScope | null>(null);
@@ -233,6 +239,12 @@ function OfficeRuntime() {
   const reportRenderer = useCallback((renderer: OfficeRenderer | null) => {
     rendererRef.current = renderer;
   }, []);
+  const reportPositioner = useCallback(
+    (positioner: OfficePositioner | null) => {
+      positionerRef.current = positioner;
+    },
+    []
+  );
   const reportThumbnailer = useCallback(
     (thumbnailer: OfficeThumbnailer | null, scope?: OfficeCaptureScope) => {
       thumbnailerRef.current = thumbnailer;
@@ -332,17 +344,24 @@ function OfficeRuntime() {
   cursorsRef.current = cursors;
   const collaboration = useMemo(
     () =>
-      file?.initialUpdate
+      file?.initialUpdate && file.clientId
         ? {
-            // Never 0, the client the DOCX seed is written under (Yrs does
-            // not move a colliding id).
-            clientId: crypto.getRandomValues(new Uint32Array(1))[0] || 1,
+            // The id the collaboration server assigned this session (Q213),
+            // never 0 (the DOCX seed's client).
+            clientId: file.clientId,
             cursors,
             initialUpdate: file.initialUpdate,
             onReplica: reportReplica,
+            workerClientId: file.workerClientId,
           }
         : null,
-    [cursors, file?.initialUpdate, reportReplica]
+    [
+      cursors,
+      file?.clientId,
+      file?.initialUpdate,
+      file?.workerClientId,
+      reportReplica,
+    ]
   );
   // An inserted image over the payer's plan cap, or over what the room may
   // still grow by, is shrunk first, and one older Office apps cannot open is
@@ -453,6 +472,7 @@ function OfficeRuntime() {
             : new Uint8Array(message.bytes);
         setFile({
           bytes,
+          clientId: message.collaboration?.clientId,
           epoch: message.collaboration?.epoch,
           fileName: message.fileName,
           format: message.format,
@@ -462,6 +482,7 @@ function OfficeRuntime() {
             ? new Uint8Array(message.collaboration.initialUpdate)
             : undefined,
           revision: message.revision,
+          workerClientId: message.collaboration?.workerClientId,
           zoom:
             message.zoom ??
             (message.format === 'docx' && compactRef.current
@@ -524,6 +545,26 @@ function OfficeRuntime() {
           { id: message.id, pages, revision, truncated, type: 'rendered' },
           pages.map((page) => page.bytes)
         );
+        return;
+      }
+      if (message.type === 'position-request' && revisionRef.current !== null) {
+        post({
+          id: message.id,
+          position: positionerRef.current?.read() ?? null,
+          revision: revisionRef.current,
+          type: 'position',
+        });
+        return;
+      }
+      if (message.type === 'set-position') {
+        await positionerRef.current?.show(message.position);
+        if (revisionRef.current !== null)
+          post({
+            id: message.id,
+            position: positionerRef.current?.read() ?? null,
+            revision: revisionRef.current,
+            type: 'position',
+          });
         return;
       }
       if (message.type === 'sending') {
@@ -772,6 +813,7 @@ function OfficeRuntime() {
               onFlusher={reportFlusher}
               onMenus={reportMenus}
               onPendingChange={reportHostPending}
+              onPositioner={reportPositioner}
               onRenderer={reportRenderer}
               onSave={save}
               onThumbnailer={reportThumbnailer}
@@ -793,6 +835,7 @@ function OfficeRuntime() {
               onMenus={reportMenus}
               onNotice={reportNotice}
               onPendingChange={reportHostPending}
+              onPositioner={reportPositioner}
               onRenderer={reportRenderer}
               onSave={save}
               onThumbnailer={reportThumbnailer}
@@ -816,6 +859,7 @@ function OfficeRuntime() {
               onMenus={reportMenus}
               onNotice={reportNotice}
               onPendingChange={reportHostPending}
+              onPositioner={reportPositioner}
               onPresentingChange={reportPresenting}
               onRenderer={reportRenderer}
               onSave={save}

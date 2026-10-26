@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -367,5 +370,73 @@ func TestDailySyncRereadsUnsettledReloadsWithoutEndingANewWindow(t *testing.T) {
 	}
 	if started, _ := reloadState(t, s, userID); !started {
 		t.Fatal("re-reading an old failed reload ended the live reload's window")
+	}
+}
+
+// Security: the starter credits come once per account and once per card. A
+// replayed event, a second card on the same account, the same card on another
+// account and a method with no card key grant nothing, and concurrent events
+// for one account grant once.
+func TestStarterCreditsOncePerAccountAndCard(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	first := newCreditsTestUser(t, s)
+	second := newCreditsTestUser(t, s)
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `DELETE FROM starter_grants WHERE user_id = ANY($1)`,
+			[]string{first, second})
+	})
+	grant := func(userID, cardKey string) bool {
+		t.Helper()
+		granted, err := s.GrantStarterCredits(ctx, userID, cardKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return granted
+	}
+	if got := mustBalance(t, s, first).PurchasedMicros; got != 0 {
+		t.Fatalf("new account holds %d purchased micros before any card", got)
+	}
+	if settings, err := s.CreditSettings(ctx, first); err != nil || !settings.StarterAvailable {
+		t.Fatalf("new account starter available=%t err=%v", settings.StarterAvailable, err)
+	}
+	if !grant(first, "card:fp_a") {
+		t.Fatal("first card granted nothing")
+	}
+	if grant(first, "card:fp_a") || grant(first, "card:fp_b") {
+		t.Fatal("the account claimed the starter credits twice")
+	}
+	if grant(second, "card:fp_a") {
+		t.Fatal("one card claimed the starter credits on two accounts")
+	}
+	if grant(second, "") {
+		t.Fatal("a method with no card key claimed the starter credits")
+	}
+	if got := mustBalance(t, s, first).PurchasedMicros; got != StarterGrantMicros {
+		t.Fatalf("first account purchased=%d, want %d", got, StarterGrantMicros)
+	}
+	if settings, err := s.CreditSettings(ctx, first); err != nil || settings.StarterAvailable {
+		t.Fatalf("granted account starter available=%t err=%v", settings.StarterAvailable, err)
+	}
+
+	var wg sync.WaitGroup
+	var granted atomic.Int32
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ok, err := s.GrantStarterCredits(ctx, second, "card:fp_c"+strconv.Itoa(i))
+			if err != nil {
+				t.Error(err)
+			}
+			if ok {
+				granted.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if granted.Load() != 1 || mustBalance(t, s, second).PurchasedMicros != StarterGrantMicros {
+		t.Fatalf("concurrent cards granted %d times, purchased=%d", granted.Load(),
+			mustBalance(t, s, second).PurchasedMicros)
 	}
 }

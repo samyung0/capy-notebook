@@ -18,6 +18,7 @@ from ..prompts.chat import (
     memory_message,
     turn_note_message,
     turn_note_messages,
+    with_mode_note,
 )
 from ..registry import ModelConfig
 from . import accounting, models, pending_hints
@@ -60,14 +61,8 @@ def request_context(
     spec: ModelConfig,
     *,
     schemas: list[dict[str, Any]] | None = None,
-    reasoning: bool | None = None,
 ) -> accounting.ContextComposition:
-    return models.measure_request_context(
-        messages,
-        model=spec,
-        tools=schemas,
-        reasoning=reasoning,
-    )
+    return models.measure_request_context(messages, model=spec, tools=schemas)
 
 
 def needs_compact(
@@ -79,9 +74,7 @@ def needs_compact(
     max_tokens: int | None = None,
     reasoning: bool | None = None,
 ) -> bool:
-    measured = request_context(
-        messages, spec, schemas=schemas, reasoning=reasoning
-    ).total_tokens
+    measured = request_context(messages, spec, schemas=schemas).total_tokens
     return measured + max(0, extra) > usable_input_limit(
         spec, max_tokens=max_tokens, reasoning=reasoning
     )
@@ -332,6 +325,8 @@ async def compact_messages(
             on_compact=on_compact,
             purpose=accounting.PURPOSE_LIVE_COMPACTION,
         )
+        # The folded history may have held the last mode note.
+        protected = [with_mode_note(protected[0]), *protected[1:]]
         compacted = [*messages[:head_count], memory_message(summary), *protected]
         if not needs_compact(compacted, spec, schemas=schemas, extra=extra):
             return compacted

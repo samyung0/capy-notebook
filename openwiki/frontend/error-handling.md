@@ -27,7 +27,9 @@ The gateway's upload line answers two typed 4xx codes the browser gives their
 own copy, as both title and description, so the transfer row (its title) and
 the note placeholder (`errorCopy`) show it inline:
 
-- `upload_timeout` (408): the upload's body took past 5 minutes. Its kind is
+- `upload_timeout` (408): the upload's body took past its deadline (30 s plus
+  its size at 100 KB/s, at most 5 minutes), shown as "The upload took too
+  long. Try again." Its kind is
   overridden to `network` (a coded 4xx otherwise reads as `unknown`, which
   `errorCopy` replaces with its fallback). A connection dropped before the
   answer is an ordinary network error.
@@ -40,7 +42,10 @@ the note placeholder (`errorCopy`) show it inline:
 An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
 without one of the typed codes `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`, `upload_queue_full` (the gateway's
-upload line is full: busy, try again), or an unknown status without a code)
+upload line is full: busy, try again), `rate_limit_unavailable`,
+`captcha_unavailable` (siteverify could not check a signed-out answer check;
+the quiz shows it under Submit with `captcha_failed`), or an unknown status
+without a code)
 shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
 the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
 one click selects the whole line (`select-all`) so a user can copy and quote it,
@@ -78,6 +83,11 @@ inline, not as a toast, so the draft and its context stay on screen:
   access refusals to their copy. An unexpected failure adds its error id.
 - Such a mutation opts out of the global toast (`errorToast: false`), so the
   failure is reported once.
+
+A file's trash confirmation (`TrashConfirmDialog` from `ContentActions`)
+follows the same rule: it stays open with a spinner while the delete runs
+and shows a refusal in its `FormAlert` (`trashErrorMessage`), such as an
+audio file still being transcribed (`audio_transcribing`).
 
 ## Input length limits
 
@@ -182,11 +192,13 @@ conflict. Zod's own messages follow the UI locale (`z.config` in
 copy.
 
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
-and `too_many_streams`. An upload answered 429 waits out
-`retryAfterSeconds` (at most 30 s) and gets 3 attempts in all, as does an
-import request after a network error, 408, 429 or 5xx
-(`src/features/workspace/sourceUpload.ts`, `sourceImport.ts`). The add-source
-dialog toasts it and keeps the unsent tail. Do not map it onto credits or the file-cap copy.
+and `too_many_streams`. An upload is never retried by the browser: one past
+the upload rate class waits in the gateway's upload line and its row shows
+its place (Epo 2026-10-24, Q282; backend-storage-quota § upload line), and
+any refusal fails its row. An import request gets 3 attempts in all after a
+network error, 408, 429 or 5xx, waiting out `retryAfterSeconds` (at most
+30 s) (`src/features/workspace/sourceImport.ts`). The add-source dialog
+toasts it and keeps the unsent tail. Do not map it onto credits or the file-cap copy.
 
 Browser analysis of a fast-parse row reports inline on that row, never as a
 toast: one message each for a user-password PDF, a damaged file, more pages
@@ -470,16 +482,17 @@ shows a status strip (`[data-testid="file-not-indexed"]`) under the header
 instead of replacing the body with a full-page error.
 
 File and material banners share `FileBanner`: a flat full-width strip with no
-leading icon and `text-fg` on a grey (info, ingest progress, newer version,
-maintenance pause) or red-tint (error) background, `role="status"` or
+leading icon and `text-fg` on a grey (info, ingest progress, a text source's
+newer version, maintenance pause) or red-tint (error) background, `role="status"` or
 `role="alert"` respectively. Its close button hides it until the message
 changes or the page remounts it. Actions are small ghost underlined buttons on a
 new line, aligned right. The save banner uses its one-row form (`inline`): the
 message scrolls sideways without a visible scrollbar (`scroll-fade-x`, the
 note toolbar's scroller and `useHorizontalWheelScroll`), and its action takes
 the close button's place, so every save banner state has the same 40px
-height. The newer-version (and maintenance pause) strip uses the same one-row
-form, with Reload in the close button's place. The center pane shows one strip
+height. The maintenance pause strip (and a text source's newer-version strip;
+Office swaps instead) uses the same one-row form, with Reload in the close
+button's place. The center pane shows one strip
 at a time: `CenterContent` wraps each open item in a `BannerStack`, and only
 the newest strip mounted inside it shows (a strip whose message changes counts
 as new); closing or unmounting it reveals the one before. An Office or text source opened in edit mode while the
@@ -548,7 +561,7 @@ Reload remembers the selected button but does not replay actions.
 **New account: every list empty**, first in the panel under Empty states,
 answers every list a new account sees (workspaces, files, materials, attempts,
 Learning and question bank progress, reviews, notifications, tasks, calendar,
-canvases, trash, tags, search) with an empty result, and stays on across pages
+trash, tags, search) with an empty result, and stays on across pages
 and reloads until Reset, so each page's empty state can be checked directly.
 Explicit source fixtures retain their checkpoint identities and epochs in
 session storage; their drafts use the real IndexedDB code in the separate
@@ -592,7 +605,7 @@ follows it (its providers leave the room while the browser is offline), and
 `setCollaborationReachable(false)` in `src/mocks/collaboration.ts` keeps the
 service unreachable across a reload, so a reopened editor waits for it.
 `moveMockMaterialRoom` moves a note's room to its next schema, as a discard
-or compaction does, for the lineage journey; public summary failures
+does, for the lineage journey; public summary failures
 require the site worker tests. Feature-flagged pages keep their existing gates.
 When the application suppresses an error or a parent guard handles it first,
 the journey explains that behavior instead of inventing an inner error state.
@@ -678,17 +691,25 @@ once per offline episode and at unmount (see
 failures (private mode, a full disk, a missing draft base) never block
 editing. Error
 strips carry localized copy only. An epoch
-change reloads a fully acknowledged editor; unacknowledged edits instead enter
-recovery, as do drafts of another version found on open.
+change swaps a fully acknowledged editor to the new epoch with no strip
+(notes and Office, the room swap of
+[plate-editor.md](plate-editor.md#room-swap) and
+[office-files.md](office-files.md#room-swap)); unacknowledged edits instead
+enter recovery, as do drafts of another version found on open.
 
 Every recovery path shows a recovery banner: a save refused for good the
 `refused` one ("These changes couldn't be saved. Copy anything you need, then
 reload to continue from the last saved version."), and edits from another
 lineage (a newer version over unsaved edits, a draft from another version, a
 note room that moved on) the `changed` one ("This file changed while your
-edits were waiting to sync. Copy anything you need, then reload."). The
+edits were waiting to sync. Copy anything you need, then reload."). Unsent
+edits whose group was last edited over 7 days ago (Epo 2026-10-24; for notes
+until the merge view, Q251) open once under the `expired` one ("These edits
+are more than 7 days old and too old to sync. Copy anything you need, then
+reload."): their rows are deleted as they open (reported as
+`draft_unrestorable` / `expired`) and no draft sweep sends them. The
 unsaved content stays on screen read-only and selectable, with no download or
-discard; a page refresh reopens the same view. A recovery banner has no close
+discard; a page refresh reopens the same view, except an expired one. A recovery banner has no close
 button: its Reload, in the close button's place, is the only way out. It
 clears the drafts on display (matching exact rows, so another tab's newer
 write stays) and reopens the last saved version, after any other retained

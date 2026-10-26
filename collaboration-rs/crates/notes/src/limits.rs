@@ -276,6 +276,10 @@ struct Shape {
     /// Elements whose children the room copy decides, after the key rules
     /// ([Structure::finish], [holds_children]).
     structure: HashSet<BranchID>,
+    /// Mermaid source texts the update may take past `MERMAID_SOURCE_MAX`:
+    /// their held length plus what it types into them is over it, so the
+    /// copy measures them ([sources_fit]).
+    sources: HashSet<BranchID>,
 }
 
 /// An entry the update writes under a key: its id and last unit, the entry it
@@ -376,17 +380,30 @@ fn shared_keys(keys: fn(&catalog::Element) -> &'static [&'static str]) -> Vec<&'
 }
 
 /// The keys whose value the store checks beyond its presence ([value_ok]).
-const VALUE_KEYS: [&str; 9] = [
-    "refKind", "provider", "videoId", "width", "html", "caption", "block", "source", "indent",
+const VALUE_KEYS: [&str; 12] = [
+    "refKind",
+    "provider",
+    "videoId",
+    "width",
+    "html",
+    "caption",
+    "block",
+    "source",
+    "indent",
+    "colSizes",
+    "marginLeft",
+    "listStyleType",
 ];
 
 /// Whether the store takes `value` under `key` on an element of type `kind`
 /// (`material::assert_canonical`): a reference names an item kind, a video
-/// is a YouTube id, a resizable block's width is one the handles write, an
-/// interactive block's html and caption fit, a figure's block is its live
-/// map (checked whole on the copy, [on_candidate]), a Mermaid source is a
-/// string (or its shared text), any block's indent stops at
-/// `LIST_INDENT_MAX`.
+/// is a YouTube id, a resizable block's width is one the handles write, a
+/// column's one the editor writes, an interactive block's html and caption
+/// fit, a figure's block is its live map (checked whole on the copy,
+/// [on_candidate]), a Mermaid source is a string (or its shared text), any
+/// block's indent is a number that stops at `LIST_INDENT_MAX`, a table's
+/// column sizes and left margin are sizes, and a list's style holds no `;` or
+/// control character.
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
         (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
@@ -403,11 +420,28 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         // A figure's block only as its live map (Epo 2026-10-18), checked
         // whole on the copy; never as one plain value.
         (kind, key, value) if plate::holds_map(kind, key) => matches!(value, Any::Buffer(_)),
-        (kind, key, value) if plate::holds_text(kind, key) => matches!(value, Any::String(_)),
+        (kind, key, value) if plate::holds_text(kind, key) => {
+            matches!(value, Any::String(source) if plate::utf16_len(source) as usize <= catalog::MERMAID_SOURCE_MAX)
+        }
         (_, "width", value) if catalog::element(kind).is_some_and(|e| e.resizable) => {
             matches!(value, Any::String(width) if crate::material::valid_width(width))
         }
+        ("column", "width", value) => {
+            matches!(value, Any::String(width) if crate::material::valid_column_width(width))
+        }
         (_, "indent", Any::Number(indent)) => *indent <= catalog::LIST_INDENT_MAX as f64,
+        (_, "indent", value) => matches!(value, Any::Null),
+        ("table", "colSizes", value) => {
+            matches!(value, Any::Array(sizes) if sizes.iter().all(|size| match size {
+                Any::Null | Any::Undefined => true,
+                Any::Number(size) => crate::material::table_size(*size),
+                _ => false,
+            }))
+        }
+        ("table", "marginLeft", value) => {
+            matches!(value, Any::Number(size) if crate::material::table_size(*size))
+        }
+        (_, "listStyleType", value) => style_value_ok(value),
         (crate::material::MATERIAL_REF_TYPE, "refKind", _)
         | ("video", "provider" | "videoId", _)
         | (crate::material::HTML_EMBED_TYPE, "html", _) => false,
@@ -470,6 +504,23 @@ fn plain_content<T: ReadTxn>(
     // the one before it); a chain that loops is none.
     let mut places: HashMap<yrs::ID, Option<Place>> = HashMap::new();
     let mut place = |start: &yrs::block::Item| -> Option<Place> {
+        // Place an item that overlaps the room's held clock, or sits next to a
+        // collected unit, where yrs integrates it (phase 0 review).
+        match incoming.landing(store, &state, start) {
+            ydoc::Landing::Gone => {
+                places.insert(*start.id(), None);
+                return None;
+            }
+            ydoc::Landing::At(id) => {
+                let found = store.get_item(&id).map(|held| match held.parent_sub() {
+                    Some(key) => Place::Entry(key.clone(), held.parent_branch().map(|b| b.id())),
+                    None => Place::Sequence(held.parent_branch().map(|b| b.id())),
+                });
+                places.insert(*start.id(), found.clone());
+                return found;
+            }
+            ydoc::Landing::Chain => {}
+        }
         let mut chain: Vec<yrs::ID> = Vec::new();
         let mut seen: HashSet<yrs::ID> = HashSet::new();
         let mut item = start;
@@ -558,6 +609,8 @@ fn plain_content<T: ReadTxn>(
     // Figures whose live block the update writes into (Epo 2026-10-17): read
     // and checked whole on the copy ([on_candidate]).
     let mut figures: HashSet<BranchID> = HashSet::new();
+    // The UTF-16 units the update types into each Mermaid source.
+    let mut typed_into: HashMap<BranchID, u64> = HashMap::new();
     let mut structure = Structure::default();
     for (item, at) in located {
         let id = item.id();
@@ -591,7 +644,13 @@ fn plain_content<T: ReadTxn>(
             (Place::Entry(_, parent), _) if is_source(parent) => {
                 Some("an attribute on a Mermaid source")
             }
-            (Place::Sequence(parent), ItemContent::String(_)) if is_source(parent) => None,
+            (Place::Sequence(parent @ Some(source)), ItemContent::String(text))
+                if is_source(parent) =>
+            {
+                *typed_into.entry(source.clone()).or_default() +=
+                    text.len(yrs::OffsetKind::Utf16) as u64;
+                None
+            }
             (Place::Sequence(parent), _) if is_source(parent) => {
                 Some("content other than text in a Mermaid source")
             }
@@ -796,8 +855,37 @@ fn plain_content<T: ReadTxn>(
     // make a deletion grow the value (a capped series moving up).
     shape.exact = !figures.is_empty();
     media.extend(figures);
+    // A source whose held length plus what the update types stays within
+    // the cap needs no copy (deletions only shorten it): one length read.
+    shape.sources = typed_into
+        .into_iter()
+        .filter(|(source, typed)| {
+            let held = held_branch(txn, source).map_or(0, |branch| branch.content_len());
+            u64::from(held) + typed > catalog::MERMAID_SOURCE_MAX as u64
+        })
+        .map(|(source, _)| source)
+        .collect();
     shape.structure = structure.finish(txn, incoming, &shape.created, material)?;
     Ok(media)
+}
+
+/// [Refusal::Content] for a Mermaid source past `MERMAID_SOURCE_MAX`.
+pub const LONG_SOURCE: &str = "a Mermaid source over its length cap";
+
+/// The Mermaid sources [plain_content] named, measured in `candidate` (the
+/// room with the update applied) in UTF-16 units, the doc's offset kind.
+fn sources_fit(candidate: &yrs::Doc, sources: &HashSet<BranchID>) -> Result<(), Refusal> {
+    use yrs::Transact;
+    let txn = candidate.transact();
+    for id in sources {
+        if id.get_branch(&txn).is_some_and(|branch| {
+            !branch.item().is_some_and(|item| item.is_deleted())
+                && branch.content_len() as usize > catalog::MERMAID_SOURCE_MAX
+        }) {
+            return Err(Refusal::Content(LONG_SOURCE));
+        }
+    }
+    Ok(())
 }
 
 /// The `type` a held element has, if the room holds it.
@@ -1437,6 +1525,19 @@ fn candidate_of<T: ReadTxn>(txn: &T, update: &Update) -> Result<yrs::Doc, Refusa
 
 /// [Refusal::Content] for a mark no leaf carries ([leaf_never_carries]).
 pub const LEAF_MARK: &str = "a text mark no leaf carries";
+/// [Refusal::Content] for a text mark Plate draws into a style holding a
+/// value the store refuses (`material::style_value`, Epo Q380).
+pub const MARK_VALUE: &str = "a text mark with a value the store refuses";
+
+/// A style value the store takes: absent (null) or a string with no `;` and
+/// no control character.
+fn style_value_ok(value: &Any) -> bool {
+    match value {
+        Any::Null | Any::Undefined => true,
+        Any::String(value) => crate::material::style_value(value),
+        _ => false,
+    }
+}
 /// [Refusal::Content] for text written straight into the content root.
 pub const ROOT_TEXT: &str = "text outside a block";
 /// [Refusal::Content] for children an element's type cannot hold: content
@@ -1505,6 +1606,11 @@ impl Structure {
             (_, ItemContent::Deleted(_)) => {}
             (Place::Sequence(_), ItemContent::Format(key, _)) if leaf_never_carries(key) => {
                 return Err(Refusal::Content(LEAF_MARK));
+            }
+            (Place::Sequence(_), ItemContent::Format(key, value))
+                if crate::material::STYLE_MARKS.contains(&&**key) && !style_value_ok(value) =>
+            {
+                return Err(Refusal::Content(MARK_VALUE));
             }
             (Place::Sequence(Some(BranchID::Root(root))), ItemContent::String(_))
                 if &**root == plate::CONTENT_ROOT =>
@@ -1796,9 +1902,10 @@ impl Validator {
         let mut shape = Shape::default();
         if keeps_roots {
             let media = plain_content(&txn, &incoming, &mut shape, &self.material)?;
-            if !media.is_empty() {
-                // An image inserted, a file named, a figure written: the room
-                // is copied only when inspect did not already.
+            if !media.is_empty() || !shape.sources.is_empty() {
+                // An image inserted, a file named, a figure written, a source
+                // typed near its cap: the room is copied only when inspect did
+                // not already.
                 let candidate = match trial.take() {
                     Some(trial) => trial,
                     None => {
@@ -1807,6 +1914,7 @@ impl Validator {
                     }
                 };
                 on_candidate(&candidate, &media)?;
+                sources_fit(&candidate, &shape.sources)?;
                 trial = Some(candidate);
             }
         }

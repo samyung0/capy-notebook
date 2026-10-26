@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +15,9 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -342,11 +345,317 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 	}
 }
 
+// Audio the browser read as longer than two hours, or with no length read
+// (no credit estimate is possible), is refused before its bytes are stored;
+// the worker checks the measured duration again.
+func TestUploadPolicyServesAudioLimitAndUploadEnforcesIt(t *testing.T) {
+	fx := openBilling(t)
+	rec := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)
+	var policy apimodel.SourceUploadPolicy
+	if err := json.Unmarshal(rec.Body.Bytes(), &policy); err != nil {
+		t.Fatal(err)
+	}
+	if policy.AudioMaxDurationSeconds != 7200 || policy.AudioSecondCreditMicros != 16_667 {
+		t.Fatalf("audio policy: %d s at %d micros", policy.AudioMaxDurationSeconds, policy.AudioSecondCreditMicros)
+	}
+	upload := func(seconds int) *httptest.ResponseRecorder {
+		return postUpload(t, fx.handler,
+			"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, map[string]any{
+				"name": "lecture.mp3", "kind": "audio", "sizeBytes": 1024, "contentType": "audio/mpeg",
+				"durationSeconds": seconds, "batchId": fx.workspaceID, "batchTotal": 2,
+			}, "audio/mpeg", make([]byte, 1024))
+	}
+	if missing := upload(0); missing.Code != http.StatusBadRequest ||
+		!strings.Contains(missing.Body.String(), "need their duration") {
+		t.Fatalf("audio without a duration: %d %s", missing.Code, missing.Body.String())
+	}
+	if over := upload(7201); over.Code != http.StatusBadRequest ||
+		!strings.Contains(over.Body.String(), "at most 2 hours") {
+		t.Fatalf("audio over the limit: %d %s", over.Code, over.Body.String())
+	}
+	if ok := upload(7200); ok.Code != http.StatusCreated {
+		t.Fatalf("audio at the limit: %d %s", ok.Code, ok.Body.String())
+	}
+}
+
+// The material response carries the reader's own editor caps, since what they
+// add is charged to them (M16; Epo 2026-10-22: the browser checks a note image
+// or audio against them before it uploads): a Free co-editor of a Pro owner's
+// note reads the Free caps, and the other way round. The image cap is the
+// same on every plan (Epo 2026-10-24), so the audio cap tells them apart.
+func TestMaterialCarriesTheReadersEditorCaps(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	free, pro := mustPlanLimits(t, fx.store, store.PlanFree), mustPlanLimits(t, fx.store, store.PlanPro)
+	if free.EditorAssetBytes("audio") == pro.EditorAssetBytes("audio") {
+		t.Fatal("the Free and Pro audio caps must differ for this test")
+	}
+	note, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "note", Title: "Caps", Content: noteTestContent(t, "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, note.ID)
+	for _, tc := range []struct {
+		owner, reader string
+		want          planlimits.Limits
+	}{{"pro", "free", free}, {"free", "pro", pro}} {
+		for user, tier := range map[string]string{fx.ownerID: tc.owner, fx.actorID: tc.reader} {
+			if _, err := fx.pool.Exec(ctx, `UPDATE users SET plan_tier=$2 WHERE id=$1`, user, tier); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rec := doReq(t, fx.handler, http.MethodGet, "/api/materials/"+note.ID, fx.actorID, nil)
+		expectStatus(t, rec, http.StatusOK, "the co-editor's read")
+		var caps struct{ AudioMaxBytes, ImageMaxBytes int64 }
+		if err := json.Unmarshal(rec.Body.Bytes(), &caps); err != nil {
+			t.Fatal(err)
+		}
+		if caps.AudioMaxBytes != tc.want.EditorAssetBytes("audio") || caps.ImageMaxBytes != tc.want.EditorAssetBytes("image") {
+			t.Fatalf("a %s reader of a %s owner's note reads audio %d and image %d", tc.reader, tc.owner,
+				caps.AudioMaxBytes, caps.ImageMaxBytes)
+		}
+	}
+}
+
+// A member removed from a workspace finds the image it still pays for in the
+// owner's note on its Files page and deletes it there; nobody else can. The
+// note then names it as removed to its readers, and an embedded quiz names its
+// own removed image in its own response (M16).
+func TestRemovedMemberDeletesItsMediaOverHTTP(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	assetID := fmt.Sprintf("asset_m16_%d", time.Now().UnixNano())
+	content, err := materialdoc.Marshal(materialdoc.Envelope{SchemaVersion: materialdoc.SchemaVersion, Value: []map[string]any{
+		materialdoc.ParagraphNode("Look."),
+		{"type": "img", "id": "img-1", "assetId": assetID, "children": []any{map[string]any{"text": ""}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "note", Title: "Owner's note", Content: noteTestContent(t, "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, note.ID)
+	quiz, err := fx.store.CreateEmbeddedMaterial(ctx, fx.ownerID, note.ID, store.EmbeddedDraft{Kind: "quiz",
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quizAssetID := assetID + "_quiz"
+	quizContent, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[{"type":"image","image":{"assetId":"`+quizAssetID+`"},"width":10,"height":10,"description":"Figure"}],
+		"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ assetID, materialID, content string }{{assetID, note.ID, content}, {quizAssetID, quiz.ID, quizContent}} {
+		_, upload, err := fx.store.CreateEditorAssetReservation(ctx, store.NewEditorAssetReservation{
+			AssetID: item.assetID, UploadID: item.assetID + "_up", WorkspaceID: fx.workspaceID, MaterialID: item.materialID,
+			CreatedBy: fx.actorID, Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/" + item.assetID + "/blob.png",
+			ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fx.store.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fx.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, item.materialID, item.content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := fx.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`,
+		fx.workspaceID, fx.actorID); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doReq(t, fx.handler, http.MethodGet, "/api/editor-assets?access=lost", fx.actorID, nil)
+	expectStatus(t, rec, http.StatusOK, "the removed member's lost media")
+	var lost store.EditorAssetPage
+	if err := json.Unmarshal(rec.Body.Bytes(), &lost); err != nil {
+		t.Fatal(err)
+	}
+	if len(lost.Items) != 2 {
+		t.Fatalf("lost media = %+v, want both images", lost.Items)
+	}
+	// One per page: the cursor reaches the second and the end.
+	var paged []string
+	for path := "/api/editor-assets?access=lost&limit=1"; path != ""; {
+		rec := doReq(t, fx.handler, http.MethodGet, path, fx.actorID, nil)
+		expectStatus(t, rec, http.StatusOK, path)
+		var page store.EditorAssetPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || len(page.Items) != 1 || len(paged) > 1 {
+			t.Fatalf("%s = %s, %v", path, rec.Body.String(), err)
+		}
+		paged = append(paged, page.Items[0].ID)
+		path = ""
+		if page.NextCursor != "" {
+			path = "/api/editor-assets?access=lost&limit=1&cursor=" + page.NextCursor
+		}
+	}
+	if len(paged) != 2 || paged[0] != lost.Items[0].ID || paged[1] != lost.Items[1].ID {
+		t.Fatalf("paged %v, want %s then %s", paged, lost.Items[0].ID, lost.Items[1].ID)
+	}
+	for _, item := range lost.Items {
+		if item.MaterialTitle != note.Title || !item.LostAccess || item.MaterialID != "" {
+			t.Fatalf("lost image %s is under %q, want the note's title %q", item.ID, item.MaterialTitle, note.Title)
+		}
+	}
+	for _, id := range []string{assetID, quizAssetID} {
+		path := "/api/editor-assets/" + id
+		expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.ownerID, nil), http.StatusNotFound, "the owner deleting it")
+		expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.actorID, nil), http.StatusNoContent, "its payer deleting it")
+	}
+
+	for _, read := range []struct{ path, want string }{
+		{"/api/materials/" + note.ID, assetID}, {"/api/quizzes/" + quiz.ID, quizAssetID},
+	} {
+		rec = doReq(t, fx.handler, http.MethodGet, read.path, fx.ownerID, nil)
+		expectStatus(t, rec, http.StatusOK, "the owner's read")
+		var body struct{ RemovedAssetIDs []string }
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(body.RemovedAssetIDs, []string{read.want}) {
+			t.Fatalf("%s removedAssetIds = %v, want only its own deleted image %s", read.path, body.RemovedAssetIDs, read.want)
+		}
+	}
+}
+
+// Study names the card images their uploader deleted, as the editor does
+// (Epo 2026-10-24, M16): the set read flashcard study uses, a new review
+// session and the items a continued one has still to answer list the removed
+// image. Answered items and a session's result are graded copies, which keep
+// the plain empty box (Q270), so they name none.
+func TestStudyReadsNameRemovedImages(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	assetID := fmt.Sprintf("asset_m16_study_%d", time.Now().UnixNano())
+	card := materialdoc.Card{ID: "c1", Front: "Cell", Back: "Unit of life"}
+	other := materialdoc.Card{ID: "c2", Front: "Atom", Back: "Unit of matter"}
+	plain, err := materialdoc.FlashcardsDocument([]materialdoc.Card{card, other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "flashcards", Title: "Cells", Content: plain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, set.ID)
+	_, upload, err := fx.store.CreateEditorAssetReservation(ctx, store.NewEditorAssetReservation{
+		AssetID: assetID, UploadID: assetID + "_up", WorkspaceID: fx.workspaceID, MaterialID: set.ID, CreatedBy: fx.actorID,
+		Name: "cell.png", Purpose: "image", ObjectPath: "editor-assets/" + assetID + "/blob.png",
+		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.store.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+		t.Fatal(err)
+	}
+	card.Image = &materialdoc.CardImage{AssetID: assetID}
+	cards, err := materialdoc.FlashcardsDocument([]materialdoc.Card{card, other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, set.ID, cards); err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, "/api/editor-assets/"+assetID, fx.actorID, nil),
+		http.StatusNoContent, "its payer deleting it")
+
+	removed := func(path string, want ...string) {
+		t.Helper()
+		rec := doReq(t, fx.handler, http.MethodGet, path, fx.ownerID, nil)
+		expectStatus(t, rec, http.StatusOK, path)
+		var body struct{ RemovedAssetIDs []string }
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(body.RemovedAssetIDs, want) {
+			t.Fatalf("%s removedAssetIds = %v, want %v; %s", path, body.RemovedAssetIDs, want, rec.Body.String())
+		}
+	}
+	rate := func(session, itemID string, items ...string) {
+		t.Helper()
+		refs := make([]any, len(items))
+		for i, id := range items {
+			refs[i] = map[string]any{"materialId": set.ID, "itemId": id}
+		}
+		expectStatus(t, doReq(t, fx.handler, http.MethodPost, "/api/review/ratings", fx.ownerID, map[string]any{
+			"materialId": set.ID, "itemId": itemID, "rating": 1,
+			"session": map[string]any{"id": session, "workspaceId": fx.workspaceID, "group": "workspace", "items": refs},
+		}), http.StatusNoContent, "rating "+itemID)
+	}
+	removed("/api/flashcards/"+set.ID, assetID)
+	// One session answers the other card first, with the imaged one still to
+	// answer; another answers the imaged card.
+	const pending, answered = "2b6f7c1d-4e5a-4b3c-9d8e-0f1a2b3c4d5e", "7c1d2b6f-5a4e-4c3b-8e9d-1a0f2b3c4d5e"
+	rate(pending, "c2", "c1", "c2")
+	rate(answered, "c1", "c1")
+	removed("/api/review/sessions/"+pending, assetID)
+	removed("/api/review/sessions/" + answered)
+	removed("/api/review/sessions/" + answered + "/result")
+	// Rated cards are due: a new session has the imaged card to answer.
+	removed("/api/workspaces/"+fx.workspaceID+"/review", assetID)
+}
+
+// An editor that still edits the owner's note deletes its image from its
+// Embeds tab (Q273): the note's content keeps the node, and the owner's next
+// read names it as removed. The owner, who did not add it, cannot delete it.
+func TestEditorDeletesItsImageInANoteItStillEdits(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	assetID := fmt.Sprintf("asset_q273_%d", time.Now().UnixNano())
+	note, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "note", Title: "Shared note", Content: noteTestContent(t, "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, note.ID)
+	_, upload, err := fx.store.CreateEditorAssetReservation(ctx, store.NewEditorAssetReservation{
+		AssetID: assetID, UploadID: assetID + "_up", WorkspaceID: fx.workspaceID, MaterialID: note.ID, CreatedBy: fx.actorID,
+		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/" + assetID + "/blob.png",
+		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.store.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := materialdoc.Marshal(materialdoc.Envelope{SchemaVersion: materialdoc.SchemaVersion, Value: []map[string]any{
+		{"type": "img", "id": "img-1", "assetId": assetID, "children": []any{map[string]any{"text": ""}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.pool.Exec(ctx, `UPDATE materials SET content=$2 WHERE id=$1`, note.ID, content); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/editor-assets/" + assetID
+	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.ownerID, nil), http.StatusNotFound, "the owner deleting it")
+	expectStatus(t, doReq(t, fx.handler, http.MethodDelete, path, fx.actorID, nil), http.StatusNoContent, "its payer deleting it")
+	rec := doReq(t, fx.handler, http.MethodGet, "/api/materials/"+note.ID, fx.ownerID, nil)
+	expectStatus(t, rec, http.StatusOK, "the owner's read")
+	var read struct{ RemovedAssetIDs []string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &read); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(read.RemovedAssetIDs, []string{assetID}) || !strings.Contains(rec.Body.String(), `"assetId":"`+assetID+`"`) {
+		t.Fatalf("owner's read = %s; want the node kept and named as removed", rec.Body.String())
+	}
+}
+
 // The upload checks again what its ticket checked: a file within the cap when
 // its ticket was issued but over it when it uploads (the payer's plan fell),
 // and a reservation over the storage that filled while it waited, are refused
-// at the upload with nothing held, for sources and editor assets (security
-// regression: human backend-storage-quota 2026-10-22 gateway uploads).
+// at the upload with nothing held: both for sources, the storage for editor
+// assets (security regression: human backend-storage-quota 2026-10-22 gateway
+// uploads).
 func TestUploadsRecheckTheCapAndStorageAtTheUpload(t *testing.T) {
 	fx := openBilling(t)
 	ctx := context.Background()
@@ -412,18 +721,9 @@ func TestUploadsRecheckTheCapAndStorageAtTheUpload(t *testing.T) {
 	image := func(size int64) map[string]any {
 		return map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": size, "contentType": "image/png"}
 	}
-	plan(fx.ownerID, "pro")
-	bigImage := image(free.EditorAssetBytes("image") + 1)
-	route = ticketed(t, fx.handler, assets, fx.ownerID, bigImage)
-	plan(fx.ownerID, "free")
-	// A real PNG's first bytes, so only the cap can refuse it.
-	bigPNG := make([]byte, free.EditorAssetBytes("image")+1)
-	copy(bigPNG, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
-	if rec := upload(route, fx.ownerID, bigImage, "image/png", bigPNG); rec.Code != http.StatusBadRequest {
-		t.Fatalf("an editor asset over the cap at its upload: %d %s", rec.Code, rec.Body.String())
-	}
-
-	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, make([]byte, 100)...)
+	// The image cap is the same on every plan (Epo 2026-10-24): only the
+	// storage can change between an image's ticket and its upload.
+	png := testPNG(108)
 	smallImage := image(int64(len(png)))
 	route = ticketed(t, fx.handler, assets, fx.ownerID, smallImage)
 	fill(fx.ownerID)

@@ -93,7 +93,10 @@ const parseExtensions = ['.docx', '.pdf', '.pptx', '.xlsx'];
 export const sourceUploadPolicy: SourceUploadPolicy = {
   accept: '',
   allowNoExtension: true,
+  audioMaxDurationSeconds: 7200,
+  audioSecondCreditMicros: 16_667,
   digitalParsePageCreditMicros: 1_000_000,
+  imageMaxBytes: PLAN_LIMITS.free.imageMaxBytes,
   kinds: kindOrder.map((kind) => ({
     extensions: extensionsFor(kind),
     kind,

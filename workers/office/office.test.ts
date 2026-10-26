@@ -68,7 +68,7 @@ describe('isolated Office runtime', () => {
     }
   });
   it('allows explicit hybrid parents and embedded DOCX blob fonts', async () => {
-    const hybrid = 'https://dev-sam.uat.capynotebook.com';
+    const hybrid = 'https://local.uat.capynotebook.com';
     const bindings = { ...env(), PARENT_ORIGINS: `${parent}, ${hybrid}` };
     const response = await worker.fetch(
       new Request(origin + '/office-runtime.html'),
@@ -84,7 +84,7 @@ describe('isolated Office runtime', () => {
     for (const invalid of [
       '',
       'https://*.capynotebook.com',
-      'http://dev-sam.uat.capynotebook.com',
+      'http://local.uat.capynotebook.com',
       origin,
       parent,
     ]) {

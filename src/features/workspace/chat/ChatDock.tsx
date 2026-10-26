@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type RefObject,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -14,6 +15,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { ChatBubbleIcon } from './ChatBubbleIcon';
+import { VoiceButton, VoiceElapsed, type VoiceInput } from './VoiceInput';
 
 /** The chat dock and the chat page share this name, so a view transition
  * grows one into the other. */
@@ -38,10 +40,12 @@ const SETTLE_MS = 600;
 
 /**
  * Chat on the file page below lg. Below md, and on Office files at any width,
- * a round button morphs into a one-line field (the Files panel plus's
- * morph); from md the field shows itself. Focusing the field leaves the page
+ * a round button morphs into a one-line field; from md the field shows itself. Focusing the field leaves the page
  * as it is (the keyboard overlays it, see useKeyboardHeight); sending is the
- * caller's (it opens the chat page).
+ * caller's (it opens the chat page). Voice input is the composer's own
+ * (useVoiceInput in ChatPanel): its button sits left of Send, its elapsed time
+ * or error on a line above the field, and the field stays open while a
+ * recording runs or is transcribed.
  */
 export function ChatDock({
   text,
@@ -52,6 +56,8 @@ export function ChatDock({
   office,
   back,
   onOpenHistory,
+  fieldRef,
+  voice,
 }: {
   text: string;
   onTextChange: (text: string) => void;
@@ -64,19 +70,23 @@ export function ChatDock({
   back?: { title: string; onOpen: () => void; onClose: () => void };
   /** Opens the chat page with its history. */
   onOpenHistory: () => void;
+  /** The dock's field, which a transcript is inserted into at its caret. */
+  fieldRef: RefObject<HTMLTextAreaElement | null>;
+  voice: VoiceInput;
 }) {
   const md = useMediaQuery('(min-width: 768px)');
   const fieldOnly = md && !office;
-  const [expanded, setExpanded] = useState(false);
+  const voiceBusy = voice.phase !== 'idle';
+  // A recording started on the chat page keeps the field open here.
+  const [expanded, setExpanded] = useState(voiceBusy);
   const open = fieldOnly || expanded;
   const draft = text.trim().length > 0;
-  const fieldRef = useRef<HTMLTextAreaElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const settledAt = useRef(0);
   const [size, setSize] = useState({ height: BUTTON, width: BUTTON });
 
   // The field lays out at the row's full width even while the surface is a
-  // button, so its height is known before it opens (as Menu's morph).
+  // button, so its height is known before it opens.
   const fieldBox = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const row = rowRef.current;
@@ -124,7 +134,7 @@ export function ChatDock({
   // Scrolling the page either way folds the field into the button, focused or
   // not; a draft stays and shows as the button's dot. Positions are tracked
   // from mount, so the first scroll after opening already has a distance.
-  const folds = !fieldOnly && expanded;
+  const folds = !fieldOnly && expanded && !voiceBusy;
   const foldsRef = useRef(folds);
   foldsRef.current = folds;
   useEffect(() => {
@@ -216,7 +226,7 @@ export function ChatDock({
           // so Tab reaches its buttons.
           onBlur={(event) => {
             if (event.currentTarget.contains(event.relatedTarget)) return;
-            if (!(fieldOnly || draft)) setExpanded(false);
+            if (!(fieldOnly || draft || voiceBusy)) setExpanded(false);
           }}
           onFocus={() => {
             settledAt.current = performance.now() + SETTLE_MS;
@@ -241,43 +251,79 @@ export function ChatDock({
             </button>
           )}
           <div
-            className="absolute right-0 bottom-0 flex w-(--dock-width) items-end gap-1 p-1.5"
+            className="absolute right-0 bottom-0 w-(--dock-width) p-1.5"
             data-chat-dock-field
             inert={!open}
             ref={fieldBox}
           >
-            <IconButton
-              className="-translate-y-px p-2.5 text-fg-muted"
-              icon="clock"
-              label={m.chat_history()}
-              onClick={onOpenHistory}
-              onMouseDown={(event) => event.preventDefault()}
-              size="sm"
-              variant="ghost-hover"
-            />
-            {/* 16px text: phones zoom the page into smaller fields. */}
-            <Textarea
-              aria-invalid={overLimit || undefined}
-              aria-label={m.chat_placeholder()}
-              className="max-h-[calc(4lh+--spacing(4))] min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-0 py-2 text-base/[22px] text-fg focus:border-0"
-              onChange={(event) => onTextChange(event.target.value)}
-              placeholder={m.chat_placeholder()}
-              ref={fieldRef}
-              rows={1}
-              value={text}
-            />
-            <IconButton
-              className="p-2.5"
-              disabled={sendDisabled}
-              icon="send"
-              label={m.chat_send()}
-              onClick={onSend}
-              // Keeps the field focused through the tap, so its blur cannot
-              // fold the dock before the send lands.
-              onMouseDown={(event) => event.preventDefault()}
-              size="sm"
-              variant="accent"
-            />
+            {/* A line of its own above the row, inside the measured box so
+                the surface grows to show it: beside the buttons, the time
+                would squeeze a phone's field to a few words a line. */}
+            {voice.phase === 'recording' ? (
+              <div className="flex px-2 pt-1">
+                <VoiceElapsed elapsedMs={voice.elapsedMs} />
+              </div>
+            ) : (
+              voice.error && (
+                <p
+                  className="px-2 pt-1 pb-0.5 text-sm text-tint-error-fg"
+                  data-error-surface="inline"
+                  role="alert"
+                >
+                  {voice.error}
+                </p>
+              )
+            )}
+            <div className="flex items-end gap-1">
+              <IconButton
+                className="-translate-y-px p-2.5 text-fg-muted"
+                icon="clock"
+                label={m.chat_history()}
+                onClick={onOpenHistory}
+                onMouseDown={(event) => event.preventDefault()}
+                size="sm"
+                variant="ghost-hover"
+              />
+              {/* 16px text: phones zoom the page into smaller fields. */}
+              <Textarea
+                aria-invalid={overLimit || undefined}
+                aria-label={m.chat_placeholder()}
+                className="max-h-[calc(4lh+--spacing(4))] min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-0 py-2 text-base/[22px] text-fg focus:border-0"
+                onChange={(event) => onTextChange(event.target.value)}
+                placeholder={m.chat_placeholder()}
+                ref={fieldRef}
+                rows={1}
+                value={text}
+              />
+              {/* As tall as one line of the field (py-2 + 22px) and the
+                  history button, so the smaller toolbar buttons centre on
+                  the field's last line. */}
+              <div className="flex h-9.5 shrink-0 items-center gap-1">
+                {voice.supported && (
+                  <VoiceButton
+                    elapsed={false}
+                    elapsedMs={voice.elapsedMs}
+                    // Keeps the field focused through the tap, as Send does.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onToggle={voice.toggle}
+                    phase={voice.phase}
+                  />
+                )}
+                <IconButton
+                  disabled={sendDisabled}
+                  icon="send"
+                  // A purple plane on no background, as in the composer.
+                  iconClassName="fill-current text-action-accent"
+                  label={m.chat_send()}
+                  onClick={onSend}
+                  // Keeps the field focused through the tap, so its blur
+                  // cannot fold the dock before the send lands.
+                  onMouseDown={(event) => event.preventDefault()}
+                  size="toolbar"
+                  variant="ghost-hover"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>

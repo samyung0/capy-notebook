@@ -208,6 +208,7 @@ export function SourceTextView({
                   source.replaced ||
                   source.offlineLimit ||
                   source.outdated ||
+                  source.draftsSending ||
                   source.status === 'recovery'
                 }
                 registerFlush={source.flushHandler}

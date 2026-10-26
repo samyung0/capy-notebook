@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/Card';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import {
   AssetUrlContext,
+  RemovedMedia,
   useResolvedAsset,
 } from '@/features/materials/MediaAssetView';
 import { cn } from '@/lib/cn';
@@ -14,7 +15,7 @@ export function CardFront({
   className,
   size = 'tile',
 }: {
-  card: FlashcardContent;
+  card: Pick<FlashcardContent, 'front' | 'image'>;
   className?: string;
   size?: 'tile' | 'panel' | 'compact' | 'large';
 }) {
@@ -81,6 +82,15 @@ function ResolvedCardImage({
   className?: string;
 }) {
   const [asset] = useResolvedAsset(assetId);
+  if (asset.status === 'error' && asset.kind === 'removed')
+    return (
+      <RemovedMedia
+        className={cn(
+          'min-h-0 gap-2 overflow-hidden px-3 py-2 text-xs',
+          className
+        )}
+      />
+    );
   return asset.status === 'ready' ? (
     <img
       alt=""
@@ -103,31 +113,38 @@ export function CardBack({ card }: { card: Pick<FlashcardContent, 'back'> }) {
 
 /** A turned card: the front's text as a centred header pinned to the top, so
  * a long front never moves the answer, which is centred in the rest. The
- * image stays on the front. A tile (result lists) caps the front's and the
- * back's heights, each scrolling without a scrollbar, edges fading. */
+ * image stays on the front; `image` (the edit grid) shows it small under the
+ * header's text. A tile caps the front's and the back's heights, each
+ * scrolling without a scrollbar, edges fading. */
 export function CardBackFace({
   card,
   className,
+  image,
   size,
 }: {
   card: Pick<FlashcardContent, 'back' | 'front'>;
   className?: string;
+  image?: FlashcardContent['image'];
   size: 'large' | 'compact' | 'panel' | 'tile';
 }) {
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
-      <p
+      <div
         className={cn(
-          'shrink-0 whitespace-pre-line break-words border-divider border-b text-center font-bold text-fg-secondary',
+          'shrink-0 border-divider border-b text-center font-bold text-fg-secondary',
           size === 'large' && 'px-7 pt-5.5 pb-4 text-base',
           size === 'compact' && 'px-5 pt-3.5 pb-2.5 text-sm',
           size === 'panel' && 'px-4 pt-2.5 pb-2 text-xs',
           size === 'tile' &&
-            'scroll-fade-y max-h-22 overflow-y-auto px-4.5 pt-4 pb-3 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+            'scroll-fade-y overflow-y-auto px-4.5 pt-4 pb-3 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+          size === 'tile' && (image ? 'max-h-36' : 'max-h-22')
         )}
       >
-        {card.front}
-      </p>
+        <p className="whitespace-pre-line break-words">{card.front}</p>
+        {image && (
+          <CardImage assetId={image.assetId} className="mx-auto mt-2 h-12" />
+        )}
+      </div>
       <div
         className={cn(
           'flex min-h-0 flex-1 items-center justify-center overflow-auto',
@@ -144,36 +161,72 @@ export function CardBackFace({
   );
 }
 
-/** A grid tile showing only the front. `children` sits over the corner (the
- * edit toolbar). */
+/** A card in a grid, as the results, the edit grid and View list it: turned
+ * (front header over the back) or, with `face="front"`, the front alone; its
+ * number at the bottom left and `aside` (rating chips, the edit toolbar) at
+ * the bottom right. `onOpen` makes it a button that lifts on hover. */
 export function CardTile({
   card,
-  onOpen,
+  n,
+  face = 'turned',
+  aside,
   label,
-  children,
+  onOpen,
 }: {
-  card: FlashcardContent;
-  onOpen: () => void;
-  label: string;
-  children?: ReactNode;
+  card: Pick<FlashcardContent, 'back' | 'front' | 'image'>;
+  n: number;
+  face?: 'turned' | 'front';
+  aside?: ReactNode;
+  label?: string;
+  onOpen?: () => void;
 }) {
+  const body = (
+    <>
+      {face === 'front' ? (
+        <CardFront
+          card={card}
+          className="scroll-fade-y justify-center-safe h-32 overflow-y-auto px-5 pt-5 [scrollbar-width:none] sm:h-43 [&::-webkit-scrollbar]:hidden"
+        />
+      ) : (
+        <CardBackFace
+          card={card}
+          className="flex-1"
+          image={onOpen ? card.image : undefined}
+          size="tile"
+        />
+      )}
+      <span className="flex h-9 shrink-0 items-center px-3.5 pb-3 font-bold text-[13px] text-fg-muted">
+        {n}
+      </span>
+    </>
+  );
   return (
-    // The Card lifts on hover like the Add card tile, the toolbar with it.
     <Card
-      className="group/tile relative aspect-[4/3] gap-0 p-0"
-      interactive
+      asChild
+      border="solid"
+      className="group/tile relative gap-0 overflow-hidden p-0 sm:min-h-52"
+      interactive={!!onOpen}
       radius="card-lg"
-      theme="transparent"
     >
-      <button
-        aria-label={label}
-        className="flex size-full items-center justify-center overflow-hidden rounded-card-lg border border-line bg-surface p-5 focus-visible:ring-2 focus-visible:ring-action"
-        onClick={onOpen}
-        type="button"
-      >
-        <CardFront card={card} className="size-full" />
-      </button>
-      {children}
+      <li>
+        {onOpen ? (
+          <button
+            aria-label={label}
+            className="flex flex-1 flex-col rounded-card-lg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+            onClick={onOpen}
+            type="button"
+          >
+            {body}
+          </button>
+        ) : (
+          body
+        )}
+        {aside && (
+          <div className="absolute right-3.5 bottom-3 flex min-h-6 items-center gap-1 whitespace-nowrap">
+            {aside}
+          </div>
+        )}
+      </li>
     </Card>
   );
 }
@@ -201,11 +254,12 @@ export function CardSides({
   );
 }
 
-/** Three columns in a wide pane, fewer as it narrows. */
+/** Tiles in columns of 350px or more that share the width; one column on
+ * phones. */
 export function CardGrid({ children }: { children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
+    <ol className="grid grid-cols-1 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(350px,1fr))] sm:gap-3.5">
       {children}
-    </div>
+    </ol>
   );
 }

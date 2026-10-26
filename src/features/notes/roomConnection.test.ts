@@ -15,6 +15,10 @@ describe('roomRefusal', () => {
     expect(roomRefusal('collaboration-not-found')).toBe('notFound');
     expect(roomRefusal('collaboration-forbidden')).toBe('forbidden');
     expect(roomRefusal('collaboration-outdated')).toBe('outdated');
+    // A client id the room holds no more never joins again (Epo
+    // 2026-10-24); a clash on a fresh offer is retried.
+    expect(roomRefusal('collaboration-unassigned-id')).toBe('unassigned');
+    expect(roomRefusal('collaboration-client-id')).toBe('retry');
     expect(
       roomRefusal('Failed to get token', new ApiError(404, 'Not Found'))
     ).toBe('notFound');
@@ -161,5 +165,39 @@ describe('roomReconnector', () => {
     reconnector.connected();
     vi.advanceTimersByTime(RECONNECT_GRACE_MS);
     expect(onStuck).not.toHaveBeenCalled();
+  });
+
+  // Epo 2026-10-23: a join has 30 s from its start, a note's token request
+  // included, which came before the editor.
+  it('counts a join from its start, not from the call', () => {
+    const { onStuck, reconnector } = setup();
+    reconnector.started(Date.now() - 20_000);
+    vi.advanceTimersByTime(RECONNECT_GRACE_MS - 20_000 - 1);
+    expect(onStuck).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onStuck).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends a join at its sync', () => {
+    const { onStuck, reconnector } = setup();
+    reconnector.started(Date.now() - 20_000);
+    reconnector.connected();
+    vi.advanceTimersByTime(RECONNECT_GRACE_MS);
+    expect(onStuck).not.toHaveBeenCalled();
+  });
+
+  it('reports a join that started over 30 s ago at once, unless offline', () => {
+    const { onStuck, reconnector } = setup();
+    vi.stubGlobal('navigator', { onLine: false });
+    reconnector.started(Date.now() - RECONNECT_GRACE_MS - 5000);
+    vi.advanceTimersByTime(0);
+    expect(onStuck).not.toHaveBeenCalled();
+    vi.stubGlobal('navigator', { onLine: true });
+    vi.advanceTimersByTime(RECONNECT_GRACE_MS);
+    expect(onStuck).toHaveBeenCalledTimes(1);
+    const late = setup();
+    late.reconnector.started(Date.now() - RECONNECT_GRACE_MS - 5000);
+    vi.advanceTimersByTime(0);
+    expect(late.onStuck).toHaveBeenCalledTimes(1);
   });
 });

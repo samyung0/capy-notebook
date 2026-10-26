@@ -2,7 +2,7 @@
 //! counters for `collab_health` and `/metrics`.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -32,6 +32,10 @@ pub struct Outbox {
     /// The largest frame this socket's rooms handed it so far.
     largest: Arc<AtomicUsize>,
     overflow: Arc<tokio::sync::Notify>,
+    /// A frame was dropped: nothing more goes out on this socket, which
+    /// closes (review r1 M1), so no later frame (a `stored` notice) reaches
+    /// a reader that lacks the dropped one.
+    dropped: Arc<AtomicBool>,
 }
 
 /// The least a socket's outgoing queue holds before its reader counts as
@@ -47,6 +51,7 @@ impl Outbox {
                 queued: Arc::default(),
                 largest: Arc::default(),
                 overflow: Arc::default(),
+                dropped: Arc::default(),
             },
             rx,
         )
@@ -55,8 +60,12 @@ impl Outbox {
     /// Queues a frame, or flags a reader too slow: one whose backlog passed
     /// max(4 MiB, the largest frame its rooms can send, as seen so far)
     /// before this frame (Epo 2026-10-08). A frame itself always fits, so a
-    /// joiner's whole-state answer goes out.
+    /// joiner's whole-state answer goes out. Once one was dropped, every
+    /// later one is too.
     pub fn frame(&self, frame: Bytes) {
+        if self.dropped.load(Ordering::Relaxed) {
+            return;
+        }
         let largest = self
             .largest
             .fetch_max(frame.len(), Ordering::Relaxed)
@@ -64,6 +73,7 @@ impl Outbox {
         let backlog = self.queued.fetch_add(frame.len(), Ordering::Relaxed);
         if backlog > OUTBOX_FLOOR.max(largest) {
             self.queued.fetch_sub(frame.len(), Ordering::Relaxed);
+            self.dropped.store(true, Ordering::Relaxed);
             self.overflow.notify_one();
             return;
         }
@@ -241,7 +251,7 @@ pub struct Stats {
     pub awareness: AtomicU64,
     pub log_bytes: AtomicU64,
     /// Draft sends refused, by `drafts::Class` (its index in `Class::ALL`).
-    pub draft_refusals: [AtomicU64; 9],
+    pub draft_refusals: [AtomicU64; 10],
     /// JOINs and draft sends refused for their client protocol: material
     /// rooms, then source rooms (stale tabs left after a deploy).
     pub outdated_refusals: [AtomicU64; 2],
@@ -280,7 +290,7 @@ pub struct App {
     pub unplaced: crate::incidents::UnplacedOnce,
     pub projection_failures: crate::projection::Failures,
     pub projection_refused: crate::projection::Refused,
-    pub pubsub: crate::pubsub::Waiters,
+    pub pubsub: crate::pubsub::Completed,
     pub next_connection: AtomicU64,
     /// Channel ids the source handoff names (one per room join).
     pub next_channel: AtomicU64,
@@ -339,5 +349,26 @@ mod outbox_tests {
             draining.sent(1024 * 1024);
         }
         assert!(!overflowed(&draining));
+    }
+
+    /// Review r1 M1: once a frame was dropped, nothing later is queued,
+    /// even after the writer drained, so a `stored` notice never follows a
+    /// broadcast its reader missed. Fails if frames queue again.
+    #[test]
+    fn nothing_goes_out_after_a_dropped_frame() {
+        let (outbox, mut rx) = Outbox::new();
+        for _ in 0..4 {
+            outbox.frame(Bytes::from(vec![0; 1024 * 1024]));
+        }
+        outbox.frame(Bytes::from(vec![0; 1]));
+        outbox.frame(Bytes::from(vec![0; 1]));
+        assert!(overflowed(&outbox));
+        outbox.sent(4 * 1024 * 1024 + 1);
+        outbox.frame(Bytes::from(vec![0; 1]));
+        let mut queued = 0;
+        while rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, 5);
     }
 }

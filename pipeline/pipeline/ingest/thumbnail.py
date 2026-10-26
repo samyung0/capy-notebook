@@ -92,9 +92,9 @@ def render(
     source: Path,
     page_image: bytes | None,
 ) -> bytes | None:
-    """The WebP of page 1, or None for a route without one (store-only, raw or
-    delimited text), a parse without a page image, or an image format this
-    Pillow cannot decode."""
+    """The WebP of page 1, or None for a route without one (store-only, audio,
+    raw or delimited text), a parse without a page image, or an image format
+    this Pillow cannot decode."""
     if plan.route == ingest_plan.DOCUMENT_PARSE:
         return None if page_image is None else decode.page_webp(page_image)
     if plan.route == ingest_plan.IMAGE_CAPTION:

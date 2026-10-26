@@ -3,10 +3,13 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -14,6 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -58,15 +64,13 @@ func officeSource(t *testing.T, fx deckFileFixture, name string) string {
 
 // inspect_office_document's query reaches the engine as the inspect body's
 // office object and its scoped answer comes back unchanged, a DOCX page's
-// query being its start and count; PPTX reads its entries a page at a time
-// until the engine's scoped PPTX read lands, and inspect_document points an
-// Office file at the Office tools.
+// query being its start and count and a PPTX read's its slide too; and
+// inspect_document points an Office file at the Office tools.
 func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	fx := openDeckFiles(t)
 	scoped := `{"sheet":"0","name":"Grades","range":"A1:B2","cells":[{"address":"A1","input":"=1+1","value":"2"}]}`
 	authority := newOfficeAuthority(t, fx.st, map[string]string{
-		"/internal/documents/inspect": `{"format":"xlsx","access":"edit","epoch":2,"checkpoint":5,"scoped":` + scoped +
-			`,"entries":[{"id":"p1","label":"Paragraph 1","value":"One"},{"id":"p2","label":"Paragraph 2","value":"Two"}]}`,
+		"/internal/documents/inspect": `{"format":"xlsx","access":"edit","epoch":2,"checkpoint":5,"scoped":` + scoped + `}`,
 	})
 	xlsx, docx, pptx := officeSource(t, fx, "grades.xlsx"), officeSource(t, fx, "essay.docx"), officeSource(t, fx, "lesson.pptx")
 	inspect := func(file string, office any) *httptest.ResponseRecorder {
@@ -93,7 +97,6 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 		t.Fatalf("authority got %v", sent)
 	}
 
-	operations := `"supportedOperations":["replace_text","insert_paragraph","delete_paragraph"]`
 	rec = inspect(docx, map[string]any{"start": 1, "count": 1})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
 		strings.Contains(rec.Body.String(), "supportedOperations") {
@@ -103,13 +106,47 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 		t.Fatalf("a DOCX page's query: %v", sent)
 	}
 
-	rec = inspect(pptx, map[string]any{"start": 1, "count": 1})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"entries":[{"id":"p2","label":"Paragraph 2","value":"Two"}]`) ||
-		!strings.Contains(rec.Body.String(), operations) {
+	rec = inspect(pptx, map[string]any{"slide": 2, "start": 1})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
+		strings.Contains(rec.Body.String(), "supportedOperations") {
 		t.Fatalf("pptx read = %d %s", rec.Code, rec.Body.String())
 	}
-	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 3 || sent[2]["office"] != nil {
-		t.Fatalf("a PPTX page sent an office query: %v", sent)
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 3 || string(sent[2]["office"]) != `{"start":1,"count":60,"slide":2}` {
+		t.Fatalf("a PPTX slide's query: %v", sent)
+	}
+
+	// Pictures and charts by id, in any format, go as their ids alone.
+	for n, file := range []string{xlsx, docx} {
+		rec = inspect(file, map[string]any{"ids": []string{"a", "b"}, "start": 3})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("a by-id read = %d %s", rec.Code, rec.Body.String())
+		}
+		if sent := authority.sent("/internal/documents/inspect"); len(sent) != 4+n || string(sent[3+n]["office"]) != `{"ids":["a","b"]}` {
+			t.Fatalf("a by-id read's query: %v", sent)
+		}
+	}
+
+	// Security regression (Epo 2026-10-26, Q381; review r1 L4): more ids
+	// than a call takes, an id past its bytes, or no id left, is refused
+	// before the authority is called; ids are counted as the engine repairs
+	// them, so a repeat, a quoted copy or a blank does not count (review r2
+	// N2), and the repaired ids are what Go forwards (review r3 N3).
+	long := strings.Repeat("x", httpapi.OfficeIDBytes+1)
+	for _, ids := range [][]string{{"a", "b", "c", "d", "e"}, {"a", long}, {"a", "b", "c", "d", " [`e`] "}, {" ", `""`}} {
+		rec = inspect(xlsx, map[string]any{"ids": ids})
+		if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "invalid_input" {
+			t.Fatalf("ids %q = %d %s", ids, rec.Code, rec.Body.String())
+		}
+	}
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 5 {
+		t.Fatalf("refused ids reached the authority: %v", sent)
+	}
+	rec = inspect(xlsx, map[string]any{"ids": []string{"a", "a", `"b"`, "c", " ", "[d]"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("repeated, quoted and blank ids = %d %s", rec.Code, rec.Body.String())
+	}
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 6 || string(sent[5]["office"]) != `{"ids":["a","b","c","d"]}` {
+		t.Fatalf("repaired ids' query: %v", sent)
 	}
 
 	rec = inspect(xlsx, nil)
@@ -157,7 +194,7 @@ func TestOfficeEditReachesTheEngineNormalized(t *testing.T) {
 // it, and a replay that neither builds nor stores it again.
 func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	fx := openDeckFiles(t)
-	content := []byte("PK\x03\x04 a workbook")
+	content := deckPackage(pngSized(10, 10))
 	encoded, _ := json.Marshal(content)
 	authority := newOfficeAuthority(t, fx.st, map[string]string{
 		"/internal/documents/create": `{"content":` + string(encoded) + `}`,
@@ -283,7 +320,7 @@ func TestOfficeRetryWaitsForTheRunningAttempt(t *testing.T) {
 		<-release
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/internal/documents/create" {
-			_, _ = w.Write([]byte(`{"content":"UEsDBA=="}`))
+			_, _ = w.Write([]byte(`{"content":"` + base64.StdEncoding.EncodeToString(deckPackage(pngSized(10, 10))) + `"}`))
 			return
 		}
 		// The collaboration server commits an edit's receipt through Go's
@@ -353,5 +390,27 @@ func TestOfficeRetryWaitsForTheRunningAttempt(t *testing.T) {
 			count.(*atomic.Int32).Load() != 1 {
 			t.Fatalf("%s: first %s, retry %s, %d calls", tc.route, one.Body.String(), two.Body.String(), count.(*atomic.Int32).Load())
 		}
+	}
+}
+
+// The ids a by-id read takes in Go are the engine's per-call limit, and the
+// side past which the engine lists a picture not viewable is the upload
+// check's (review r2 N5).
+func TestOfficeIDsPerCallIsTheEngines(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", agenttools.OfficeLimitsPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var limits struct {
+		InspectIDs struct {
+			PerCall     int `json:"perCall"`
+			PictureSide int `json:"pictureSide"`
+		} `json:"inspectIds"`
+	}
+	if err := json.Unmarshal(data, &limits); err != nil || limits.InspectIDs.PerCall != httpapi.OfficeIDsPerCall {
+		t.Fatalf("limits.json inspectIds.perCall = %d (%v), Go takes %d", limits.InspectIDs.PerCall, err, httpapi.OfficeIDsPerCall)
+	}
+	if limits.InspectIDs.PictureSide != imagecheck.MaxSide {
+		t.Fatalf("limits.json inspectIds.pictureSide = %d, the upload check takes %d", limits.InspectIDs.PictureSide, imagecheck.MaxSide)
 	}
 }

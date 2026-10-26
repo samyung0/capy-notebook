@@ -1,7 +1,11 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { useMe } from '@/api/hooks';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
+import {
+  isOutdatedBanner,
+  recoveryBanner,
+  SaveBanner,
+} from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import {
@@ -86,7 +90,7 @@ export function LiveFlashcards({
       <div className="flex flex-col gap-4">
         <SaveBanner
           onReload={() => void room.reload()}
-          state={snapshot.recovery.refused ? 'refused' : 'changed'}
+          state={recoveryBanner(snapshot.recovery)}
         />
         <FlashcardGrid
           action={action}
@@ -118,7 +122,7 @@ export function LiveFlashcards({
   return (
     <div className="flex flex-col gap-4">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
-      {snapshot.access !== 'write' || itemEditingStopped(snapshot.offline) ? (
+      {snapshot.access !== 'write' || itemEditingStopped(snapshot) ? (
         grid
       ) : (
         <CollaborationHold>

@@ -39,6 +39,9 @@ export const escapeHtml = (value: string) =>
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
+/** Code as Word shows it: a monospace paragraph on a light panel. */
+const codeHtml = (text: string) =>
+  `<p style="font-family:Consolas;background-color:#f5f4f2">${escapeHtml(text).replaceAll('\n', '<br/>')}</p>`;
 const escapeMd = (value: string) =>
   value
     .replace(/[\\`*_{}[\]<>#|~]/g, '\\$&')
@@ -340,9 +343,7 @@ export async function renderExport(
     }
     if (type === 'code_block') {
       const text = node.children.map(plain).join('\n');
-      return html
-        ? `<p style="font-family:Consolas;background-color:#f5f4f2">${escapeHtml(text).replaceAll('\n', '<br/>')}</p>`
-        : fence(text, field(node, 'lang'));
+      return html ? codeHtml(text) : fence(text, field(node, 'lang'));
     }
     if (type === 'column_group') {
       if (!html)
@@ -436,9 +437,17 @@ export async function renderExport(
     if (type === 'mermaid') {
       const source = field(node, 'source');
       const description = plain(node);
-      return md
-        ? `${description ? `${escapeMd(description)}\n\n` : ''}${fence(source, 'mermaid')}`
-        : `<p>${await picture({ source, type: 'mermaid' }, description || 'Diagram', true)}</p><p>${escapeHtml(description)}</p>`;
+      if (md)
+        return `${description ? `${escapeMd(description)}\n\n` : ''}${fence(source, 'mermaid')}`;
+      // A diagram that cannot be drawn (a source error, an unsupported type,
+      // no worker, too large, could not load) exports as its source, as
+      // Markdown does (Epo 2026-10-23).
+      const drawn = await picture(
+        { source, type: 'mermaid' },
+        description || 'Diagram',
+        true
+      ).catch(() => null);
+      return `${drawn ? `<p>${drawn}</p>` : codeHtml(source)}<p>${escapeHtml(description)}</p>`;
     }
     if (type === 'chart' || type === 'plot' || type === 'graph') {
       const block = node.block as Extract<

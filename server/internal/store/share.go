@@ -8,6 +8,8 @@ import (
 	"path"
 	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -366,35 +368,86 @@ func (s *Store) GetWorkspaceShared(ctx context.Context, id string) (Workspace, e
 /* ------------------------------------------------------------------- explore
 
 Explore reads live rows: everything with privacy='public' plus its author name
-and clone counter. The seeded public_* snapshot tables are no longer used. */
+and clone counter, ExplorePageSize at a time, most cloned first, then newest.
+Quizzes are read from their stored preview, never their content. */
 
-// ListPublicWorkspaces lists Explore rows with the caller's persisted
-// membership on each, so the response can carry their real capabilities.
-func (s *Store) ListPublicWorkspaces(ctx context.Context, userID string) ([]PublicWorkspace, error) {
+// ExplorePageSize is how many items one Explore page holds.
+const ExplorePageSize = 50
+
+// exploreKey is where an Explore row sits in the order.
+type exploreKey struct {
+	clones    int
+	createdAt time.Time
+	id        string
+}
+
+// exploreAfter is the keyset predicate resuming after cursor (columns named
+// by the query), arguments numbered from next, and the page's order and
+// limit: one row past the page tells whether another follows.
+func exploreAfter(cursor string, next int, clones, createdAt, id string) (string, []any, error) {
+	order := fmt.Sprintf(" ORDER BY %s DESC, %s DESC, %s DESC LIMIT %d", clones, createdAt, id, ExplorePageSize+1)
+	primary, lastID, ok, err := decodeListCursor(cursor)
+	if err != nil || !ok {
+		return order, nil, err
+	}
+	count, at, found := strings.Cut(primary, ",")
+	n, countErr := strconv.Atoi(count)
+	t, atErr := time.Parse(time.RFC3339Nano, at)
+	if !found || countErr != nil || atErr != nil {
+		return "", nil, ErrInvalidCursor
+	}
+	clause := fmt.Sprintf(" AND (%s, %s, %s) < ($%d::bigint, $%d::timestamptz, $%d::text)", clones, createdAt, id, next, next+1, next+2)
+	return clause + order, []any{n, t, lastID}, nil
+}
+
+// explorePage drops the row past the page and names the cursor after the
+// last row kept ("" on the last page).
+func explorePage[T any](items []T, keys []exploreKey) ([]T, string) {
+	if len(items) <= ExplorePageSize {
+		return items, ""
+	}
+	last := keys[ExplorePageSize-1]
+	return items[:ExplorePageSize], encodeListCursor(strconv.Itoa(last.clones)+","+last.createdAt.UTC().Format(time.RFC3339Nano), last.id)
+}
+
+// ListPublicWorkspaces lists a page of Explore rows with the caller's
+// persisted membership on each, so the response can carry their real
+// capabilities, and the cursor of the next page.
+func (s *Store) ListPublicWorkspaces(ctx context.Context, userID, cursor string) ([]PublicWorkspace, string, error) {
+	after, args, err := exploreAfter(cursor, 2, "COALESCE(cc.clone_count,0)", "w.created_at", "w.id")
+	if err != nil {
+		return nil, "", err
+	}
 	rows, err := s.pool.Query(ctx, `SELECT `+wsCols+`, COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+memberRoleCol+`
 		FROM workspaces w LEFT JOIN users u ON u.id=w.user_id
 		LEFT JOIN workspace_clone_counts cc ON cc.workspace_id=w.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE w.privacy='public'
-		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL
-		ORDER BY COALESCE(cc.clone_count,0) DESC, w.created_at DESC`, userID)
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`+after,
+		append([]any{userID}, args...)...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 	out := []PublicWorkspace{}
+	keys := []exploreKey{}
 	for rows.Next() {
 		var w PublicWorkspace
 		var member WorkspaceRole
 		workspace, err := s.scanWorkspace(rows, &w.Author, &w.Clones, &member)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		workspace.MemberRole = member
 		w.Workspace = workspace
 		out = append(out, w)
+		keys = append(keys, exploreKey{w.Clones, w.CreatedAt, w.ID})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	out, next := explorePage(out, keys)
+	return out, next, nil
 }
 
 // CanCloneFrom is who may copy what sits in a workspace, on roles already
@@ -412,78 +465,91 @@ func exploreCanClone(workspaceID string, member WorkspaceRole, privacy Privacy, 
 	return workspaceID == "" || CanCloneFrom(member, EffectiveRole(member, privacy, shareRole))
 }
 
-// ListPublicQuizzes lists Explore quizzes with whether userID may clone each.
-func (s *Store) ListPublicQuizzes(ctx context.Context, userID string) ([]PublicQuiz, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.provenance,
+// ListPublicQuizzes lists a page of Explore quizzes, read from their stored
+// preview, with whether userID may clone each, and the next page's cursor.
+func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([]PublicQuiz, string, error) {
+	after, args, err := exploreAfter(cursor, 2, "COALESCE(cc.clone_count,0)", "m.created_at", "m.id")
+	if err != nil {
+		return nil, "", err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), (m.preview->>'questionCount')::int, m.created_at,
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
-		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL
-		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`, userID)
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`+after,
+		append([]any{userID}, args...)...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 	out := []PublicQuiz{}
+	keys := []exploreKey{}
 	for rows.Next() {
-		var mt Material
-		var author string
-		var clones int
-		var provenance []byte
+		var q PublicQuiz
+		var createdAt time.Time
 		var member WorkspaceRole
 		var privacy Privacy
 		var shareRole ShareRole
-		if err := rows.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &provenance, &author, &clones,
+		if err := rows.Scan(&q.ID, &q.Name, &q.WorkspaceID, &q.QuestionCount, &createdAt, &q.Author, &q.Clones,
 			&member, &privacy, &shareRole); err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		if mt.Provenance, err = decodeProvenance(provenance); err != nil {
-			return nil, err
-		}
-		q, err := s.quizFromMaterial(mt)
-		if err != nil {
-			continue // skip unparseable content instead of failing the page
-		}
-		canClone := exploreCanClone(mt.WorkspaceID, member, privacy, shareRole)
-		out = append(out, PublicQuiz{Quiz: q, Author: author, Clones: clones, CanClone: canClone})
+		q.CanClone = exploreCanClone(q.WorkspaceID, member, privacy, shareRole)
+		out = append(out, q)
+		keys = append(keys, exploreKey{q.Clones, createdAt, q.ID})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	out, next := explorePage(out, keys)
+	return out, next, nil
 }
 
-// ListPublicFlashcardSets lists Explore flashcards with whether userID may
-// clone each.
-func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID string) ([]PublicFlashcardSet, error) {
+// ListPublicFlashcardSets lists a page of Explore flashcards with whether
+// userID may clone each, and the next page's cursor.
+func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID, cursor string) ([]PublicFlashcardSet, string, error) {
+	after, args, err := exploreAfter(cursor, 2, "COALESCE(cc.clone_count,0)", "m.created_at", "m.id")
+	if err != nil {
+		return nil, "", err
+	}
 	rows, err := s.pool.Query(ctx, `SELECT `+flashcardSetCols+`,
-			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`, m.created_at
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
-		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL
-		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`, userID)
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`+after,
+		append([]any{userID}, args...)...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 	out := []PublicFlashcardSet{}
+	keys := []exploreKey{}
 	for rows.Next() {
 		var item PublicFlashcardSet
 		var member WorkspaceRole
 		var privacy Privacy
 		var shareRole ShareRole
-		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones, &member, &privacy, &shareRole)
+		var createdAt time.Time
+		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones, &member, &privacy, &shareRole, &createdAt)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		item.FlashcardSet = set
 		item.CanClone = exploreCanClone(set.WorkspaceID, member, privacy, shareRole)
 		out = append(out, item)
+		keys = append(keys, exploreKey{item.Clones, createdAt, item.ID})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	out, next := explorePage(out, keys)
+	return out, next, nil
 }
 
 /* -------------------------------------------------------------------- cloning */

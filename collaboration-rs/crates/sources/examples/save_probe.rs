@@ -235,6 +235,7 @@ async fn main() {
             &update,
             &mut estimate,
             sources::MAX_SOURCE_STATE_BYTES as u64,
+            2 << 20,
         )
     });
     assert_eq!(admitted, sources::Admission::Accept);

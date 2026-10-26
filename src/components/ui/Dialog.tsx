@@ -167,6 +167,7 @@ function useIsPhone() {
  */
 function DialogTitle({
   action,
+  status,
   closable = true,
   closeDisabled,
   onCloseClick,
@@ -174,6 +175,8 @@ function DialogTitle({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Title> & {
   action?: React.ReactNode;
+  /** Phones: a live dialog's save status, right after the title. */
+  status?: React.ReactNode;
   closable?: boolean;
   closeDisabled?: boolean;
   /** Replaces closing, for a dialog whose way out is an action (Skip). */
@@ -207,11 +210,17 @@ function DialogTitle({
           't-large-card-title flex items-center justify-between pt-0 pb-6',
           className,
           // At most two lines, so a long title never squeezes the action.
-          'max-sm:line-clamp-2 max-sm:min-w-0 max-sm:flex-1 max-sm:py-2 max-sm:text-lg max-sm:leading-tight'
+          'max-sm:line-clamp-2 max-sm:min-w-0 max-sm:flex-1 max-sm:py-2 max-sm:text-lg max-sm:leading-tight',
+          status && 'max-sm:flex-initial'
         )}
         data-slot="dialog-title"
         {...props}
       />
+      {status && (
+        <div className="mr-auto flex h-[38.5px] shrink-0 items-center pl-1 sm:hidden">
+          {status}
+        </div>
+      )}
       {/* A compact button: the header row is a toolbar, not a footer. */}
       <div
         className="ml-2 flex shrink-0 translate-y-0.5 items-center gap-2 empty:hidden sm:hidden [&>[data-slot=button]]:min-w-0 [&>[data-slot=button]]:px-4 [&>[data-slot=button]]:[--button-h:--spacing(9)]"
@@ -315,6 +324,7 @@ function SimpleDialog({
   title,
   children,
   action,
+  status,
   footer,
   width,
   className,
@@ -339,6 +349,9 @@ function SimpleDialog({
   /** The primary action: the header's right on phones, the footer's end
    * after Cancel elsewhere. */
   action?: React.ReactNode;
+  /** Phones: a live dialog's save status, right after the title (wider
+   * screens keep it in the footer). */
+  status?: React.ReactNode;
   /** Other actions; phones show them after the content, wider screens
    * before Cancel. */
   footer?: React.ReactNode;
@@ -404,6 +417,7 @@ function SimpleDialog({
           closable={showCloseButton}
           closeDisabled={pending}
           onCloseClick={onCloseClick}
+          status={phone && status}
         >
           {title}
         </DialogTitle>

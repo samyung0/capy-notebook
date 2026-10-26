@@ -251,7 +251,12 @@ impl Sources {
                 // What an Office room admits from a writer (its roots,
                 // pptx:meta), as for a person's update.
                 if let Some(format) = format {
-                    match crate::admit::office_update_violation(&doc.transact(), &update, format) {
+                    match crate::admit::office_update_violation(
+                        &doc.transact(),
+                        &update,
+                        format,
+                        stored.image_cap,
+                    ) {
                         Err(message) => return Err(edit_error("invalid_input", message)),
                         Ok(true) => return Err(undo_gone("this edit can no longer be undone")),
                         Ok(false) => {}
@@ -480,5 +485,11 @@ mod tests {
         ));
         let other = EngineError::Transient("Office engine process exited".into());
         assert!(matches!(office_error(other), SourceError::Engine(_)));
+        // A busy by-id read is a refusal the agent reads (409), not an outage.
+        assert!(matches!(
+            office_error(crate::engine::busy()),
+            SourceError::Edit { ref code, ref message, .. }
+                if code == "unavailable_target" && message.contains("busy")
+        ));
     }
 }

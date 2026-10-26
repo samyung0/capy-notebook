@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
+from pathlib import Path
 
 import pytest
 
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import accounting, models
 from pipeline.retrieval.usage_extract import NormalizedUsage
+from pipeline.store import db
 
 
 def _spec(**overrides) -> ModelConfig:
@@ -281,6 +284,79 @@ async def test_cancellation_waits_for_known_receipt_to_finish():
     with pytest.raises(asyncio.CancelledError):
         await settlement
     assert finished.is_set()
+
+
+def _counting_estimates(monkeypatch) -> list:
+    """The values the context estimator walks, in order."""
+    walked: list = []
+    real = accounting.estimate_context_value
+
+    def counting(value):
+        walked.append(value)
+        return real(value)
+
+    monkeypatch.setattr(accounting, "estimate_context_value", counting)
+    return walked
+
+
+def test_a_model_call_estimates_only_messages_it_has_not_measured(monkeypatch):
+    """(security regression: rate-limit audit Q238) A request's estimate sums
+    each message's kept estimate: the next call's request walks only the
+    message added since, never the whole context again."""
+    walked = _counting_estimates(monkeypatch)
+    messages = [
+        {"role": "system", "content": "rules " * 200},
+        {"role": "user", "content": "question " * 300},
+        {"role": "assistant", "content": "answer " * 300},
+    ]
+    first = models.measure_request_context(messages, model=_spec())
+    assert len(walked) == len(messages)
+    walked.clear()
+    added = {"role": "tool", "tool_call_id": "c1", "content": "result " * 100}
+    messages.append(added)
+
+    second = models.measure_request_context(messages, model=_spec())
+
+    assert walked == [
+        {"role": "tool", "tool_call_id": "c1", "content": "result " * 100}
+    ]
+    assert second.system_tokens == first.system_tokens
+    assert second.conversation_tokens == (
+        first.conversation_tokens + models.message_tokens(added)
+    )
+
+
+def test_a_message_estimate_is_kept_until_the_message_changes(monkeypatch):
+    """(security regression: rate-limit audit Q238) One walk per message; a
+    message edited in place (a notice appended to a tool result) is counted
+    again."""
+    walked = _counting_estimates(monkeypatch)
+    message = {"role": "tool", "tool_call_id": "c1", "content": "result " * 50}
+
+    def measure() -> int:
+        return models.measure_request_context([message], model=_spec()).total_tokens
+
+    first = measure()
+    assert measure() == measure() == first
+    assert len(walked) == 1
+
+    message["content"] += " Answer from the evidence you have now."
+    assert measure() > first
+    assert len(walked) == 2
+
+
+def test_the_estimates_count_like_the_character_walk():
+    """The CJK runs counted in C give the per-character count: kana, hangul
+    and ideographs one token each, other characters four (prose) or three
+    (provider JSON) to a token."""
+    from pipeline.retrieval.chunking import estimate_tokens
+    from pipeline.retrieval.lang import is_cjk
+
+    text = "Plain words, café, 中文字符, かなカナ, 한국어, emoji 🙂, 豈 and 中" * 7
+    cjk = sum(1 for ch in text if is_cjk(ch))
+    assert cjk > 0
+    assert estimate_tokens(text) == cjk + (len(text) - cjk + 3) // 4
+    assert accounting.estimate_context_value(text) == cjk + (len(text) - cjk + 2) // 3
 
 
 def test_measure_context_separates_system_tools_and_conversation():
@@ -590,6 +666,90 @@ async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
         accounting.reset(token)
 
 
+def test_admission_holds_the_model_wide_lock_for_one_statement():
+    """(security regression: rate-limit audit M13, Q298) Admission sweeps
+    expired leases before it takes the model-wide lock, then holds the lock
+    for one conditional insert."""
+
+    class Cursor:
+        rowcount = 1
+
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def execute(self, sql: str, _params=None) -> None:
+            self.statements.append(sql.split()[0])
+            if "pg_advisory_xact_lock" in sql:
+                self.statements[-1] = "LOCK"
+
+    cur = Cursor()
+    assert db.acquire_provider_capacity(
+        cur, lease_id="pc_1", provider="m", units=1, capacity=4, lease_seconds=60
+    )
+    assert cur.statements == ["DELETE", "LOCK", "INSERT"]
+
+
+@pytest.mark.parametrize("ingest", [False, True], ids=["chat", "ingest"])
+async def test_a_settled_call_frees_its_lease_in_the_settlement(monkeypatch, ingest):
+    """(security regression: rate-limit audit M13, Q298) A settled call's lease
+    goes with its settlement (the gateway's transaction, or the local one for
+    ingest), so the call's end starts no release transaction of its own; a call
+    whose settlement failed still frees its lease."""
+    from pipeline import registry
+    from pipeline.retrieval.stream import AssembledResponse
+
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    jobs: list[str] = []
+    failing: list[bool] = []
+
+    async def to_thread(function, *_args):
+        jobs.append(function.__name__)
+        if function is accounting._settle_ingest_call_sync and failing:
+            raise ValueError("rejected")
+        return function is accounting._open_call_sync or None
+
+    async def post_settlement(_payload, **_kwargs):
+        jobs.append("post_settlement")
+        if failing:
+            raise accounting.SettlementError("accounting failed")
+        return {}
+
+    async def stream(*_args, **_kwargs):  # chat streams
+        return AssembledResponse(
+            text="ok", usage=NormalizedUsage(input_tokens=3, output_tokens=2)
+        )
+
+    async def complete(*_args, **_kwargs):  # ingest does not
+        return models.elitellm.chat_response(
+            {"role": "assistant", "content": "ok"},
+            finish_reason="stop",
+            usage={"prompt_tokens": 3, "completion_tokens": 2},
+        )
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    registry.bind_request_llm(paid_by="platform")
+    token = accounting.bind_ingest("cr_1", {}) if ingest else accounting.bind("cr_1")
+    settled = "_settle_ingest_call_sync" if ingest else "post_settlement"
+    try:
+        await models.complete_text([{"role": "user", "content": "q"}], model=_spec())
+        assert jobs == ["_open_call_sync", settled]
+
+        jobs.clear()
+        failing.append(True)
+        with pytest.raises(accounting.SettlementError):
+            await models.complete_text(
+                [{"role": "user", "content": "q"}], model=_spec()
+            )
+        assert jobs == ["_open_call_sync", settled, "_release_lease_sync"]
+    finally:
+        accounting.reset(token)
+
+
 async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
     monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
     forwarded = []
@@ -687,3 +847,120 @@ async def test_a_cancelled_admission_is_undone_without_delaying_the_cancel(
         assert registered and accounting._background == set()
     finally:
         accounting.reset(token)
+
+
+def _record_call_lifecycle(monkeypatch) -> list[tuple]:
+    """Bind a chat session and record each call's open, settle, abandon and
+    release in order, with no database or gateway."""
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    events: list[tuple] = []
+
+    async def open_call(call_id, **_kwargs):
+        events.append(("open", call_id))
+
+    async def abandon_call(call_id, _exc=None):
+        events.append(("abandon", call_id))
+
+    async def release_call(call_id):
+        events.append(("release", call_id))
+
+    async def post_settlement(payload, **_kwargs):
+        events.append(("settle", payload))
+        return {}
+
+    monkeypatch.setattr(accounting, "open_call", open_call)
+    monkeypatch.setattr(accounting, "abandon_call", abandon_call)
+    monkeypatch.setattr(accounting, "release_call", release_call)
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    monkeypatch.setattr(models.obs, "record_normalized", lambda *a, **k: None)
+    return events
+
+
+async def test_a_stream_failing_after_its_usage_bills_that_usage(monkeypatch):
+    """A stream that sent its usage before failing settles that usage at once
+    (abandoning would bill nothing) and frees its lease."""
+    events = _record_call_lifecycle(monkeypatch)
+
+    async def stream(*_args, **_kwargs):
+        yield {
+            "choices": [{"index": 0, "delta": {"content": "Hel"}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 2},
+        }
+        raise TimeoutError("provider stream went silent for 15 s after it started")
+
+    monkeypatch.setattr(models.elitellm, "stream", stream)
+    token = accounting.bind("cr_1")
+    try:
+        with pytest.raises(TimeoutError):
+            await models.stream_agent_response(
+                [{"role": "user", "content": "hi"}], model=_spec()
+            )
+    finally:
+        accounting.reset(token)
+
+    call_id = events[0][1]
+    assert [event[0] for event in events] == ["open", "settle", "release"]
+    payload = events[1][1]
+    assert (payload["callId"], payload["inputTokens"], payload["outputTokens"]) == (
+        call_id,
+        11,
+        2,
+    )
+    assert events[2] == ("release", call_id)
+
+
+async def test_openrouter_serving_provider_is_recorded_as_served_by(monkeypatch):
+    """OpenRouter names the provider that served the call on every response;
+    it reaches usage_events.metadata as servedBy, from the gateway receipt
+    (streamed chat) and from ingest's local settlement (whole responses)."""
+    import httpx
+    import yaml
+
+    from pipeline import registry
+    from pipeline.elitellm import client as transport
+    from pipeline.retrieval.usage_extract import response_usage
+    from pipeline.store import db
+
+    cassette = Path(__file__).parent / "cassettes/replay/zai__glm_5_3_flash.yaml"
+    recorded = yaml.safe_load(cassette.read_text())["interactions"][0]["response"]
+    body = recorded["body"]["string"].encode()
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _r: httpx.Response(200, content=body))
+    )
+    monkeypatch.setattr(transport, "_client", lambda: client)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    registry.bind_request_llm(paid_by="platform", thinking="max")
+    events = _record_call_lifecycle(monkeypatch)
+    glm = _spec(
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        byok_enabled=False,
+        thinking_levels=("low", "high", "max"),
+        default_thinking="max",
+    )
+    token = accounting.bind("cr_glm")
+    try:
+        await models.stream_agent_response(
+            [{"role": "user", "content": "hi"}], model=glm
+        )
+    finally:
+        accounting.reset(token)
+        await client.aclose()
+
+    settle = next(event[1] for event in events if event[0] == "settle")
+    assert settle["servedBy"] == "DigitalOcean"
+    assert settle["inputTokens"] == 171
+
+    final_chunk = next(
+        line[5:]
+        for line in recorded["body"]["string"].splitlines()
+        if line.startswith("data:") and '"usage"' in line
+    )
+    usage = response_usage(json.loads(final_chunk), provider="zai")
+    metadata = db._ingest_provider_metadata(
+        "pc_1", "ingest_summary", "llm", usage, "user"
+    )
+    assert metadata["servedBy"] == "DigitalOcean"
+    # Direct providers carry no such field and record nothing.
+    assert response_usage(json.loads(final_chunk), provider="deepseek").served_by == ""

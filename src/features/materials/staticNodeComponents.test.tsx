@@ -13,6 +13,8 @@ import {
 import { EmbedViewContext } from './embeds/EmbedView';
 import { MaterialPreview } from './MaterialPreview';
 
+const STYLE_OR_CLASS = /(?:style|class)="([^"]*)"/g;
+
 function renderMaterial(
   value: MaterialValue,
   metadata?: { isStandalone: boolean; kind: MaterialKind; title: string }
@@ -223,6 +225,134 @@ describe('static study-block renderers', () => {
     expect(html).toContain('--column-width:33.333%');
     expect(html).toContain('Wide');
     expect(html).toContain('Narrow');
+  });
+
+  // Share pages and previews draw a stored value the document check refuses
+  // as it is (MaterialPreview falls back to the raw value): a column width
+  // other than the editor's writes no style at all.
+  it('styles no column width the document check refuses (security)', () => {
+    const column = (text: string, width: string) => ({
+      children: [{ children: [{ text }], type: 'p' }],
+      type: 'column',
+      width,
+    });
+    const html = renderToStaticMarkup(
+      <MaterialPreview
+        content={{
+          schemaVersion: 1,
+          value: [
+            {
+              children: [
+                column('Left', '50%;color:red'),
+                column('Right', '50%'),
+              ],
+              type: 'column_group',
+            },
+          ],
+        }}
+      />
+    );
+    expect(html).toContain('Left');
+    // Only the right column is styled.
+    expect(html.split('--column-width:')).toHaveLength(2);
+    expect(html).toContain('--column-width:50%"');
+  });
+
+  // The same fallback: a table size, indent, element mark, media width, or a
+  // text mark or list style holding `;` (Epo Q380) the document check refuses
+  // reaches no style or class, while valid ones and browser values do.
+  it('styles no table size, indent, element mark, media width or style value the document check refuses (security)', () => {
+    const cell = (text: string) => ({
+      children: [{ children: [{ text }], type: 'p' }],
+      type: 'td',
+    });
+    const html = renderToStaticMarkup(
+      <MaterialPreview
+        content={{
+          schemaVersion: 1,
+          value: [
+            {
+              children: [{ children: [cell('a'), cell('b')], type: 'tr' }],
+              colSizes: ['zq;color:red', 100],
+              id: 't',
+              marginLeft: 'zq',
+              type: 'table',
+            },
+            { children: [{ text: 'indented' }], indent: 'zq fixed', type: 'p' },
+            {
+              backgroundColor: 'zq',
+              children: [{ text: 'marked' }],
+              color: 'zq',
+              fontFamily: 'zq',
+              fontSize: 'zq',
+              type: 'p',
+            },
+            {
+              children: [{ text: '' }],
+              id: 'v',
+              provider: 'youtube',
+              type: 'video',
+              videoId: 'dQw4w9WgXcQ',
+              width: 'zq;color:red',
+            },
+            {
+              children: [{ color: '#c0392b', text: 'kept' }],
+              indent: 1,
+              type: 'p',
+            },
+            {
+              children: [
+                {
+                  backgroundColor: 'red;zq:1',
+                  color: 'red;zq:1',
+                  fontFamily: 'Georgia;zq:1',
+                  fontSize: '12px;zq:1',
+                  text: 'semicolons',
+                },
+              ],
+              type: 'p',
+            },
+            {
+              children: [{ text: 'listed' }],
+              indent: 1,
+              listStyleType: 'decimal;zq:1',
+              type: 'p',
+            },
+            {
+              children: [{ text: 'lettered' }],
+              indent: 1,
+              listStyleType: 'lower-alpha',
+              type: 'p',
+            },
+            {
+              children: [
+                {
+                  backgroundColor: 'color-mix(in srgb, red 50%, blue)',
+                  color: 'var(--accent)',
+                  fontFamily: '"Times New Roman", serif',
+                  fontSize: '1.2em',
+                  text: 'browser values',
+                },
+              ],
+              type: 'p',
+            },
+          ],
+        }}
+      />
+    );
+    const attributes = [...html.matchAll(STYLE_OR_CLASS)].map(
+      (match) => match[1]
+    );
+    expect(attributes.filter((value) => value.includes('zq'))).toEqual([]);
+    expect(html).toContain('<col style="width:100px"/>');
+    expect(html).toContain('slate-indent-1');
+    expect(html).toContain('margin-left:24px');
+    expect(html).toContain('color:#c0392b');
+    expect(html).toContain('list-style-type:lower-alpha');
+    expect(html).toContain('color:var(--accent)');
+    expect(html).toContain('color-mix(in srgb, red 50%, blue)');
+    expect(html).toContain('font-family:&quot;Times New Roman&quot;, serif');
+    expect(html).toContain('font-size:1.2em');
   });
 
   it('renders every quiz question shape as a read-only answer review', () => {

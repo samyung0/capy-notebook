@@ -52,7 +52,12 @@ import { BaseTocPlugin } from '@platejs/toc';
 import { common, createLowlight } from 'lowlight';
 import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
-import { FONT_SIZE_NODE_PROPS } from '@/features/notes/nodeStyles';
+import {
+  FONT_SIZE_NODE_PROPS,
+  INDENT_NODE_PROPS,
+  STYLE_MARK_NODE_PROPS,
+} from '@/features/notes/nodeStyles';
+import { isStyleValue } from './document';
 import { UnsupportedBlockNotice } from './UnsupportedBlock';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
@@ -145,7 +150,7 @@ const UnsupportedBlockPlugin = createSlatePlugin({
    All of this is plain render logic and static-safe. */
 const StaticListKit: AnyPlugin[] = [
   BaseIndentPlugin.configure({
-    inject: { targetPlugins: listTargets },
+    inject: { nodeProps: INDENT_NODE_PROPS, targetPlugins: listTargets },
     options: { offset: 24 },
   }),
   BaseListPlugin.configure({
@@ -225,7 +230,9 @@ const StaticListKit: AnyPlugin[] = [
               className: 'relative m-0 ml-6 p-0',
               start: element.listStart,
               style: {
-                listStyleType: element.listStyleType,
+                listStyleType: isStyleValue(element.listStyleType)
+                  ? element.listStyleType
+                  : undefined,
                 marginLeft: element.indent
                   ? `${element.indent * 24}px`
                   : undefined,
@@ -280,12 +287,19 @@ export const StaticMaterialKit: AnyPlugin[] = [
   StaticInlineEquationPlugin,
   StaticEquationPlugin,
   BaseMentionPlugin,
-  BaseFontColorPlugin,
-  BaseFontBackgroundColorPlugin,
-  BaseFontSizePlugin.configure({
-    inject: { nodeProps: FONT_SIZE_NODE_PROPS },
+  // Text marks: an element carrying one is refused, and none is drawn.
+  BaseFontColorPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
   }),
-  BaseFontFamilyPlugin.configure({ inject: { targetPlugins: [KEYS.p] } }),
+  BaseFontBackgroundColorPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+  }),
+  BaseFontSizePlugin.configure({
+    inject: { isLeaf: true, nodeProps: FONT_SIZE_NODE_PROPS },
+  }),
+  BaseFontFamilyPlugin.configure({
+    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+  }),
   BaseTextAlignPlugin.configure({
     inject: {
       nodeProps: {

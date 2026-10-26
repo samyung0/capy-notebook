@@ -23,6 +23,12 @@ export function transferStatus(
   switch (transfer.stage) {
     case 'waiting':
       return { kind: 'progress', label: m.source_transfer_waiting(), value: 0 };
+    case 'compressing':
+      return {
+        kind: 'progress',
+        label: m.source_transfer_compressing(),
+        value: transfer.uploadPct,
+      };
     case 'uploading':
       if (transfer.queuePosition) {
         return {

@@ -857,8 +857,8 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       await notesStay();
     }
 
-    // Paused (a newer version replaced the session): zoom edits nothing, so
-    // the toolbar's control still works.
+    // Paused (the maintenance window): zoom edits nothing, so the toolbar's
+    // control still works.
     await mode.click();
     await expect(officeEditMenu(page, format)).toBeVisible({
       timeout: 120_000,
@@ -867,12 +867,12 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
     await page.evaluate(async (id) => {
       const modulePath = '/src/mocks/collaboration.ts';
-      const { announceSourceEpoch } = (await import(
+      const { announceSourcePaused } = (await import(
         modulePath
       )) as typeof import('../../src/mocks/collaboration');
-      announceSourceEpoch(id, 2);
+      announceSourcePaused(id);
     }, fileId);
-    await expect(page.getByText(m.source_edit_replaced())).toBeVisible();
+    await expect(page.getByText(m.source_edit_paused())).toBeVisible();
     await expect(toolbarZoom).toBeEnabled();
     if (format === 'xlsx') {
       // A typed zoom takes 50–200% as Google Sheets does: 300 is 200%.
@@ -1567,16 +1567,16 @@ for (const [format, text] of [
     await saveOffice(page, format);
     await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
 
-    // A newer version is published while the saved editor is open: the
-    // session is replaced and the editor pauses under the reload banner.
+    // The maintenance window pauses the saved editor under its banner (a
+    // newer version swaps the view instead: room-swap.spec.ts).
     await page.evaluate(async (id) => {
       const modulePath = '/src/mocks/collaboration.ts';
-      const { announceSourceEpoch } = (await import(
+      const { announceSourcePaused } = (await import(
         modulePath
       )) as typeof import('../../src/mocks/collaboration');
-      announceSourceEpoch(id, 2);
+      announceSourcePaused(id);
     }, fileId);
-    await expect(page.getByText(m.source_edit_replaced())).toBeVisible();
+    await expect(page.getByText(m.source_edit_paused())).toBeVisible();
 
     const updates = await page.evaluateHandle(() => {
       const seen = { count: 0 };
@@ -1957,13 +1957,18 @@ test('closing DOCX header editing gives the document the focus back', async ({
   await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
   const box = await pageCanvas.boundingBox();
   if (!box) throw new Error('Missing page canvas');
-  // One double click on the header band near the page's top edge opens it.
+  // A double click on the header band near the page's top edge opens it. The
+  // canvas ignores pointer input until the editor's layout geometry is ready,
+  // which on a loaded runner comes after the pages paint, so the double click
+  // repeats until the header opens.
   const options = frame.getByRole('button', { name: /^Options/ });
   const openHeader = async () => {
-    await pageCanvas.dblclick({
-      position: { x: box.width / 2, y: box.height * 0.06 },
-    });
-    await expect(options).toBeVisible();
+    await expect(async () => {
+      await pageCanvas.dblclick({
+        position: { x: box.width / 2, y: box.height * 0.06 },
+      });
+      await expect(options).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 30_000 });
   };
   await openHeader();
   await options.click();

@@ -108,9 +108,9 @@ that unload succeeds. The room's task runs the eviction in order with its stores
 acknowledgement. A negative acknowledgement leaves the outbox item retryable.
 Durable material events carry the material identity as
 well as their original room. Each instance resolves and evicts the current room
-epoch after waiting for an in-progress compaction, then rechecks the epoch
-before acknowledging delivery. An ACL event can therefore neither reopen a
-failed discard nor disappear against a room schema that compaction replaced.
+epoch, then rechecks the epoch before acknowledging delivery. An ACL event can
+therefore neither reopen a failed discard nor disappear against a room schema
+that a discard replaced.
 
 The editor never requires the member roster. Comment authorship arrives on the
 discussion payloads, and mention autocomplete reads a redacted collaborator
@@ -137,16 +137,17 @@ The interactive path is:
 CenterContent
 └── NoteEditor
     └── EditorRuntimeProvider
-        └── NoteEditorCore
-            └── Plate + YjsPlugin
-                └── CollaborationProvider
-                    ├── NoteToolbar
-                    ├── scroll box
-                    │   └── PlateContainer (relative)
-                    │       ├── PlateContent + link actions
-                    │       └── FloatingToolbar (edit only)
-                    ├── EditorCommandPalette
-                    └── AiMenu (edit only)
+        └── DndProvider (one for every editor it mounts)
+            └── NoteEditorCore (per room and generation: two in a room swap)
+                └── Plate + YjsPlugin
+                    └── CollaborationProvider
+                        ├── NoteToolbar
+                        ├── scroll box
+                        │   └── PlateContainer (relative)
+                        │       ├── PlateContent + link actions
+                        │       └── FloatingToolbar (edit only)
+                        ├── EditorCommandPalette
+                        └── AiMenu (edit only)
 ```
 
 `FloatingToolbar` shares the editor's positioned `PlateContainer`, following
@@ -236,6 +237,30 @@ The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.
 
+Undo and Redo restore a deleted list item as a copy placed by tracing its old
+neighbours' `redone` links. The copy keeps the right neighbour its trace finds
+only when that lies after its left neighbour; otherwise it takes the item now
+after the left, as a local insert does (Epo 2026-10-24). A traced right with
+more than 4,096 items between the left and it gives way to the item after the
+left too, which bounds the walk. Without the rule a trace through a copy an
+earlier Undo made, later split by typing, can give a right origin before the
+origin, and each replica then places the copy by its own block boundaries, so
+peers and reloads read the text in another order.
+Yjs has it through our pnpm patch (`redoItem` in `patches/yjs@13.6.31.patch`)
+and the fork's yrs in `Item::redo` (`third_party/yrs/src/block.rs`), so
+browser notes and items, the server's agent Undo and the Office editors all
+follow it.
+
+Undo reaches back at most 24 h (Epo 2026-10-23, the in-place collection's
+Q2): every stack item of the note editor's history and of the item rooms'
+managers records when it was made, and steps older than 24 h by the tab's own
+clock are dropped before each Undo and Redo, whoever calls it (`limitUndo` in
+`src/features/collaboration/undo.ts`). The server keeps the deletions an Undo
+may restore 25 h after they arrived (see [editing
+sessions](#editing-sessions)). The toolbar can still show Undo for a step past
+the horizon; pressing it drops the step and undoes nothing older. Office
+editors keep their own history.
+
 ### Room presence
 
 Developer Epo decided the avatar group and verified cursor labels on
@@ -264,10 +289,8 @@ hears none (its page's header shows the note's). A member's own connection is
 never in its list, so its user appears only for their other tabs and devices.
 The ids come from the room's own map of which channel holds which client id,
 so a client cannot label a cursor as someone else: labels and the group read
-only this message. An id its user released (a removal, a leave) stays theirs
-until the next presence, which no longer lists it, has gone out: until then
-co-editors still label it with their name, so another user's channel cannot
-take it.
+only this message. A channel's awareness lives only under its own bound client
+id ([client ids](#client-ids)), so no other user's channel can take it.
 
 The browser (`presence.ts`) hands it to the open editor (`onPresence` on
 `RoomProvider`; it goes empty when the channel ends): notes keep it for cursor
@@ -520,10 +543,14 @@ change) jumped the page back to its top.
 
 Quizzes and flashcard sets never render through Plate. Opened as a file (in a
 workspace or standalone) the center pane shows the quiz page's question list or
-the flashcard grid (`src/features/flashcards/FlashcardGrid.tsx`: fronts as
-tiles, a preview dialog with the front over the back and Previous/Next), each
-under the material title, and flashcard edit mode is the live card grid
-described under authoring below (`src/features/materials/CenterContent.tsx`).
+the flashcard grid (`src/features/flashcards/FlashcardGrid.tsx`: numbered
+fronts as `CardTile`s, a preview dialog with the front over the back and
+Previous/Next), each under the material title, and flashcard edit mode is the
+live card grid described under authoring below, its tiles turned like the
+result pages' (front header over the back, the image small in the header,
+Edit/Remove beside the number) (`src/features/materials/CenterContent.tsx`).
+Every flashcard grid (View, edit, flashcard and review results) is
+`CardGrid` and `CardTile` in `src/features/flashcards/CardView.tsx`.
 
 Standalone quiz, flashcard, mindmap, and diagram titles live only in relational
 material metadata. Their stored Plate documents contain the custom block but no
@@ -632,19 +659,143 @@ settings (General tab, below Display size), so all viewers see the same
 theme. Server-created diagrams (generate, agent tools) carry no `theme` and
 draw in Linear Light until someone picks one. The block
 stores its preset as optional `theme` on the `mermaid` node, and the diagram
-sits on the preset's background with no border. `renderMermaid` queues renders,
-because `mermaid.initialize` is global: each render sets its own preset, and
-mermaid scopes the output CSS to the SVG id, so blocks in one note keep their
-own themes. Frontmatter config would scope too, but mermaid's sanitizer blanks
-font stacks containing hyphens. Hand Drawn gets per-diagram roughen filters
-after rendering.
+sits on the preset's background with no border. Renders run one at a time,
+because `mermaid.initialize` is global: each render sets its own preset
+(`drawMermaid` in `mermaidDraw.ts`), and mermaid scopes the output CSS to the
+SVG id, unique on the page, so blocks in one note keep their own themes.
+Frontmatter config would scope too, but mermaid's sanitizer blanks font stacks
+containing hyphens. Hand Drawn draws in Excalifont with plain strokes; its
+roughen filters are gone (Epo 2026-10-23): they never applied on the page,
+and in the worker their bounding-box region erased straight lines (sequence
+lifelines, messages, loop boxes) in Chromium and WebKit. `drawMermaid` also sets mermaid's top-level `fontFamily` to the
+theme's (mermaid's default ends in `;`, so the page used to drop it and
+measure some ER, class and sequence labels in the app's body font) and
+`handDrawnSeed: 1` (the class and ER shapes mermaid draws with rough.js came
+out different each time).
 
-A diagram loads nothing from outside the page. Mermaid draws into a host that
-is already in the document (it measures labels as it draws), so anything that
-would fetch does so while it draws; `renderMermaid` therefore makes the source
-inert before `mermaid.render`, not after (`mermaidSafety.ts`). It locks the
-`strict` security level, HTML labels keep no fetching element or attribute (a
-`dompurifyConfig` forbidding `img`, `image`, `source` and the like), and front
+**Rendering in a worker** (Epo 2026-10-22). mermaid.js runs in one dedicated
+module worker (`mermaid.worker.ts`) on a DOM shim (`mermaidShim.ts`): linkedom
+for the tree, and the geometry mermaid reads (`getBBox`,
+`getBoundingClientRect`, `getComputedTextLength`, client sizes) computed from
+attributes and OffscreenCanvas text metrics. The shim has no layout engine: a
+small cascade (inline styles, the diagram's own stylesheet with `!important`
+and specificity, presentation attributes) gives each element its font and
+side padding; an HTML label is laid out as mermaid's `createText` styles it
+(nowrap up to its max-width, then wrapped at its width, line height 1.5,
+inline widths rounded up to 1/64 px as Chromium does), in its text element's
+font, with a padded span's line kept and a block inside it splitting the
+line; an SVG text box collapses white space, takes a tspan's `dy` over its
+text's, and spans the ink past the advance (`actualBoundingBoxRight`). A
+worker has no font settings, so its `sans-serif` is another face: the page
+finds the faces its generic families draw in (`genericFaces` in
+`Mermaid.tsx`) and sends them with each draw; theme fonts load into the
+worker's `self.fonts`. The page sends one draw at a time
+(`renderMermaid`): a queued draw no caller wants when its turn comes is
+skipped (a newer source superseded it), and one already drawing finishes
+into the cache (Epo 2026-10-23). The worker posts `started` once everything
+the draw needs is in: mermaid, the theme preset and its fonts, the diagram
+type's code and its layout's (mermaid has no loader per type, so the worker
+draws the type's small source in `MERMAID_TYPES` once before its first
+diagram of that type), and KaTeX for a source with `$$` math. A draw still
+running 30 s after that (`MERMAID_RENDER_LIMIT_MS`) stops, the worker with
+it, and the block says "This diagram is too large to draw on this device."
+A worker that has not started 30 s after the request, any failure before
+`started` (a download: the worker tells it from a source error by where it
+happens, never by the error's message, which can echo the source; review r3
+L1, L5), the page's DOMPurify failing to load, or an error escaping the
+worker says "Diagrams couldn't load." and stops (Epo 2026-10-23, review r2
+M1/M2, r3 L3). A theme font that fails to load fails the draw the same way,
+and the next draw loads it again. Neither result is cached, nor is a
+missing worker: only failures the source causes are kept, so the next view
+draws again, in a new worker. The page sanitizes the worker's SVG (`forPage`: DOMPurify with
+mermaid's foreignObject setup, our forbid lists and no form controls, then
+every `<style>` but mermaid's root stylesheet removed, then `withSafeLinks`):
+DOMPurify finds no document implementation in linkedom, so mermaid's label
+pass does nothing in the worker and the page's pass is the sanitizer (review
+H1 and L6, Epo 2026-10-23). Each inserted copy makes every id the SVG
+defines its own (`ownIds`): the root id, which prefixes most ids and scopes
+the stylesheet, becomes the copy's, and every other defined id (the ids
+mermaid counts per worker, such as sankey gradients and sequence actors, and
+any id a label's HTML sets) takes the copy's id as a prefix, with every
+`url(#…)`, `href="#…"` and aria reference, so a block and its full-screen
+preview, or two drawings from different worker lifetimes, never share one,
+and no label can claim another diagram's ids (review L1, r2 L2, r3 L2). Drawn diagrams are cached in memory by theme and source (and
+width for a gantt chart, which spans its box), up to about 8 million
+characters of SVG in all (`CACHE_CHARS`, oldest dropped first), shared by
+the block, the full-screen preview, View/Edit and exports, so opening full
+screen or switching mode does not draw again. The worker ends after 60 s
+without a draw (`WORKER_IDLE_MS`); a warm-up extends that. A block draws once it comes within a
+screen of the viewport (`useNearScreen`), showing "Rendering diagram" until
+then; any mounted diagram starts the worker (which loads mermaid as it
+starts), the page's generic-face probe and DOMPurify at idle (`warmMermaid`,
+Epo 2026-10-23), so a diagram scrolled to later waits on neither.
+
+The worker draws only the types the geometry check covers (`MERMAID_TYPES` in
+`mermaidTypes.ts`, one source each in `e2e/fixtures/mermaid-sources.ts`, a
+unit test keeping the two equal; Epo 2026-10-23): every type mermaid 11.16.1
+registers, by detected id: architecture, block, c4, class and classDiagram
+(`classDiagram` and `classDiagram-v2`, one renderer), cynefin, er, eventmodeling, flowchart-v2 and
+flowchart-elk, gantt, gitGraph, info, ishikawa, journey, kanban, mindmap,
+packet, pie, quadrantChart, radar, railroad (plain, ABNF, EBNF and PEG),
+requirement, sankey, sequence, stateDiagram, swimlane, timeline, treemap,
+treeView, venn, wardley and xychart. A type mermaid does not ship (an add-on
+such as ZenUML) or misspells fails mermaid's own detection: "This diagram could
+not be drawn". A registered id outside the list, the renderer-v1 `flowchart`
+that a `defaultRenderer` directive picks, is unsupported: the worker refuses
+it before drawing (`mermaid.detectType` against mermaid's site config, which
+a diagram's directives never reach, review r2 H1) or after (by the drawn
+`diagramType`). `drawMermaid` clears mermaid's directives
+(`mermaidAPI.reset`) before it initializes, so no diagram's config reaches
+the next draw by any path, the image check's type detection included
+(review r3 M1). There is no main-thread drawing path. An unsupported type
+says "This diagram type isn't supported." and a browser without a 2D
+OffscreenCanvas (Safari before 16.4) or module workers (a `Worker` that never
+reads its `type` option) says "This browser can't draw diagrams.", both
+checked on the page (review r3 L4); every Mermaid error shows in
+`MermaidError` as a source error does, everywhere (block, preview, chat). A
+Word export writes a diagram that cannot be drawn, for any of these reasons,
+as its source in a code block, as Markdown export does (Epo 2026-10-23). The geometry check (`e2e/editor/mermaid-geometry.spec.ts`) draws
+each type in the worker and on the page (`drawMermaid`, then the same
+`forPage`) and compares the detected type and every element's numbers
+(positions, sizes, path points, transforms, the viewBox) within 1.5 px, in all
+five themes, so a mermaid upgrade or a shim change that moves anything fails
+CI. That exact check runs in Chromium, where Windows and Linux both match;
+only the timeline's title (font-size `4ex`) is about 1 px off, since canvas
+exposes no x-height. Firefox and WebKit lay text out a few pixels apart, so
+there the same spec (`e2e/editor/playwright.mermaid-engines.config.ts`, CI
+job `e2e_mermaid_engines`) lays both drawings out and checks every worker
+label with text against its box: an HTML label against its foreignObject,
+an SVG text against the drawing and the smallest rect, polygon or path whose
+box holds its centre (a node, a bar, a cell). A label may reach past its box
+by no more than the same label on that engine's own page drawing, plus 1 px,
+which keeps mermaid's own placements (info's version line and a radar's axis
+names past the drawing, a sequence `loop` tab), and no two labels may overlap
+more than there; labels pair up by their place in document order (Epo
+2026-10-23, review r3 M2). Info, radar, sankey and treeView have no box
+around any text (a version line, axis names around the web, names beside
+the bars, a tree drawn in lines), so their texts are checked against the
+drawing only, as are titles, axis ticks, legend entries and edge labels in
+other types. The check's first WebKit run found that WebKit does not pass a
+text's `dominant-baseline` down to its tspans, as Chromium, Firefox and the
+shim do: ishikawa causes drew about 4 px above their boxes there. Every
+drawing's stylesheet now says a tspan without its own inherits it
+(`TSPAN_BASELINE` in `mermaidDraw.ts`), which changes nothing in Chromium or
+Firefox.
+
+**Scale.** A block never shows a diagram below half its natural size
+(`MIN_SCALE`, Epo 2026-10-22): the SVG keeps a minimum width and height of
+half its viewBox, and the box (at most `min(70vh, 48rem)` tall) scrolls both
+ways instead, centred while it fits (`justify-center-safe`). Large diagrams
+stay inline SVG. The full-screen viewer fits the diagram and zooms to at
+least its natural size (`maxScale` = max(8, natural / fitted width),
+`MermaidPreview`).
+
+A diagram loads nothing from outside the page. In the worker nothing can
+fetch (linkedom loads nothing and there is no document), and `drawMermaid`
+makes the source inert before `mermaid.render` (`mermaidSafety.ts`). It locks the
+`strict` security level, keeps a `dompurifyConfig` forbidding `img`, `image`,
+`source`, `style` and the like (a no-op in the worker; `forPage` applies the
+same lists on the page), and front
 matter and `%%{init}%%` directives cannot turn `themeCSS`, a font stack or
 those keys back on (mermaid's own `secure` list, extended). Over that, the
 source drops what config cannot reach: a line naming a CSS image function
@@ -653,9 +804,7 @@ entities, and across mermaid's directive cuts) is blanked keeping its line
 number. That is any line containing `url(` or `image-set(`, so a label whose
 text writes `url(` loses its line too ("the URL (a link)", with a space, is
 kept). This filter, not the sanitiser, is what stops an inline `style` in a
-label from fetching: labels keep their inline styles, since mermaid sanitises
-its own icon SVGs (architecture icons) and math-label wrappers with the same
-config. An image node's `img` or a sequence actor's icon is removed when
+label from fetching: labels keep their inline styles. An image node's `img` or a sequence actor's icon is removed when
 mermaid's own parse says the diagram draws an image. A diagram that needed a
 removed part still draws, minus that part; one that still names or draws an
 image across lines after the pass is refused. Links stay clickable (`click …
@@ -664,12 +813,15 @@ href`, Epo 2026-10-15): after `mermaid.render`, every `<a>` in the SVG gets
 a new tab and cannot reach the Capy tab; mermaid's strict mode already leaves
 a `javascript:` target's anchor with no href. The one `renderMermaid` serves
 every surface — chat, note blocks, mindmap and diagram files, shared-page
-islands and the export rasteriser — so this covers them all. The app's
+islands and the export rasteriser — so this covers them all; a worker's SVG
+is sanitized on the page before any of it is inserted. The app's
 report-only image policy (deployment-runbook §2.4) is a backstop, not the fix.
 Preset fonts (Excalifont, vendored Latin subset in
 `src/assets/fonts`; Comic Neue from `@fontsource/comic-neue`) load through
-`FontFace` before the render, since mermaid measures labels while drawing; a
-failed font load draws in the fallback font. In edit mode the hover toolbar has
+`FontFace` into the worker's (or the page's) font set before the render,
+since mermaid measures labels while drawing; a failed font load draws in the
+fallback font. Inter, first in the Linear stacks, is not shipped: both
+threads fall through to the next installed face. In edit mode the hover toolbar has
 theme, caption, edit, copy and delete. A resized diagram stretches
 past its natural width. The
 caption is typed in a field under the diagram (at most 300 characters, a
@@ -684,10 +836,16 @@ preview in the block's theme (Tab indents by two spaces; deleting lives on the
 toolbar) and edits the block live: there is no Save or Cancel, it closes with
 its X or Esc, and its footer holds Undo, Redo (CodeMirror's own history; the
 note's Undo does not cover the dialog's typing) and the note's save status.
-An edit (typing, paste, Undo) that would take the source past the HTML embed
-source's 64 KB (UTF-8) is refused with that bound's message ("The snippet is
-over 64 KB."; `byteBound`), while other peers' edits and shrinking edits always
-land; these bounds are the browser's only.
+A source is capped at `MERMAID_SOURCE_MAX`, 50,000 UTF-16 units (mermaid's own
+`maxTextSize`), one embed-catalog limit on every layer (Epo 2026-10-22): an edit
+(typing, paste, Undo) in the dialog or a diagram file's editor that would take
+the source past it is refused with "This diagram is over 50,000 characters."
+(`lengthBound`), while other peers' edits and shrinking edits always land;
+`renderMermaid` refuses a longer source before drawing it with the same
+message, and mermaid's 500-edge limit ("Edge limit exceeded") says "This
+diagram has more than 500 links."; the browser's document check, Go's
+`materialdoc` and the collaboration server's store and room admission refuse
+a longer source ([embeds](../embeds.md)).
 The source is a trimmed CodeMirror 6 (`MermaidCodeEditor.tsx`: state,
 view and history only, ~78 KB gzipped, loaded with the dialog or the editor,
 ligatures off) with line numbers; the line mermaid blames gets a tinted
@@ -984,6 +1142,10 @@ Collaboration unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
+Every file's header (notes, quizzes, flashcards, diagrams, text, Office and
+other files) also shows the label beside the icon from md up (Epo
+2026-10-22; `EditorSaveStatus` `labelFromMd`: one span, screen-reader text
+below md and visible from md).
 Pending work preserves Connecting, Offline and error indicators. An older
 checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
 
@@ -1016,10 +1178,36 @@ account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) replace the editor with the
 file-missing or no-access panel, `collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
-and anything else (an expired token, a room being reset or compacted) is
-retried. A loss still unresolved after 30 s while
+`collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
+and anything else (an expired token,
+a room being reset, a client-id clash) is retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
-sync it turns the status red). A failed first token request shows the panel for its status (not found,
+sync it turns the status red). A join, first or after a reload, has the same
+30 s from its start, which is its collaboration-token request (or the new
+mount, for a new mount of the same room; Epo 2026-10-23): `NoteEditor` keeps
+that start and the editor's `roomReconnector` counts from it (`started(at)`).
+A first open whose token has not answered by then shows the collaboration
+unavailable panel with Retry instead of loading for ever; an editor not
+synced by then, a JOIN never answered on the open socket included, turns the
+status red, and after a reload that failing editor replaces the paused one.
+The editor binds to the room's document (`YjsEditor.connect`) only at the
+room's first sync (`roomBinding.ts`, CAPY-WEB-7). Plate's init binds after
+waiting at most 5 s; bound to a document the room had not filled, the editor
+showed it empty and kept a paragraph the document never got, which broke
+every later Yjs mapping. Until it binds, an editor painted early (red because
+its join ran out first) shows the projection. Binding replaces that tree and
+keeps a caret placed on it by block id where its text still exists, else
+drops it; history maps the selection onto the room only once bound (the
+@slate-yjs/core patch).
+Item rooms (quizzes, flashcard sets, standalone diagrams and mindmaps) have
+the same 30 s from their token request (`ItemRoom.start`); one not synced by
+then goes offline, the room's connection error (Epo 2026-10-23).
+A slowed open and offline wait. A reload pauses only once its new token has
+answered, so a reload whose token hangs keeps the old editor on screen,
+unpaused and editable. A discard evicts the old room, so its own reconnect
+(whose token request hangs too) goes Offline at about 30 s like any lost
+room, its edits kept on the device, and the swap runs once a token answers;
+no e2e waits for the Offline part. A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry). A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
@@ -1197,8 +1385,8 @@ room after 10 s, with none authenticating, is closed (1008, "no room
 joined"); a client joins as soon as it opens one, and a warmed socket's
 hold is 8 s. A JOIN's token is checked when it arrives (CPU only): a bad one
 is refused before any lookup, so it never holds the deadline open, and the
-user's timeout is checked next, before the eviction lease's Redis lookup and
-the database. A client address holds at most
+user's timeout is checked next, before a source room's eviction lease (Redis)
+and the database. A client address holds at most
 `COLLABORATION_SOCKETS_PER_ADDRESS` open sockets (500): one more is refused
 429 before the upgrade. The address is read as the gateway's limiter reads
 it (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
@@ -1263,12 +1451,12 @@ document, storage, history, keys room and id; its own token refreshes and
 expiry apply as for any channel, and a JOIN costs one message of the
 allowance. With no note channel (an embedded set opened on its own study
 page, or under MSW) an item room joins as any document does. A room keeps at most 256 awareness
-client ids and a channel at most 4 (`MAX_CLIENTS_PER_ROOM`,
-`MAX_CLIENTS_PER_MEMBER`); a new id past either is not kept. The room's cap
-counts removed ids until their removal went out (the next flush forgets
+client ids (`MAX_CLIENTS_PER_ROOM`); a new id past it is not kept. The room's
+cap counts removed ids until their removal went out (the next flush forgets
 them), so adding and removing ids in a loop stays capped and needs no scan.
-A client id is its user's: another user's channel neither overwrites nor
-removes it, and a channel's leave removes only the ids it still holds.
+A channel writes awareness only under the client id its JOIN bound (see
+[client ids](#client-ids)); entries under any other id are ignored, and its
+leave removes its entry unless a later channel of its user took it over.
 
 A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
 pending receipts (the failed-store retry answers them), shows Not saved and,
@@ -1318,13 +1506,356 @@ writers. Relational metadata and standalone sharing use separate endpoints so a
 privacy or metadata failure cannot be reported as though it rolled back an
 already-durable Yjs command.
 
+### Client ids
+
+Epo decided on 2026-10-23 (Q213) that the collaboration server assigns each
+editing session its Yjs client id and admits a writer's changes only under
+ids assigned to that writer's user, in every room (notes, items, keys,
+Office and text files); on 2026-10-24 (Q226 M3, Q236) that an id is
+recorded at the first accepted write under it, and that a reconnect keeps
+its id by presenting its previous token; on 2026-10-24 (Q288) that stored
+drafts keep their tab's last token, which re-grants their id to a draft send
+from any page.
+
+- **Assignment** (`newClientID` and `regrantedClientIDs` in
+  `server/internal/httpapi/collaboration_tokens.go`). Every collaboration
+  token (material, keys and source rooms; read and write) offers a client id
+  (its `clientId` claim, 1 to 2^32-1 other than the fork's seed ids 0 and
+  1): a fresh random one, or, when the request carries the session's
+  previous token (`previousToken`), that token's id again. Go re-grants only
+  a token with our signature, for the same user and the same room (document,
+  schema or epoch), issued at most 7 days ago; its expiry is otherwise
+  ignored, and the endpoint's own access check runs first, so a previous
+  token never grants access. Anything else gets a fresh id.
+- **The browser** (`RoomProvider`). The provider presents its last token on
+  every token request (each JOIN and each in-band refresh). Its document
+  takes the id each JOIN's token offers until the document (or its DOCX
+  layout worker) wrote under it, then keeps that id for the document's life
+  and names it in every JOIN, so the Undo stack survives. A reconnect's token
+  offers the same id again, so a session that never wrote keeps it too: an
+  Office editor, whose replica and layout worker took their ids at the edit
+  `load`, needs no reload. A new id comes with a new Y.Doc (a new editor or
+  item room, a room swap's renderer), or when a document that never wrote
+  gets a fresh token (its previous one too old, or dropped after 70 s of
+  `collaboration-client-id` refusals). Edits a document made before its first
+  JOIN stay under the id Yjs drew, and the room refuses them as they are (Epo
+  2026-10-24, see Refusal); a document whose `clientID` no longer matches the
+  id it took stops its channel with an error instead of sending (Q226 L3).
+- **Binding** (`ClientIds::bind` in
+  `collaboration-rs/crates/server/src/client_ids.rs`). A JOIN binds its
+  channel to the id its Y.Doc names, in memory. An id recorded to the
+  joiner's user binds as it is, whichever id the token offers (a reconnect).
+  An unrecorded id binds only when it is the one the token offers, has no
+  structs in the document's history (its state vector) and no live channel
+  holds it (nor the room's own client). One recorded to another user, one the
+  token does not offer, or one in the history (its row cleared or expired) is
+  refused as `collaboration-unassigned-id`: no retry binds it, so the editor
+  does not retry (`roomRefusal` reads it as `unassigned`; until the catch-up merge
+  re-applies its edits, a note or item keeps its unsent edits as refused and
+  remounts, a source session goes to recovery). One a live channel holds is
+  refused as `collaboration-client-id`: a dropped socket's channel the
+  server has not closed yet (at most 60 s, `SILENT_CLOSE`), or two sessions
+  presenting one previous token. The provider keeps presenting its previous
+  token for 70 s from the first such refusal (`CLIENT_ID_HELD_MS`), so a
+  reconnect after a network drop gets its ids back once the old channel
+  closed, then drops it and retries with a fresh id. A channel whose token
+  turns writable writes under the id it bound (Q226 M1); a token refresh
+  naming another user than the channel's is refused (the channel closes at
+  its token's expiry), so a bound id stays its user's.
+- **A DOCX session's worker id** (Q219, Epo 2026-10-23). The DOCX editor
+  lays out and applies typing in a resident worker, a yrs document of its
+  own, so a DOCX write token also offers `workerClientId` (Go mints it only
+  for DOCX write tokens, other than the session's id, and re-grants it from
+  the previous token as it does the session's). The JOIN binds it with the
+  session's id under the same rule. The provider keeps the worker id with its
+  document's (`RoomProvider.workerClientId`), the source session hands it to
+  the edit `load`, and the fork's resident worker writes under it
+  (`workerClientId` in the DOCX editor's collaboration options) instead of a
+  random id. A DOCX edit load without a worker id fails explicitly (Q226
+  L4); other formats carry none.
+- **The record.** `material_yjs_client_ids` (material, document `content` or
+  `keys`, id) and `source_document_client_ids` (file, id), each row naming
+  the user (indexed) and deleted with its document and by the account purge
+  (migration 0115). A room loads its rows once and keeps them in memory, so
+  reconnects and update checks read no database. An update accepted and
+  applied (after admission, the validator and the limits) records the ids it
+  wrote under as the writer's user's the first time in a room's life, and
+  refreshes their `last_write_at` once a day after; a JOIN or a refused
+  update records nothing. Rows are recorded in memory at once and in the
+  database off the room's task (a slow database stalls no channel, Q226 M4),
+  in order through one queue per room that the room's unload waits on; a
+  batch still failing after its retries (about 15 s), or a queue a closing
+  room drops, is logged as an error. A Leave says whether the tab still holds unsent edits for the
+  document (one byte: 0 when it holds none, beyond the provider's
+  unacknowledged updates and the drafts not yet covered by a receipt), then
+  names the session's client id (see [editing sessions](#editing-sessions)); a
+  clean Leave expires the recorded ids its token offered, so they never bind
+  again (an id it bound otherwise, its user's other tab's, stays), and a
+  socket drop or a Leave with unsent edits keeps them. Each room load
+  first deletes the document's expired rows and rows unwritten for 7 days:
+  no scheduled job (Q226 M3). The server's own writers (the room client, the
+  edit scratch documents) take ids outside the recorded set, the ids bound
+  to live channels and the room's history (Q226 L2). Ids never enter the Yjs document, whose readers must
+  not map ids to users.
+- **Admission** (`client_ids::foreign`, after the marker check). Every block
+  an update adds beyond the room's held clock for its client must be under an
+  id the writer's user holds: one recorded to the user (any of them, so
+  drafts of their earlier sessions still apply), one bound to a live channel
+  of the user (a draft send from another page of a tab that is still
+  joined), or one a draft send's stored token re-grants (see draft grants). Blocks at clocks the room holds pass as duplicates, and delete sets
+  are not bound. Server-side writers (the room client, Office engine
+  children, seeds) do not go through admission.
+- **Reserved copy ids** (Epo 2026-10-24, M5). Ids from 2^32 up to the PPTX
+  bootstrap id (2^53-1) are reserved for derived override-seed copies; no
+  session is assigned one. Until override-seed copies exist, every room
+  refuses structs under them like any unassigned id, a source file's editors
+  included.
+- **Draft grants** (Epo 2026-10-24, Q288). Stored draft rows keep their
+  session's last signed room token (`grants` in `src/lib/editDrafts.ts`; a
+  merged row keeps each of its rows'). A draft send presents its group's
+  tokens in `X-Capy-Grants`, newest first and one per client id they offer
+  (a session's refreshed tokens take one slot), at most 16. The server
+  re-grants the ids each offers under the reconnect rule: our signature,
+  the same user and room, issued at most 7 days ago, expiry ignored
+  (`auth::granted_ids`, `auth::granted_by` reads the first 16), and
+  recorded for no one else, absent from the history and held by no live
+  channel (`ClientIds::grantable`). The write records them. So the drafts
+  of a closed tab whose edits never reached the room go in from any page. A
+  group still refused `unassigned` (a token over 7 days old, an id recorded
+  to another user) is held and opens copy-only (see opening with stored
+  drafts). Stored drafts and their
+  short-lived tokens stay in the browser through sign-out and an account
+  switch, as the drafts always did; an expired token grants nothing, and a
+  grant needs the sender's own user.
+- **Opening with stored drafts** (Epo 2026-10-24, Q319, Q326, Q327, Q328).
+  The recorder marks a session's rows `accepted` once a receipt covers one
+  of its own edits (`covered > start`: adopted rows do not count), since the
+  room then recorded the session's id. On open (`draftGroups`,
+  `splitOpenDrafts`) a note, item room or source session applies accepted
+  rows and syncs them over its live channel; rows of a never-accepted
+  session with a stored token go through the draft send (`draftSender`)
+  while the editor joins. Never-accepted rows no send delivers (held after
+  one, or with no stored token) open copy-only with the refused rows when
+  they draw on their own (the drafts worker's `draws` decides, so the main
+  thread merges and applies them once), as Q237 and Q251 say until the merge
+  view exists (Epo 2026-10-25, Q360), reported once as the edit incident
+  `other_epoch_draft`/`held` (never sent, so no service log has them); ones
+  that need the room's document are applied, and the room's live refusal of
+  them opens the whole document copy-only. Restored rows the room's document
+  cannot place either (their base is gone) go at the first receipt with the
+  drafts-lost notice, reported `draft_unrestorable`/`base_missing` as
+  recovery reports a group nothing can draw (an item room too, under its
+  material). Until the send settles (every group stored or held) the editor
+  shows the syncing status and is view-only: notes lock the content and
+  toolbar, items set `sending` (`itemEditingStopped`), sources return
+  `draftsSending`. Each request has 30 s plus its upload at 100 KB/s, at
+  most 3 minutes (`draftSendTimeout`, Epo 2026-10-25, Q365), so a 2 MiB
+  piece on a slow uplink still lands; one that fails or times out goes again
+  30 s later, doubling to 5 minutes, and at once on the browser's `online`
+  event or when the room connects (`now`, from the `beforeJoin` hooks),
+  never twice at once: one asked during a try goes as it ends. While steps
+  are held no socket is open, so a server that comes back is noticed only by
+  the next try: the hold's own connect, the browser's `online` event and the
+  backoff are its triggers. A send that settles before the hold with a group
+  the room did not take opens it copy-only at once (a note remounts, an item
+  room is replaced, a source session opens again). Not settled 30 s after
+  the open (`DRAFT_SEND_WAIT_MS`) with the room synced, or at a first sync
+  after that, the editor closes its channel, applies those rows, adds them
+  to its recorder's adopted rows and edits on: every edit is stored as a
+  draft and nothing goes live, since the room would refuse the old steps on
+  the channel. Its provider's `beforeJoin` then holds every JOIN until the
+  send settles, and no socket opens for the room meanwhile. The hold shows
+  syncing and is no editing incident (the recorder's `disconnected(true)`
+  reports no `offline_episode`); a browser that goes offline in it shows
+  offline, and syncing (a source saving) again once back online. Once a send
+  is accepted the editor joins and continues; one the room refused leaves
+  the steps in the document, so the live sync is refused `unassigned` and
+  the edits open in the copy-only recovery. Before a first sync the join's
+  own 30 s connection error stands. A live refusal has no automatic
+  fallback: an accepted session is refused only once its record and its
+  tokens are past 7 days.
+- **Duplicate draft sends** (Epo 2026-10-24, Q321). A draft send whose
+  update the room already holds in full (`ydoc::contains_changes` is false
+  over the room's state vector and delete set) is accepted as a no-op on the
+  room's task, before the allowance is charged: no charge, and no new store
+  or gateway checkpoint. Its answer still waits for the store that holds
+  the group when one is due or running (Epo 2026-10-25, Q360), since the
+  browser deletes its rows on it. So the page sweep, an opening editor and
+  other tabs may send one group without a lock, a resend after a lost answer
+  costs nothing, and simultaneous duplicates count once since a room handles
+  writes in order. Draft sends count against their own limit of 60 a minute
+  per user instead (see the draft sweep).
+- **Refusal.** An update under another id goes the refused-on-entry way:
+  material rooms send `document-rejected` with code `unassigned` (the editor
+  keeps its unsaved edits as a refused draft), source rooms
+  `source-checkpoint-failed` with `recoverable: false` and code `unassigned`
+  (recovery), and a draft send answers 409 `unassigned` (the group is held,
+  never sent again: its next open shows it copy-only, or applies it when it
+  needs the room's document, which the live refusal then opens copy-only).
+  Each is logged at warn and recorded as
+  the edit incident `save_refused`/`client_id`. So after the server lost
+  state a tab restores only its own user's unsaved edits; another user's are
+  lost (accepted, Q213). Edits under an id the server never assigned (made
+  before the tab had one) or no longer holds are refused as they are, never
+  bound. Until the catch-up merge re-applies them under the tab's id (Epo
+  2026-10-24, `human/frontend/error-handling.md`), they open for copying:
+  this covers a session that typed without a write accepted and reconnects
+  with a fresh token (its previous one over 7 days old). An open tab within
+  7 days gets its id re-granted by its previous token, after a network drop
+  too, and its edits land; a closed tab's drafts carry its last token (see
+  draft grants). Drafts stored before the binding, under ids nobody was
+  assigned, are refused once and kept for copying.
+- **The unassigned signal** (for the catch-up merge's re-author mode). Edits
+  under an id the room does not hold for the user are answered apart from an
+  invalid document on every path: a room write gets `document-rejected` code
+  `unassigned` (material rooms) or `source-checkpoint-failed` code
+  `unassigned` (source rooms), a draft send class `unassigned` (409), and the
+  JOIN of a document that wrote under such an id `collaboration-unassigned-id`
+  (`collaboration-client-id` means only that a live channel holds the id; the
+  browser retries with its previous token for 70 s, then with fresh ids, and
+  a document that wrote then hears `collaboration-unassigned-id`).
+- **Awareness.** A channel's awareness entries are kept only under its bound
+  id; entries under any other id are ignored.
+- **Browser writers.** Notes, items and text sources write under their
+  provider's document id; the text editor's IME merge writes its scratch copy
+  under the same id. The Office editor's replica takes the id from the edit
+  `load` message (Office protocol 13, `collaboration.clientId`), and the host
+  applies its updates as the document's own (`applyOwnUpdate` in
+  `src/features/files/sourceState.ts`): Yjs moves a document to a new id when
+  its own id arrives in an applied update.
+
+### Editing sessions
+
+Epo approved the in-place Yjs collection on 2026-10-23
+([storage quota](../backend-storage-quota.md#yjs-storage-growth)): a note's
+stored state is to be collected when a room folds it, keeping what an open
+session or an Undo may still name. This is its first step, the bookkeeping;
+nothing is collected yet. Notes only (Q274, 2026-10-24): quiz, flashcard and
+other item rooms and source rooms keep no sessions and their full history.
+
+- **A session is one Y.Doc**, named by its client id (see [client
+  ids](#client-ids)): one editor in one tab, whose Undo stack lives as long.
+  A viewer, who never edits, has none; one whose token turns writable (a
+  role change evicts the channel first, so only if that eviction is late)
+  gets one at its first write, at the version it last named.
+- **Versions.** Every JOIN names the stored version its document holds after
+  the client id (0: a new document that holds nothing; one that took stored
+  drafts before its first JOIN names theirs, `unsentFrom`). A note room tells
+  a synced editor the stored version it holds right after answering its step
+  1 and after each store commits, once every update the store holds went out
+  (`{"type": "stored", "version": v}`, `STORED_TYPE` in `room.rs`): the latest
+  version the room holds every version up to. A store whose version passed a
+  service edit the room has not applied yet goes unannounced, and only stores
+  announce (review r1 M1); a gap still open at the next store is logged at
+  Warn, once per gap (review r3 N3). A service edit whose committed row the
+  room cannot apply reloads the room from the stored document instead of
+  counting its version (Q389, Epo 2026-10-26, `Room::reload`): joins wait as
+  for a drain, every channel closes as the room is reset (its tab rejoins and
+  resyncs), and the room stores what it holds and unloads, so the next room
+  loads every row. The tab answers `{"type": "ack", "version": v}`
+  whenever the version it may report changes. The room counts the session at
+  its JOIN's version, then at each `ack` (never above the room's own
+  version). A new session (version 0) that never synced is left out of the
+  fold's reached version (review r1 H2), and a session that never
+  acknowledged a store, holds nothing and has no row is forgotten with its
+  last channel (review r2 L1). Acks, deletions and Leaves act only on the
+  channel's own user's session (review r2 N3).
+  A socket whose outbox dropped a frame sends nothing more and closes, so no
+  notice follows a broadcast its reader missed.
+- **The oldest unsent edit.** A tab never reports a version above the one its
+  oldest unsent edit was made at (`RoomProvider.reportedVersion`): an edit
+  stays unsent from the moment it is made until the second store's `stored`
+  after the room's ACK of the message carrying it (review r1 H1, Editor
+  2026-10-26, a plan change: admission is not durable, and the first notice
+  may be a store that began before the edit arrived; the first notice on a
+  channel answers its step 1 and counts for nothing). Before that it is in
+  flight, admitted and not yet surely stored, held for a resend after a
+  dropped channel, or not sent yet (offline, in a timeout, parked). An empty
+  step 2 (a new document's) carries no edit, but takes a mark: the room
+  already holds what it marks, which clears by the same rule (review r2
+  N1). Drafts applied later (`unsentFrom`) mark the next update sent, which
+  clears by the same rule (M2). Its JOIN, its `ack`s and its stored drafts carry at most that, and a
+  document holding unsent edits reports at least 1. Each stored draft row
+  keeps the version the tab reported when it was made (`EditDraft.version`, a
+  merged row its oldest), and a draft send names its group's oldest in
+  `X-Capy-Version` (a row from before versions, or made before the tab's
+  first stored version, counts as 1, older than any collection; an
+  unreadable one is refused as malformed, review r2 N2). A Leave
+  while drafts are marked says unsent, so a draft send's hold keeps its
+  session (N3).
+- **Held deletions.** A session holds the deletions its own channel's updates
+  made: what the room held undeleted, so a reconnect's step 2, which resends
+  the whole delete set, adds only the session's own (`ydoc::apply_deleting`).
+  They are what its Undo may restore. Each is stamped with its arrival (to
+  the minute, the batch's latest) and released 25 h after it, since Undo
+  reaches back 24 h on the tab's clock. A draft send's deletions are held for
+  no one: its session ended.
+- **Counted.** A session counts while connected and for 24 h after it was
+  last seen. It ends at that cap, or on a clean Leave naming it, only the
+  session bound to the leaving channel (a user ends only their own); its held
+  deletions go then. A Leave with unsent edits or a dropped socket keeps it.
+  A live session stays its user's: a JOIN of its id by another user changes
+  nothing (the binding refuses that first).
+- **Agent holds** (review r1 M3, Editor 2026-10-26, a plan change: in-place
+  collection step 1 owns them). An agent edit's Undo and Redo are offered
+  24 h after the edit, whether or not its room stays loaded (Q385, Epo
+  2026-10-26): the room drops the step then (`Room::expire_agent_steps`) and
+  the chat hides its buttons (see [agentic
+  retrieval](../agentic-retrieval.md)); a step spanning rooms (a quiz's
+  content and keys) ends as a whole (Q389). What the edit, its Undo and its
+  Redo deleted is held 25 h from the edit, an hour past the offer as a
+  person's holds are, whatever the sessions do (`Sessions::agent_deleted`,
+  `AGENT_HELD_FOR`; an Undo or Redo keeps the edit's time; review r3 N8), so
+  every Undo the room offers is held; a durable Undo payload records its
+  deletions through the same call once that wiring lands. Stored beside the
+  document (`material_yjs_documents.agent_held`, the same encoding). Agent
+  holds that cannot be read are dropped and reported to Sentry, and the note
+  loads (Q386, Epo 2026-10-26).
+- **Stored** (migration 0117) as columns of the session's client-id row
+  (`material_yjs_client_ids`: `acked_version`, `seen_at`, NULL when there is
+  no session or it ended, and `held`, the batches as arrival times and Yjs
+  delete sets). A store writes the sessions changed since the last one in its
+  own transaction, in one statement, so a held deletion is durable with the
+  state that holds it; the unload writes what changed after the last store,
+  taking the document's row first as a store does (review r2 L5). A store
+  takes the document's row `FOR NO KEY UPDATE`: a new id's queued row insert
+  checks its key against that row, which a stronger lock would deadlock
+  with (review r2 M1). A session's held deletions are written only when they
+  changed (review r2 L4); a repeated `ack` changes nothing to write. Never
+  for an account whose deletion began: a store locks the sessions' users
+  with its accounts, in their order before the material (review r2 M2), and
+  writes only live ones, so a purge waits for it and then deletes what it
+  wrote. Only sessions whose id is recorded
+  have a row: a deletion is an accepted write, so a session that only deleted
+  is recorded too. A session that never wrote is counted in memory for its
+  room's life. A room load reads the sessions seen within 24 h; a row whose
+  held deletions cannot be read is dropped alone, written lost
+  (`acked_version` -1, `sessions::LOST`, the other columns NULL) and reported
+  to Sentry, and the note loads (Q382, Epo 2026-10-26). A moved lineage (a
+  discard) ends the old lineage's sessions in its transaction (review r2
+  L3).
+- **The fold's input** (`Sessions::holds`): the oldest version every counted
+  session reached (none when no session counts) and their held deletions with
+  the agent holds. The folds log it until the collection uses it.
+- **Late.** A JOIN or a draft group naming a version below the latest
+  collection's window has missed what that collection discarded (`late` in
+  `sessions.rs`, version 0 never is). So has one under the id of a session
+  whose record was lost, whatever version it names (Q385, review r2 M1): its
+  held deletions were not kept; for a draft group, an id its grants name or
+  one it writes under, which the room admits through its record (review r3
+  L4). Nothing is collected yet, so nothing is late.
+
 ### Client protocol and the release nudge
 
 Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
 design, option d), and the nudge's release file on 2026-10-17.
 
 - **The gate.** Every JOIN carries the build's client protocol after the
-  token (`room, token, varuint protocol`), and every draft send carries it as
+  token (`room, token, varuint protocol, varuint clientId, varuint version`,
+  then an embed's note channel; the client id is the Y.Doc's, see [client
+  ids](#client-ids), and the version the stored one it holds, see [editing
+  sessions](#editing-sessions)),
+  and every draft send carries it as
   `X-Capy-Protocol`. The number is `CLIENT_PROTOCOL` in
   `src/features/collaboration/protocol.ts` and
   `collaboration-rs/crates/server/src/protocol.rs`; a vitest keeps them equal.
@@ -1420,6 +1951,67 @@ design, option d), and the nudge's release file on 2026-10-17.
   2026-10-20) raised `CLIENT_PROTOCOL` to 8 and `MIN_SOURCE` to 8;
   `MIN_MATERIAL` stays 7. Its deploy request names "client protocol 7 -> 8,
   source 7 -> 8".
+  The BetterOffice pins landed since then without a bump (Office DOCX
+  edbb81eea, PPTX b50fc6f4f, DOCX speed 9664f2ff9); the speaker notes cap
+  (pin ceecaec31) raised `CLIENT_PROTOCOL` to 9 and `MIN_SOURCE` to 9 for all of
+  them; `MIN_MATERIAL` stays 7. Its deploy request names "client protocol
+  8 -> 9, source 8 -> 9".
+  The yrs block lookup fix (pin 3fdc52f50: a lookup outside a client's blocks
+  finds nothing instead of panicking) raised `CLIENT_PROTOCOL` to 10 and
+  `MIN_SOURCE` to 10; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 9 -> 10, source 9 -> 10".
+  The Office agent DOCX id parser (pin 45d17fc72: every DOCX command reads
+  its id through one parser, refusing a bare paraId, table or cell id by
+  naming the read's id; UAT 2026-10-22) raised `CLIENT_PROTOCOL` to 11 and
+  `MIN_SOURCE` to 11; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 10 -> 11, source 10 -> 11".
+  The Office agent's short table id and format_text's `text` (pin
+  337896d27: delete_table takes `body:t0` naming one table, format_text names
+  its span `text`; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to 12 and
+  `MIN_SOURCE` to 12; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 11 -> 12, source 11 -> 12".
+  The room swap (pin 86237e2c1: BetterOffice going read-only and a
+  document's first frame keep the view, reader actions still bring the caret
+  into view, a peer's change never does; Epo 2026-10-22, 2026-10-23) raised
+  `CLIENT_PROTOCOL` to 13 and `MIN_SOURCE` to 13; `MIN_MATERIAL` stays 7. Its
+  deploy request names "client protocol 12 -> 13, source 12 -> 13".
+  Phase 0 of the tombstone work (pin 870dc1661: yrs collects an item next to
+  a collected unit, as Yjs does; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to
+  14 and `MIN_SOURCE` to 14; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 13 -> 14, source 13 -> 14".
+  The Office agent's short paragraph ids and malformed-id refusals (pin
+  faacf7887: a DOCX paraId alone names its one paragraph, and a malformed
+  slide, shape, paragraph or table id is refused as malformed, showing the
+  read's form; Epo 2026-10-24, Q222 and Q223) raised `CLIENT_PROTOCOL` to 15
+  and `MIN_SOURCE` to 15; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 14 -> 15, source 14 -> 15".
+  The Undo redo rule (pin d5b87cd17 and the yjs patch: a restored copy
+  keeps its traced right neighbour only when it lies after its left; Epo
+  2026-10-24, Q247-Q250) raised `CLIENT_PROTOCOL` to 16 and both minimums to
+  16, so note and item tabs without the rule reload. Its deploy request names
+  "client protocol 15 -> 16, material 7 -> 16, source 15 -> 16".
+  The DOCX typing fixes (pin 88b28baa4: a page whose positions only shift
+  keeps its mirror and overlay nodes, charts, shapes and content controls are
+  named by their embed, and the position projection follows typed text; Epo
+  2026-10-24, Q351) raised `CLIENT_PROTOCOL` to 17 and `MIN_SOURCE` to 17;
+  `MIN_MATERIAL` stays 16. Its deploy request names "client protocol 16 -> 17,
+  source 16 -> 17".
+  The client-id binding (Q213: every JOIN names its Y.Doc's client id after
+  the protocol, Office protocol 13; pin 58518dfdb: the DOCX layout worker
+  writes under its assigned id, Q219) raised `CLIENT_PROTOCOL` to 18 and both
+  minimums to 18. Its deploy request names "client protocol 17 -> 18,
+  material 16 -> 18, source 17 -> 18".
+  The Office agent's pictures and charts (pin 13f70b8f6: the reads list
+  pictures and charts and a by-id read returns their bytes and series; Epo
+  2026-10-24, Q240 phase A, with the review fixes of Q381, Q384 and Q388)
+  raised `CLIENT_PROTOCOL` to 19 and `MIN_SOURCE` to 19. The editing sessions
+  (the in-place collection's bookkeeping, Epo 2026-10-23: every JOIN names the
+  stored version its Y.Doc holds after the client id, note rooms send `stored`
+  and take `ack`, a Leave names its session) raised `CLIENT_PROTOCOL` to 20
+  and `MIN_MATERIAL` to 20; `MIN_SOURCE` stays 19, since a source JOIN or
+  Leave from an older build carries no version or session and still reads.
+  The two landed together, so their deploy request names "client protocol
+  18 -> 20, material 18 -> 20, source 18 -> 19".
 
 #### When to bump
 
@@ -1525,7 +2117,11 @@ the token's room are applied before the room connects (updates whose base is
 missing stay pending until the sync brings it) and saved like any edit; rows
 of another room, and refused rows, open read-only in copy-only recovery
 (`NoteRecovery`: the static renderer under a `changed` or `refused` banner
-whose Reload deletes them, one group at a time). A group with no `state` row
+whose Reload deletes them, one group at a time). A lineage's rows expire 7
+days after its newest row (`draftGroups`, Epo 2026-10-24): that group opens
+once under the `expired` banner and is deleted as it opens
+(`dropExpiredGroup`), and the draft sweep never sends it; for notes until the
+merge view (Q251). A group with no `state` row
 cannot be drawn (a tab closed online, then the room moved): it is dropped
 with "Some unsaved edits from your last session couldn't be restored."
 
@@ -1604,20 +2200,25 @@ the group's rows become one row of the pieces not sent (the worker's
 `unsent`), which the answer below applies to and recovery shows (Epo
 2026-10-18).
 
-The service runs a channel's JOIN checks (origin, token, access, the room's
-eviction and pause state), refuses a read-only token, checks the note's
-current schema, refuses the send while the user is in a timeout (checked
-right after the token, before any lookup), reads the body within 8 MiB (a
-larger one answers `too_large`, which the page leaves to the editor, and
-times the user out) and a note's 4 MiB sync cap, takes it from the user's update allowance (the one their sockets take
-from), checks the eviction lease and a local
-reset again (the body may have arrived after them), and hands the update to
-the room, loading it if need be: the same writer admission and apply as a
-channel's update (`admit_update` in `room.rs`, a read token's draft as a
-read channel's), so open editors receive it live, then a store at once. A
-source send counts as joining its room meanwhile. It answers only after that
-store, and that answer is the receipt for every row the request carried:
-only then are the rows deleted. A source room takes no send during a
+The service counts the send against the user's draft sends once its token
+checks out, at most 60 in any minute apart from the update allowance (Epo
+2026-10-25, Q360; `take_draft` in `rate.rs`; over it answers `too_fast`
+before any lookup, with no timeout). It runs a channel's JOIN checks
+(origin, token, access, the room's eviction and pause state), refuses a
+read-only token, checks the note's current schema, refuses the send while
+the user is in a timeout (checked right after the token, before any
+lookup), reads the body within 8 MiB (a larger one answers `too_large`,
+which the page leaves to the editor, and times the user out) and a note's
+4 MiB sync cap, checks a source room's eviction lease and a local reset
+again (the body may have arrived after them), and hands the update to the room, loading it
+if need be. There a group the room holds in full is a no-op (see duplicate
+draft sends); any other takes from the user's update allowance (the one
+their sockets take from) and goes through the same writer admission and
+apply as a channel's update (`admit_update` in `room.rs`, a read token's
+draft as a read channel's), so open editors receive it live, then a store
+at once. A source send counts as joining its room meanwhile. It answers
+only after the store that holds the update, and that answer is the receipt
+for every row the request carried: only then are the rows deleted. A source room takes no send during a
 publication handoff, and an Office file's only over the room's base. A room
 whose load failed answers the failure (one load per send). A successful send
 is silent: the edits just appear for everyone.
@@ -1635,15 +2236,19 @@ class
   refuses it again and the editor keeps the whole document as its refused
   row; neither is sent again, so the room records the over-limit incident
   once per open, not per page load;
-- `unheld` (409, the room lacks the update's base), `too_large` (413) and
-  `lineage` (409, a token for another room, a schema or epoch that moved on,
-  another Office base): marked `held`, left for the editor;
+- `unheld` (409, the room lacks the update's base), `unassigned` (409,
+  structs under a client id not assigned to the user, Epo 2026-10-24),
+  `too_large` (413) and `lineage` (409, a token for another room, a schema
+  or epoch that moved on, another Office base): marked `held`, left for the
+  editor's next open, which applies a held group of an accepted session and
+  shows any other copy-only (see opening with stored drafts, Q360);
 - `outdated` (426, the page's client protocol is refused): kept unmarked,
   and no sweep runs again until the page reloads (see
   [Client protocol](#client-protocol-and-the-release-nudge));
 - `permission` (403), `unavailable` (503) and any other answer: kept, and
   not sent again until the next page load;
-- `too_fast` (429, the user is in a timeout), no answer (offline) or rows
+- `too_fast` (429, the user is in a timeout or sent 60 drafts in the last
+  minute), no answer (offline, or none within the request's 30 s) or rows
   that changed meanwhile: kept for the next trigger.
 
 `held` is the sweep's own mark: a held group that enters recovery at the
@@ -1807,10 +2412,10 @@ else handled at save: a canonical repair, otherwise the room reset (Epo
 or structure rule, an update outside the document's shape) answers its writer
 alone with a `document-rejected` stateless message (a limit's code and metrics,
 else `invalid_document`, no eviction id), then closes that channel only: the
-socket stays, the client remounts on a fresh Y.Doc and a new channel on it
-(its old Y.Doc holds the refused structs, so no later edit of it could be
-placed) and keeps its unsaved edits as a refused draft, and co-editors and
-the room are untouched. Right after an admitted update goes in, the room
+socket stays, the client swaps to a new editor on a fresh Y.Doc and a new
+channel ([room swap](#room-swap); its old Y.Doc holds the refused structs, so
+no later edit of it could be placed) and keeps its unsaved edits as a refused
+draft, and co-editors and the room are untouched. Right after an admitted update goes in, the room
 repairs what a canonical form fixes cheaply, in one server transaction every
 editor gets in the same flush (`Model::repair_on_entry`,
 `notes::repair::on_entry`, `items::flashcards::repair`): an element's `text`
@@ -1841,12 +2446,14 @@ loaded would mean it never persists again. A structurally invalid snapshot no
 repair fixes is discarded the same way (`document-rejected` with code
 `invalid_document`), and an `authorization-revoked` eviction makes every editor
 drop its copy too. `NoteEditor` responds to a `document-rejected` (its writer's
-or the room's) by remounting `NoteEditorCore` under a new generation key, which
-reconnects onto the room's state (after a discard, the last durable state). Unsaved edits are kept as
-one refused draft first, so the remount shows them read-only for copying until
-Reload; a limit also shows the too-large toast, and only edits this device
-could not store end in the changes-undone toast. Invalidating the collaboration token alone is not enough, because
-an unchanged room string leaves the editor mounted on its forked document.
+or the room's) by swapping in a new `NoteEditorCore` under a new generation key
+([room swap](#room-swap)), which reconnects onto the room's state (after a
+discard, the last durable state). Unsaved edits are kept as one refused draft
+first, so what the swap brings in is the recovery view showing them read-only
+for copying until Reload; a limit also shows the too-large toast, and only
+edits this device could not store end in the changes-undone toast.
+Invalidating the collaboration token alone is not enough, because an unchanged
+room string leaves the editor mounted on its forked document.
 Failed-store retries use the same terminal path. If a queued snapshot later
 fails a document or quota limit, the server drops it, broadcasts the rejection
 when the room is still live, and discard-evicts the room back to durable Yjs
@@ -1869,6 +2476,62 @@ it syncs anything and opens copy-only recovery; item identities do not change,
 so comment anchors stay valid. A co-editor still connected
 during such a discard, with a few seconds of unsaved typing, lands in recovery
 too (Epo, 2026-10-04).
+
+### Room swap
+
+Developer Epo decided on 2026-10-22 that a room reload swaps renderers
+instead of remounting in place: a discard that moves the room to a new
+`room_schema` (the token names another room), a `document-rejected`
+(a new generation), and Reload from recovery. `NoteEditor` keys each renderer
+by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
+`NoteEditorCore` a phase:
+
+- **Paused**: the one on screen once the note wants another room or
+  generation. It stops edits without Slate's readOnly, since readOnly
+  re-rendered every block and dropped the reader to the top: its model takes
+  only selection changes (`holdModel` wraps `editor.apply` and `tf.apply`,
+  so a portalled block menu, a column or figure resize, or an IME
+  composition the pause ends changes nothing), and `pauseEdits` turns the
+  editable root `contenteditable=false` and stops typing, paste, drops,
+  drags, right clicks and clicks on controls in the capture phase. Its
+  toolbar is inert, the palette and AI menu unmount, it leaves its room
+  (no reconnect), writes its unsaved edits as one whole document (its child
+  effect runs before `useNoteDrafts` reads the next room's drafts, so another
+  lineage's edits still open in recovery, as before) and reports nothing
+  more: no status, presence, banners or refusals. Reading, scrolling,
+  selecting, copying and links still work.
+- **Standby**: the next renderer (an editor, or `NoteRecovery` when stored
+  edits must show for copying) once the next room's stored edits are read.
+  It mounts `invisible absolute inset-0` and `inert` beside the paused one,
+  so its layout is real, connects and syncs, and its header status reads
+  Reconnecting (with a slowed open's line); `NoteEditor` reports Reconnecting
+  itself until then.
+- **Live**: after the standby renderer's first paint (`onPainted`, two
+  animation frames after its content rendered, an error state included) its
+  slot loses the hidden classes (the DOM is never moved), the paused one
+  unmounts, and the reader's place comes back by block id
+  (`captureNotePosition`/`restoreNotePosition`): first the selection by
+  top-level block id plus path and offset, with the focus when the editor
+  held it as it paused (`noteFocusAtPause`, read before the pause makes the
+  root non-editable and blurs it) and the reader has not focused something
+  else since, then the first top-level block under the scroll box's top
+  edge at the same offset (else the old scroll offset), last, so the
+  reading place wins over the caret. Yjs ids are never used: the next room's
+  document need not hold them.
+
+A hidden tab swaps at once (no paused phase; a tab that hides meanwhile
+swaps then). A phone (below sm) holds one renderer: the paused view is
+copied as plain DOM (`copyPausedView`: nothing editable, no frames, Slate and
+block-id markers removed, its toolbar inert, scroll kept) over the editor
+remounting in place, which stays in standby under the copy until its first
+paint. The copy does not carry canvas bitmaps or shadow roots: charts and
+plots drawn to a canvas and math fields show blank in it until the swap. The
+path (beside, a phone's copy, or at once) is decided once per swap, when the
+next mount is ready, so a breakpoint crossing during the build keeps it. The banners of the paused editor's room (offline, delayed) go with it.
+All renderers share one react-dnd `DndProvider` in `NoteEditor`: two
+providers, each with an HTML5 backend, throw. `room-swap.spec.ts` covers a
+discard (`discardMockMaterialRoom`: the room moves on and its editors' channels
+close), a hidden tab, a phone and a refused update.
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from
@@ -1896,9 +2559,12 @@ revoked user's update.
 None of this gates **opening** a document. Limits protect the collaboration
 service and the database on write; a document that already exists always opens.
 `MaterialBody` reads `sizeBytes` / `nodeCount` from the cached material list and
-shows `HeavyMaterialGate` when either passes `MATERIAL_RENDER_WARNING`, offering
-read-only (static `MaterialPreview`, no Yjs handshake and no editing plugins) or
-open-anyway. Absent list metadata always opens: the gate must never become a
+shows `HeavyMaterialGate` for a note when either passes
+`MATERIAL_RENDER_WARNING`, offering read-only (static `MaterialPreview`, no Yjs
+handshake and no editing plugins) or open-anyway. Notes only (Epo 2026-10-22,
+`heavyMaterial`): the gate spares a note's Plate editor, which a flashcard set
+or quiz has no copy of in View (a 1,400-card set is about 7,000 nodes), and a
+diagram draws in the Mermaid worker. Absent list metadata always opens: the gate must never become a
 door the reader cannot pass. Nothing downloads the document before the reader
 chooses: `GET /api/materials/{id}` carries the whole `content` envelope, so the
 viewer header takes the title and kind from the list entry and the capabilities
@@ -2130,12 +2796,7 @@ that then pass the strict validator (D4), so grading (`POST /api/quizzes/{id}/
 attempts` projects a lagging room first, D9) and fresh reads see what a Save
 would have stored. The projection also names every editor asset either
 document references (`assetIds`), so an image in an incomplete question stays
-in use. Lineage compaction never rebuilds a quiz from that projection: it
-replays both stored documents and seeds fresh ones from every question as
-typed with its keys (`items::quiz::editor_value`, complete or not, blank
-blocks included; Epo 2026-10-14), and skips a quiz holding a block this
-version cannot read (`rebuilt_quiz` in
-`collaboration-rs/crates/server/src/note_store.rs`). The two documents count together against the material's limits: each
+in use. The two documents count together against the material's limits: each
 room holds the other's metrics (`PeerMetrics`), and Go refuses a quiz
 projection over a limit unless it shrank. Admission checks structure, value
 caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
@@ -2202,10 +2863,10 @@ update the server refuses (or a store refusal for the room) ends the room
 here: its edits become a refused draft, a toast says so, and a fresh room
 opens with the draft read-only for copying until Reload (`QuizRecovery`,
 `LiveFlashcards`); it never rejoins with what was refused. A fresh token
-naming another room (compaction, a discard) does the same with the edits as a
-draft of the old lineage. An eviction notice's `mode` decides its close: a
-drain (access widened; the room stored first) rejoins with the document as
-it is, a discard (or compaction) replaces the room as a moved one. Leaving
+naming another room (a discard) does the same with the edits as a draft of
+the old lineage. An eviction notice's `mode` decides its close: a drain
+(access widened; the room stored first) rejoins with the document as it is,
+a discard replaces the room as a moved one. Leaving
 the tab or navigating in the app while an
 item room holds edits the server has not acknowledged asks first
 (`unsentItems.ts`).
@@ -2256,10 +2917,21 @@ Comments and threads remain relational. A discussion stores:
 - encoded start/end Yjs relative positions;
 - anchor schema version;
 - a short quoted-text fallback;
-- comments, resolution state, and authorship.
+- comments and authorship.
 
-The JSON API base64-encodes relative positions; PostgreSQL stores raw `bytea`.
-Go enforces paired anchors and strict size/version/quote bounds.
+Comments are plain fields (Epo 2026-10-24): each comment holds its
+discussion, author and plain text of at most 3,000 characters (`text`, the
+only size rule; no rich content and no JSON byte cap). Go refuses text that is
+empty or only whitespace, and any field the schema does not name. Every
+comment field (text, quote, block id) refuses control characters other than
+newline and tab and the bidi override and isolate characters (U+202A-U+202E,
+U+2066-U+2069); zero-width joiners, which emoji and some scripts need, stay
+(Epo 2026-10-24, Q313). The comment box and the AI's
+comments both send one plain text; the thread shows it as written. The
+discussion and comment routes take bodies of at most 64 KiB, which fits the
+largest valid discussion. The JSON API base64-encodes relative positions;
+PostgreSQL stores raw `bytea`. Go enforces paired anchors, a block id of 1-128
+characters and strict size/version/quote bounds.
 
 When creating a comment, the browser converts the selected Slate range with
 `slateRangeToRelativeRange`. Rendering reverses it with
@@ -2385,6 +3057,33 @@ same layout in viewing. Column drag markers use the shared gap midpoint for
 both adjacent edges. Layout changes discard a lone empty paragraph in a removed
 column before Plate merges its contents, preventing repeated 2↔3 switches from
 accumulating blank lines. Authored block sequences and textless embeds survive.
+A column stores `width` as a preset writes it (`"33.333%"`) or as Plate's
+column normalizer rewrites a group whose widths stop summing to 100 (`${n}%` of
+a float, `"49.9995%"`): a plain decimal percentage above 0 and at most 100, as
+JavaScript writes a number (`isColumnWidth`, Go's `columnWidth`, the notes
+crate's `valid_column_width`). The browser's document check (so a Markdown or
+JSON import), Go, the store and room admission refuse any other width, and
+both column renderers draw none, since the width reaches a style.
+The same holds for every other value a renderer puts into a style or class.
+A table's `colSizes` (each entry a size or empty, null) and `marginLeft` are
+px as Plate's table resizing writes them, finite numbers of 0 or more
+(`isTableSize`, Go's `tableSize`, the notes crate's `table_size`). A block's
+`indent` is a number (Plate's indent and list plugins, a pasted list's
+`aria-level`) up to `LIST_INDENT_MAX` (`isIndent`); the indent plugin injects
+its class and margin only for one (`INDENT_NODE_PROPS`). The text marks Plate
+draws as styles (`color`, `backgroundColor`, `fontSize`, `fontFamily`) live
+on text: the embed catalog forbids them on every element and both kits
+inject them on leaves only (`inject.isLeaf`). On text, and as a list's
+`listStyleType`, each holds any string a browser writes (`var()`,
+`color-mix()`, non-px sizes, quoted font names, custom list markers) but no
+`;` and no control character (Epo Q380, `isStyleValue`, Go's
+`validateStyleValue`, the notes crate's `style_value`): the document check,
+Go, the store and room admission (`MARK_VALUE` for a mark, `BAD_VALUE` for a
+list style) refuse one, and both kits draw none (`STYLE_MARK_NODE_PROPS`, the
+ordered list's `list-style-type`). Media blocks draw only a width
+`mediaWidth` takes. `src/features/notes/refusedValues.test.tsx` holds that the
+editor itself draws none of these refused values, so a crafted paste styles
+nothing even before the room refuses it.
 The table menu's cell/merge subscriptions remain inside the unmounted-when-closed
 menu body, keeping those reads off the typing path.
 
@@ -2548,8 +3247,8 @@ validation and are not rendered.
   Redis/PostgreSQL latency.
 - Do not impose an arbitrary room occupancy cap. Add a distributed measured cap
   only when load tests or production usage justify one.
-- Keep Yjs garbage collection enabled. Compaction/rebasing requires a separately
-  tested maintenance procedure.
+- Keep Yjs garbage collection enabled. Yjs history is not compacted for now
+  ([Yjs storage growth](../backend-storage-quota.md#yjs-storage-growth)).
 - Nothing outside the document may re-render the document. A near-limit note is
   ~7.4k Slate nodes, so one extra render is seconds of blocking. Concretely:
   context values read from inside the tree (`EditorRuntime`, collaboration

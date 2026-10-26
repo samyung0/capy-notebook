@@ -67,6 +67,8 @@ import type {
   Customization,
   DeletionPreflight,
   EditableQuiz,
+  EditorAssetAccess,
+  EditorAssetPage,
   FileLinks,
   FileListParams,
   FilePage,
@@ -99,10 +101,11 @@ import type {
   PastReview,
   PastReviewParams,
   PendingWorkspaceInvite,
+  PlanStepInput,
   Privacy,
-  PublicFlashcardSet,
-  PublicQuiz,
-  PublicWorkspace,
+  PublicFlashcardSetPage,
+  PublicQuizPage,
+  PublicWorkspacePage,
   Quiz,
   RateReviewItemReq,
   RequestAccountDeletionReq,
@@ -111,18 +114,18 @@ import type {
   ReviewResult,
   ReviewSession,
   ReviewStart,
-  SaveCanvasReq,
   SearchResult,
   SetModelPrefsReq,
   SetStudyItemReq,
   SourceFile,
   SourceUploadPolicy,
   SpendingLimitReq,
+  StudyPlan,
+  StudyPlans,
   StudyPreferences,
   StudySummary,
   Tag,
   Task,
-  ThinkingCanvas,
   TopUpReq,
   TrashActionReq,
   TrashItem,
@@ -148,6 +151,7 @@ import type {
   UsageEventParams,
   UsageReport,
   User,
+  VoiceTranscription,
   WireMessage,
   Workspace,
   WorkspaceCollaborator,
@@ -1208,6 +1212,37 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
     placeholderData: keepPreviousData,
   });
 
+/** The images and audio the caller pays for (M16), newest first, each marked
+ * when its note can no longer be opened: the Files page's Embeds tab. A new
+ * access filter loads afresh, so its notice never sits over the previous
+ * filter's rows. */
+export const useEditorAssets = (access?: EditorAssetAccess) =>
+  useInfiniteQuery({
+    getNextPageParam: (last: EditorAssetPage) => last.nextCursor || undefined,
+    initialPageParam: '',
+    queryFn: ({ pageParam }: { pageParam: string }) =>
+      api.get<EditorAssetPage>(
+        `/editor-assets${listSearch({ access }, pageParam)}`
+      ),
+    queryKey: qk.editorAssets(access),
+  });
+
+/** Deletes one of them at once, wherever it sits: nothing restores it, and
+ * its note shows it as removed by its uploader. */
+export function useDeleteEditorAsset() {
+  const qc = useQueryClient();
+  return useMutation({
+    // Its confirmation shows the failure.
+    meta: { errorToast: false },
+    mutationFn: (assetId: string) =>
+      api.del<void>(`/editor-assets/${encodeURIComponent(assetId)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.editorAssetsRoot });
+      qc.invalidateQueries({ queryKey: qk.usage });
+    },
+  });
+}
+
 /** The dashboard recents: newest files across every workspace the caller is
  * a member of. The first page covers the card, which shows 20 items. */
 export const recentFilesQuery = () => ({
@@ -1267,9 +1302,10 @@ function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
 
 /** Deleting a file moves it to the trash; the owner can restore it from
  * Files › Trash for 30 days. Its bytes stay charged until purged. */
-export function useDeleteFile(wsId: string) {
+export function useDeleteFile(wsId: string, options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (id: string) => api.del<void>(`/files/${id}`),
     onSuccess: () => invalidateAfterFileDelete(qc, wsId),
   });
@@ -1615,6 +1651,7 @@ export function useUploadSource(wsId: string) {
       parseMode,
       estimatedCreditMicros,
       pageCount,
+      durationSeconds,
       batchId,
       batchTotal,
       onQueued,
@@ -1640,6 +1677,9 @@ export function useUploadSource(wsId: string) {
       /** The analysed page count of a fast-parse document; the gateway
        * refuses one past the policy's maxPages. */
       pageCount?: number;
+      /** An audio file's length as the browser read it, in whole seconds;
+       * the gateway refuses one past the policy's audioMaxDurationSeconds. */
+      durationSeconds?: number;
       /** The upload's place in the gateway's line while it waits, 0 once
        * its turn comes (uploadWithTicket). */
       onQueued?: (position: number) => void;
@@ -1652,6 +1692,7 @@ export function useUploadSource(wsId: string) {
         chapterId: chapterId ?? null,
         chapterName: chapterName ?? null,
         contentType: file.type || 'application/octet-stream',
+        durationSeconds: durationSeconds || undefined,
         estimatedCreditMicros: estimatedCreditMicros || undefined,
         kind,
         name: file.name,
@@ -1747,6 +1788,19 @@ export const messagesQuery = (convId: string | null) =>
   });
 export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
   useQuery({ ...messagesQuery(convId), meta: queryMeta(options) });
+
+/** Transcribes a chat voice recording for the composer; it shows failures
+ * inline, and the user records again (nothing retries). */
+export function useTranscribeVoice(wsId: string) {
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (clip: Blob) =>
+      api.postBlob<VoiceTranscription>(
+        `/workspaces/${wsId}/voice-transcriptions`,
+        clip
+      ),
+  });
+}
 
 export const useArchivedConversations = (
   wsId: string,
@@ -2285,15 +2339,23 @@ export function useDeleteMaterialDiscussion(materialId: string) {
 
 /** A room token; `keys` asks for a quiz's keys document (editors who can
  * write only, live-items), `read` for a read channel whatever the user may do
- * (a View or a study page, which never write: REVIEW5 N2). */
+ * (a View or a study page, which never write: REVIEW5 N2). `previousToken`,
+ * the session's last token for the room, asks for its client id again
+ * (Q236). */
 export const getMaterialCollaborationToken = (
   materialId: string,
-  { access, document }: { access?: 'read'; document?: 'keys' } = {}
+  {
+    access,
+    document,
+    previousToken,
+  }: { access?: 'read'; document?: 'keys'; previousToken?: string } = {}
 ) =>
   api
     .post<MaterialCollaborationToken>(
       `/materials/${materialId}/collaboration-token`,
-      document || access ? { access, document } : undefined
+      document || access || previousToken
+        ? { access, document, previousToken }
+        : undefined
     )
     .then((token) => {
       // A newer room schema retires the material's agent Undo payloads (Q122).
@@ -2573,16 +2635,18 @@ export function invalidateStudy(
   qc: ReturnType<typeof useQueryClient>,
   workspaceId?: string
 ) {
-  // qk.study and qk.workspaceReview: ['workspace', id, 'study' | 'review'].
+  // qk.study and qk.workspaceReview: ['workspace', id, 'study' | 'review'];
+  // every workspace's plans, since a plan counts steps in other workspaces.
   return Promise.all([
     qc.invalidateQueries({
-      predicate: ({ queryKey: [scope, id, kind] }) =>
+      predicate: ({ queryKey: [scope, id, kind, part] }) =>
         scope === 'workspace' &&
-        (!workspaceId || id === workspaceId) &&
-        (kind === 'study' || kind === 'review'),
+        (((!workspaceId || id === workspaceId) &&
+          (kind === 'study' || kind === 'review')) ||
+          (kind === 'study' && part === 'plans')),
     }),
     qc.invalidateQueries({ queryKey: qk.reviewRoot }),
-    qc.invalidateQueries({ queryKey: qk.learningProgress }),
+    qc.invalidateQueries({ queryKey: qk.learningRoot }),
   ]);
 }
 
@@ -2637,40 +2701,6 @@ export function useResetWorkspaceStudy(workspaceId: string) {
   return useMutation({
     mutationFn: () => api.post<void>(`/workspaces/${workspaceId}/study/reset`),
     onSuccess: () => invalidateStudy(qc, workspaceId),
-  });
-}
-
-/** The global default for workspaces without their own setting. Optimistic;
- * changes queue so a fast second toggle cannot land before the first. */
-export function useSetStudyProgressDefault() {
-  const qc = useQueryClient();
-  const queue = useRef(Promise.resolve());
-  return useMutation({
-    mutationFn: (enabled: boolean) => {
-      const request = queue.current.then(() =>
-        api.patch<void>('/me/study-progress', { enabled })
-      );
-      queue.current = request.then(
-        () => undefined,
-        () => undefined
-      );
-      return request;
-    },
-    mutationKey: qk.me,
-    onMutate: async (enabled) => {
-      await qc.cancelQueries({ queryKey: qk.me });
-      qc.setQueryData<User>(qk.me, (me) =>
-        me ? { ...me, studyProgress: enabled } : me
-      );
-    },
-    onSettled: () =>
-      refetchIfLast(qc, qk.me, () =>
-        Promise.all([
-          qc.invalidateQueries({ queryKey: qk.me }),
-          qc.invalidateQueries({ queryKey: ['workspace'] }),
-          qc.invalidateQueries({ queryKey: qk.reviewRoot }),
-        ])
-      ),
   });
 }
 
@@ -2773,19 +2803,120 @@ export const usePastReviews = (params: PastReviewParams = {}) =>
 
 /** Learning → Progress: workspaces in progress and finished, the leading
  * one's items; `lead` asks for that listed workspace's map instead. */
-export const learningProgressQuery = (lead?: string) =>
+export const learningProgressQuery = (lead?: string, all = false) =>
   queryOptions({
     ...persisted,
     queryFn: () =>
       api.get<LearningProgress>(
-        lead
-          ? `/learning/progress?lead=${encodeURIComponent(lead)}`
-          : '/learning/progress'
+        `/learning/progress${listSearch({ all: all ? 'true' : undefined, lead }, '')}`
       ),
-    queryKey: lead ? [...qk.learningProgress, lead] : qk.learningProgress,
+    queryKey: [...qk.learningProgress, lead ?? null, all],
   });
-export const useLearningProgress = (lead?: string, options?: QueryUiOptions) =>
-  useQuery({ ...learningProgressQuery(lead), meta: queryMeta(options) });
+/** `all` (Show all) also lists workspaces hiding study progress. */
+export const useLearningProgress = (
+  lead?: string,
+  all = false,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    ...learningProgressQuery(lead, all),
+    meta: queryMeta(options),
+    placeholderData: keepPreviousData,
+  });
+
+/* ---------------- study plans ---------------- */
+/** Plans kept in a workspace, then the user's plans elsewhere with a step in it. */
+export const workspacePlansQuery = (workspaceId: string) =>
+  queryOptions({
+    queryFn: () =>
+      api.get<StudyPlans>(`/workspaces/${workspaceId}/study/plans`),
+    queryKey: qk.studyPlans(workspaceId),
+  });
+export const useWorkspacePlans = (
+  workspaceId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({ ...workspacePlansQuery(workspaceId), meta: queryMeta(options) });
+
+/** Every plan of the user, for Learning → Progress. */
+export const useLearningPlans = (options?: QueryUiOptions) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () => api.get<StudyPlans>('/learning/plans'),
+    queryKey: qk.learningPlans,
+  });
+
+const invalidatePlans = (qc: QueryClient) =>
+  Promise.all([
+    qc.invalidateQueries({
+      predicate: ({ queryKey: [scope, , kind, part] }) =>
+        scope === 'workspace' && kind === 'study' && part === 'plans',
+    }),
+    qc.invalidateQueries({ queryKey: qk.learningPlans }),
+  ]);
+
+export function useCreateStudyPlan(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api.post<StudyPlan>(`/workspaces/${workspaceId}/study/plans`, { name }),
+    onSettled: () => invalidatePlans(qc),
+  });
+}
+
+/** Renames a plan and/or replaces its steps. Optimistic in the workspace's
+ * list, so a dragged row lands at once; the refetch settles it. */
+export function useUpdateStudyPlan(workspaceId: string) {
+  const qc = useQueryClient();
+  type Patch = { id: string; name?: string; steps?: PlanStepInput[] };
+  return useMutation<void, Error, Patch, { prev?: StudyPlans }>({
+    mutationFn: ({ id, ...body }) =>
+      api.patch<void>(`/study/plans/${id}`, body),
+    mutationKey: qk.studyPlans(workspaceId),
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(qk.studyPlans(workspaceId), ctx.prev);
+    },
+    onMutate: async ({ id, name, steps }) => {
+      await qc.cancelQueries({ queryKey: qk.studyPlans(workspaceId) });
+      const prev = qc.getQueryData<StudyPlans>(qk.studyPlans(workspaceId));
+      qc.setQueryData<StudyPlans>(qk.studyPlans(workspaceId), (list) => {
+        if (!list) return list;
+        return {
+          ...list,
+          plans: list.plans.map((p) => {
+            if (p.id !== id) return p;
+            // Steps keep their shown titles; new ones show once refetched.
+            const held = new Map(
+              p.steps.map((st) => [stepKey(st), st] as const)
+            );
+            return {
+              ...p,
+              name: name ?? p.name,
+              steps: steps
+                ? steps.flatMap((st) => held.get(stepKey(st)) ?? [])
+                : p.steps,
+            };
+          }),
+        };
+      });
+      return { prev };
+    },
+    onSettled: () =>
+      refetchIfLast(qc, qk.studyPlans(workspaceId), () => invalidatePlans(qc)),
+  });
+}
+
+/** One identity per step target, the server's uniqueness. */
+export const stepKey = (st: PlanStepInput) =>
+  `${st.kind}:${st.workspaceId}:${st.targetId ?? ''}`;
+
+export function useDeleteStudyPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/study/plans/${id}`),
+    onSettled: () => invalidatePlans(qc),
+  });
+}
 
 /** Records one rating; the study page toasts a failure once. Each rating
  * refreshes `workspaceId`'s progress, or every workspace's when omitted; a
@@ -2964,67 +3095,44 @@ export function useDeleteTask() {
   });
 }
 
-/* ---------------- thinking ---------------- */
-export const canvasesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<ThinkingCanvas[]>('/thinking'),
-    queryKey: qk.thinking,
-  });
-export const useCanvases = (options?: QueryUiOptions) =>
-  useQuery({ ...canvasesQuery(), meta: queryMeta(options) });
-
-export const canvasQuery = (id: string) =>
-  queryOptions({
-    enabled: !!id,
-    queryFn: () => api.get<ThinkingCanvas>(`/thinking/${id}`),
-    queryKey: qk.canvas(id),
-  });
-export const useCanvas = (id: string, options?: QueryUiOptions) =>
-  useQuery({ ...canvasQuery(id), meta: queryMeta(options) });
-export function useCreateCanvas() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      api.post<ThinkingCanvas>('/thinking', { name }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
-  });
-}
-export function useSaveCanvas(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    meta: { errorToast: false },
-    mutationFn: (body: SaveCanvasReq) =>
-      api.put<ThinkingCanvas>(`/thinking/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
-  });
-}
-
 /* ---------------- explore ---------------- */
-export const exploreWorkspacesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicWorkspace[]>('/explore/workspaces'),
-    queryKey: qk.exploreWorkspaces,
-  });
-export const useExploreWorkspaces = () => useQuery(exploreWorkspacesQuery());
+// Explore lists come 50 at a time, most cloned first.
+export const exploreWorkspacesQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicWorkspacePage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicWorkspacePage>(
+      `/explore/workspaces${listSearch({}, pageParam)}`
+    ),
+  queryKey: qk.exploreWorkspaces,
+});
+export const useExploreWorkspaces = () =>
+  useInfiniteQuery(exploreWorkspacesQuery());
 
-export const exploreQuizzesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicQuiz[]>('/explore/quizzes'),
-    queryKey: qk.exploreQuizzes,
-  });
-export const useExploreQuizzes = () => useQuery(exploreQuizzesQuery());
+export const exploreQuizzesQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicQuizPage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicQuizPage>(`/explore/quizzes${listSearch({}, pageParam)}`),
+  queryKey: qk.exploreQuizzes,
+});
+export const useExploreQuizzes = () => useInfiniteQuery(exploreQuizzesQuery());
 
-export const exploreFlashcardSetsQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicFlashcardSet[]>('/explore/flashcards'),
-    queryKey: qk.exploreFlashcardSets,
-  });
+export const exploreFlashcardSetsQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicFlashcardSetPage) =>
+    last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicFlashcardSetPage>(
+      `/explore/flashcards${listSearch({}, pageParam)}`
+    ),
+  queryKey: qk.exploreFlashcardSets,
+});
 export const useExploreFlashcardSets = () =>
-  useQuery(exploreFlashcardSetsQuery());
+  useInfiniteQuery(exploreFlashcardSetsQuery());
 
 /* ---------------- sharing & cloning ---------------- */
 

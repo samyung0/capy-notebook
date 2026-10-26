@@ -11,7 +11,7 @@ use yrs::block::{ClientID, Item, UpdateParent};
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
 use yrs::{
-    BranchID, Doc, ID, IdSet, OffsetKind, Options, ReadTxn, StateVector, Transact, Update,
+    BranchID, Doc, ID, IdSet, OffsetKind, Options, ReadTxn, StateVector, Store, Transact, Update,
     UpdateBlock,
 };
 
@@ -493,6 +493,56 @@ impl<'a> Incoming<'a> {
             .iter()
             .map(|(client, ranges)| (client, ranges.as_slice()))
     }
+
+    /// Where yrs integrates an incoming item against the room, so every
+    /// admission resolver places it where the room will (phase 0 review).
+    /// yrs trims an item that overlaps the room's held clock and makes the
+    /// writer's own unit just before the held clock its left; and it collects
+    /// an item whose left (that unit, or the update's origin) or right origin
+    /// is a collected unit. The caller resolves [Landing::At] to its own
+    /// container type and reads [Landing::Chain] from the update's origins as
+    /// before.
+    pub fn landing(&self, store: &Store, state: &StateVector, item: &Item) -> Landing {
+        let held = |id: &ID| id.clock < state.get(&id.client);
+        let collected = |id: &ID| held(id) && store.get_item(id).is_none();
+        // The right origin is unchanged by the trim.
+        if item.right_origin().is_some_and(collected) {
+            return Landing::Gone;
+        }
+        let ID { client, clock } = *item.id();
+        let state_clock = state.get(&client);
+        let left = if clock < state_clock && state_clock < clock + item.len() {
+            // Overlap: yrs keeps the tail after the writer's own unit here.
+            Some(ID::new(client, state_clock - 1))
+        } else if matches!(item.update_parent(), UpdateParent::Unknown) {
+            // A typed neighbour; an explicit parent resolves in the chain.
+            item.origin().or_else(|| item.right_origin()).copied()
+        } else {
+            None
+        };
+        match left {
+            Some(left) if held(&left) => {
+                if collected(&left) {
+                    Landing::Gone
+                } else {
+                    Landing::At(left)
+                }
+            }
+            _ => Landing::Chain,
+        }
+    }
+}
+
+/// Where an incoming item lands against the room, from [Incoming::landing].
+#[derive(Clone, Copy)]
+pub enum Landing {
+    /// Collected: it adds nothing and lands nowhere.
+    Gone,
+    /// It lands where this held, live item sits; its container is the item's.
+    At(ID),
+    /// No held reference decides it: resolve from the update's own origin
+    /// chain, as before.
+    Chain,
 }
 
 /// `inspectUpdate`, read against the room, plus a trial on a copy of it past
@@ -680,7 +730,14 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
         if item.id().clock + item.len() <= held(&item.id().client) {
             continue;
         }
-        match container_of(item) {
+        // Place an item that overlaps the held clock, or sits next to a
+        // collected unit, where yrs integrates it (phase 0 review).
+        let found = match incoming.landing(store, &state, item) {
+            Landing::Gone => Found::Gone,
+            Landing::At(id) => held_at(&id),
+            Landing::Chain => container_of(item),
+        };
+        match found {
             Found::Gone => {}
             Found::Unknown => unheld = true,
             Found::At(container) => containers.push(container),
@@ -837,6 +894,21 @@ pub fn apply(doc: &Doc, update: Update) -> Result<Vec<u8>, yrs::error::UpdateErr
     let mut txn = doc.transact_mut();
     txn.apply_update(update)?;
     Ok(committed_update(txn))
+}
+
+/// [apply], and the deletions it made: items the document held undeleted
+/// that it deleted (a note session's held deletions, in-place collection).
+/// A resync's step 2 resends its whole delete set; what the document had
+/// deleted already is not among them.
+pub fn apply_deleting(
+    doc: &Doc,
+    update: Update,
+) -> Result<(Vec<u8>, IdSet), yrs::error::UpdateError> {
+    let mut txn = doc.transact_mut();
+    txn.apply_update(update)?;
+    txn.commit();
+    let deleted = txn.delete_set().clone();
+    Ok((committed_update(txn), deleted))
 }
 
 /// [apply], and the payload bytes the update's deletes gave back to the

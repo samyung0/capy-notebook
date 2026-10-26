@@ -203,7 +203,7 @@ func TestListModelsResolvesEmptyReasoningPrefs(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	// A fresh account is pinned to zai/glm-5.3-flash, whose default is "high".
+	// A fresh account is pinned to deepseek/deepseek-flash, whose default is "high".
 	if body.SelectedThinking != "high" {
 		t.Fatalf("resolved thinking = %+v, want high", body)
 	}

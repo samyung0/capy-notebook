@@ -12,4 +12,6 @@ export interface MaterialCollaborationTokenBody {
   readonly $schema?: string;
   access?: MaterialCollaborationTokenBodyAccess;
   document?: MaterialCollaborationTokenBodyDocument;
+  /** @maxLength 8192 */
+  previousToken?: string;
 }
