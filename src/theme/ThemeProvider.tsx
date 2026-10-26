@@ -2,6 +2,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
 } from 'react';
@@ -54,7 +55,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     readStored<Style>(
       STYLE_KEY,
       STYLES.map((s) => s.value),
-      'classroom'
+      'capy'
     )
   );
   const [theme, setThemeState] = useState<Theme>(() =>
@@ -67,7 +68,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const [pageFrame, setPageFrameState] = useState<PageFrame>(readFrame);
 
-  useEffect(() => {
+  // Before paint: a device with nothing stored yet (the pre-paint scripts
+  // drew no frame) shows the default with the shell's first frame.
+  useLayoutEffect(() => {
     const root = document.documentElement;
     const vars = pageFrameStyle(pageFrame);
     for (const name of [...root.style]) {

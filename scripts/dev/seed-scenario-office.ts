@@ -16,6 +16,17 @@ for (const [format, file, checkpoint] of [
     'e2e/fixtures/files/rich-content/exchange-plan-comments.docx',
     'comments-docx',
   ],
+  // The Office engine's starters, which the Create tab's blank files open on.
+  [
+    'docx',
+    'vendor/betteroffice/crates/office-service/starters/blank.docx',
+    'blank-docx',
+  ],
+  [
+    'xlsx',
+    'vendor/betteroffice/crates/office-service/starters/blank.xlsx',
+    'blank-xlsx',
+  ],
   // The Office perf spec's large files (VITE_LOAD_TEST_SEED).
   ['docx', 'bench/editor/fixtures/office/long-handbook.docx', 'long-docx'],
   ['xlsx', 'bench/editor/fixtures/office/large-gradebook.xlsx', 'long-xlsx'],

@@ -1,0 +1,13 @@
+== users-2000-skipmat-1024-1339: PASS
+   330 req/s (0.165 per user), p50 7 p95 49 p99 129 max 304 ms, errors 0.00%, streams {'ended': 0, 'failed': 0, 'open_at_end': 25, 'opened': 5054, 'refused': 0}
+   server   cpu mean 0.45 p95 0.75 cores, memory peak 281 MiB
+   db       cpu mean 0.54 p95 0.77 cores, memory peak 759 MiB
+   redis    cpu mean 0.04 p95 0.06 cores, memory peak 4 MiB
+   loadgen  cpu mean 0.15 p95 0.37 cores, memory peak 180 MiB
+   cores cpu0 49%, cpu1 63%, cpu2 23%, cpu3 22%
+   postgres backends (mean) active/- 0.1, active/IO 0.1, idle/- 0.1, idle/Client 8.6, idle in transaction/- 0.0, idle in transaction/Client 0.2
+   pool waits: 134303 acquires waited 878.3 s in all, 17 windows with waits, 2 with every connection taken at the line
+   gateway warnings and errors: 2
+     {"time":"2026-10-24T13:39:50.443332743Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"ad5b6f631f579911bc06cbd901a6ba06","method":"GET","path":"/api/stream","status":500,"duration_ms":16,"bytes":124,"ip":"10.0.2.2","client_aborted":true}
+     {"time":"2026-10-24T13:42:05.788905849Z","level":"ERROR","msg":"http request","service":"gateway","env":"e2e","trace_id":"bb302e9f2cc630c6f9cc10b866074d83","method":"GET","path":"/api/workspaces/ws_9ffcd72554","status":500,"duration_ms":132,"bytes":124,"ip":"10.0.2.2","client_aborted":true}
+   slowest routes (p95): GET /api/review/overview 123 ms, GET /api/workspaces/{id}/study 120 ms, GET /api/flashcards/{id} 117 ms, GET /api/workspaces/{id} 114 ms, GET /api/quizzes/{id} 95 ms

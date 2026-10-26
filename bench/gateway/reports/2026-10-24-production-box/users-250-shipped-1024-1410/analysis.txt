@@ -1,0 +1,12 @@
+== users-250-shipped-1024-1410: PASS
+   30 req/s (0.120 per user), p50 5 p95 13 p99 20 max 244 ms, errors 0.00%, streams {'ended': 0, 'failed': 0, 'open_at_end': 207, 'opened': 838, 'refused': 0}
+   server   cpu mean 0.08 p95 0.13 cores, memory peak 170 MiB
+   db       cpu mean 0.17 p95 0.24 cores, memory peak 323 MiB
+   redis    cpu mean 0.02 p95 0.05 cores, memory peak 7 MiB
+   loadgen  cpu mean 0.02 p95 0.03 cores, memory peak 31 MiB
+   cores cpu0 15%, cpu1 25%, cpu2 11%, cpu3 12%
+   postgres backends (mean) active/- 0.0, active/IO 0.0, idle/- 0.0, idle/Client 9.0, idle in transaction/Client 0.0
+   pool waits: 355 acquires waited 0.4 s in all, 16 windows with waits, 0 with every connection taken at the line
+   gateway warnings and errors: 0
+   seconds with p95 over 500 ms: 0 of 301
+   slowest routes (p95): GET /api/materials 213 ms, GET /api/review/overview 26 ms, POST /api/quizzes/{id}/attempts 23 ms, POST /api/workspaces/{id}/materials 22 ms, GET /api/learning/progress 16 ms

@@ -30,15 +30,21 @@ import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
-import { mergeRecentItems, type RecentItem } from './recentItems';
+import {
+  mergeRecentItems,
+  RECENT_ITEM_LIMIT,
+  type RecentItem,
+} from './recentItems';
 
-/** The row's one hint line: when it was last added or edited. Materials
- * carry `updatedAt`; file rows carry only `addedAt`. */
-function recentHint(item: RecentItem): string {
+/** The row's one hint line: when it was last added or edited, with the time
+ * in the list view. Materials carry `updatedAt`; file rows carry only
+ * `addedAt`. */
+function recentHint(item: RecentItem, withTime = false): string {
   const locale = getLocale() === 'zh' ? 'zh-CN' : 'en';
   return new Intl.DateTimeFormat(locale, {
     day: 'numeric',
     month: 'short',
+    ...(withTime && { hour: '2-digit', minute: '2-digit' }),
   }).format(
     new Date(item.kind === 'file' ? item.file.addedAt : item.material.updatedAt)
   );
@@ -84,7 +90,8 @@ function RecentActions({
       display={display}
       hoverClassName="mr-1.5"
       menuAlign="end"
-      menuTriggerIcon="moreHorizontal"
+      // Its menu shows only on the grid card; the list row has hover actions.
+      menuTriggerIcon="moreVertical"
       readOnly={!item.canEdit}
       showMove={false}
       workspaceId={item.workspaceId}
@@ -92,7 +99,7 @@ function RecentActions({
   );
 }
 
-function recentLink(item: RecentItem) {
+export function recentLink(item: RecentItem) {
   if (!item.workspaceId) {
     return linkOptions({
       params: { materialId: item.id },
@@ -139,7 +146,8 @@ export function useRecentItems() {
   const items = mergeRecentItems(
     files?.pages[0]?.items ?? [],
     materials?.pages[0]?.items ?? [],
-    workspaces ?? []
+    workspaces ?? [],
+    RECENT_ITEM_LIMIT
   );
   const paused =
     waitsForConnection(filesFetchStatus, files) ||
@@ -175,7 +183,11 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
         view === 'grid' ? (
           <ItemSkeletonGrid count={8} dense />
         ) : (
-          <SkeletonList className="gap-3.5" count={8} rowHeight={54} />
+          <SkeletonList
+            className="grid gap-1 md:grid-cols-2 md:gap-x-4"
+            count={8}
+            rowHeight={52}
+          />
         )
       ) : missing.length ? (
         <InlineErrorState
@@ -215,7 +227,8 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
           })}
         </ItemGrid>
       ) : (
-        <div className="-mx-1.5 flex flex-col gap-3.5">
+        // Two items to a row from `md`, filled left to right.
+        <div className="-mx-1.5 grid gap-1 md:grid-cols-2 md:gap-x-4">
           {items.map((item) => {
             const workspace = workspaces?.find(
               (ws) => ws.id === item.workspaceId
@@ -245,10 +258,10 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
                         <>
                           <img
                             alt=""
-                            className="size-4 shrink-0 -translate-y-px rounded-[3px]"
-                            height={16}
+                            className="size-4.5 shrink-0 -translate-y-px rounded-[4px]"
+                            height={18}
                             src={iconUrl(workspace.iconId)}
-                            width={16}
+                            width={18}
                           />
                           <span className="min-w-0 truncate text-fg">
                             {workspace.name}
@@ -259,7 +272,7 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
                         </>
                       )}
                       <span className="shrink-0 whitespace-nowrap text-fg-muted">
-                        {recentHint(item)}
+                        {recentHint(item, true)}
                       </span>
                     </span>
                   </span>

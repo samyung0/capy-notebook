@@ -138,6 +138,17 @@ masked, link targets are not). Cloudflare Workers Logs keep
 the site Worker's request URLs (`/w/*`, `/share/*`, `/p/*`), accepted as a
 trusted platform log (Sam 2026-10-19).
 
+The gateway logs one `db pool waits` line (info, `component` `db_pool`,
+`server/cmd/api/db_pool.go`) per 10 s window in which a request found no idle
+Postgres connection in the pool: `waits` (those acquires), `wait_ms` (their
+summed wait), `acquired` and `max` at the line. Opening a new connection
+under `max` counts too, so a few after a start or a quiet spell are normal.
+Lines every window with `acquired` at `max` mean requests queue for a
+connection: slow statements holding the connections (the gateway's CPU then
+sits idle), a busy gateway core delaying the goroutines that hold them, or
+a pool too small for the load. A larger pool helps only the last (the
+[2026-10-24 load test](../bench/gateway/reports/2026-10-24-gateway-capacity.md)).
+
 The collaboration server logs one `collab_health` line per minute
 (`collaboration-rs/crates/server/src/health.rs`, a background task; counting a message is an
 atomic increment, nothing allocates):
@@ -483,7 +494,7 @@ Pageviews fire once per parameterized TanStack route pattern
 | `chat_turn_sent` and `chat_turn_completed` | `useChatStream.send`. `hasScope` is `false`. Completed fires once for ok, error, or abort. |
 | `material_generated` / `material_generate_failed` | `useGenerate` success or error. |
 | `editor_ai_used` | Plate AI menu submit. `continue` vs typed or other actions (`command`). Prompt is not sent. |
-| `quiz_attempt_finished` | Grade succeeds, even if persist 401s. |
+| `quiz_attempt_finished` | The check of a quiz's last unchecked question succeeds (not a page that opens an already finished try). |
 | `share_link_created` | Visibility becomes `link` or `public`. |
 | `collaborator_invited` | Invite create succeeds. |
 | `quota_blocked` | User-visible quota or credits block on mutation, clone, or upload. |
@@ -697,10 +708,10 @@ pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`), which Go calls directly:
 it is not an EliteLLM provider and has no registry row (migration `0050`
 dropped the `quiz` slot). `POST /api/quizzes/{id}/grade` (signed in) and
 `POST /api/public/quizzes/{token}/grade` (anonymous, through the site Worker)
-take part ids and answers only; the server loads the marking scheme from the
-stored quiz, so neither grades arbitrary text. One Jev request per open part,
-at most 20 per attempt, five at a time; any failure fails the attempt and the
-learner retries. Jev costs $0.042 per million input tokens and nothing for
+take one question's part ids and answers only; the server loads the marking
+scheme from the stored quiz, so neither grades arbitrary text. One Jev request
+per answered open part, five at a time; any failure fails that check and the
+learner checks again. Jev costs $0.042 per million input tokens and nothing for
 output, so grading is **recorded, never charged**: signed-in requests write one
 `usage_events` row (surface `quiz`, provider `typesafe`, `credit_micros` 0,
 `units` = graded parts, `metadata.costMicroUsd`), and the author's
@@ -728,13 +739,14 @@ or per-address count. A shared page runs at most one widget (managed mode, a
 challenge only when Cloudflare asks), rendered at the first signed-out check
 and solved again only when a check asks, never in the background (it renders
 with `refresh-expired: never`, Q350, and `refresh-timeout: manual`, so a
-timed-out interactive challenge waits for the visitor). It sits under the
-Submit of the check that asks, rendering again under another quiz's Submit
-when that one asks. Its slot shows while a solve runs (the invisible widget
+timed-out interactive challenge waits for the visitor). Answers are checked
+one question at a time, and the widget sits under the Check button that asks,
+rendering again under another question's Check when that one asks; a captcha
+refusal shows under that Check too. Its slot shows while a solve runs (the invisible widget
 takes no room, and its solve needs a rendered container) and is hidden once
 the token settles or the interaction ends, which clears the widget's success
-box. While Cloudflare shows a challenge the hint "Complete the check below to
-submit." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
+box. While Cloudflare shows a challenge the hint "Complete the challenge below
+to check your answer." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
 15 s, a clock that stops while an interactive challenge shows, so the check
 waits until the challenge is solved or errors; the API's refusal of an empty
 token shows the failed-check copy (Epo 2026-10-24, Q309;
@@ -747,7 +759,7 @@ than the environment's app hosts (the hosts of `APP_URL`,
 development and e2e, whose test keys name no app host), answers 403
 `captcha_failed`, and a siteverify that cannot answer 503
 `captcha_unavailable`, refusing rather than skipping the check; the page shows
-both under Submit (Q308). A deployed gateway refuses Cloudflare's published
+both under the question's Check (Q308). A deployed gateway refuses Cloudflare's published
 test secrets at boot, and an empty app host list, which would check no host
 (Q350; `turnstileHosts`, `server/cmd/api/main.go`). Signed-in checks take no token, a signed-in
 visitor's check of a quiz embedded in a shared note included (Q311). Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
@@ -1627,7 +1639,9 @@ orders of magnitude. Listing workspaces touches one index. A chat turn gets
 12 responses before its first write, 4 tool calls per response and 160 per
 turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
-(`/chat/stream`, `/generate`, `/ai/command`, signed-in quiz `/grade` and
+(`/chat/stream`, `/generate`, `/ai/command`, question checks (`/check`: a
+quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
+keeps them here, since a learner does not check 15 questions a minute) and
 `/computation-check`) are 200/hour with burst 15, plus
 a 15/minute short-window guard so a scripted loop trips immediately. Cheap
 editor routes (`/ai/copilot`) have their own 120/minute
@@ -1644,6 +1658,9 @@ line); an import past it answers 429. Chat voice
 input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
 with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
 person talking, apart from the chat allowance the turns they send then use.
+Starting a review session (`GET /api/workspaces/{id}/review`, which reads and
+scores every quiz and set in scope) has its own class, 60/hour with burst 10;
+continuing one is not counted.
 Credits remain the money bound; these limits only stop abuse patterns.
 
 The rate-limit audit (Epo 2026-10-24) added these classes:

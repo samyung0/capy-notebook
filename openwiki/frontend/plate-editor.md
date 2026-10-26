@@ -540,7 +540,11 @@ live card grid described under authoring below, its tiles turned like the
 result pages' (front header over the back, the image small in the header,
 Edit/Remove beside the number) (`src/features/materials/CenterContent.tsx`).
 Every flashcard grid (View, edit, flashcard and review results) is
-`CardGrid` and `CardTile` in `src/features/flashcards/CardView.tsx`.
+`CardGrid` and `CardTile` in `src/features/flashcards/CardView.tsx`, except a
+note's flashcards block in Edit, which lists Quick review's small front-only
+cards (`CompactCardGrid`, `CompactCardTile`: as many 144px, 160px past phones,
+columns as fit, the front cut at the padding, no toolbar: a click opens the
+card dialog; a dashed Add card tile of the same size; Epo 2026-10-25).
 
 Standalone quiz, flashcard, mindmap, and diagram titles live only in relational
 material metadata. Their stored Plate documents contain the custom block but no
@@ -577,8 +581,9 @@ render (images, embeds, diagrams, interactive HTML) sit in an `Island`
 (`Island.tsx`, views in `staticViews.tsx`): inert in the app, they are what a
 server-rendered shared note hydrates, and equations render MathLive's static markup
 there (`StaticMathContext`). Inserting through the slash command or toolbar
-creates the row through `POST /api/materials/{noteId}/embedded` (a set with one
-blank card) and inserts the reference at the top level, where it opens in place
+creates the row through `POST /api/materials/{noteId}/embedded` (a quiz with
+one starter question to edit, "What is 2 + 2?" as multiple choice, Epo
+2026-10-25; a set with one blank card) and inserts the reference at the top level, where it opens in place
 for editing. The block goes where the command ran, not where the caret is when
 the row arrives (`holdInsertPlace` in `insertEditorNode.ts`): over the
 command's line while it is still an empty paragraph, otherwise after it, and it
@@ -607,7 +612,7 @@ quiz needs at least one question and a set needs cards each with a front and a
 back (a pasted quiz's questions are checked too, `validateQuestions`). A fence
 that does not read is left out with a warning toast naming the kind; one
 whose create is refused is left out under the mutation's own error toast. The
-slash commands' new empty quiz and one-blank-card set pass their drafts to
+slash commands' new one-question quiz and one-blank-card set pass their drafts to
 `insertEmbedded` without a fence. The
 collaboration server refuses an update that writes `pending` or leaves a
 reference without its material id or below the top level, the store check refuses one (logged with the room's name, so with the note), Go refuses a
@@ -2735,13 +2740,16 @@ card, blank ones included, and projects the set to its Plate envelope with blank
 cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
 workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the
 old `/flashcards/$id/edit` page is gone) and inside a note. The card dialog
-(front, back, one optional image under the front) writes as you type through
+(front, back on ruled lines like a quiz's written answer, one optional image
+under the front; beside them on wider screens the study card as a preview,
+turned to the answer until a click flips it to the front, `CardPreview` in
+`CardStack.tsx`) writes as you type through
 `useBoundText` (`src/features/collaboration/yText.ts`: the fewest changes to the
 `Y.Text`, the caret carried through remote changes) and uploads a picked image
 at once. There is no Save, Reset or Done: the dialog closes with its X or Esc,
 and its footer holds Undo and Redo (this user's own edits: a `Y.UndoManager`
 over the item document tracking the `LOCAL_EDIT` origin), the live state and
-Remove card. A card added and left blank goes when its dialog closes. On a
+Remove card (borderless danger, at the footer's end on phones too). A card added and left blank goes when its dialog closes. On a
 set's own page Undo and Redo sit in the center header beside View (portaled into
 its actions slot). Rooms ride the tab's shared collaboration socket (`ItemRoom`
 in `src/features/collaboration/itemRoom.ts`, one token per room); the socket
@@ -2949,14 +2957,14 @@ fill the available width. Note previews use the same preference.
 General also holds Note font: Fustat with roomy block gaps, or the system font
 with the Plate playground's compact ones (paragraphs 4px padding and 1.5 line
 height, my-1 lists, quotes, code, callouts and columns; headings unchanged).
-Without a pick the style decides: classroom shows Fustat, notion the system
+Without a pick the style decides: capy and fisheye show Fustat, notion the system
 font. A pick is per browser in `capy.noteFont` (`noteFont.ts`), not the prefs
 blob, so the head scripts in `index.html` and `share.html` set
 `<html data-note-font>` before first paint; `tailwind.css` maps it to
 `--font-sans` and the `--note-*` gap variables on `.note-editor`, which the
 editor, View and shared note pages all render in. Applying an unchanged font
 stores nothing, so the default keeps following the style. Shared note pages
-show the viewer's own choice (visitors without one get classroom, so Fustat)
+show the viewer's own choice (visitors without one get capy, so Fustat)
 and carry a server-rendered Aa button that switches it with plain script
 (`src/share/main.tsx`); the edge-cached HTML stays the same for everyone.
 
@@ -3069,9 +3077,14 @@ leases, and credit rates.
 
 `MaterialPreview` uses `PlateStatic` and the checkpointed Plate envelope. Static
 components must not use editor hooks. `StaticMaterialKit` has no markdown
-parser: uploaded `.md` files convert first (`files/MarkdownPreview.tsx` through
-`markdownToDocument`), and the markdown converters add `noteMarkdownPlugin` on
-top of the kit themselves. Interactive and static component
+parser: uploaded `.md` files convert first, in a worker
+(`files/MarkdownPreview.worker.ts` through `markdownToDocument`), and the
+markdown converters add `noteMarkdownPlugin` on top of the kit themselves. The
+kit imports no `.tsx` module and nothing render-only, so that worker can load
+it; `MaterialPreview` adds code highlighting (lowlight) and
+`UnsupportedBlockPlugin` itself. Vite aliases
+`decode-named-character-reference` to its DOM-free entry, since a worker has
+no `document`. Interactive and static component
 registries share node vocabulary but have different behavior.
 
 Obsolete `suggestion` and `suggestion_*` properties are rejected by server

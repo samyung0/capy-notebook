@@ -12,5 +12,6 @@ export interface LearningProgress {
   readonly $schema?: string;
   active: ProgressWorkspace[];
   finished: ProgressWorkspace[];
+  hiddenCount: number;
   lead?: ProgressMap;
 }

@@ -1,3 +1,5 @@
+import { BaseCodeBlockPlugin } from '@platejs/code-block';
+import { common, createLowlight } from 'lowlight';
 import { createSlateEditor, type SlateEditor } from 'platejs';
 import { ElementStatic, pipeDecorate } from 'platejs/static';
 import { memo, useMemo } from 'react';
@@ -12,6 +14,19 @@ import {
 import { MaterialRenderProvider } from './MaterialRenderContext';
 import { staticNoteComponents } from './staticNodeComponents';
 import { StaticMaterialKit } from './staticPlugins';
+import { UnsupportedBlockPlugin } from './UnsupportedBlock';
+
+const lowlight = createLowlight(common);
+/** The kit with its render-only parts, which the markdown converter leaves
+ * out: code highlighting and the unsupported-block notice. */
+const renderPlugins = [
+  ...StaticMaterialKit.map((plugin) =>
+    plugin.key === BaseCodeBlockPlugin.key
+      ? BaseCodeBlockPlugin.configure({ options: { lowlight } })
+      : plugin
+  ),
+  UnsupportedBlockPlugin,
+];
 
 /** Universal read-only renderer for the checkpointed material projection.
  * Markdown files convert first (files/MarkdownPreview.tsx); the renderer
@@ -40,7 +55,7 @@ export const MaterialPreview = memo(function MaterialPreview({
     () =>
       createSlateEditor({
         components: staticNoteComponents,
-        plugins: StaticMaterialKit,
+        plugins: renderPlugins,
       }),
     []
   );

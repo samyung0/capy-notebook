@@ -1,14 +1,9 @@
 import { delay, HttpResponse, http } from 'msw';
 import type {
-  BankCopyReq,
   BankTopicMarks,
   BankTopicProgress,
   BankTopicSummary,
 } from '@/api/types';
-import {
-  createMaterialDocument,
-  quizNode,
-} from '@/features/materials/document';
 import {
   type BankDetail,
   type BankPage,
@@ -22,8 +17,6 @@ import { questionMarks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import type { Answers } from '@/features/quizzes/grade';
 import { gradeQuestions, learnerView } from './answerKeys';
-import * as db from './db';
-import { uid } from './db';
 
 const assetsUrl = 'https://bank-fixtures.invalid/assets';
 const assets = new Map<string, File>();
@@ -363,15 +356,6 @@ const learnerDetail = (detail: BankDetail): BankDetail => ({
   ...detail,
   question: learnerView(detail.question as Question),
 });
-const ownerAccess = {
-  capabilities: {
-    canEdit: true,
-    canEditContent: true,
-    canManageMembers: true,
-    canView: true,
-  },
-  role: 'owner' as const,
-};
 const drillTopics = (exam: string, subject: string) =>
   DRILLS.filter(
     (drill) => drill.exam === exam && drill.subject === subject
@@ -657,87 +641,6 @@ export const questionBankHandlers = [
       .flatMap((id) => topicProgress(id) ?? [])
       .sort((a, b) => b.lastAnsweredAt.localeCompare(a.lastAnsweredAt));
     return HttpResponse.json({ topics });
-  }),
-  // Copies into a new quiz or the end of one in a workspace the user edits.
-  http.post('/api/bank/copy', async ({ request }) => {
-    const body = (await request.json()) as BankCopyReq;
-    const name = body.quizName?.trim() ?? '';
-    const chapterName = body.chapterName?.trim() ?? '';
-    const found = body.questionIds.flatMap((id) => details.get(id) ?? []);
-    if (
-      !body.questionIds.length ||
-      body.questionIds.length > 20 ||
-      !name === !body.quizId ||
-      ((body.chapterId || chapterName) && body.quizId) ||
-      (body.chapterId && chapterName)
-    )
-      return new HttpResponse(null, { status: 422 });
-    if (found.length !== body.questionIds.length)
-      return new HttpResponse(null, { status: 404 });
-    const ws = db.workspaces.find((item) => item.id === body.workspaceId);
-    if (!ws?.capabilities.canEdit)
-      return new HttpResponse(null, { status: 403 });
-    const copies = found.map((detail) => ({
-      ...structuredClone(detail.question as Question),
-      id: uid('q'),
-    }));
-    let quizId = body.quizId ?? '';
-    if (quizId) {
-      const quiz = db.materials.find(
-        (item) =>
-          item.id === quizId &&
-          item.kind === 'quiz' &&
-          item.workspaceId === ws.id
-      );
-      if (!quiz) return new HttpResponse(null, { status: 404 });
-      const questions = [...db.quizFromMaterial(quiz).questions, ...copies];
-      quiz.content = createMaterialDocument([quizNode({ questions }, quiz.id)]);
-      quiz.revision += 1;
-      db.refreshMaterialContentBytes(quiz);
-    } else {
-      // A typed chapter is reused in any case or created, as the server does.
-      let chapterId = body.chapterId ?? null;
-      if (chapterName) {
-        const existing = db.chapters.find(
-          (chapter) =>
-            chapter.workspaceId === ws.id &&
-            chapter.name.toLowerCase() === chapterName.toLowerCase()
-        );
-        chapterId = existing?.id ?? uid('ch');
-        if (!existing) {
-          db.chapters.push({
-            fileIds: [],
-            id: chapterId,
-            name: chapterName,
-            order: db.chapters.filter(
-              (chapter) => chapter.workspaceId === ws.id
-            ).length,
-            workspaceId: ws.id,
-          });
-          ws.chapterCount += 1;
-        }
-      }
-      quizId = uid('qz');
-      db.materials.unshift(
-        db.makeMaterial({
-          ...ownerAccess,
-          chapterId,
-          content: createMaterialDocument([
-            quizNode({ questions: copies }, uid('quiz')),
-          ]),
-          createdAt: new Date().toISOString(),
-          id: quizId,
-          kind: 'quiz',
-          privacy: 'private',
-          scopeChapters: [],
-          scopeFileNames: [],
-          title: name,
-          workspaceId: ws.id,
-          workspaceName: ws.name,
-        })
-      );
-    }
-    return HttpResponse.json({ quizId, workspaceId: ws.id });
   }),
   http.post(
     '/api/bank/questions/:id/comments',

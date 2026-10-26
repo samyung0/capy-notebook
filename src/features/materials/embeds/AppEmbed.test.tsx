@@ -39,6 +39,7 @@ const question = {
 };
 
 vi.mock('@/api/hooks', () => ({
+  useCheckQuizQuestion: () => ({ mutateAsync: vi.fn() }),
   useMaterial: () => ({
     data: {
       content: {
@@ -81,7 +82,6 @@ vi.mock('@/api/hooks', () => ({
     isError: false,
     isPending: false,
   }),
-  useSubmitAttempt: () => ({ mutateAsync: vi.fn() }),
 }));
 
 const render = (node: ReactNode) =>

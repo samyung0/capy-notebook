@@ -48,6 +48,7 @@ type workspaceRecentOutput struct {
 type filesListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated file kinds"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
+	IDs         string `query:"ids" doc:"Comma-separated file ids: only these rows (the phone quick open, ordered by the client's opens)"`
 	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"`
 	Sort        string `query:"sort" enum:"added,name,size,kind,workspace" default:"added"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
@@ -84,6 +85,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List the files the caller pays for, or can open (scope=member)", http.StatusOK, a.listOwnedFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/recent", "listWorkspaceRecent", tag, "List a workspace's newest files and materials", http.StatusOK, a.listWorkspaceRecent)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/files/blank", "createBlankFile", tag, "Create a blank Word or Excel file", http.StatusCreated, a.createBlankFile)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)
 	reg(api, http.MethodGet, "/api/files/{id}/links", "getFileLinks", tag, "Get presigned file reads", http.StatusOK, a.getFileLinks)
 	reg(api, http.MethodPatch, "/api/files/{id}", "updateFile", tag, "Update a file", http.StatusOK, a.updateFile)
@@ -167,7 +169,7 @@ func (a *api) deleteChapter(ctx context.Context, in *chapterIDInput) (*Empty, er
 
 func (a *api) listOwnedFiles(ctx context.Context, in *filesListInput) (*filePageOutput, error) {
 	page, err := a.s.ListOwnedFiles(ctx, userID(ctx), store.FileListFilter{
-		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Member: in.Scope == "member",
+		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), IDs: csv(in.IDs), Member: in.Scope == "member",
 		Sort: in.Sort, Ascending: in.Dir == "asc", Limit: in.Limit, Cursor: in.Cursor,
 	})
 	if err != nil {

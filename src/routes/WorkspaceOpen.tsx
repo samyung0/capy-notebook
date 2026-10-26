@@ -6,12 +6,16 @@ import {
 } from '@tanstack/react-router';
 import {
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from 'react';
-import { type PanelSize, usePanelRef } from 'react-resizable-panels';
+import {
+  type GroupImperativeHandle,
+  useGroupRef,
+} from 'react-resizable-panels';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
@@ -95,93 +99,117 @@ const isPanelTab = (value: unknown): value is PanelTab =>
 const isLeftView = (value: unknown): value is LeftView =>
   value === 'chats' || value === 'files';
 
-// The rail is 32% of the group from 1380px up (~438px at a 1400px window).
-// Narrower, it takes three quarters of the lost width down to 400px, the
-// least a rich chat answer (cards, tables, charts) reads well in.
 /** The header's panel toggles while their panel is open: the icon's strip
  * fills in the accent. */
 const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
+
+const LEFT_SIZE = 340;
+const LEFT_MIN = 300;
+const VIEWER_MIN = 400;
+// The rail is 32% of the group from 1380px up (~438px at a 1400px window).
+// Narrower, it takes three quarters of the lost width down to 400px, the
+// least a rich chat answer (cards, tables, charts) reads well in.
 const RAIL_SHARE = 0.32;
 const RAIL_FULL_AT = 1380;
 const RAIL_MIN = 400;
 function railSize(groupWidth: number) {
-  if (groupWidth >= RAIL_FULL_AT) return `${RAIL_SHARE * 100}%`;
-  return `${Math.max(RAIL_MIN, RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth))}px`;
+  if (groupWidth >= RAIL_FULL_AT) return RAIL_SHARE * groupWidth;
+  return Math.max(
+    RAIL_MIN,
+    RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth)
+  );
 }
 
-/** A collapsible panel was dragged under its least width. Reopening a
- * collapsed panel also reports a zero size, which must not close it again. */
-function collapsedByDrag(size: PanelSize, previous: PanelSize | undefined) {
-  return size.inPixels === 0 && !!previous && previous.inPixels > 0;
-}
-
-/** A side panel. Closed, it collapses to nothing but stays mounted: the
- * group remembers a layout per set of panels, so a remounted panel would come
- * back collapsed after a drag closed it, and the rail's chat keeps its thread,
- * draft and stream. Opening sizes it
- * from the group's width; with `fitToWidth` it refits whenever that width
- * changes, which also drops a width the user dragged. Dragging it under its
- * least width closes it. */
+/** A side panel. Closed, it collapses to nothing but stays mounted, so the
+ * rail's chat keeps its thread, draft and stream. usePanelLayout places it;
+ * dragging it under its least width closes it on release. */
 function SidePanel({
   id,
-  open,
-  onCollapse,
-  size,
-  fitToWidth = false,
   minSize,
   maxSize,
+  className,
   children,
 }: {
   id: string;
-  open: boolean;
-  onCollapse: () => void;
-  size: (groupWidth: number) => string;
-  fitToWidth?: boolean;
   minSize: string;
   maxSize: string;
+  className: string;
   children: ReactNode;
 }) {
-  const panelRef = usePanelRef();
-  const [element, setElement] = useState<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const group = element?.parentElement;
-    if (!group) return;
-    // The first callback lands after the group has registered its panels.
-    let first = true;
-    const observer = new ResizeObserver(([entry]) => {
-      const panel = panelRef.current;
-      if (!open) {
-        if (panel && !panel.isCollapsed()) panel.collapse();
-      } else if (first || fitToWidth) {
-        panel?.resize(size(entry.contentRect.width));
-      }
-      first = false;
-    });
-    observer.observe(group);
-    return () => observer.disconnect();
-  }, [element, fitToWidth, open, panelRef, size]);
   return (
     <ResizablePanel
-      className="overflow-visible!"
+      className={cn('overflow-visible!', className)}
       collapsible
-      // Constant: a changing defaultSize re-registers the group, and the
-      // resize that opens the panel then lands on the stale layout.
+      // Constant: a changing defaultSize re-registers the group.
       defaultSize="0%"
-      elementRef={setElement}
       id={id}
       maxSize={maxSize}
       minSize={minSize}
-      onResize={(next, _id, previous) => {
-        if (open && collapsedByDrag(next, previous)) onCollapse();
-      }}
-      panelRef={panelRef}
     >
       {children}
     </ResizablePanel>
   );
 }
 
-const leftSize = () => '340px';
+/** Lays the side panels out whenever one opens or closes: the panel that did
+ * not change keeps its width and the viewer takes the difference (the
+ * library's own resize moves space to and from the farthest panel first, so
+ * opening the rail collapsed the left panel). The left opens at 340px, the
+ * rail at railSize, which it follows when the window resizes while it is the
+ * only side panel open. When the viewer would drop under its least width, the
+ * rail and then the left give way down to theirs. */
+function usePanelLayout({
+  group,
+  groupRef,
+  left,
+  right,
+}: {
+  group: HTMLDivElement | null;
+  groupRef: RefObject<GroupImperativeHandle | null>;
+  left: boolean;
+  right: boolean;
+}) {
+  useEffect(() => {
+    if (!group) return;
+    // The first callback lands after the group has registered its panels.
+    let first = true;
+    const observer = new ResizeObserver(([entry]) => {
+      const handle = groupRef.current;
+      const width = entry.contentRect.width;
+      const fit = right && !left;
+      if (!(handle && width > 0 && (first || fit))) return;
+      const current = handle.getLayout();
+      // The library reads a layout's sizes by position, in the order its
+      // panels registered (not the DOM's): the current layout's keys give
+      // that order. None yet: the group has no size, wait for one.
+      const order = Object.keys(current);
+      if (order.length === 0) return;
+      // The first callback after a toggle keeps the rail's width; later
+      // ones are window resizes, which refit it.
+      const toggled = first;
+      first = false;
+      const kept = (id: string) => ((current[id] ?? 0) * width) / 100;
+      let files = left ? kept('files') || LEFT_SIZE : 0;
+      let rail = right ? (toggled ? kept('rail') : 0) || railSize(width) : 0;
+      let short = VIEWER_MIN - (width - files - rail);
+      if (short > 0 && rail > 0) {
+        const give = Math.min(short, rail - RAIL_MIN);
+        rail -= Math.max(give, 0);
+        short -= Math.max(give, 0);
+      }
+      if (short > 0 && files > 0) files -= Math.min(short, files - LEFT_MIN);
+      const share = (px: number) => (px / width) * 100;
+      const sizes: Record<string, number> = {
+        files: share(files),
+        rail: share(rail),
+        viewer: 100 - share(files) - share(rail),
+      };
+      handle.setLayout(Object.fromEntries(order.map((id) => [id, sizes[id]])));
+    });
+    observer.observe(group);
+    return () => observer.disconnect();
+  }, [group, groupRef, left, right]);
+}
 
 export default function WorkspaceOpen() {
   const params = useParams({ strict: false });
@@ -207,15 +235,13 @@ export default function WorkspaceOpen() {
   const [cloneOpen, setCloneOpen] = useState(false);
 
   // Breakpoints: one column below 1260px, side panels from there, the left
-  // one only from xl up. The left starts open from 2xl, where there is room,
-  // the right starts closed (a chat row opens it); both toggles and both
-  // panels' views are remembered.
+  // one only from xl up. The left starts open, the right closed (a chat row
+  // opens it); both toggles and both panels' views are remembered.
   const lg = useMediaQuery('(min-width: 1260px)');
   const xl = useMediaQuery('(min-width: 1280px)');
-  const roomy = useMediaQuery('(min-width: 1536px)');
   const [leftOpen, setLeftOpen] = useLocalPref(
     PREF_KEYS.leftPanel,
-    roomy,
+    true,
     isBoolean
   );
   const [rightOpen, setRightOpen] = useLocalPref(
@@ -225,6 +251,15 @@ export default function WorkspaceOpen() {
   );
   const oneColumnLayout = !lg;
   const leftShown = xl && leftOpen;
+  const panelGroupRef = useGroupRef();
+  const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
+  usePanelLayout({
+    // One column has no side panels to place.
+    group: lg ? panelGroup : null,
+    groupRef: panelGroupRef,
+    left: leftShown,
+    right: rightOpen,
+  });
   const [leftView, setLeftView] = useLocalPref(
     PREF_KEYS.leftView,
     'chats',
@@ -360,7 +395,10 @@ export default function WorkspaceOpen() {
   // Offline before the first load: the fetch resumes on reconnect.
   if (waitsForConnection(wsFetchStatus, ws))
     return (
-      <Panel sectionClassName="items-center justify-center h-full">
+      <Panel
+        frost="center"
+        sectionClassName="items-center justify-center h-full"
+      >
         <QueryPausedState />
       </Panel>
     );
@@ -382,8 +420,15 @@ export default function WorkspaceOpen() {
     setRightOpen(true);
     setChatRequest((previous) => ({ id, seq: (previous?.seq ?? 0) + 1 }));
   }
+  // Both panels' title menus open the Study page in the centre.
+  const studyItem: MenuItem = {
+    icon: 'knowledge',
+    label: m.workspace_tab_study(),
+    onClick: openProgress,
+  };
   const leftTitle = (
     <PanelTitleMenu
+      extra={[studyItem]}
       onChange={setLeftView}
       value={leftView}
       views={[
@@ -467,47 +512,33 @@ export default function WorkspaceOpen() {
         filesOpen,
         onOpenFiles: openFiles,
         settingsItems,
+        workspaceIconId: ws.iconId,
         workspaceName: ws.name,
       }
     : undefined;
 
-  const addProps = readOnly
-    ? {}
-    : {
-        onAddChapter: () => setChapterForm({ mode: 'add' }),
-        onAddSource: setAddSource,
-      };
-  // The plus lives with the tree: on the rail's Files view.
   const railRow = (actions: TabAction[]) => (
     <PanelTabRow
       actions={actions}
-      title={<PanelTitleMenu onChange={setTab} value={tab} views={railViews} />}
+      title={
+        <PanelTitleMenu
+          extra={[studyItem]}
+          onChange={setTab}
+          value={tab}
+          views={railViews}
+        />
+      }
       {...rowProps}
-      {...(tab === 'files' ? addProps : {})}
     />
   );
-  // The workspace switcher and the Study row lead the file tree and scroll
-  // with it.
-  const studyShown = !!(search.study || search.plan);
+  // The workspace switcher leads the file tree and scrolls with it.
   const picker = (
-    <div className="mt-2.5 flex flex-col">
+    <div className="mt-1 flex flex-col">
       <WorkspacePicker
         onClone={readOnly && canClone ? () => setCloneOpen(true) : undefined}
         onOpenSettings={rowProps.onOpenSettings}
         workspace={ws}
       />
-      <button
-        aria-current={studyShown ? 'page' : undefined}
-        className={cn(
-          'mx-2.5 mt-1 flex h-7.5 items-center gap-1.75 rounded-button px-2 text-left hover:bg-surface-hover-bg',
-          studyShown && 'bg-surface-hover-bg font-semibold'
-        )}
-        onClick={openProgress}
-        type="button"
-      >
-        <Icon name="knowledge" size={15} />
-        <span className="translate-y-px">{m.workspace_tab_study()}</span>
-      </button>
     </div>
   );
 
@@ -522,6 +553,10 @@ export default function WorkspaceOpen() {
       beforeReplace={confirmViewerReplacement}
       generating={generating}
       header={picker}
+      onAddChapter={
+        readOnly ? undefined : () => setChapterForm({ mode: 'add' })
+      }
+      onAddSource={readOnly ? undefined : setAddSource}
       onNavigate={() => setCitationTarget(null)}
       onOpenItem={setOpenItem}
       onRenameChapter={(ch) =>
@@ -627,7 +662,7 @@ export default function WorkspaceOpen() {
   );
 
   const viewer = (
-    <Panel className="w-full" sectionClassName="h-full gap-0">
+    <Panel className="w-full" frost="center" sectionClassName="h-full gap-0">
       <h1 className="sr-only">{ws.name}</h1>
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
@@ -706,6 +741,7 @@ export default function WorkspaceOpen() {
   const railColumn = (
     <Panel
       className="h-full w-full"
+      frost="right"
       sectionClassName="h-full gap-0 overflow-hidden"
     >
       {rail}
@@ -713,12 +749,12 @@ export default function WorkspaceOpen() {
   );
   // The left panel: chats or the file tree, members at its foot.
   const leftPanel = (
-    <Panel className="w-full" frosted sectionClassName="h-full gap-0">
+    <Panel className="w-full" frost="left" sectionClassName="h-full gap-0">
       <div className="flex h-full min-h-0 flex-col" data-workspace-left-panel>
         <div className="flex min-h-0 flex-1 flex-col">
           {leftView === 'files' ? (
             filesPanel((actions) => (
-              <PanelTabRow actions={actions} title={leftTitle} {...addProps} />
+              <PanelTabRow actions={actions} title={leftTitle} />
             ))
           ) : (
             <>
@@ -743,6 +779,7 @@ export default function WorkspaceOpen() {
           )}
         </div>
         <AccountFooter
+          canInvite={canManageWorkspaceSettings(ws)}
           items={footerItems}
           member={!!ws.role}
           onOpenSettings={rowProps.onOpenSettings}
@@ -755,39 +792,65 @@ export default function WorkspaceOpen() {
 
   // The viewer keeps one parent chain at every width: moving an Office iframe
   // to another parent reloads its runtime and refetches the document.
+  // The gaps between panels are padding inside them and the separators stay
+  // mounted (disabled while their panel is closed): panels size as shares of
+  // their summed width, so a gap or separator that came and went with a
+  // panel shifted the other one, and a new separator re-registered the group,
+  // which could restore a layout with the reopened panel at zero.
   // overflow-visible WITH important is so that shadow doesnt get clipped
   return (
     <>
       <div className="flex h-full min-h-0 flex-col gap-2.5">
         <ResizablePanelGroup
           className={cn(
-            'overflow-visible! flex min-h-0 flex-1 gap-1.5',
-            // Collapsed, a side panel leaves no gap behind.
+            'group/panels overflow-visible! flex min-h-0 flex-1',
+            // Collapsed, a side panel leaves no gap or handle behind.
+            'data-files-collapsed:[&>#files]:hidden! data-rail-collapsed:[&>#rail]:hidden!',
             !leftOpen && '[&>#files]:hidden!',
             !rightOpen && '[&>#rail]:hidden!'
           )}
+          elementRef={setPanelGroup}
+          groupRef={panelGroupRef}
+          // A drag can collapse a panel before the pointer lets go. Marked on
+          // the group without a render, its gap and handle go in the same
+          // frame; it closes only on release, so dragging back reopens it.
+          onLayoutChange={(layout) => {
+            panelGroup?.toggleAttribute('data-files-collapsed', !layout.files);
+            panelGroup?.toggleAttribute('data-rail-collapsed', !layout.rail);
+          }}
+          onLayoutChanged={(layout, { isUserInteraction }) => {
+            if (!isUserInteraction) return;
+            if (leftOpen && layout.files === 0) setLeftOpen(false);
+            if (rightOpen && layout.rail === 0) setRightOpen(false);
+          }}
           orientation="horizontal"
         >
           {xl && (
             <>
               <SidePanel
+                className="pr-1.5"
                 id="files"
                 maxSize="420px"
-                minSize="300px"
-                onCollapse={() => setLeftOpen(false)}
-                open={leftOpen}
-                size={leftSize}
+                minSize={`${LEFT_MIN}px`}
               >
                 {/* Unlike the rail's chat, nothing here needs to survive closing. */}
                 {leftOpen && leftPanel}
               </SidePanel>
-              {leftOpen && <ResizableHandle withHandle />}
+              <ResizableHandle
+                className="group-data-files-collapsed/panels:[&>div]:hidden"
+                disabled={!leftOpen}
+                withHandle={leftOpen}
+              />
             </>
           )}
           <ResizablePanel
-            className="overflow-visible!"
+            className={cn(
+              'overflow-visible!',
+              leftShown && 'pl-1.5 group-data-files-collapsed/panels:pl-0',
+              lg && rightOpen && 'pr-1.5 group-data-rail-collapsed/panels:pr-0'
+            )}
             id="viewer"
-            minSize={oneColumnLayout ? undefined : '400px'}
+            minSize={oneColumnLayout ? undefined : `${VIEWER_MIN}px`}
           >
             <div
               className="relative h-full"
@@ -822,15 +885,16 @@ export default function WorkspaceOpen() {
           </ResizablePanel>
           {lg && (
             <>
-              {rightOpen && <ResizableHandle withHandle />}
+              <ResizableHandle
+                className="group-data-rail-collapsed/panels:[&>div]:hidden"
+                disabled={!rightOpen}
+                withHandle={rightOpen}
+              />
               <SidePanel
-                fitToWidth={!leftShown}
+                className="pl-1.5"
                 id="rail"
                 maxSize="50%"
                 minSize={`${RAIL_MIN}px`}
-                onCollapse={() => setRightOpen(false)}
-                open={rightOpen}
-                size={railSize}
               >
                 {railColumn}
               </SidePanel>

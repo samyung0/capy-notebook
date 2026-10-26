@@ -21,6 +21,8 @@ export interface ReviewSession {
   items: ReviewItem[];
   /** Omitted for a review started from the workspace list */
   mode?: ReviewSessionMode;
+  /** The plan of a plan group */
+  planId?: string;
   /** @nullable */
   removedAssetIds?: string[] | null;
   total: number;

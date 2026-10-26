@@ -678,10 +678,22 @@ function SourceList({
                   provider={source.provider}
                 />
               )}
-              <span className="t-meta text-fg-muted max-sm:text-xs">
-                {formatSize(source.sizeBytes, source.sizeEstimate)} ·{' '}
-                {source.kind.toUpperCase()}
-              </span>
+              {/* While a fast parse is analyzed, its progress takes the size and type slot. */}
+              {source.parseMode === 'fast' &&
+              (source.analysisStatus === 'queued' ||
+                source.analysisStatus === 'analyzing') ? (
+                <ProgressBar
+                  className="min-w-0 max-w-[140px] flex-1"
+                  height={4}
+                  showLabel
+                  value={source.analysisProgress?.percent ?? 0}
+                />
+              ) : (
+                <span className="t-meta text-fg-muted max-sm:text-xs">
+                  {formatSize(source.sizeBytes, source.sizeEstimate)} ·{' '}
+                  {source.kind.toUpperCase()}
+                </span>
+              )}
               <div className="ml-auto flex items-center">
                 {fixed ? null : creatingKey === source.key ? (
                   <NewChapterInput
@@ -744,25 +756,9 @@ function SourceList({
             )}
             {source.parseMode === 'fast' &&
               (source.analysisStatus === 'error' ||
-              source.analysisStatus === 'ready' ? (
+                source.analysisStatus === 'ready') && (
                 <SourceAnalysisNote policy={uploadPolicy} source={source} />
-              ) : (
-                source.analysisStatus !== 'idle' && (
-                  <div className="mt-1 flex flex-col gap-1">
-                    <ProgressBar
-                      height={4}
-                      value={source.analysisProgress?.percent ?? 0}
-                    />
-                    <p className="t-meta text-fg-muted">
-                      {m.source_analyzing_progress({
-                        percent: Math.round(
-                          source.analysisProgress?.percent ?? 0
-                        ),
-                      })}
-                    </p>
-                  </div>
-                )
-              ))}
+              )}
             {source.kind === 'audio' && source.origin === 'local' && (
               <p
                 className={cn('t-meta text-fg-muted', {
@@ -1478,7 +1474,8 @@ export function AddSourceDialog({
               value: 'import',
             },
             { label: m.action_create(), value: 'create' },
-            { label: m.generate_ai(), value: 'generate' },
+            // TODO: refine with agentic harness. AI generate is hidden until
+            // then; its panel below still opens for initialMode 'generate'.
           ]}
           value={mode}
         />

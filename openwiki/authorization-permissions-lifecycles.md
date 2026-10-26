@@ -184,9 +184,9 @@ kept out of the static assets by `.assetsignore`; `wrangler.jsonc` aliases it as
 components keep their browser imports; libraries that only run in effects or on click (Mermaid, MathLive's
 editor, jsxgraph, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
 into `<script id="share-state">`, and the page's script (`share.html`, `src/share/main.tsx`) never fetches it
-again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when an
-attempt is submitted or a card rated (`src/share/session.ts`): signed in, the attempt or rating goes to the
-account (`POST /api/quizzes/{id}/attempts`, `POST /api/review/ratings`); signed out, the share route grades and
+again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Clerk loads after hydration without its UI bundle (`prefetchUI={false}`) and is asked only when a
+question is checked or a card rated (`src/share/session.ts`): signed in, the check or rating goes to the
+account (`POST /api/quizzes/{id}/check`, `POST /api/review/ratings`); signed out, the share route grades and
 the browser keeps it. Without a Clerk key (MSW, e2e) `?anonymous` selects the signed-out path; under MSW the dev
 server signs the mocks' placeholder links and answers the Worker's API reads from the MSW handlers
 (`src/summary/vite.ts`). The pages drop the label
@@ -212,9 +212,10 @@ pattern lives in `src/features/questions/quantity.ts`. Mentions render the name 
 references in its current content and has not trashed, in reference order (quizzes answer-free, flashcards
 written cards only); they render in place (`src/share/PublicEmbed.tsx`) and are the only note data the page's
 script receives. The note's asset route also serves an image one of those embeds shows, owned by that embed.
-Visitors grade an embedded quiz at `POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same
+Visitors grade an embedded quiz one question at a time (`questionId` in, the graded question out) at
+`POST /api/public/notes/{token}/quizzes/{quizId}/grade`, which has the same
 caps as the quiz grade, stores nothing, and returns 404 for any quiz the note does not embed and reference. A
-signed-in visitor's check goes instead to `POST /api/shared/notes/{token}/quizzes/{quizId}/check`: the same
+signed-in visitor's check, also one question, goes instead to `POST /api/shared/notes/{token}/quizzes/{quizId}/check`: the same
 share-token checks, graded under the user's daily grading parts with no captcha, storing nothing (Epo 2026-10-24,
 Q311). The page takes it only once the session is known to be signed in; while it is signed out, failed or not
 yet settled, the check takes the captcha route. A note page loads Clerk to learn the session only when the note
@@ -465,6 +466,13 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
 - Upload reservations and finalized bytes are charged to the editor who
   uploaded them (uploader pays), and only that editor completes its
   reservation.
+- The Create tab's Blank DOCX and Blank XLSX
+  (`POST /api/workspaces/{id}/files/blank`) take an upload's gates without a
+  reservation: an editor whose account may add bytes, the editor's storage
+  (it pays) and the workspace's file cap, checked once before the Office
+  engine builds the starter and again at the insert. The file is stored ready
+  and not processed (parse mode `none`, no credits); the Indexing tab
+  processes it like any store-only upload. It is in the upload rate class.
 - Direct cloud-source inspection treats DNS and connection failures as
   retryable provider outages. Request cancellation remains cancellation.
 - Short-lived read links (a file's `/links`, an editor asset's resolve, the
@@ -636,7 +644,11 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 
 - Readable shared quizzes can be attempted by any signed-in user. Attempts,
   study progress and review state belong to the user taking the quiz (see
-  Study progress below). Signed-out visitors can take standalone link/public
+  Study progress below). On a shared quiz page the attempt is held by the
+  page (`useSharedAccountRun`): each check posts to `/api/quizzes/{id}/check`
+  and continues the attempt the page's first check started, but opening the
+  page reads nothing, so a shared page's only read is the Worker's and a
+  reload starts a new attempt. Signed-out visitors can take standalone link/public
   quizzes and study flashcards; their progress stays in the browser (see
   Anonymous quizzes, flashcards and notes).
 - Answer keys follow one rule (Epo, 2026-10-06; details in
@@ -1472,7 +1484,8 @@ history but blank the live workspace (and chapter) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
 The Embeds tab lists every image and audio clip the caller pays for
-(`GET /api/editor-assets`), under its note's current title, marked
+(`GET /api/editor-assets`), under its note's current title and kind
+(`materialType`, for the row's icon; the Block column), marked
 `lostAccess` when the caller can no longer reach the note's workspace
 (`lostAccessSQL`; title and workspace name blank once that workspace's owner
 is no longer live). One in a note the caller can open opens that note; one it

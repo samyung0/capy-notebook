@@ -64,7 +64,9 @@ const loaded = {
   refetch: vi.fn(),
 };
 vi.mock('@/api/hooks', () => ({
+  useAttempt: () => ({ data: undefined }),
   useCards: () => ({ data: [card], ...loaded }),
+  useCheckQuizQuestion: () => ({ mutateAsync: vi.fn() }),
   useFinishReviewSession: () => ({ mutate: vi.fn() }),
   useFlashcardSet: () => ({
     data: {
@@ -76,6 +78,7 @@ vi.mock('@/api/hooks', () => ({
     },
     ...loaded,
   }),
+  useMe: () => ({ data: { id: 'u_1' } }),
   useQuiz: () => ({
     data: {
       id: 'quiz',
@@ -89,7 +92,6 @@ vi.mock('@/api/hooks', () => ({
   useRateReviewItem: () => ({ mutateAsync: vi.fn() }),
   useResumeReviewSession: () => ({ data: undefined }),
   useReviewOverview: () => ({ data: undefined }),
-  useSubmitAttempt: () => ({ mutateAsync: vi.fn() }),
   useWorkspace: () => ({ data: undefined }),
   useWorkspaceReview: () => ({
     data: {

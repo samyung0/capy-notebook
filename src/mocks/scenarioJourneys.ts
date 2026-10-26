@@ -940,20 +940,13 @@ export async function runJourney(
       return 'Chat history currently suppresses its read error.';
     case 'generation-failed':
     case 'ai-context':
-      await go(scenarioPath);
-      await ui.click(m.action_add_file());
-      await ui.click(m.generate_ai());
-      await ui.click(m.generate_kind_diagram());
-      fail();
-      await ui.click(m.action_generate());
-      return id === 'ai-context'
-        ? 'The application currently shows its generic validation error for this response.'
-        : undefined;
-    case 'quiz-submit':
-      // Submitting grades on the server, so one request covers grading too.
+      // TODO: refine with agentic harness, then walk the AI generate tab again.
+      return 'The AI generate tab is hidden, so nothing in the app sends this request.';
+    case 'quiz-check':
+      // Checking grades on the server, so one request covers grading too.
       await go(`/quizzes/${scenarioQuiz}/attempt`);
       fail();
-      await ui.click(m.quiz_submit());
+      await ui.click(m.question_ui_check());
       return;
     case 'flashcard-progress':
       await go(`/flashcards/${scenarioCards}`);

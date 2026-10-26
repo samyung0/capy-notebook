@@ -370,7 +370,7 @@ export async function upload(
   await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-add-menu]')
-    .getByRole('button', { exact: true, name: m.action_add_file() })
+    .getByRole('button', { exact: true, name: m.action_add_file_or_chapter() })
     .click();
   await page
     .getByRole('menuitem', { name: m.action_upload_or_import() })

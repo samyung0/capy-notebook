@@ -11,6 +11,7 @@ import type {
   Chapter,
   CloneFileReq,
   CloneMaterialReq,
+  CreateBlankFileReq,
   CreateWorkspaceReq,
   CreditSettings,
   EditableQuiz,
@@ -52,7 +53,7 @@ import {
   exampleAnswers,
   exampleQuestion,
 } from '@/features/questions/questionFixtures';
-import type { Answers } from '@/features/quizzes/grade';
+import { type Answers, runScore } from '@/features/quizzes/grade';
 import {
   modelRefValue,
   optionRef,
@@ -77,8 +78,10 @@ import { uid } from './db';
 import { editorAssetHandlers } from './editorAssets';
 import { questionBankHandlers } from './questionBank';
 import {
+  blankOffice,
   clearMockThumbnailStale,
   mockAtSizeLimit,
+  prepareBlankOffice,
   scenarioSourceSession,
   seedUploadedOffice,
 } from './scenarioFixtures';
@@ -674,6 +677,24 @@ const mockCreditSettings: CreditSettings = {
   starterAvailable: false,
 };
 
+type GradeOneBody = { questionId: string; answers: Answers };
+
+/** A signed-out check: one question graded with its key. */
+function gradeOne(
+  questions: Question[],
+  { questionId, answers }: GradeOneBody
+) {
+  const question = questions.find((q) => q.id === questionId);
+  if (!question)
+    return HttpResponse.json({ message: 'not found' }, { status: 404 });
+  const graded = gradeQuestions([question], answers);
+  return HttpResponse.json({
+    correct: graded.awarded,
+    question: graded.questions[0],
+    total: graded.max,
+  });
+}
+
 export const handlers = [
   ...questionBankHandlers,
   ...editorAssetHandlers,
@@ -1000,13 +1021,8 @@ export const handlers = [
     const mt = anonymousMaterial(String(params.token), 'quiz');
     if (!mt)
       return HttpResponse.json({ message: 'not found' }, { status: 404 });
-    const { answers } = (await request.json()) as { answers: Answers };
-    const graded = gradeQuestions(db.quizFromMaterial(mt).questions, answers);
-    return HttpResponse.json({
-      correct: graded.awarded,
-      questions: graded.questions,
-      total: graded.max,
-    });
+    const body = (await request.json()) as GradeOneBody;
+    return gradeOne(db.quizFromMaterial(mt).questions, body);
   }),
   http.get('/api/public/flashcards/:token', ({ params }) => {
     const mt = anonymousMaterial(String(params.token), 'flashcards');
@@ -1068,16 +1084,8 @@ export const handlers = [
         note && noteEmbeds(note).find((child) => child.id === params.quizId);
       if (quiz?.kind !== 'quiz')
         return HttpResponse.json({ message: 'not found' }, { status: 404 });
-      const { answers } = (await request.json()) as { answers: Answers };
-      const graded = gradeQuestions(
-        db.quizFromMaterial(quiz).questions,
-        answers
-      );
-      return HttpResponse.json({
-        correct: graded.awarded,
-        questions: graded.questions,
-        total: graded.max,
-      });
+      const body = (await request.json()) as GradeOneBody;
+      return gradeOne(db.quizFromMaterial(quiz).questions, body);
     }
   ),
 
@@ -1774,6 +1782,34 @@ export const handlers = [
     db.files.push(file);
     return HttpResponse.json(file, { status: 201 });
   }),
+  http.post('/api/workspaces/:id/files/blank', async ({ params, request }) => {
+    const body = (await request.json()) as CreateBlankFileReq;
+    const ws = db.workspaces.find((w) => w.id === params.id);
+    if (!ws) return new HttpResponse(null, { status: 404 });
+    const chapterId = body.chapterId ?? null;
+    const url = blankOffice[body.format].sourceURL;
+    const file: (typeof db.files)[number] = {
+      addedAt: new Date().toISOString(),
+      chapterId,
+      hasBytes: true,
+      id: uid('f'),
+      indexed: false,
+      kind: body.format === 'docx' ? 'doc' : 'sheet',
+      name: `${body.name.trim()}.${body.format}`,
+      position: db.nextContentPosition(ws.id, chapterId),
+      revision: 1,
+      sizeBytes: (await (await fetch(url)).arrayBuffer()).byteLength,
+      status: 'ready',
+      workspaceId: ws.id,
+    };
+    db.fileLinks[file.id] = { url };
+    await prepareBlankOffice(file.id, body.format);
+    db.files.push(file);
+    ws.fileCount += 1;
+    if (chapterId)
+      db.chapters.find((c) => c.id === chapterId)?.fileIds.push(file.id);
+    return HttpResponse.json(file, { status: 201 });
+  }),
   /* ---------------- chapters & files ---------------- */
   http.get('/api/workspaces/:id/chapters', async ({ params }) =>
     HttpResponse.json(
@@ -1864,11 +1900,13 @@ export const handlers = [
     const { asc, limit, list, offset, sort } = listParams(request.url);
     const kinds = list('kind');
     const wsIds = list('workspaceId');
+    const ids = list('ids');
     const rows = db.files
       .filter(
         (f) =>
           (!kinds.length || kinds.includes(f.kind)) &&
-          (!wsIds.length || wsIds.includes(f.workspaceId))
+          (!wsIds.length || wsIds.includes(f.workspaceId)) &&
+          (!ids.length || ids.includes(f.id))
       )
       .sort(
         sortBy(
@@ -2040,10 +2078,12 @@ export const handlers = [
     const kinds = list('kind');
     const wsIds = list('workspaceId');
     const locations = list('location');
+    const ids = list('ids');
     const allowed = kinds.length ? kinds : ['note', 'quiz', 'flashcards'];
     const rows = db.materials
       .filter((mt) => {
         if (!allowed.includes(mt.kind)) return false;
+        if (ids.length && !ids.includes(mt.id)) return false;
         if (wsIds.length && !wsIds.includes(mt.workspaceId)) return false;
         // Embedded items live only inside their note.
         if (mt.parentMaterialId) return false;
@@ -3087,40 +3127,58 @@ export const handlers = [
       }),
     });
   }),
-  // Grades every part, records the attempt and returns it with the keys.
-  http.post('/api/quizzes/:id/attempts', async ({ params, request }) => {
-    const { answers, startedAt } = (await request.json()) as {
-      answers: Answers;
-      startedAt?: string;
-    };
+  // Grades one question and adds it to the attempt, starting one when the id
+  // is missing or unknown; returns the attempt so far with the keys.
+  http.post('/api/quizzes/:id/check', async ({ params, request }) => {
+    const { answers, attemptId, questionId, startedAt } =
+      (await request.json()) as GradeOneBody & {
+        attemptId?: string;
+        startedAt?: string;
+      };
     const quizMt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'quiz'
     );
     if (!quizMt) return new HttpResponse(null, { status: 404 });
     const quiz = db.quizFromMaterial(quizMt);
-    const graded = gradeQuestions(quiz.questions, answers);
-    if (graded.max <= 0) return new HttpResponse(null, { status: 422 });
+    const question = quiz.questions.find((q) => q.id === questionId);
+    if (!question) return new HttpResponse(null, { status: 404 });
+    const [graded] = gradeQuestions([question], answers).questions;
+    const order = quiz.questions.map((q) => q.id);
+    const existing = db.attempts.find(
+      (a) => a.id === attemptId && a.materialId === quiz.id
+    );
+    if (existing?.questions?.some((q) => q.id === questionId))
+      return new HttpResponse(null, { status: 409 });
+    // As the server: quiz order, questions no longer in the quiz last; a
+    // checked question counts with the marks it was checked against.
+    const at_ = (id: string) =>
+      order.includes(id) ? order.indexOf(id) : order.length;
+    const checked = [...(existing?.questions ?? []), graded].sort(
+      (a, b) => at_(a.id) - at_(b.id)
+    );
+    const { awarded: correct, max: total } = runScore(quiz.questions, checked);
     const at = {
-      answers,
+      answers: { ...existing?.answers, ...answers },
       chapters: quiz.chapters,
-      correct: graded.awarded,
-      id: uid('at'),
+      correct,
+      id: existing?.id ?? uid('at'),
       kind: 'quiz' as const,
       materialId: quiz.id,
-      pct: Math.round((graded.awarded / graded.max) * 100),
-      questions: graded.questions,
+      pct: total > 0 ? Math.floor((correct / total) * 100) : 0,
+      questions: checked,
       quizName: quiz.name,
-      startedAt: startedAt ?? null,
+      startedAt: existing?.startedAt ?? startedAt ?? null,
       takenAt: new Date().toISOString(),
-      total: graded.max,
+      total,
       workspaceId: quizMt.workspaceId,
       workspaceName: quiz.workspaceName,
     };
     // An embedded quiz records nothing: graded, returned without an id.
     if (quizMt.parentMaterialId)
-      return HttpResponse.json({ ...at, id: '' }, { status: 201 });
+      return HttpResponse.json({ ...at, id: '', questions: [graded] });
+    if (existing) db.attempts.splice(db.attempts.indexOf(existing), 1);
     db.attempts.unshift(at);
-    return HttpResponse.json(at, { status: 201 });
+    return HttpResponse.json(at);
   }),
   /* ---------------- flashcards ---------------- */
   http.post('/api/flashcards', async ({ request }) => {
@@ -3281,6 +3339,9 @@ export const handlers = [
       creditsReservedMicros: 0,
       creditsUsedMicros: PLAN_LIMITS.pro.creditLimitMicros,
       planTier: db.user.planTier,
+      renewalAt: new Date(
+        Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 9)
+      ).toISOString(),
       storageLimitBytes: db.accountStatus.storageLimitBytes,
       storageReservedBytes: 0,
       storageUsedBytes: db.accountStatus.storageUsedBytes,

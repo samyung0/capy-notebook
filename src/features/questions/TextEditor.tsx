@@ -11,12 +11,14 @@ import { createContext, useContext, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '@/components/ui/Icon';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
-import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { MathPreview } from '@/features/materials/MathPreview';
 import {
   EquationPlugin,
   InlineEquationPlugin,
 } from '@/features/notes/equationPlugins';
+import { FormulaButton } from '@/features/notes/FormulaButton';
+import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
+import { ToolbarMathMenu } from '@/features/notes/toolbar/ToolbarMathMenu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
@@ -59,25 +61,18 @@ function Equation({ children, ...props }: PlateElementProps) {
             value={draft}
           />
         ) : (
-          <button
-            aria-label={m.question_ui_formula()}
-            className={cn(
-              'cursor-text',
-              display && 'block min-h-14 w-full px-6 py-4'
-            )}
-            onClick={(event) => {
-              if (display) {
-                setEditingHeight(
-                  event.currentTarget.getBoundingClientRect().height
-                );
-              }
+          <FormulaButton
+            display={display}
+            element={props.element}
+            label={m.question_ui_formula()}
+            onEdit={(height) => {
+              if (display) setEditingHeight(height);
               setDraft(tex);
               setEditing(true);
             }}
-            type="button"
           >
             <MathPreview displayMode={display} tex={tex} />
-          </button>
+          </FormulaButton>
         )}
       </span>
       {children}
@@ -111,42 +106,32 @@ export function TextEditor({
     ],
     value: mathTextToValue(value),
   });
-  const formula = (tex: string, display = false) => {
+  const displayFormula = () => {
     editor.tf.focus();
     editor.tf.insertNodes(
-      {
-        children: [{ text: '' }],
-        texExpression: tex,
-        type: display ? 'equation' : 'inline_equation',
-      },
+      { children: [{ text: '' }], texExpression: '', type: 'equation' },
       { select: true }
     );
   };
+  // The note toolbar's groups: what inserts formulas, then the controls of
+  // the formula being edited.
   const tools = (
     <>
       <ToolbarGroup>
+        <ToolbarMathMenu editor={editor} label={m.question_ui_formula()} />
         <ToolbarButton
-          className="w-auto px-2"
-          label={m.question_ui_formula()}
-          onClick={() => formula('')}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          {m.question_ui_formula()}
-        </ToolbarButton>
-        <ToolbarButton
-          className="w-auto px-2"
           label={m.question_ui_display_formula()}
-          onClick={() => formula('', true)}
-          onMouseDown={(e) => e.preventDefault()}
+          onClick={displayFormula}
         >
-          {m.question_ui_display()}
+          <Icon name="displayFormula" />
         </ToolbarButton>
+      </ToolbarGroup>
+      <ToolbarGroup>
         {controls?.toggleKeyboard && (
           <ToolbarButton
             data-math-keyboard-toggle
             label={m.question_ui_formula_keyboard()}
             onClick={controls?.toggleKeyboard}
-            onMouseDown={(event) => event.preventDefault()}
           >
             <Icon name="keyboard" />
           </ToolbarButton>
@@ -156,30 +141,9 @@ export function TextEditor({
           disabled={!controls}
           label={m.question_ui_formula_menu()}
           onClick={controls?.showMenu}
-          onMouseDown={(event) => event.preventDefault()}
         >
           <Icon name="menu" />
         </ToolbarButton>
-      </ToolbarGroup>
-      <ToolbarGroup>
-        {[
-          ['∑', '\\sum_{n=1}^{\\infty}'],
-          ['∫', '\\int_0^1'],
-          ['lim', '\\lim_{x\\to 0}'],
-          ['ⁿ√', '\\sqrt[n]{}'],
-          ['logₐ', '\\log_a'],
-          ['→', '\\vec{}'],
-        ].map(([label, tex]) => (
-          <ToolbarButton
-            className="w-auto min-w-8 px-1"
-            key={label}
-            label={label}
-            onClick={() => formula(tex)}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            {label}
-          </ToolbarButton>
-        ))}
       </ToolbarGroup>
     </>
   );
@@ -216,9 +180,23 @@ export function TextEditor({
           // Slate sets an inline min-height while the placeholder shows;
           // the box keeps its own.
           className={cn(
-            'min-w-0 outline-none',
+            // Paragraphs (a blank line in the text) sit a line apart, as
+            // the preview draws them.
+            'min-w-0 outline-none [&_.slate-p+.slate-p]:mt-[1lh]',
             compact ? 'min-h-8! py-1' : 'min-h-40! p-3'
           )}
+          // Enter is one new line, as one press reads in the preview; a
+          // paragraph's blank line takes two.
+          onKeyDown={(event) => {
+            if (
+              event.key === 'Enter' &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              editor.tf.insertSoftBreak();
+            }
+          }}
           placeholder={placeholder}
           spellCheck={false}
         />

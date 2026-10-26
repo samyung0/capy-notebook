@@ -1,0 +1,419 @@
+<meta charset="utf-8">
+<title>AI Generate Scope Picker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400..800&display=swap">
+<style>
+/* Layout: one proposal column; each option shows a working Add file dialog at desktop width and a 360px phone sheet.
+   Classroom theme tokens (latte / mocha), the app's Fustat face. */
+:root {
+  --page: #f7f7f7; --card: #ffffff; --card-dark: #e6e9ea; --hover: #f2f3f4; --overlay: #ffffff;
+  --fg: #222222; --fg2: #4b4b4b; --muted: #6b6b6b; --link: #5b4aa8;
+  --border: #d6d6d6; --divider: #e6e6e6; --strong: #afafaf;
+  --primary: #222222; --primary-fg: #ffffff; --accent: #8c7bd9; --accent-fg: #1b1530;
+  --tint-accent: #ece6f6; --tint-accent-fg: #5b4aa8;
+  --ic-red: #d20f39; --ic-blue: #1e66f5; --ic-green: #40a02b; --ic-teal: #179299; --ic-yellow: #c48a12; --ic-peach: #fe640b; --ic-pink: #d6409f; --ic-grey: #7c7f93;
+  --shadow: 0 18px 44px -12px rgba(20, 22, 26, .25), 0 3px 10px rgba(20, 22, 26, .08);
+  --sans: "Fustat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --r-btn: 10px; --r-card: 16px; --r-dlg: 22px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #0d1219; --card: #1b2330; --card-dark: #222c3a; --hover: #243041; --overlay: #202a38;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --link: #b4befe;
+  --border: #323e52; --divider: rgba(255,255,255,.07); --strong: #46536a;
+  --primary: #cdd4de; --primary-fg: #0d1219; --accent: #b5a1f8; --accent-fg: #17122b;
+  --tint-accent: #31334b; --tint-accent-fg: #c8b8fa;
+  --ic-red: #f38ba8; --ic-blue: #89b4fa; --ic-green: #a6e3a1; --ic-teal: #94e2d5; --ic-yellow: #f9e2af; --ic-peach: #fab387; --ic-pink: #f5c2e7; --ic-grey: #9399b2;
+  --shadow: 0 18px 44px -12px rgba(0, 0, 0, .6), 0 3px 10px rgba(0, 0, 0, .3);
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --page: #0d1219; --card: #1b2330; --card-dark: #222c3a; --hover: #243041; --overlay: #202a38;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --link: #b4befe;
+  --border: #323e52; --divider: rgba(255,255,255,.07); --strong: #46536a;
+  --primary: #cdd4de; --primary-fg: #0d1219; --accent: #b5a1f8; --accent-fg: #17122b;
+  --tint-accent: #31334b; --tint-accent-fg: #c8b8fa;
+  --ic-red: #f38ba8; --ic-blue: #89b4fa; --ic-green: #a6e3a1; --ic-teal: #94e2d5; --ic-yellow: #f9e2af; --ic-peach: #fab387; --ic-pink: #f5c2e7; --ic-grey: #9399b2;
+  --shadow: 0 18px 44px -12px rgba(0, 0, 0, .6), 0 3px 10px rgba(0, 0, 0, .3);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--fg); font-family: var(--sans); font-size: 15px; font-weight: 500; line-height: 1.45; }
+.wrap { max-width: 1200px; margin: 0 auto; padding-block: 40px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 48px; }
+h1 { font-size: 30px; font-weight: 800; letter-spacing: -.02rem; margin: 0; text-wrap: balance; }
+h2 { font-size: 22px; font-weight: 800; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 72ch; }
+.lede { color: var(--fg2); font-size: 16px; }
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 16px; }
+.prose ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; background: var(--card-dark); padding: 1px 5px; border-radius: 5px; }
+.head { display: flex; flex-direction: column; gap: 12px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls .lbl { font-size: 13px; font-weight: 700; color: var(--muted); margin-right: 4px; }
+.seg { font: inherit; font-size: 14px; font-weight: 700; color: var(--fg2); background: var(--card); border: 1px solid var(--border); border-radius: var(--r-btn); padding: 6px 12px; cursor: pointer; }
+.seg[aria-pressed="true"] { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pick { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; letter-spacing: .04rem; text-transform: uppercase; color: var(--tint-accent-fg); background: var(--tint-accent); padding: 2px 9px; border-radius: 999px; align-self: flex-start; }
+
+/* Frames */
+.frames { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.fcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fcol.desk { flex: 1 1 700px; max-width: 760px; }
+.fcol.phone { flex: 0 0 360px; }
+.cap { font-size: 12px; font-weight: 700; color: var(--muted); }
+.sends { font-family: var(--mono); font-size: 12px; color: var(--fg2); background: var(--card-dark); border-radius: 8px; padding: 6px 10px; overflow-x: auto; white-space: nowrap; }
+@media (max-width: 420px) { .fcol.phone { flex-basis: 100%; } }
+
+/* The dialog */
+.dlg { position: relative; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); overflow: hidden; }
+.desk .dlg { height: 660px; border-radius: var(--r-dlg); box-shadow: var(--shadow); }
+.phone .dlg { height: 740px; width: 100%; max-width: 360px; border-radius: 26px; }
+.dhead { display: flex; align-items: center; gap: 10px; padding: 22px 22px 10px; }
+.phone .dhead { padding: 12px 16px 6px; }
+.dhead h3 { margin: 0; font-size: 22px; font-weight: 800; flex: 1; }
+.phone .dhead h3 { font-size: 19px; }
+.iconbtn { all: unset; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--fg2); cursor: pointer; }
+.iconbtn:hover { background: var(--hover); }
+.tabs { display: flex; gap: 4px; padding: 0 10px; border-bottom: 1px solid var(--divider); }
+.phone .tabs { padding: 0 4px; }
+.tab { all: unset; padding: 8px 12px 10px; font-size: 15px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tab.on { color: var(--fg); font-weight: 700; border-color: var(--fg); }
+.dbody { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 22px 18px; display: flex; flex-direction: column; gap: 18px; }
+.phone .dbody { padding: 14px 16px 18px; gap: 16px; }
+.used { font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: -6px; }
+.kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.phone .kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kind { all: unset; box-sizing: border-box; height: 70px; border: 1px solid var(--border); border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.kind:hover { background: var(--hover); }
+.kind.on { background: var(--tint-accent); border-color: var(--accent); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.flabel { font-size: 15px; font-weight: 700; }
+.flabel em { color: var(--ic-red); font-style: normal; }
+.input { border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; font-size: 15px; background: var(--page); }
+.dfoot { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 14px 22px 20px; border-top: 1px solid var(--divider); }
+.ghost { all: unset; padding: 9px 16px; border-radius: 999px; font-weight: 700; cursor: pointer; }
+.ghost:hover { background: var(--hover); }
+.gen { all: unset; display: inline-flex; align-items: center; gap: 8px; background: var(--accent); color: var(--accent-fg); padding: 11px 22px; border-radius: 999px; font-weight: 700; cursor: pointer; }
+.phone .gen { padding: 7px 14px; font-size: 14px; }
+.gen[aria-disabled="true"] { opacity: .45; cursor: default; }
+
+/* Settings rows: label left, control right, a divider between */
+.rows { display: flex; flex-direction: column; }
+.srow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
+.srow:first-child { border-top: 1px solid var(--divider); }
+.srow > .k { font-size: 14px; font-weight: 700; color: var(--fg2); white-space: nowrap; }
+.trig { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; max-width: 70%; min-width: 0; padding: 6px 10px 6px 12px; border: 1px solid var(--border); border-radius: var(--r-btn); font-size: 14px; font-weight: 600; cursor: pointer; background: var(--card); }
+.phone .trig { max-width: 62%; }
+.trig:hover { background: var(--hover); }
+.trig[aria-expanded="true"] { border-color: var(--strong); }
+.trig .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trig svg { flex: none; color: var(--muted); }
+
+/* Scope heading + tick rows */
+.shead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.shead .k { font-size: 15px; font-weight: 700; }
+.shead .n { font-size: 13px; color: var(--muted); font-weight: 600; }
+.list { display: flex; flex-direction: column; }
+.tree { border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); padding: 4px 0; max-height: 232px; overflow-y: auto; }
+.phone .tree { max-height: 260px; }
+.rowx { display: flex; align-items: center; gap: 2px; }
+.tick { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 6px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; }
+.tick:hover { background: var(--hover); }
+.tick .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; translate: 0 1px; }
+.tick .ct { font-size: 13px; color: var(--muted); font-weight: 600; }
+.tick.child { padding-left: 34px; font-weight: 500; }
+.tick.top { font-weight: 700; }
+.chev { all: unset; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); cursor: pointer; flex: none; }
+.chev:hover { background: var(--hover); }
+.chev svg { transition: rotate 160ms ease; }
+.chev[aria-expanded="false"] svg { rotate: -90deg; }
+.cb { width: 20px; height: 20px; flex: none; border: 1px solid var(--strong); border-radius: 6px; background: var(--card); display: grid; place-items: center; color: var(--primary-fg); }
+.cb.all, .cb.mixed { background: var(--primary); border-color: var(--primary); }
+.fi { width: 16px; height: 16px; flex: none; }
+.more { all: unset; align-self: flex-start; padding: 4px 6px; margin-top: 2px; color: var(--link); font-weight: 600; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* Popover, placed inside the dialog under its trigger */
+.pop { position: absolute; z-index: 5; background: var(--overlay); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 8px; overflow-y: auto; display: flex; flex-direction: column; }
+.pop .tick { padding: 6px 8px; }
+.pop .tick.child { padding-left: 8px; }
+.pop .sep { height: 1px; background: var(--divider); margin: 6px 4px; }
+.pop .done { display: flex; justify-content: flex-end; padding: 6px 2px 0; }
+
+.qs { display: flex; flex-direction: column; gap: 10px; }
+.qs ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; max-width: 80ch; }
+@media (prefers-reduced-motion: reduce) { .chev svg { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <span class="eyebrow">Add file · AI generate · 2026-10-25</span>
+    <h1>AI generate scope picker</h1>
+    <p class="lede">Today the tab has two pill lists, Chapter scope and File scope. They look like the option pills below them, files aren't grouped by chapter, and "whole workspace" is only a grey line that disappears once you pick something. Each option below replaces both lists with one tick list over the same Biology 101 sources, where ticking a chapter ticks its items.</p>
+    <div class="controls" role="group" aria-label="Example state">
+      <span class="lbl">Start every frame with</span>
+      <button class="seg" data-example="all" aria-pressed="true">Whole workspace</button>
+      <button class="seg" data-example="some" aria-pressed="false">Two chapters + one file</button>
+      <button class="seg" data-example="mixed" aria-pressed="false">Part of a chapter</button>
+    </div>
+  </header>
+
+  <section class="prose">
+    <span class="eyebrow">Same in every option</span>
+    <ul>
+      <li>One <b>Sources</b> list: Whole workspace, then each chapter, then Others. Ticking a chapter ticks everything in it. A chapter with only some items ticked shows a dash.</li>
+      <li>Whole workspace is ticked when the dialog opens. If you untick everything, Generate turns off, so an empty pick never quietly means "everything".</li>
+      <li>Notes and cheatsheets appear next to uploaded files. The server already accepts them in scope, but today only uploaded files can be picked. Files that are still processing stay hidden, as they are now.</li>
+      <li>The other options use label-left / control-right rows with dropdowns instead of pill rows: Amount (5 or 10), Question types (a tick menu), Detail, and Diagram type.</li>
+      <li>The grey line under each desktop frame shows the request the current pick would send. A fully ticked chapter goes in <code>chapters</code> and leftover items go in <code>fileIds</code>, which is the union the server already computes.</li>
+    </ul>
+  </section>
+
+  <section id="a">
+    <span class="pick">Recommended</span>
+    <h2>A · Chapter tree in the form</h2>
+    <p>The list sits in the form, with chapters collapsed. Use the chevron to open a chapter and pick single items inside it. It's short when you don't need it and complete when you do, and it scrolls inside its own band so the options stay close to the top.</p>
+    <div class="frames" data-variant="a"></div>
+  </section>
+
+  <section id="b">
+    <h2>B · Sources dropdown</h2>
+    <p>Sources becomes one row, like Amount, and shows a summary such as "Whole workspace" or "Genetics, Membranes & transport, 1 more". The tick list opens in a popover. Single items are behind a "Single items" link, as in the Study plan's Add steps. This is the shortest form, but you have to open the popover to see what's picked.</p>
+    <div class="frames" data-variant="b"></div>
+  </section>
+
+  <section id="c">
+    <h2>C · Study plan's tick list, inline</h2>
+    <p>This reuses the rows from <code>AddStepsPopover</code> directly in the form: a flat chapter list, with all single items listed together under a "Single items" link. It needs the least new code, but single items lose their chapter grouping.</p>
+    <div class="frames" data-variant="c"></div>
+  </section>
+
+  <section class="qs">
+    <span class="eyebrow">Open questions</span>
+    <ol>
+      <li>Which option: A, B or C?</li>
+      <li>Should notes and other study materials be pickable as sources (proposed yes), or only uploaded files as today?</li>
+      <li>Should the dropdown rows for Amount and Question types ship with this change, or should the scope picker ship on its own first?</li>
+      <li>Should the chosen kind tile get a stronger selected state? Today the faint tint is hard to see, but the mock keeps it as is.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+const ICON = {
+  x: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  down: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+  check: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  minus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 12h12"/></svg>',
+  sparkles: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8z"/><path d="M18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>',
+  chapter: '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" style="color:var(--fg2)"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5C4.7 20 4 19.3 4 18.5z"/><path d="M13 4h5.5c.8 0 1.5.7 1.5 1.5v13c0 .8-.7 1.5-1.5 1.5H13z"/></svg>',
+};
+const KIND_ICON = {
+  quiz: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ic-blue)" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/></svg>',
+  flashcards: '<svg width="24" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ic-pink)" stroke-width="1.8"><rect x="3" y="7" width="18" height="10" rx="2"/><rect x="6" y="10" width="4" height="4" rx="1"/><rect x="14" y="10" width="4" height="4" rx="1"/></svg>',
+  mindmap: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ic-peach)" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="19" r="2"/><circle cx="16" cy="5" r="2"/><path d="M8 17V9a4 4 0 0 1 4-4h2M8 13h5a3 3 0 0 0 3-3"/></svg>',
+  diagram: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ic-blue)" stroke-width="1.8"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/><path d="M11 7l-5 10M13 7l5 10"/></svg>',
+};
+const KIND_LABEL = { quiz: 'Quiz', flashcards: 'Flashcards', mindmap: 'Mindmap', diagram: 'Diagram' };
+const TYPE_COLOR = { pdf: '--ic-red', md: '--ic-blue', txt: '--ic-grey', csv: '--ic-green', img: '--ic-teal', code: '--ic-yellow', note: '--ic-peach' };
+function fileIcon(t) {
+  const c = `var(${TYPE_COLOR[t]})`;
+  if (t === 'note') return `<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>`;
+  return `<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.9" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>`;
+}
+
+// Biology 101 as the MSW seed has it: indexed files plus the indexed notes.
+const GROUPS = [
+  { id: 'cell', name: 'Cell structure', items: [['f1', 'Cell structure.pdf', 'pdf'], ['f2', 'Organelles cheatsheet.md', 'md'], ['n1', 'Lecture notes — the cell', 'note']] },
+  { id: 'mem', name: 'Membranes & transport', items: [['f3', 'Osmosis notes.txt', 'txt'], ['n2', 'Membranes & transport cheatsheet', 'note']] },
+  { id: 'gen', name: 'Genetics', items: [['f4', 'Mendelian genetics.pdf', 'pdf']] },
+  { id: 'others', name: 'Others', others: true, items: [
+    ['f5', 'Punnett squares.png', 'img'], ['f6', 'Pond survey.csv', 'csv'], ['f7', 'Organelle functions.tsv', 'csv'],
+    ['f8', 'Class gradebook.csv', 'csv'], ['f9', 'Greenhouse sensors.tsv', 'csv'], ['f10', '池塘調查.csv', 'csv'],
+    ['f11', 'Enzyme assay (600 rows).csv', 'csv'], ['f12', 'Edge cases.csv', 'csv'], ['f13', 'Monohybrid cross.json', 'code'],
+    ['f14', 'Respiration outline.yaml', 'code'], ['f15', 'punnett.py', 'code'], ['f16', 'Photosynthesis.tex', 'code']] },
+];
+const ALL = GROUPS.flatMap((g) => g.items.map((i) => i[0]));
+const NAME = Object.fromEntries(GROUPS.flatMap((g) => g.items.map((i) => [i[0], i[1]])));
+const EXAMPLES = {
+  all: () => new Set(ALL),
+  some: () => new Set(['f3', 'n2', 'f4', 'f5']),
+  mixed: () => new Set(['f1', 'n1']),
+};
+const QTYPES = ['Multiple choice', 'True / false', 'Short answer', 'Matching', 'Ordering', 'Open answer'];
+
+const idsOf = (key) => key === 'ws' ? ALL : key.startsWith('g:') ? GROUPS.find((g) => g.id === key.slice(2)).items.map((i) => i[0]) : [key.slice(2)];
+function stateOf(st, ids) {
+  const n = ids.filter((id) => st.picked.has(id)).length;
+  return n === 0 ? 'none' : n === ids.length ? 'all' : 'mixed';
+}
+const cb = (s) => `<span class="cb ${s}">${s === 'all' ? ICON.check : s === 'mixed' ? ICON.minus : ''}</span>`;
+function tick(st, key, label, { icon = '', count = '', cls = '' } = {}) {
+  const s = stateOf(st, idsOf(key));
+  return `<button class="tick ${cls}" role="checkbox" aria-checked="${s === 'all' ? 'true' : s === 'mixed' ? 'mixed' : 'false'}" data-act="toggle" data-key="${key}">${cb(s)}${icon}<span class="nm">${label}</span>${count !== '' ? `<span class="ct">${count}</span>` : ''}</button>`;
+}
+function summary(st) {
+  const n = st.picked.size;
+  return n === ALL.length ? `All ${n}` : n === 0 ? 'Nothing picked' : `${n} of ${ALL.length}`;
+}
+// Fully ticked chapters by name, then what is left as single items.
+function split(st) {
+  if (st.picked.size === ALL.length) return { chapters: [], items: [] };
+  const chapters = [], items = [];
+  for (const g of GROUPS) {
+    const ids = g.items.map((i) => i[0]);
+    if (!g.others && ids.every((id) => st.picked.has(id))) chapters.push(g);
+    else ids.filter((id) => st.picked.has(id)).forEach((id) => items.push(id));
+  }
+  return { chapters, items };
+}
+function triggerText(st) {
+  if (st.picked.size === ALL.length) return 'Whole workspace';
+  if (st.picked.size === 0) return 'Nothing picked';
+  const { chapters, items } = split(st);
+  const names = chapters.map((g) => g.name);
+  if (!names.length) return items.length === 1 ? NAME[items[0]] : `${items.length} items`;
+  return items.length ? `${names.join(', ')}, ${items.length} more` : names.join(', ');
+}
+function sends(st, kind) {
+  const { chapters, items } = split(st);
+  const parts = [`kind: "${kind}"`];
+  if (st.picked.size && st.picked.size !== ALL.length) {
+    if (chapters.length) parts.push(`chapters: [${chapters.map((g) => `"${g.id}"`).join(', ')}]`);
+    if (items.length) parts.push(`fileIds: [${items.map((id) => `"${id}"`).join(', ')}]`);
+  }
+  return `POST /generate  { ${parts.join(', ')} }`;
+}
+
+// Scope blocks per variant
+function scopeA(st) {
+  let h = `<div class="field"><div class="shead"><span class="k">Sources</span><span class="n">${summary(st)}</span></div><div class="list tree" data-scroll="tree">`;
+  h += `<div class="rowx">${tick(st, 'ws', 'Whole workspace', { cls: 'top' })}</div>`;
+  for (const g of GROUPS) {
+    const open = st.expanded.has(g.id);
+    h += `<div class="rowx">${tick(st, 'g:' + g.id, g.name, { icon: g.others ? '' : ICON.chapter, count: g.items.length })}<button class="chev" aria-label="Show ${g.name}" aria-expanded="${open}" data-act="expand" data-g="${g.id}">${ICON.down}</button></div>`;
+    if (open) for (const [id, name, t] of g.items) h += `<div class="rowx">${tick(st, 'i:' + id, name, { icon: fileIcon(t), cls: 'child' })}<span style="width:30px;flex:none"></span></div>`;
+  }
+  return h + '</div></div>';
+}
+function flatList(st) {
+  let h = tick(st, 'ws', 'Whole workspace', { cls: 'top' });
+  for (const g of GROUPS) h += tick(st, 'g:' + g.id, g.name, { icon: g.others ? '' : ICON.chapter, count: g.items.length });
+  h += `<button class="more" data-act="singles" aria-expanded="${st.singles}">Single items</button>`;
+  if (st.singles) for (const g of GROUPS) for (const [id, name, t] of g.items) h += tick(st, 'i:' + id, name, { icon: fileIcon(t), cls: 'child' });
+  return h;
+}
+function scopeC(st) {
+  return `<div class="field"><div class="shead"><span class="k">Sources</span><span class="n">${summary(st)}</span></div><div class="list">${flatList(st)}</div></div>`;
+}
+const trig = (pop, text, open) => `<button class="trig" data-act="pop" data-pop="${pop}" aria-expanded="${open}"><span class="tx">${text}</span>${ICON.down}</button>`;
+function optionRows(st, variant) {
+  let h = '<div class="rows">';
+  if (variant === 'b') h += `<div class="srow"><span class="k">Sources</span>${trig('sources', triggerText(st), st.pop === 'sources')}</div>`;
+  if (st.kind === 'quiz' || st.kind === 'flashcards')
+    h += `<div class="srow"><span class="k">Amount</span>${trig('amount', st.kind === 'quiz' ? `${st.amount} questions` : `${st.amount} cards`, st.pop === 'amount')}</div>`;
+  if (st.kind === 'quiz')
+    h += `<div class="srow"><span class="k">Question types</span>${trig('types', st.types.size ? QTYPES.filter((t) => st.types.has(t)).join(', ') : 'None', st.pop === 'types')}</div>`;
+  if (st.kind === 'mindmap') h += `<div class="srow"><span class="k">Detail</span>${trig('detail', 'Standard', false)}</div>`;
+  if (st.kind === 'diagram') h += `<div class="srow"><span class="k">Diagram type</span>${trig('dtype', 'Auto', false)}</div>`;
+  return h + '</div>';
+}
+function popBody(st) {
+  if (st.pop === 'sources') return flatList(st);
+  if (st.pop === 'types') return QTYPES.map((t) => `<button class="tick" role="checkbox" aria-checked="${st.types.has(t)}" data-act="qtype" data-t="${t}">${cb(st.types.has(t) ? 'all' : 'none')}<span class="nm">${t}</span></button>`).join('');
+  if (st.pop === 'amount') return [5, 10].map((n) => `<button class="tick" data-act="amount" data-n="${n}">${cb(st.amount === n ? 'all' : 'none')}<span class="nm">${n}</span></button>`).join('');
+  return '';
+}
+
+function render(frame) {
+  const { st, variant, device } = frame;
+  const body = frame.el.querySelector('[data-scroll="body"]'), tree = frame.el.querySelector('[data-scroll="tree"]');
+  const keep = { body: body?.scrollTop ?? 0, tree: tree?.scrollTop ?? 0 };
+  const phone = device === 'phone';
+  const ok = st.picked.size > 0 && (st.kind !== 'quiz' || st.types.size > 0);
+  const genBtn = `<button class="gen" aria-disabled="${!ok}">${ICON.sparkles}Generate</button>`;
+  const title = `${'Biology 101'} ${st.kind === 'flashcards' ? 'flashcards' : st.kind} 1`;
+  frame.el.innerHTML = `<div class="dlg">
+    <div class="dhead">${phone ? `<button class="iconbtn" aria-label="Close">${ICON.x}</button><h3>Add file</h3>${genBtn}` : `<h3>Add file</h3><button class="iconbtn" aria-label="Close">${ICON.x}</button>`}</div>
+    <div class="tabs"><span class="tab">Upload</span><span class="tab">Import</span><span class="tab">Create</span><span class="tab on">AI generate</span></div>
+    <div class="dbody" data-scroll="body">
+      <p class="used">38 of 100 files used</p>
+      <div class="kinds">${Object.keys(KIND_LABEL).map((k) => `<button class="kind ${st.kind === k ? 'on' : ''}" data-act="kind" data-k="${k}">${KIND_ICON[k]}${KIND_LABEL[k]}</button>`).join('')}</div>
+      <div class="field"><span class="flabel">File name <em>*</em></span><div class="input">${title}</div></div>
+      ${variant === 'a' ? scopeA(st) : variant === 'c' ? scopeC(st) : ''}
+      ${optionRows(st, variant)}
+    </div>
+    ${phone ? '' : `<div class="dfoot"><button class="ghost">Cancel</button>${genBtn}</div>`}
+  </div>`;
+  const nb = frame.el.querySelector('[data-scroll="body"]'), nt = frame.el.querySelector('[data-scroll="tree"]');
+  nb.scrollTop = keep.body; if (nt) nt.scrollTop = keep.tree;
+  if (frame.sends) frame.sends.textContent = sends(st, st.kind);
+  if (st.pop) placePop(frame);
+}
+// The popover sits in the dialog under its trigger, right-aligned, clamped to the dialog.
+function placePop(frame) {
+  const dlg = frame.el.querySelector('.dlg');
+  const t = frame.el.querySelector(`[data-pop="${frame.st.pop}"]`);
+  if (!t) return;
+  const d = dlg.getBoundingClientRect(), r = t.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  pop.innerHTML = popBody(frame.st);
+  const width = Math.min(frame.st.pop === 'sources' ? 330 : 240, d.width - 24);
+  const top = r.bottom - d.top + 6;
+  pop.style.width = width + 'px';
+  pop.style.left = Math.max(12, r.right - d.left - width) + 'px';
+  pop.style.top = top + 'px';
+  pop.style.maxHeight = Math.max(160, d.height - top - 12) + 'px';
+  if (top + 160 > d.height) { pop.style.top = 'auto'; pop.style.bottom = d.bottom - r.top + 6 + 'px'; pop.style.maxHeight = r.top - d.top - 18 + 'px'; }
+  dlg.appendChild(pop);
+}
+
+let example = 'all';
+const frames = [];
+function freshState(variant, device) {
+  return {
+    picked: EXAMPLES[example](), kind: 'quiz', amount: 5, types: new Set(['Multiple choice', 'True / false']),
+    expanded: new Set(example === 'mixed' ? ['cell'] : example === 'some' ? ['others'] : []),
+    singles: example !== 'all' && variant !== 'b' ? true : false,
+    pop: variant === 'b' && device === 'desk' ? 'sources' : null,
+  };
+}
+for (const host of document.querySelectorAll('.frames')) {
+  const variant = host.dataset.variant;
+  for (const device of ['desk', 'phone']) {
+    const col = document.createElement('div');
+    col.className = `fcol ${device}`;
+    col.innerHTML = `<span class="cap">${device === 'desk' ? 'Desktop dialog' : 'Phone, 360px'}</span><div class="host"></div>${device === 'desk' ? '<div class="sends"></div>' : ''}`;
+    host.appendChild(col);
+    const frame = { variant, device, el: col.querySelector('.host'), sends: col.querySelector('.sends'), st: freshState(variant, device) };
+    frames.push(frame);
+    frame.el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]');
+      const st = frame.st;
+      if (!b) { if (st.pop && !e.target.closest('.pop')) { st.pop = null; render(frame); } return; }
+      const act = b.dataset.act;
+      if (act === 'toggle') {
+        const ids = idsOf(b.dataset.key);
+        const all = ids.every((id) => st.picked.has(id));
+        ids.forEach((id) => all ? st.picked.delete(id) : st.picked.add(id));
+      } else if (act === 'expand') {
+        const g = b.dataset.g;
+        st.expanded.has(g) ? st.expanded.delete(g) : st.expanded.add(g);
+      } else if (act === 'singles') st.singles = !st.singles;
+      else if (act === 'kind') { st.kind = b.dataset.k; st.pop = null; }
+      else if (act === 'pop') st.pop = st.pop === b.dataset.pop ? null : b.dataset.pop;
+      else if (act === 'qtype') { const t = b.dataset.t; st.types.has(t) ? st.types.delete(t) : st.types.add(t); }
+      else if (act === 'amount') { st.amount = +b.dataset.n; st.pop = null; }
+      render(frame);
+    });
+    render(frame);
+  }
+}
+for (const btn of document.querySelectorAll('[data-example]')) btn.addEventListener('click', () => {
+  example = btn.dataset.example;
+  document.querySelectorAll('[data-example]').forEach((b) => b.setAttribute('aria-pressed', b === btn));
+  for (const f of frames) { f.st = freshState(f.variant, f.device); render(f); }
+});
+</script>

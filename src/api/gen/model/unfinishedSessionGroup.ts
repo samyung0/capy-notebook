@@ -12,4 +12,5 @@ export const UnfinishedSessionGroup = {
   chapter: 'chapter',
   others: 'others',
   workspace: 'workspace',
+  plan: 'plan',
 } as const;

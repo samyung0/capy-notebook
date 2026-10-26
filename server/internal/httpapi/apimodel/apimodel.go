@@ -474,23 +474,16 @@ func FromAttemptDetail(d store.AttemptDetail) AttemptDetail {
 	return out
 }
 
-// GradedQuiz is a graded signed-out attempt: every question with its key and,
-// on each part, the awarded marks (open parts also itemAwards, Jev's marks per
-// marking item; matching and gaps parts also itemResults, right or wrong per
-// pair or gap). Correct is the awarded marks over Total, the quiz's marks.
-type GradedQuiz struct {
-	Correct   float64          `json:"correct"`
-	Total     float64          `json:"total"`
-	Questions []map[string]any `json:"questions" nullable:"false"`
-}
-
 // VoiceTranscription is a chat voice recording's text, for the composer to
 // insert where the user edits and sends it; nothing is sent or stored.
 type VoiceTranscription struct {
 	Text string `json:"text"`
 }
 
-// GradedQuestion is one checked question, keyed and awarded like GradedQuiz.
+// GradedQuestion is one checked question with its key and, on each part, the
+// awarded marks (open parts also itemAwards, Jev's marks per marking item;
+// matching and gaps parts also itemResults, right or wrong per pair or gap).
+// Correct is the awarded marks over Total, the question's marks.
 type GradedQuestion struct {
 	Correct  float64        `json:"correct"`
 	Total    float64        `json:"total"`

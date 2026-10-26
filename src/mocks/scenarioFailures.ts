@@ -429,10 +429,10 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    id: 'quiz-submit',
-    label: 'Quiz attempt submit and grading 500',
+    id: 'quiz-check',
+    label: 'Quiz question check and grading 500',
     method: 'post',
-    paths: ['/api/quizzes/:id/attempts'],
+    paths: ['/api/quizzes/:id/check'],
     status: 500,
   },
   {

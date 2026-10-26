@@ -28,6 +28,15 @@ type CloneFileReq struct {
 	Name        FileName    `json:"name" minLength:"1" doc:"The copy's name"`
 }
 
+// CreateBlankFileReq is the body for POST /api/workspaces/{id}/files/blank:
+// a blank Word or Excel file from the Office engine's starter, named without
+// its extension.
+type CreateBlankFileReq struct {
+	Format    string   `json:"format" enum:"docx,xlsx"`
+	Name      FileName `json:"name" minLength:"1" doc:"The file's name without its extension"`
+	ChapterID string   `json:"chapterId,omitempty" doc:"A chapter of the workspace"`
+}
+
 // CloneMaterialReq is the body for POST /api/materials/{id}/clone: like
 // CloneFileReq, but without a workspace the copy is a private standalone item.
 type CloneMaterialReq struct {
@@ -209,9 +218,12 @@ type UpdateQuizMetadataReq struct {
 // each answer type's shape. The server grades them against the stored key.
 type Answers = map[string]any
 
-type CreateAttemptReq struct {
-	Answers   Answers    `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
-	StartedAt *time.Time `json:"startedAt,omitempty" doc:"When the learner opened the quiz, for the minutes taken"`
+// CheckQuizQuestionReq checks one question of a quiz attempt.
+type CheckQuizQuestionReq struct {
+	QuestionID string     `json:"questionId" minLength:"1" maxLength:"128"`
+	Answers    Answers    `json:"answers" nullable:"false" doc:"The learner's answers to the question's parts, by part id"`
+	AttemptID  string     `json:"attemptId,omitempty" maxLength:"64" doc:"The attempt the browser continues; empty or unknown starts a new one, whose id the response carries"`
+	StartedAt  *time.Time `json:"startedAt,omitempty" doc:"When the learner began the attempt, for the minutes taken"`
 }
 
 // FlashcardAttemptRef is the flashcard attempt a card's rating belongs to.
@@ -220,9 +232,11 @@ type FlashcardAttemptRef struct {
 	StartedAt time.Time `json:"startedAt"`
 }
 
-// GradeAnonymousQuizReq is a signed-out attempt at a shared quiz.
+// GradeAnonymousQuizReq checks one question of a signed-out attempt at a
+// shared quiz.
 type GradeAnonymousQuizReq struct {
-	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+	QuestionID string  `json:"questionId" minLength:"1" maxLength:"128"`
+	Answers    Answers `json:"answers" nullable:"false" doc:"The learner's answers to the question's parts, by part id"`
 	// LocalID is the anonymous browser's reporting id for the grading caps.
 	LocalID string `json:"localId,omitempty" maxLength:"64"`
 	// TurnstileToken is the Cloudflare Turnstile token the page solved for this
@@ -230,10 +244,11 @@ type GradeAnonymousQuizReq struct {
 	TurnstileToken string `json:"turnstileToken,omitempty" maxLength:"2048"`
 }
 
-// CheckSharedNoteQuizReq is a signed-in visitor's check of a quiz embedded in
-// a shared note (Q311).
+// CheckSharedNoteQuizReq is a signed-in visitor's check of one question of a
+// quiz embedded in a shared note (Q311).
 type CheckSharedNoteQuizReq struct {
-	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+	QuestionID string  `json:"questionId" minLength:"1" maxLength:"128"`
+	Answers    Answers `json:"answers" nullable:"false" doc:"The learner's answers to the question's parts, by part id"`
 }
 
 // CheckReviewItemReq checks one question of a review session.
@@ -532,7 +547,7 @@ type CreateStudyPlanReq struct {
 // UpdateStudyPlanReq renames the plan and/or replaces its steps in order.
 type UpdateStudyPlanReq struct {
 	Name  *StudyPlanName         `json:"name,omitempty" minLength:"1"`
-	Steps *[]store.PlanStepInput `json:"steps,omitempty" maxItems:"50"`
+	Steps *[]store.PlanStepInput `json:"steps,omitempty" maxItems:"200"`
 }
 
 // SetStudyItemReq marks one file or material; an omitted state marks it unread.

@@ -207,10 +207,10 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   assert.equal(
     await clicked(
       page,
-      `/api/quizzes/${finishedQuiz}/attempts`,
-      m.quiz_submit()
+      `/api/quizzes/${finishedQuiz}/check`,
+      m.question_ui_check()
     ),
-    201
+    200
   );
   await expect(page.getByRole('button', { name: m.quiz_redo() })).toBeVisible();
   await page.goto(`${run.env.appUrl}/flashcards/${set}`);
@@ -340,8 +340,12 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     .getByRole('textbox', { exact: true, name: m.question_ui_your_answer() })
     .fill('The plants keep the carbon in their roots and in the wet soil.');
   assert.equal(
-    await clicked(page, `/api/quizzes/${openQuiz}/attempts`, m.quiz_submit()),
-    201
+    await clicked(
+      page,
+      `/api/quizzes/${openQuiz}/check`,
+      m.question_ui_check()
+    ),
+    200
   );
   await expect(page.getByRole('button', { name: m.quiz_redo() })).toBeVisible();
   const graded = await run.query<{ questions: { parts: object[] }[] }>(

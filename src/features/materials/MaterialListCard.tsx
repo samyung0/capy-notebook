@@ -1,7 +1,7 @@
 import type { LinkProps } from '@tanstack/react-router';
 import { memo } from 'react';
 import type { MaterialListItem } from '@/api/types';
-import { ItemCard } from '@/components/app/ItemCard';
+import { ItemCard, itemMenuIcon } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { formatFileSize } from '@/features/files/fileUtils';
@@ -79,7 +79,7 @@ export const MaterialCard = memo(function MaterialCard({
 }) {
   return (
     <ItemCard
-      actions={<Menu items={menuFor(item)} triggerIcon="moreHorizontal" />}
+      actions={<Menu items={menuFor(item)} triggerIcon={itemMenuIcon(view)} />}
       details={materialListDetails(item)}
       icon={materialIconName(item.kind)}
       link={item.lostAccess ? undefined : linkFor(item)}

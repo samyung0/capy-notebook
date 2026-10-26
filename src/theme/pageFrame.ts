@@ -1,4 +1,5 @@
 import type {
+  FrostPanel,
   PageFrame,
   PageFrameColor,
   PageFrameColours,
@@ -28,6 +29,17 @@ export const FRAME_PRESETS: Record<
   Preset,
   { stops: [string, string, string]; dots: PageFrameColor[]; strength: number }
 > = {
+  // Pale: the default frame, light enough to stay in the background.
+  dawn: {
+    dots: [
+      // Just inside the field's top edge, where the fit put it.
+      { x: 0.67, y: 0.04 },
+      { x: 0.89, y: 0.6 },
+      { x: 0.08, y: 0.275 },
+    ],
+    stops: ['#9d93df', '#efc6e0', '#f8d9bd'],
+    strength: 0.08,
+  },
   dusk: {
     dots: [
       { x: 0.67, y: 0.15 },
@@ -100,12 +112,16 @@ const PRESET_STRENGTH = 0.75;
 /** Above this the frosted sidebar's muted labels lose their contrast. */
 export const STRENGTH_MAX = 0.92;
 export const MAX_FRAME_COLORS = 3;
+export const FROST_PANELS: FrostPanel[] = ['left', 'center', 'right'];
 
+/** A new device's frame: Arc in the pale Dawn with the left panel frosted,
+ * so the app starts with some colour; None stays a choice. */
 export const DEFAULT_PAGE_FRAME: PageFrame = {
-  colours: 'dusk',
-  dots: FRAME_PRESETS.dusk.dots,
-  pattern: 'none',
-  strength: FRAME_PRESETS.dusk.strength,
+  colours: 'dawn',
+  dots: FRAME_PRESETS.dawn.dots,
+  frosted: ['left'],
+  pattern: 'arc',
+  strength: FRAME_PRESETS.dawn.strength,
 };
 const unit = (v: unknown): v is number =>
   typeof v === 'number' && v >= 0 && v <= 1;
@@ -126,6 +142,11 @@ export function sanitizePageFrame(raw: unknown): PageFrame {
         ? (f.colours as PageFrameColours)
         : DEFAULT_PAGE_FRAME.colours,
     dots: dots.length ? dots : DEFAULT_PAGE_FRAME.dots,
+    // An empty list is a choice (no panel frosts); only a missing one, as in
+    // a frame stored before panels were picked, takes the default.
+    frosted: Array.isArray(f.frosted)
+      ? FROST_PANELS.filter((p) => (f.frosted as unknown[]).includes(p))
+      : DEFAULT_PAGE_FRAME.frosted,
     pattern: FRAME_PATTERNS.includes(f.pattern as PageFramePattern)
       ? (f.pattern as PageFramePattern)
       : DEFAULT_PAGE_FRAME.pattern,

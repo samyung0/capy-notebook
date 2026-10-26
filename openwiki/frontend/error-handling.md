@@ -44,7 +44,7 @@ without one of the typed codes `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`, `upload_queue_full` (the gateway's
 upload line is full: busy, try again), `rate_limit_unavailable`,
 `captcha_unavailable` (siteverify could not check a signed-out answer check;
-the quiz shows it under Submit with `captcha_failed`), or an unknown status
+the quiz shows it under the question's Check with `captcha_failed`), or an unknown status
 without a code)
 shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
 the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
@@ -229,7 +229,8 @@ not offline use: without a service worker the app itself does not load offline.
 - Stored: `/me`, workspace lists (not searches), a workspace and its chapters,
   files, materials, conversations and study states, file metadata, the
   dashboard recents, Thinking, notifications and the unread count, learning
-  progress, the review overview, calendar events, labels, tasks, tags,
+  progress, the review overview, quiz attempts (the quiz page resumes its open
+  one from it), calendar events, labels, tasks, tags,
   notification preferences, integrations, models, LLM key last-4s, Explore,
   and the question bank's syllabus and progress. Infinite lists keep their first
   page.

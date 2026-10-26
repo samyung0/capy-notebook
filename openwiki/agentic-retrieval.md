@@ -3329,7 +3329,12 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
 - **Recording.** The button toggles one recording: Opus in WebM or Ogg where
   `MediaRecorder.isTypeSupported` says so, else Safari's AAC in MP4, asked for
   at 32 kb/s. While it records, the elapsed time and the limit show beside it
-  (`0:42 / 2:00`) and the mic is filled purple, its label Stop recording; it
+  (`0:42 / 2:00`, held at its widest width) after a waveform of the input's
+  recent levels (`VoiceWaveform`: an `AnalyserNode` on the microphone, one
+  bar every 80 ms sliding left and growing leftwards to fill the row,
+  animated with the motion tokens; the composer's scope label gives way to
+  it), and the mic is filled
+  purple, its label Stop recording; it
   stops by itself at `VOICE_INPUT_MAX_SECONDS` (120,
   `fieldlimits.VoiceInputSeconds`, generated into
   `src/api/limits.generated.ts`). The microphone's tracks stop whenever

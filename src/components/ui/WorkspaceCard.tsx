@@ -16,6 +16,7 @@ import { type CoverPaint, coverPaint } from '@/lib/coverArt';
 import { iconUrl } from '@/lib/icon-catalog';
 import { Badge } from './Badge';
 import { Card } from './Card';
+import { CardActions } from './CardActions';
 import { CoverArt } from './CoverArt';
 import { Skeleton } from './feedback';
 
@@ -74,7 +75,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       : []),
   ];
   return (
-    <div className="group/ws relative h-full">
+    <div className="group/card relative h-full">
       <Link
         className="block h-full"
         key={workspace.id}
@@ -82,21 +83,23 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         preload="intent"
         to="/workspaces/$workspaceId"
       >
-        <WorkspaceCardFace interactive paint={paint} workspace={workspace} />
+        <WorkspaceCardFace
+          interactive
+          menuSpace={menuItems.length > 0}
+          paint={paint}
+          workspace={workspace}
+        />
       </Link>
       {menuItems.length > 0 && (
-        // Lifts with the card, which rises on hover (Card interactive).
-        <div className="absolute top-3 right-3 z-50 transition-transform duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/ws:-translate-y-1 group-has-[[data-slot=card]:hover]/ws:ease-(--motion-ease-smooth-out)">
-          <Menu
-            align="start"
-            iconContainerClassName={cn(
-              // No resting background: it read as already hovered.
-              ink === 'dark' && 'text-white hover:bg-white/15',
-              ink === 'light' && 'text-[#1d1d1f] hover:bg-black/8'
-            )}
-            items={menuItems}
-          />
-        </div>
+        // Lifts with the card, which rises on hover (Card interactive). Below
+        // desktop widths the title clears room for it (menuSpace).
+        <CardActions
+          backing="revealed"
+          className="top-3 right-3 z-50 transition-[translate] duration-320 ease-(--motion-ease-bounce-strong) group-has-[[data-slot=card]:hover]/card:-translate-y-1 group-has-[[data-slot=card]:hover]/card:ease-(--motion-ease-smooth-out)"
+          ink={ink}
+        >
+          <Menu align="start" items={menuItems} />
+        </CardActions>
       )}
       {editOpen && canSettings && (
         <WorkspaceSettingsDialog
@@ -157,7 +160,7 @@ export function WorkspaceCardSkeleton({ className }: { className?: string }) {
   return (
     <Skeleton
       className={cn(
-        'rounded-card border border-transparent p-4 xl:p-5',
+        'rounded-card border border-transparent p-3.5 xl:p-4.5',
         className
       )}
     >
@@ -184,17 +187,21 @@ export function WorkspaceCardFace({
   workspace,
   paint,
   interactive = false,
+  menuSpace = false,
 }: {
   workspace: WorkspaceCardFields;
   paint: CoverPaint | null;
   interactive?: boolean;
+  /** The card's ⋮ is always shown (below desktop widths, on touch
+   * screens): the title keeps clear of it. */
+  menuSpace?: boolean;
 }) {
   const ink = paint && (paint.light ? 'light' : 'dark');
   return (
     <Card
       border="solid"
       className={cn(
-        'group relative h-full gap-4 p-4 xl:p-5',
+        '@container group relative h-full gap-4 p-3.5 xl:p-4.5',
         paint && 'overflow-hidden'
       )}
       interactive={interactive}
@@ -207,19 +214,21 @@ export function WorkspaceCardFace({
         />
       )}
       {/* The icon sits beside the name; counts and tags take their own lines. */}
-      <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5">
+      <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3">
         <img
           alt=""
-          className="size-9 rounded-button"
-          height={36}
+          // A step smaller on narrow cards (the dashboard's row, phones).
+          className="@min-[19rem]:size-10 size-9 -translate-y-px rounded-button"
+          height={40}
           src={iconUrl(workspace.iconId)}
-          width={36}
+          width={40}
         />
         {/* Always two lines tall, so long names do not grow the card; a
             one-line name stays centred beside the icon. */}
         <h3
           className={cn(
-            't-card-title flex h-[2lh] items-center pr-7 leading-tight',
+            't-card-title flex h-[2lh] items-center leading-tight',
+            menuSpace && 'pointer-coarse:pr-7 max-lg:pr-7',
             ink === 'dark' && 'text-white',
             ink === 'light' && 'text-[#1d1d1f]'
           )}

@@ -2,7 +2,7 @@ import { useRef, useSyncExternalStore } from 'react';
 import { m } from '@/i18n';
 import { challengeSlot, onChallenge, takeTurnstileToken } from './turnstile';
 
-/** A signed-out check's Turnstile challenge, under its Submit (Q372): `view`
+/** A signed-out check's Turnstile challenge, under its Check (Q372): `view`
  * holds the widget's slot, which turnstile.ts shows while a solve runs and
  * hides once it settles, and a hint while Cloudflare shows the visitor a
  * challenge; `take` gets the check's token there. */

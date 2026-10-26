@@ -7,9 +7,11 @@ import {
   useRef,
 } from 'react';
 import { Card } from '@/components/ui/Card';
+import { CardActions } from '@/components/ui/CardActions';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
+import type { MenuProps } from '@/components/ui/Menu';
 import type { PickContext } from '@/features/files/useFileSelection';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -34,6 +36,11 @@ import { WorkspaceCell } from './WorkspaceCell';
  * selects, and while anything is selected a tap adds or removes. A context,
  * so a pick re-renders only the overlays, not every card. */
 export const ItemPick = createContext<PickContext | null>(null);
+
+/** A grid card's menu is a ⋮, as on the workspace cards; a list row's a ⋯. */
+export function itemMenuIcon(view: ListView): MenuProps['triggerIcon'] {
+  return view === 'grid' ? 'moreVertical' : 'moreHorizontal';
+}
 
 const LONG_PRESS_MS = 450;
 const PRESS_SLOP_PX = 10;
@@ -182,8 +189,9 @@ export function ItemCard({
     return (
       <div
         className={cn(
-          'relative flex flex-col gap-1 border-divider border-t px-4 py-2.5 text-sm hover:bg-surface-hover-bg md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
-          selected && 'bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
+          'relative flex flex-col gap-1 border-divider border-b py-3 text-sm hover:bg-surface-hover-bg md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
+          selected &&
+            'bg-tint-accent-1/60 frosted:bg-solid-accent-1/25 frosted:hover:bg-solid-accent-1/25 hover:bg-tint-accent-1/60'
         )}
         data-item
       >
@@ -214,15 +222,16 @@ export function ItemCard({
       </div>
     );
   }
-  // Borderless card: the thumbnail with its ⋯ over the top right corner
-  // (on hover, focus or touch), then the title and the hint. From `sm`
+  // Borderless card: the thumbnail with its ⋮ over the top right corner,
+  // then the title and the hint. From `sm`
   // one-line titles keep every card in a row the same height; narrower
   // cards wrap the title to two lines and drop the workspace.
   return (
     <Card
       className={cn(
-        '@container group/card relative gap-0 p-1.5 hover:bg-surface-hover-bg',
-        selected && 'bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
+        '@container group/card relative gap-0 p-1.5 hover:bg-item-hover',
+        selected &&
+          'bg-tint-accent-1/60 frosted:bg-solid-accent-1/25 frosted:hover:bg-solid-accent-1/25 hover:bg-tint-accent-1/60'
       )}
       data-item
       radius="button"
@@ -232,14 +241,14 @@ export function ItemCard({
       <div className="relative">
         <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
         {actions ? (
-          <div className="absolute top-1.5 right-1.5 z-10 opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/card:opacity-100 has-[[data-state=open]]:opacity-100 [&_button]:bg-surface [&_button]:p-1 [&_button]:shadow-card [&_button]:hover:bg-surface-hover-bg">
-            {actions}
-          </div>
+          <CardActions className="top-2 right-2">{actions}</CardActions>
         ) : null}
       </div>
-      <div className="box-content flex min-w-0 items-start gap-2 px-1.5 pt-2.5 sm:h-5 sm:items-center">
+      {/* The file's and workspace's icons are the same size and gap, so the
+          title and the workspace name start at one edge. */}
+      <div className="box-content flex min-w-0 items-start gap-1.5 px-1.5 pt-2.5 sm:h-5 sm:items-center">
         <FileIcon
-          className="mt-px size-4 shrink-0 sm:mt-0 sm:-translate-y-px"
+          className="mt-px size-4.5 shrink-0 sm:mt-0 sm:-translate-y-px"
           name={icon}
         />
         <Title
@@ -250,8 +259,9 @@ export function ItemCard({
         </Title>
       </div>
       {/* A fixed-height line, so cards with and without a workspace match;
-          pinned to the bottom when a wrapped title makes a row taller. */}
-      <div className="mt-auto box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-1.5 pb-1 text-[13px] text-fg">
+          it follows the title, so a one-line title beside a wrapped one
+          leaves its gap at the card's foot instead of above the date. */}
+      <div className="box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-1.5 pb-1 text-[13px] text-fg">
         {workspaceLabel && (
           <span
             className={cn(
@@ -261,15 +271,18 @@ export function ItemCard({
             title={workspaceLost ? m.files_lost_access() : undefined}
           >
             {workspaceLost ? (
-              <Icon className="size-4 shrink-0 -translate-y-px" name="error" />
+              <Icon
+                className="size-4.5 shrink-0 -translate-y-px"
+                name="error"
+              />
             ) : (
               workspaceIconId && (
                 <img
                   alt=""
-                  className="size-4 shrink-0 -translate-y-px rounded-[3px]"
-                  height={16}
+                  className="size-4.5 shrink-0 -translate-y-px rounded-[4px]"
+                  height={18}
                   src={iconUrl(workspaceIconId)}
-                  width={16}
+                  width={18}
                 />
               )
             )}
@@ -315,9 +328,10 @@ function Title({
 /** A list column's label, or a label that sorts the list by `sort`. */
 export type ItemColumn<S extends string> = string | { label: string; sort: S };
 
-/** Grid, or bordered list with a header row for the four text columns; the
- * fifth column holds the actions. With `sorting` the columns that name a
- * sort order the list from the header (only from md, where it shows). */
+/** Grid, or a list in Billing's table design (muted header, divider rows,
+ * full width) with a header row for the four text columns; the fifth column
+ * holds the actions. With `sorting` the columns that name a sort order the
+ * list from the header (only from md, where it shows). */
 export function ItemList<S extends string = string>({
   view,
   columns,
@@ -331,8 +345,8 @@ export function ItemList<S extends string = string>({
 }) {
   if (view === 'grid') return <ItemGrid>{children}</ItemGrid>;
   return (
-    <div className="overflow-hidden rounded-card border border-line">
-      <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3">
+    <div>
+      <div className="t-meta hidden border-divider border-b py-2.5 font-medium text-fg-muted md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3">
         {columns.map((column) =>
           typeof column === 'string' || !sorting ? (
             <div key={typeof column === 'string' ? column : column.label}>
@@ -361,13 +375,15 @@ export function ItemList<S extends string = string>({
 }
 
 /** The card grid: as many columns as fit at 140px (two on a 360px phone),
- * growing to 180px from `sm`, 210px from `lg` and 240px from `xl`; each card
- * at most 320px wide and centred in a column that grows past that. */
+ * growing to 200px from `sm` and 240px from `xl`; each card at most 320px
+ * wide and centred in a column that grows past that. */
 export function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'grid w-full grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(210px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
+        // Cards stay at least 200px wide, so phones show one column; min() keeps
+        // a grid narrower than that from overflowing.
+        'grid w-full grid-cols-[repeat(auto-fill,minmax(min(200px,100%),1fr))] gap-4 xl:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
         className
       )}
       {...rest}
@@ -392,7 +408,7 @@ export function ItemSkeletonGrid({
         <div className="@container p-1.5" key={i}>
           <Skeleton
             className={cn(
-              'rounded-[13px]',
+              'rounded-[calc(var(--radius-tile)-1px)]',
               dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
             )}
           />

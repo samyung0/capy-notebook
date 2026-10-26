@@ -62,6 +62,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  compact = false,
   cardClassName,
   cardScrollContainerClassName,
   onOpenAutoFocus,
@@ -69,6 +70,9 @@ function DialogContent({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  /** A few rows to pick from: phones keep the centred card instead of a
+   * full-screen page. */
+  compact?: boolean;
   cardClassName?: string;
   cardScrollContainerClassName?: string;
 }) {
@@ -85,7 +89,8 @@ function DialogContent({
           'supports-[top:round(50%,1px)]:[--dialog-center:round(50%,1px)] supports-[translate:round(-50%,1px)]:[--dialog-offset:round(-50%,1px)]',
           // Phones: a full-screen page the keyboard covers, so its header
           // never moves.
-          'max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:px-0',
+          !compact &&
+            'max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:px-0',
           className
         )}
         data-slot="dialog-content"
@@ -114,7 +119,8 @@ function DialogContent({
       >
         <Card
           className={cn(
-            'relative w-full items-stretch gap-0 overflow-hidden p-0 max-sm:h-full max-sm:rounded-none max-sm:shadow-none',
+            'relative w-full items-stretch gap-0 overflow-hidden p-0',
+            !compact && 'max-sm:h-full max-sm:rounded-none max-sm:shadow-none',
             cardClassName
           )}
           radius="card-lg"
@@ -128,7 +134,8 @@ function DialogContent({
               // the top; a dialog without a title keeps the corner button.
               // Its scrollbar is hidden there, so one appearing when the keyboard
               // shortens the page never shifts the header's action.
-              'max-sm:max-h-none max-sm:pb-[calc(--spacing(16)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))] max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden',
+              !compact &&
+                'max-sm:max-h-none max-sm:pb-[calc(--spacing(16)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))] max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden',
               'max-sm:has-[>[data-slot=dialog-header],>form>[data-slot=dialog-header]]:pt-0 max-sm:has-[>[data-slot=dialog-header],>form>[data-slot=dialog-header]]:[&>[data-slot=dialog-close]]:hidden',
               cardScrollContainerClassName
             )}
@@ -223,7 +230,7 @@ function DialogTitle({
       )}
       {/* A compact button: the header row is a toolbar, not a footer. */}
       <div
-        className="ml-2 flex shrink-0 translate-y-0.5 items-center gap-2 empty:hidden sm:hidden [&>[data-slot=button]]:min-w-0 [&>[data-slot=button]]:px-4 [&>[data-slot=button]]:[--button-h:--spacing(9)]"
+        className="ml-2 flex shrink-0 translate-y-0.5 items-center gap-2 empty:hidden sm:hidden [&>[data-slot=button]]:h-[calc(var(--control-h)-4px)] [&>[data-slot=button]]:min-w-0 [&>[data-slot=button]]:px-4"
         ref={setSlot}
       >
         {action}

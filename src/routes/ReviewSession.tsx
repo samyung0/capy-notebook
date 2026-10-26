@@ -104,6 +104,7 @@ export default function ReviewSession() {
         search.session,
         search.group,
         search.chapterId,
+        search.planId,
         search.reviewMode,
       ].join('|')}
       search={search}
@@ -137,6 +138,7 @@ function Session({
             chapterId: search.chapterId,
             group: search.group ?? 'workspace',
             mode: search.reviewMode,
+            planId: search.planId,
           },
         }
   );
@@ -184,6 +186,7 @@ function Session({
           materialId,
         })),
         mode: data.mode,
+        planId: data.planId,
         workspaceId,
       },
     });
@@ -193,17 +196,18 @@ function Session({
   // Cards rise from one stack across the session, the rated one swiping away.
   const stack = useCardStack();
 
-  // Ratings save in the background and refresh progress once, when the
-  // session is left or Review more asks for the next batch.
+  // Ratings save in the background and refresh progress once, in every
+  // workspace (a plan's items span several), when the session is left or
+  // Review more asks for the next batch.
   const qc = useQueryClient();
   const { mutateAsync: rateItem } = useRateReviewItem(null);
   const { mutate: finish } = useFinishReviewSession();
   const [ratings] = useState(() => ratingQueue(rateItem, ratingFailed));
   useEffect(
     () => () => {
-      void ratings.saved().then(() => invalidateStudy(qc, workspaceId));
+      void ratings.saved().then(() => invalidateStudy(qc));
     },
-    [qc, ratings, workspaceId]
+    [qc, ratings]
   );
   const shown = steps.current;
   const itemOf = (key: string) =>
@@ -244,6 +248,12 @@ function Session({
     );
   }
 
+  // A plan's review returns to its Study page with the plan picked.
+  const planId = search.planId ?? session?.ref.planId;
+  const studySearch = {
+    study: true as const,
+    ...(planId ? { plan: planId } : {}),
+  };
   function back() {
     if (search.from === 'review')
       navigate({ search: { tab: 'review' }, to: '/learning' });
@@ -251,7 +261,7 @@ function Session({
     else
       navigate({
         params: { workspaceId },
-        search: { study: true },
+        search: studySearch,
         to: '/workspaces/$workspaceId',
       });
   }
@@ -260,13 +270,14 @@ function Session({
     setLoadingMore(true);
     try {
       await ratings.saved();
-      await invalidateStudy(qc, workspaceId);
+      await invalidateStudy(qc);
       if (session)
         setSource({
           start: {
             chapterId: session.ref.chapterId,
             group: session.ref.group,
             mode: session.ref.mode,
+            planId: session.ref.planId,
           },
         });
       setSession(null);
@@ -297,7 +308,7 @@ function Session({
                     label: ws?.name ?? '',
                     link: linkOptions({
                       params: { workspaceId },
-                      search: { study: true },
+                      search: studySearch,
                       to: '/workspaces/$workspaceId',
                     }),
                   },
@@ -353,7 +364,7 @@ function Session({
                         ? SRS_RATINGS[shown.record.rating - 1]
                         : undefined
                     }
-                    size="large"
+                    size="compact"
                     stack={stack}
                   />
                 ) : (

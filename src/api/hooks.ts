@@ -22,6 +22,11 @@ import {
   trackItemCloned,
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
+import {
+  pruneRecentOpens,
+  RECENT_OPENS_MAX,
+  readRecentOpens,
+} from '@/lib/recentOpens';
 import { emitSyncedCustomization } from '@/theme/customizationEvents';
 import { USE_MSW } from './auth';
 import { api, isApiError, qk } from './client';
@@ -44,12 +49,13 @@ import type {
   CalendarEvent,
   Chapter,
   ChatPrefs,
+  CheckQuizQuestionReq,
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResult,
   ContentOrderItem,
   Conversation,
-  CreateAttemptReq,
+  CreateBlankFileReq,
   CreateCommentReq,
   CreateDiscussionReq,
   CreateEmbeddedMaterialReq,
@@ -1244,6 +1250,31 @@ export const recentFilesQuery = () => ({
   ...persisted,
 });
 
+/** The phone quick open's files: those this browser opened last that the
+ * caller can still open. The ids are read when the query runs, so the key
+ * stays fixed and the cached rows show while a new open refetches; the
+ * client orders the rows by its opens. Opens the list left out are dropped. */
+export const openedFilesQuery = () =>
+  queryOptions({
+    queryFn: async () => {
+      const ids = readRecentOpens()
+        .filter((open) => open.kind === 'file')
+        .map((open) => open.id);
+      if (!ids.length) return [];
+      const page = await api.get<FilePage>(
+        `/files${listSearch({ ids, limit: String(RECENT_OPENS_MAX), scope: 'member' }, '')}`
+      );
+      pruneRecentOpens(
+        'file',
+        ids,
+        page.items.map((file) => file.id)
+      );
+      return page.items;
+    },
+    queryKey: qk.ownedFiles('opened'),
+    ...persisted,
+  });
+
 export function useUpdateFile(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1942,6 +1973,38 @@ export const recentMaterialsQuery = () => ({
   ...persisted,
 });
 
+/** openedFilesQuery for materials: top-level ones of every kind, in member
+ * workspaces or standalone. */
+export const openedMaterialsQuery = () =>
+  queryOptions({
+    queryFn: async () => {
+      const ids = readRecentOpens()
+        .filter((open) => open.kind === 'material')
+        .map((open) => open.id);
+      if (!ids.length) return [];
+      const page = await api.get<MaterialPage>(
+        `/materials${listSearch(
+          {
+            ids,
+            kind: ['note', 'quiz', 'flashcards', 'mindmap', 'diagram'],
+            limit: String(RECENT_OPENS_MAX),
+            location: ['workspace', 'standalone'],
+            scope: 'member',
+          },
+          ''
+        )}`
+      );
+      pruneRecentOpens(
+        'material',
+        ids,
+        page.items.map((material) => material.id)
+      );
+      return page.items;
+    },
+    queryKey: qk.ownedMaterials('opened'),
+    ...persisted,
+  });
+
 function invalidateOwnedMaterials(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
 }
@@ -1993,6 +2056,22 @@ export function useCloneFile(options?: MutationUiOptions) {
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       if (body.chapterName)
         qc.invalidateQueries({ queryKey: qk.chapters(file.workspaceId) });
+    },
+  });
+}
+
+/** The Create tab's Blank DOCX and Blank XLSX: a stored, unprocessed file
+ * the caller pays for. */
+export function useCreateBlankFile(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateBlankFileReq) =>
+      api.post<SourceFile>(`/workspaces/${wsId}/files/blank`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.files(wsId) });
+      qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+      qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
+      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
     },
   });
 }
@@ -2445,8 +2524,10 @@ export const useAttempts = (params: AttemptParams = {}) =>
     placeholderData: keepPreviousData,
   });
 
+// Persisted: the quiz page resumes its open attempt from it.
 export const attemptQuery = (id: string) =>
   queryOptions({
+    ...persisted,
     enabled: !!id,
     queryFn: () => api.get<AttemptDetail>(`/attempts/${id}`),
     queryKey: qk.attempt(id),
@@ -2506,14 +2587,18 @@ export function useDeleteQuiz() {
     },
   });
 }
-/** Submits the answers; the server grades every part, records the attempt
- * and returns it graded, with the key for each question. */
-export function useSubmitAttempt(options?: MutationUiOptions) {
+/** Checks one question of a quiz attempt: the server grades it, adds it to
+ * the attempt (a new one when `attemptId` is missing or unknown) and returns
+ * the attempt so far, with the key for each checked question. */
+export function useCheckQuizQuestion(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
-    mutationFn: ({ quizId, ...body }: CreateAttemptReq & { quizId: string }) =>
-      api.post<AttemptDetail>(`/quizzes/${quizId}/attempts`, body),
+    mutationFn: ({
+      quizId,
+      ...body
+    }: CheckQuizQuestionReq & { quizId: string }) =>
+      api.post<AttemptDetail>(`/quizzes/${quizId}/check`, body),
     onSuccess: (attempt) => {
       // An embedded quiz records nothing: its attempt comes back without an id.
       if (!attempt.id) return;
@@ -2582,6 +2667,24 @@ export const useWorkspaceStudy = (
 ) =>
   useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
 
+/** The workspace's summary with its review parts (Reviewable, Quick review,
+ * Continue review) drawn from one of the user's plans kept in it. */
+export const usePlanStudy = (
+  workspaceId: string,
+  planId: string | undefined,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    ...persisted,
+    enabled: !!planId,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<StudySummary>(
+        `/workspaces/${workspaceId}/study${listSearch({ planId }, '')}`
+      ),
+    queryKey: qk.planStudy(workspaceId, planId ?? ''),
+  });
+
 /** Each quiz's and set's attempt count and latest attempts in a workspace,
  * for the Study progress page; refreshed with the Study tab. */
 export const workspaceAttemptsQuery = (workspaceId: string) =>
@@ -2608,14 +2711,15 @@ export function invalidateStudy(
   workspaceId?: string
 ) {
   // qk.study and qk.workspaceReview: ['workspace', id, 'study' | 'review'];
-  // every workspace's plans, since a plan counts steps in other workspaces.
+  // every workspace's plans and plan summaries, since a plan counts steps
+  // and draws review items from other workspaces.
   return Promise.all([
     qc.invalidateQueries({
       predicate: ({ queryKey: [scope, id, kind, part] }) =>
         scope === 'workspace' &&
         (((!workspaceId || id === workspaceId) &&
           (kind === 'study' || kind === 'review')) ||
-          (kind === 'study' && part === 'plans')),
+          (kind === 'study' && (part === 'plans' || part === 'plan'))),
     }),
     qc.invalidateQueries({ queryKey: qk.reviewRoot }),
     qc.invalidateQueries({ queryKey: qk.learningRoot }),
@@ -2800,6 +2904,7 @@ export const useLearningProgress = (
 /** Plans kept in a workspace, then the user's plans elsewhere with a step in it. */
 export const workspacePlansQuery = (workspaceId: string) =>
   queryOptions({
+    ...persisted,
     queryFn: () =>
       api.get<StudyPlans>(`/workspaces/${workspaceId}/study/plans`),
     queryKey: qk.studyPlans(workspaceId),
@@ -2821,8 +2926,11 @@ export const useLearningPlans = (options?: QueryUiOptions) =>
 const invalidatePlans = (qc: QueryClient) =>
   Promise.all([
     qc.invalidateQueries({
+      // The plans, and each plan's review parts its steps feed.
       predicate: ({ queryKey: [scope, , kind, part] }) =>
-        scope === 'workspace' && kind === 'study' && part === 'plans',
+        scope === 'workspace' &&
+        kind === 'study' &&
+        (part === 'plans' || part === 'plan'),
     }),
     qc.invalidateQueries({ queryKey: qk.learningPlans }),
   ]);
@@ -2857,7 +2965,8 @@ export function useUpdateStudyPlan(workspaceId: string) {
           ...list,
           plans: list.plans.map((p) => {
             if (p.id !== id) return p;
-            // Steps keep their shown titles; new ones show once refetched.
+            // Held steps keep their titles; new ones are in the list at once
+            // (a save before the refetch must keep them) and get theirs then.
             const held = new Map(
               p.steps.map((st) => [stepKey(st), st] as const)
             );
@@ -2865,7 +2974,14 @@ export function useUpdateStudyPlan(workspaceId: string) {
               ...p,
               name: name ?? p.name,
               steps: steps
-                ? steps.flatMap((st) => held.get(stepKey(st)) ?? [])
+                ? steps.map(
+                    (st) =>
+                      held.get(stepKey(st)) ?? {
+                        ...st,
+                        locked: false,
+                        title: '',
+                      }
+                  )
                 : p.steps,
             };
           }),
@@ -2880,7 +2996,7 @@ export function useUpdateStudyPlan(workspaceId: string) {
 
 /** One identity per step target, the server's uniqueness. */
 export const stepKey = (st: PlanStepInput) =>
-  `${st.kind}:${st.workspaceId}:${st.targetId ?? ''}`;
+  `${st.kind}:${st.workspaceId}:${st.targetId}`;
 
 export function useDeleteStudyPlan() {
   const qc = useQueryClient();

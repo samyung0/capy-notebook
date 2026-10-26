@@ -41,7 +41,6 @@ import type {
   FilePage as GenFilePage,
   FilePreview as GenFilePreview,
   GradedQuestion as GenGradedQuestion,
-  GradedQuiz as GenGradedQuiz,
   Material as GenMaterial,
   MaterialListItem as GenMaterialListItem,
   MaterialPage as GenMaterialPage,
@@ -96,6 +95,7 @@ export type {
   CloneWorkspaceResp as CloneWorkspaceResult,
   CollaborationTokenResponse as MaterialCollaborationToken,
   ContentOrderItem,
+  CreateBlankFileReq,
   CreateConversationReq,
   CreateEventReq,
   CreateFlashcardSetReq,
@@ -216,21 +216,16 @@ export type SystemColor =
 /* ---------------- overridden contracts ----------------
    Same generated shape, minus the wire's opaque / client-only fields. */
 
-/** An attempt as the server graded it, also POST /quizzes/{id}/attempts'
- * response: `questions` carry their keys and, on each part, `awarded`, plus
+/** An attempt as the server graded it, also POST /quizzes/{id}/check's
+ * response (the attempt so far): `questions` carry their keys and, on each part, `awarded`, plus
  * `itemAwards` (open) or `itemResults` (matching, gaps); `answers` maps part
  * id -> the user's answer (the `Answer` union from grade.ts, kept loose here
  * to avoid an import cycle). */
 export type AttemptDetail = Omit<GenAttemptDetail, 'questions'> & {
   questions: Question[];
 };
-/** A signed-out attempt graded by POST /public/quizzes/{token}/grade, keyed
- * and awarded like AttemptDetail; nothing is stored server-side. */
-export type GradedQuiz = Omit<GenGradedQuiz, 'questions'> & {
-  questions: Question[];
-};
-/** One question checked by POST /review/check or /bank/questions/{id}/check,
- * with its key and awards. */
+/** One question checked by POST /review/check, /bank/questions/{id}/check or
+ * a signed-out /public/.../grade, with its key and awards. */
 export type GradedQuestion = Omit<GenGradedQuestion, 'question'> & {
   question: Question;
 };
@@ -358,8 +353,6 @@ export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
   quickReview: ReviewItem[];
 };
 export type {
-  BankCopyInputBody as BankCopyReq,
-  BankCopyOutputBody as BankCopyResult,
   BankMarksOutputBody as BankTopicMarks,
   BankProgressOutputBody as BankProgress,
   BankSummaryOutputBody as BankTopicSummary,
@@ -398,6 +391,8 @@ export interface ReviewStart {
   chapterId?: string;
   group: GenReviewSession['group'];
   mode?: ReviewMode;
+  /** A plan group's plan, kept in the session's workspace. */
+  planId?: string;
 }
 export type AttemptSort = ListAttemptsSort;
 export type AttemptKind = import('./gen/model').Attempt['kind'];
@@ -429,7 +424,8 @@ export type CreateQuizReq = Omit<GenCreateQuizReq, 'questions'> & {
 };
 export type {
   AttemptCard,
-  CreateAttemptReq,
+  CheckQuizQuestionReq,
+  CheckSharedNoteQuizReq,
   ItemAttempts,
   PreviousAttempt,
 } from './gen/model';
@@ -494,6 +490,7 @@ import type {
   Customization as GenCustomization,
   PageFrame as GenPageFrame,
   PageFrameColor,
+  PageFrameFrostedItem,
 } from './gen/model';
 
 export type {
@@ -501,8 +498,13 @@ export type {
   PageFrameColours,
   PageFramePattern,
 } from './gen/model';
+/** A panel that can frost over the page frame: the left, centre or right one. */
+export type FrostPanel = PageFrameFrostedItem;
 /** The painted page frame (src/theme/pageFrame.ts); always 1 to 3 colours. */
-export type PageFrame = Omit<GenPageFrame, 'dots'> & { dots: PageFrameColor[] };
+export type PageFrame = Omit<GenPageFrame, 'dots' | 'frosted'> & {
+  dots: PageFrameColor[];
+  frosted: FrostPanel[];
+};
 /** The app's look as Sync stores it on the account. */
 export type Customization = Omit<GenCustomization, 'pageFrame'> & {
   pageFrame: PageFrame;

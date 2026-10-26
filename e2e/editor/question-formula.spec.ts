@@ -24,7 +24,7 @@ test('block formula preserves its height and dismisses the virtual keyboard', as
   );
   await paragraph
     .getByRole('button', { exact: true, name: m.editor_equation() })
-    .click();
+    .dblclick();
   const field = paragraph.locator('math-field:not([read-only])');
   await expect(field).toBeVisible();
   const after = await paragraph.evaluate(
@@ -54,7 +54,7 @@ test('block formula preserves its height and dismisses the virtual keyboard', as
     .toBe(false);
   await paragraph
     .getByRole('button', { exact: true, name: m.editor_equation() })
-    .click();
+    .dblclick();
   await toggle.click();
   await field.press('ControlOrMeta+A');
   await page
@@ -97,7 +97,7 @@ test('question formula accepts physical digits and retains them after commit', a
   await editor
     .getByRole('button', { exact: true, name: m.question_ui_formula() })
     .first()
-    .click();
+    .dblclick();
   const formula = editor.locator('math-field:not([read-only])');
   await expect(formula).toBeVisible();
   await expect(
@@ -127,7 +127,7 @@ test('question formula accepts physical digits and retains them after commit', a
   const viewing = await rendered.locator('.ML__base').boundingBox();
   expect(Math.abs(viewing!.width - editing!.width)).toBeLessThan(0.1);
   expect(Math.abs(viewing!.height - editing!.height)).toBeLessThan(0.1);
-  await preview.click();
+  await preview.dblclick();
   await expect(formula).toHaveJSProperty('value', tex);
   await formula.press('ControlOrMeta+A');
   await formula.press('5');
@@ -144,7 +144,7 @@ test('question formula accepts physical digits and retains them after commit', a
   await editor
     .getByRole('button', { exact: true, name: m.question_ui_formula() })
     .first()
-    .click();
+    .dblclick();
   await expect(formula).toHaveJSProperty('value', '5');
 });
 
@@ -217,4 +217,42 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
       return { fade, fits: scroll <= client, mask };
     })
     .toEqual({ fade: '0px 0px', fits: true, mask: 'none' });
+});
+
+test('a question formula selects on click for Delete and edits on double click', async ({
+  page,
+}) => {
+  await page.goto('/materials/qz_1?mode=edit');
+  await page
+    .getByRole('button', { exact: true, name: m.action_edit() })
+    .first()
+    .click({ timeout: 30_000 });
+  const dialog = page.getByRole('dialog');
+  // The stem's second block is the reaction's display formula.
+  await dialog
+    .getByRole('button', {
+      exact: true,
+      name: m.question_ui_select_block({ type: m.question_ui_text() }),
+    })
+    .nth(1)
+    .click();
+  await page.keyboard.press('Enter');
+  const editor = dialog.getByRole('textbox', {
+    name: m.question_ui_text_and_formulas(),
+  });
+  const formulas = editor.getByRole('button', {
+    exact: true,
+    name: m.question_ui_formula(),
+  });
+  const field = editor.locator('math-field:not([read-only])');
+  await expect(formulas.first()).toBeVisible();
+  const count = await formulas.count();
+  await formulas.first().dblclick();
+  await expect(field).toBeVisible();
+  await field.press('Enter');
+  await expect(field).toHaveCount(0);
+  await formulas.first().click();
+  await expect(field).toHaveCount(0);
+  await page.keyboard.press('Delete');
+  await expect(formulas).toHaveCount(count - 1);
 });

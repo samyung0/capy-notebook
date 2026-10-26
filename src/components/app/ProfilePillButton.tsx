@@ -68,7 +68,7 @@ export function ProfilePillButton({
     <button
       className={cn(
         BASE_BUTTON_STYLE,
-        'flex h-11.5 min-w-36 max-w-50 items-center gap-2.5 rounded-full bg-surface pr-3 hover:bg-surface-hover-bg [[data-style=classroom][data-theme=frappe]_&]:hover:bg-[#283447] [[data-style=classroom][data-theme=mocha]_&]:hover:bg-[#1f2836]',
+        'flex h-11.5 min-w-36 max-w-50 items-center gap-2.5 rounded-full bg-surface pr-3 hover:bg-surface-hover-bg [:is([data-style=capy],[data-style=fisheye])[data-theme=frappe]_&]:hover:bg-[#283447] [:is([data-style=capy],[data-style=fisheye])[data-theme=mocha]_&]:hover:bg-[#1f2836]',
         className
       )}
       type="button"

@@ -66,7 +66,7 @@ func envList(key string) []string {
 func rateLimitConfig(appEnv, shareLinkSecret string) ratelimit.Config {
 	cfg := ratelimit.DefaultConfig()
 	cfg.ShareReadSecret = []byte(shareLinkSecret)
-	if appEnv == "e2e" || envBool("RATE_LIMIT_DISABLED") {
+	if (appEnv == "e2e" && !loadTest) || envBool("RATE_LIMIT_DISABLED") {
 		cfg.Disabled = true
 		return cfg
 	}
@@ -607,6 +607,7 @@ func main() {
 		StripeSecretKey: cfg.StripeSecretKey,
 		StripePricePro:  cfg.StripePricePro,
 	})
+	runPoolWaitLog(ctx, st.Pool())
 
 	go func() {
 		log.Printf("capy-notebook gateway listening on %s", addr)

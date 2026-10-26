@@ -5,7 +5,8 @@
 @import "./fontFallbacks.css";
 @import "./cjkFont.css";
 @import "tailwindcss" source("../");
-@import "./tokens/themes/classroom.css";
+@import "./tokens/themes/capy.css";
+@import "./tokens/themes/fisheye.css";
 @import "./tokens/themes/notion.css";
 @import "./tokens/catppuccin.css";
 @import "tw-animate-css";
@@ -13,6 +14,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Inside a panel frosted over the page frame (data-frosted, see "The painted
+   page frame" below): for surfaces that should show the frost, not paint over
+   it, usually with `frosted:bg-(--frost-fill)`. */
+@custom-variant frosted (&:is(html[data-page-frame] .page-frame [data-frosted] *));
 /* The sidebar rail is widened: hovered, holding keyboard focus, or with one
    of its menus open. */
 @custom-variant rail-open (&:is(:where(.group\/rail):is(:hover, :has(:focus-visible, [aria-expanded="true"])) *));
@@ -29,6 +34,7 @@
   /* Surfaces → bg-* */
   --color-page: var(--surface-page);
   --color-page-hover: var(--surface-page-hover);
+  --color-item-hover: var(--surface-item-hover);
 
   --color-surface: var(--surface-card-bg);
   --color-surface-hover-bg: var(--surface-card-hover-bg);
@@ -123,6 +129,9 @@
   --radius-input: var(--radius-input);
   --radius-button: var(--radius-button);
   --radius-button-lg: var(--radius-button-lg);
+  --radius-button-xl: var(--radius-button-xl);
+  --radius-tile: var(--radius-tile);
+  --radius-flashcard: var(--radius-flashcard);
   --radius-card: var(--radius-card);
   --radius-card-lg: var(--radius-card-lg);
   --radius-card-xl: var(--radius-card-xl);
@@ -135,21 +144,24 @@
   --shadow-chip: var(--shadow-chip);
 }
 
-[data-style="classroom"] {
+[data-style="capy"],
+[data-style="fisheye"] {
   --top-inset-bar-radius: var(--radius-card-lg);
   --top-inset-bar-height: 60px;
   --top-inset-bar-width: 100%;
 }
 
 @media (min-width: 1024px) {
-  [data-style="classroom"] {
+  [data-style="capy"],
+  [data-style="fisheye"] {
     --top-inset-bar-width: 330px;
     --top-inset-bar-radius: var(--radius-card-lg);
   }
 }
 
 @media (min-width: 1280px) {
-  [data-style="classroom"] {
+  [data-style="capy"],
+  [data-style="fisheye"] {
     --top-inset-bar-width: 360px;
     --top-inset-bar-radius: var(--radius-card-xl);
   }
@@ -257,8 +269,8 @@
 }
 
 /* Page gutters. Normal: list and overview pages (Dashboard, Workspaces,
- * Files, the Learning tables, Question bank). Wide: the body under a page's
- * tabs (Settings, Billing, Learning's Progress and Review) and Notifications.
+ * Question bank). Wide: the body under a page's tabs (Settings, Billing,
+ * Files, Learning) and Notifications.
  * wide-inset takes a section inside a normal page out to the wide gutter
  * (Question bank's topic lists). The bleeds pull edge-to-edge content (the
  * trail maps) back out to the panel's edges. */
@@ -519,7 +531,7 @@ math-field {
      with the Plate playground's compact ones (nodeStyles.ts reads the gaps).
      A pick on <html data-note-font> wins; otherwise notion gets the system
      font. The roomy gaps sit on :root so note blocks outside .note-editor
-     keep them. The Fustat stack repeats classroom.css. */
+     keep them. The Fustat stack repeats capy.css. */
   :root {
     --note-font-fustat:
       "Fustat Variable", "Fustat", "Fustat Fallback", var(--font-cjk),
@@ -544,7 +556,7 @@ math-field {
   :root[data-note-font="system"] .note-editor,
   :root[data-style="notion"]:not([data-note-font="fustat"]) .note-editor {
     --font-sans: var(--note-font-system);
-    /* classroom's body weight (500) suits Fustat; system text reads at 400. */
+    /* capy's body weight (500) suits Fustat; system text reads at 400. */
     font-weight: 400;
     --note-gap: var(--spacing);
     --note-p-py: var(--spacing);
@@ -748,7 +760,7 @@ math-field {
    ThemeProvider, or the pre-paint scripts in index.html and share.html, set
    the --page-frame-* properties and data-page-frame on <html>; the shell and
    the shared pages paint their margin with them, dark themes under an ink
-   wash, and the shell's sidebar card frosts over the paint. Unlayered, so it
+   wash, and the picked panels frost over the paint. Unlayered, so it
    overrides the cards' background utilities.
    The three colours are registered so that, while the Theme drawer's Page
    frame section is open (data-page-frame-edit), a new frame (a preset, a
@@ -793,16 +805,33 @@ html[data-page-frame] .page-frame {
   background-size: 100% 100%;
   background-position: center;
 }
-/* Frosted cards: the shell's sidebar and the workspace's left panel.
-   Translucent hovers, so a row darkens the frost instead of covering it. */
+/* Frosted cards: the left, centre or right panels the Theme drawer picks
+   (useFrosted sets data-frosted). Translucent hovers, so a row darkens the
+   frost instead of covering it, and translucent lines and fields (selects,
+   inputs), so they sit on the frost instead of as opaque grey and white.
+   --frost-fill is the same light fill for controls and tiles that would
+   otherwise paint the card colour (`frosted:bg-(--frost-fill)`). Menus and
+   dialogs portal out of the panel and keep the opaque tokens. */
 html[data-page-frame] .page-frame [data-frosted] {
+  --frost-fill: rgb(255 255 255 / 0.5);
   --surface-page-hover: rgb(0 0 0 / 0.06);
   --surface-card-hover-bg: rgb(0 0 0 / 0.06);
+  /* Grid cards, a step lighter than a row's hover as on opaque panels. */
+  --surface-item-hover: rgb(0 0 0 / 0.04);
+  --surface-field-bg: var(--frost-fill);
+  --surface-field-disabled-bg: rgb(0 0 0 / 0.04);
+  --border-default: rgb(0 0 0 / 0.12);
+  --divider: rgb(0 0 0 / 0.08);
   background-color: rgb(255 255 255 / 0.6);
 }
 html.dark[data-page-frame] .page-frame [data-frosted] {
+  --frost-fill: rgb(255 255 255 / 0.05);
   --surface-page-hover: rgb(255 255 255 / 0.08);
   --surface-card-hover-bg: rgb(255 255 255 / 0.08);
+  --surface-item-hover: rgb(255 255 255 / 0.06);
+  --surface-field-disabled-bg: rgb(255 255 255 / 0.03);
+  --border-default: rgb(255 255 255 / 0.12);
+  --divider: rgb(255 255 255 / 0.08);
   background-color: rgb(17 17 27 / 0.55);
 }
 /* An open exam's tree (ExamSection) runs over its cover's wash: translucent
@@ -815,14 +844,18 @@ html.dark[data-page-frame] .page-frame [data-frosted] {
   --surface-card-hover-bg: rgb(255 255 255 / 0.05);
 }
 /* A row's hover ⋮ cannot cover the label with a see-through fill: it drops
-   its fill and the label fades out under it instead. */
+   its fill and the label fades out under it instead. Only rows holding the ⋮
+   directly: a card's own ⋮ sits on the card's opaque fill. */
 html[data-page-frame] .page-frame [data-frosted] [data-slot="hover-actions"] {
   background-color: transparent;
 }
 html[data-page-frame]
   .page-frame
   [data-frosted]
-  .group:is(:hover, :has(> [data-slot="hover-actions"] [data-state="open"]))
+  .group:has(> [data-slot="hover-actions"]):is(
+    :hover,
+    :has(> [data-slot="hover-actions"] [data-state="open"])
+  )
   > :not([data-slot="hover-actions"]) {
   mask-image: linear-gradient(to left, transparent 2.25rem, #000 3.25rem);
 }

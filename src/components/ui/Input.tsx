@@ -31,8 +31,8 @@ const inputContainerVariants = cva(
     variants: {
       size: {
         lg: 'rounded-card-lg px-4.5 py-0',
-        // Same heights as Button md; one h-* override still replaces it.
-        md: 'h-(--input-h) rounded-input px-3.5 py-0 [--input-h:--spacing(10)] sm:[--input-h:--spacing(11)]',
+        // Button and Select md's height; one h-* override still replaces it.
+        md: 'h-(--control-h) rounded-input px-3.5 py-0',
         sm: 'rounded-input px-2.5 py-0 text-xs',
       },
       variant: {
@@ -51,7 +51,9 @@ const inputContainerVariants = cva(
 );
 
 const inputVariants = cva(
-  'min-w-0 flex-1 border-none bg-transparent outline-none placeholder:text-placeholder disabled:bg-field-disabled disabled:text-fg-muted',
+  // The wrapper paints the disabled fill (has-disabled); a second one here
+  // would double a translucent fill on a frosted panel.
+  'min-w-0 flex-1 border-none bg-transparent outline-none placeholder:text-placeholder disabled:text-fg-muted',
   {
     defaultVariants: {
       size: 'md',

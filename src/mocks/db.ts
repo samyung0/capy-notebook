@@ -74,6 +74,7 @@ import {
   EDITOR_WORKSPACE_ID,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
+import { markdownSamples } from './markdownSamples';
 import {
   nearLimitCards,
   nearLimitFlowchart,
@@ -631,6 +632,7 @@ print(punnett("Aa", "Aa"))
     kind: 'txt',
     name: 'Photosynthesis.tex',
   },
+  ...markdownSamples,
 ] as const;
 
 /** Inline text sources for MSW: the links handler hands this back as the
