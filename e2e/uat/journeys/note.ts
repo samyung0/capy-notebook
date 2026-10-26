@@ -204,7 +204,7 @@ export async function createNote(run: UatRun, workspaceId: string) {
   await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-add-menu]')
-    .getByRole('button', { exact: true, name: m.action_add_file_or_chapter() })
+    .getByRole('button', { exact: true, name: m.action_new_file_or_chapter() })
     .click();
   await page.getByRole('menuitem', { name: m.action_new_file() }).click();
   const dialog = page.getByRole('dialog');

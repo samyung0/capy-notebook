@@ -444,9 +444,10 @@ test.describe('study progress', () => {
       new RegExp(`[?&]material=${startedQuiz.id}(&|$)`)
     );
 
-    // Learning → Review: Default plans lists the five practised items, and
-    // the row opens a whole-workspace session, which mixes in the new ones
-    // (the untouched quiz, the started set's other cards).
+    // Learning → Review: Default plans lists the workspace, and its row
+    // opens a whole-workspace session over the five practised items, which
+    // mixes in the new ones (the untouched quiz, the started set's other
+    // cards).
     const manual = await ownerApi.get(
       `/api/workspaces/${ws.id}/review?group=workspace`
     );
@@ -460,11 +461,6 @@ test.describe('study progress', () => {
         }),
       })
       .getByRole('button', { exact: true, name: ws.name });
-    await expect(
-      name
-        .locator('xpath=ancestor::div[contains(@class, "border-t")][1]')
-        .getByText(m.review_practised({ count: 5 }), { exact: true })
-    ).toBeVisible();
     await name.click();
     await expect(ownerPage).toHaveURL(
       new RegExp(
@@ -681,7 +677,7 @@ test.describe('study progress', () => {
     });
   });
 
-  test('hidden progress: the Study page keeps plain rows, Show brings it back, and settings stay in the URL', async ({
+  test('hidden progress: the Study page keeps its settings rows, the switch brings it back, and settings stay in the URL', async ({
     ownerApi,
     ownerPage,
     workspaceFactory,
@@ -698,13 +694,12 @@ test.describe('study progress', () => {
     ownerPage.on('pageerror', (error) => errors.push(error.message));
 
     await ownerPage.goto(`/workspaces/${workspace.id}?study=true`);
-    await expect(
-      ownerPage.getByText(m.study_hidden_title(), { exact: true })
-    ).toBeVisible();
-    await ownerPage
-      .getByRole('button', { exact: true, name: m.study_show() })
-      .click();
-    await expect(ownerPage.getByText(m.study_hidden_title())).toHaveCount(0);
+    const hide = ownerPage.getByRole('switch', {
+      name: m.study_hide_progress(),
+    });
+    await expect(hide).toBeChecked();
+    await hide.click();
+    await expect(hide).not.toBeChecked();
 
     // Back with settings open leaves in-app (a goto would leave the
     // document, so the router never runs) and closes the dialog once.
