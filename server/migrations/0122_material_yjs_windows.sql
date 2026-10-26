@@ -1,11 +1,11 @@
 -- Window snapshots of the in-place Yjs collection (openwiki/backend-storage-quota.md
 -- "Yjs storage growth"): with the collection on, each fold of a note stores
 -- the folded document's state vector and delete set at its stored_version as
--- a later collection's window candidate, and keeps the newest four per
--- document. They hold ids only, no content; only the collaboration server
--- reads and writes them, and like the rest of a material's Yjs history they
--- are not charged to storage. Notes only for now (Q274); `document` leaves
--- room for a quiz's keys.
+-- a later collection's window candidate, and keeps the newest of each hour
+-- for the latest 25 hours that have one (Q400). They hold ids only, no
+-- content; only the collaboration server reads and writes them, and like the
+-- rest of a material's Yjs history they are not charged to storage. Notes
+-- only for now (Q274); `document` leaves room for a quiz's keys.
 CREATE TABLE material_yjs_windows (
   material_id    text NOT NULL REFERENCES material_yjs_documents(material_id) ON DELETE CASCADE,
   document       text NOT NULL CHECK (document IN ('content', 'keys')),
