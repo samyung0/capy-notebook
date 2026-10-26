@@ -73,6 +73,30 @@ const STATUS_ICON = {
   unsaved: 'cloudAlert',
 } satisfies Record<NoteEditorSaveState, IconName>;
 
+/* The header's labels follow its width. A size container breaks WebKit's
+   scroll anchoring for a reader while blocks are added above (Q393), so
+   WebKit browsers (Safari and every iOS browser, all of which report Apple's
+   vendor) skip `@container/header` and measure the header instead:
+   `data-roomy` at 36rem (`@xl`) and `data-wide` at 42rem (`@2xl`), which the
+   label variants also read. */
+const WEBKIT =
+  typeof navigator !== 'undefined' &&
+  navigator.vendor === 'Apple Computer, Inc.';
+
+function measureHeader(header: HTMLDivElement | null) {
+  if (!(WEBKIT && header)) return;
+  const rem = Number.parseFloat(
+    getComputedStyle(document.documentElement).fontSize
+  );
+  const observer = new ResizeObserver(([entry]) => {
+    const width = entry.contentRect.width;
+    header.toggleAttribute('data-roomy', width >= 36 * rem);
+    header.toggleAttribute('data-wide', width >= 42 * rem);
+  });
+  observer.observe(header);
+  return () => observer.disconnect();
+}
+
 /** The workspace below lg has no side panels: the title opens Files from the
  * top, and ⋮ carries the workspace actions the panels held. */
 export interface OneColumnChrome {
@@ -194,7 +218,8 @@ export function EditorSaveStatus({
           'inline-flex size-(--toolbar-button) shrink-0 items-center justify-center rounded-button outline-none focus-visible:ring-2 focus-visible:ring-action',
           // With its label the button grows to fit it rather than spilling
           // the icon over the ⋮ before it.
-          labelWhenWide && '@xl/header:w-auto @xl/header:px-1.5',
+          labelWhenWide &&
+            '@xl/header:w-auto @xl/header:px-1.5 group-data-roomy/header:w-auto group-data-roomy/header:px-1.5',
           failed && 'text-solid-error'
         )}
         data-save-state={editorStatus.saveState}
@@ -210,7 +235,7 @@ export function EditorSaveStatus({
             'sr-only',
             labelWhenWide &&
               // Dropped 1px with the cloud.
-              't-meta @xl/header:not-sr-only @xl/header:ml-2 translate-y-[1px] @xl/header:whitespace-nowrap'
+              't-meta @xl/header:not-sr-only @xl/header:ml-2 translate-y-[1px] @xl/header:whitespace-nowrap group-data-roomy/header:not-sr-only group-data-roomy/header:ml-2 group-data-roomy/header:whitespace-nowrap'
           )}
         >
           {statusLabel}
@@ -580,7 +605,8 @@ export function Header({
     return (
       <div
         className={cn(
-          '@container/header grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 border-divider border-b',
+          WEBKIT ? 'group/header' : '@container/header',
+          'grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 border-divider border-b',
           menuShown
             ? 'h-15 grid-rows-[24px_24px] gap-y-1 pt-1.5'
             : 'h-12 items-center sm:h-15',
@@ -591,6 +617,7 @@ export function Header({
         data-layout="office"
         data-rows={menuShown ? 2 : 1}
         data-testid="content-header"
+        ref={measureHeader}
       >
         <div
           className={cn(
@@ -637,13 +664,15 @@ export function Header({
   return (
     <div
       className={cn(
-        '@container/header flex h-12 items-center gap-1 border-divider border-b sm:h-15',
+        WEBKIT ? 'group/header' : '@container/header',
+        'flex h-12 items-center gap-1 border-divider border-b sm:h-15',
         // Workspace buttons at the left edge sit as far in as the right's.
         leading ? 'px-3' : 'pr-2 pl-2 sm:pl-4',
         // The title pill's padding already spaces it from the back button.
         !(leading && oneColumn) && 'sm:gap-2'
       )}
       data-testid="content-header"
+      ref={measureHeader}
     >
       {leading}
       <div
