@@ -2,7 +2,9 @@
  * components (nodeComponents.tsx) and the static preview components
  * (materials/staticNodeComponents.tsx) consume these so the two surfaces
  * cannot drift apart visually. */
+import type { TElement, TText } from 'platejs';
 import type { CSSProperties } from 'react';
+import { isIndent, isStyleValue } from '@/features/materials/document';
 
 /** Heading sizes shrink on narrow screens through `note-fs` (tailwind.css);
  * the line heights are Tailwind's text-4xl/2xl/xl/lg ratios. */
@@ -15,10 +17,24 @@ export const HEADING_CLASS: Record<string, string> = {
   h6: 'mt-[0.75em] mb-1 pb-px text-base font-semibold text-fg',
 };
 
+/** Plate draws a text mark (color, background, font size and family) into a
+ * style only for a value the document check takes (`isStyleValue`). Shared by
+ * the editor and static plugins. */
+export const STYLE_MARK_NODE_PROPS = {
+  query: ({
+    nodeKey,
+    nodeProps,
+  }: {
+    nodeKey?: string;
+    nodeProps: { text?: TText };
+  }) => nodeKey !== undefined && isStyleValue(nodeProps.text?.[nodeKey]),
+};
+
 /** Font size marks written in px render through `note-fs` like headings;
  * other units (pasted HTML) render as written. Shared by the editor and static
  * plugins. */
 export const FONT_SIZE_NODE_PROPS = {
+  ...STYLE_MARK_NODE_PROPS,
   nodeKey: 'fontSize',
   transformClassName: ({ nodeValue }: { nodeValue?: unknown }) =>
     pxFontSize(nodeValue) == null ? undefined : 'note-fs',
@@ -28,6 +44,14 @@ export const FONT_SIZE_NODE_PROPS = {
       ? { fontSize: nodeValue }
       : { '--note-fs': px }) as unknown as CSSStyleDeclaration;
   },
+};
+
+/** Plate draws a block's indent as a class and a margin: only for an indent
+ * the document check takes (`isIndent`). Shared by the editor and static
+ * plugins. */
+export const INDENT_NODE_PROPS = {
+  query: ({ nodeProps }: { nodeProps: { element?: TElement } }) =>
+    isIndent(nodeProps.element?.indent),
 };
 
 const PX_FONT_SIZE = /^(\d+(?:\.\d+)?)px$/;

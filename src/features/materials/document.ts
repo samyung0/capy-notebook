@@ -174,6 +174,13 @@ const MATERIAL_REF_KINDS = new Set<string>(
  * the collaboration server refuse any other, so an imported document carrying
  * one fails here instead of getting the note's room refused. */
 const MEDIA_WIDTH = /^(?:[2-9][0-9]|100)%$/;
+/** A resizable block's width when it is one MEDIA_WIDTH takes, for renderers:
+ * the width reaches a style, so any other draws as no width. */
+export function mediaWidth(width: unknown): string | undefined {
+  return typeof width === 'string' && MEDIA_WIDTH.test(width)
+    ? width
+    : undefined;
+}
 /** A column's width as the editor writes it: the layout presets, or Plate's
  * column normalizer writing `${n}%` of a float (`49.9995%`,
  * `33.333333333333336%`). A plain decimal percentage above 0 and at most 100,
@@ -182,6 +189,39 @@ const MEDIA_WIDTH = /^(?:[2-9][0-9]|100)%$/;
 const COLUMN_WIDTH = /^(?:100|[1-9][0-9]?(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])%$/;
 export function isColumnWidth(width: unknown): width is string {
   return typeof width === 'string' && COLUMN_WIDTH.test(width);
+}
+/** A table's column size or left margin as Plate's table resizing writes it:
+ * a finite number of px, 0 or more. A column size may be empty (null) where
+ * Plate sets one past the end of the list. Go and the collaboration server
+ * refuse any other, and renderers draw none, since sizes reach a style. */
+export function isTableSize(size: unknown): size is number {
+  return typeof size === 'number' && Number.isFinite(size) && size >= 0;
+}
+/** A block's indent: a number (Plate's indent and list plugins, a pasted
+ * list's `aria-level`), at most LIST_INDENT_MAX. Plate turns it into a class
+ * and a margin, so renderers draw no other. */
+export function isIndent(indent: unknown): indent is number {
+  return typeof indent === 'number' && indent <= LIST_INDENT_MAX;
+}
+/** The text marks Plate draws straight into a style. */
+export const STYLE_MARKS = [
+  'color',
+  'backgroundColor',
+  'fontSize',
+  'fontFamily',
+] as const;
+/** A text mark's or a list's style value (Epo Q380): any string a browser
+ * writes (`var()`, `color-mix()`, non-px sizes, quoted font names, custom list
+ * markers) but no `;` and no control character (U+0000-U+001F, U+007F), since
+ * the value goes into a style as written. Go and the collaboration server
+ * refuse any other, and renderers draw none. */
+export function isStyleValue(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0x3b || code < 0x20 || code === 0x7f) return false;
+  }
+  return true;
 }
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -351,6 +391,15 @@ function validateCustomElement(
       return element.children.every(isTextNode);
     case 'column':
       return element.width === undefined || isColumnWidth(element.width);
+    case 'table':
+      return (
+        (element.colSizes === undefined ||
+          (Array.isArray(element.colSizes) &&
+            element.colSizes.every(
+              (size) => size == null || isTableSize(size)
+            ))) &&
+        (element.marginLeft === undefined || isTableSize(element.marginLeft))
+      );
     case 'flashcards':
       return (
         hasId(element) &&
@@ -424,11 +473,15 @@ export function isMaterialNode(
   depth = 0,
   live = false
 ): value is MaterialNode {
-  if (isTextNode(value)) return true;
+  if (isTextNode(value))
+    return STYLE_MARKS.every(
+      (key) => value[key] == null || isStyleValue(value[key])
+    );
   if (!isElementNode(value)) return false;
   if (!value.children.every((child) => isMaterialNode(child, depth + 1, live)))
     return false;
-  if (typeof value.indent === 'number' && value.indent > LIST_INDENT_MAX)
+  if (value.indent != null && !isIndent(value.indent)) return false;
+  if (value.listStyleType != null && !isStyleValue(value.listStyleType))
     return false;
   const catalog = ELEMENTS.get(value.type);
   // A stored document holding a type the catalog does not list stays
