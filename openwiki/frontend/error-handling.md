@@ -698,9 +698,14 @@ Every recovery path shows a recovery banner: a save refused for good the
 reload to continue from the last saved version."), and edits from another
 lineage (a newer version over unsaved edits, a draft from another version, a
 note room that moved on) the `changed` one ("This file changed while your
-edits were waiting to sync. Copy anything you need, then reload."). The
+edits were waiting to sync. Copy anything you need, then reload."). Unsent
+edits whose group was last edited over 7 days ago (Epo 2026-10-24; for notes
+until the merge view, Q251) open once under the `expired` one ("These edits
+are more than 7 days old and too old to sync. Copy anything you need, then
+reload."): their rows are deleted as they open (reported as
+`draft_unrestorable` / `expired`) and no draft sweep sends them. The
 unsaved content stays on screen read-only and selectable, with no download or
-discard; a page refresh reopens the same view. A recovery banner has no close
+discard; a page refresh reopens the same view, except an expired one. A recovery banner has no close
 button: its Reload, in the close button's place, is the only way out. It
 clears the drafts on display (matching exact rows, so another tab's newer
 write stays) and reopens the last saved version, after any other retained

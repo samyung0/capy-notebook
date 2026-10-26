@@ -3940,7 +3940,7 @@ materials are sources.
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes. The engine's reads also list pictures and charts and answer them by id (Pictures and charts, below); the tool shows them from phase B |
 | `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
 
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
@@ -4421,9 +4421,21 @@ edit's transaction (`ydoc::undo::Captured`), as an undo step under the edit's
 operation id (`Room.agent_changes`, indexed by `app.agent_steps`). The
 receipt commits without an Undo ref; once every room the edit wrote answers
 that it took the step (`ServiceEdit.taken`), the server stores
-`undo: {operationId, status: "available"}` on it and returns it so
+`undo: {operationId, status: "available", expiresAt}` on it and returns it so
 (`offer_undo` in `edits.rs`; a source's receipt is Go's checkpoint receipt,
-which never sets the ref). An edit of a file or material no room has loaded
+which never sets the ref). The step lasts 24 h from the edit whether or not
+its room stays loaded (Q385, Epo 2026-10-26): `expiresAt` says when, the
+room drops the step then (`Room::expire_agent_steps`, releasing it from
+`app.agent_steps`), an Undo or Redo arriving later is refused as one the
+room no longer has (`undo_unavailable`), and the chat hides the receipt's
+button at that time (`UndoButton` in `ChatTrace.tsx`). A step spanning rooms
+(a quiz's content and keys, each stamping its own time) ends as a whole at
+the earliest of them (Q389): the Undo handler refuses it once that passed,
+so neither room reverts alone. An Undo or Redo keeps
+the edit's 24 h, and the room's Undo answer names it for the next receipt.
+What the step and its reverses deleted is held an hour longer (in-place
+collection's agent holds, see [editing
+sessions](frontend/plate-editor.md#editing-sessions)). An edit of a file or material no room has loaded
 gets no Undo: nothing opens or holds a room for it, and its receipt shows
 none. A room that loaded after the edit committed already holds its items and
 takes no step either. An edit may remove or replace any note block, media
@@ -4757,6 +4769,115 @@ retried create gives the same bytes. The engine has every XLSX command above
 (`crates/office-service/src/xlsx.rs`) and every DOCX one
 (`crates/office-service/src/docx/agent.rs`), and every PPTX one
 (`crates/office-service/src/pptx/agent.rs`).
+
+Pictures and charts (Epo 2026-10-24, Q240, Q275 to Q280, Q283, Q284;
+2026-10-26, Q381, Q384, Q388; phase A, the engine, gateway and lane: the tool's
+argument, its renderers and the pictures' images come with phase B, so the
+tool shows none of this yet). The engine's reads list them: a DOCX page puts
+a paragraph's in `objects` (a picture, a chart, `{kind: "equation", text}`,
+`{kind: "drawing", text}` for a drawn shape or text box), a PPTX slide read
+adds them to a picture's or a chart's shape entry (the deck read only a
+picture's alt text, `viewable` and `reason`, a chart's `chartType` and
+`title`), and the XLSX sheet list gives each sheet's `objects` with their
+anchor `cell`; at most 50 a paragraph or sheet (`moreObjects`). A drawing
+part the sheet list cannot read is skipped and named in that sheet's
+`notice`, the rest of the list read, as the workbook skips its charts
+(review r1 M1). A read reads each chart part and each picture header once
+however many objects name it (`objects::Parts`; review r1 M3), and a DOCX
+page read opens the package once for its chart parts (`ObjectParts`, review
+r3 L1); a DOCX picture's header is decoded from the first 1 MiB of its data URL (as much
+as Go's upload check reads) and its bytes only when a by-id read sends them. A picture shows `id`, `alt` (1,000
+characters), `pixels` from its header (`[width, height]`; nothing is
+decoded, Q279), `crop` as fractions of the image each side leaves out (a
+side that is no finite number reads as 0), and `viewable`, or `viewable:
+false` with a `reason`: an EMF or WMF drawing, an SVG without the PNG Office
+stores beside it (an SVG with it is read as that PNG), linked to a file
+outside this one, damaged or unknown data (a media part that does not read,
+such as a wrong checksum, included; review r2 N4), its size cannot be read
+(a header naming no size, such as a TIFF's, or a width or height of 0;
+Q388), over 2,400 pixels on its long
+side (limits.json `inspectIds.pictureSide`, the upload check's limit, Q286,
+which Go's limits test and the sources crate's `pictures` tests keep equal;
+a GIF sized by the larger of its logical screen and its first frame), too
+large to send (a media part read no further than the answer's bytes). The
+size rules follow the upload check (Q381, Q384, Q388; applied with the
+read's limits, `Picture::seen`, with no fallback side), so a picture stored before
+that check whose header names a size past it, or none, is not sent; the
+header is all the engine reads, so a file whose header understates its
+pixels still reaches the AI process, whose pixel guard comes with phase B. A
+PPTX
+picture takes its file picture's alt text and crop only while it shows that
+picture's media (a picture added in the editor has none; review r1 L5). A
+chart shows `chartType` (`column`, `bar`, `line`, `pie` …, a combination
+joined), `title` and `series`, each with `name`, `refs` (`name`,
+`categories`, `values` cell references), `count` and its first 12 `points`
+as `[idx, category, value]` paired by `c:pt/@idx` (a gap stays a gap; a
+text value such as `#N/A` is kept) with `more`, at most 8 series
+(`moreSeries`); it is read again from the chart part (`objects::read_chart`),
+since the shared chart reader ignores idx and drops text points. A DOCX or
+PPTX chart's points are its part's caches (its data lives in an embedded
+workbook). An XLSX chart's `refs` and `cell` are the workbook's current ones
+(its `SheetChart`, which renames and row and column edits remap; the part's
+own when the workbook does not hold the chart), and its points and series
+name are read from the cells those references name now
+(`xlsx_parse::chart_reference_area`, `with_chart_refs`), `count` being the
+cells its values reference names and `more` the points past those shown
+plus the positions past the cells read (a literal part counting only the
+positions it gives; review r3 N2); a reference that does not read (a union, a defined name, another
+book, a two-dimensional range such as a multi-level category axis) shows
+nothing of its part instead of the file's cached one (Q381): without its
+values the series shows no points and a `reason` (naming the name too when
+it also fails); without its name or categories it keeps its values, that
+part empty and the `reason` on the series (Q384). A frame's chart is read once per sheet a call. An XLSX
+picture's or
+drawn shape's `cell` is its anchor moved along the rows and columns edited
+since, as a save moves it (`Workbook::source_axes`). Ids: a PPTX picture's
+or chart's shape id; DOCX `<story>:picture:<client>.<clock>` and
+`<story>:chart:<client>.<clock>`, the embed's Yjs item; XLSX
+`<drawing>#<anchor>:<n>`, the workbook's own image ids (`n` counting the
+anchor's embedded pictures), and `<drawing>#<anchor>:chart`.
+
+The query's `ids` (any format) reads them back (`objects::answer`): at most
+limits.json's `inspectIds.perCall` (4) a call, in an answer of at most
+`inspectIds.answerBytes` (8,384,512: Go's 8 MiB read of the collaboration
+answer, `postCollaboration`, less 4 KiB for the inspection around it). The
+answer is `items` in the order asked, a picture's with its `mimeType` and
+`data` (its stored bytes, base64) besides its read fields, a not-viewable
+picture's with its alt text and `reason`, a chart's with every point, and a
+`notice` naming the ids not found and why, the ids past the per-call count
+(which Go refuses first, so only another caller meets it), the pictures past
+the answer's bytes ("a read carries at most 6 MB of
+pictures; read them in another call"), and the points (`cut` on a series)
+and series (`seriesCut`) that did not fit, measured as JSON writes them
+(review r1 L4). Ids are trimmed of spaces, quotes and the brackets a read
+shows (a clear repair, Q277), and a DOCX paragraph id holding one picture or
+chart stands for it. The ids found are answered and a gone or malformed id
+is named in the notice (`Not found: <id> is no longer in the deck`, `… is a
+malformed picture or chart id; picture and chart ids read like …`; Q381);
+only a call naming no id at all is refused (`invalid_input`). An XLSX by-id
+read takes pictures from the package's drawing, relationship and media parts
+alone (`xlsx_drawing::by_ids`, `ooxml_opc::Package`: the package opened once
+a call and its part names indexed once, review r2 L3) without opening the
+workbook (2 to 9 s on large books), its items carrying no `cell` (the sheet
+list has it); a call naming a chart opens the workbook over the state, since
+a chart's points are its cells. Of the state the package path reads only the
+sheet order (`xlsx:sheet-order`), so a picture or chart of a sheet deleted
+since the read is named as gone ("its sheet was deleted"), as the sheet list
+no longer lists it. DOCX and PPTX by-id reads open the session over the base
+and that state as their reads do, so a picture added or removed in the
+editor answers as the read lists it. Go repairs `office.ids` as the engine
+does (trimmed, blanks and repeats dropped, in the order asked) and passes
+those alone to the inspect route (`internal_documents.go`, `officeIDs`;
+review r2 N2, r3 N3), after refusing more ids than the engine's per-call
+limit, an id over 256 bytes, or a list with no id left (422
+`invalid_input`, before the authority is called; Q381). There a by-id read is
+busy (an `unavailable_target` refusal, 409, the agent reads to ask again;
+not a 503) when its room's background engine process already holds 4 queued
+calls (`IDS_READ_QUEUE`, `EnginePool::admit`, counted per process, checked
+after the session lookup and before the base download and seed), and runs as
+a bounded call (`call_bounded`): skipped when its caller is gone by the time
+it would start, busy once it waited past 10 s (`IDS_READ_WAIT`; a rebuild
+rebase ahead of it). Every other call on the lane keeps its unbounded queue.
 
 Slides (Epo 2026-10-20, phase 3): `set_shape_text {shape_id,
 expected_text, paragraphs}` replaces a shape's whole text, `expected_text`

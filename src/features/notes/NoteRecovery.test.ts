@@ -40,10 +40,16 @@ vi.mock('react', async (load) => ({
 const stored = vi.hoisted(() => ({ rows: [] as unknown[] }));
 vi.mock('@/lib/editDrafts', async (load) => ({
   ...(await load<typeof import('@/lib/editDrafts')>()),
+  dropExpiredGroup: vi.fn(),
   readDrafts: vi.fn(async () => stored.rows),
 }));
 
-import type { EditDraft } from '@/lib/editDrafts';
+import * as Y from 'yjs';
+import {
+  DRAFT_EXPIRY_MS,
+  dropExpiredGroup,
+  type EditDraft,
+} from '@/lib/editDrafts';
 import { useNoteDrafts } from './NoteRecovery';
 
 const ROOM = 'material:m_1:schema:1';
@@ -54,7 +60,7 @@ const draft = (id: string, extra: Partial<EditDraft>): EditDraft => ({
   key: 'u_1:material:m_1',
   kind: 'update',
   lineage: ROOM,
-  savedAt: 0,
+  savedAt: Date.now(),
   seq: 1,
   session: id,
   ...extra,
@@ -80,4 +86,25 @@ it("applies accepted sessions' rows and leaves never-accepted ones with a token 
     pending: [pending],
     recovery: null,
   });
+});
+
+// Late merge M5 (Epo 2026-10-24): rows whose last edit is over 7 days old
+// open once, copy-only and marked too old, and go as they open.
+it('opens an expired group once, copy-only, and drops it', async () => {
+  const doc = new Y.Doc();
+  doc.getText('content').insert(0, 'old');
+  const old = draft('a:state', {
+    accepted: true,
+    data: Y.encodeStateAsUpdate(doc),
+    kind: 'state',
+    savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
+  });
+  stored.rows = [old];
+  render();
+  await vi.waitFor(() => expect(render()).not.toBeNull());
+  expect(render()).toMatchObject({
+    current: [],
+    recovery: { expired: true, refused: false, rows: [old] },
+  });
+  expect(dropExpiredGroup).toHaveBeenCalledWith([old], expect.any(Function));
 });

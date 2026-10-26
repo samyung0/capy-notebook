@@ -179,22 +179,24 @@ export function readSync(payload: Uint8Array) {
  * in protocol.rs is the same number (a test keeps them equal). When to bump:
  * openwiki/frontend/plate-editor.md "Client protocol".
  */
-export const CLIENT_PROTOCOL = 18;
+export const CLIENT_PROTOCOL = 20;
 
 /** A JOIN's payload: the room, the token, the client protocol, the Y.Doc's
- * client id (Q213); an embed's names its note's channel last (Epo
- * 2026-10-20). */
+ * client id (Q213), the stored version it holds (in-place collection, 0 when
+ * new); an embed's names its note's channel last (Epo 2026-10-20). */
 export function joinPayload(
   room: string,
   token: string,
   clientId: number,
+  version: number,
   note?: number
 ) {
   const writer = new Writer()
     .varString(room)
     .varString(token)
     .varUint(CLIENT_PROTOCOL)
-    .varUint(clientId);
+    .varUint(clientId)
+    .varUint(version);
   if (note !== undefined) writer.varUint(note);
   return writer.done();
 }

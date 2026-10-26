@@ -1116,6 +1116,7 @@ export const UndoEditOperationResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -1248,6 +1249,7 @@ export const ListMessagesResponseItem = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -1369,7 +1371,7 @@ export const ReportEditIncidentBody = zod.object({
   "fileId": zod.string().min(1).max(reportEditIncidentBodyFileIdMax).regex(reportEditIncidentBodyFileIdRegExp).describe('The note (material) or source file'),
   "fileKind": zod.enum(['material', 'source_file']),
   "kind": zod.enum(['other_epoch_draft', 'draft_unrestorable', 'draft_storage_failed', 'unconfirmed_edit', 'offline_episode', 'discard_unsaved']),
-  "reason": zod.enum(['reopen', 'held', 'epoch_changed', 'paused', 'base_missing', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found']).optional(),
+  "reason": zod.enum(['reopen', 'held', 'epoch_changed', 'paused', 'base_missing', 'expired', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found']).optional(),
   "sizeBytes": zod.int().min(reportEditIncidentBodySizeBytesMin).max(reportEditIncidentBodySizeBytesMax).optional()
 })
 
@@ -6016,6 +6018,7 @@ export const PurgeTrashedResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -6073,6 +6076,7 @@ export const RestoreTrashedResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()
@@ -8083,6 +8087,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
 }),
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
   "operationId": zod.string(),
   "status": zod.enum(['available', 'unavailable'])
 }).optional()

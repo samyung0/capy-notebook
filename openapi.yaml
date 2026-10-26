@@ -4777,6 +4777,7 @@ components:
             - epoch_changed
             - paused
             - base_missing
+            - expired
             - quota
             - unavailable
             - write
@@ -6797,6 +6798,9 @@ components:
     UndoRef:
       additionalProperties: false
       properties:
+        expiresAt:
+          format: date-time
+          type: string
         operationId:
           type: string
         status:

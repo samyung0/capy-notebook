@@ -2,7 +2,7 @@ import { lazy, Suspense, useState } from 'react';
 import type * as Y from 'yjs';
 import { uploadEditorAsset } from '@/api/editorAssets';
 import type { Question } from '@/api/types';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { recoveryBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
@@ -197,13 +197,13 @@ export function QuizRecovery({
     recovery.content?.doc ?? rooms.content?.doc,
     recovery.keys?.doc ?? rooms.keys?.doc
   );
-  const refused = !!(recovery.content?.refused || recovery.keys?.refused);
+  const state = recoveryBanner({
+    expired: !!(recovery.content?.expired || recovery.keys?.expired),
+    refused: !!(recovery.content?.refused || recovery.keys?.refused),
+  });
   return (
     <div className="grid gap-6">
-      <SaveBanner
-        onReload={recovery.reload}
-        state={refused ? 'refused' : 'changed'}
-      />
+      <SaveBanner onReload={recovery.reload} state={state} />
       <QuizQuestionList disabled questions={questions} showAnswerKey />
     </div>
   );

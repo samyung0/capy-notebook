@@ -306,11 +306,26 @@ function toastRefusal(effect: Undoable, code: string) {
  * showing the step, waits for the first one's answer. */
 const undoing = new Set<string>();
 
+/** Whether `at` (an ISO time; none: never) has passed, re-rendering when it does. */
+function usePassed(at: string | undefined): boolean {
+  const end = at ? Date.parse(at) : Number.POSITIVE_INFINITY;
+  const [passed, setPassed] = useState(() => Date.now() >= end);
+  useEffect(() => {
+    const left = end - Date.now();
+    setPassed(left <= 0);
+    if (left <= 0 || !Number.isFinite(left)) return;
+    const timer = setTimeout(() => setPassed(true), left);
+    return () => clearTimeout(timer);
+  }, [end]);
+  return passed;
+}
+
 /** Undo on created, edited and restored effects; Redo once undone. Hidden
- * unless the server says the step is available. A refusal hides it for the
- * session; an unknown outcome (no answer, a server error) or a refusal for a
- * moment (the Office pause, a busy room) keeps it, and the server answers a
- * retry with the step's receipt if the first one landed. */
+ * unless the server says the step is available, and once its edit's 24 h
+ * passed (Q385). A refusal hides it for the session; an unknown outcome (no
+ * answer, a server error) or a refusal for a moment (the Office pause, a busy
+ * room) keeps it, and the server answers a retry with the step's receipt if
+ * the first one landed. */
 function UndoButton({
   effect,
   handlers,
@@ -320,8 +335,10 @@ function UndoButton({
 }) {
   const { mutate: undo, isPending } = useUndoEdit();
   const redo = undoAction(effect.operation) === 'redo';
-  const { operationId, status } = effect.undo;
-  if (status !== 'available') return null;
+  const { operationId, status, expiresAt } = effect.undo;
+  // An edit's Undo and Redo are offered 24 h after the edit (Q385).
+  const expired = usePassed(expiresAt);
+  if (status !== 'available' || expired) return null;
   return (
     <Button
       className="px-1.5 py-1"

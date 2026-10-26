@@ -45,3 +45,9 @@ func SetUploadQueueTimings(t *testing.T, turn, bodyBase, poll time.Duration) {
 		uploadTurnTTL, uploadBodyBase, uploadPollWait = previous[0], previous[1], previous[2]
 	})
 }
+
+// The by-id read's caps on ids (internal_documents.go).
+const (
+	OfficeIDsPerCall = officeIDsPerCall
+	OfficeIDBytes    = officeIDBytes
+)

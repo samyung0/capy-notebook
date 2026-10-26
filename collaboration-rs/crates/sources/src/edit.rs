@@ -397,5 +397,11 @@ mod tests {
         ));
         let other = EngineError::Transient("Office engine process exited".into());
         assert!(matches!(office_error(other), SourceError::Engine(_)));
+        // A busy by-id read is a refusal the agent reads (409), not an outage.
+        assert!(matches!(
+            office_error(crate::engine::busy()),
+            SourceError::Edit { ref code, ref message, .. }
+                if code == "unavailable_target" && message.contains("busy")
+        ));
     }
 }

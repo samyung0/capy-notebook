@@ -104,6 +104,8 @@ vi.mock('@/lib/editDrafts', async (load) => ({
       stop() {},
     };
   }),
+  dropExpiredGroup: vi.fn(),
+  openRecoveryGroup: vi.fn(async () => null),
   readDrafts: vi.fn(async () => []),
   recordDrafts: vi.fn(() => recorder),
 }));
@@ -111,7 +113,14 @@ vi.mock('@/lib/editDrafts', async (load) => ({
 import * as Y from 'yjs';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import { COLLABORATION_OUTDATED_REASON } from '@/features/notes/collaborationEvents';
-import { type EditDraft, readDrafts, recordDrafts } from '@/lib/editDrafts';
+import {
+  DRAFT_EXPIRY_MS,
+  dropExpiredGroup,
+  type EditDraft,
+  openRecoveryGroup,
+  readDrafts,
+  recordDrafts,
+} from '@/lib/editDrafts';
 import type { SourceProviderConfig } from './sourceProvider';
 import { useSourceSession } from './useSourceSession';
 
@@ -224,6 +233,40 @@ describe('an Office edit session opening while its base downloads', () => {
   });
 });
 
+// Late merge M5 (review r1 L6): an Office file's stored edits past the
+// 7-day expiry open once over their own base under the expired banner, are
+// dropped as they open, and no room joins.
+describe('an edit session opening with expired stored drafts', () => {
+  it('opens them once under the expired banner and drops them', async () => {
+    const row: EditDraft = {
+      base: SESSION.baseSourceSHA256,
+      data: Y.encodeStateAsUpdate(new Y.Doc()),
+      id: 'b:state',
+      key: 'u_1:file:f_1',
+      kind: 'state',
+      lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
+      savedAt: Date.now() - DRAFT_EXPIRY_MS - 1,
+      seq: 1,
+      session: 'b',
+    };
+    vi.mocked(readDrafts).mockResolvedValueOnce([row]);
+    vi.mocked(openRecoveryGroup).mockResolvedValueOnce({
+      base: new Uint8Array([1]),
+      doc: new Y.Doc(),
+    });
+    takeSourceOpen.mockResolvedValue({
+      base: new Promise(() => {}),
+      credentials: TOKEN,
+      session: SESSION,
+    });
+    render();
+    await vi.waitFor(() => expect(render().banner).toBe('expired'));
+    expect(render().status).toBe('recovery');
+    expect(dropExpiredGroup).toHaveBeenCalledWith([row], expect.any(Function));
+    expect(createSourceProvider).not.toHaveBeenCalled();
+  });
+});
+
 // Epo 2026-10-23: an Office join ends when its frame reports ready; one past
 // its 30 s errors, and gets its status back once the frame is ready with the
 // room synced (review r3 M1).
@@ -257,7 +300,7 @@ describe('an edit session opening with stored drafts', () => {
       key: 'u_1:file:f_1',
       kind: 'update',
       lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
-      savedAt: 0,
+      savedAt: Date.now(),
       seq: 1,
     } as const;
     const accepted: EditDraft = {
@@ -317,7 +360,7 @@ describe('an edit session opening with stored drafts', () => {
       key: 'u_1:file:f_1',
       kind: 'update',
       lineage: `${SESSION.room}@${SESSION.baseSourceSHA256}`,
-      savedAt: 0,
+      savedAt: Date.now(),
       seq: 1,
       session: 'b',
     };

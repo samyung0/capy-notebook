@@ -1192,6 +1192,7 @@
   "editor_offline_unstored": "Your edits can't be saved on this device. Keep this tab open until you reconnect.",
   "editor_offline_limit": "You've reached the offline edit limit for this file. Reconnect to keep editing.",
   "editor_recovery_changed": "This file changed while your edits were waiting to sync. Copy anything you need, then reload.",
+  "editor_recovery_expired": "These edits are more than 7 days old and too old to sync. Copy anything you need, then reload.",
   "editor_outdated": "Capy was updated. Reload to keep editing. Your edits are saved on this device and will sync after you reload.",
   "editor_outdated_publishing": "The update is still being published. Try again in a minute.",
   "editor_outdated_unstored": "Capy was updated. Reload to keep editing. This device couldn't store your unsent edits, so reloading loses them.",

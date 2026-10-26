@@ -251,6 +251,16 @@ and the fork's yrs in `Item::redo` (`third_party/yrs/src/block.rs`), so
 browser notes and items, the server's agent Undo and the Office editors all
 follow it.
 
+Undo reaches back at most 24 h (Epo 2026-10-23, the in-place collection's
+Q2): every stack item of the note editor's history and of the item rooms'
+managers records when it was made, and steps older than 24 h by the tab's own
+clock are dropped before each Undo and Redo, whoever calls it (`limitUndo` in
+`src/features/collaboration/undo.ts`). The server keeps the deletions an Undo
+may restore 25 h after they arrived (see [editing
+sessions](#editing-sessions)). The toolbar can still show Undo for a step past
+the horizon; pressing it drops the step and undoes nothing older. Office
+editors keep their own history.
+
 ### Room presence
 
 Developer Epo decided the avatar group and verified cursor labels on
@@ -1585,7 +1595,8 @@ from any page.
   batch still failing after its retries (about 15 s), or a queue a closing
   room drops, is logged as an error. A Leave says whether the tab still holds unsent edits for the
   document (one byte: 0 when it holds none, beyond the provider's
-  unacknowledged updates and the drafts not yet covered by a receipt); a
+  unacknowledged updates and the drafts not yet covered by a receipt), then
+  names the session's client id (see [editing sessions](#editing-sessions)); a
   clean Leave expires the recorded ids its token offered, so they never bind
   again (an id it bound otherwise, its user's other tab's, stays), and a
   socket drop or a Leave with unsent edits keeps them. Each room load
@@ -1721,14 +1732,137 @@ from any page.
   `src/features/files/sourceState.ts`): Yjs moves a document to a new id when
   its own id arrives in an applied update.
 
+### Editing sessions
+
+Epo approved the in-place Yjs collection on 2026-10-23
+([storage quota](../backend-storage-quota.md#yjs-storage-growth)): a note's
+stored state is to be collected when a room folds it, keeping what an open
+session or an Undo may still name. This is its first step, the bookkeeping;
+nothing is collected yet. Notes only (Q274, 2026-10-24): quiz, flashcard and
+other item rooms and source rooms keep no sessions and their full history.
+
+- **A session is one Y.Doc**, named by its client id (see [client
+  ids](#client-ids)): one editor in one tab, whose Undo stack lives as long.
+  A viewer, who never edits, has none; one whose token turns writable (a
+  role change evicts the channel first, so only if that eviction is late)
+  gets one at its first write, at the version it last named.
+- **Versions.** Every JOIN names the stored version its document holds after
+  the client id (0: a new document that holds nothing; one that took stored
+  drafts before its first JOIN names theirs, `unsentFrom`). A note room tells
+  a synced editor the stored version it holds right after answering its step
+  1 and after each store commits, once every update the store holds went out
+  (`{"type": "stored", "version": v}`, `STORED_TYPE` in `room.rs`): the latest
+  version the room holds every version up to. A store whose version passed a
+  service edit the room has not applied yet goes unannounced, and only stores
+  announce (review r1 M1); a gap still open at the next store is logged at
+  Warn, once per gap (review r3 N3). A service edit whose committed row the
+  room cannot apply reloads the room from the stored document instead of
+  counting its version (Q389, Epo 2026-10-26, `Room::reload`): joins wait as
+  for a drain, every channel closes as the room is reset (its tab rejoins and
+  resyncs), and the room stores what it holds and unloads, so the next room
+  loads every row. The tab answers `{"type": "ack", "version": v}`
+  whenever the version it may report changes. The room counts the session at
+  its JOIN's version, then at each `ack` (never above the room's own
+  version). A new session (version 0) that never synced is left out of the
+  fold's reached version (review r1 H2), and a session that never
+  acknowledged a store, holds nothing and has no row is forgotten with its
+  last channel (review r2 L1). Acks, deletions and Leaves act only on the
+  channel's own user's session (review r2 N3).
+  A socket whose outbox dropped a frame sends nothing more and closes, so no
+  notice follows a broadcast its reader missed.
+- **The oldest unsent edit.** A tab never reports a version above the one its
+  oldest unsent edit was made at (`RoomProvider.reportedVersion`): an edit
+  stays unsent from the moment it is made until the second store's `stored`
+  after the room's ACK of the message carrying it (review r1 H1, Editor
+  2026-10-26, a plan change: admission is not durable, and the first notice
+  may be a store that began before the edit arrived; the first notice on a
+  channel answers its step 1 and counts for nothing). Before that it is in
+  flight, admitted and not yet surely stored, held for a resend after a
+  dropped channel, or not sent yet (offline, in a timeout, parked). An empty
+  step 2 (a new document's) carries no edit, but takes a mark: the room
+  already holds what it marks, which clears by the same rule (review r2
+  N1). Drafts applied later (`unsentFrom`) mark the next update sent, which
+  clears by the same rule (M2). Its JOIN, its `ack`s and its stored drafts carry at most that, and a
+  document holding unsent edits reports at least 1. Each stored draft row
+  keeps the version the tab reported when it was made (`EditDraft.version`, a
+  merged row its oldest), and a draft send names its group's oldest in
+  `X-Capy-Version` (a row from before versions, or made before the tab's
+  first stored version, counts as 1, older than any collection; an
+  unreadable one is refused as malformed, review r2 N2). A Leave
+  while drafts are marked says unsent, so a draft send's hold keeps its
+  session (N3).
+- **Held deletions.** A session holds the deletions its own channel's updates
+  made: what the room held undeleted, so a reconnect's step 2, which resends
+  the whole delete set, adds only the session's own (`ydoc::apply_deleting`).
+  They are what its Undo may restore. Each is stamped with its arrival (to
+  the minute, the batch's latest) and released 25 h after it, since Undo
+  reaches back 24 h on the tab's clock. A draft send's deletions are held for
+  no one: its session ended.
+- **Counted.** A session counts while connected and for 24 h after it was
+  last seen. It ends at that cap, or on a clean Leave naming it, only the
+  session bound to the leaving channel (a user ends only their own); its held
+  deletions go then. A Leave with unsent edits or a dropped socket keeps it.
+  A live session stays its user's: a JOIN of its id by another user changes
+  nothing (the binding refuses that first).
+- **Agent holds** (review r1 M3, Editor 2026-10-26, a plan change: in-place
+  collection step 1 owns them). An agent edit's Undo and Redo are offered
+  24 h after the edit, whether or not its room stays loaded (Q385, Epo
+  2026-10-26): the room drops the step then (`Room::expire_agent_steps`) and
+  the chat hides its buttons (see [agentic
+  retrieval](../agentic-retrieval.md)); a step spanning rooms (a quiz's
+  content and keys) ends as a whole (Q389). What the edit, its Undo and its
+  Redo deleted is held 25 h from the edit, an hour past the offer as a
+  person's holds are, whatever the sessions do (`Sessions::agent_deleted`,
+  `AGENT_HELD_FOR`; an Undo or Redo keeps the edit's time; review r3 N8), so
+  every Undo the room offers is held; a durable Undo payload records its
+  deletions through the same call once that wiring lands. Stored beside the
+  document (`material_yjs_documents.agent_held`, the same encoding). Agent
+  holds that cannot be read are dropped and reported to Sentry, and the note
+  loads (Q386, Epo 2026-10-26).
+- **Stored** (migration 0117) as columns of the session's client-id row
+  (`material_yjs_client_ids`: `acked_version`, `seen_at`, NULL when there is
+  no session or it ended, and `held`, the batches as arrival times and Yjs
+  delete sets). A store writes the sessions changed since the last one in its
+  own transaction, in one statement, so a held deletion is durable with the
+  state that holds it; the unload writes what changed after the last store,
+  taking the document's row first as a store does (review r2 L5). A store
+  takes the document's row `FOR NO KEY UPDATE`: a new id's queued row insert
+  checks its key against that row, which a stronger lock would deadlock
+  with (review r2 M1). A session's held deletions are written only when they
+  changed (review r2 L4); a repeated `ack` changes nothing to write. Never
+  for an account whose deletion began: a store locks the sessions' users
+  with its accounts, in their order before the material (review r2 M2), and
+  writes only live ones, so a purge waits for it and then deletes what it
+  wrote. Only sessions whose id is recorded
+  have a row: a deletion is an accepted write, so a session that only deleted
+  is recorded too. A session that never wrote is counted in memory for its
+  room's life. A room load reads the sessions seen within 24 h; a row whose
+  held deletions cannot be read is dropped alone, written lost
+  (`acked_version` -1, `sessions::LOST`, the other columns NULL) and reported
+  to Sentry, and the note loads (Q382, Epo 2026-10-26). A moved lineage (a
+  discard) ends the old lineage's sessions in its transaction (review r2
+  L3).
+- **The fold's input** (`Sessions::holds`): the oldest version every counted
+  session reached (none when no session counts) and their held deletions with
+  the agent holds. The folds log it until the collection uses it.
+- **Late.** A JOIN or a draft group naming a version below the latest
+  collection's window has missed what that collection discarded (`late` in
+  `sessions.rs`, version 0 never is). So has one under the id of a session
+  whose record was lost, whatever version it names (Q385, review r2 M1): its
+  held deletions were not kept; for a draft group, an id its grants name or
+  one it writes under, which the room admits through its record (review r3
+  L4). Nothing is collected yet, so nothing is late.
+
 ### Client protocol and the release nudge
 
 Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
 design, option d), and the nudge's release file on 2026-10-17.
 
 - **The gate.** Every JOIN carries the build's client protocol after the
-  token (`room, token, varuint protocol, varuint clientId`, then an embed's
-  note channel; the client id is the Y.Doc's, see [client ids](#client-ids)),
+  token (`room, token, varuint protocol, varuint clientId, varuint version`,
+  then an embed's note channel; the client id is the Y.Doc's, see [client
+  ids](#client-ids), and the version the stored one it holds, see [editing
+  sessions](#editing-sessions)),
   and every draft send carries it as
   `X-Capy-Protocol`. The number is `CLIENT_PROTOCOL` in
   `src/features/collaboration/protocol.ts` and
@@ -1875,6 +2009,17 @@ design, option d), and the nudge's release file on 2026-10-17.
   writes under its assigned id, Q219) raised `CLIENT_PROTOCOL` to 18 and both
   minimums to 18. Its deploy request names "client protocol 17 -> 18,
   material 16 -> 18, source 17 -> 18".
+  The Office agent's pictures and charts (pin 13f70b8f6: the reads list
+  pictures and charts and a by-id read returns their bytes and series; Epo
+  2026-10-24, Q240 phase A, with the review fixes of Q381, Q384 and Q388)
+  raised `CLIENT_PROTOCOL` to 19 and `MIN_SOURCE` to 19. The editing sessions
+  (the in-place collection's bookkeeping, Epo 2026-10-23: every JOIN names the
+  stored version its Y.Doc holds after the client id, note rooms send `stored`
+  and take `ack`, a Leave names its session) raised `CLIENT_PROTOCOL` to 20
+  and `MIN_MATERIAL` to 20; `MIN_SOURCE` stays 19, since a source JOIN or
+  Leave from an older build carries no version or session and still reads.
+  The two landed together, so their deploy request names "client protocol
+  18 -> 20, material 18 -> 20, source 18 -> 19".
 
 #### When to bump
 
@@ -1980,7 +2125,11 @@ the token's room are applied before the room connects (updates whose base is
 missing stay pending until the sync brings it) and saved like any edit; rows
 of another room, and refused rows, open read-only in copy-only recovery
 (`NoteRecovery`: the static renderer under a `changed` or `refused` banner
-whose Reload deletes them, one group at a time). A group with no `state` row
+whose Reload deletes them, one group at a time). A lineage's rows expire 7
+days after its newest row (`draftGroups`, Epo 2026-10-24): that group opens
+once under the `expired` banner and is deleted as it opens
+(`dropExpiredGroup`), and the draft sweep never sends it; for notes until the
+merge view (Q251). A group with no `state` row
 cannot be drawn (a tab closed online, then the room moved): it is dropped
 with "Some unsaved edits from your last session couldn't be restored."
 
