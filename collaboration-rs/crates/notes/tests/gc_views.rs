@@ -891,7 +891,7 @@ impl World {
     /// row written lost (Q382).
     fn load_sessions(&mut self, rng: &mut Rng, tally: &mut Tally) {
         let now = self.clock;
-        let mut rows: Vec<(u64, String, i64, SystemTime, Option<Vec<u8>>)> = self
+        let mut rows: Vec<_> = self
             .session_rows
             .iter()
             .filter(|(_, row)| row.version != sessions::LOST)
