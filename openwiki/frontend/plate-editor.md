@@ -1867,7 +1867,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   writes under its assigned id, Q219) raised `CLIENT_PROTOCOL` to 18 and both
   minimums to 18. Its deploy request names "client protocol 17 -> 18,
   material 16 -> 18, source 17 -> 18".
-  The Office agent's pictures and charts (pin 19f76b19f: the reads list
+  The Office agent's pictures and charts (pin 13f70b8f6: the reads list
   pictures and charts and a by-id read returns their bytes and series; Epo
   2026-10-24, Q240 phase A, with the review fixes of Q381, Q384 and Q388)
   raised `CLIENT_PROTOCOL` to 19 and `MIN_SOURCE`
