@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { captureException } from '@sentry/react';
 import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import { beforeAll, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
@@ -14,6 +15,8 @@ import {
   mergeLate,
 } from './lateMerge';
 import { mergeRequest } from './lateMerge.worker';
+
+vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 
 /** The sample the native merge is held to (collaboration-rs late-merge
  * tests/sample.rs): a tab's document, the room's collected one, and the
@@ -114,16 +117,19 @@ it('joins a late merge as a new session, other restored rows at their version', 
 });
 
 // Late merge review r2 S6: from the snapshot the merge places onto until
-// its update is stored, the session reports the version it held then.
-it('marks the session unsent at its version as the merge takes the current document', () => {
+// its update is stored, the session reports the version it held then. The
+// mark is required (Q406).
+it('marks the session unsent at its version as the merge takes the current document, and fails with no room', () => {
   const doc = new Y.Doc();
   doc.getText('t').insert(0, 'current');
   const room = { reportedVersion: 11, unsentFrom: vi.fn() };
   const base = mergeBase(doc, room);
   expect(room.unsentFrom).toHaveBeenCalledWith(11);
+  expect(base.version).toBe(11);
   const copy = new Y.Doc();
-  Y.applyUpdate(copy, base);
+  Y.applyUpdate(copy, base.state);
   expect(copy.getText('t').toString()).toBe('current');
+  expect(() => mergeBase(doc, undefined)).toThrow('no room to mark');
 });
 
 it('needs no merge when the old document holds nothing the current one lacks', () => {
@@ -292,6 +298,68 @@ it('counts the deadline from the loaded WASM, not from the download, and reads t
     expect(workers[0].stopped).toBe(true);
   } finally {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+// Review r3 L4: an editor that goes stops its merge, the worker with it.
+it('stops the worker when its editor goes', async () => {
+  const workers = fakeWorkers();
+  try {
+    const stop = new AbortController();
+    const merging = mergeLate(
+      new Uint8Array(),
+      () => new Uint8Array(),
+      undefined,
+      stop.signal
+    );
+    stop.abort();
+    await expect(merging).rejects.toThrow();
+    expect(workers[0].stopped).toBe(true);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+// Q406 (review r3 M4): a merge that cannot take the current document (no
+// room to mark) fails at once as a merge failure, its worker stopped.
+it('fails the merge at once when the current document cannot be taken', async () => {
+  const workers = fakeWorkers();
+  try {
+    const merging = mergeLate(new Uint8Array(), () => {
+      throw new Error('The late merge has no room to mark');
+    });
+    workers[0].onmessage({ data: { ready: true } });
+    await expect(merging).rejects.toThrow('no room to mark');
+    await expect(merging).rejects.not.toBeInstanceOf(LateMergeUnloaded);
+    expect(workers[0].stopped).toBe(true);
+    expect(workers[0].posted).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+// Review r3 L3: code that does not load while online goes to Sentry once a
+// page, so a cause no Retry fixes is seen; offline failures are not sent.
+it('reports code that did not load while online once a page', async () => {
+  const workers = fakeWorkers();
+  vi.stubGlobal('navigator', { onLine: false });
+  try {
+    const offline = mergeLate(new Uint8Array(), () => new Uint8Array());
+    workers[0].onmessage({ data: { error: 'Failed to fetch' } });
+    await expect(offline).rejects.toBeInstanceOf(LateMergeUnloaded);
+    expect(captureException).not.toHaveBeenCalled();
+    vi.stubGlobal('navigator', { onLine: true });
+    for (const index of [1, 2]) {
+      const online = mergeLate(new Uint8Array(), () => new Uint8Array());
+      workers[index].onmessage({ data: { error: 'blocked by CSP' } });
+      await expect(online).rejects.toBeInstanceOf(LateMergeUnloaded);
+    }
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(vi.mocked(captureException).mock.calls[0][1]).toMatchObject({
+      tags: { component: 'late-merge', stage: 'load' },
+    });
+  } finally {
     vi.unstubAllGlobals();
   }
 });

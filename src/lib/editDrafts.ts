@@ -915,8 +915,10 @@ export function recordDrafts({
      * the adopted rows it stands for go now rather than at a receipt, so a
      * reload never merges them again, and `hidden` (a document of the text
      * the merge would hide) stays as one refused row, shown for copying.
-     * That row is written first and the adopted rows go only once it
-     * landed; resolves whether it did (when it did not, they stay). */
+     * That row is written first, then the merged document whole, and the
+     * adopted rows go only once both landed (review r3 L5); resolves whether
+     * the hidden row did. When the whole document did not land the adopted
+     * rows stay for the receipt that covers them. */
     async supersede(hidden?: Uint8Array): Promise<boolean> {
       if (hidden) {
         const kept = {
@@ -930,6 +932,8 @@ export function recordDrafts({
           return false;
         }
       }
+      await writeState();
+      if (gap) return true;
       const previous = pendingAdopted;
       pendingAdopted = [];
       void write(deleteDrafts(previous));
@@ -1328,6 +1332,7 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
   let done = false;
   let stopped = false;
   let kept = false;
+  let late = false;
   // Asked again during a try: the next one goes as it ends (Q360).
   let rerun = false;
   let flight: Promise<void> | null = null;
@@ -1366,6 +1371,7 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
         kept ||= !!answers?.some(
           (sent) => sent === 'refused' || sent === 'waits'
         );
+        late ||= !!answers?.includes('late');
         again =
           !stopped &&
           !outdated &&
@@ -1400,6 +1406,11 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
     /** Whether a group was left for recovery (held or refused). */
     get kept() {
       return kept;
+    },
+    /** Whether a group was answered late (marked `late`): the editor takes
+     * the late path for it in this session (Q406). */
+    get late() {
+      return late;
     },
     /** A try now, or as the one in flight ends: a reconnect while steps
      * are held (Q328, Q360). */

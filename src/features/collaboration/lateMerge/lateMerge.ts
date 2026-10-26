@@ -1,3 +1,4 @@
+import { captureException } from '@sentry/react';
 import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import * as Y from 'yjs';
 import { draftsVersion } from '@/lib/draftStore';
@@ -17,6 +18,18 @@ export const LATE_MERGE_DEADLINE_MS = 10_000;
 /** The merge's code (the worker or its WASM) did not load: nothing was
  * merged, and trying again may work (Epo 2026-10-24, Q295; Q398). */
 export class LateMergeUnloaded extends Error {}
+
+/** The room a late merge marks (`mergeBase`): the version its session
+ * reports, and an unsent edit made at a version. */
+export interface MarkedRoom {
+  readonly reportedVersion: number;
+  unsentFrom(version: number): void;
+}
+
+// Code that did not load while the browser was online is reported once per
+// page: a cause no retry fixes (a CSP block, a broken build) shows only
+// here (review r3 L3).
+let unloadedReported = false;
 
 /**
  * The late merge of the in-place GC (openwiki/frontend/plate-editor.md "The
@@ -38,16 +51,22 @@ export class LateMergeUnloaded extends Error {}
  *
  * Runs in a worker that is gone afterwards, so neither it nor its WASM is
  * in the main bundle or stays loaded. The download has no time limit
- * (Q295): `current` is read once the WASM loaded, and a failure before then
- * rejects with `LateMergeUnloaded`. `LATE_MERGE_DEADLINE_MS` after it loaded
- * the worker is stopped and the merge fails.
+ * (Q295): `current` is read once the WASM loaded (a throw fails the merge),
+ * and a failure before then rejects with `LateMergeUnloaded`.
+ * `LATE_MERGE_DEADLINE_MS` after it loaded the worker is stopped and the
+ * merge fails. `signal` stops the worker at any point (the editor went).
  */
 export function mergeLate(
   old: Uint8Array,
   current: () => Uint8Array,
-  author?: number
+  author?: number,
+  signal?: AbortSignal
 ): Promise<{ hidden: HiddenBlock[]; merged: Uint8Array }> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
     const worker = new Worker(
       new URL('./lateMerge.worker.ts', import.meta.url),
       {
@@ -61,8 +80,28 @@ export function mergeLate(
       clearTimeout(deadline);
       worker.terminate();
     };
-    const fail = (message: string) =>
-      reject(loaded ? new Error(message) : new LateMergeUnloaded(message));
+    const fail = (message: string) => {
+      if (loaded) {
+        reject(new Error(message));
+        return;
+      }
+      const error = new LateMergeUnloaded(message);
+      if (navigator.onLine && !unloadedReported) {
+        unloadedReported = true;
+        captureException(error, {
+          tags: { component: 'late-merge', stage: 'load' },
+        });
+      }
+      reject(error);
+    };
+    signal?.addEventListener(
+      'abort',
+      () => {
+        done();
+        reject(signal.reason);
+      },
+      { once: true }
+    );
     worker.onmessage = ({ data }: MessageEvent<MergeReply>) => {
       if ('ready' in data) {
         loaded = true;
@@ -72,9 +111,17 @@ export function mergeLate(
             `The late merge did not finish in ${LATE_MERGE_DEADLINE_MS / 1000} s`
           );
         }, LATE_MERGE_DEADLINE_MS);
+        let base: Uint8Array;
+        try {
+          base = current();
+        } catch (error) {
+          done();
+          fail(error instanceof Error ? error.message : String(error));
+          return;
+        }
         const request: MergeRequest = {
           author,
-          current: current().slice().buffer,
+          current: base.slice().buffer,
           old: old.slice().buffer,
         };
         worker.postMessage(request, [request.current, request.old]);
@@ -105,16 +152,16 @@ export function joinedFrom(
 }
 
 /** The current document a late merge places onto, taken once its code
- * loaded. The merged update names units of it: until a store holds that
- * update the session reports no version past the one it holds now, so no
- * collection passes them meanwhile (late merge review r2 S6; the mark
- * clears as the merged update's own, like any edit's). */
-export function mergeBase(
-  doc: Y.Doc,
-  room?: { reportedVersion: number; unsentFrom(version: number): void }
-) {
-  room?.unsentFrom(room.reportedVersion);
-  return Y.encodeStateAsUpdate(doc);
+ * loaded, and the version the session held then. The merged update names
+ * units of it: until a store holds that update the session reports no
+ * version past that one, so no collection passes them meanwhile (late merge
+ * review r2 S6; the mark clears as the merged update's own, like any
+ * edit's). Required (Q406): without a room to mark, the merge fails. */
+export function mergeBase(doc: Y.Doc, room: MarkedRoom | undefined) {
+  if (!room) throw new Error('The late merge has no room to mark');
+  const version = room.reportedVersion;
+  room.unsentFrom(version);
+  return { state: Y.encodeStateAsUpdate(doc), version };
 }
 
 /** Whether `old` holds anything `doc` lacks: a unit past its clocks, or a

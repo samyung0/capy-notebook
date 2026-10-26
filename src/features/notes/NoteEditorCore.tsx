@@ -48,6 +48,7 @@ import {
   holdsUnsent,
   joinedFrom,
   LateMergeUnloaded,
+  type MarkedRoom,
   mergeBase,
   mergeLate,
 } from '@/features/collaboration/lateMerge/lateMerge';
@@ -173,6 +174,15 @@ function roomProvider(editor: PlateEditor) {
 function capyRoom(editor: PlateEditor) {
   const provider = roomProvider(editor)?.provider;
   return provider instanceof RoomProvider ? provider : undefined;
+}
+
+/** The room a late merge marks (`mergeBase`): the capy room provider, or
+ * under MSW the mock's channel, which records its marks. None otherwise, and
+ * the merge then fails (Q406). */
+function markedRoom(editor: PlateEditor): MarkedRoom | undefined {
+  const room = capyRoom(editor);
+  if (room || !USE_MSW) return room;
+  return roomProvider(editor)?.provider as MarkedRoom | undefined;
 }
 
 /**
@@ -593,13 +603,22 @@ export function NoteEditorCore({
   // Each request's local edit count, so a receipt covers the stored drafts.
   const pendingCheckpoints = useRef(new Map<string, number>());
   // The late path (in-place GC): the old document, merged once the room
-  // synced; until then the editor is not shown, so nothing is edited or
-  // saved (a receipt would cover the restored rows before their edits
-  // reached the room).
-  const [lateDocument] = useState<Uint8Array | null>(() => {
-    if (!(late || restored.some((row) => row.late))) return null;
-    const parts = restored.length ? [mergedRows(restored)] : [];
-    return Y.mergeUpdates(late ? [late, ...parts] : parts);
+  // synced: the handed document and every stored draft found for the note,
+  // never-accepted ones included, in one merge (Q406). Until it applies the
+  // editor is not shown, so nothing is edited or saved (a receipt would
+  // cover the rows before their edits reached the room), nothing of it goes
+  // raw and no draft send runs (so no Q360 hold). `adoptedRows`: the rows
+  // the recorder stands for; `sendRows`: the draft send's.
+  const [{ adoptedRows, lateDocument, sendRows }] = useState(() => {
+    if (!(late || restored.some((row) => row.late)))
+      return { adoptedRows: restored, lateDocument: null, sendRows: pending };
+    const rows = [...restored, ...pending];
+    const parts = rows.length ? [mergedRows(rows)] : [];
+    return {
+      adoptedRows: rows,
+      lateDocument: Y.mergeUpdates(late ? [late, ...parts] : parts),
+      sendRows: [] as EditDraft[],
+    };
   });
   const [lateMerging, setLateMerging] = useState(!!lateDocument);
   // The header reads Getting ready until the merge applied (Q295).
@@ -700,19 +719,20 @@ export function NoteEditorCore({
   // the note applies them and edits on, nothing live and every JOIN waiting
   // for the send, until the room took them (`heldSteps`, Q327, Q328). Both
   // read as syncing.
-  const [draftsSending, setDraftsSending] = useState(pending.length > 0);
-  const sendingNow = useRef(pending.length > 0);
+  const [draftsSending, setDraftsSending] = useState(sendRows.length > 0);
+  const sendingNow = useRef(sendRows.length > 0);
   const heldSteps = useRef(false);
   const sender = useRef<DraftSender | null>(null);
   // Takes the pending steps once DRAFT_SEND_WAIT_MS passed and the room
   // synced, whichever comes last.
   const holdSteps = useRef<(() => void) | null>(null);
   const report = useCallback((saveState: NoteEditorStatus['saveState']) => {
+    // A late mount reads Getting ready, standby beside the paused note too.
     const shown =
-      phaseNow.current === 'standby'
-        ? 'reconnecting'
-        : lateNow.current && saveState !== 'offline' && saveState !== 'error'
-          ? 'preparing'
+      lateNow.current && saveState !== 'offline' && saveState !== 'error'
+        ? 'preparing'
+        : phaseNow.current === 'standby'
+          ? 'reconnecting'
           : (sendingNow.current || heldSteps.current) &&
               (saveState === 'saved' || saveState === 'reconnecting')
             ? 'syncing'
@@ -854,6 +874,17 @@ export function NoteEditorCore({
     setStatus('error');
     reportRejection.current?.('late', storageOk.current ? 'kept' : 'lost');
   };
+  // This session is late (its JOIN, or a draft group of the note, answered
+  // late): its document is kept as one late row, and the next editor merges
+  // it with the document handed to it and every leftover draft (Q406).
+  const goLate = useRef(() => {});
+  goLate.current = () => {
+    if (stale.current) return;
+    stale.current = true;
+    roomProvider(editorRef.current)?.disconnect();
+    recorder.current?.late();
+    reportLate.current?.(Y.encodeStateAsUpdate(ydoc));
+  };
   // Once synced, the old document's unsent edits are merged in a worker and
   // applied as one edit of this session (sent, stored, its receipt covering
   // the restored rows, which it replaces at once); then the note paints, and
@@ -867,19 +898,48 @@ export function NoteEditorCore({
   // Set once the merged update is applied: from then on this session holds
   // the note's edits as any session does.
   const mergeApplied = useRef(false);
+  // Stops the merge's worker when this editor goes (review r3 L4).
+  const mergeStop = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const stop = new AbortController();
+    mergeStop.current = stop;
+    return () => stop.abort();
+  }, []);
   const mergeNow = useRef(() => {});
   mergeNow.current = () => {
     if (!lateDocument || mergeStarted.current) return;
     mergeStarted.current = true;
     setLateUnloaded(false);
+    const signal = mergeStop.current?.signal;
+    // The version the session held as the merge took the current document,
+    // which its mark (`mergeBase`, required) holds it to.
+    let base = 0;
     const merged = holdsUnsent(lateDocument, ydoc)
-      ? mergeLate(lateDocument, () =>
-          mergeBase(ydoc, capyRoom(editorRef.current))
+      ? mergeLate(
+          lateDocument,
+          () => {
+            const taken = mergeBase(ydoc, markedRoom(editorRef.current));
+            base = taken.version;
+            return taken.state;
+          },
+          undefined,
+          signal
         )
       : Promise.resolve(null);
     merged
       .then(async (result) => {
         if (rejected.current || stale.current) return;
+        // Another send took the mark and a store cleared it, so a collection
+        // may have passed the base: merge again (review r3 L1; a repeat is a
+        // no-op for what the room holds).
+        if (
+          result &&
+          (markedRoom(editorRef.current)?.reportedVersion ?? base) > base
+        ) {
+          mergeStarted.current = false;
+          mergeNow.current();
+          return;
+        }
         if (result) Y.applyUpdate(ydoc, result.merged, LATE_ORIGIN);
         mergeApplied.current = true;
         lateNow.current = false;
@@ -903,6 +963,7 @@ export function NoteEditorCore({
         if (hidden) reportRejection.current?.('late', 'kept');
       })
       .catch((error: unknown) => {
+        if (signal?.aborted) return;
         if (!(error instanceof LateMergeUnloaded)) {
           failLate.current(lateDocument, error);
           return;
@@ -1083,6 +1144,9 @@ export function NoteEditorCore({
   );
 
   const plugins = useMemo(() => {
+    // The restored rows' version: the tab reports no newer one until the
+    // room took them (none for a late merge, which joins new).
+    const joinVersion = joinedFrom(restored, !!lateDocument);
     const onAuthenticationFailed = ({ reason }: { reason: string }) => {
       const failedToken = tokenError.current;
       const refusal = roomRefusal(reason, failedToken);
@@ -1101,12 +1165,7 @@ export function NoteEditorCore({
           );
           return;
         }
-        // Kept as one late row, which the next editor merges with the
-        // document handed to it.
-        stale.current = true;
-        roomProvider(editorRef.current)?.disconnect();
-        recorder.current?.late();
-        reportLate.current?.(Y.encodeStateAsUpdate(ydoc));
+        goLate.current();
       }
       // The room holds this document's client id for no one: not retried.
       else if (refusal === 'unassigned') rejectDocument('unassigned');
@@ -1213,6 +1272,7 @@ export function NoteEditorCore({
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
+                    unsentFrom: joinVersion,
                   },
                   type: 'mock',
                 } as never)
@@ -1264,9 +1324,7 @@ export function NoteEditorCore({
                     },
                     // Stored drafts not yet covered by a receipt (Q236).
                     unsent: () => !!recorder.current?.unsaved,
-                    // The restored rows' version: the tab reports no newer
-                    // one until the room took them (none for a late merge).
-                    unsentFrom: joinedFrom(restored, !!lateDocument),
+                    unsentFrom: joinVersion,
                     url: collaborationToken.url,
                   },
                   // The capy-sync room provider (features/collaboration/platePlugin).
@@ -1339,7 +1397,7 @@ export function NoteEditorCore({
   useEffect(() => {
     if (!lateDocument) applyDrafts(ydoc, restored, RESTORE_ORIGIN);
     const current = recordDrafts({
-      adopted: restored,
+      adopted: adoptedRows,
       doc: ydoc,
       ignore: (origin) => {
         if (origin === RESTORE_ORIGIN) return true;
@@ -1442,9 +1500,10 @@ export function NoteEditorCore({
     };
   }, [collaborationToken.room, editor, material.id, qc, seat, setStatus]);
 
-  // The draft send of never-accepted steps (Q319, Q327, Q328).
+  // The draft send of never-accepted steps (Q319, Q327, Q328); none in a
+  // late mount, which merges them (Q406).
   useEffect(() => {
-    if (!pending.length) return;
+    if (!sendRows.length) return;
     const current = draftSender(draftKey, () =>
       getMaterialCollaborationToken(material.id)
     );
@@ -1456,6 +1515,12 @@ export function NoteEditorCore({
       sendingNow.current = false;
       heldSteps.current = false;
       setDraftsSending(false);
+      // A group the room answered late (marked late): this session takes the
+      // late path, the next mount merging it with this document (Q406).
+      if (current.late) {
+        goLate.current();
+        return;
+      }
       // A group the room did not take, its steps not applied here: the
       // remount opens it copy-only (Q360). Held ones the JOIN's refusal
       // takes there.
@@ -1477,11 +1542,11 @@ export function NoteEditorCore({
       heldEpisode.current = true;
       // Marked first, so the Leave says unsent and the session (this Y.Doc)
       // stays (review r1 N3).
-      capyRoom(editor)?.unsentFrom(draftsVersion(pending));
+      capyRoom(editor)?.unsentFrom(draftsVersion(sendRows));
       room?.disconnect();
       recorder.current?.disconnected(true);
-      applyDrafts(ydoc, pending, RESTORE_ORIGIN);
-      recorder.current?.adopt(pending);
+      applyDrafts(ydoc, sendRows, RESTORE_ORIGIN);
+      recorder.current?.adopt(sendRows);
       sendingNow.current = false;
       setDraftsSending(false);
       report('syncing');
@@ -1499,7 +1564,7 @@ export function NoteEditorCore({
       if (sender.current === current) sender.current = null;
       if (holdSteps.current === hold) holdSteps.current = null;
     };
-  }, [draftKey, editor, material.id, pending, report, ydoc]);
+  }, [draftKey, editor, material.id, report, sendRows, ydoc]);
 
   // Out of standby: the header shows this editor's own status now.
   const lastPhase = useRef(phase);
@@ -1546,19 +1611,35 @@ export function NoteEditorCore({
   // The first paint of the content, for the swap.
   const paintedChange = useRef(onPainted);
   paintedChange.current = onPainted;
-  // A late merge paints the tab's own copy first (no editor in it, Q295).
-  const paintReported = useRef(false);
+  // A late merge paints once, with the editor, after it applied: a paused
+  // note beside it shows the own copy meanwhile, and the swap keeps the
+  // caret and focus. Only code that did not load paints the own copy first
+  // (no editor in it), so its strip shows; the editor then paints again
+  // (review r3 L2).
+  const paintReported = useRef<'copy' | 'editor' | null>(null);
   useEffect(() => {
-    if ((handshaking && !lateMerging) || !scrollArea || paintReported.current)
+    const view = lateMerging
+      ? lateUnloaded
+        ? 'copy'
+        : null
+      : handshaking
+        ? null
+        : 'editor';
+    // Each view once: the copy, then the editor.
+    if (
+      !(view && scrollArea) ||
+      paintReported.current === view ||
+      paintReported.current === 'editor'
+    )
       return;
     return afterPaint(() => {
-      paintReported.current = true;
+      paintReported.current = view;
       paintedChange.current?.({
-        editor: lateMerging ? null : editor,
+        editor: view === 'editor' ? editor : null,
         scrollArea,
       });
     });
-  }, [editor, handshaking, lateMerging, scrollArea]);
+  }, [editor, handshaking, lateMerging, lateUnloaded, scrollArea]);
 
   // Cursor awareness goes to every peer through the server: at most one per
   // 50 ms (withCursors installs sendCursorPosition when the editor is made).
@@ -1747,7 +1828,10 @@ export function NoteEditorCore({
                      * than a healthy handshake still paints, otherwise a broken
                      * collaboration service would leave a readable note hidden
                      * behind a spinner. */}
-                    {lateCopy && lateMerging ? (
+                    {lateCopy &&
+                    lateMerging &&
+                    (phase === 'live' || lateUnloaded) ? (
+                      // The own copy, where no paused note shows it (Q295).
                       <div data-testid="late-copy">
                         <MaterialPreview
                           content={lateCopy}
@@ -1756,7 +1840,7 @@ export function NoteEditorCore({
                           title={material.title}
                         />
                       </div>
-                    ) : handshaking ? (
+                    ) : handshaking || lateMerging ? (
                       <FileLoading
                         message={m.editor_connecting()}
                         slowed={slowed}

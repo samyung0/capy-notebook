@@ -2558,31 +2558,51 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   `/drafts` group (its version, or a lost id among its grants and the ids it
   writes under) answers the class `late` (409) before admission and is
   counted. Until a collection records its window only lost ids are late.
-- **The tab** (`roomRefusal` gives `late`): the editor leaves its room, keeps
+  An older build reads `collaboration-late` as a retryable refusal and would
+  rejoin with backoff forever, so the release that turns lateness on ships
+  with the next protocol (fixed at landing): its raised `MIN_MATERIAL` refuses
+  the older build as outdated first, and it reloads.
+- **The tab** (`roomRefusal` gives `late`, and a draft send answered `late`,
+  Q406): the editor leaves its room, keeps
   its document as one stored row flagged `late` (`recordDrafts().late()`) and
   hands the document to a new mount through the room swap. The new editor (a
   new Y.Doc, so a new client id and an empty Undo) joins with nothing
   restored, as a new session at version 0 (`joinedFrom`: the rows' version
-  would be answered late again), shows the tab's own copy read-only (the old
-  document, static, `data-testid="late-copy"`) with the header reading Getting
-  ready (`preparing`) and its toolbar inert, and once synced merges: the handed
-  document and every restored row are the old document, the synced one the
+  would be answered late again), with the header reading Getting ready
+  (`preparing`, standby too) and its toolbar inert, and once synced merges:
+  the handed document and every stored draft found for the note, a
+  never-accepted session's pending steps included, are the old document
+  (Developer Epo, 2026-10-27, Q406, [error
+  handling](../../human/frontend/error-handling.md)), the synced one the
   current, and `mergeLate` (`src/features/collaboration/lateMerge`) runs the
-  merge in a worker that is gone afterwards. Neither the worker nor the WASM is
+  merge in a worker that is gone afterwards (and stopped when the editor
+  goes). Meanwhile no draft is applied raw or sent: a late mount runs no
+  draft send, so no Q360 hold. The tab's own copy shows read-only: the paused
+  note beside the late mount (the swap waits for the merged editor, which
+  paints once and takes the caret and focus back), or, where nothing paused
+  shows it (an opening editor, a hidden tab), the late mount's static copy
+  (`data-testid="late-copy"`). Neither the worker nor the WASM is
   in the main bundle; they load only here, and not at all when the old
   document holds nothing the current one lacks (no unit past its clocks, no
   deletion it has not made). The download has no time limit (Developer Epo,
   2026-10-24, Q295): the own copy stays until the code loaded. A download that
-  failed (the worker or its WASM did not load: `LateMergeUnloaded`) keeps it,
-  everything kept, with a strip offering Retry, and the browser's `online`
-  event tries again too (Q398); a room sync while it waits tries again as
-  well. Once the code loaded, the current document is read (`mergeBase`) and
+  failed (the worker or its WASM did not load: `LateMergeUnloaded`) swaps the
+  late mount in with its static copy, everything kept, and a strip "Couldn't
+  sync your edits. Retry or reload the page." offering Retry; the browser's
+  `online` event tries again too (Q398), and so does a room sync. Code that
+  does not load while the browser is online goes to Sentry once a page
+  (`late-merge`, stage `load`): a cause no retry fixes (a CSP block) shows
+  there. Once the code loaded, the current document is read (`mergeBase`) and
   the session marks an unsent edit at the version it holds then
-  (`RoomProvider.unsentFrom`), so its acknowledgements stay there until a
-  store holds the merged update and no collection passes the units it names
-  (late merge review r2 S6). The update is applied as this session's edit
-  (sent and stored; the restored rows it stands for are replaced at once, so a
-  reload never merges them again); then the note paints and swaps in. What
+  (`RoomProvider.unsentFrom`; required, Q406: without a room provider to mark,
+  the merge fails), so its acknowledgements stay there until a store holds
+  the merged update and no collection passes the units it names (late merge
+  review r2 S6). A result that arrives after another send took the mark and a
+  store cleared it (the session reports past the base) is dropped and the
+  merge runs again (review r3 L1). The update is applied as this session's
+  edit (sent and stored); the merged document is then written whole and the
+  rows it stands for go once that landed (else at the receipt), so a reload
+  never merges them again; then the note paints and swaps in. What
   the merge would hide, because someone deleted the block around it (Developer
   Epo, 2026-10-24, Q237, [error handling](../../human/frontend/error-handling.md)),
   is kept as one refused row holding those top-level blocks of the old
@@ -2604,8 +2624,9 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   is stopped),
   or a late answer to the new session before its merge applied keeps the old
   document as one refused row, shown read-only for copying after the remount
-  (the `refused` banner), and goes to Sentry (`late-merge`). The stored rows
-  stay until then; no edit is dropped. A mount already set aside (paused,
+  (the `refused` banner), and goes to Sentry (`late-merge`). The old document
+  holds every draft the merge took, so every stored draft stays, in that row
+  (Q406); no edit is dropped. A mount already set aside (paused,
   outdated) leaves the rows to the next one.
 - **Stored drafts**: a sweep answered `late` marks the group's rows `late`.
   Sweeps never send them, and an editor opening with any late row merges every
@@ -2613,7 +2634,8 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   merge whoever's session they are: `draftGroups` never shows them copy-only
   as undeliverable and `splitOpenDrafts` never hands them to the draft send.
   Under an id the room never recorded, the merged update is refused
-  `unassigned` and the document opens copy-only.
+  `unassigned` and the document opens copy-only until the re-author route
+  (Q406, below) lands with the collection.
 - **The merge** (`collaboration-rs/crates/late-merge`, the prototype's
   `rejoin::merge_unsent`): each unsent run goes right after the nearest unit on
   its left, in the old document, that the current document still holds.
@@ -2641,9 +2663,10 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   once (a reload before the receipt then resends fixed ids instead of
   re-authoring again). Its hidden blocks go to the same copy-only recovery. A
   clock that would run past the largest one refuses the merge.
-  The editor takes this path
-  once the client-id binding's refusal names such edits; until then only the
-  merge and its worker carry it.
+  Q406 routes a merged update refused for an unrecorded id here (the editor
+  remounts into the late path with `author` = its own client id); that
+  routing ships with the collection as merge view phase 2, and until then
+  only the merge and its worker carry this mode.
 - **Expiry**: unsent edits older than 7 days get the copy-only notice instead
   (Developer Epo, 2026-10-24); the late path reads its rows through the same
   draft groups, so the expiry covers late rows.

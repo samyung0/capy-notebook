@@ -909,13 +909,47 @@ describe('recording a note session', () => {
     expect(await recorder.supersede(Y.encodeStateAsUpdate(hidden))).toBe(true);
     const rows = await readDrafts(key);
     expect(rows.some((row) => row.id === earlier.id)).toBe(false);
+    // The merged edit, and the whole merged document written before the
+    // adopted rows went (review r3 L5).
     expect(rows.filter((row) => !row.refused).map((row) => row.kind)).toEqual([
       'update',
+      'state',
     ]);
     const refused = rows.filter((row) => row.refused);
     expect(recoveryDocument(refused)?.getText('content').toString()).toBe(
       'hidden'
     );
+  });
+
+  // Review r3 L5: the merged document is written whole before the adopted
+  // rows go; when it cannot be stored, they stay for the receipt.
+  it('keeps the adopted rows when the merged document cannot be stored', async () => {
+    const key = 'u_1:material:supersede-whole';
+    const earlier = draft('earlier:1', { key, late: true, session: 'earlier' });
+    await putDrafts([earlier]);
+    const { client, recorder } = noteRecorder(key, 'a', { adopted: [earlier] });
+    client.getText('content').insert(1, 'merged');
+    const put = IDBObjectStore.prototype.put;
+    const spy = vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementation(function (this: IDBObjectStore, ...args) {
+        if ((args[0] as EditDraft).id?.endsWith(':state'))
+          throw new DOMException('Broken', 'UnknownError');
+        return put.apply(this, args);
+      });
+    try {
+      expect(await recorder.supersede()).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await readDrafts(key)).some((row) => row.id === earlier.id)).toBe(
+      true
+    );
+    // Stored this time: the whole document lands, then the rows go.
+    expect(await recorder.supersede()).toBe(true);
+    const rows = await readDrafts(key);
+    expect(rows.some((row) => row.id === earlier.id)).toBe(false);
+    expect(rows.some((row) => row.kind === 'state')).toBe(true);
   });
 
   it('keeps the adopted rows when the hidden blocks cannot be stored', async () => {
@@ -2115,6 +2149,24 @@ describe('the draft sweep sending', () => {
     room: ROOM,
     token: 'room-token',
     url: 'wss://collab.test',
+  });
+
+  // Q406 (review r3 M2): a group the room answers late is marked late and
+  // the send says so, so the editor takes the late path in this session.
+  it('settles a send answered late, its rows marked late and the sender saying so', async () => {
+    const key = 'u_late_send:material:mat_1';
+    await putDrafts(
+      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(12)] }))
+    );
+    requests.length = 0;
+    answer(409, 'late');
+    const sender = draftSender(key, roomToken);
+    await sender.settled;
+    expect(sender.late).toBe(true);
+    expect(sender.kept).toBe(false);
+    const rows = await readDrafts(key);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.late)).toBe(true);
   });
 
   // Q328: a send whose answer was lost goes again, at once when the browser

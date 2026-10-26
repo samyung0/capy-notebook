@@ -687,6 +687,37 @@ interface MockCollaborationOptions {
   onPresence?: (connections: PresenceConnection[]) => void;
   onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
+  /** As the room provider's: the stored version the session's JOIN names
+   * for drafts it applies (in-place GC). */
+  unsentFrom?: number;
+}
+
+/** What each note session named (in-place GC), for the late-path e2e: its
+ * JOIN version (`unsentFrom`, null for a new session) and the late merge's
+ * marks (`unsentFrom()` calls). */
+const sessionVersions = new Map<
+  string,
+  { joins: (number | null)[]; marks: number[]; reported: number }
+>();
+const versionsOf = (materialId: string) => {
+  let versions = sessionVersions.get(materialId);
+  if (!versions) {
+    versions = { joins: [], marks: [], reported: 0 };
+    sessionVersions.set(materialId, versions);
+  }
+  return versions;
+};
+
+/** The JOIN versions and late-merge marks a note's sessions named. */
+export function mockSessionVersions(materialId: string) {
+  const { joins, marks } = versionsOf(materialId);
+  return { joins: [...joins], marks: [...marks] };
+}
+
+/** The stored version a note's sessions report from now (as stores the
+ * mock does not run would raise it). */
+export function setMockReportedVersion(materialId: string, version: number) {
+  versionsOf(materialId).reported = version;
 }
 
 const outdated = { reason: COLLABORATION_OUTDATED_REASON };
@@ -703,10 +734,12 @@ class MockCollaborationProvider implements UnifiedProvider {
   readonly document: Y.Doc;
   // The room channel the editor reaches through the wrapper, as the capy
   // provider's (a held draft send closes and reopens it, Q327).
-  readonly provider = {
-    connect: () => this.connect(),
-    disconnect: () => this.disconnect(),
-    sendStateless: (payload: string) => this.handleStateless(payload),
+  readonly provider: {
+    connect: () => void;
+    disconnect: () => void;
+    readonly reportedVersion: number;
+    sendStateless: (payload: string) => void;
+    unsentFrom: (version: number) => void;
   };
   readonly type = 'mock';
   isConnected = false;
@@ -749,6 +782,19 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.onError = onError;
     this.onSyncChange = onSyncChange;
     this.options = options;
+    const versions = versionsOf(options.materialId);
+    versions.joins.push(options.unsentFrom ?? null);
+    this.provider = {
+      connect: () => this.connect(),
+      disconnect: () => this.disconnect(),
+      get reportedVersion() {
+        return versions.reported;
+      },
+      sendStateless: (payload: string) => this.handleStateless(payload),
+      unsentFrom: (version: number) => {
+        versions.marks.push(version);
+      },
+    };
     if (browser)
       for (const type of ['online', 'offline', REACHABILITY])
         window.addEventListener(type, this.onReachability);
@@ -1158,6 +1204,7 @@ export function announceSourcePaused(fileId: string) {
 export function resetScenarioRooms() {
   roomJoinsHeld = false;
   lateMaterials.clear();
+  sessionVersions.clear();
   sourceSessionsHeld = false;
   failedSourceSaves.clear();
   refusedSourceSaves.clear();

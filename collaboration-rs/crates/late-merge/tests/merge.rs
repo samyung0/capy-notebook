@@ -441,6 +441,37 @@ fn text_typed_into_a_collected_block_names_its_block() {
     assert!(items(&reauthored.update).is_empty());
 }
 
+/// Re-authored edits (the route for ids the room never recorded, review r3
+/// M3) keep what the tab made: typed text, a mark over it and a new block,
+/// every piece under the assigned id, the note reading as the tab's.
+#[test]
+fn reauthored_edits_keep_text_marks_and_new_blocks() {
+    let mut room = Note::new(1, "s");
+    room.apply(&[Operation::InsertNode {
+        path: vec![1],
+        node: paragraph("s2", "abc"),
+    }]);
+    let mut tab = Note::load(2, "t", &room.state());
+    let typing = tab.insert_ops(1, 3, " typed");
+    tab.apply(&typing);
+    let bold = tab.format_ops(1, 0, 3, "bold", true);
+    tab.apply(&bold);
+    let enter = tab.split_ops(1, 5);
+    tab.apply(&enter);
+    let reauthored = late_merge::reauthor(&tab.state(), &room.state(), 9).unwrap();
+    assert!(reauthored.hidden.is_empty());
+    let pieces = items(&reauthored.update);
+    assert!(!pieces.is_empty());
+    assert!(
+        pieces.iter().all(|(id, ..)| id.client.get() == 9),
+        "{pieces:?}"
+    );
+    let mut after = Note::load(3, "x", &room.state());
+    after.receive(&reauthored.update);
+    assert_eq!(after.value(), tab.value());
+    assert!(after.value().contains("bold"), "{}", after.value());
+}
+
 #[test]
 fn text_typed_into_a_block_a_peer_deleted_names_its_block() {
     let mut room = Note::new(1, "s");

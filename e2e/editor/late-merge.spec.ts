@@ -71,6 +71,21 @@ function roomText(page: Page) {
   );
 }
 
+/** The JOIN versions and late-merge marks the note's sessions named (the
+ * mock provider records them; in-place GC). */
+function sessionVersions(page: Page) {
+  return page.evaluate(
+    async ({ path, value }) => {
+      const { mockSessionVersions } = await import(path);
+      return mockSessionVersions(value) as {
+        joins: (number | null)[];
+        marks: number[];
+      };
+    },
+    { path: MOCK, value: MATERIAL }
+  );
+}
+
 /** Every late merge's request waits in the page until the test calls
  * `releaseLateMerge` (never, for a merge that must run out of time). */
 async function holdMerges(page: Page) {
@@ -121,6 +136,20 @@ async function peerLeaves(page: Page) {
   });
 }
 
+/** Holds the late merge's WASM download until `answer` aborts it or lets it
+ * through (a route disables the page's HTTP cache). */
+async function holdDownload(page: Page) {
+  let answer: (how: 'abort' | 'continue') => void = () => {};
+  const answered = new Promise<'abort' | 'continue'>((resolve) => {
+    answer = resolve;
+  });
+  await page.context().route('**/late_merge_bg.wasm*', async (route) => {
+    if ((await answered) === 'abort') await route.abort('failed');
+    else await route.continue();
+  });
+  return (how: 'abort' | 'continue') => answer(how);
+}
+
 test('a late tab merges its unsent edits into the current note and swaps without losing or doubling text', async ({
   page,
 }) => {
@@ -144,13 +173,29 @@ test('a late tab merges its unsent edits into the current note and swaps without
   await peerAppends(page, PEER);
 
   // The room collected past this session: its rejoin is answered late, and
-  // only a new session joins.
+  // only a new session joins. Until the merge's code loaded nothing is
+  // marked; the mark is taken then (Q406, review r2 S6).
+  const download = await holdDownload(page);
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
+  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+    timeout: 30_000,
+  });
+  await page.waitForTimeout(1000);
+  expect((await sessionVersions(page)).marks).toEqual([]);
+  download('continue');
   await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
     timeout: 30_000,
   });
+  const versions = await sessionVersions(page);
+  expect(versions.marks).toHaveLength(1);
+  // The late mount joined as a new session, naming no version.
+  expect(versions.joins.length).toBeGreaterThan(1);
+  expect(versions.joins.at(-1)).toBeNull();
   const editor = live.locator('[contenteditable="true"]');
+  // One swap, at the merged note: the caret and the focus came back
+  // (review r3 L2).
+  await expect(editor).toBeFocused();
   await expect(editor).toContainText(PEER);
   await expect(editor).toContainText(OFFLINE.trim());
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
@@ -197,24 +242,11 @@ test('a late tab merges its unsent edits into the current note and swaps without
   expect(after.split(AGAIN.trim()).length - 1).toBe(1);
 });
 
-/** Holds the late merge's WASM download until `answer` aborts it or lets it
- * through (a route disables the page's HTTP cache). */
-async function holdDownload(page: Page) {
-  let answer: (how: 'abort' | 'continue') => void = () => {};
-  const answered = new Promise<'abort' | 'continue'>((resolve) => {
-    answer = resolve;
-  });
-  await page.context().route('**/late_merge_bg.wasm*', async (route) => {
-    if ((await answered) === 'abort') await route.abort('failed');
-    else await route.continue();
-  });
-  return (how: 'abort' | 'continue') => answer(how);
-}
-
 // Q295, Q398: while the merge's code downloads (no time limit) the note
-// shows the tab's own copy read-only and the header reads Getting ready; a
-// failed download keeps it so, offering Retry, and a reconnecting browser
-// tries again too.
+// shows the tab's own copy read-only (the paused note beside the late mount)
+// and the header reads Getting ready; a failed download shows the own copy
+// in the late mount with a strip offering Retry, everything kept, and a
+// reconnecting browser tries again too.
 test('a late tab shows its own copy while the merge code downloads; a failed download retries on Retry and on reconnect', async ({
   page,
 }) => {
@@ -234,26 +266,33 @@ test('a late tab shows its own copy while the merge code downloads; a failed dow
   let download = await holdDownload(page);
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
-  const copy = live.getByTestId('late-copy');
-  await expect(copy).toContainText(OFFLINE.trim(), { timeout: 30_000 });
-  await expect(saveState).toHaveAttribute('data-save-state', 'preparing');
-  await expect(live.locator('[contenteditable="true"]')).toHaveCount(0);
-  await expect(page.locator('[data-note-toolbar]')).toHaveAttribute(
-    'inert',
-    ''
-  );
+  const paused = page.locator('[data-note-mount="paused"]');
+  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+    timeout: 30_000,
+  });
+  await expect(paused).toContainText(OFFLINE.trim());
+  await expect(live).toHaveCount(0);
+  // The paused note is the copy: the late mount beside it renders none.
+  await expect(page.getByTestId('late-copy')).toHaveCount(0);
   // Past the merge's 10 s: the download has no limit.
   await page.waitForTimeout(11_000);
-  await expect(copy).toBeVisible();
+  await expect(paused).toContainText(OFFLINE.trim());
   await expect(page.getByTestId('note-recovery')).toHaveCount(0);
 
-  // The download fails: the copy stays, everything kept, with Retry.
+  // The download fails: the late mount shows the own copy, everything kept,
+  // with Retry.
   download('abort');
   const banner = page.locator(
     '[data-testid="save-banner"][data-kind="late-unloaded"]'
   );
   await expect(banner).toBeVisible({ timeout: 30_000 });
+  const copy = live.getByTestId('late-copy');
   await expect(copy).toContainText(OFFLINE.trim());
+  await expect(live.locator('[contenteditable="true"]')).toHaveCount(0);
+  await expect(page.locator('[data-note-toolbar]')).toHaveAttribute(
+    'inert',
+    ''
+  );
   await expect(saveState).toHaveAttribute('data-save-state', 'preparing');
   await expect(page.getByTestId('note-recovery')).toHaveCount(0);
 
@@ -356,6 +395,11 @@ test('a reload during the merge keeps the edits: the reloaded editor merges its 
     'inert',
     ''
   );
+  // Nothing paused shows it here: the opening mount shows the own copy
+  // (Q295).
+  await expect(
+    page.locator('[data-note-mount="live"]').getByTestId('late-copy')
+  ).toContainText(OFFLINE.trim());
   await page.evaluate(() =>
     (window as unknown as { releaseLateMerge: () => void }).releaseLateMerge()
   );
@@ -496,4 +540,254 @@ test('a merge that runs out of time after its editor stopped leaves the edits to
   await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
   await expect(editor).toContainText(PEER);
   await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+});
+
+const HELD = ' Held steps.';
+const DRAFTS_ANSWER = 'e2e.late.drafts.answer';
+const DRAFTS_SENT = 'e2e.late.drafts.sent';
+
+/** The service's `/drafts` for this tab (the mock token's URL is not
+ * fetchable): a service that is down, or one answering `late` once
+ * `answerDraftsLate` was called. The page's sweep, which sends with the
+ * document's lock held exclusively, always meets a down service; only the
+ * editor's sends get the answer and are counted (`draftSends`). */
+async function serveDrafts(page: Page) {
+  await page.addInitScript(
+    ([answerKey, sentKey]) => {
+      const original = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (!url.endsWith('/drafts')) return original(input, init);
+        const { held = [] } = await navigator.locks.query();
+        const sweep = held.some(
+          (lock) =>
+            lock.mode === 'exclusive' && lock.name?.startsWith('capy-drafts:')
+        );
+        if (!sweep)
+          sessionStorage.setItem(
+            sentKey,
+            String(Number(sessionStorage.getItem(sentKey) ?? 0) + 1)
+          );
+        if (!sweep && sessionStorage.getItem(answerKey) === 'late')
+          return Response.json({ class: 'late' }, { status: 409 });
+        throw new TypeError('Failed to fetch');
+      };
+    },
+    [DRAFTS_ANSWER, DRAFTS_SENT]
+  );
+}
+
+function answerDraftsLate(page: Page) {
+  return page.evaluate(
+    (key) => sessionStorage.setItem(key, 'late'),
+    DRAFTS_ANSWER
+  );
+}
+
+const draftSends = (page: Page) =>
+  page.evaluate((key) => Number(sessionStorage.getItem(key) ?? 0), DRAFTS_SENT);
+
+/** Leaves the note with steps the room never took, as a closed session's
+ * with its stored token (pending: the draft send's), on the workspace page
+ * with the service down. */
+async function leaveHeldSteps(page: Page) {
+  await page.goto(note);
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(seed, { timeout: 30_000 });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
+  await setReachable(page, false);
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(HELD);
+  await page.goto('/workspaces/ws_scenarios');
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  // As a real session's rows, they carry its stored token (the mock's
+  // provider takes none).
+  await page.evaluate(async (id) => {
+    const draftsPath = '/src/lib/editDrafts.ts';
+    const dbPath = '/src/mocks/db.ts';
+    const { draftKey, putDrafts, readDrafts } = await import(draftsPath);
+    const { user } = await import(dbPath);
+    const key = draftKey(user.id, 'material', id);
+    const rows: { grants?: string[] }[] = await readDrafts(key);
+    if (!rows.length) throw new Error('No stored steps');
+    await putDrafts(rows.map((row) => ({ ...row, grants: ['stored-token'] })));
+  }, MATERIAL);
+}
+
+/** The note opened over the held steps: the draft send takes them (down)
+ * while the note joins, synced and view-only. */
+async function openOverHeldSteps(page: Page) {
+  await page.goto(note);
+  await setReachable(page, true);
+  const content = page.locator('[data-slate-editor]').first();
+  await expect(content).toContainText(seed, { timeout: 30_000 });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'syncing'
+  );
+  await expect(content).not.toContainText(HELD.trim());
+  await expect.poll(() => draftSends(page)).toBeGreaterThan(0);
+}
+
+// Q406 (review r3 M1): a late mount merges every leftover draft with its
+// own in one pass, a never-accepted session's pending steps included: none
+// goes raw or through the draft send meanwhile.
+test('a late tab merges the pending steps of another session with its own, in one merge', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await serveDrafts(page);
+  await leaveHeldSteps(page);
+  await openOverHeldSteps(page);
+  // This session is answered late before the send's 30 s hold.
+  const download = await holdDownload(page);
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, false);
+  const sent = await draftSends(page);
+  await setReachable(page, true);
+  // While the merge's code downloads, the late mount sends no draft.
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'preparing',
+    { timeout: 30_000 }
+  );
+  await page.waitForTimeout(3000);
+  expect(await draftSends(page)).toBe(sent);
+  download('continue');
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(HELD.trim(), { timeout: 20_000 });
+  const text = await editor.innerText();
+  expect(text.split(HELD.trim()).length - 1).toBe(1);
+  expect(text.split(seed).length - 1).toBe(1);
+  expect(await draftSends(page)).toBe(sent);
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+  await lateSessions(page, null);
+});
+
+// Q406 (review r3 M1): a late merge that fails keeps every draft it took,
+// the pending steps of another session included, for copying.
+test('a failed late merge keeps the pending steps it took for copying', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await serveDrafts(page);
+  await leaveHeldSteps(page);
+  await openOverHeldSteps(page);
+  // Every session is late: the new one too, so the merge cannot run.
+  await lateSessions(page, MATERIAL, true);
+  await setReachable(page, false);
+  await setReachable(page, true);
+  const recovery = page.getByTestId('note-recovery');
+  await expect(recovery).toContainText(HELD.trim(), { timeout: 30_000 });
+  await page.reload();
+  await expect(page.getByTestId('note-recovery')).toContainText(HELD.trim(), {
+    timeout: 30_000,
+  });
+  await lateSessions(page, null);
+});
+
+// Q406 (review r3 M2): a draft send answered late (its steps older than the
+// window) starts the late merge in the same session: the steps show live.
+test('a draft send answered late merges its steps in the same session', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await serveDrafts(page);
+  await leaveHeldSteps(page);
+  await answerDraftsLate(page);
+  await page.goto(note);
+  await setReachable(page, true);
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(HELD.trim(), { timeout: 25_000 });
+  const text = await editor.innerText();
+  expect(text.split(HELD.trim()).length - 1).toBe(1);
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+});
+
+// Review r3 L1: a merge whose mark another send took and a store cleared
+// (the session reports past its base) runs again, marked anew.
+test('a late merge runs again when its mark no longer holds the session at its base', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await holdMerges(page);
+  await page.goto(note);
+  const live = page.locator('[data-note-mount="live"]');
+  await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
+    timeout: 30_000,
+  });
+  await setReachable(page, false);
+  await live.locator('[contenteditable="true"]').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(OFFLINE);
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, true);
+  await mergeHeld(page);
+  const [base] = (await sessionVersions(page)).marks;
+  await page.evaluate(
+    async ({ path, value, version }) => {
+      const { setMockReportedVersion } = await import(path);
+      setMockReportedVersion(value, version);
+    },
+    { path: MOCK, value: MATERIAL, version: base + 1 }
+  );
+  await page.evaluate(() =>
+    (window as unknown as { releaseLateMerge: () => void }).releaseLateMerge()
+  );
+  await expect
+    .poll(async () => (await sessionVersions(page)).marks)
+    .toEqual([base, base + 1]);
+  await page.evaluate(() =>
+    (window as unknown as { releaseLateMerge: () => void }).releaseLateMerge()
+  );
+  const editor = live.locator('[contenteditable="true"]');
+  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  const text = await editor.innerText();
+  expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
+  await lateSessions(page, null);
+});
+
+// Review r3 L4: leaving the note while the merge's code downloads stops its
+// worker.
+test('leaving a late note stops its merge worker', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(note);
+  const live = page.locator('[data-note-mount="live"]');
+  await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
+    timeout: 30_000,
+  });
+  await setReachable(page, false);
+  await live.locator('[contenteditable="true"]').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(OFFLINE);
+  await holdDownload(page);
+  const started = page.waitForEvent('worker', {
+    predicate: (worker) => worker.url().includes('lateMerge.worker'),
+    timeout: 30_000,
+  });
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, true);
+  const worker = await started;
+  const closed = new Promise<void>((resolve) =>
+    worker.on('close', () => resolve())
+  );
+  await page.getByRole('link', { name: 'Scenario source.txt' }).click();
+  await expect(page).toHaveURL(/file=mock-scenario-text/);
+  await Promise.race([
+    closed,
+    page.waitForTimeout(10_000).then(() => {
+      throw new Error('The merge worker outlived its editor');
+    }),
+  ]);
+  await lateSessions(page, null);
 });
