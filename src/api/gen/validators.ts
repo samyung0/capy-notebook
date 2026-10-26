@@ -1373,7 +1373,7 @@ export const ReportEditIncidentBody = zod.object({
   "fileId": zod.string().min(1).max(reportEditIncidentBodyFileIdMax).regex(reportEditIncidentBodyFileIdRegExp).describe('The note (material) or source file'),
   "fileKind": zod.enum(['material', 'source_file']),
   "kind": zod.enum(['other_epoch_draft', 'draft_unrestorable', 'draft_storage_failed', 'unconfirmed_edit', 'offline_episode', 'discard_unsaved', 'merge_view']),
-  "reason": zod.enum(['reopen', 'held', 'epoch_changed', 'paused', 'base_missing', 'expired', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found', 'refused', 'changed', 'conflict', 'hidden']).optional(),
+  "reason": zod.enum(['reopen', 'held', 'epoch_changed', 'paused', 'base_missing', 'expired', 'quota', 'unavailable', 'write', 'browser_offline', 'unreachable', 'read_only', 'forbidden', 'not_found', 'unreadable', 'refused', 'changed', 'conflict', 'hidden']).optional(),
   "sizeBytes": zod.int().min(reportEditIncidentBodySizeBytesMin).max(reportEditIncidentBodySizeBytesMax).optional()
 })
 

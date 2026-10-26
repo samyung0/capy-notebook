@@ -111,10 +111,16 @@ import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
 import { registerLiveNote } from './liveNoteHandover';
-import { applyMergeSteps, asOneStep } from './merge/applyBlocks';
-import { type BlockConflict, mergeBlocks } from './merge/blockMerge';
-import { type NoteCopies, type NoteCopy, recordCopy } from './merge/copyDraft';
+import { mergeAtBind } from './merge/applyBlocks';
+import type { CopyPair } from './merge/blockMerge';
+import {
+  deleteOnceStored,
+  holdCopy,
+  type NoteCopies,
+  recordCopy,
+} from './merge/copyDraft';
 import { watchHiddenTyping } from './merge/hiddenTyping';
+import { mergeOffThread } from './merge/mergeOffThread';
 import { createMergeStore, type MergeStore } from './merge/mergeStore';
 import type { NoteDrafts } from './merge/noteDrafts';
 import {
@@ -646,12 +652,20 @@ export function NoteEditorCore({
   const [initialValue] = useState(
     () => copies.adopted?.copy.mine ?? projection
   );
+  // The copy past the offline bound (review r1 L2): the editor stops, as
+  // drafts do, until the room joins.
+  const [copyFull, setCopyFull] = useState(false);
   const [copy] = useState(() =>
     recordCopy({
-      adopted: copies.adopted?.row ?? null,
+      adopted: copies.adopted,
       base: copies.adopted?.copy.base ?? projection,
       key: draftKey,
+      limitBytes: MATERIAL_DOCUMENT_LIMITS.maxContentBytes,
       lineage: collaborationToken.room,
+      onLimit: () => {
+        setCopyFull(true);
+        reportOffline.current?.('offline-limit');
+      },
       revision: copies.adopted?.copy.revision ?? material.revision,
     })
   );
@@ -1037,13 +1051,14 @@ export function NoteEditorCore({
         // before the recorder's discard, the report counts this session's
         // rows.
         if (refusalDropsDrafts(refusal, failedToken)) {
+          // Written first, so the drop below takes it too.
+          copy.stop();
           void dropLostDrafts(
             draftKey,
             refusal === 'notFound' ? 'not_found' : 'forbidden',
             reportIncident
           ).catch((error) => console.warn('Draft storage failed:', error));
           void recorder.current?.discard();
-          copy.stop();
         }
         reportUnavailable.current?.(refusal);
       }
@@ -1330,7 +1345,9 @@ export function NoteEditorCore({
     [editor]
   );
   useEffect(() => () => store.dispose(), [store]);
-  addPieces.current = (found) => store.add(found);
+  addPieces.current = (found) => {
+    void deleteOnceStored(store.add(found), [], toastDraftsLost);
+  };
   // Choices that edit the note need it live, synced, bound and editable
   // (Q255): never paused, refused, locked, held or offline.
   canApplyNow.current = () =>
@@ -1356,13 +1373,15 @@ export function NoteEditorCore({
     for (const input of sources) {
       try {
         const value = editor.children as MaterialValue;
-        store.add(
-          'doc' in input
-            ? piecesFromDrafts(input.doc, ydoc, value, input.source)
-            : piecesFromCopy(input.copy, value, input.source)
-        );
-        void deleteDrafts(input.rows).catch((error) =>
-          console.warn('Draft storage failed:', error)
+        // The group's rows go once its pieces are stored (Q397).
+        void deleteOnceStored(
+          store.add(
+            'doc' in input
+              ? piecesFromDrafts(input.doc, ydoc, value, input.source)
+              : piecesFromCopy(input.copy, value, input.source)
+          ),
+          input.rows,
+          toastDraftsLost
         );
       } catch (error) {
         // The rows stay for the next open.
@@ -1374,62 +1393,60 @@ export function NoteEditorCore({
   // Bound at the room's first sync (roomBinding.ts): what was typed into the
   // saved copy merges into the room's document block by block (Q229), older
   // copies first, as one Undo step of ordinary edits under this session's
-  // id. The merge reads the room's blocks as it applies, in the same task,
-  // so a block changed meanwhile is never overwritten. Blocks both sides
-  // changed become pieces.
-  const bound = useRef((_unbound: MaterialValue) => {});
+  // id. The diff runs in a worker (Q397); a block changed before its steps
+  // apply is left as it is now. Blocks both sides changed become pieces, and
+  // the copies' rows go only once those are stored.
+  const bound = useRef(
+    (_unbound: MaterialValue): Promise<unknown> | undefined => undefined
+  );
   bound.current = (unbound) => {
     store.changed();
     canApplyNow.current();
     if (sources.length) afterPaint(() => convertSources.current());
     const own = copy.stop();
-    const pairs: Pick<NoteCopy, 'base' | 'mine'>[] = copies.others.map(
-      ({ copy: other }) => other
-    );
-    if (copyEdited.current || copies.adopted)
-      pairs.push({
-        base: copies.adopted?.copy.base ?? projection,
-        mine: unbound,
-      });
-    if (!pairs.length) return;
-    const conflicts: BlockConflict[] = [];
-    try {
-      asOneStep(editor, () => {
-        for (const { base, mine } of pairs) {
-          const merged = mergeBlocks(
-            base,
-            mine,
-            editor.children as MaterialValue
-          );
-          applyMergeSteps(editor, merged.steps);
-          conflicts.push(...merged.conflicts);
-        }
-      });
-    } catch (error) {
-      // The rows stay for the next open's merge.
-      captureException(error, { tags: { component: 'note-copy-merge' } });
-      return;
+    // Past the offline bound, the copy as last written is merged.
+    const mine = copy.over ? copy.kept : unbound;
+    if (copyFull) {
+      setCopyFull(false);
+      reportOffline.current?.(null);
     }
-    store.add(piecesFromConflicts(conflicts, 'conflict'));
-    // Unsaved like restored drafts: a bind before the first paint changes
-    // the value with no value change reported.
-    unsavedChanges.current = true;
-    // The merge's updates are recorded already (asOneStep flushed them).
-    setTimeout(() => {
-      void deleteDrafts(copyRows(own)).catch((error) =>
-        console.warn('Draft storage failed:', error)
-      );
-      saveNow.current();
-    });
+    const pairs: CopyPair[] = copies.others.map(({ copy: other }) => other);
+    if (mine && (copyEdited.current || copies.adopted))
+      pairs.push({ base: copies.adopted?.copy.base ?? projection, mine });
+    if (!pairs.length) return;
+    return mergeAtBind(editor, pairs, mergeOffThread).then(
+      async (merged) => {
+        // Unbound meanwhile: the rows stay for the next open's merge.
+        if (!merged) return;
+        // Unsaved like restored drafts: a bind before the first paint
+        // changes the value with no value change reported.
+        if (merged.applied) {
+          unsavedChanges.current = true;
+          saveNow.current();
+        }
+        await deleteOnceStored(
+          store.add(piecesFromConflicts(merged.conflicts, 'conflict')),
+          copyRows(own),
+          toastDraftsLost
+        );
+      },
+      (error) => {
+        // The rows stay for the next open's merge.
+        captureException(error, { tags: { component: 'note-copy-merge' } });
+      }
+    );
   };
   useEffect(() => {
     whenBound(editor, (unbound) => bound.current(unbound as MaterialValue));
+    // This tab owns its copy row while mounted (review r1 M1).
+    const release = holdCopy(copy.session);
     // A copy edited and not written yet goes as the page or the editor goes.
     const flush = () => copy.flush();
     window.addEventListener('pagehide', flush);
     return () => {
       window.removeEventListener('pagehide', flush);
       flush();
+      release();
     };
   }, [copy, editor]);
 
@@ -1776,7 +1793,7 @@ export function NoteEditorCore({
   // nothing may edit until reconnect, reload or the next editor. A paused
   // editor's content stops edits without Slate's readOnly (pauseEdits).
   const locked =
-    offlineLimit || outdated || phase === 'paused' || draftsSending;
+    offlineLimit || copyFull || outdated || phase === 'paused' || draftsSending;
   lockedNow.current = locked;
   // Read through refs: these are what changes it here.
   useEffect(() => canApplyNow.current(), [locked, phase]);
@@ -1831,7 +1848,10 @@ export function NoteEditorCore({
                               discussions={discussions}
                               presence={presence}
                               readOnly={
-                                offlineLimit || outdated || draftsSending
+                                offlineLimit ||
+                                copyFull ||
+                                outdated ||
+                                draftsSending
                               }
                               shouldShowStats={shouldShowDocumentStats(
                                 documentStats

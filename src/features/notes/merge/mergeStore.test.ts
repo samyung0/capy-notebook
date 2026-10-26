@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const storage = vi.hoisted(() => ({
   deleted: [] as unknown[],
+  fail: false,
   put: [] as { id: string; seq: number }[],
 }));
 vi.mock('@/lib/editDrafts', async (load) => ({
@@ -17,6 +18,7 @@ vi.mock('@/lib/editDrafts', async (load) => ({
     storage.deleted.push(...rows);
   }),
   putDrafts: vi.fn(async (rows: { id: string; seq: number }[]) => {
+    if (storage.fail) throw new Error('quota');
     storage.put.push(...rows.map(({ id, seq }) => ({ id, seq })));
   }),
 }));
@@ -85,6 +87,7 @@ const frame = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 beforeEach(() => {
   storage.deleted.length = 0;
+  storage.fail = false;
   storage.put.length = 0;
 });
 
@@ -145,6 +148,19 @@ describe('the merge store', () => {
       { id: pieceId(KEY, 'b'), seq: 1 },
     ]);
     expect(store.getSnapshot().pieces).toHaveLength(2);
+  });
+
+  // Q397: the rows pieces came from go only once the pieces are stored;
+  // `add` says when (deleteOnceStored waits on it).
+  it('resolves an add once its pieces are stored, and rejects when the write fails', async () => {
+    const { store } = setup();
+    await expect(store.add([piece('a', p('a', 'A mine'))])).resolves.toBe(
+      undefined
+    );
+    storage.fail = true;
+    await expect(store.add([piece('b', p('b', 'B mine'))])).rejects.toThrow(
+      'quota'
+    );
   });
 
   it('deletes exactly the rows it lets go: a dismissal, Discard, resolved ones on close', () => {

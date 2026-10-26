@@ -164,7 +164,7 @@ export function createMergeStore({
       keep(piece, seq);
       return pieceRow(key, lineage, piece, seq);
     });
-    if (rows.length) void putDrafts(rows).catch(warn);
+    return rows.length ? putDrafts(rows) : Promise.resolve();
   };
 
   const forget = (blocks: string[]) => {
@@ -191,10 +191,13 @@ export function createMergeStore({
   return {
     /** New pieces (a conversion after the first sync, a merge's
      * conflicts): stored and listed. */
+    /** Resolves once the pieces are stored (the rows they came from go
+     * only then, Q397); rejects when the write failed. */
     add(pieces: MergePiece[]) {
-      if (!pieces.length) return;
-      write(pieces);
+      if (!pieces.length) return Promise.resolve();
+      const stored = write(pieces);
       publish();
+      return stored;
     },
     /** The user's choice on a piece, against the block they were shown. */
     apply(
@@ -208,7 +211,9 @@ export function createMergeStore({
         const done = applyChoice(editor, entry.piece, choice, shown);
         stale = done.result === 'stale' ? block : null;
         if (done.result === 'applied' && done.insertedAs)
-          write([{ ...entry.piece, insertedAs: done.insertedAs }]);
+          void write([{ ...entry.piece, insertedAs: done.insertedAs }]).catch(
+            warn
+          );
       } catch (error) {
         onApplyFailed(entry.piece, error);
       }

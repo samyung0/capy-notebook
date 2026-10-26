@@ -12,7 +12,12 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import { toastDraftsLost } from '../saveFailure';
-import { type NoteCopies, type NoteCopy, noteCopies } from './copyDraft';
+import {
+  heldCopies,
+  type NoteCopies,
+  type NoteCopy,
+  noteCopies,
+} from './copyDraft';
 import { storedPieces } from './pieceRows';
 import type { MergePiece, PieceSource } from './types';
 
@@ -69,10 +74,15 @@ export function useNoteDrafts(
         return [] as EditDraft[];
       });
       const pieces = storedPieces(rows);
-      const copy = noteCopies(rows);
+      const copy = noteCopies(rows, await heldCopies().catch(() => null));
       const unreadable = [...pieces.unreadable, ...copy.unreadable];
       if (unreadable.length) {
+        // Lost work (review r1 L4): reported once, as a group nothing could
+        // draw.
         toastDraftsLost();
+        reportOnce(unreadable[0].id, () =>
+          report('draft_unrestorable', 'unreadable', draftBytes(unreadable))
+        );
         await deleteDrafts(unreadable).catch(() => undefined);
       }
       const sources: PieceInput[] = copy.expired.map((expired) => ({

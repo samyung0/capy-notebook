@@ -4715,6 +4715,7 @@ components:
             - read_only
             - forbidden
             - not_found
+            - unreadable
             - refused
             - changed
             - conflict

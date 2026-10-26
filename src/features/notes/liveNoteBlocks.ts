@@ -5,43 +5,13 @@ import {
   normalizeMaterialBlock,
 } from '@/features/materials/document';
 import { repairFigureBlock } from '@/features/questions/repair';
+import { sameBlock } from './merge/blockMerge';
 
 /* A note's value read from its room for a live View (live-items DESIGN.md 3),
  * block by block: each top-level block keeps its object until the room
  * changes something inside it, so the static renderer, which re-renders a
  * top-level block only when its object changes (PlateStatic's memo), redraws
  * one block per remote keystroke. */
-
-/** Deep equality of two blocks as JSON, key order aside (the room and the
- * projection write a block's keys in different orders). Below the block
- * itself element ids are left out: normalization gives an element without
- * one a random id, on the painted copy and on every read of the room (a
- * Mermaid caption, table rows and cells, columns, toggles; REVIEW5 N1), and
- * nothing renders differently for them. */
-function same(a: unknown, b: unknown, top = true): boolean {
-  if (a === b) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
-  if (Array.isArray(a) || Array.isArray(b))
-    return (
-      Array.isArray(a) &&
-      Array.isArray(b) &&
-      a.length === b.length &&
-      a.every((item, index) => same(item, b[index], false))
-    );
-  const keys = (value: object) =>
-    Object.keys(value).filter((key) => top || key !== 'id');
-  const own = keys(a);
-  return (
-    own.length === keys(b).length &&
-    own.every((key) =>
-      same(
-        (a as Record<string, unknown>)[key],
-        (b as Record<string, unknown>)[key],
-        false
-      )
-    )
-  );
-}
 
 type Attributes = Record<string, unknown>;
 
@@ -147,7 +117,7 @@ export class NoteBlocks {
         const live = blockOf(insert);
         const shown =
           (typeof live.id === 'string' && byId.get(live.id)) || painted[index];
-        const kept = shown && same(shown, live) ? shown : live;
+        const kept = shown && sameBlock(shown, live) ? shown : live;
         this.blocks.set(insert, kept);
         return kept;
       }
