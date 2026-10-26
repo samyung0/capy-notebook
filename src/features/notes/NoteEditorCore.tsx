@@ -288,9 +288,10 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   return (
     <div {...props}>
+      {/* The right gutter holds the comment-thread buttons on phones too. */}
       <div
         className={cn(
-          'mx-auto w-full px-5 sm:px-10',
+          'mx-auto w-full pr-10 pl-5 sm:pl-10',
           displayWidth === 'half' && 'md:max-w-3xl'
         )}
         data-note-content=""
