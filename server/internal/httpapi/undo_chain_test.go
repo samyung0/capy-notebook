@@ -162,14 +162,26 @@ func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := signedUndoPayload(t, st, edit, created.Effect.Resource.ID)
-	// The collaboration service: the Undo lands after the client left.
+	// The collaboration service: the Undo lands after the client left, its
+	// receipt committed with the write (r1 M2).
 	started := make(chan struct{}, 1)
 	var undos atomic.Int32
-	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		undos.Add(1)
 		started <- struct{}{}
 		time.Sleep(300 * time.Millisecond)
-		_ = json.NewEncoder(w).Encode(map[string]any{"undo": nil})
+		var body struct {
+			Operation store.DocumentOperation `json:"operation"`
+			UndoOf    string                  `json:"undoOf"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		effect := fmt.Sprintf(`{"operation":"edit_undone","operationId":%q,"resource":{"kind":"material","id":%q}}`,
+			body.Operation.ID, created.Effect.Resource.ID)
+		if _, err := st.Pool().Exec(context.Background(), `INSERT INTO agent_operations (id,kind,request_hash,actor_user_id,workspace_id,outcome,effect,undo_of)
+			VALUES ($1,'undo_edit',$2,$3,$4,'succeeded',$5,$6)`, body.Operation.ID, body.Operation.RequestHash, userID, ws.ID, effect, body.UndoOf); err != nil {
+			t.Error(err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"operationId": body.Operation.ID, "outcome": "succeeded", "effect": json.RawMessage(effect)})
 	}))
 	t.Cleanup(authority.Close)
 	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
@@ -217,7 +229,7 @@ func signedUndoPayload(t *testing.T, st *store.Store, step, materialID string) *
 	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"operationId": step, "outcome": "succeeded",
-			"undoPayload": map[string]any{"epoch": 1, "updates": map[string]string{"content": "dW5kbw=="}},
+			"undoPayload": map[string]any{"epoch": 1, "issuedAt": time.Now().Unix(), "updates": map[string]string{"content": "dW5kbw=="}},
 		})
 	}))
 	defer authority.Close()

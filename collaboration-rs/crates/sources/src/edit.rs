@@ -4,10 +4,11 @@
 //! through the notes crate's text commands and Office through the engine's
 //! commands. The change commits as one row through the checkpoint CAS with
 //! the operation's receipt; a moved checkpoint applies the commands again on
-//! the new state (3 attempts), an ended epoch never will. An edit made while
-//! its room was loaded returns its Undo payload (`ydoc::undo`, Epo
-//! 2026-10-21); a payload sent back is written the same way, as a plain
-//! checkpoint (Go records the Undo's receipt), and returns its Redo payload.
+//! the new state (3 attempts), an ended epoch never will. Every edit returns
+//! its Undo payload (`ydoc::undo`, Epo 2026-10-21 and 2026-10-22); a payload
+//! sent back is written the same way, its checkpoint carrying the Undo's
+//! receipt, which names the step it reverses (r1 M2), and returns its Redo
+//! payload.
 
 use notes::edit::DocumentCommand;
 use office_service::Command;
@@ -38,14 +39,16 @@ pub struct EditInput {
     pub undo: Option<SentBack>,
 }
 
-/// An Undo payload sent back: the epoch it was made in and its update.
+/// An Undo payload sent back: the epoch it was made in, its update and the
+/// step it reverses (its receipt's `undo_of`).
 #[derive(Clone, Debug)]
 pub struct SentBack {
     pub epoch: i64,
     pub update: Vec<u8>,
+    pub undo_of: String,
 }
 
-/// A committed edit: the receipt (none for an Undo), its room, what that
+/// A committed edit: the receipt (none for a payload applied before), its room, what that
 /// room lacks of it (none when a payload had been applied before and nothing
 /// was written), the stored cover it makes and the checkpoint it reached.
 /// `notice` is the Office engine's note on the characters the agent's text
@@ -396,11 +399,11 @@ impl Sources {
         } else {
             row
         };
-        // An Undo saves as a writer's checkpoint does; Go records its receipt.
-        let receipt_operation = input
-            .undo
-            .is_none()
-            .then(|| json!({ "receipt": operation }));
+        // The receipt commits with the checkpoint, an Undo's naming its step.
+        let receipt_operation = match &input.undo {
+            Some(undo) => json!({ "receipt": operation, "undoOf": undo.undo_of }),
+            None => json!({ "receipt": operation }),
+        };
         let body = CheckpointBody {
             actor_ids: vec![input.actor_user_id.clone()],
             epoch: session.epoch,
@@ -413,7 +416,7 @@ impl Sources {
             base_source_sha256: seeded.then(|| sha.clone()),
             seed_bytes: (seeded && office(session.format).is_none())
                 .then_some(seed.state.len() as u64),
-            operation: receipt_operation,
+            operation: Some(receipt_operation),
             preview,
         };
         let saved: CheckpointSaved = self
@@ -421,12 +424,9 @@ impl Sources {
             .file(&input.file_id, "checkpoint", Some(&body), None, None)
             .await?;
         self.not_seeded(&name);
-        let receipt = match input.undo {
-            Some(_) => Value::Null,
-            None => saved
-                .operation
-                .ok_or_else(|| SourceError::Other("checkpoint did not return a receipt".into()))?,
-        };
+        let receipt = saved
+            .operation
+            .ok_or_else(|| SourceError::Other("checkpoint did not return a receipt".into()))?;
         let update = match &live_vector {
             Some(vector) => doc.transact().encode_state_as_update_v1(vector),
             None => row.clone(),

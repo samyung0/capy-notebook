@@ -1,8 +1,10 @@
+import 'fake-indexeddb/auto';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import type { ActivityBlock, ChatMessage, ResourceEffect } from '@/api/types';
 import { m } from '@/i18n';
+import { keepUndoPayloads } from '@/lib/undoPayloads';
 import { ChatTrace } from './ChatTrace';
 
 // An Office edit the engine cut at a per-call limit (Epo 2026-10-23, Q171).
@@ -15,6 +17,19 @@ const edit = (id: string): ResourceEffect => ({
   resource: { id: 'f_1', kind: 'source_file', title: 'grades.xlsx' },
   undo: { operationId: id, status: 'available' },
 });
+
+// An edit shows its Undo while the browser holds its payload (Epo
+// 2026-10-21).
+keepUndoPayloads(
+  ['op_1', 'op_2'].map((operationId) => ({
+    documentId: 'f_1',
+    epoch: 1,
+    issuedAt: Math.floor(Date.now() / 1000),
+    mac: 'f'.repeat(64),
+    operationId,
+    updates: { source: 'dW5kbw==' },
+  }))
+);
 
 function cut(more: Partial<Extract<ActivityBlock, { kind: 'tool' }>>) {
   return {

@@ -54,8 +54,10 @@ type documentRequest struct {
 	// Office is an inspect_office_document read's query; the engine answers
 	// it in the inspection's Scoped.
 	Office *OfficeQuery `json:"office,omitempty"`
-	// Undo is the payload an Undo (or Redo) sends back.
-	Undo *UndoPayload `json:"undo,omitempty"`
+	// Undo is the payload an Undo (or Redo) sends back; UndoOf the step it
+	// reverses, which its receipt names (r1 M2).
+	Undo   *UndoPayload `json:"undo,omitempty"`
+	UndoOf string       `json:"undoOf,omitempty"`
 }
 
 // OfficeQuery scopes an Office read: for XLSX no range lists the sheets, a
@@ -232,8 +234,8 @@ type DocumentEdit struct {
 
 // EditDocument applies normalized commands through the authority, which
 // commits state, receipt and the merged provenance together and returns the
-// receipt; an edit made while its room was loaded carries its Undo ref and
-// its Undo payload, signed here for the chat (Epo 2026-10-21).
+// receipt; one whose Undo fits carries its Undo ref and its Undo payload,
+// signed here for the chat (Epo 2026-10-21, 2026-10-22).
 func (s *Store) EditDocument(ctx context.Context, actorID string, target DocumentTarget, commands []json.RawMessage, provenance *Provenance, op DocumentOperation) (DocumentEdit, error) {
 	req := documentRequest{
 		Target: target, ActorUserID: actorID, Commands: commands,

@@ -8,24 +8,39 @@ import (
 	"encoding/hex"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 )
 
 // UndoPayload is an agent step's Undo (or Redo) as the collaboration server
 // builds it (Epo 2026-10-21): per document the step wrote, the Yjs update
-// that reverses it (base64), and the lineage it was made in. The chat keeps
-// it in the browser for a day and sends it back; nothing here stores it, and
-// it is never logged. The MAC binds it to its step and document, so a payload
-// cannot be replayed onto another file or forged. DocumentID tells the
-// browser which document's lineage retires it (Epo 2026-10-22, Q122); the
-// server reads the document from the step, never from it.
+// that reverses it (base64), the lineage it was made in and its agent edit's
+// time. The chat keeps it in the browser for a day and sends it back;
+// nothing here stores it, and it is never logged. The MAC binds it to its
+// step, document and time, so a payload cannot be replayed onto another
+// file, kept past its day or forged. DocumentID tells the browser which
+// document's lineage retires it (Epo 2026-10-22, Q122); the server reads the
+// document from the step, never from it.
 type UndoPayload struct {
 	OperationID string            `json:"operationId,omitempty" maxLength:"64" doc:"The step this payload reverses"`
 	DocumentID  string            `json:"documentId,omitempty" maxLength:"64" doc:"The material or file the step changed"`
 	Epoch       int64             `json:"epoch" doc:"The document lineage it was made in"`
+	IssuedAt    int64             `json:"issuedAt" doc:"Unix seconds of the agent edit; offered for 24 h from then (an Undo's Redo keeps it)"`
 	Updates     map[string]string `json:"updates" doc:"Per document, the base64 Yjs update that reverses the step"`
-	MAC         string            `json:"mac,omitempty" maxLength:"64" doc:"The server's signature over the step, the document, the epoch and the updates"`
+	MAC         string            `json:"mac,omitempty" maxLength:"64" doc:"The server's signature over the step, the document, the epoch, the time and the updates"`
+}
+
+// undoOffer is how long after an agent edit its Undo and Redo are offered
+// (Q385, Epo 2026-10-26; ydoc::undo::OFFERED_FOR): this server refuses a
+// payload older than that (r1 L4).
+const undoOffer = 24 * time.Hour
+
+// undoExpiry is when a step whose agent edit was at issuedAt stops being
+// offered: its receipt's UndoRef.ExpiresAt, when the chat hides it.
+func undoExpiry(issuedAt int64) *time.Time {
+	at := time.Unix(issuedAt, 0).Add(undoOffer).UTC()
+	return &at
 }
 
 // undoPayloadKey is the MAC key, derived from the collaboration secret for
@@ -39,9 +54,10 @@ func (s *Store) undoPayloadKey() []byte {
 	return mac.Sum(nil)
 }
 
-// undoPayloadMAC signs (step, target kind and id, epoch, updates digest); the
-// digest reads the updates in name order, each as its name, a zero byte, its
-// length and its decoded bytes. False when an update is not base64.
+// undoPayloadMAC signs (step, target kind and id, epoch, issued at, updates
+// digest); the digest reads the updates in name order, each as its name, a
+// zero byte, its length and its decoded bytes. False when an update is not
+// base64.
 func undoPayloadMAC(key []byte, step string, target DocumentTarget, payload *UndoPayload) (string, bool) {
 	names := make([]string, 0, len(payload.Updates))
 	for name := range payload.Updates {
@@ -60,7 +76,7 @@ func undoPayloadMAC(key []byte, step string, target DocumentTarget, payload *Und
 		digest.Write(update)
 	}
 	mac := hmac.New(sha256.New, key)
-	for _, field := range []string{"v1", step, string(target.Kind), target.ID, strconv.FormatInt(payload.Epoch, 10)} {
+	for _, field := range []string{"v1", step, string(target.Kind), target.ID, strconv.FormatInt(payload.Epoch, 10), strconv.FormatInt(payload.IssuedAt, 10)} {
 		mac.Write([]byte(field))
 		mac.Write([]byte{0})
 	}
@@ -80,14 +96,17 @@ func (s *Store) signUndoPayload(step string, target DocumentTarget, payload *Und
 	if !ok {
 		return nil
 	}
-	return &UndoPayload{OperationID: step, DocumentID: target.ID, Epoch: payload.Epoch, Updates: payload.Updates, MAC: mac}
+	return &UndoPayload{OperationID: step, DocumentID: target.ID, Epoch: payload.Epoch, IssuedAt: payload.IssuedAt, Updates: payload.Updates, MAC: mac}
 }
 
 // verifyUndoPayload reports whether the browser sent back a payload this
-// server signed for this step of this document.
+// server signed for this step of this document, within its 24 h.
 func (s *Store) verifyUndoPayload(step string, resource agenttools.ResourceRef, payload *UndoPayload) bool {
 	key := s.undoPayloadKey()
 	if payload == nil || len(payload.Updates) == 0 || key == nil {
+		return false
+	}
+	if !time.Now().Before(*undoExpiry(payload.IssuedAt)) {
 		return false
 	}
 	want, ok := undoPayloadMAC(key, step, DocumentTarget{Kind: resource.Kind, ID: resource.ID}, payload)

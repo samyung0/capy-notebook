@@ -15,6 +15,7 @@
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use yrs::block::ItemContent;
 use yrs::branch::BranchPtr;
@@ -38,6 +39,25 @@ pub const ORIGIN: &str = "capy-agent-edit";
 /// content of what they delete, so the edit can be reverted afterwards.
 pub struct Keep {
     _manager: UndoManager<()>,
+}
+
+/// How long after an agent edit its Undo and Redo are offered (Q385, Epo
+/// 2026-10-26): a payload carries its edit's time (an Undo's Redo payload
+/// keeps it), and the server refuses one older than this (r1 L4).
+pub const OFFERED_FOR: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Unix seconds of `time`.
+pub fn unix(time: SystemTime) -> i64 {
+    time.duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64)
+}
+
+/// Whether a payload issued at `issued_at` (Unix seconds, its agent edit's
+/// time) is past its offer at `now`; the caller answers `undo_unavailable`.
+/// A step across documents (a quiz's content and keys) carries one time, so
+/// it ends as a whole (Q389).
+pub fn expired(issued_at: i64, now: SystemTime) -> bool {
+    unix(now) >= issued_at.saturating_add(OFFERED_FOR.as_secs() as i64)
 }
 
 /// Whether a payload made in lineage `made_in` is refused in lineage `now`
@@ -106,8 +126,9 @@ pub enum Applied {
     Changed(Captured),
     /// Nothing of the edit was left to revert.
     Nothing,
-    /// It names items the document does not hold (another lineage, a
-    /// tampered payload): they stay pending, so the document must be dropped.
+    /// It is not this document's: it names items the document does not hold
+    /// (another lineage, a tampered payload; they stay pending, so the
+    /// document must be dropped), or fails the structure checks ([foreign]).
     Unheld,
 }
 
@@ -122,6 +143,13 @@ pub fn apply_payload(doc: &Doc, update: Update) -> Result<Applied, yrs::error::U
     let carries = update.blocks().next().is_some();
     if carries && held(&update, &doc.transact().state_vector()) {
         return Ok(Applied::Before);
+    }
+    // In-place collection's integration (P2 with this branch, Editor
+    // 2026-10-24): a payload naming a collected unit is refused here
+    // (`ydoc::gc::names_collected`, editor/gc-collect), so its copies never
+    // integrate as collected. The agent holds keep such units meanwhile.
+    if foreign(doc, &update) {
+        return Ok(Applied::Unheld);
     }
     let own = update.insertions(true);
     let named = update.delete_set().clone();
@@ -139,6 +167,47 @@ pub fn apply_payload(doc: &Doc, update: Update) -> Result<Applied, yrs::error::U
         return Ok(Applied::Nothing);
     }
     Ok(Applied::Changed(change))
+}
+
+/// Whether `update` cannot be a payload of `doc` though it may name only
+/// items `doc` holds (r1 L3: defence in depth behind the gateway's
+/// signature): malformed against it (`inspect_update`, as a writer's update
+/// is checked), writing or deleting a contributor marker (an Undo leaves
+/// provenance as it is, 2026-09-17), or carrying a copy anchored on a live
+/// item. yrs re-inserts a deleted item with the tombstone itself as its
+/// right origin (a copy inside a re-inserted block names other copies), so
+/// a right origin `doc` holds live means another document's edit: a note
+/// seeded alike, whose tombstone is a live item here.
+fn foreign(doc: &Doc, update: &Update) -> bool {
+    let txn = doc.transact();
+    let Ok(inspection) = crate::inspect_update(&txn, update) else {
+        return true;
+    };
+    if inspection
+        .containers
+        .iter()
+        .any(|found| &*found.root == CONTRIBUTORS_ROOT)
+    {
+        return true;
+    }
+    let deletes = update.delete_set();
+    if crate::live_markers(&txn)
+        .iter()
+        .any(|marker| deletes.contains(marker))
+    {
+        return true;
+    }
+    let state = txn.state_vector();
+    let store = ReadTxn::store(&txn);
+    update.blocks().any(|block| {
+        let UpdateBlock::Item(item) = block else {
+            return false;
+        };
+        item.right_origin().is_some_and(|right| {
+            right.clock < state.get(&right.client)
+                && store.get_item(right).is_some_and(|held| !held.is_deleted())
+        })
+    })
 }
 
 /// Whether `doc`'s state vector covers every struct `update` carries: the
@@ -652,6 +721,58 @@ mod tests {
             text.insert(txn, 0, "howdy");
         });
         assert!(matches!(sent_back(&room, &undo).1, Applied::Unheld));
+    }
+
+    /// r1 L3 (defence in depth behind the gateway's signature): an edit that
+    /// only deleted has a payload of copies alone, anchored on ids a note
+    /// seeded alike holds too. There its tombstone is a live item, and the
+    /// payload is refused rather than doubling the text; in its own note
+    /// it applies. Fails if the copies' anchors go unchecked.
+    #[test]
+    fn a_deletion_only_payload_of_a_note_seeded_alike_is_unheld() {
+        let seed = crate::scratch_doc();
+        seed.get_or_insert_text("source")
+            .insert(&mut seed.transact_mut(), 0, "hello world");
+        let (other, room) = (reloaded(&seed), reloaded(&seed));
+        let undo = edit_with_payload(&other, |txn| {
+            txn.get_or_insert_text("source").remove_range(txn, 0, 6);
+        });
+        assert!(matches!(sent_back(&room, &undo).1, Applied::Unheld));
+        assert_eq!(text(&room), "hello world");
+        let (undone, applied) = sent_back(&reloaded(&other), &undo);
+        assert!(matches!(applied, Applied::Changed(_)), "{applied:?}");
+        assert_eq!(text(&undone), "hello world");
+    }
+
+    /// r1 L3: an update writing the contributor markers is no payload (an
+    /// Undo leaves provenance as it is). Fails if a marker write applies.
+    #[test]
+    fn a_payload_writing_a_contributor_marker_is_unheld() {
+        let room = crate::scratch_doc();
+        room.get_or_insert_text("source")
+            .insert(&mut room.transact_mut(), 0, "hello");
+        let forged = crate::scratch_doc();
+        sync(&room, &forged);
+        let before = room.transact().state_vector();
+        forged.get_or_insert_map(CONTRIBUTORS_ROOT).insert(
+            &mut forged.transact_mut(),
+            "u_forged",
+            "1",
+        );
+        let update = forged.transact().encode_state_as_update_v1(&before);
+        assert!(matches!(sent_back(&room, &update).1, Applied::Unheld));
+    }
+
+    /// r1 L4, Q385: a payload is offered 24 h from its edit, then refused.
+    #[test]
+    fn a_payload_expires_24_hours_after_its_edit() {
+        let edited = SystemTime::now();
+        let issued = unix(edited);
+        assert!(!expired(
+            issued,
+            edited + OFFERED_FOR - Duration::from_secs(1)
+        ));
+        assert!(expired(issued, edited + OFFERED_FOR));
     }
 
     /// Once a person removed everything the agent wrote, its payload has

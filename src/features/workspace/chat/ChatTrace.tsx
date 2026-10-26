@@ -46,6 +46,7 @@ import {
   toolIcon,
   unappliedWarning,
   undoAction,
+  undoGone,
   undoRefused,
 } from './trace';
 
@@ -372,10 +373,8 @@ function UndoButton({
                   effect,
                   isApiError(error) ? (error.code ?? '') : ''
                 );
-              if (undoRefused(error)) {
-                forgetUndoPayload(operationId);
-                handlers.onUndoRefused(effect);
-              }
+              if (undoGone(error)) forgetUndoPayload(operationId);
+              if (undoRefused(error)) handlers.onUndoRefused(effect);
             },
             onSettled: () => undoing.delete(operationId),
             onSuccess: (receipt) => {

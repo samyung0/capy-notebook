@@ -2880,7 +2880,7 @@ without tracked deletions, and why the text commands refuse it as
 starter (`crates/office-service/starters/blank.xlsx`, or `blank.docx`,
 python-docx's default template with its core properties emptied; MIT,
 `starters/NOTICE.md`); the PPTX scoped read is phase 3. Every command's edit, structural ones
-included, gets the live Undo while its room is loaded
+included, gets the durable Undo, its room loaded or not
 ([agentic retrieval](../agentic-retrieval.md), Undo chain).
 
 A paragraph insert or delete leaves the paragraphs around it as they were,

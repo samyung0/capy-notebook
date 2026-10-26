@@ -20,6 +20,7 @@ import {
   deletionConfirmSchema,
 } from '@/features/settings/deletionConfirm';
 import { m } from '@/i18n';
+import { clearAccountData } from '@/lib/accountData';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -86,6 +87,8 @@ function DeleteAccountDialogInner({
       // The global mutation handler shows the normalized failure.
       return;
     }
+    // This browser's drafts and caches of the account go (Q315).
+    if (meData) await clearAccountData(meData.id);
     reset({ confirmEmail: '', lifecycleGeneration: 0 });
     onClose();
     userToast({

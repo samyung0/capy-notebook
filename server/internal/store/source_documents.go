@@ -158,9 +158,11 @@ const sourcePreviewChars = 600
 
 // SourceCheckpointOperation is the receipt side of a source edit checkpoint.
 // The receipt commits without an Undo ref: the collaboration service adds it
-// once the source's live room took the edit (its Undo lives there).
+// with the edit's payload. An Undo's (UndoOf: the step it reverses) is an
+// `undo_edit` receipt naming that step, committed with the write (r1 M2).
 type SourceCheckpointOperation struct {
 	Receipt SourceCheckpointReceipt `json:"receipt"`
+	UndoOf  string                  `json:"undoOf,omitempty"`
 }
 
 // SourceCheckpointReceipt is the trusted operation identity the collaboration
@@ -496,6 +498,17 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 			out.Operation = existing
 			return out, tx.Commit(ctx)
 		}
+		// A step reversed already (another request's Undo): its receipt.
+		if step := in.Operation.UndoOf; step != "" {
+			done, err := undoReceiptTx(ctx, tx, step)
+			if err != nil {
+				return out, err
+			}
+			if done != nil {
+				out.Operation = done
+				return out, tx.Commit(ctx)
+			}
+		}
 	}
 	// The maintenance pause refuses committing an Office agent edit (a
 	// replayed receipt above still answers); saves of rooms already open still
@@ -602,9 +615,25 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 	}
 	receipt.Kind = "edit_document"
 	effect.Operation = agenttools.EffectEdited
+	if op.UndoOf != "" {
+		receipt.Kind = "undo_edit"
+		var undone *string
+		if err := tx.QueryRow(ctx, `SELECT effect->>'operation' FROM agent_operations WHERE id=$1`, op.UndoOf).Scan(&undone); err != nil {
+			return AgentOperation{}, err
+		}
+		effect.Operation = agenttools.EffectEditUndone
+		if undone != nil && agenttools.EffectOperation(*undone) == agenttools.EffectEditUndone {
+			effect.Operation = agenttools.EffectEdited
+		}
+	}
 	receipt.Effect = &effect
 	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {
 		return AgentOperation{}, err
+	}
+	if op.UndoOf != "" {
+		if err := linkUndoTx(ctx, tx, receipt.ID, op.UndoOf); err != nil {
+			return AgentOperation{}, err
+		}
 	}
 	return receipt, nil
 }

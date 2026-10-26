@@ -4,7 +4,7 @@ import { parseHTML } from 'linkedom';
 import { act, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
-import { api } from '@/api/client';
+import { ApiError, api } from '@/api/client';
 import { getMaterialCollaborationToken } from '@/api/hooks';
 import type {
   ChatMessage,
@@ -46,6 +46,7 @@ const at = (s: number) =>
 const payload = (operationId: string) => ({
   documentId: 'mat_1',
   epoch: 1,
+  issuedAt: Math.floor(Date.now() / 1000),
   mac: 'f'.repeat(64),
   operationId,
   updates: { content: 'dW5kbw==' },
@@ -174,6 +175,39 @@ it('offers no Undo once the document moved to a newer lineage', async () => {
   await vi.waitFor(async () =>
     expect(await localUndoPayload('op_compacted')).toBeUndefined()
   );
+});
+
+// Review r1 L7: only a refusal for good (`undo_unavailable`: a bad
+// signature, another lineage, past its day, nothing left) drops the stored
+// payload. Another (over quota here) hides the button for the session and
+// keeps the payload, so the Undo can work once the account recovers.
+it('drops the payload only when its Undo is refused for good', async () => {
+  const refuse = (status: number, code: string) =>
+    vi
+      .spyOn(api, 'post')
+      .mockRejectedValueOnce(
+        new ApiError(status, 'Refused', undefined, { code })
+      );
+  // A click's own callbacks run only while its receipt is mounted.
+  const refusedClick = async (id: string) => {
+    const refused = handlers();
+    buttons.length = 0;
+    const root = createRoot(document.getElementById('root') as never);
+    await act(async () => root.render(trace(refused, id)));
+    const click = buttons.find(
+      ({ children }) => children === m.chat_undo_edit()
+    )?.onClick;
+    await act(async () => click?.());
+    await vi.waitFor(() => expect(refused.onUndoRefused).toHaveBeenCalled());
+    await act(async () => root.unmount());
+  };
+  keepUndoPayloads([payload('op_quota'), payload('op_gone')]);
+  refuse(403, 'quota_rejected');
+  await refusedClick('op_quota');
+  expect(await undoPayload('op_quota')).toBeDefined();
+  refuse(409, 'undo_unavailable');
+  await refusedClick('op_gone');
+  expect(await undoPayload('op_gone')).toBeUndefined();
 });
 
 // Redo across a room close (Epo 2026-10-21): the Undo's answer brings the

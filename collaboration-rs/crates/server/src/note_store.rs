@@ -297,12 +297,11 @@ pub async fn append(
     Ok(version)
 }
 
-/// A note's sessions as stored (`sessions.rs`): those seen within the cap,
-/// the ids whose records were lost, and the agent holds. A session record
-/// that cannot be read is dropped alone (Q382, Epo 2026-10-26): its row is
-/// written lost (`sessions::LOST`, its tab late when it returns, Q385) and
-/// the caller reports it; agent holds that cannot be read are dropped and
-/// reported too, and the note loads (Q386, Epo 2026-10-26).
+/// A note's sessions as stored (`sessions.rs`): those seen within the cap
+/// and the ids whose records were lost. A session record that cannot be read
+/// is dropped alone (Q382, Epo 2026-10-26): its row is written lost
+/// (`sessions::LOST`, its tab late when it returns, Q385) and the caller
+/// reports it. The agent holds are not the room's (see [hold_agent]).
 pub async fn load_sessions(
     pool: &Pool,
     material_id: &str,
@@ -326,13 +325,6 @@ pub async fn load_sessions(
             &[&material_id, &sessions::LOST],
         )
         .await?;
-    let agent: Option<Vec<u8>> = client
-        .query_opt(
-            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
-            &[&material_id],
-        )
-        .await?
-        .and_then(|row| row.get(0));
     let (sessions, damaged) = sessions::Sessions::load(
         rows.iter().map(|row| {
             (
@@ -344,7 +336,6 @@ pub async fn load_sessions(
             )
         }),
         lost.iter().map(|row| row.get::<_, i64>(0) as u64),
-        agent,
     );
     if !damaged.sessions.is_empty() {
         let clients: Vec<i64> = damaged.sessions.iter().map(|&id| id as i64).collect();
@@ -363,7 +354,7 @@ pub async fn load_sessions(
 /// records, in one statement (review r1 L2): a live session's version and
 /// last seen, its held deletions only when they changed (review r2 L4), an
 /// ended one's cleared (the record's row is made if its first write's has
-/// not landed yet), and the agent holds when they changed. Never for an
+/// not landed yet). Never for an
 /// account whose deletion began or ended (review r1 L5): a store locked the
 /// live ones first (`lock_boundary`'s bystanders), so a purge waits for it
 /// and then deletes what it wrote; the unload write (`save_sessions_now`)
@@ -418,14 +409,51 @@ pub(crate) async fn save_sessions(
         )
         .await?;
     }
-    if let Some(agent) = &unsaved.agent {
+    Ok(())
+}
+
+/// Holds what an agent edit, or its Undo or Redo, deleted in a note
+/// (`sessions::agent_held`, Q390): written in the write's own transaction,
+/// which holds the document row, whether or not a room is loaded, so no
+/// fold collects what its Undo payload may restore (P2). `edited` is the
+/// agent edit's time. A stored record that cannot be read is dropped and
+/// reported, and the write goes on (Q386).
+pub(crate) async fn hold_agent(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    ids: yrs::IdSet,
+    edited: std::time::SystemTime,
+) -> Result<(), StoreError> {
+    let stored: Option<Vec<u8>> = tx
+        .query_one(
+            "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+            &[&material_id],
+        )
+        .await?
+        .get(0);
+    let now = std::time::SystemTime::now();
+    let (held, damaged) = sessions::agent_held(stored.as_deref(), ids, edited, now);
+    if damaged {
+        unreadable_agent_holds(material_id);
+    }
+    if held != stored {
         tx.execute(
             "UPDATE material_yjs_documents SET agent_held=$2 WHERE material_id=$1",
-            &[&material_id, agent],
+            &[&material_id, &held],
         )
         .await?;
     }
     Ok(())
+}
+
+/// Q386 (Epo 2026-10-26): an agent holds record that cannot be read is
+/// dropped and reported; the note loads and is written as before.
+fn unreadable_agent_holds(material_id: &str) {
+    crate::observe::capture(
+        "unreadable agent holds",
+        None,
+        &[("room", material_id), ("stage", "agent_holds")],
+    );
 }
 
 /// The sessions' rows when a note room unloads (the acknowledgements and
@@ -520,7 +548,7 @@ pub async fn fold(
     let current = tx
         .query(
             &format!(
-                "SELECT s.state, d.room_schema, m.kind
+                "SELECT s.state, d.room_schema, d.agent_held, m.kind
                  FROM {state_table} s
                  JOIN material_yjs_documents d ON d.material_id=s.material_id
                  JOIN materials m ON m.id=s.material_id
@@ -540,6 +568,24 @@ pub async fn fold(
         Doc::Content => Model::of(current.get("kind")),
         Doc::Keys => Model::Item(items::Kind::QuizKeys),
     };
+    // What the agent holds keep, read under the document row this fold
+    // holds, so it covers every row it folds: the collection's part of H
+    // beside the room's session holds once P2 lands; logged until then.
+    if doc == Doc::Content && current.get::<_, String>("kind") == "note" {
+        let stored: Option<Vec<u8>> = current.get("agent_held");
+        let (held, damaged) =
+            sessions::agent_holds(stored.as_deref(), std::time::SystemTime::now());
+        if damaged {
+            unreadable_agent_holds(material_id);
+        }
+        if !held.is_empty() {
+            crate::observe::log(
+                crate::observe::Level::Info,
+                "fold agent holds",
+                serde_json::json!({ "clients": held.len(), "room": material_id }),
+            );
+        }
+    }
     let rows = doc_rows(&tx, doc, material_id, through).await?;
     let Some(&(last, _)) = rows.last() else {
         return Ok(None);

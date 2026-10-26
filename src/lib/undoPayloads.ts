@@ -1,23 +1,28 @@
 import { useEffect, useState } from 'react';
 import type { UndoPayload } from '@/api/types';
 import {
+  claimLocalUndoPayloads,
   deleteLocalUndoPayloads,
   deleteLocalUndoPayloadsBefore,
   type LocalUndoPayload,
   localUndoPayload,
+  localUndoPayloadsOwner,
   saveLocalUndoPayload,
 } from './localDb';
 
 /**
  * The chat keeps each agent step's Undo payload, exactly as the server sent
- * it, for a day (Epo 2026-10-21): in memory for this tab, and in IndexedDB so
- * the Undo survives a reload and the room closing. IndexedDB that is blocked
- * or missing (some private modes) leaves the memory copy only. A payload
- * cannot apply across a compaction, so once the browser sees its document in
- * a newer lineage it is dropped and its Undo hidden (Epo 2026-10-22, Q122).
+ * it, for a day from its agent edit (Epo 2026-10-21, Q385): in memory for this
+ * tab, and in IndexedDB so the Undo survives a reload and the room closing.
+ * IndexedDB that is blocked or missing (some private modes) leaves the memory
+ * copy only. The payloads hold document content, so they are the signed-in
+ * account's alone: another account or a sign-out deletes them (r1 M1), and
+ * expired ones go when the account is claimed. A payload cannot apply across
+ * a compaction, so once the browser sees its document in a newer lineage it
+ * is dropped and its Undo hidden (Epo 2026-10-22, Q122).
  */
 
-/** How long a payload is kept. */
+/** How long after its agent edit a payload is kept (the server's offer). */
 export const UNDO_PAYLOAD_LIFETIME_MS = 24 * 60 * 60 * 1000;
 /** The most one payload may hold, as the server bounds it (an 8 MiB update
  * in base64 and its envelope); a larger one is not kept. */
@@ -25,33 +30,29 @@ export const UNDO_PAYLOAD_MAX_CHARS = 12 * 1024 * 1024;
 
 const kept = new Map<string, LocalUndoPayload>();
 const listeners = new Set<() => void>();
-let swept = false;
 
 function changed() {
   for (const listener of listeners) listener();
 }
 
 function fresh(payload: LocalUndoPayload | undefined, now = Date.now()) {
-  return payload && now - payload.savedAt < UNDO_PAYLOAD_LIFETIME_MS
+  return payload && now < payload.issuedAt * 1000 + UNDO_PAYLOAD_LIFETIME_MS
     ? payload
     : undefined;
 }
 
-/** A payload as the server sends it: a step and document id, an epoch,
- * base64 updates and a signature, within the size bound. */
-function valid(
-  value: unknown
-): value is UndoPayload & { documentId: string; operationId: string } {
+/** A payload as the server sends it: a step and document id, an epoch, its
+ * edit's time, base64 updates and a signature, within the size bound. */
+function valid(value: unknown): value is LocalUndoPayload {
   if (!value || typeof value !== 'object') return false;
-  const { documentId, epoch, mac, operationId, updates } = value as Record<
-    string,
-    unknown
-  >;
+  const { documentId, epoch, issuedAt, mac, operationId, updates } =
+    value as Record<string, unknown>;
   if (
     typeof operationId !== 'string' ||
     typeof documentId !== 'string' ||
     typeof mac !== 'string' ||
     typeof epoch !== 'number' ||
+    typeof issuedAt !== 'number' ||
     !updates ||
     typeof updates !== 'object'
   )
@@ -69,22 +70,42 @@ function valid(
 function drop(operationId: string | null) {
   deleteLocalUndoPayloads(
     operationId,
-    Date.now() - UNDO_PAYLOAD_LIFETIME_MS
+    (Date.now() - UNDO_PAYLOAD_LIFETIME_MS) / 1000
   ).catch(() => undefined);
+}
+
+/**
+ * Runs when the signed-in account is known, before any read (r1 M1): the
+ * payloads of another account (or all of them once signed out, `null`) are
+ * deleted, here and in IndexedDB, and the account's expired ones go.
+ */
+export async function claimUndoPayloads(owner: string | null): Promise<void> {
+  try {
+    if (owner && (await localUndoPayloadsOwner()) === owner) {
+      drop(null);
+      return;
+    }
+    kept.clear();
+    changed();
+    await claimLocalUndoPayloads(owner);
+  } catch {
+    // Without IndexedDB nothing was stored.
+    kept.clear();
+    changed();
+  }
 }
 
 /** Keeps the payloads a tool's end or an Undo's answer brought. */
 export function keepUndoPayloads(payloads: readonly unknown[]) {
-  const now = Date.now();
   for (const payload of payloads) {
     if (!valid(payload)) continue;
-    const { documentId, epoch, mac, operationId, updates } = payload;
+    const { documentId, epoch, issuedAt, mac, operationId, updates } = payload;
     const record: LocalUndoPayload = {
       documentId,
       epoch,
+      issuedAt,
       mac,
       operationId,
-      savedAt: now,
       updates,
     };
     kept.set(operationId, record);
@@ -120,8 +141,8 @@ export function sawRoom(room: string) {
   if (found) retireUndoPayloads(found[1], Number(found[2]));
 }
 
-/** The step's payload while it is under a day old; this tab's copy first,
- * else IndexedDB's. */
+/** The step's payload within its day; this tab's copy first, else
+ * IndexedDB's. */
 export async function undoPayload(
   operationId: string
 ): Promise<UndoPayload | undefined> {
@@ -129,10 +150,6 @@ export async function undoPayload(
   const held = fresh(kept.get(operationId), now);
   if (held) return held;
   kept.delete(operationId);
-  if (!swept) {
-    swept = true;
-    drop(null);
-  }
   let stored: LocalUndoPayload | undefined;
   try {
     stored = await localUndoPayload(operationId);

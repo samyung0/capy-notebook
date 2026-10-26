@@ -30,6 +30,7 @@ export function mockUndoPayload(effect: ResourceEffect): UndoPayload | null {
   return {
     documentId: effect.resource.id,
     epoch: 1,
+    issuedAt: Math.floor(Date.now() / 1000),
     mac: 'mock',
     operationId: effect.undo.operationId,
     updates: { content: 'bW9jaw==' },

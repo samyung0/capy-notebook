@@ -361,7 +361,17 @@ async fn document(
             json!({ "code": "invalid_input", "message": "command body is too large" }),
         );
     }
-    match crate::edits::document(&app, uri.path(), &body).await {
+    // The work runs to its end once started (r1 M2): a gateway that went away
+    // (its timeout, a restart) cannot cut an edit or an Undo between its
+    // commit and its live room's update.
+    let work = tokio::spawn({
+        let (app, path) = (app.clone(), uri.path().to_owned());
+        async move { crate::edits::document(&app, &path, &body).await }
+    });
+    let result = work
+        .await
+        .unwrap_or_else(|error| Err(crate::edits::DocumentError::Unknown(error.to_string())));
+    match result {
         Ok(value) => json_response(StatusCode::OK, value),
         Err(error) => {
             let (status, body) = error.status_and_body();

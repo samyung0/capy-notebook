@@ -1798,19 +1798,21 @@ other item rooms and source rooms keep no sessions and their full history.
   nothing (the binding refuses that first).
 - **Agent holds** (review r1 M3, Editor 2026-10-26, a plan change: in-place
   collection step 1 owns them). An agent edit's Undo and Redo are offered
-  24 h after the edit, whether or not its room stays loaded (Q385, Epo
-  2026-10-26): the room drops the step then (`Room::expire_agent_steps`) and
-  the chat hides its buttons (see [agentic
+  24 h after the edit, whether or not a room is loaded (Q385, Epo
+  2026-10-26): the durable payload carries the edit's time, the server
+  refuses it after its day, and the chat hides its buttons (see [agentic
   retrieval](../agentic-retrieval.md)); a step spanning rooms (a quiz's
   content and keys) ends as a whole (Q389). What the edit, its Undo and its
   Redo deleted is held 25 h from the edit, an hour past the offer as a
-  person's holds are, whatever the sessions do (`Sessions::agent_deleted`,
-  `AGENT_HELD_FOR`; an Undo or Redo keeps the edit's time; review r3 N8), so
-  every Undo the room offers is held; a durable Undo payload records its
-  deletions through the same call once that wiring lands. Stored beside the
-  document (`material_yjs_documents.agent_held`, the same encoding). Agent
-  holds that cannot be read are dropped and reported to Sentry, and the note
-  loads (Q386, Epo 2026-10-26).
+  person's holds are, whatever the sessions do (`AGENT_HELD_FOR`; an Undo or
+  Redo keeps the edit's time; review r3 N8), so every payload the server
+  accepts is held. They are not room state: the write records them in
+  `material_yjs_documents.agent_held` (the same encoding) in its own
+  transaction, under the document's row, loaded room or not
+  (`note_store::hold_agent`, Q390), and a fold reads them under the same lock
+  (`note_store::fold`) for collection to add to the sessions' holds. Agent
+  holds that cannot be read are dropped and reported to Sentry, and the
+  write or fold goes on (Q386, Epo 2026-10-26).
 - **Stored** (migration 0117) as columns of the session's client-id row
   (`material_yjs_client_ids`: `acked_version`, `seen_at`, NULL when there is
   no session or it ended, and `held`, the batches as arrival times and Yjs
@@ -2847,7 +2849,7 @@ Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
 content write is gone). Agent question commands write what differs in the
 questions that differ, texts as the fewest changes and lists by position, so
 an editor typing in the same question keeps their characters; their Undo is
-the live Undo of every agent edit.
+the durable Undo of every agent edit.
 
 Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
 editor's unsent edits on the device as notes do (`editDrafts`, Epo

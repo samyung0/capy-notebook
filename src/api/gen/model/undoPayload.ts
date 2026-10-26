@@ -14,8 +14,10 @@ export interface UndoPayload {
   documentId?: string;
   /** The document lineage it was made in */
   epoch: number;
+  /** Unix seconds of the agent edit; offered for 24 h from then (an Undo's Redo keeps it) */
+  issuedAt: number;
   /**
-     * The server's signature over the step, the document, the epoch and the updates
+     * The server's signature over the step, the document, the epoch, the time and the updates
      * @maxLength 64
      */
   mac?: string;

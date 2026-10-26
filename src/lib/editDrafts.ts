@@ -287,6 +287,18 @@ export async function deleteDocumentDrafts(
   return deleted.reduce((sum, row) => sum + (counted(row) ? row.bytes : 0), 0);
 }
 
+/** Every stored draft of an account, all its documents (Q315: the account's
+ * deletion was confirmed in this browser). */
+export async function deleteAccountDrafts(actorId: string): Promise<void> {
+  const documents = await call<Record<string, string[]>>({
+    op: 'documents',
+    prefix: `${actorId}:`,
+  });
+  await Promise.all(
+    Object.keys(documents).map((key) => deleteDocumentDrafts(key))
+  );
+}
+
 /** Deletes the stored edits of a document this account lost (a 404, or a 403
  * not about the account itself) and reports them as discarded, when there
  * were any (edit_incidents). Queued before a live recorder's own discard, it

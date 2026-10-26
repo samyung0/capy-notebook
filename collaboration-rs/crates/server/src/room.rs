@@ -461,6 +461,11 @@ const IT_PANIC_LOAD: &str = "capy-it-panic-load";
 #[cfg(debug_assertions)]
 pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
 
+/// See `edits::send_writes`: a server edit of a material whose id holds this
+/// reaches its live room half a second late, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_SLOW_SERVICE_EDIT: &str = "capy-it-slow-service-edit";
+
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -734,13 +739,6 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 for client in &damaged.sessions {
                     let message = format!("session {client}: unreadable held deletions");
                     observe::capture(&message, None, &[("room", &room), ("stage", "sessions")]);
-                }
-                if damaged.agent {
-                    observe::capture(
-                        "unreadable agent holds",
-                        None,
-                        &[("room", &room), ("stage", "sessions")],
-                    );
                 }
                 Some(sessions)
             } else {
@@ -4476,7 +4474,7 @@ impl Room {
             };
             // The log folds while the room is empty (DESIGN.md 3.5).
             let folding = async {
-                if !(session_rows.rows.is_empty() && session_rows.agent.is_none())
+                if !session_rows.rows.is_empty()
                     && let Err(error) =
                         note_store::save_sessions_now(&app.db, &material_id, &session_rows).await
                 {

@@ -37,6 +37,7 @@ describe('the Undo payloads a tool_end carries', () => {
     const payload = {
       documentId: 'mat_1',
       epoch: 1,
+      issuedAt: Math.floor(Date.now() / 1000),
       mac: 'f'.repeat(64),
       operationId: 'op_streamed',
       updates: { content: update },

@@ -1541,6 +1541,14 @@ deletion-cancelled email keys include that generation: retries within one window
 deduplicate, while a restored account's later deletion window receives a fresh
 notice with its current purge deadline.
 
+The browser where a deletion is confirmed clears what it keeps of the account
+(Q315, Epo 2026-10-24; `clearAccountData` in `src/lib/accountData.ts`): its
+editing drafts (`deleteAccountDrafts`), the persisted query cache, the cached
+source files and the chat's Undo payloads. The last two go through the same
+claim a sign-out or another account's sign-in runs (`claimAccountData`), so
+a browser holds those of the signed-in account only. Other browsers keep
+theirs until that claim runs there.
+
 Collaborators do not block account deletion. The owner is the lifecycle
 authority for every workspace they own, including workspaces with members.
 

@@ -280,10 +280,11 @@ const (
 	UndoUnavailable UndoStatus = "unavailable"
 )
 
-// UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
-// room holds its Yjs items while the step is live (Epo 2026-10-20). An edit
-// step's is offered until ExpiresAt, 24 h after its agent edit (Q385), when
-// the chat hides it; a file step's has none.
+// UndoRef names the step a chat Undo or Redo reverses. It is offered until
+// ExpiresAt, 24 h after the step's agent edit or created file (Q385, Q162),
+// when the chat hides it and the server refuses it; an Undo or Redo keeps the
+// first step's time. An edit step's Undo also needs the signed payload the
+// browser keeps (Epo 2026-10-21).
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
 	Status      UndoStatus `json:"status" enum:"available,unavailable"`

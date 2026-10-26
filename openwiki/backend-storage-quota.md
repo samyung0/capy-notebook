@@ -958,12 +958,16 @@ editing session's last acknowledged stored version, when it was last seen
 and the deletions its own updates made, each kept 25 h after it arrived (Undo
 reaches back 24 h, Q2), as columns of the session's client-id row (migration
 0117), written with the store that holds them, and the deletions of agent
-steps the room keeps for their Undo or Redo, each kept 25 h from its agent
-edit, an hour past the room's offer of that Undo (`material_yjs_documents.agent_held`;
-review r1 M3, Editor 2026-10-26; Q385; review r3 N8). A
+edits and their Undo or Redo, each kept 25 h from its agent edit, an hour
+past the offer of that Undo (`material_yjs_documents.agent_held`, written in
+the agent write's own transaction whether or not a room is loaded:
+`note_store::hold_agent`; review r1 M3, Editor 2026-10-26; Q385, Q390;
+review r3 N8). A
 session counts while connected and 24 h after it was last seen. A fold reads
 from it the oldest version every counted session reached and the held
-deletions (`Sessions::holds`), logged until the collection lands. A session
+deletions (`Sessions::holds`, and the agent holds it reads from the document
+row under the same lock: `note_store::fold`), logged until the collection
+lands. A session
 row whose held deletions cannot be read is dropped alone, written lost (its
 tab returns as late) and reported, and the note loads (Q382, Q385); so are
 agent holds that cannot be read (Q386). The rows are bounded by the document: a held deletion

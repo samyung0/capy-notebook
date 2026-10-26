@@ -7,8 +7,8 @@ import type { SrsState } from './srs';
 /**
  * Browser-local data: signed-out visitors' quiz attempts and flashcard reviews
  * on shared standalone materials (never sent to the server or imported into an
- * account on sign-in), and the chat's agent Undo payloads for a day
- * (`undoPayloads.ts`). Later offline work adds stores in new database
+ * account on sign-in), and the signed-in account's agent Undo payloads for a
+ * day (`undoPayloads.ts`). Later offline work adds stores in new database
  * versions.
  *
  * Every call rejects when IndexedDB is unavailable (some private modes);
@@ -42,12 +42,11 @@ export interface LocalCardState {
   srs: SrsState;
 }
 
-/** An agent step's Undo payload exactly as the server sent it, and when it
- * was kept (Epo 2026-10-21). */
+/** An agent step's Undo payload exactly as the server sent it (Epo
+ * 2026-10-21). */
 export interface LocalUndoPayload extends UndoPayload {
   documentId: string;
   operationId: string;
-  savedAt: number;
 }
 
 const VERSION = 4;
@@ -84,7 +83,7 @@ function open(): Promise<IDBDatabase> {
         const payloads = database.createObjectStore('undoPayloads', {
           keyPath: 'operationId',
         });
-        payloads.createIndex('savedAt', 'savedAt');
+        payloads.createIndex('issuedAt', 'issuedAt');
         payloads.createIndex('documentId', 'documentId');
       }
     };
@@ -196,7 +195,26 @@ export function deleteLocalUndoPayloadsBefore(
   });
 }
 
-/** Drops one payload, and every payload kept before `before`. */
+/** The account the stored payloads belong to (M1): none yet, or signed out. */
+export function localUndoPayloadsOwner(): Promise<string | undefined> {
+  return run(['meta'], 'readonly', (t) =>
+    t.objectStore('meta').get('undoPayloadsOwner')
+  );
+}
+
+/** Deletes every stored payload and gives the store to `owner` (none: signed
+ * out), in one transaction. */
+export function claimLocalUndoPayloads(owner: string | null): Promise<void> {
+  return run(['meta', 'undoPayloads'], 'readwrite', (t) => {
+    t.objectStore('undoPayloads').clear();
+    const meta = t.objectStore('meta');
+    if (owner) meta.put(owner, 'undoPayloadsOwner');
+    else meta.delete('undoPayloadsOwner');
+  });
+}
+
+/** Drops one payload, and every payload issued before `before` (Unix
+ * seconds). */
 export function deleteLocalUndoPayloads(
   operationId: string | null,
   before: number
@@ -205,7 +223,7 @@ export function deleteLocalUndoPayloads(
     const store = t.objectStore('undoPayloads');
     if (operationId) store.delete(operationId);
     store
-      .index('savedAt')
+      .index('issuedAt')
       .openCursor(IDBKeyRange.upperBound(before, true)).onsuccess = (event) => {
       const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
         .result;

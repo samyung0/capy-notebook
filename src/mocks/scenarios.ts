@@ -413,6 +413,7 @@ export function getMockScenarioHandlers(
                       {
                         documentId: 'f_2',
                         epoch: 1,
+                        issuedAt: Math.floor(Date.now() / 1000),
                         mac: 'mock',
                         operationId: 'mock_edit',
                         updates: { source: 'bW9jaw==' },

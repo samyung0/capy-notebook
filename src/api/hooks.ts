@@ -1352,11 +1352,9 @@ export function useDeleteOwnedFile() {
   });
 }
 
-/** Reverse one direct AI edit shown in chat. Each click is its own request
- * (the key is not reused across retries); the server answers every request
- * for a step it reversed already with that receipt, and refuses a step its
- * room no longer holds (live Undo, Epo 2026-10-20). */
-/** One chat Undo or Redo: an edit step sends the payload the browser kept;
+/** One chat Undo or Redo: each click is its own request (the key is not
+ * reused across retries), and the server answers every request for a step it
+ * reversed already with that receipt. An edit step sends the payload the browser kept;
  * the answer's payload (the next step's) is kept and the used one dropped,
  * whether or not the receipt is still on screen. Offline it fails at once;
  * nothing waits to be sent. */
