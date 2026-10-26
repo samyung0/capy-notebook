@@ -2001,15 +2001,17 @@ design, option d), and the nudge's release file on 2026-10-17.
   writes under its assigned id, Q219) raised `CLIENT_PROTOCOL` to 18 and both
   minimums to 18. Its deploy request names "client protocol 17 -> 18,
   material 16 -> 18, source 17 -> 18".
-  The editing sessions (the in-place collection's bookkeeping, Epo
-  2026-10-23: every JOIN names the stored version its Y.Doc holds after the
-  client id, note rooms send `stored` and take `ack`, a Leave names its
-  session) raised `CLIENT_PROTOCOL` to the next protocol after main's (20
-  as written; the number is fixed at landing) and `MIN_MATERIAL` to it;
-  `MIN_SOURCE` stays as it was, since a source JOIN or Leave from an older
-  build carries no version or session and still reads. Its deploy request
-  names the client protocol it raises from and to, and "material" to the
-  same number.
+  The Office agent's pictures and charts (pin 13f70b8f6: the reads list
+  pictures and charts and a by-id read returns their bytes and series; Epo
+  2026-10-24, Q240 phase A, with the review fixes of Q381, Q384 and Q388)
+  raised `CLIENT_PROTOCOL` to 19 and `MIN_SOURCE` to 19. The editing sessions
+  (the in-place collection's bookkeeping, Epo 2026-10-23: every JOIN names the
+  stored version its Y.Doc holds after the client id, note rooms send `stored`
+  and take `ack`, a Leave names its session) raised `CLIENT_PROTOCOL` to 20
+  and `MIN_MATERIAL` to 20; `MIN_SOURCE` stays 19, since a source JOIN or
+  Leave from an older build carries no version or session and still reads.
+  The two landed together, so their deploy request names "client protocol
+  18 -> 20, material 18 -> 20, source 18 -> 19".
 
 #### When to bump
 

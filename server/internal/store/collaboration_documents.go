@@ -59,13 +59,15 @@ type documentRequest struct {
 // OfficeQuery scopes an Office read: for XLSX no range lists the sheets, a
 // sheet and a range read those cells; for DOCX a page of count paragraphs
 // from start; for PPTX no slide is a page of count slides from start, a
-// slide (its number) that slide's shapes and a page of its paragraphs.
+// slide (its number) that slide's shapes and a page of its paragraphs. IDs
+// (any format) reads those pictures and charts instead.
 type OfficeQuery struct {
-	Sheet string `json:"sheet,omitempty"`
-	Range string `json:"range,omitempty"`
-	Start int    `json:"start,omitempty"`
-	Count int    `json:"count,omitempty"`
-	Slide int    `json:"slide,omitempty"`
+	Sheet string   `json:"sheet,omitempty"`
+	Range string   `json:"range,omitempty"`
+	Start int      `json:"start,omitempty"`
+	Count int      `json:"count,omitempty"`
+	Slide int      `json:"slide,omitempty"`
+	IDs   []string `json:"ids,omitempty"`
 }
 
 // MaterialInspection is the authority's editable view of a material.

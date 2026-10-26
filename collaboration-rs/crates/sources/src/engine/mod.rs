@@ -5,7 +5,9 @@
 //! load, replica drops) and `Background` (exports, rebases, inspect, agent
 //! commands, locate, assets). Within a lane a room's calls go to one process
 //! (its XLSX replica stays warm there); a call without a room goes to the
-//! least busy one. Each process runs one call at a time. A call that runs past
+//! least busy one. Each process runs one call at a time, its queue unbounded
+//! but for the agent's by-id read ([`EnginePool::admit`],
+//! [`EnginePool::call_bounded`]). A call that runs past
 //! the timeout (120 s, officeRuntime's `CALL_TIMEOUT_MS`) kills its process
 //! (its process group on Linux);
 //! a process that dies (a crash, an abort on its memory cap) or answers
@@ -133,7 +135,19 @@ struct Job {
     request: Frame,
     room: Option<String>,
     queued_at: Instant,
+    /// A bounded call's wait ([`EnginePool::call_bounded`]).
+    max_wait: Option<Duration>,
     reply: oneshot::Sender<Result<Reply, EngineError>>,
+}
+
+/// A bounded call's refusal: an edit refusal the agent reads as tool text,
+/// to ask again later (not an outage).
+pub fn busy() -> EngineError {
+    EngineError::Refused(Failure {
+        kind: FailureKind::Edit,
+        message: "unavailable_target: the file's document engine is busy with other work; read the pictures and charts again in a moment".into(),
+        details: None,
+    })
 }
 
 /// One interval of a lane for `collab_health` (officeRuntime's
@@ -306,6 +320,42 @@ impl EnginePool {
         room: Option<&str>,
         request: Frame,
     ) -> Result<Reply, EngineError> {
+        self.enqueue(lane, room, request, None).await
+    }
+
+    /// [`Self::call`] for a call its caller asks again when told to (the
+    /// agent's by-id Office read; the Editor's lane calls, 2026-10-24): it
+    /// is skipped when its caller is gone by the time it would start, and
+    /// answers [`busy`] instead of running once it waited past `max_wait`.
+    /// Other calls never wait on these rules.
+    pub async fn call_bounded(
+        &self,
+        lane: Lane,
+        room: Option<&str>,
+        request: Frame,
+        max_wait: Duration,
+    ) -> Result<Reply, EngineError> {
+        self.enqueue(lane, room, request, Some(max_wait)).await
+    }
+
+    /// [`busy`] when `room`'s process on `lane` already holds `most` calls
+    /// queued and not started (its own `depth`).
+    pub fn admit(&self, lane: Lane, room: &str, most: usize) -> Result<(), EngineError> {
+        let lane = self.lane(lane);
+        let process = &lane.processes[affinity(room, lane.processes.len())];
+        if process.depth.load(Ordering::Relaxed) >= most {
+            return Err(busy());
+        }
+        Ok(())
+    }
+
+    async fn enqueue(
+        &self,
+        lane: Lane,
+        room: Option<&str>,
+        request: Frame,
+        max_wait: Option<Duration>,
+    ) -> Result<Reply, EngineError> {
         let lane = self.lane(lane);
         let index = match room {
             Some(room) => affinity(room, lane.processes.len()),
@@ -322,6 +372,7 @@ impl EnginePool {
             request,
             room: room.map(str::to_owned),
             queued_at: Instant::now(),
+            max_wait,
             reply,
         };
         if process.jobs.send(job).is_err() {
@@ -543,6 +594,15 @@ impl Supervisor {
     async fn run(mut self, mut jobs: mpsc::UnboundedReceiver<Job>) {
         while let Some(job) = jobs.recv().await {
             self.depth.fetch_sub(1, Ordering::Relaxed);
+            if let Some(max_wait) = job.max_wait {
+                if job.reply.is_closed() {
+                    continue;
+                }
+                if job.queued_at.elapsed() > max_wait {
+                    let _ = job.reply.send(Err(busy()));
+                    continue;
+                }
+            }
             let result = self.handle(&job).await;
             let _ = job.reply.send(result);
         }
