@@ -1,37 +1,35 @@
-//! Office pending effects, computed when the agent reads a file and cached
-//! until any edit to it (Q405, Epo 2026-10-26). A read compares the stored
-//! document, with this instance's live room merged in, against the
-//! published baseline (`office_effects`). The cache keeps one entry per
-//! file, valid while its stamp holds: a durable write (a save, an agent
-//! edit, an Undo) moves the checkpoint, a publication the base revision or
-//! the epoch, a live edit the room's edit version, and a room load or
-//! unload its generation.
+//! Office pending effects, computed when the agent reads a file (Q405, Epo
+//! 2026-10-26). A read compares the stored document against the published
+//! baseline (`office_effects`) and keeps the result on the file's
+//! source-document row (`effects_cache`, Q423, Epo 2026-10-27), for the
+//! version it read: {"at": {epoch, checkpoint, baseRevision}, "effects"}.
+//! Every save and publication moves that version and clears the column, so
+//! a cold read writes it once per saved version, and it survives restarts.
+//! A loaded room's unsaved edits are read live, merged into the stored
+//! document, and never written.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use office_service::NetEffect;
 use serde::Serialize;
+use tokio_postgres::types::Json;
 use yrs::{Doc, TransactionMut};
 
 use crate::effects::{TextCount, edited_text};
 use crate::gateway::SourceSession;
-use crate::store::{Job, Reader, whole};
-use crate::{BoxFuture, SourceError, SourceRoom, Sources};
-
-/// Files whose effects one instance keeps; past it the least recently read
-/// goes.
-const CACHED_FILES: usize = 256;
+use crate::store::{Job, Reader, db_error, whole};
+use crate::{BoxFuture, SourceError, Sources};
 
 const EDITS_OBSERVER: &str = "capy-source-edits";
 
 /// What a loaded Office room's document took since its last save: a version
-/// any change moves (the cache's key) and the text its transactions
-/// inserted and deleted (the reindex count each save stores).
+/// any change moves, the version its last save stored, and the text its
+/// transactions inserted and deleted (the reindex count each save stores).
 #[derive(Default)]
 pub(crate) struct Edits {
     version: AtomicU64,
+    saved: AtomicU64,
     units: AtomicU64,
     cjk: AtomicU64,
 }
@@ -55,16 +53,20 @@ impl Edits {
         Ok(edits)
     }
 
-    pub(crate) fn version(&self) -> u64 {
-        self.version.load(Ordering::SeqCst)
-    }
-
-    /// The count since the last save, for the save about to store it.
-    pub(crate) fn take(&self) -> TextCount {
-        TextCount {
+    /// The count since the last save, for the save about to store it, and
+    /// the version that save holds (the room waits while it saves).
+    pub(crate) fn take(&self) -> (TextCount, u64) {
+        let version = self.version.load(Ordering::SeqCst);
+        let count = TextCount {
             units: self.units.swap(0, Ordering::SeqCst),
             cjk: self.cjk.swap(0, Ordering::SeqCst),
-        }
+        };
+        (count, version)
+    }
+
+    /// A save that stored `version`: the room holds no edit it lacks.
+    pub(crate) fn saved(&self, version: u64) {
+        self.saved.store(version, Ordering::SeqCst);
     }
 
     /// A count whose save failed: the next save stores it.
@@ -72,66 +74,10 @@ impl Edits {
         self.units.fetch_add(count.units, Ordering::SeqCst);
         self.cjk.fetch_add(count.cjk, Ordering::SeqCst);
     }
-}
 
-/// What a cached file's effects were read at.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Stamp {
-    epoch: u64,
-    checkpoint: u64,
-    base_revision: i64,
-    /// The loaded room's (generation, edit version), when one was.
-    room: Option<(u64, u64)>,
-}
-
-struct Cached {
-    stamp: Stamp,
-    effects: Arc<Vec<NetEffect>>,
-    used: u64,
-}
-
-#[derive(Default)]
-pub(crate) struct EffectsCache {
-    files: HashMap<String, Cached>,
-    tick: u64,
-}
-
-impl EffectsCache {
-    fn get(&mut self, file_id: &str, stamp: &Stamp) -> Option<Arc<Vec<NetEffect>>> {
-        self.tick += 1;
-        let cached = self.files.get_mut(file_id)?;
-        if cached.stamp != *stamp {
-            return None;
-        }
-        cached.used = self.tick;
-        Some(cached.effects.clone())
-    }
-
-    fn put(&mut self, file_id: &str, stamp: Stamp, effects: Arc<Vec<NetEffect>>) {
-        self.tick += 1;
-        let used = self.tick;
-        self.files.insert(
-            file_id.to_owned(),
-            Cached {
-                stamp,
-                effects,
-                used,
-            },
-        );
-        // ponytail: O(n) scan for the oldest; a real LRU if the cap grows.
-        if self.files.len() > CACHED_FILES
-            && let Some(oldest) = self
-                .files
-                .iter()
-                .min_by_key(|(_, cached)| cached.used)
-                .map(|(file, _)| file.clone())
-        {
-            self.files.remove(&oldest);
-        }
-    }
-
-    pub(crate) fn forget(&mut self, file_id: &str) {
-        self.files.remove(file_id);
+    /// The room holds edits its last save did not store.
+    pub(crate) fn unsaved(&self) -> bool {
+        self.version.load(Ordering::SeqCst) != self.saved.load(Ordering::SeqCst)
     }
 }
 
@@ -142,7 +88,7 @@ pub struct FileChanges {
     pub file_id: String,
     pub epoch: u64,
     pub checkpoint: u64,
-    pub changes: Arc<Vec<NetEffect>>,
+    pub changes: Vec<NetEffect>,
 }
 
 /// `POST /internal/source-changes`: the files read, and those whose read
@@ -152,6 +98,10 @@ pub struct OfficeChanges {
     pub files: Vec<FileChanges>,
     pub failed: Vec<String>,
 }
+
+/// The cached effects of a row whose version they were read at; NULL
+/// otherwise.
+const CACHED_EFFECTS_SQL: &str = "CASE WHEN d.effects_cache->'at'=jsonb_build_object('epoch',d.epoch,'checkpoint',d.checkpoint,'baseRevision',d.base_revision) THEN d.effects_cache->'effects' END";
 
 impl Sources {
     /// The pending effects of the workspace's Office files among `file_ids`
@@ -167,24 +117,27 @@ impl Sources {
     where
         F: Fn(String) -> BoxFuture<Option<Vec<u8>>>,
     {
-        let client = self.db().get().await.map_err(crate::store::db_error)?;
+        let client = self.db().get().await.map_err(db_error)?;
         let rows = client
             .query(
-                "SELECT d.file_id,d.epoch,d.checkpoint,d.base_revision FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=ANY($1) AND f.workspace_id=$2 AND f.trashed_at IS NULL AND d.format<>'text' ORDER BY d.file_id",
+                &format!(
+                    "SELECT d.file_id,d.epoch,d.checkpoint,{CACHED_EFFECTS_SQL} FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=ANY($1) AND f.workspace_id=$2 AND f.trashed_at IS NULL AND d.format<>'text' ORDER BY d.file_id"
+                ),
                 &[&file_ids, &workspace_id],
             )
             .await
-            .map_err(crate::store::db_error)?;
+            .map_err(db_error)?;
         drop(client);
         let mut out = OfficeChanges::default();
         for row in rows {
             let file_id: String = row.get(0);
             let (epoch, checkpoint) = (row.get::<_, i64>(1) as u64, row.get::<_, i64>(2) as u64);
-            let stamp = self.stamp(&file_id, epoch, checkpoint, row.get(3));
-            let hit = crate::store::lock(&self.effects).get(&file_id, &stamp);
-            let read = match hit {
-                Some(changes) => Ok((epoch, checkpoint, changes)),
-                None => match self.current(&file_id).await {
+            let cached: Option<Json<Vec<NetEffect>>> = row.get(3);
+            let read = match cached {
+                Some(Json(changes)) if !self.unsaved(&file_id, epoch) => {
+                    Ok((epoch, checkpoint, changes))
+                }
+                _ => match self.current(&file_id).await {
                     Ok(session) => self
                         .read_effects(&session, &live)
                         .await
@@ -212,48 +165,50 @@ impl Sources {
         Ok(out)
     }
 
-    /// The stamp a read of the file now would have.
-    fn stamp(&self, file_id: &str, epoch: u64, checkpoint: u64, base_revision: i64) -> Stamp {
-        let room = SourceRoom {
-            file_id: file_id.to_owned(),
-            epoch,
-        };
-        Stamp {
-            epoch,
-            checkpoint,
-            base_revision,
-            room: self.room_edits(&room.name()),
-        }
-    }
-
-    /// One Office file's pending effects now: cached, or read from the
-    /// stored document with the live room merged in. The stamp is taken
-    /// before the state, so an edit landing meanwhile only makes the next
-    /// read compute again.
+    /// One Office file's pending effects now. A room loaded here with
+    /// unsaved edits: computed with them, never written. Otherwise the
+    /// stored document's, from the row's cache, or computed and written
+    /// there unless a save or publication moved the row meanwhile.
     pub(crate) async fn read_effects<F>(
         &self,
         session: &SourceSession,
         live: &F,
-    ) -> Result<Arc<Vec<NetEffect>>, SourceError>
+    ) -> Result<Vec<NetEffect>, SourceError>
     where
         F: Fn(String) -> BoxFuture<Option<Vec<u8>>>,
     {
-        let stamp = self.stamp(
-            &session.file_id,
-            session.epoch,
-            session.checkpoint,
+        let unsaved = self.unsaved(&session.file_id, session.epoch);
+        let at = (
+            session.epoch as i64,
+            session.checkpoint as i64,
             session.base_revision,
         );
-        if let Some(hit) = crate::store::lock(&self.effects).get(&session.file_id, &stamp) {
-            return Ok(hit);
+        if !unsaved {
+            let client = self.db().get().await.map_err(db_error)?;
+            let row = client
+                .query_opt(
+                    &format!(
+                        "SELECT {CACHED_EFFECTS_SQL} FROM source_documents d WHERE d.file_id=$1 AND d.epoch=$2 AND d.checkpoint=$3 AND d.base_revision=$4"
+                    ),
+                    &[&session.file_id, &at.0, &at.1, &at.2],
+                )
+                .await
+                .map_err(db_error)?;
+            if let Some(Json(cached)) =
+                row.and_then(|row| row.get::<_, Option<Json<Vec<NetEffect>>>>(0))
+            {
+                return Ok(cached);
+            }
         }
         let job = Job::default();
         let (base, sha) = self.bound_base(session, Reader::Job(&job)).await?;
-        let state = self
-            .current_state(session, (&base, &sha), &job, live)
-            .await?;
-        let effects = Arc::new(
-            self.office_effects(
+        let mut layers = self.durable_layers(session, &base, &sha, &job).await?;
+        if unsaved {
+            layers.extend(live(session.room.clone()).await);
+        }
+        let state = whole(session.format, layers).await?;
+        let effects = self
+            .office_effects(
                 session,
                 &base,
                 &sha,
@@ -261,9 +216,17 @@ impl Sources {
                 &session.room,
                 Reader::Job(&job),
             )
-            .await?,
-        );
-        crate::store::lock(&self.effects).put(&session.file_id, stamp, effects.clone());
+            .await?;
+        if !unsaved {
+            let client = self.db().get().await.map_err(db_error)?;
+            client
+                .execute(
+                    "UPDATE source_documents SET effects_cache=jsonb_build_object('at',jsonb_build_object('epoch',epoch,'checkpoint',checkpoint,'baseRevision',base_revision),'effects',$5::jsonb) WHERE file_id=$1 AND epoch=$2 AND checkpoint=$3 AND base_revision=$4",
+                    &[&session.file_id, &at.0, &at.1, &at.2, &Json(&effects)],
+                )
+                .await
+                .map_err(db_error)?;
+        }
         Ok(effects)
     }
 

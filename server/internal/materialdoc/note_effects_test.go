@@ -199,3 +199,21 @@ func TestNoteChangesBoundALargeLineDiff(t *testing.T) {
 		t.Fatalf("every line changed allocated %d MB", bytes>>20)
 	}
 }
+
+// Q415: a note's blocks with their kinds and titles come from one parse; a
+// second one doubled the index text's cost on near-limit notes.
+func TestExtractNoteBlocksParsesOnce(t *testing.T) {
+	nodes := []map[string]any{}
+	for i := range 200 {
+		nodes = append(nodes, effectsPara(fmt.Sprintf("p%d", i), strings.Repeat("words ", 20)))
+	}
+	raw := effectsDoc(t, nodes...)
+	allocs := func(f func()) float64 { return testing.AllocsPerRun(5, f) }
+	parse := allocs(func() { _, _ = Parse(raw) })
+	index := allocs(func() { _, _ = ExtractIndexBlocks(raw, nil) })
+	note := allocs(func() { _, _ = ExtractNoteBlocks(raw, nil) })
+	if note > index+parse/2 {
+		t.Fatalf("ExtractNoteBlocks made %.0f allocations: the index blocks' %.0f plus most of another parse (%.0f)",
+			note, index, parse)
+	}
+}

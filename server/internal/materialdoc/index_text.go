@@ -49,6 +49,11 @@ func ExtractIndexBlocks(raw string, items map[string]string) ([]IndexBlock, erro
 	if err != nil {
 		return nil, err
 	}
+	return indexBlocks(doc, items)
+}
+
+// indexBlocks is ExtractIndexBlocks of a parsed note.
+func indexBlocks(doc Envelope, items map[string]string) ([]IndexBlock, error) {
 	// Only the referenced items are read; a reference is a top-level block.
 	texts := map[string]string{}
 	for _, node := range doc.Value {

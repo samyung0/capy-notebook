@@ -557,7 +557,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if _, err = tx.Exec(ctx, `INSERT INTO source_document_updates(file_id,epoch,checkpoint,update) VALUES($1,$2,$3,$4)`, fileID, epoch, out.Checkpoint+1, in.Update); err != nil {
 		return out, err
 	}
-	err = tx.QueryRow(ctx, `UPDATE source_documents SET state_seed_sha256=NULLIF($7,''),seed_bytes=$5,base_source_sha256=$6,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$2,log_rows=log_rows+1,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, int64(len(in.Update)), in.PendingEffects, in.NetTokens, seedBytes, sha, in.StateSeedSHA256).Scan(&out.Checkpoint)
+	err = tx.QueryRow(ctx, `UPDATE source_documents SET effects_cache=NULL,state_seed_sha256=NULLIF($7,''),seed_bytes=$5,base_source_sha256=$6,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$2,log_rows=log_rows+1,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, int64(len(in.Update)), in.PendingEffects, in.NetTokens, seedBytes, sha, in.StateSeedSHA256).Scan(&out.Checkpoint)
 	if err != nil {
 		return out, err
 	}

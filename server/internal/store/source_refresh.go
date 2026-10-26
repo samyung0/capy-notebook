@@ -444,7 +444,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	case in.Deferred:
 		// Editing stays on its base and epoch (no reload for open editors);
 		// base_revision follows the file's so the next capture is current.
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,pending_effects=$3,net_tokens=$4,rebuild_pending=true,rebuild_refusal=NULL,published_state=$5,published_state_seed_sha256=$6,reprocess_at=NULL,running_job_id=NULL,desired_checkpoint=CASE WHEN $4::bigint=0 THEN NULL ELSE checkpoint END,desired_manual=desired_manual AND $4::bigint<>0,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, effects, netTokens, captured, capturedSeed)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET effects_cache=NULL,indexed_checkpoint=$2,base_revision=base_revision+1,pending_effects=$3,net_tokens=$4,rebuild_pending=true,rebuild_refusal=NULL,published_state=$5,published_state_seed_sha256=$6,reprocess_at=NULL,running_job_id=NULL,desired_checkpoint=CASE WHEN $4::bigint=0 THEN NULL ELSE checkpoint END,desired_manual=desired_manual AND $4::bigint<>0,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, effects, netTokens, captured, capturedSeed)
 		if err == nil {
 			err = releaseArtifactCacheTx(ctx, tx, replacedSHA, sha)
 		}
@@ -452,14 +452,14 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		// Text keeps its lineage; its baseline is the exported blob decoded.
 		// The published text is the file's bytes now, so the seed size takes
 		// the change in its size (Yjs stores the text as its UTF-8 bytes).
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,seed_bytes=seed_bytes+$7,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens, resized)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET effects_cache=NULL,indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,seed_bytes=seed_bytes+$7,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens, resized)
 	default:
 		// Indexed now, so an export-only publication's reprocess mark is done.
 		// The new epoch's state replaces the old base and its rows.
 		if err = dropSourceRowsTx(ctx, tx, fileID); err != nil {
 			return doc, err
 		}
-		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::bigint=0 THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::bigint<>0,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
+		_, err = tx.Exec(ctx, `UPDATE source_documents d SET effects_cache=NULL,epoch=d.epoch+1,log_bytes=0,log_rows=0,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::bigint=0 THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::bigint<>0,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
 	}
 	if err != nil {
 		return doc, err
@@ -774,7 +774,7 @@ func (s *Store) RebuildSource(ctx context.Context, fileID string, in SourceRebui
 	if err = dropSourceRowsTx(ctx, tx, fileID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,base_blob_path=f.blob_path,base_source_sha256=f.source_sha256,state=$2,state_seed_sha256=NULLIF($3,''),pending_effects=$4,net_tokens=$5,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, state, in.StateSeedSHA256, in.PendingEffects, in.NetTokens); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_documents d SET effects_cache=NULL,epoch=d.epoch+1,log_bytes=0,log_rows=0,base_blob_path=f.blob_path,base_source_sha256=f.source_sha256,state=$2,state_seed_sha256=NULLIF($3,''),pending_effects=$4,net_tokens=$5,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, state, in.StateSeedSHA256, in.PendingEffects, in.NetTokens); err != nil {
 		return err
 	}
 	if err = releaseArtifactCacheTx(ctx, tx, oldSHA, published); err != nil {

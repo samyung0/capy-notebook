@@ -509,7 +509,13 @@ empty list costs nothing, so opening a file charges only its source), plus its
 stored editing state and unfolded rows (`log_bytes`) beyond what the file's
 bytes already hold (migration 0043 dropped the stored baseline; it derives from
 the base). Below, "state" means the stored state plus `log_bytes`; a fold
-moves bytes from the rows into the state.
+moves bytes from the rows into the state. The effects caches are not charged
+(Q415, Q423, migration 0118): `source_documents.effects_cache` (an Office
+file's read effects) is outside `storage_bytes`, and `materials.effects_cache`
+(a note's changes) outside `size_bytes`. Each holds one read's trimmed effects
+for one version and is cleared when that version moves. Text pending effects
+stay charged, but are trimmed line runs since Q416, so far-apart edits in a
+large file no longer charge twice its size.
 Edits a publication captured are charged once, in the file:
 
 - An Office state is charged as stored: the change over seed(base) that the

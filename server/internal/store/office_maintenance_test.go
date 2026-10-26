@@ -338,9 +338,11 @@ func TestExportOnlyPublication(t *testing.T) {
 		t.Fatalf("refresh candidate key = %q, want a 128-bit id", candidate.SourceBlobPath)
 	}
 	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b"}
+	plantEffectsCache(t, s, file)
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {
 		t.Fatal(err)
 	}
+	effectsCacheCleared(t, s, file, "an export-only publication")
 
 	var blobPath, sha string
 	var size, revision int64

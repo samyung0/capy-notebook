@@ -46,7 +46,7 @@ WITH dropped AS (
 )
 UPDATE source_documents d
 SET epoch = d.epoch + 1, state = NULL, state_seed_sha256 = NULL, seed_bytes = 0, log_bytes = 0, log_rows = 0,
-    pending_effects = '[]'::jsonb,
+    pending_effects = '[]'::jsonb, effects_cache = NULL,
     net_tokens = 0, running_job_id = NULL, desired_checkpoint = NULL, desired_manual = false,
     refresh_error = NULL, updated_at = now()
 FROM dropped

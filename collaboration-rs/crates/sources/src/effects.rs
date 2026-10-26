@@ -3,6 +3,8 @@
 //! deleted (Q405's reindex count). Offsets, cuts and lengths are UTF-16 code
 //! units, as the TS measured them and as Go and the browser read them.
 
+use std::ops::Range;
+
 use office_service::{EffectKind, NetEffect, Operation};
 use unicode_script::{Script, UnicodeScript};
 use yrs::block::{Item, ItemContent};
@@ -24,28 +26,49 @@ fn low_surrogate(unit: Option<&u16>) -> bool {
     unit.is_some_and(|unit| (0xDC00..=0xDFFF).contains(unit))
 }
 
-/// The one contiguous replacement turning `before` into `after`, or none
-/// when they are equal (textEffects).
-pub fn text_effects(before: &[u16], after: &[u16]) -> Vec<NetEffect> {
+/// A text file's pending effects (Q416, Epo 2026-10-27): the lines that
+/// changed between the baseline and the text now, by a diff whose cost grows
+/// with the changed lines, not the file. A run of changed lines is one
+/// effect, trimmed to its changed span and [`EFFECT_CONTEXT_CHARS`] of
+/// context (Office's [`trim_effect`]); past [`LINE_DIFF_CELLS`] the change is
+/// one placeholder counting its lines, as a note's heavy line diff is
+/// (materialdoc/note_effects.go).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextChange {
+    pub effects: Vec<NetEffect>,
+    /// [`effect_tokens`] of the effects; a placeholder counts the whole
+    /// change, as the reindex threshold measures it.
+    pub tokens: u64,
+    /// Where the text differs from the baseline: its first differing UTF-16
+    /// unit and the units from there that differ (none when equal).
+    pub span: Option<(usize, usize)>,
+}
+
+/// The diff's bound, notes' `lineDiffCells`: its trace keeps (D + 1)^2
+/// cells for D changed lines, so it stops past 511.
+pub const LINE_DIFF_CELLS: usize = 1 << 18;
+
+/// [`TextChange`] from `before` to `after`.
+pub fn text_effects(before: &[u16], after: &[u16]) -> TextChange {
     text_effects_with(before, after.len(), |index| after[index], 0, 0)
 }
 
 /// [`text_effects`] over `after` read through `at`, with its first `head`
 /// and last `tail` units known to equal `before`'s: the scans skip them, so
-/// the work is the changed span's, not the text's.
+/// the work is the changed span's (widened to whole lines), not the text's.
 pub(crate) fn text_effects_with(
     before: &[u16],
     after_len: usize,
     at: impl Fn(usize) -> u16,
     head: usize,
     tail: usize,
-) -> Vec<NetEffect> {
+) -> TextChange {
     let mut prefix = head.min(before.len()).min(after_len);
     while prefix < before.len() && prefix < after_len && before[prefix] == at(prefix) {
         prefix += 1;
     }
     if prefix == before.len() && prefix == after_len {
-        return Vec::new();
+        return TextChange::default();
     }
     if prefix > 0 && low_surrogate(before.get(prefix)) {
         prefix -= 1;
@@ -61,26 +84,164 @@ pub(crate) fn text_effects_with(
         end_before += 1;
         end_after += 1;
     }
-    let removed = string(&before[prefix..end_before]);
-    let inserted = string(&(prefix..end_after).map(&at).collect::<Vec<_>>());
-    let id = office_service::sha256_hex(
-        serde_json::to_string(&(prefix, &removed, &inserted)).unwrap_or_default(),
-    );
-    let operation = match (removed.is_empty(), inserted.is_empty()) {
-        (false, false) => Operation::Replace,
-        (false, true) => Operation::Remove,
-        (true, _) => Operation::Add,
+    // The changed span widened to whole lines; past it both texts agree.
+    let newline = u16::from(b'\n');
+    let from = before[..prefix]
+        .iter()
+        .rposition(|unit| *unit == newline)
+        .map_or(0, |at| at + 1);
+    let rest = before[end_before..]
+        .iter()
+        .position(|unit| *unit == newline)
+        .unwrap_or(before.len() - end_before);
+    let old = &before[from..end_before + rest];
+    let new: Vec<u16> = (from..end_after + rest).map(&at).collect();
+    let (a, b) = (lines(old), lines(&new));
+    let span = Some((prefix, end_after - prefix));
+    let Some(hunks) = line_hunks(&a, &b) else {
+        // A heavy change: its lines counted, its text left out.
+        let mut count = TextCount::default();
+        count.add_units(&before[prefix..end_before]);
+        count.add_units(&new[prefix - from..end_after - from]);
+        let (head, tail) = common_ends(&a, &b);
+        let changed = (a.len() - head - tail).max(b.len() - head - tail);
+        let total = before.iter().filter(|unit| **unit == newline).count() + 1 - a.len() + b.len();
+        let label = format!("{changed} of {total} lines changed");
+        return TextChange {
+            effects: vec![NetEffect {
+                id: office_service::sha256_hex(
+                    serde_json::to_string(&(prefix, end_before, end_after, count.tokens(), &label))
+                        .unwrap_or_default(),
+                ),
+                kind: EffectKind::Text,
+                operation: operation(end_before > prefix, end_after > prefix),
+                label,
+                before: None,
+                after: None,
+                asset_ref: None,
+                image_sha256: None,
+            }],
+            tokens: count.tokens(),
+            span,
+        };
     };
-    vec![NetEffect {
-        id,
-        kind: EffectKind::Text,
-        operation,
-        label: format!("Text at UTF-16 offset {prefix}"),
-        before: Some(removed),
-        after: Some(inserted),
-        asset_ref: None,
-        image_sha256: None,
-    }]
+    // Where each line of `b` starts in the text now.
+    let mut starts = Vec::with_capacity(b.len() + 1);
+    starts.push(from);
+    for line in &b {
+        starts.push(starts[starts.len() - 1] + line.len() + 1);
+    }
+    let effects: Vec<NetEffect> = hunks
+        .into_iter()
+        .map(|(removed, added)| {
+            let join = |texts: &[&[u16]]| string(&texts.join(&newline));
+            let (gone, came) = (join(&a[removed.clone()]), join(&b[added.clone()]));
+            let offset = starts[added.start].min(from + new.len());
+            trim_effect(NetEffect {
+                id: office_service::sha256_hex(
+                    serde_json::to_string(&(offset, &gone, &came)).unwrap_or_default(),
+                ),
+                kind: EffectKind::Text,
+                operation: operation(!removed.is_empty(), !added.is_empty()),
+                label: format!("Text at UTF-16 offset {offset}"),
+                before: Some(gone),
+                after: Some(came),
+                asset_ref: None,
+                image_sha256: None,
+            })
+        })
+        .collect();
+    TextChange {
+        tokens: effect_tokens(&effects),
+        effects,
+        span,
+    }
+}
+
+fn operation(removed: bool, added: bool) -> Operation {
+    match (removed, added) {
+        (true, true) => Operation::Replace,
+        (true, false) => Operation::Remove,
+        (false, _) => Operation::Add,
+    }
+}
+
+/// The lines of `text`, split at '\n' (a '\r' stays on its line).
+fn lines(text: &[u16]) -> Vec<&[u16]> {
+    text.split(|unit| *unit == u16::from(b'\n')).collect()
+}
+
+/// The runs of lines `a` lost and `b` gained, as (lines of `a`, lines of
+/// `b`), in order: Myers' O(ND) diff, so the work grows with the changed
+/// lines D. None once its trace would pass [`LINE_DIFF_CELLS`].
+fn line_hunks(a: &[&[u16]], b: &[&[u16]]) -> Option<Vec<(Range<usize>, Range<usize>)>> {
+    let (head, tail) = common_ends(a, b);
+    let (x0, y0) = (head, head);
+    let (n, m) = (
+        (a.len() - head - tail) as isize,
+        (b.len() - head - tail) as isize,
+    );
+    let limit = (n + m).min(LINE_DIFF_CELLS.isqrt() as isize - 1);
+    // v[k + limit + 1]: the furthest x on diagonal k = x - y.
+    let at = |k: isize| (k + limit + 1) as usize;
+    let mut v = vec![0isize; 2 * limit as usize + 3];
+    let mut trace: Vec<Vec<isize>> = Vec::new();
+    let mut found = None;
+    'search: for d in 0..=limit {
+        for k in (-d..=d).step_by(2) {
+            let mut x = if k == -d || (k != d && v[at(k - 1)] < v[at(k + 1)]) {
+                v[at(k + 1)]
+            } else {
+                v[at(k - 1)] + 1
+            };
+            let mut y = x - k;
+            while x < n && y < m && a[x0 + x as usize] == b[y0 + y as usize] {
+                x += 1;
+                y += 1;
+            }
+            v[at(k)] = x;
+            if x >= n && y >= m {
+                found = Some(d);
+                break 'search;
+            }
+        }
+        trace.push(v[at(-d)..=at(d)].to_vec());
+    }
+    let d = found?;
+    // Back from the end: each step's last edit is one line lost or gained.
+    let (mut lost, mut gained) = (vec![false; n as usize], vec![false; m as usize]);
+    let (mut x, mut y) = (n, m);
+    for d in (1..=d).rev() {
+        let previous = &trace[d as usize - 1];
+        let get = |k: isize| previous[(k + d - 1) as usize];
+        let k = x - y;
+        let down = k == -d || (k != d && get(k - 1) < get(k + 1));
+        let k = if down { k + 1 } else { k - 1 };
+        let (px, py) = (get(k), get(k) - k);
+        if down {
+            gained[py as usize] = true;
+        } else {
+            lost[px as usize] = true;
+        }
+        (x, y) = (px, py);
+    }
+    let mut hunks = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < lost.len() || j < gained.len() {
+        let (i0, j0) = (i, j);
+        while i < lost.len() && lost[i] {
+            i += 1;
+        }
+        while j < gained.len() && gained[j] {
+            j += 1;
+        }
+        if (i, j) == (i0, j0) {
+            (i, j) = (i + 1, j + 1);
+        } else {
+            hunks.push((x0 + i0..x0 + i, y0 + j0..y0 + j));
+        }
+    }
+    Some(hunks)
 }
 
 /// Lengths of the common prefix and the non-overlapping common suffix.
@@ -200,6 +361,17 @@ impl TextCount {
         self.units.div_ceil(4) + self.cjk
     }
 
+    /// The characters of UTF-16 `text`.
+    fn add_units(&mut self, text: &[u16]) {
+        for character in char::decode_utf16(text.iter().copied()) {
+            match character {
+                Ok(character) if cjk(character) => self.cjk += 1,
+                Ok(character) => self.units += character.len_utf16() as u64,
+                Err(_) => self.units += 1,
+            }
+        }
+    }
+
     /// The characters of `text` within UTF-16 units `from..to`.
     fn add(&mut self, text: &str, from: u32, to: u32) {
         let mut at = 0;
@@ -307,32 +479,109 @@ mod tests {
     }
 
     fn texts(before: &str, after: &str) -> Vec<NetEffect> {
-        text_effects(&utf16(before), &utf16(after))
+        text_effects(&utf16(before), &utf16(after)).effects
     }
 
-    // sourceDocuments.test.ts: text effects retain Unicode, exact line
-    // endings, removals and undo cancellation.
+    // Text effects are the changed lines, trimmed (Q416), with Unicode and
+    // exact line endings; an equal text has none.
     #[test]
-    fn text_effects_keep_unicode_line_endings_and_removals() {
+    fn text_effects_are_changed_lines_with_unicode_and_line_endings() {
         let [emoji] = texts("a\r\n😀z", "a\r\n😁z").try_into().unwrap();
-        assert_eq!(emoji.before.as_deref(), Some("😀"));
-        assert_eq!(emoji.after.as_deref(), Some("😁"));
+        assert_eq!(emoji.before.as_deref(), Some("😀z"));
+        assert_eq!(emoji.after.as_deref(), Some("😁z"));
         assert_eq!(emoji.label, "Text at UTF-16 offset 3");
         assert_eq!(emoji.operation, Operation::Replace);
-        let [removed] = texts("a\r\n", "").try_into().unwrap();
+        let [removed] = texts("a\r\nb", "b").try_into().unwrap();
         assert_eq!(
             (
                 removed.before.as_deref(),
                 removed.after.as_deref(),
                 removed.operation
             ),
-            (Some("a\r\n"), Some(""), Operation::Remove)
+            (Some("a\r"), Some(""), Operation::Remove)
         );
-        assert!(texts("same", "same").is_empty());
-        let [added] = texts("ab", "aXb").try_into().unwrap();
-        assert_eq!(added.operation, Operation::Add);
-        // The id hashes JSON.stringify([prefix, removed, inserted]).
-        assert_eq!(added.id, office_service::sha256_hex(r#"[1,"","X"]"#));
+        let [added] = texts("a\nc", "a\nb\nc").try_into().unwrap();
+        assert_eq!(
+            (
+                added.before.as_deref(),
+                added.after.as_deref(),
+                added.operation
+            ),
+            (Some(""), Some("b"), Operation::Add)
+        );
+        assert_eq!(added.label, "Text at UTF-16 offset 2");
+        // A long line keeps its change and 40 units of context a side.
+        let (head, tail) = ("a".repeat(100), "z".repeat(100));
+        let [word] = texts(&format!("{head}old{tail}"), &format!("{head}new{tail}"))
+            .try_into()
+            .unwrap();
+        assert_eq!(
+            word.after,
+            Some(format!("…{}new{}…", &head[60..], &tail[60..]))
+        );
+        // The id hashes [offset, lines lost, lines gained].
+        assert_eq!(added.id, office_service::sha256_hex(r#"[2,"","b"]"#));
+        assert_eq!(
+            text_effects(&utf16("same"), &utf16("same")),
+            TextChange::default()
+        );
+    }
+
+    // Q416: two far-apart edits in a large file are two small hunks, not one
+    // span over everything between them.
+    #[test]
+    fn far_apart_edits_are_small_hunks() {
+        let base: String = (0..200_000)
+            .map(|i| format!("line {i} of the file\n"))
+            .collect();
+        let edited = base.replacen("line 10 of", "line ten of", 1).replacen(
+            "line 199990 of",
+            "line END of",
+            1,
+        );
+        let change = text_effects(&utf16(&base), &utf16(&edited));
+        let [first, last] = change.effects.clone().try_into().unwrap();
+        assert_eq!(
+            (first.before.as_deref(), first.after.as_deref()),
+            (Some("line 10 of the file"), Some("line ten of the file"))
+        );
+        assert_eq!(
+            (last.before.as_deref(), last.after.as_deref()),
+            (
+                Some("line 199990 of the file"),
+                Some("line END of the file")
+            )
+        );
+        assert!(serde_json::to_string(&change.effects).unwrap().len() < 1000);
+        assert_eq!(change.tokens, effect_tokens(&change.effects));
+        // The window still spans both: the next save diffs within it.
+        let (prefix, inserted) = change.span.unwrap();
+        assert_eq!(prefix, base.find("10 of").unwrap());
+        assert!(inserted > 4_000_000);
+    }
+
+    // Q416: a change past the diff's bound is one placeholder counting its
+    // lines, without text, and its tokens are the whole change's; a few
+    // changed lines in the same file stay hunks.
+    #[test]
+    fn heavy_changes_are_a_placeholder() {
+        let base: String = (0..2000).map(|i| format!("row {i}\n")).collect();
+        let heavy: String = (0..2000).map(|i| format!("ROW {i}\n")).collect();
+        let change = text_effects(&utf16(&base), &utf16(&heavy));
+        let [placeholder] = change.effects.try_into().unwrap();
+        assert_eq!(placeholder.label, "2000 of 2001 lines changed");
+        assert_eq!((placeholder.before, placeholder.after), (None, None));
+        assert_eq!(placeholder.operation, Operation::Replace);
+        let mut whole = TextCount::default();
+        whole.add_units(&utf16(&base[..base.len() - " 1999\n".len()]));
+        whole.add_units(&utf16(&heavy[..heavy.len() - " 1999\n".len()]));
+        assert_eq!(change.tokens, whole.tokens());
+        let few = base
+            .replacen("row 5\n", "ROW 5\n", 1)
+            .replacen("row 500\n", "", 1)
+            .replacen("row 1500\n", "row 1500\nnew\n", 1);
+        let ops: Vec<Operation> = texts(&base, &few).iter().map(|e| e.operation).collect();
+        assert_eq!(ops, [Operation::Replace, Operation::Remove, Operation::Add]);
     }
 
     // Office text effects keep the changed span with 40 characters of context.

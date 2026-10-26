@@ -29,7 +29,7 @@ use crate::effects::{effect_tokens, trim_effect, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
 use crate::gateway::{CheckpointBody, CheckpointSaved, Gateway, RefreshCandidate, SourceSession};
-use crate::pending::{Edits, EffectsCache};
+use crate::pending::Edits;
 use crate::text::{TEXT_ROOT, TextSave, TextWindow, full_text_effects, text_doc, text_seed};
 use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceFormat, SourceRoom};
 
@@ -345,8 +345,6 @@ pub struct Sources {
     disk: Arc<DiskStore>,
     rooms: Mutex<HashMap<String, RoomRecord>>,
     generations: std::sync::atomic::AtomicU64,
-    /// Office pending effects as last read ([crate::pending]).
-    pub(crate) effects: Mutex<EffectsCache>,
 }
 
 impl Sources {
@@ -376,7 +374,6 @@ impl Sources {
             disk,
             rooms: Mutex::new(HashMap::new()),
             generations: std::sync::atomic::AtomicU64::new(0),
-            effects: Mutex::default(),
         })
     }
 
@@ -729,7 +726,6 @@ impl Sources {
         }
         session.checkpoint = stored.checkpoint;
         lock(&self.rooms).insert(name, record);
-        lock(&self.effects).forget(&room.file_id);
         Ok(Loaded {
             format: session.format,
             checkpoint: stored.checkpoint,
@@ -783,15 +779,17 @@ impl Sources {
         }
     }
 
-    /// A loaded Office room's (generation, edit version) here: the effects
-    /// cache's key while the room holds edits it has not saved.
-    pub(crate) fn room_edits(&self, room: &str) -> Option<(u64, u64)> {
-        lock(&self.rooms).get(room).and_then(|record| {
-            record
-                .edits
-                .as_ref()
-                .map(|edits| (record.generation, edits.version()))
-        })
+    /// An Office room loaded here holds edits its last save did not store:
+    /// a read computes them live and caches nothing ([crate::pending]).
+    pub(crate) fn unsaved(&self, file_id: &str, epoch: u64) -> bool {
+        let room = SourceRoom {
+            file_id: file_id.to_owned(),
+            epoch,
+        };
+        lock(&self.rooms)
+            .get(&room.name())
+            .and_then(|record| record.edits.as_ref())
+            .is_some_and(|edits| edits.unsaved())
     }
 
     /// The durable checkpoint this instance knows for a loaded room.
@@ -816,7 +814,6 @@ impl Sources {
             }
             rooms.remove(&name);
         }
-        lock(&self.effects).forget(&room.file_id);
         self.engines.drop_room(&name).await;
     }
 
@@ -1001,12 +998,13 @@ impl Sources {
         let edits = lock(&self.rooms)
             .get(&room.name())
             .and_then(|record| record.edits.clone());
-        let count = edits.as_ref().map(|edits| edits.take()).unwrap_or_default();
+        let (count, version) = edits.as_ref().map(|edits| edits.take()).unwrap_or_default();
         let stored = self.store_row(room, save, count.tokens()).await;
-        if stored.is_err()
-            && let Some(edits) = edits
-        {
-            edits.put_back(count);
+        if let Some(edits) = edits {
+            match &stored {
+                Ok(_) => edits.saved(version),
+                Err(_) => edits.put_back(count),
+            }
         }
         stored
     }
@@ -1070,27 +1068,30 @@ impl Sources {
                 }
             };
             let (base, sha) = self.bound_base(&session, reader).await?;
-            let (effects, state_seed_sha256) = match office(session.format) {
-                // Office effects are read on demand, not stored (Q405).
+            // Office effects are read on demand, not stored (Q405); its count
+            // is the file's plus this save's. Text: the save's line diff (Q416).
+            let (effects, net_tokens, state_seed_sha256) = match office(session.format) {
                 Some(_) => {
                     let seed = self
                         .seed(session.format, &base, &sha, Some(&name), reader)
                         .await?;
-                    (Vec::new(), Some(seed.sha256))
+                    (
+                        Vec::new(),
+                        session.net_tokens.max(0) as u64 + office_tokens,
+                        Some(seed.sha256),
+                    )
                 }
                 None => {
-                    let effects = match &text {
-                        Some(text) => text.effects.clone(),
+                    let computed = match text.take() {
+                        Some(computed) => computed,
                         None => {
-                            let computed = self
-                                .text_effects_whole(&session, &base, &sha, &save.row, reader)
-                                .await?;
-                            let effects = computed.effects.clone();
-                            text = Some(computed);
-                            effects
+                            self.text_effects_whole(&session, &base, &sha, &save.row, reader)
+                                .await?
                         }
                     };
-                    (effects, None)
+                    let out = (computed.effects.clone(), computed.tokens, None);
+                    text = Some(computed);
+                    out
                 }
             };
             // A text room's first row is whole, seed included: a text
@@ -1118,18 +1119,6 @@ impl Sources {
                 None => save.row.clone(),
             };
             let row_bytes = row.len();
-            // Office: the file's count plus this save's. Text: O(effect
-            // text), its pending effect spans every edit since its baseline,
-            // up to the whole file twice.
-            let net_tokens = match office(session.format) {
-                Some(_) => session.net_tokens.max(0) as u64 + office_tokens,
-                None => {
-                    let effects = effects.clone();
-                    tokio::task::spawn_blocking(move || effect_tokens(&effects))
-                        .await
-                        .map_err(|error| SourceError::Other(format!("effect tokens: {error}")))?
-                }
-            };
             let body = CheckpointBody {
                 actor_ids: save.actors.clone(),
                 epoch: room.epoch,
@@ -2062,18 +2051,19 @@ impl Sources {
         })
     }
 
-    /// Effects of the durable state, against `from` (a text publication's
-    /// exported text) or the indexed baseline, for the handoff.
+    /// Effects of the durable state and their tokens, against `from` (a
+    /// text publication's exported text) or the indexed baseline, for the
+    /// handoff.
     pub(crate) async fn effects_of_durable(
         &self,
         session: &SourceSession,
         from: Option<&[u16]>,
         job: &Job,
-    ) -> Result<Vec<NetEffect>, SourceError> {
+    ) -> Result<(Vec<NetEffect>, u64), SourceError> {
         let (base, sha) = self.bound_base(session, Reader::Job(job)).await?;
         let state = self.durable_state(session, &base, &sha, job).await?;
         if office(session.format).is_some() {
-            return self
+            let effects = self
                 .office_effects(
                     session,
                     &base,
@@ -2082,7 +2072,9 @@ impl Sources {
                     &session.room,
                     Reader::Job(job),
                 )
-                .await;
+                .await?;
+            let tokens = effect_tokens(&effects);
+            return Ok((effects, tokens));
         }
         let text = crate::text::text_state(&state)
             .map_err(|error| SourceError::State(error.to_string()))?;
@@ -2090,7 +2082,8 @@ impl Sources {
             Some(from) => from.to_vec(),
             None => utf16(text_of(&base)?),
         };
-        Ok(crate::effects::text_effects(&baseline, &utf16(&text)))
+        let change = crate::effects::text_effects(&baseline, &utf16(&text));
+        Ok((change.effects, change.tokens))
     }
 
     /// The text of a capture (text publications measure later edits against it).

@@ -34,13 +34,14 @@ func JoinNoteBlocks(blocks []NoteBlock) string {
 	return JoinIndexBlocks(index)
 }
 
-// ExtractNoteBlocks is ExtractIndexBlocks with each block's kind and title.
+// ExtractNoteBlocks is ExtractIndexBlocks with each block's kind and title,
+// from one parse.
 func ExtractNoteBlocks(raw string, items map[string]string) ([]NoteBlock, error) {
-	blocks, err := ExtractIndexBlocks(raw, items)
+	doc, err := Parse(raw)
 	if err != nil {
 		return nil, err
 	}
-	doc, err := Parse(raw)
+	blocks, err := indexBlocks(doc, items)
 	if err != nil {
 		return nil, err
 	}

@@ -15,7 +15,7 @@ use ydoc::undo::Captured;
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, GetString, ReadTxn, StateVector, Transact};
 
-use crate::effects::{TextCount, edited_text, effect_tokens, utf16};
+use crate::effects::{TextCount, edited_text, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, FailureKind};
 use crate::gateway::{CheckpointBody, CheckpointSaved};
@@ -310,8 +310,7 @@ impl Sources {
                     .map(|text| text.get_string(&txn))
                     .unwrap_or_default();
                 let save = full_text_effects(&text, &utf16(text_of(&base)?));
-                let tokens = effect_tokens(&save.effects);
-                (save.effects, tokens, Some(save.preview))
+                (save.effects, save.tokens, Some(save.preview))
             }
         };
         let (row, after) = {

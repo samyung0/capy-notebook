@@ -810,10 +810,12 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldRefs, newRefs := blobRefCount(t, s, oldBase), blobRefCount(t, s, newBase)
+	plantEffectsCache(t, s, file.ID)
 	published, err := s.PublishSourceRefresh(ctx, file.ID, publish)
 	if err != nil {
 		t.Fatal(err)
 	}
+	effectsCacheCleared(t, s, file.ID, "a publication onto the export")
 	if got, want := blobRefCount(t, s, oldBase), oldRefs-2; got != want {
 		t.Fatalf("old base references = %d, want %d", got, want)
 	}
@@ -863,6 +865,26 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 // An owner's Office publication swaps the file and its index while editing
 // stays on its base and epoch; the rebuild later moves editing onto the
 // published file with a compare-and-swap.
+// plantEffectsCache stands for an agent read's cached Office effects (Q423),
+// which every save and publication clears.
+func plantEffectsCache(t *testing.T, s *Store, fileID string) {
+	t.Helper()
+	if _, err := s.pool.Exec(context.Background(), `UPDATE source_documents SET effects_cache='{"at":{},"effects":[]}' WHERE file_id=$1`, fileID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func effectsCacheCleared(t *testing.T, s *Store, fileID, how string) {
+	t.Helper()
+	var cached bool
+	if err := s.pool.QueryRow(context.Background(), `SELECT effects_cache IS NOT NULL FROM source_documents WHERE file_id=$1`, fileID).Scan(&cached); err != nil {
+		t.Fatal(err)
+	}
+	if cached {
+		t.Fatalf("%s kept the cached effects", how)
+	}
+}
+
 func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -887,7 +909,9 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	captured := doc.Checkpoint
+	plantEffectsCache(t, s, file.ID)
 	doc = sourceTestEdit(t, s, owner, doc, "later-state")
+	effectsCacheCleared(t, s, file.ID, "a save")
 	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
 		t.Fatal(err)
 	}
@@ -915,10 +939,12 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 		t.Fatalf("deferred publication with a rebase: %v", err)
 	}
 	publish.RebasedState, publish.RebasedStateSeedSHA256 = nil, ""
+	plantEffectsCache(t, s, file.ID)
 	published, err := s.PublishSourceRefresh(ctx, file.ID, publish)
 	if err != nil {
 		t.Fatal(err)
 	}
+	effectsCacheCleared(t, s, file.ID, "a deferred publication")
 	if published.Epoch != 1 || sourceTestDocument(published) != "captured-state+later-state" || published.BaseBlobPath != oldBase || published.IndexedCheckpoint != captured || published.BaseRevision != 2 || !published.RebuildPending || string(published.PublishedState) != "captured-state" || published.PublishedSourceSHA256 != export || published.PublishedBlobPath != newBase || published.NetTokens != 2 {
 		t.Fatalf("deferred publication: %+v", published)
 	}
@@ -979,9 +1005,11 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 	if err = s.CancelSourceRefresh(ctx, owner, file.ID); err != nil {
 		t.Fatal(err)
 	}
+	plantEffectsCache(t, s, file.ID)
 	if err = s.RebuildSource(ctx, file.ID, rebuild); err != nil {
 		t.Fatal(err)
 	}
+	effectsCacheCleared(t, s, file.ID, "a rebuild")
 	rebuilt, err := s.SourceSession(ctx, owner, file.ID)
 	if err != nil {
 		t.Fatal(err)

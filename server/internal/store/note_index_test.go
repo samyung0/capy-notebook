@@ -617,6 +617,157 @@ func TestNoteChangesGateReindexAndReadForChat(t *testing.T) {
 	}
 }
 
+// Q415 (Epo 2026-10-27): a note's changes are computed once per revision and
+// kept in its effects_cache; a cached read computes nothing, a content write
+// (the note's or an embedded item's) and the index clear the cache, and an
+// entry for another revision, or one computed before the row changed, is
+// never served.
+func TestNoteChangesAreCachedPerRevision(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_note_cache")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Cached", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Cached",
+		Content: materialTestContent(t, "body"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cards, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
+		Kind: "flashcards", Cards: [][2]string{{"front", "back"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := noteWithRefs(t, cards)
+	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	cache := func() (revision *int64, labels []string) {
+		t.Helper()
+		var raw []byte
+		if err := s.pool.QueryRow(ctx, `SELECT (effects_cache->'at'->>'revision')::bigint, effects_cache->'effects'
+			FROM materials WHERE id=$1`, note.ID).Scan(&revision, &raw); err != nil {
+			t.Fatal(err)
+		}
+		var effects []materialdoc.NoteEffect
+		if raw != nil {
+			if err := json.Unmarshal(raw, &effects); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, effect := range effects {
+			labels = append(labels, effect.Label)
+		}
+		return revision, labels
+	}
+	read := func() []string {
+		t.Helper()
+		pending, err := s.NotePendingChanges(ctx, ws.ID, []string{note.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var labels []string
+		for _, p := range pending {
+			for _, change := range p.Changes {
+				labels = append(labels, change.Label)
+			}
+		}
+		return labels
+	}
+	// A marker entry at the note's current revision: served only from the cache.
+	plant := func() {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `UPDATE materials SET effects_cache=jsonb_build_object(
+				'at', jsonb_build_object('revision', revision),
+				'effects', '[{"id":"x","kind":"text","operation":"add","label":"planted","blockId":"b"}]'::jsonb)
+			WHERE id=$1`, note.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cleared := func(how string) {
+		t.Helper()
+		if revision, _ := cache(); revision != nil {
+			t.Fatalf("after %s the cache holds revision %d", how, *revision)
+		}
+	}
+	var revision int64
+	revisionNow := func() int64 {
+		t.Helper()
+		if err := s.pool.QueryRow(ctx, `SELECT revision FROM materials WHERE id=$1`, note.ID).Scan(&revision); err != nil {
+			t.Fatal(err)
+		}
+		return revision
+	}
+
+	// The reindex measure fills the cache with the changes it computed.
+	if _, err := s.RequestMaterialIndex(ctx, note.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a small change is not due, got %v", err)
+	}
+	at, computed := cache()
+	if at == nil || *at != revisionNow() || len(computed) != 2 {
+		t.Fatalf("after the measure the cache is %v %v", at, computed)
+	}
+	if got := read(); strings.Join(got, "|") != strings.Join(computed, "|") {
+		t.Fatalf("a read gave %v, the measure cached %v", got, computed)
+	}
+	// A cached read computes nothing: it serves the entry as stored.
+	plant()
+	if got := read(); len(got) != 1 || got[0] != "planted" {
+		t.Fatalf("a cached read gave %v", got)
+	}
+
+	// An entry for another revision is never served, and a read replaces it.
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET revision=revision+1 WHERE id=$1`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); strings.Join(got, "|") != strings.Join(computed, "|") {
+		t.Fatalf("a stale entry was served: %v", got)
+	}
+	if at, _ := cache(); at == nil || *at != revisionNow() {
+		t.Fatalf("the read cached revision %v, want %d", at, revision)
+	}
+
+	// The note's own content write and an embedded item's both clear it.
+	plant()
+	edited := noteWithRefs(t, cards)
+	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &edited, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	cleared("a content write")
+	plant()
+	saved, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{ID: "c_new", Front: "osmosis", Back: "water"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateMaterial(ctx, cards.ID, MaterialPatch{Content: &saved, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	cleared("an embedded item's write")
+	if got := read(); len(got) != 2 || got[0] == "planted" {
+		t.Fatalf("after the item's write a read gave %v", got)
+	}
+
+	// Changes computed before the row changed are not kept: the item's write
+	// landed without a new revision, after the read that computed them.
+	var xmin string
+	if err := s.pool.QueryRow(ctx, `SELECT revision, xmin::text FROM materials WHERE id=$1`, note.ID).
+		Scan(&revision, &xmin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateMaterial(ctx, cards.ID, MaterialPatch{Content: &saved, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.cacheNoteChanges(ctx, note.ID, revision, xmin, nil); err != nil {
+		t.Fatal(err)
+	}
+	cleared("a cache write computed before the row changed")
+}
+
 // TestNoteIndexSchedulerQuery runs NOTE_INDEX_SQL from
 // collaboration-rs/crates/sources/src/refresh.rs verbatim with its trigger
 // constants, which must equal Go admission's.

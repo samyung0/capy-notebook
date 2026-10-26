@@ -5534,8 +5534,15 @@ hashes/references and visual fingerprints. It is never stored (migration 0043
 dropped `indexed_baseline`): the collaboration service derives it from the
 published base, as the decoded text or the engine baseline of seed(base), and
 caches it by base SHA. Text compares its merged current state to this
-baseline on each durable save. Office compares only when the agent reads the
-file (Q405, below); its saves store no effects. Net-zero changes and Undo
+baseline on each durable save, line by line (Q416, Epo 2026-10-27): Myers'
+O(ND) diff over the lines of the changed window (from the first changed line
+to the last), so its cost grows with the changed lines, not the file. Each run
+of changed lines is one effect, trimmed like Office's (`Text at UTF-16 offset
+N` names where the run starts now), and only the trimmed effects are stored; a
+change whose diff would pass 2^18 trace cells (about 511 changed lines, notes'
+bound) is one placeholder without text, `N of M lines changed`, counting the
+whole change's tokens (`effects::text_effects`). Office compares only when the
+agent reads the file (Q405, below); its saves store no effects. Net-zero changes and Undo
 cancel by equality. Office publication rebases the latest saved state
 onto seed(export), so the new baseline derives from the export. Text publication
 compares the captured candidate with the latest state and retains later edits.
@@ -5665,11 +5672,15 @@ secret), which Go forwards to the collaboration service. There
 `Sources::office_changes` compares the stored document, with this instance's
 live room merged in, against the published baseline (`office_effects`, the
 engine's baseline diff, or XLSX overrides through the room's replica) and
-caches the result per file (`pending.rs`, at most 256 files). An entry holds
-while the file's epoch, checkpoint and base revision and its loaded room's
-generation and edit version are unchanged, so any save, agent edit, Undo,
-publication, room load or unload, or unsaved edit in the room makes the next
-read compute again; a cached read is one statement and no engine call. A file
+keeps the result on the file's row (Q423, Epo 2026-10-27):
+`source_documents.effects_cache` holds `{"at": {epoch, checkpoint,
+baseRevision}, "effects"}`, served only while `at` names the row's version
+and not charged to storage (migration 0118). Every save and publication moves
+that version and clears the column, so a cold read writes it once per saved
+version (a conditional write, skipped when the row moved meanwhile), and it
+survives restarts; a cached read is one statement and no engine call. A room
+loaded here with edits its last save did not store (`Edits::unsaved`) is read
+live, its state merged into the stored document, and never written. A file
 the service could not read is listed as failed, and a read of it carries the
 outdated-source notice. `resolve_source_change` finds its change among the
 same read effects and resolves the image from the same document, unsaved
@@ -5831,7 +5842,15 @@ Notes get the same evidence from Go (Epo 2026-10-17). The same read calls
 each scoped note the index does not hold as it stands (dirty, being indexed or
 failed), its index blocks now (`MaterialIndexText`'s blocks from
 `materials.content`) against `indexed_blocks`, aligned by element id
-(`materialdoc.NoteChanges`). A never-indexed note reads as added blocks. A stored note the rules refuse gives none (logged), and the other notes still do. Each
+(`materialdoc.NoteChanges`, from one parse of the note). A note's changes are
+computed once per revision and kept in `materials.effects_cache` (Q415, Epo
+2026-10-27; a column rather than API memory, which would hold RAM): `{"at":
+{"revision"}, "effects"}`, served only at that revision, not charged to
+storage (materials charge their content). Content writes clear it
+(`noteIndexDirtySQL`, an embedded item's write included), and so does the
+index's write of `indexed_blocks`; a computed entry is written only if the row
+did not change since it was read (`xmin`), and the reindex measure
+(`measureNoteChange`) fills it too. A never-indexed note reads as added blocks. A stored note the rules refuse gives none (logged), and the other notes still do. Each
 change names its `blockId`. Text changes have Office's shape: one span with
 40 UTF-16 units of context. Reordered blocks are moves without text. An
 embed's small change is a line diff of its index text. A chart, plot, graph or
