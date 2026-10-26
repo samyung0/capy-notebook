@@ -5,8 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { SourceCheckpointReceipt } from './sourceCheckpointReceipt.ts';
+import type { UndoRef } from './undoRef.ts';
 
 export interface SourceCheckpointOperation {
   receipt: SourceCheckpointReceipt;
+  undo?: UndoRef;
   undoOf?: string;
 }

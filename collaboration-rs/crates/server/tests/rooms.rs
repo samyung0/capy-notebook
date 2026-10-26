@@ -4738,7 +4738,8 @@ async fn an_agent_edit_undo_keeps_a_persons_typing_and_redo_restores_it() {
         .expect("the content update")
         .to_owned();
     // Editor 2026-10-22: the payload passes through; the receipt row keeps
-    // the ref alone.
+    // the ref alone (written by the room's store, Q402).
+    assert!(receipt_stored(&env, &edit).await);
     let stored: String = db(&env)
         .await
         .query_one(
@@ -5192,6 +5193,8 @@ async fn a_source_undo_lands_while_a_person_keeps_typing() {
     )
     .await;
     assert_eq!(status, 200, "{receipt}");
+    // The room's checkpoint writes the receipt with its ref (Q402).
+    assert!(receipt_stored(&env, &edit).await);
     assert_eq!(
         (
             receipt["effect"]["undo"]["operationId"].as_str(),
@@ -5816,6 +5819,29 @@ async fn gateway_post(
         .await
         .expect("source row");
     let (epoch, checkpoint): (i64, i64) = (row.get(0), row.get(1));
+    // A direct edit's operation stored already: its receipt answers, and
+    // nothing is saved (Go's replay, review r2 M1).
+    if let Some(id) = body["operation"]["receipt"]["id"].as_str()
+        && let Some(stored) = txn
+            .query_opt(
+                "SELECT kind, effect FROM agent_operations WHERE id=$1",
+                &[&id],
+            )
+            .await
+            .expect("receipt")
+    {
+        let saved = serde_json::json!({
+            "checkpoint": checkpoint,
+            "operation": {
+                "effect": stored.get::<_, serde_json::Value>(1),
+                "kind": stored.get::<_, String>(0),
+                "operationId": id,
+                "outcome": "succeeded",
+            },
+            "replayed": true,
+        });
+        return axum::Json(saved).into_response();
+    }
     if checkpoint != body["expectedCheckpoint"].as_i64().unwrap_or(-1) {
         let refusal = serde_json::json!({ "errors": [{ "message": "checkpoint_moved" }] });
         return (axum::http::StatusCode::CONFLICT, axum::Json(refusal)).into_response();
@@ -5858,9 +5884,20 @@ async fn gateway_post(
     // with it, as Go stores it (no Undo ref: the collaboration service adds
     // it with the payload); an Undo's names the step it reverses (r1 M2).
     let mut saved = serde_json::json!({ "checkpoint": next });
-    if let Some(receipt) = body["operation"].get("receipt") {
+    // A room save's agent steps (Q402) go in as the direct edit's does, each
+    // with its Undo ref; one stored already is passed over.
+    let mut operations: Vec<&serde_json::Value> = body["operations"]
+        .as_array()
+        .map(|operations| operations.iter().collect())
+        .unwrap_or_default();
+    let direct = body
+        .get("operation")
+        .filter(|operation| !operation.is_null());
+    operations.extend(direct);
+    for operation_body in operations {
+        let receipt = &operation_body["receipt"];
         let operation = receipt["id"].as_str().unwrap_or_default().to_owned();
-        let undo_of = body["operation"]["undoOf"].as_str();
+        let undo_of = operation_body["undoOf"].as_str();
         let (kind, done) = match undo_of {
             Some(step) => {
                 let undone: Option<String> = txn
@@ -5880,13 +5917,16 @@ async fn gateway_post(
             }
             None => ("edit_document", "edited"),
         };
-        let effect = serde_json::json!({
+        let mut effect = serde_json::json!({
             "operation": done, "operationId": operation,
             "resource": { "id": id, "kind": "source_file" },
         });
+        if !operation_body["undo"].is_null() {
+            effect["undo"] = operation_body["undo"].clone();
+        }
         txn.execute(
             "INSERT INTO agent_operations (id,kind,request_hash,actor_user_id,outcome,effect,undo_of)
-             VALUES ($1,$2,$3,$4,'succeeded',$5,$6)",
+             VALUES ($1,$2,$3,$4,'succeeded',$5,$6) ON CONFLICT DO NOTHING",
             &[
                 &operation,
                 &kind,
@@ -5898,10 +5938,12 @@ async fn gateway_post(
         )
         .await
         .expect("receipt");
-        saved["operation"] = serde_json::json!({
-            "effect": effect, "kind": kind, "operationId": operation,
-            "outcome": "succeeded",
-        });
+        if direct == Some(operation_body) {
+            saved["operation"] = serde_json::json!({
+                "effect": effect, "kind": kind, "operationId": operation,
+                "outcome": "succeeded",
+            });
+        }
     }
     txn.commit().await.expect("commit");
     axum::Json(saved).into_response()
@@ -7056,16 +7098,13 @@ fn image_block(id: &str, asset: &str) -> serde_json::Value {
 }
 
 /// An agent edit may remove a block holding media (Epo 2026-10-21): the
-/// image leaves the open note, the projection trashes its asset like a
-/// person's deletion does (`pruneMaterialAssetsTx`, the asset completed over
-/// a minute ago), and the edit's Undo brings the block back with its asset
-/// out of the trash. The note's server edits reach its room half a second
-/// late (a debug-only hook), and the Undo's children pass still runs on its
-/// write: the editor hears `children-ready` naming the asset (PENDING
-/// 2026-10-23). Fails if the media refusal comes back, the Undo leaves the
-/// asset trashed, or the pass is queued before the write reaches the room
-/// (the room skips a pass naming ids it lacks; the projection's restore
-/// alone would hide that).
+/// image leaves the open note, the room's projection (asked for here; it
+/// runs once the note idles) trashes its asset like a person's deletion
+/// does (`pruneMaterialAssetsTx`, the asset completed over a minute ago),
+/// and the edit's Undo, admitted by the room (Q402), brings the block back
+/// with its asset out of the trash through its children pass: the editor
+/// hears `children-ready` naming the asset (PENDING 2026-10-23). Fails if
+/// the media refusal comes back or the Undo leaves the asset trashed.
 #[tokio::test]
 async fn an_image_the_agent_removes_is_trashed_and_its_undo_restores_it() {
     let Some(env) = env() else { return };
@@ -7073,7 +7112,7 @@ async fn an_image_the_agent_removes_is_trashed_and_its_undo_restores_it() {
         return;
     }
     let server = start(&env).await;
-    let (user, material) = note_named(&env, "intro", "capy-it-slow-service-edit").await;
+    let (user, material) = note(&env, "intro").await;
     let client = db(&env).await;
     let asset = format!("asset_it_removed_{}", uuid_like());
     image_asset(&client, &user, &asset, &material).await;
@@ -7115,6 +7154,13 @@ async fn an_image_the_agent_removes_is_trashed_and_its_undo_restores_it() {
         "{receipt}"
     );
     assert!(person.settle(|c| c.block("img1").is_none()).await);
+    let (status, body) = internal(
+        server.port,
+        &format!("/internal/materials/{material}/project"),
+        &serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
     while !asset_trashed(&client, &asset).await {
         assert!(tokio::time::Instant::now() < deadline, "the asset stayed");
@@ -8333,7 +8379,11 @@ async fn a_viewer_reads_a_notes_set_without_writes_or_presence() {
 /// A quiz owned by `owner` (live-items) with an mcq and an ordering
 /// question; `privacy` link lets any signed-in user read it.
 async fn quiz_material(env: &Env, owner: &str, privacy: &str) -> String {
-    let material = format!("qz_it_{}", uuid_like());
+    quiz_material_as(env, owner, privacy, format!("qz_it_{}", uuid_like())).await
+}
+
+/// [quiz_material] under the id `material`.
+async fn quiz_material_as(env: &Env, owner: &str, privacy: &str, material: String) -> String {
     let question = |id: &str, answer: serde_json::Value| {
         serde_json::json!({
             "type": "quiz_question",
@@ -8525,6 +8575,34 @@ async fn update_rows(env: &Env, table: &str, material: &str) -> i64 {
         .get(0)
 }
 
+/// A quiz's stored keys document as it stands, its base and its log: a
+/// store changes it whether or not an unload folded the row since.
+async fn stored_keys(env: &Env, quiz: &str) -> String {
+    db(env)
+        .await
+        .query_one(
+            "SELECT md5(k.state) || ':' || (SELECT count(*) FROM material_yjs_key_updates u
+               WHERE u.material_id=k.material_id)
+             FROM material_yjs_keys k WHERE k.material_id=$1",
+            &[&quiz],
+        )
+        .await
+        .expect("keys")
+        .get(0)
+}
+
+/// Waits until a material document has more than `rows` stored update rows,
+/// at most 10 s: a loaded room stores an agent edit after admitting it.
+async fn rows_past(env: &Env, table: &str, material: &str, rows: i64) -> bool {
+    for _ in 0..100 {
+        if update_rows(env, table, material).await > rows {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
 /// An agent edit that only removes (a deletion moves no state vector) is
 /// committed and fanned into the live room like any other: a quiz's
 /// `remove_child` stores both its documents and the open editor loses the
@@ -8544,7 +8622,7 @@ async fn a_removal_only_agent_edit_of_a_quiz_is_stored_and_reaches_the_room() {
             .await
     );
     let content_rows = update_rows(&env, "material_yjs_updates", &quiz).await;
-    let key_rows = update_rows(&env, "material_yjs_key_updates", &quiz).await;
+    let keys = stored_keys(&env, &quiz).await;
     let edit = serde_json::json!({
         "actorUserId": owner,
         "commands": [{ "type": "remove_child", "parentType": "quiz", "nodeId": "q2" }],
@@ -8554,8 +8632,18 @@ async fn a_removal_only_agent_edit_of_a_quiz_is_stored_and_reaches_the_room() {
     });
     let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
     assert_eq!(status, 200, "{receipt}");
-    assert!(update_rows(&env, "material_yjs_updates", &quiz).await > content_rows);
-    assert!(update_rows(&env, "material_yjs_key_updates", &quiz).await > key_rows);
+    // Both rooms admit it (the keys room loads for it) and store it (Q403);
+    // the keys room, with no one in it, may fold its row as it unloads.
+    assert!(rows_past(&env, "material_yjs_updates", &quiz, content_rows).await);
+    let mut stored = keys.clone();
+    for _ in 0..100 {
+        stored = stored_keys(&env, &quiz).await;
+        if stored != keys {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_ne!(stored, keys, "the keys were not stored");
     assert!(
         client
             .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_none())
@@ -8617,7 +8705,8 @@ async fn a_removal_only_change_of_a_flashcard_set_is_stored_and_reaches_the_room
     });
     let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
     assert_eq!(status, 200, "{receipt}");
-    assert!(update_rows(&env, "material_yjs_updates", &set).await > rows);
+    // The room's store writes it (Q402).
+    assert!(rows_past(&env, "material_yjs_updates", &set, rows).await);
     let two = vec![
         ("c1".to_owned(), "Cell".to_owned()),
         ("c2".to_owned(), "Nucleus".to_owned()),
@@ -10880,30 +10969,25 @@ async fn a_session_that_never_wrote_is_counted_only_while_its_room_lives() {
 
 /// Review r1 H1 (Editor 2026-10-26, plan change): a tab keeps an edit
 /// unsent until the second store's `stored` after the edit's ACK, which
-/// holds only if nothing but a store announces. An agent edit (whose
-/// service edit may fold the note) announces nothing; the next store's
-/// notice names a version past it. Fails if a service edit announces its
-/// version.
+/// holds only if nothing but a store announces. A server edit (the
+/// replace-block command, whose row may fold the note) announces nothing;
+/// the next store's notice names a version past it. Fails if a service edit
+/// announces its version.
 #[tokio::test]
-async fn an_agent_edit_announces_no_stored_version() {
+async fn a_service_edit_announces_no_stored_version() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, room, mut writer) = writer(&env, server.port, "hello world").await;
     let material = material_of(&room).to_owned();
     let committed = writer.stored_past(0).await;
-    let (status, receipt) = internal(
+    // Its answer waits on the projection (the API); the room's part comes
+    // first either way.
+    let _ = internal(
         server.port,
-        "/internal/documents/edit",
-        &serde_json::json!({
-            "actorUserId": user,
-            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "hello", "text": "hi" }],
-            "operation": { "id": format!("h1_{material}"), "requestHash": "h1" },
-            "room": room,
-            "target": { "id": material, "kind": "material" },
-        }),
+        "/internal/commands",
+        &replace_paragraph(&user, &material, "hello world", "hi world"),
     )
     .await;
-    assert_eq!(status, 200, "{receipt}");
     assert!(writer.settle(|c| c.block_text() == "hi world").await);
     while let Ok(Some(event)) =
         tokio::time::timeout(Duration::from_millis(500), writer.until(9)).await
@@ -11078,8 +11162,10 @@ async fn a_store_never_locks_a_deleting_session_user() {
 /// Q389 (Epo 2026-10-26): a server edit whose committed row the open room
 /// cannot apply (a debug-only failure for a note whose id holds the hook)
 /// reloads the room from the stored document: its channels close as the
-/// room is reset, and the next room holds the edit. Fails if the room
-/// carries on without it.
+/// room is reset, and the next room holds the edit. Since Q402 an agent
+/// edit of an open note is the room's own admission, so the server edit
+/// here is the replace-block command. Fails if the room carries on without
+/// it.
 #[tokio::test]
 async fn a_server_edit_the_room_cannot_apply_reloads_the_room() {
     let Some(env) = env() else { return };
@@ -11089,18 +11175,14 @@ async fn a_server_edit_the_room_cannot_apply_reloads_the_room() {
     let mut person = Client::open(server.port).await;
     person.joined(&room, &token(&room, &user, "write")).await;
     assert!(person.settle(|c| c.block_text() == "hello world").await);
-    let (status, receipt) = internal(
+    // Its answer waits on the projection (the API); the room's part comes
+    // first either way.
+    let _ = internal(
         server.port,
-        "/internal/documents/edit",
-        &note_edit(
-            &user,
-            &material,
-            &format!("e_{material}"),
-            serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
-        ),
+        "/internal/commands",
+        &replace_paragraph(&user, &material, "hello world", "hello there"),
     )
     .await;
-    assert_eq!(status, 200, "{receipt}");
     let closed = person.until(4).await.expect("the channel closes");
     let closed = String::from_utf8_lossy(&closed);
     assert!(closed.contains("being reset"), "{closed}");
@@ -11264,9 +11346,10 @@ async fn an_unloading_room_writes_its_sessions_last_state() {
 }
 
 /// Review r1 M3, Q390: what an agent edit deleted is held beside the note,
-/// written in the edit's own transaction, with no room loaded and with one,
-/// so no fold collects what its Undo payload may restore. Fails if the
-/// edit's deletions are not held when its answer comes.
+/// written in the edit's own transaction with no room loaded, and with the
+/// receipt by the store of the room that admitted it (Q402), so no fold
+/// collects what its Undo payload may restore. Fails if the edit's
+/// deletions are not held with its write.
 #[tokio::test]
 async fn an_agent_edits_deletions_are_held_with_its_commit() {
     let Some(env) = env() else { return };
@@ -11302,7 +11385,22 @@ async fn an_agent_edits_deletions_are_held_with_its_commit() {
     )
     .await;
     assert_eq!(status, 200, "{receipt}");
+    // The room's store writes them with the receipt (Q402).
+    assert!(receipt_stored(&env, &format!("e2_{material}")).await);
     assert!(grew(&alone, &all_ids(&agent_held(&env, &material).await)));
+}
+
+/// The replace-block command of a note's only paragraph `b1`, a service
+/// edit (Q402 leaves agent edits of an open note to the room's admission).
+fn replace_paragraph(user: &str, material: &str, from: &str, to: &str) -> serde_json::Value {
+    serde_json::json!({
+        "actorUserId": user,
+        "expectedBlock": { "type": "p", "id": "b1", "children": [{ "text": from }] },
+        "materialId": material,
+        "replacementBlock": { "type": "p", "id": "b1", "children": [{ "text": to }] },
+        "room": format!("material:{material}:schema:1"),
+        "type": "replace-block",
+    })
 }
 
 /// The agent holds as stored: each batch's arrival (Unix seconds) and ids.
@@ -11696,4 +11794,414 @@ async fn a_viewer_whose_token_turns_writable_gets_a_session_at_its_first_write()
     let answered = v.stored_past(0).await;
     v.stored_past(answered).await;
     assert_eq!(session_row(&env, &material, v.id()).await.2, held);
+}
+
+/// Waits until `operation`'s receipt is stored, at most 10 s: a loaded room
+/// writes it with the store it starts at admission (Q402, Q403).
+async fn receipt_stored(env: &Env, operation: &str) -> bool {
+    for _ in 0..100 {
+        let stored: i64 = db(env)
+            .await
+            .query_one(
+                "SELECT count(*) FROM agent_operations WHERE id=$1",
+                &[&operation],
+            )
+            .await
+            .expect("receipts")
+            .get(0);
+        if stored > 0 {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+/// Q402, Q403 (Epo 2026-10-26): an open note's room admits an agent edit
+/// like a person's edit and the tool hears done at admission, before the
+/// store (each store of this note commits a second late, a debug hook): the
+/// receipt is not stored yet, the editor already has the edit, the agent's
+/// read and the note's live content show it. A retry gets the room's
+/// receipt and changes nothing; an Undo clicked before the store works on
+/// its payload. The receipts and the held deletions are then written by the
+/// room's stores, and a retry after them still changes nothing. Fails if
+/// the edit is written before its answer, a retry applies twice, the Undo
+/// needs a stored step, or a store leaves the receipts or holds out.
+#[tokio::test]
+async fn an_open_room_admits_an_agent_edit_and_its_store_writes_the_receipt() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note_named(&env, "hello world", "capy-it-slow-store").await;
+    let room = format!("material:{material}:schema:1");
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    let (edit, undo) = (format!("e_{material}"), format!("u_{material}"));
+    let request = note_edit(
+        &user,
+        &material,
+        &edit,
+        serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &request).await;
+    assert_eq!(status, 200, "{receipt}");
+    let stored: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM agent_operations WHERE id=$1",
+            &[&edit],
+        )
+        .await
+        .expect("receipts")
+        .get(0);
+    assert_eq!(stored, 0, "the receipt was written before the answer");
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    assert_eq!(
+        note_blocks(server.port, &user, &material).await,
+        [("b1".to_owned(), "hello there".to_owned())]
+    );
+    let (status, live) = internal(
+        server.port,
+        "/internal/materials/live",
+        &serde_json::json!({ "room": room }),
+    )
+    .await;
+    assert_eq!(status, 200, "{live}");
+    assert_eq!(
+        live["content"]["value"][0]["children"][0]["text"], "hello there",
+        "{live}"
+    );
+    // A retry while unsaved: the room's receipt, no second change.
+    let (status, again) = internal(server.port, "/internal/documents/edit", &request).await;
+    assert_eq!(
+        (status, again["operationId"].as_str()),
+        (200, Some(edit.as_str())),
+        "{again}"
+    );
+    assert!(again.get("undoPayload").is_none(), "{again}");
+    // The Undo before the store: its step is the room's.
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &undo, &material, &receipt),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    assert_eq!(answer["effect"]["operation"], "edit_undone", "{answer}");
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    assert!(receipt_stored(&env, &edit).await, "the edit's receipt");
+    assert!(receipt_stored(&env, &undo).await, "the Undo's receipt");
+    let undone_of: Option<String> = db(&env)
+        .await
+        .query_one("SELECT undo_of FROM agent_operations WHERE id=$1", &[&undo])
+        .await
+        .expect("the Undo's receipt")
+        .get(0);
+    assert_eq!(undone_of.as_deref(), Some(edit.as_str()));
+    assert!(!all_ids(&agent_held(&env, &material).await).is_empty());
+    let (status, again) = internal(server.port, "/internal/documents/edit", &request).await;
+    assert_eq!(
+        (status, again["operationId"].as_str()),
+        (200, Some(edit.as_str())),
+        "{again}"
+    );
+    let _ = person.hears(200, 300).await;
+    assert_eq!(person.block_text(), "hello world");
+}
+
+/// A quiz owned by `owner` whose id starts with `prefix`.
+async fn quiz_named(env: &Env, owner: &str, prefix: &str) -> String {
+    quiz_material_as(env, owner, "private", format!("{prefix}_{}", uuid_like())).await
+}
+
+/// Q403 (Epo 2026-10-26): a quiz edit whose content room is open (a reader
+/// has the quiz) loads its keys room, and both rooms admit it together:
+/// the reader's room gets the question, the keys room its key, and both
+/// documents are stored at once (the store debounce is a minute here). When
+/// the keys room refuses its part (a debug hook for a quiz whose id holds
+/// it), neither room takes any of it. Fails if a half-loaded quiz is
+/// written past its open room, either room waits for its debounce, or one
+/// room keeps its part of a refused edit.
+#[tokio::test]
+async fn a_quiz_edit_is_admitted_by_both_its_rooms_or_neither() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_DEBOUNCE_MS", "60000"),
+            ("COLLABORATION_MAX_DEBOUNCE_MS", "60000"),
+        ],
+    )
+    .await;
+    let owner = user(&env).await;
+    let question = serde_json::json!({
+        "type": "quiz_question", "id": "q3", "children": [{ "text": "" }],
+        "question": {
+            "id": "q3", "layout": "paper", "labels": "letters", "stem": [],
+            "parts": [{
+                "id": "q3-p", "blocks": [{ "type": "text", "text": "Order these." }],
+                "answer": { "type": "ordering", "items": ["a", "b"] }, "marks": 1, "solution": [],
+            }],
+        },
+    });
+    let insert = serde_json::json!([{ "type": "insert_child", "parentType": "quiz", "afterNodeId": "q2", "node": question }]);
+    let has_q3 = |c: &Client| map_at(&c.doc, &["questions", "q3"]).is_some();
+
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let room = format!("material:{quiz}:schema:1");
+    let mut content = Client::open(server.port).await;
+    content.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(
+        content
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_some())
+            .await
+    );
+    assert_eq!(active_rooms(server.port).await, 1);
+    let key_rows = update_rows(&env, "material_yjs_key_updates", &quiz).await;
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &note_edit(&owner, &quiz, &format!("e_{quiz}"), insert.clone()),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(content.settle(has_q3).await);
+    assert_eq!(active_rooms(server.port).await, 2, "the keys room loaded");
+    let keys_room = format!("keys:{quiz}:schema:1");
+    let mut keys = Client::open(server.port).await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q3-p"]).is_some())
+            .await
+    );
+    assert!(receipt_stored(&env, &format!("e_{quiz}")).await);
+    for _ in 0..50 {
+        if update_rows(&env, "material_yjs_key_updates", &quiz).await > key_rows {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(update_rows(&env, "material_yjs_key_updates", &quiz).await > key_rows);
+
+    let refused = quiz_named(&env, &owner, "capy-it-refuse-agent-keys").await;
+    let room = format!("material:{refused}:schema:1");
+    let mut content = Client::open(server.port).await;
+    content.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(
+        content
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_some())
+            .await
+    );
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &note_edit(&owner, &refused, &format!("e_{refused}"), insert),
+    )
+    .await;
+    assert_ne!(status, 200, "{refusal}");
+    let _ = content.hears(200, 500).await;
+    assert!(!has_q3(&content), "the content room kept its part");
+    let keys_room = format!("keys:{refused}:schema:1");
+    let mut keys = Client::open(server.port).await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q2-p"]).is_some())
+            .await
+    );
+    assert!(map_at(&keys.doc, &["keys", "q3-p"]).is_none());
+}
+
+/// Q402: a text source's room refuses an agent edit it would refuse from a
+/// person, as it does: an append past the room's state cap is refused
+/// (`413`), nothing of it lands, and the same append typed by the person
+/// closes their channel for size. Fails if the room takes an agent edit
+/// past the checks a person's update gets.
+#[tokio::test]
+async fn an_open_room_refuses_an_agent_edit_as_it_refuses_a_persons() {
+    let Some(env) = env() else { return };
+    let _cap = ExportCap::lower(&env).await;
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 100 * 1024;
+    let (mut client, user, file, base) = capped_text_source(&env, &gateway, &server, growth).await;
+    let appended = "b".repeat(150 * 1024);
+    let edit = serde_json::json!({
+        "actorUserId": user,
+        "commands": [{
+            "type": "replace_text",
+            "expectedText": "END",
+            "offset": base.len() - 3,
+            "text": format!("END{appended}"),
+        }],
+        "operation": { "id": format!("op_{file}"), "requestHash": "h1" },
+        "target": { "id": file, "kind": "source_file" },
+    });
+    let (status, refusal) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 413, "{refusal}");
+    let _ = client.hears(200, 500).await;
+    assert_eq!(source_text(&client).len(), base.len());
+    type_at_start(&mut client, &appended).await;
+    closed_for_size(client.until(4).await);
+}
+
+/// Q402, Q399 M1: the same agent edit of an open text source sent twice at
+/// once (a pipeline retry while the first is still on its way) lands once:
+/// the room admits the first and answers the second with its receipt, which
+/// the room's checkpoint stores with its Undo ref. Fails if the second
+/// applies again.
+#[tokio::test]
+async fn a_source_edit_retried_at_its_open_room_lands_once() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c) == "hello world").await);
+    let edit = format!("e_{file}");
+    let body = source_edit(
+        &user,
+        &file,
+        &edit,
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+    );
+    let ((first, a), (second, b)) = tokio::join!(
+        internal(server.port, "/internal/documents/edit", &body),
+        internal(server.port, "/internal/documents/edit", &body),
+    );
+    assert_eq!((first, second), (200, 200), "{a} {b}");
+    assert_eq!(a["operationId"], b["operationId"]);
+    assert!(client.settle(|c| source_text(c) == "hello there").await);
+    let _ = client.hears(200, 500).await;
+    assert_eq!(source_text(&client), "hello there");
+    assert!(receipt_stored(&env, &edit).await);
+    assert_eq!(
+        stored_undo(&env, &edit).await.as_deref(),
+        Some(edit.as_str())
+    );
+}
+
+/// Review r2 M1: with no room loaded, a source edit retried after its
+/// checkpoint committed is answered with its stored receipt, no Undo payload
+/// of its own and nothing computed or written again; two requests of one
+/// operation racing its checkpoint land once, the second answered by Go's
+/// replay without a payload. Fails if a retry recomputes the edit (refused
+/// as stale) or a replayed retry offers its own change as the step's Undo.
+#[tokio::test]
+async fn a_source_edit_retried_after_its_checkpoint_is_replayed() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let edit = format!("e_{file}");
+    let body = source_edit(
+        &user,
+        &file,
+        &edit,
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &body).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(receipt["undoPayload"].is_object(), "{receipt}");
+    let checkpoints = gateway.checkpoints.load(Relaxed);
+    let (status, again) = internal(server.port, "/internal/documents/edit", &body).await;
+    assert_eq!(status, 200, "{again}");
+    assert_eq!(again["operationId"], receipt["operationId"]);
+    assert!(again.get("undoPayload").is_none(), "{again}");
+    assert_eq!(
+        gateway.checkpoints.load(Relaxed),
+        checkpoints,
+        "answered as stored"
+    );
+    // Both requests pass the stored receipt check before the slow
+    // checkpoint commits; the edit still applies to the committed text.
+    gateway.checkpoint_delay.store(500, Relaxed);
+    let body = source_edit(
+        &user,
+        &file,
+        &format!("e2_{file}"),
+        serde_json::json!([{ "type": "replace_text", "expectedText": "hello", "text": "hello!" }]),
+    );
+    let ((first, a), (second, b)) = tokio::join!(
+        internal(server.port, "/internal/documents/edit", &body),
+        internal(server.port, "/internal/documents/edit", &body),
+    );
+    gateway.checkpoint_delay.store(0, Relaxed);
+    assert_eq!((first, second), (200, 200), "{a} {b}");
+    assert_eq!(a["operationId"], b["operationId"]);
+    let offered = [&a, &b]
+        .iter()
+        .filter(|answer| answer["undoPayload"].is_object())
+        .count();
+    assert_eq!(offered, 1, "{a} {b}");
+}
+
+/// Q417 (Epo 2026-10-27): a detailed read's live note content comes only
+/// from a room holding edits its projected content lacks. An open note no
+/// one edited answers none (no snapshot: the stored content stands); typing
+/// answers the room's content with it. Fails if a clean room answers its
+/// state or a typed one none.
+#[tokio::test]
+async fn a_live_note_read_answers_only_a_room_with_unprojected_edits() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, room, mut writer) = writer(&env, server.port, "hello").await;
+    let body = serde_json::json!({ "room": room });
+    let (status, clean) = internal(server.port, "/internal/materials/live", &body).await;
+    assert_eq!(status, 200, "{clean}");
+    assert!(clean["content"].is_null(), "{clean}");
+    writer.type_text("!").await;
+    writer.until(6).await.expect("ack");
+    let (status, typed) = internal(server.port, "/internal/materials/live", &body).await;
+    assert_eq!(status, 200, "{typed}");
+    let text = typed["content"]["value"][0]["children"][0]["text"].as_str();
+    assert!(text.is_some_and(|text| text.contains('!')), "{typed}");
+}
+
+/// Review r2 L1 (Q386): a fold drops an agent holds record it cannot read
+/// once it reported it, so later folds read none. Fails if the record stays.
+#[tokio::test]
+async fn a_fold_drops_an_unreadable_agent_holds_record() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (_, room, mut writer) = writer(&env, server.port, "hello").await;
+    let material = material_of(&room).to_owned();
+    db(&env)
+        .await
+        .execute(
+            "UPDATE material_yjs_documents SET agent_held='\\x09'::bytea WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("damaged agent holds");
+    writer.type_text("!").await;
+    writer.until(6).await.expect("ack");
+    drop(writer);
+    wait_unloaded(server.port).await;
+    assert!(
+        logs.has(&["captured error", "unreadable agent holds"])
+            .await
+    );
+    let mut held: Option<Vec<u8>> = Some(Vec::new());
+    for _ in 0..50 {
+        held = db(&env)
+            .await
+            .query_one(
+                "SELECT agent_held FROM material_yjs_documents WHERE material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("document")
+            .get(0);
+        if held.is_none() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(held, None);
 }

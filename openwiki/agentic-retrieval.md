@@ -4397,22 +4397,64 @@ rows that edit created and no projection has referenced
 (`DiscardEmbeddedDrafts`), so no hidden rows stay charged to the owner; a lost
 answer keeps them, since the edit may have committed. A discarded row that a
 retry of the same call references after all is restored by the note's
-projection (`reconcileEmbeddedTx`). The edit is applied on an
-isolated Y.Doc loaded from durable state under the material or source lock,
-merged with this replica's open live room so unsaved typing on a target also
-counts as drift; the durable copy drops the room's server-owned contributor
-markers while the delta sent back to the room keeps them, so the room's own
-store still asserts each contributor's access. A source edit reads state and
-checkpoint from one session and commits with that checkpoint's CAS, so a
-commit landing in between conflicts and the edit retries from fresh state,
-3 attempts in all. There is no revision precondition: expected content compared under
+projection (`reconcileEmbeddedTx`).
+
+**A loaded room admits the edit** (Q402, Q403, Epo 2026-10-26). When the
+material's or source's room is loaded (a quiz's either room), the edit, Undo
+or Redo is computed on that room's snapshot, outside the room's task and
+under a client id the room does not hold, with the same checks as a stored
+write (targets, expected text, limits, caps, the canonical check, the Undo
+estimate); what it sends is the change alone, which leaves the room's live
+contributor markers as they are: `edit_in_room` and `source_in_room` in
+`collaboration-rs/crates/server/src/edits.rs`, `Sources::edit_live` in
+`collaboration-rs/crates/sources/src/edit.rs`. The change goes to the room as
+`RoomCmd::AgentEdit` and through a person's admission (`check_update`, then
+`apply_update` in `room.rs`: eviction, unsupported block, the Office pause,
+markers, the validator or the source's state cap and Office parts, then the
+apply, the broadcast, the contributor marker under the chat actor and the
+children pass), writing only under ids no user holds (`server_ids`: its
+scratch id, and those an Undo or Redo payload carries from its step), none
+recorded to the actor; the room refuses it as it refuses a person's edit, mapped to
+the edit's codes (`agent_refusal`). The tool answers done at admission with
+the receipt and Undo payload, so the next read (inspect_document, the live
+note content) sees it. The room keeps the receipt (and a note's held
+deletions) until its store, which starts at once (Q403), writes them in the
+same transaction as the change: `note_store::append` with the receipts, or a
+source room's checkpoint with its `operations` (Go
+`commitRoomOperationsTx`, each with its Undo ref). A failed store keeps
+them for the retry; a room that throws its unsaved state away loses them
+with everyone's edits. Each request holds its operation's advisory lock
+from its receipt checks (the stored receipt, then the room's, before
+anything is computed: `known`) to the room's answer; the room's store takes
+the same locks before the material's (Go's checkpoint after the file's), so
+a retry waits for the first request's answer, gets the room's receipt until
+the store and the stored one after, and never applies twice. A quiz edit
+loads the room not yet loaded and the content room admits its part only
+once the keys room admitted its own (both or neither), each storing at
+once; with neither room loaded it writes both stored documents directly.
+Edits are never forwarded between instances: one collaboration process runs
+per environment (Q400, Q403).
+
+**With no room loaded** the edit is applied on an isolated Y.Doc loaded from
+durable state under the material or source lock and commits its row with
+its receipt in one transaction, as before (the no-room line); a room that
+loads meanwhile takes the committed row as a service edit (Q389's reload
+covers such writes and the other service edits: replace-block, markers,
+repairs, the children pass). The durable copy drops the room's server-owned
+contributor markers. A source edit reads state and checkpoint from one
+session and commits with that checkpoint's CAS, so a commit landing in
+between conflicts and the edit retries from fresh state, 3 attempts in all;
+a retry after the checkpoint is answered with the stored receipt before
+anything is computed, and one racing that checkpoint is answered by Go's
+replay (`replayed`) with no payload of its own, sending nothing anywhere
+(review r2 M1). There is no revision precondition: expected content compared under
 the lock catches target drift, the lock and the source checkpoint CAS serialize
 concurrent commits, and the server-resolved room incarnation fences trash,
 restore and rebase. An edit's Undo is a payload the browser keeps (Epo
 2026-10-21, superseding the room-held step of 2026-10-20, the guarded Undo of
 2026-09-09 and the server-kept Redo of 2026-10-15). The edit is computed on
-its working document (`Scratch`: the stored state, its rows and this
-replica's live room, if one is loaded, under a fresh client), in a
+its working document (`Scratch`: the loaded room's snapshot, or the stored
+state and its rows, under a fresh client), in a
 transaction under the origin `capy-agent-edit` that keeps what it deletes
 (`ydoc::undo::keep`); its own Yjs items, read off that transaction
 (`ydoc::undo::Captured`), are reverted on the same working document as the
@@ -4425,8 +4467,8 @@ one too (Epo 2026-10-22). The collaboration service answers the receipt with
 `undoPayload: {epoch, issuedAt, updates: {content|keys|source: base64}}`
 beside it (`issuedAt`: the agent edit's time in Unix seconds) and sets
 `undo: {operationId, status: "available", expiresAt}` on the stored receipt,
-`expiresAt` 24 h after `issuedAt` (Q385; `insert_receipt` for materials,
-`offer_undo` for sources); Go signs the payload (HMAC-SHA256 over the step's
+`expiresAt` 24 h after `issuedAt` (Q385; `material_receipt` for materials,
+the room's checkpoint operation or `offer_undo` for sources); Go signs the payload (HMAC-SHA256 over the step's
 id, the document's kind and id, the epoch, `issuedAt` and a digest of the
 updates, keyed from `COLLABORATION_SECRET`:
 `server/internal/store/undo_payload.go`), and the pipeline passes it on the
@@ -4434,14 +4476,17 @@ tool's `tool_end` event to the browser. The payload is never stored on the
 server: not in the receipt, the chat row, the tool record, logs or traces;
 `agent_operations` holds the ref only. What a note's agent edit deletes (and
 what its Undo or Redo deletes) is held 25 h from the agent edit (Q390), an
-hour past the offer, in `material_yjs_documents.agent_held`, written in the
-write's own transaction under the document row whether or not a room is
-loaded (`note_store::hold_agent`, `sessions::agent_held`; notes only, Q274),
+hour past the offer, in `material_yjs_documents.agent_held`, written under
+the document row with the receipt: in the write's own transaction with no
+room loaded, by the store of the room that admitted it otherwise
+(`note_store::write_receipts`, `hold_agent`, `sessions::agent_held`; notes
+only, Q274),
 so in-place collection never collects what an unexpired payload may
 restore. A fold reads the record under the same row lock, so it covers every
 row it folds (`note_store::fold`, logged until P2's collection takes it as
 the agent part of H). A record that cannot be read is dropped and reported
-to Sentry where it is read, and the write goes on (Q386). The document work
+to Sentry where it is read, and the write goes on (Q386); a fold clears it
+in its own transaction once reported (review r2 L1). The document work
 runs in its own task (`document` in `http.rs`), so a gateway that goes away
 cannot cut an edit or an Undo between its commit and its live room's update. An edit may remove or replace any note block, media
 included (an image, a placed library figure, audio, a YouTube video; Epo
@@ -4470,7 +4515,10 @@ state; the command result's inverse is unused. PDFs and store-only files
 refuse with `unsupported_format`. Undo is
 `POST /api/chat/edit-operations/{id}/undo`, only for the original chat actor
 with current edit access, checked before the collaboration service
-(`server/internal/httpapi/huma_undo.go`).
+(`server/internal/httpapi/huma_undo.go`). A step its room admitted and has
+not stored yet has no stored receipt: its signed payload names its document
+(`PendingUndoStep`), and the room, which holds the step's receipt, checks
+the actor and gives the Undo's receipt the step's chat (Q403).
 
 **Undo chain** (Epo 2026-10-20, durable since 2026-10-21). The browser
 keeps each payload in memory and in IndexedDB (`capy-local`, store
@@ -4509,9 +4557,10 @@ a window accepted for now (review r1 L5). XLSX needs nothing more:
 Yjs holds cell inputs and every engine recalculates values from them. A
 payload naming items the document does not hold (another document, another
 lineage, a forged update) is refused (`undo_unavailable`) and nothing is
-written; one applied before changes nothing. The write goes to the live room
-like an edit, and a note's children pass (only for a write naming children)
-and a material's projection follow. The
+written; one applied before changes nothing. A loaded room admits it like
+an edit, before the step's own store if need be; with no room loaded it is
+written to the stored document, and a note's children pass (only for a
+write naming children) and a material's projection follow. The
 revert of the payload's change is the Redo payload, returned with the Undo's
 answer and signed under the Undo's own operation id, so the same endpoint
 called with that id is Redo, for any number of steps; it keeps the edit's
@@ -5845,8 +5894,9 @@ Notes get the same evidence from Go (Epo 2026-10-17). The same read calls
 `POST /api/internal/note-changes` (pipeline secret, bound to the workspace like
 `index-text`; generation calls it too), and `NotePendingChanges` computes, for
 each scoped note the index does not hold as it stands (dirty, being indexed or
-failed), its index blocks now (`MaterialIndexText`'s blocks from
-`materials.content`) against `indexed_blocks`, aligned by element id
+failed, or open in a room), its index blocks now (`MaterialIndexText`'s
+blocks from its open room's content when loaded, `materials.content`
+otherwise) against `indexed_blocks`, aligned by element id
 (`materialdoc.NoteChanges`). A never-indexed note reads as added blocks. A stored note the rules refuse gives none (logged), and the other notes still do. Each
 change names its `blockId`. Text changes have Office's shape: one span with
 40 UTF-16 units of context. Reordered blocks are moves without text. An
@@ -5858,9 +5908,21 @@ with its kind, title and a count (`chart "Rain": 40 of 104 cells changed`).
 `resolve_source_change` with `material_id` and `block_id` reads that block's
 index text before and after through `POST /api/internal/note-changes/resolve`,
 which acts as the turn's user (who must read the workspace). Index text holds
-no answer keys, so neither does any of this (2026-10-18). The read is of the
-stored content, as of the last projection; the live room comes with the Office
-live route. The notes' published index identities, read before the changes,
+no answer keys, so neither does any of this (2026-10-18). The turn's read
+(and the pending hints it feeds) uses stored content only and asks no room.
+A note the agent reads in detail (inspect_document) reads its open room
+(Q403, Q417, Epo 2026-10-27), so an edit the room holds shows before any
+save or projection: the pipeline asks for that one note (`live: true` on
+`/api/internal/note-changes`, `PendingSources.read_note`), Go names its room
+to the collaboration server (`POST /internal/materials/live` with one room,
+`live_note` in `edits.rs`, `liveNoteContent` and `NoteReadChanges` in
+`server/internal/store/note_index.go`), and the room answers its content as
+its projection would store it only when it holds edits its projected
+content lacks (unsaved, being stored, or stored and not projected yet:
+its own state, no document compared); otherwise it answers none, nothing
+is computed and the turn's stored read stands. Resolve reads as the
+detailed read. One room per request keeps the answer far below the API's
+answer cap; a failed live read gives the outdated notice. The notes' published index identities, read before the changes,
 are checked with the files'; a failed read keeps the turn going, with the
 outdated notice once the agent reads a note. Notes have no overflow
 notification (their Process is in the Indexing tab only): an omitted note

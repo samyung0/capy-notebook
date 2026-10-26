@@ -431,3 +431,70 @@ func TestCreatedMaterialUndoTrashesAndRedoRestores(t *testing.T) {
 		t.Fatalf("a step past its day: %v", err)
 	}
 }
+
+// Q402 (Epo 2026-10-26): a room's save writes the agent steps the room
+// admitted with its checkpoint, each with its Undo ref, an Undo naming its
+// step; a step stored already (or naming a step another receipt reversed)
+// is passed over and the save still lands. A direct edit's retry is
+// answered with its receipt as replayed and saves nothing (review r2 M1).
+// Fails if the save drops its steps, stores a step twice or refuses the
+// save, or if a replay is not marked.
+func TestARoomSaveWritesItsAgentStepsWithItsCheckpoint(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "room_steps")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	step := func(id string) SourceCheckpointReceipt {
+		return SourceCheckpointReceipt{ID: id, ToolVersion: 1, RequestHash: "h_" + id, ActorUserID: owner}
+	}
+	edit, undo, later := uid("op"), uid("op"), uid("op")
+	expires := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	ref := &agenttools.UndoRef{OperationID: edit, Status: agenttools.UndoAvailable, ExpiresAt: &expires}
+	save := sourceTestSave(sourceTestSeed(t, s, owner, file.ID), owner, "room")
+	save.Operations = []SourceCheckpointOperation{
+		{Receipt: step(edit), Undo: ref},
+		{Receipt: step(undo), UndoOf: edit},
+	}
+	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, save)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := getAgentOperation(ctx, s.pool, edit)
+	if err != nil || first.Effect.Undo == nil || first.Effect.Undo.OperationID != edit || first.Effect.Operation != agenttools.EffectEdited {
+		t.Fatalf("the edit's receipt = %+v %v", first, err)
+	}
+	if reversed, err := s.UndoReceipt(ctx, edit); err != nil || reversed.ID != undo || reversed.Effect.Operation != agenttools.EffectEditUndone {
+		t.Fatalf("the Undo's receipt = %+v %v", reversed, err)
+	}
+	// The next save carries the edit again and an Undo of the same step
+	// under another id: both passed over, the new step written, the save in.
+	next := sourceTestSave(sourceTestSeed(t, s, owner, file.ID), owner, "more")
+	next.Operations = []SourceCheckpointOperation{
+		{Receipt: step(edit), Undo: ref},
+		{Receipt: step(uid("op")), UndoOf: edit},
+		{Receipt: step(later)},
+	}
+	again, err := s.SaveSourceCheckpoint(ctx, file.ID, next)
+	if err != nil || again.Checkpoint != saved.Checkpoint+1 || again.Replayed {
+		t.Fatalf("the next save = %+v %v", again, err)
+	}
+	var receipts int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM agent_operations WHERE actor_user_id=$1`, owner).Scan(&receipts); err != nil {
+		t.Fatal(err)
+	}
+	if receipts != 3 {
+		t.Fatalf("receipts = %d, want the edit, its Undo and the later step", receipts)
+	}
+	// A direct edit retried after its checkpoint committed.
+	direct := uid("op")
+	single := sourceTestSave(sourceTestSeed(t, s, owner, file.ID), owner, "direct")
+	single.Operation = &SourceCheckpointOperation{Receipt: step(direct)}
+	committed, err := s.SaveSourceCheckpoint(ctx, file.ID, single)
+	if err != nil || committed.Replayed {
+		t.Fatalf("the direct edit = %+v %v", committed, err)
+	}
+	replayed, err := s.SaveSourceCheckpoint(ctx, file.ID, single)
+	if err != nil || !replayed.Replayed || replayed.Operation.ID != direct || replayed.Checkpoint != committed.Checkpoint {
+		t.Fatalf("the retry = %+v %v", replayed, err)
+	}
+}

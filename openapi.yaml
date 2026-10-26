@@ -5469,6 +5469,12 @@ components:
           type: integer
         operation:
           $ref: "#/components/schemas/SourceCheckpointOperation"
+        operations:
+          items:
+            $ref: "#/components/schemas/SourceCheckpointOperation"
+          maxItems: 256
+          nullable: true
+          type: array
         pendingEffects: {}
         preview:
           type: string
@@ -5495,6 +5501,8 @@ components:
       properties:
         receipt:
           $ref: "#/components/schemas/SourceCheckpointReceipt"
+        undo:
+          $ref: "#/components/schemas/UndoRef"
         undoOf:
           type: string
       required:
@@ -5538,6 +5546,8 @@ components:
           type: integer
         operation:
           $ref: "#/components/schemas/AgentOperation"
+        replayed:
+          type: boolean
       required:
         - checkpoint
       type: object

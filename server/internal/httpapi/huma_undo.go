@@ -42,10 +42,15 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 	}
 	actor := userID(ctx)
 	step, err := a.s.UndoStep(ctx, in.OperationID)
+	if errors.Is(err, store.ErrNotFound) {
+		// A step its room admitted and has not stored yet goes to the room
+		// on its signed payload; the room checks the actor (Q403).
+		step, err = a.s.PendingUndoStep(in.OperationID, in.Body.Payload)
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}
-	if step.ActorUserID != actor {
+	if step.ActorUserID != "" && step.ActorUserID != actor {
 		return nil, hErr(store.ErrNotFound)
 	}
 	unlock, err := a.undos.lock(ctx, step.ID)

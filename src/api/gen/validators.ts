@@ -7809,6 +7809,8 @@ export const checkpointSourceDocumentBodyExpectedCheckpointMin = 0;
 
 export const checkpointSourceDocumentBodyNetTokensMin = 0;
 
+export const checkpointSourceDocumentBodyOperationsMax = 256;
+
 export const checkpointSourceDocumentBodySeedBytesMin = 0;
 
 
@@ -7830,8 +7832,30 @@ export const CheckpointSourceDocumentBody = zod.object({
   "requestHash": zod.string(),
   "toolVersion": zod.int()
 }),
+  "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
+  "operationId": zod.string(),
+  "status": zod.enum(['available', 'unavailable'])
+}).optional(),
   "undoOf": zod.string().optional()
 }).optional(),
+  "operations": zod.array(zod.object({
+  "receipt": zod.object({
+  "actorUserId": zod.string(),
+  "callId": zod.string().optional(),
+  "conversationId": zod.string().optional(),
+  "id": zod.string(),
+  "messageId": zod.string().optional(),
+  "requestHash": zod.string(),
+  "toolVersion": zod.int()
+}),
+  "undo": zod.object({
+  "expiresAt": zod.iso.datetime({"offset":true}).optional(),
+  "operationId": zod.string(),
+  "status": zod.enum(['available', 'unavailable'])
+}).optional(),
+  "undoOf": zod.string().optional()
+})).max(checkpointSourceDocumentBodyOperationsMax).nullish(),
   "pendingEffects": zod.unknown(),
   "preview": zod.string().optional(),
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
@@ -7895,7 +7919,8 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "updates": zod.record(zod.string(), zod.string()).describe('Per document, the base64 Yjs update that reverses the step')
 }).optional().describe('The step\'s signed Undo payload, on a fresh receipt only; never stored'),
   "workspaceId": zod.string().optional()
-}).optional()
+}).optional(),
+  "replayed": zod.boolean().optional()
 })
 
 

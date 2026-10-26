@@ -463,6 +463,7 @@ async fn save_text(
                 text: Some(effects),
                 actors: vec![h.user.clone()],
                 retry_event: None,
+                operations: Vec::new(),
             },
         )
         .await?;
@@ -714,6 +715,7 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
                 text: Some(effects),
                 actors: vec![h.user.clone()],
                 retry_event: None,
+                operations: Vec::new(),
             },
         )
         .await
@@ -896,6 +898,7 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
                 text: None,
                 actors: vec![h.user.clone()],
                 retry_event: None,
+                operations: Vec::new(),
             },
         )
         .await

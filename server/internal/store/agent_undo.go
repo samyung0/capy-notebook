@@ -43,6 +43,29 @@ func (s *Store) UndoStep(ctx context.Context, operationID string) (AgentOperatio
 	return *op, nil
 }
 
+// PendingUndoStep is a step its room admitted and has not stored yet (Q402,
+// Q403): its signed payload names the step's document, and the room, which
+// holds the step's receipt, checks the actor. ErrNotFound when the payload
+// is not this server's for that step.
+func (s *Store) PendingUndoStep(stepID string, payload *UndoPayload) (AgentOperation, error) {
+	if payload == nil || payload.OperationID != stepID {
+		return AgentOperation{}, ErrNotFound
+	}
+	for _, kind := range []agenttools.ResourceKind{agenttools.KindMaterial, agenttools.KindSourceFile} {
+		resource := agenttools.ResourceRef{Kind: kind, ID: payload.DocumentID}
+		if s.verifyUndoPayload(stepID, resource, payload) {
+			return AgentOperation{
+				ID: stepID,
+				Effect: &agenttools.ResourceEffect{
+					Operation: agenttools.EffectEdited, Resource: resource, OperationID: stepID,
+					Undo: &agenttools.UndoRef{OperationID: stepID, Status: agenttools.UndoAvailable, ExpiresAt: undoExpiry(payload.IssuedAt)},
+				},
+			}, nil
+		}
+	}
+	return AgentOperation{}, ErrNotFound
+}
+
 // UndoReceipt is the receipt of the Undo (or Redo) that reversed a step:
 // ErrNotFound while the step is unused.
 func (s *Store) UndoReceipt(ctx context.Context, stepID string) (AgentOperation, error) {

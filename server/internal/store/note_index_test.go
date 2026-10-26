@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -681,5 +683,93 @@ func TestNoteIndexSchedulerQuery(t *testing.T) {
 		if got := listed(tc.edited, tc.dirty, tc.pending); got != tc.want {
 			t.Errorf("%s: listed=%v", tc.name, got)
 		}
+	}
+}
+
+// Q417 (Epo 2026-10-27): the turn's note changes read stored content and
+// ask no room; a detailed read of one note asks its room alone, and reads
+// the room's content only when the room holds edits not stored (the room
+// answers none otherwise, and nothing is computed). Resolve reads as the
+// detailed read. Fails if the turn read asks a room or the detailed read
+// misses the room's unsaved edit.
+func TestNoteChangesReadTheOpenRoomOnlyInADetailedRead(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "note_live")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Live notes", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := func(texts ...string) string {
+		nodes := []map[string]any{}
+		for i, text := range texts {
+			nodes = append(nodes, map[string]any{"type": "p", "id": fmt.Sprintf("p%d", i+1),
+				"children": []any{map[string]any{"text": text}}})
+		}
+		content, err := materialdoc.Marshal(materialdoc.Envelope{SchemaVersion: 1, Value: nodes})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return content
+	}
+	note, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Open",
+		Content: doc("cells divide", "membranes"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexed, err := s.MaterialIndexText(ctx, note.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := json.Marshal(indexed.Blocks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET indexed_blocks=$2, index_dirty_at=NULL, pending_tokens=NULL
+		WHERE id=$1`, note.ID, baseline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO material_yjs_documents (material_id,room_schema,state,stored_version,projected_version)
+		VALUES ($1,3,'\x00',1,1)`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	unsaved := json.RawMessage("null")
+	room := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Room string `json:"room"`
+		}
+		if r.URL.Path != "/internal/materials/live" || json.NewDecoder(r.Body).Decode(&body) != nil {
+			http.NotFound(w, r)
+			return
+		}
+		asked = append(asked, body.Room)
+		_ = json.NewEncoder(w).Encode(map[string]any{"content": unsaved})
+	}))
+	t.Cleanup(room.Close)
+	s.ConfigureCollaboration(room.URL, "live-secret")
+	unsaved = json.RawMessage(doc("cells divide", "membranes grow"))
+	pending, err := s.NotePendingChanges(ctx, ws.ID, nil)
+	if err != nil || len(pending) != 0 || len(asked) != 0 {
+		t.Fatalf("the turn read = %+v %v, rooms asked = %v", pending, err, asked)
+	}
+	read, live, err := s.NoteReadChanges(ctx, ws.ID, note.ID)
+	if err != nil || !live || len(asked) != 1 || asked[0] != "material:"+note.ID+":schema:3" {
+		t.Fatalf("the detailed read = %v %v, rooms asked = %v", live, err, asked)
+	}
+	if len(read) != 1 || len(read[0].Changes) != 1 || read[0].Changes[0].BlockID != "p2" {
+		t.Fatalf("the open room's change = %+v", read)
+	}
+	resolved, err := s.ResolveNoteChange(ctx, ws.ID, note.ID, "p2")
+	if err != nil || resolved.Before != "membranes" || resolved.After != "membranes grow" {
+		t.Fatalf("resolve = %+v %v", resolved, err)
+	}
+	// A room holding no unsaved edit answers none: the stored read stands.
+	unsaved = json.RawMessage("null")
+	read, live, err = s.NoteReadChanges(ctx, ws.ID, note.ID)
+	if err != nil || live || read != nil {
+		t.Fatalf("a clean room's read = %+v %v %v", read, live, err)
 	}
 }

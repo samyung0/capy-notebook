@@ -12,11 +12,13 @@ import (
 // per turn, and chat resolves a data placeholder to its block's text (Epo
 // 2026-10-17). The read is bound to the workspace like index-text: its
 // callers authorized the turn. The resolve acts as the turn's user, who must
-// be able to read the workspace.
+// be able to read the workspace. A detailed read of one note (live) reads it
+// from its open room when that room holds unsaved edits (Q417).
 
 type internalNoteChangesReq struct {
 	WorkspaceID string   `json:"workspaceId"`
 	MaterialIDs []string `json:"materialIds"`
+	Live        bool     `json:"live"`
 }
 
 func (a *api) internalNoteChanges(w http.ResponseWriter, r *http.Request) {
@@ -31,6 +33,19 @@ func (a *api) internalNoteChanges(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.WorkspaceID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "workspaceId is required"})
+		return
+	}
+	if req.Live {
+		if len(req.MaterialIDs) != 1 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "a live read names one note"})
+			return
+		}
+		notes, live, err := a.s.NoteReadChanges(r.Context(), req.WorkspaceID, req.MaterialIDs[0])
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"notes": notes, "live": live})
 		return
 	}
 	notes, err := a.s.NotePendingChanges(r.Context(), req.WorkspaceID, req.MaterialIDs)

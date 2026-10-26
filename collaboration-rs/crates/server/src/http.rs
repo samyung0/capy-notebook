@@ -44,6 +44,7 @@ pub fn router(app: Shared) -> Router {
             post(document).layer(axum::extract::DefaultBodyLimit::max(MAX_UNDO_BODY + 1)),
         )
         .route("/internal/documents/create", post(document))
+        .route("/internal/materials/live", post(live_note))
         .route("/internal/commands", post(command))
         .route("/internal/markdown/convert", post(markdown))
         // Reads its own body within a writer's sync cap (`drafts.rs`).
@@ -381,6 +382,36 @@ async fn document(
             if status >= 500 {
                 crate::observe::capture(error.message(), None, &[("stage", "document_request")]);
             }
+            let status = StatusCode::from_u16(status).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
+            json_response(status, body)
+        }
+    }
+}
+
+/// `/internal/materials/live`: a note room's live content when it holds edits
+/// its projected content lacks, for a detailed read's note changes (Q417).
+async fn live_note(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "invalid service secret" }),
+        );
+    }
+    #[derive(serde::Deserialize)]
+    struct Room {
+        room: String,
+    }
+    let Ok(Room { room }) = serde_json::from_slice(&body) else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "code": "invalid_input", "message": "invalid live request" }),
+        );
+    };
+    match crate::edits::live_note(&app, &room).await {
+        Ok(value) => json_response(StatusCode::OK, value),
+        Err(error) => {
+            crate::observe::capture(error.message(), None, &[("stage", "live_note")]);
+            let (status, body) = error.status_and_body();
             let status = StatusCode::from_u16(status).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
             json_response(status, body)
         }

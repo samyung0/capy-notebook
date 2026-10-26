@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -240,4 +241,67 @@ func signedUndoPayload(t *testing.T, st *store.Store, step, materialID string) *
 		t.Fatalf("signing: %+v %v", receipt.UndoPayload, err)
 	}
 	return receipt.UndoPayload
+}
+
+// Q403 (Epo 2026-10-26): an agent edit's Undo clicked before its room
+// stored the edit has no stored receipt yet; it goes to the room on its
+// signed payload, the document the signature names, and the room (which
+// holds the step) checks the rest. A payload not this server's signature is
+// refused before the room. Fails if the Undo needs the stored receipt.
+func TestUndoEndpointSendsAnUnstoredStepToItsRoom(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	userID := fmt.Sprintf("u_undo_unstored_%d", time.Now().UnixNano())
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Undo',$2)`,
+		userID, userID+"@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+	})
+	ws, err := st.CreateWorkspace(ctx, userID, store.WorkspaceCreate{Name: "Undo unstored", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, _, err := st.CreateMaterialOperation(ctx, store.MaterialDraft{
+		ID: "mat_" + userID, ActorUserID: userID, WorkspaceID: ws.ID, Kind: "flashcards", Title: "Cells",
+		Cards: [][2]string{{"Cell", "Unit of life"}},
+	}, store.AgentOperation{ID: "op_" + userID, RequestHash: "c1", ActorUserID: userID, WorkspaceID: ws.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	material := created.Effect.Resource.ID
+	edit := "op_edit_" + userID
+	payload := signedUndoPayload(t, st, edit, material)
+	forged := *payload
+	forged.MAC = strings.Repeat("0", 64)
+	var asked []map[string]any
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		asked = append(asked, body)
+		op, _ := body["operation"].(map[string]any)
+		_ = json.NewEncoder(w).Encode(map[string]any{"operationId": op["id"], "outcome": "succeeded",
+			"effect": map[string]any{"operation": "edit_undone", "resource": map[string]any{"kind": "material", "id": material}}})
+	}))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
+		httpapi.Config{AuthDisabled: true, DevUserID: userID})
+	path := "/api/chat/edit-operations/" + edit + "/undo"
+	if rec := doReq(t, h, http.MethodPost, path, "", map[string]any{"requestId": "r0", "payload": forged}); rec.Code != http.StatusNotFound || len(asked) != 0 {
+		t.Fatalf("a forged payload: %d %s, %d room calls", rec.Code, rec.Body.String(), len(asked))
+	}
+	rec := doReq(t, h, http.MethodPost, path, "", map[string]any{"requestId": "r1", "payload": payload})
+	if rec.Code != http.StatusOK || len(asked) != 1 {
+		t.Fatalf("the unstored step's Undo: %d %s, %d room calls", rec.Code, rec.Body.String(), len(asked))
+	}
+	target, _ := asked[0]["target"].(map[string]any)
+	if asked[0]["undoOf"] != edit || target["kind"] != "material" || target["id"] != material {
+		t.Fatalf("the room was sent %v", asked[0])
+	}
 }

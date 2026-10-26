@@ -249,8 +249,10 @@ pub async fn load(
 
 /// One store: rechecks every contributor in the snapshot, then appends the
 /// row and advances `stored_version`, with the note sessions' changed rows
-/// (`sessions.rs`) in the same transaction, so a held deletion is durable
-/// with the state that holds it. Returns the new version.
+/// (`sessions.rs`) and the agent steps the room admitted (`receipts`, Q402)
+/// in the same transaction, so a held deletion and a step's receipt are
+/// durable with the state that holds them. Returns the new version.
+#[allow(clippy::too_many_arguments)]
 pub async fn append(
     pool: &Pool,
     material_id: &str,
@@ -259,9 +261,11 @@ pub async fn append(
     row: &[u8],
     actors: &[String],
     sessions: &sessions::Unsaved,
+    receipts: &[AgentReceipt],
 ) -> Result<i64, StoreError> {
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
+    lock_operations(&tx, receipts.iter().map(|receipt| receipt.id.as_str())).await?;
     access::lock_material(&tx, material_id).await?;
     // The sessions' users are locked with the accounts, in their order,
     // before the material (review r2 M2); none of them refuses the store.
@@ -293,8 +297,130 @@ pub async fn append(
     let version = current.get::<_, i64>("stored_version") + 1;
     append_row(&tx, doc, material_id, version, row).await?;
     save_sessions(&tx, material_id, sessions).await?;
+    write_receipts(&tx, material_id, receipts).await?;
     tx.commit().await?;
     Ok(version)
+}
+
+/// An agent step's receipt (`agent_operations`), written with the write that
+/// holds its change: a direct write's own transaction, or the store of the
+/// room that admitted it (Q402). The Undo payload itself is never stored.
+#[derive(Clone, Debug)]
+pub struct AgentReceipt {
+    pub id: String,
+    /// `edit_document`, or `undo_edit` for an Undo or Redo.
+    pub kind: &'static str,
+    pub tool_version: i32,
+    pub request_hash: String,
+    pub actor: String,
+    pub workspace_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub message_id: Option<String>,
+    pub call_id: Option<String>,
+    pub effect: Value,
+    /// The step an Undo or Redo reverses.
+    pub undo_of: Option<String>,
+    /// The books the gateway merged into the material's record (an edit's).
+    pub provenance: Option<Value>,
+    /// What a note's write deleted, and its agent edit's time (Q390).
+    pub held: Option<(yrs::IdSet, std::time::SystemTime)>,
+}
+
+impl AgentReceipt {
+    /// The receipt as the gateway reads it.
+    pub fn answer(&self) -> Value {
+        let mut receipt = serde_json::json!({
+            "effect": self.effect,
+            "kind": self.kind,
+            "operationId": self.id,
+            "outcome": "succeeded",
+            "toolVersion": self.tool_version,
+        });
+        if let Some(call) = &self.call_id {
+            receipt["callId"] = serde_json::json!(call);
+        }
+        if let Some(workspace) = &self.workspace_id {
+            receipt["workspaceId"] = serde_json::json!(workspace);
+        }
+        receipt
+    }
+}
+
+/// The agent operations' advisory locks, in id order and before any other
+/// lock (the direct write takes its own first too): a retry holds its lock
+/// from its receipt check to its room's answer, so a store never commits a
+/// receipt between the two (Q402).
+pub(crate) async fn lock_operations<'a>(
+    tx: &Transaction<'_>,
+    ids: impl Iterator<Item = &'a str>,
+) -> Result<(), StoreError> {
+    let mut ids: Vec<&str> = ids.collect();
+    ids.sort_unstable();
+    ids.dedup();
+    for id in ids {
+        tx.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            &[&format!("agent-operation:{id}")],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Writes agent receipts in the caller's transaction, which holds the
+/// material's lock: the provenance an edit credits, the receipt row and the
+/// holds of what it deleted. A receipt already stored, or naming a step
+/// another receipt reversed, is passed over and logged, so the store that
+/// carries it still saves everyone's edits.
+pub(crate) async fn write_receipts(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    receipts: &[AgentReceipt],
+) -> Result<(), StoreError> {
+    for receipt in receipts {
+        if let Some(provenance) = &receipt.provenance {
+            tx.execute(
+                "UPDATE materials SET provenance=$2 WHERE id=$1",
+                &[&material_id, provenance],
+            )
+            .await?;
+        }
+        let written = tx
+            .execute(
+                "INSERT INTO agent_operations
+                 (id, kind, tool_version, request_hash, actor_user_id, workspace_id, conversation_id,
+                  message_id, call_id, outcome, effect, undo_of)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'succeeded',$10,$11)
+                 ON CONFLICT DO NOTHING",
+                &[
+                    &receipt.id,
+                    &receipt.kind,
+                    &receipt.tool_version,
+                    &receipt.request_hash,
+                    &receipt.actor,
+                    &receipt.workspace_id,
+                    &receipt.conversation_id,
+                    &receipt.message_id,
+                    &receipt.call_id,
+                    &receipt.effect,
+                    &receipt.undo_of,
+                ],
+            )
+            .await?;
+        if written == 0 {
+            crate::observe::log(
+                crate::observe::Level::Warn,
+                "agent receipt passed over",
+                serde_json::json!({ "operation": receipt.id, "room": material_id }),
+            );
+        }
+        if let Some((held, edited)) = &receipt.held
+            && !held.is_empty()
+        {
+            hold_agent(tx, material_id, held.clone(), *edited).await?;
+        }
+    }
+    Ok(())
 }
 
 /// A note's sessions as stored (`sessions.rs`): those seen within the cap
@@ -575,8 +701,14 @@ pub async fn fold(
         let stored: Option<Vec<u8>> = current.get("agent_held");
         let (held, damaged) =
             sessions::agent_holds(stored.as_deref(), std::time::SystemTime::now());
+        // Dropped once reported (Q386, review r2 L1): later folds read none.
         if damaged {
             unreadable_agent_holds(material_id);
+            tx.execute(
+                "UPDATE material_yjs_documents SET agent_held=NULL WHERE material_id=$1",
+                &[&material_id],
+            )
+            .await?;
         }
         if !held.is_empty() {
             crate::observe::log(
@@ -588,6 +720,8 @@ pub async fn fold(
     }
     let rows = doc_rows(&tx, doc, material_id, through).await?;
     let Some(&(last, _)) = rows.last() else {
+        // Nothing to fold; a dropped holds record still commits.
+        tx.commit().await?;
         return Ok(None);
     };
     let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();

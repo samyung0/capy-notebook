@@ -2342,7 +2342,11 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
     if isinstance(body, ToolResult):
         return body
-    changes = ctx.pending_sources.for_read(rid)
+    changes = (
+        await ctx.pending_sources.read_note(rid)
+        if kind == "material"
+        else ctx.pending_sources.for_read(rid)
+    )
     shown = None
     if kind == "material":
         seen = ctx.seen_blocks.setdefault(rid, {})

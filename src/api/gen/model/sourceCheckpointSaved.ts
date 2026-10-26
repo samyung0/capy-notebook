@@ -11,4 +11,5 @@ export interface SourceCheckpointSaved {
   readonly $schema?: string;
   checkpoint: number;
   operation?: AgentOperation;
+  replayed?: boolean;
 }

@@ -106,14 +106,41 @@ type NotePending struct {
 
 // NotePendingChanges reads the changes of the workspace's notes the index
 // does not hold as they stand (dirty, being indexed or failed), from their
-// stored content: the per-turn read of Epo 2026-10-17 (the live room comes
-// later). materialIDs narrows the notes when not nil.
+// stored content: the per-turn read of Epo 2026-10-17, which feeds the
+// turn's hints and asks no room (Q417). materialIDs narrows the notes when
+// not nil.
 func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, materialIDs []string) ([]NotePending, error) {
+	return s.notePendingChanges(ctx, workspaceID, materialIDs, nil)
+}
+
+// NoteReadChanges is one note's changes for a detailed read of it
+// (inspect_document, Q417): from its open room's content when that room
+// holds edits its stored content lacks, one room per request. live false:
+// no loaded room holds any, nothing is computed, and the turn's stored read
+// stands.
+func (s *Store) NoteReadChanges(ctx context.Context, workspaceID, materialID string) ([]NotePending, bool, error) {
+	content, live, err := s.liveNoteContent(ctx, workspaceID, materialID)
+	if err != nil || !live {
+		return nil, false, err
+	}
+	notes, err := s.notePendingChanges(ctx, workspaceID, []string{materialID}, map[string]string{materialID: content})
+	return notes, true, err
+}
+
+// notePendingChanges reads the changes of the named notes (all when nil),
+// each from its live content when given, else its stored content; a note
+// with live content is read whether or not its index is dirty.
+func (s *Store) notePendingChanges(ctx context.Context, workspaceID string, materialIDs []string, live map[string]string) ([]NotePending, error) {
+	liveIDs := make([]string, 0, len(live))
+	for id := range live {
+		liveIDs = append(liveIDs, id)
+	}
 	rows, err := s.pool.Query(ctx, `SELECT id, title, revision, content, indexed_blocks FROM materials
 		WHERE workspace_id=$1 AND kind='note' AND trashed_at IS NULL
-		  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL OR index_error IS NOT NULL)
+		  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL OR index_error IS NOT NULL
+		       OR id=ANY($3::text[]))
 		  AND ($2::text[] IS NULL OR id=ANY($2::text[]))
-		ORDER BY id`, workspaceID, materialIDs)
+		ORDER BY id`, workspaceID, materialIDs, liveIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -137,6 +164,9 @@ func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, mate
 	}
 	out := []NotePending{}
 	for _, n := range notes {
+		if content, ok := live[n.pending.MaterialID]; ok {
+			n.content = content
+		}
 		before, now, err := noteBlocks(ctx, s.pool, n.pending.MaterialID, workspaceID, n.content, n.baseline)
 		if errors.Is(err, materialdoc.ErrInvalid) {
 			// A stored note the rules refuse is unreadable: it gives no
@@ -152,6 +182,38 @@ func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, mate
 		}
 	}
 	return out, nil
+}
+
+// liveNoteContent is a note's content from its open room, when the room
+// holds edits its stored content lacks (Q417): the collaboration server
+// answers none for a room not loaded or holding none. One room per request.
+// Without a collaboration server no room is loaded.
+func (s *Store) liveNoteContent(ctx context.Context, workspaceID, materialID string) (string, bool, error) {
+	if s.collaborationURL == "" {
+		return "", false, nil
+	}
+	var schema int
+	err := s.pool.QueryRow(ctx, `SELECT d.room_schema FROM materials m
+		JOIN material_yjs_documents d ON d.material_id=m.id
+		WHERE m.id=$1 AND m.workspace_id=$2 AND m.kind='note' AND m.trashed_at IS NULL`,
+		materialID, workspaceID).Scan(&schema)
+	if isNoRows(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	var out struct {
+		Content json.RawMessage `json:"content"`
+	}
+	room := fmt.Sprintf("material:%s:schema:%d", materialID, schema)
+	if err := s.postDocumentAuthority(ctx, "/internal/materials/live", map[string]any{"room": room}, &out); err != nil {
+		return "", false, err
+	}
+	if len(out.Content) == 0 || string(out.Content) == "null" {
+		return "", false, nil
+	}
+	return string(out.Content), true, nil
 }
 
 // NoteChangeText is one note block's index text at the last index and now,
@@ -175,6 +237,15 @@ func (s *Store) ResolveNoteChange(ctx context.Context, workspaceID, materialID, 
 	}
 	if err != nil {
 		return NoteChangeText{}, err
+	}
+	// The open room's content when it holds edits not stored, as a detailed
+	// read of the note reads its changes (Q417).
+	current, live, err := s.liveNoteContent(ctx, workspaceID, materialID)
+	if err != nil {
+		return NoteChangeText{}, err
+	}
+	if live {
+		content = current
 	}
 	before, now, err := noteBlocks(ctx, s.pool, materialID, workspaceID, content, baseline)
 	if err != nil {
