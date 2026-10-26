@@ -10821,6 +10821,22 @@ async fn a_damaged_session_row_drops_only_that_session() {
     back.send(0, &payload).await;
     back.until(1).await.expect("joined");
     assert!(logs.has(&["late session joined"]).await, "late");
+    // Review r3 L4: so is a draft group written under the lost id, which
+    // the room admits through its record without any grant.
+    let lost = Doc::with_options(ydoc::doc_options(damaged));
+    let state = reader
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    lost.transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    typed_into_note(" offline")(&lost);
+    let body = lost
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let (status, answer) = send_drafts(server.port, &room, Some(&join), Some(ORIGIN), body).await;
+    assert!(logs.has(&["late draft group"]).await, "{status} {answer}");
 }
 
 /// Q386 (Epo 2026-10-26): agent holds that cannot be read are dropped and
@@ -10866,6 +10882,164 @@ async fn unreadable_agent_holds_are_dropped_and_reported() {
         .get(0);
     assert_eq!(agent, None);
     assert_eq!(session_row(&env, &material, session).await.2, held);
+}
+
+/// Review r3 L1: a store never locks a deleting account among its session
+/// users, so the purge holding that account's row (PurgeUser updates the
+/// account's materials, then its row) never waits on a store that waits on
+/// the material. Fails if the store share-locks the deleting account.
+#[tokio::test]
+async fn a_store_never_locks_a_deleting_session_user() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "abcdef").await;
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &owner, "write")).await;
+    let mut b = Client::open(server.port).await;
+    b.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(b.settle(|c| c.block_text() == "abcdef").await);
+    let answered = b.stored_past(0).await;
+    b.delete_in_block(0, 1, true).await;
+    let stored = b.stored_past(answered).await;
+    db(&env)
+        .await
+        .execute(
+            "UPDATE users SET deletion_requested_at=now(), purge_after=now() WHERE id=$1",
+            &[&editor],
+        )
+        .await
+        .expect("deletion");
+    // The purge's lock on the account's row, held while A's store runs.
+    let purge = db(&env).await;
+    purge.execute("BEGIN", &[]).await.expect("begin");
+    purge
+        .execute("SELECT 1 FROM users WHERE id=$1 FOR UPDATE", &[&editor])
+        .await
+        .expect("account row");
+    // B's session changes, so A's next store carries it.
+    b.ack_version(stored).await;
+    assert!(a.settle(|c| c.block_text() == "bcdef").await);
+    a.type_text("-a").await;
+    let next = tokio::time::timeout(Duration::from_secs(8), a.stored_past(stored)).await;
+    purge.execute("ROLLBACK", &[]).await.expect("rollback");
+    assert!(next.is_ok(), "the store waited on the deleting account");
+}
+
+/// Q389 (Epo 2026-10-26): a server edit whose committed row the open room
+/// cannot apply (a debug-only failure) reloads the room from the stored
+/// document: its channels close as the room is reset, and the next room
+/// holds the edit. Fails if the room carries on without it.
+#[tokio::test]
+async fn a_server_edit_the_room_cannot_apply_reloads_the_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut person) = writer(&env, server.port, "hello world").await;
+    let material = material_of(&room).to_owned();
+    let edit = format!("capy-it-fail-service-edit-{material}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    let closed = person.until(4).await.expect("the channel closes");
+    let closed = String::from_utf8_lossy(&closed);
+    assert!(closed.contains("being reset"), "{closed}");
+    assert_eq!(person.block_text(), "hello world");
+    wait_unloaded(server.port).await;
+    let mut next = Client::open(server.port).await;
+    next.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        next.settle(|c| c.block_text() == "hello there").await,
+        "{}",
+        next.block_text()
+    );
+}
+
+/// Q389 (Epo 2026-10-26): a quiz edit's step ends as a whole once either
+/// room's 24 h passed (shortened here; the keys room's stamped 10 s later by
+/// a debug-only hook): its Undo is refused and neither room changes. Fails
+/// if the room still holding it reverts alone.
+#[tokio::test]
+async fn a_quiz_step_ends_as_a_whole() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_AGENT_UNDO_MS", "1500")],
+    )
+    .await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let content_room = format!("material:{quiz}:schema:1");
+    let keys_room = format!("keys:{quiz}:schema:1");
+    let mut content = Client::open(server.port).await;
+    let mut keys = Client::open(server.port).await;
+    content
+        .joined(&content_room, &token(&content_room, &owner, "write"))
+        .await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
+    let has_q3 = |c: &Client| map_at(&c.doc, &["questions", "q3"]).is_some();
+    let has_keys = |c: &Client| map_at(&c.doc, &["keys", "q3-p"]).is_some();
+    assert!(
+        content
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_some())
+            .await
+    );
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q2-p"]).is_some())
+            .await
+    );
+    let edit = format!("capy-it-keys-later-{quiz}");
+    let question = serde_json::json!({
+        "type": "quiz_question", "id": "q3", "children": [{ "text": "" }],
+        "question": {
+            "id": "q3", "layout": "paper", "labels": "letters", "stem": [],
+            "parts": [{
+                "id": "q3-p", "blocks": [{ "type": "text", "text": "Order these." }],
+                "answer": { "type": "ordering", "items": ["a", "b"] }, "marks": 1, "solution": [],
+            }],
+        },
+    });
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": owner,
+            "commands": [{ "type": "insert_child", "parentType": "quiz", "afterNodeId": "q2", "node": question }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": content_room,
+            "target": { "id": quiz, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["effect"]["undo"]["operationId"], edit.as_str());
+    assert!(content.settle(has_q3).await);
+    assert!(keys.settle(has_keys).await);
+    // The content room's part ended and went; the keys room's has 10 s left.
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&owner, &edit, &format!("u_{quiz}"), &quiz),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("undo_unavailable")),
+        "{refusal}"
+    );
+    let _ = keys.hears(200, 1000).await;
+    assert!(has_q3(&content) && has_keys(&keys), "a room reverted alone");
 }
 
 /// Review r1 L5: a room never writes back the session row of an account

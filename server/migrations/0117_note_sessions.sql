@@ -3,7 +3,8 @@
 -- editor's Y.Doc, named by its client id, so its state extends that id's
 -- row. The collaboration server writes these columns with the stores of a
 -- note's content document: the stored version the session last
--- acknowledged, when it was last seen (NULL: no session, or it ended), and
+-- acknowledged (-1: the session's record was lost, so its tab returns as
+-- late), when it was last seen (NULL: no session, or it ended), and
 -- the deletions its own updates made that an Undo may still restore, each
 -- with its arrival time (Yjs delete sets; released 25 h after arrival). A
 -- session counts while connected and for 24 h after it was last seen.
@@ -13,6 +14,6 @@ ALTER TABLE material_yjs_client_ids
   ADD COLUMN held bytea;
 
 -- The deletions of agent steps whose Undo or Redo may still bring them back
--- (review r1 M3), in the same encoding as `held`, each batch released 24 h
--- after it arrived. NULL: none.
+-- (review r1 M3), in the same encoding as `held`, each batch released 25 h
+-- after its agent edit, an hour past its Undo's 24 h. NULL: none.
 ALTER TABLE material_yjs_documents ADD COLUMN agent_held bytea;

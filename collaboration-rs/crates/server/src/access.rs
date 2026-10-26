@@ -357,22 +357,25 @@ pub async fn lock_boundary<C: GenericClient>(
     // The payer is charged by the write (the material's bytes), so its row is
     // locked with the owner's and the actors'. Bystanders (a note store's
     // session users, review r2 M2) are locked in the same order and refuse
-    // nothing.
+    // nothing; only live ones are (review r3 L1): a deleting account's purge
+    // takes its materials before its row, so holding that row while waiting
+    // on the material would deadlock with it. A deletion requested while this
+    // waits on a bystander's row drops it (the filter is checked again on the
+    // row it locks), and a purge starts only after its request committed.
     let mut required: Vec<String> = actors.to_vec();
     required.push(owner.clone());
     required.push(payer.clone());
     required.sort();
     required.dedup();
-    let mut ids = required.clone();
-    ids.extend(bystanders.iter().cloned());
-    ids.sort();
-    ids.dedup();
     let rows = client
         .query(
             "SELECT u.id, (u.deleted_at IS NOT NULL OR u.deletion_requested_at IS NOT NULL
                OR u.suspended_at IS NOT NULL) AS locked
-             FROM users u WHERE u.id=ANY($1::text[]) ORDER BY u.id FOR SHARE OF u",
-            &[&ids],
+             FROM users u
+             WHERE u.id=ANY($1::text[])
+               OR (u.id=ANY($2::text[]) AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL)
+             ORDER BY u.id FOR SHARE OF u",
+            &[&required, &bystanders],
         )
         .await?;
     let found = rows

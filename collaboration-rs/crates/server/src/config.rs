@@ -68,9 +68,9 @@ pub struct Config {
     /// before it closes (`socket.rs`); tests shorten them.
     pub ping_every: Duration,
     pub silent_close: Duration,
-    /// How long after an agent edit its Undo and Redo are offered (Q385:
-    /// 24 h); tests shorten it. Never longer than the agent holds
-    /// (`sessions::AGENT_HELD_FOR`), which keep every offered Undo's text.
+    /// How long after an agent edit its Undo and Redo are offered
+    /// (`sessions::AGENT_UNDO_FOR`, Q385); debug builds' tests shorten it
+    /// (review r3: a release build stays at 24 h).
     pub agent_undo: Duration,
 }
 
@@ -118,6 +118,25 @@ fn millis(
     fallback: u64,
 ) -> Result<Duration, ConfigError> {
     positive(env, name, fallback).map(Duration::from_millis)
+}
+
+/// The agent Undo's offer: tests shorten it in debug builds, never past
+/// Q385's 24 h; a release build reads nothing.
+#[cfg(debug_assertions)]
+fn agent_undo(env: &HashMap<String, String>) -> Result<Duration, ConfigError> {
+    let undo = crate::sessions::AGENT_UNDO_FOR;
+    let agent_undo = millis(env, "COLLABORATION_AGENT_UNDO_MS", undo.as_millis() as u64)?;
+    if agent_undo > undo {
+        return Err(ConfigError(
+            "COLLABORATION_AGENT_UNDO_MS must be at most 24 hours".into(),
+        ));
+    }
+    Ok(agent_undo)
+}
+
+#[cfg(not(debug_assertions))]
+fn agent_undo(_: &HashMap<String, String>) -> Result<Duration, ConfigError> {
+    Ok(crate::sessions::AGENT_UNDO_FOR)
 }
 
 fn required(env: &HashMap<String, String>, name: &str) -> Result<u64, ConfigError> {
@@ -179,16 +198,7 @@ impl Config {
                     .into(),
             ));
         }
-        let agent_undo = millis(
-            env,
-            "COLLABORATION_AGENT_UNDO_MS",
-            crate::sessions::AGENT_HELD_FOR.as_millis() as u64,
-        )?;
-        if agent_undo > crate::sessions::AGENT_HELD_FOR {
-            return Err(ConfigError(
-                "COLLABORATION_AGENT_UNDO_MS must be at most 24 hours".into(),
-            ));
-        }
+        let agent_undo = agent_undo(env)?;
         // A smaller burst would refuse an update the rooms take, every time.
         if update_limits.burst_bytes < ydoc::MAX_UPDATE_BYTES as u64 {
             return Err(ConfigError(format!(

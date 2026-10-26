@@ -1746,7 +1746,13 @@ other item rooms and source rooms keep no sessions and their full history.
   (`{"type": "stored", "version": v}`, `STORED_TYPE` in `room.rs`): the latest
   version the room holds every version up to. A store whose version passed a
   service edit the room has not applied yet goes unannounced, and only stores
-  announce (review r1 M1). The tab answers `{"type": "ack", "version": v}`
+  announce (review r1 M1); a gap still open at the next store is logged at
+  Warn, once per gap (review r3 N3). A service edit whose committed row the
+  room cannot apply reloads the room from the stored document instead of
+  counting its version (Q389, Epo 2026-10-26, `Room::reload`): joins wait as
+  for a drain, every channel closes as the room is reset (its tab rejoins and
+  resyncs), and the room stores what it holds and unloads, so the next room
+  loads every row. The tab answers `{"type": "ack", "version": v}`
   whenever the version it may report changes. The room counts the session at
   its JOIN's version, then at each `ack` (never above the room's own
   version). A new session (version 0) that never synced is left out of the
@@ -1795,9 +1801,11 @@ other item rooms and source rooms keep no sessions and their full history.
   24 h after the edit, whether or not its room stays loaded (Q385, Epo
   2026-10-26): the room drops the step then (`Room::expire_agent_steps`) and
   the chat hides its buttons (see [agentic
-  retrieval](../agentic-retrieval.md)). What the edit, its Undo and its Redo
-  deleted is held 24 h from the edit, whatever the sessions do
-  (`Sessions::agent_deleted`; an Undo or Redo keeps the edit's time), so
+  retrieval](../agentic-retrieval.md)); a step spanning rooms (a quiz's
+  content and keys) ends as a whole (Q389). What the edit, its Undo and its
+  Redo deleted is held 25 h from the edit, an hour past the offer as a
+  person's holds are, whatever the sessions do (`Sessions::agent_deleted`,
+  `AGENT_HELD_FOR`; an Undo or Redo keeps the edit's time; review r3 N8), so
   every Undo the room offers is held; a durable Undo payload records its
   deletions through the same call once that wiring lands. Stored beside the
   document (`material_yjs_documents.agent_held`, the same encoding). Agent
@@ -1833,8 +1841,9 @@ other item rooms and source rooms keep no sessions and their full history.
   collection's window has missed what that collection discarded (`late` in
   `sessions.rs`, version 0 never is). So has one under the id of a session
   whose record was lost, whatever version it names (Q385, review r2 M1): its
-  held deletions were not kept. Nothing is collected yet, so nothing is
-  late.
+  held deletions were not kept; for a draft group, an id its grants name or
+  one it writes under, which the room admits through its record (review r3
+  L4). Nothing is collected yet, so nothing is late.
 
 ### Client protocol and the release nudge
 

@@ -302,7 +302,7 @@ pub async fn append(
 /// that cannot be read is dropped alone (Q382, Epo 2026-10-26): its row is
 /// written lost (`sessions::LOST`, its tab late when it returns, Q385) and
 /// the caller reports it; agent holds that cannot be read are dropped and
-/// reported (Q386 open).
+/// reported too, and the note loads (Q386, Epo 2026-10-26).
 pub async fn load_sessions(
     pool: &Pool,
     material_id: &str,
@@ -364,9 +364,11 @@ pub async fn load_sessions(
 /// last seen, its held deletions only when they changed (review r2 L4), an
 /// ended one's cleared (the record's row is made if its first write's has
 /// not landed yet), and the agent holds when they changed. Never for an
-/// account whose deletion began or ended (review r1 L5): the caller locked
-/// the users first (`lock_boundary`'s bystanders), so a purge waits for it
-/// and then deletes what it wrote.
+/// account whose deletion began or ended (review r1 L5): a store locked the
+/// live ones first (`lock_boundary`'s bystanders), so a purge waits for it
+/// and then deletes what it wrote; the unload write (`save_sessions_now`)
+/// only leaves out the accounts whose deletion began before its statement
+/// (review r3 N2).
 pub(crate) async fn save_sessions(
     tx: &Transaction<'_>,
     material_id: &str,

@@ -392,8 +392,9 @@ struct Note {
     /// edits whose rows committed before a later store's (`sessions::took`).
     /// Note content rooms only.
     gaps: std::collections::BTreeSet<i64>,
-    /// The room logged a store it could not announce (review r2 L2).
-    stall_logged: bool,
+    /// The first gap below a store the room could not announce, and whether
+    /// it was warned of (`announce_stored`).
+    stall: Option<(i64, bool)>,
 }
 
 impl Note {
@@ -510,6 +511,17 @@ const IT_PANIC_LOAD: &str = "capy-it-panic-load";
 /// in a quiz's keys room, in debug builds only.
 #[cfg(debug_assertions)]
 pub const IT_REFUSE_KEYS_UNDO: &str = "capy-it-refuse-keys-undo";
+/// See `service_edit`: a server edit whose step id starts with this fails to
+/// apply, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
+
+/// See `service_edit`: a quiz's keys room stamps a step whose id starts
+/// with this 10 s after its edit, so its rooms' 24 h end apart, in debug
+/// builds only.
+#[cfg(debug_assertions)]
+pub const IT_KEYS_LATER: &str = "capy-it-keys-later";
+
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -559,6 +571,8 @@ pub struct Room {
     rows_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
+    /// The room reloads from the stored document (`reload`).
+    reloading: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
     /// items of, by operation id (`ydoc::undo`), with what each one's revert
     /// may send (the edit's `sources::undo_cost`) and when the agent edit was
@@ -780,7 +794,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 folding: false,
                 window: 0,
                 gaps: std::collections::BTreeSet::new(),
-                stall_logged: false,
+                stall: None,
             };
             // A note's content room keeps its sessions (Q274: notes only).
             let sessions = if note.sessioned() {
@@ -1020,6 +1034,7 @@ async fn run(
         rows: VecDeque::new(),
         rows_running: false,
         applying: false,
+        reloading: false,
         agent_changes: HashMap::new(),
         agent_expiry: None,
         agent_reverted: HashMap::new(),
@@ -1405,15 +1420,6 @@ impl Room {
             version,
             reply,
         } = draft;
-        if self.late(&granted, version) {
-            // Nothing is collected yet, so nothing is late; the late path
-            // holds such a group once collection lands.
-            log(
-                Level::Info,
-                "late draft group",
-                json!({ "room": self.name, "version": version }),
-            );
-        }
         let (history, live) = (self.in_history(), self.live_ids());
         let granted: Vec<u64> = granted
             .into_iter()
@@ -1438,7 +1444,7 @@ impl Room {
                 return;
             }
         }
-        let answer = match self.admit_draft(&context, &update, &granted) {
+        let answer = match self.admit_draft(&context, &update, &granted, version) {
             // Held in full, or admitted: the receipt waits for the store.
             Ok(None | Some(Outcome::Admitted)) => Ok(self.durable().await),
             Ok(Some(Outcome::Unheld)) => Err(Refused::new(
@@ -1463,8 +1469,27 @@ impl Room {
         context: &Context,
         update: &[u8],
         granted: &[u64],
+        version: Option<u64>,
     ) -> Result<Option<Outcome>, Refused> {
         let decoded = ydoc::decode(update).ok();
+        // A group under a lost session's id is late: an id its grants name,
+        // or one it writes under, which the room admits through its record
+        // (review r3 L4). Nothing is collected yet, so nothing is late; the
+        // late path holds such a group once collection lands.
+        let mut ids = granted.to_vec();
+        if let Some(decoded) = &decoded {
+            ids.extend(client_ids::written(
+                &self.doc.transact().state_vector(),
+                decoded,
+            ));
+        }
+        if self.late(&ids, version) {
+            log(
+                Level::Info,
+                "late draft group",
+                json!({ "room": self.name, "version": version }),
+            );
+        }
         if decoded
             .as_ref()
             .is_some_and(|decoded| !ydoc::contains_changes(&self.doc.transact(), decoded))
@@ -1775,9 +1800,20 @@ impl Room {
     /// stays clean and its cover takes the edit's row in. An agent edit's own
     /// items stay here for its Undo, what it deleted kept from collection.
     fn service_edit(&mut self, edit: ServiceEdit) {
+        // Debug builds only: the integration test's server edit that fails.
+        #[cfg(debug_assertions)]
+        let failing = edit
+            .step
+            .as_ref()
+            .is_some_and(|(id, _, _)| id.starts_with(IT_FAIL_SERVICE_EDIT));
+        #[cfg(not(debug_assertions))]
+        let failing = false;
         let applied = ydoc::decode(&edit.update)
             .map_err(|error| error.to_string())
             .and_then(|update| {
+                if failing {
+                    return Err("integration test apply failure".to_owned());
+                }
                 match edit.step {
                     Some(_) => ydoc::undo::apply_kept(&self.doc, update),
                     None => ydoc::apply(&self.doc, update),
@@ -1792,19 +1828,13 @@ impl Room {
                     None,
                     &[("room", &self.name), ("stage", "service_edit")],
                 );
-                // Its row committed: its version leaves no gap (review r2 L2).
-                if let Kindly::Note(note) = &mut self.kind
-                    && note.sessioned()
-                {
-                    note.stored_version = crate::sessions::took(
-                        note.stored_version,
-                        &mut note.gaps,
-                        edit.version as i64,
-                    );
-                }
                 if let Some(reply) = edit.taken {
                     let _ = reply.send(false);
                 }
+                // Its row committed: the room reloads from the stored
+                // document, which holds it (Q389), and counts nothing past
+                // it meanwhile.
+                self.reload();
                 return;
             }
         };
@@ -1823,10 +1853,19 @@ impl Room {
             && changed
             && self.update_fits(cost)
         {
+            let edited = std::time::SystemTime::now();
+            // Debug builds only: the integration test of a step whose rooms'
+            // 24 h end apart.
+            #[cfg(debug_assertions)]
+            let edited = if self.name.starts_with("keys:") && id.starts_with(IT_KEYS_LATER) {
+                edited + Duration::from_secs(10)
+            } else {
+                edited
+            };
             let step = AgentStep {
                 change: items.change(&self.doc),
                 cost,
-                edited: std::time::SystemTime::now(),
+                edited,
             };
             self.keep_agent_step(id, step);
             taken = true;
@@ -1862,6 +1901,24 @@ impl Room {
         self.maybe_fold();
     }
 
+    /// Reloads the room from the stored document (Q389: a server edit whose
+    /// committed row it cannot apply): joins wait as for a drain, every
+    /// channel closes as the room is reset (its tab rejoins and resyncs, its
+    /// unsent edits going again), and the room stores what it holds and
+    /// unloads; the next room loads every row.
+    fn reload(&mut self) {
+        if self.reloading {
+            return;
+        }
+        self.reloading = true;
+        self.app.evictions.begin(&self.name, true);
+        let keys: Vec<MemberKey> = self.members.keys().copied().collect();
+        for key in keys {
+            self.close_channel(key, None, 0, crate::edits::ROOM_RESET);
+        }
+        self.flush();
+    }
+
     /// Undo or Redo of an agent step (`edits::undo`): reverted as the
     /// editor's undo reverts (`ydoc::undo`), so other people's later changes
     /// stay; a note the store would refuse is put back at once. The result
@@ -1879,8 +1936,6 @@ impl Room {
             actor,
             reply,
         } = undo;
-        // A step past its 24 h is answered as one the room no longer has.
-        self.expire_agent_steps();
         let Some(AgentStep {
             change,
             cost,
@@ -3927,8 +3982,15 @@ impl Room {
         };
         let version = crate::sessions::whole(note.stored_version, &note.gaps);
         if version < store {
-            // Once per room: a gap that stays stalls its sessions.
-            if !note.stall_logged {
+            // A gap still open at the next store stalls the sessions: warned
+            // once per gap (a server edit arriving after a later store's
+            // notice closes its own at once, review r3 N3).
+            let gap = version + 1;
+            let (seen, warned) = match note.stall {
+                Some((open, warned)) if open == gap => (true, warned),
+                _ => (false, false),
+            };
+            if seen && !warned {
                 log(
                     Level::Warn,
                     "store not announced",
@@ -3936,7 +3998,7 @@ impl Room {
                 );
             }
             if let Kindly::Note(note) = &mut self.kind {
-                note.stall_logged = true;
+                note.stall = Some((gap, seen));
             }
             return;
         }
@@ -4743,6 +4805,10 @@ impl Room {
         );
         // The live Undo of agent edits ends with the room (Epo 2026-10-20).
         self.app.agent_steps.forget_room(&self.name);
+        // A reload's next room may load now.
+        if std::mem::take(&mut self.reloading) {
+            self.app.evictions.end(&self.name, true);
+        }
         for reply in self.forced_unload.drain(..) {
             let _ = reply.send(());
         }

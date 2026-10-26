@@ -25,10 +25,14 @@ pub const COUNTED_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 /// How long a held deletion stays after it arrived (Q2): an hour past the
 /// editors' 24 h Undo, which runs on the tab's clock.
 pub const HELD_FOR: Duration = Duration::from_secs(25 * 60 * 60);
-/// How long an agent step's deletions stay held, from the agent edit: its
-/// Undo and Redo are offered for 24 h after it (Q385, Epo 2026-10-26), so the
-/// holds cover every agent Undo a room offers.
-pub const AGENT_HELD_FOR: Duration = Duration::from_secs(24 * 60 * 60);
+/// How long after an agent edit its Undo and Redo are offered (Q385, Epo
+/// 2026-10-26).
+pub const AGENT_UNDO_FOR: Duration = Duration::from_secs(24 * 60 * 60);
+/// How long an agent step's deletions stay held, from the agent edit: an
+/// hour past its Undo's [AGENT_UNDO_FOR], as a person's are past theirs, so
+/// a wall clock stepping back never offers an Undo whose holds went (review
+/// r3 N8).
+pub const AGENT_HELD_FOR: Duration = Duration::from_secs(25 * 60 * 60);
 /// Deletions arriving within this of a batch's first join it, stamped with
 /// the latest arrival, so a session keeps at most one batch a minute.
 const BATCH: Duration = Duration::from_secs(60);
@@ -138,7 +142,7 @@ pub struct Unsaved {
 /// Stored records that could not be read (Q382, Epo 2026-10-26): each such
 /// session is dropped alone and reported, and its id is remembered as lost
 /// (Q385: its tab returns as late); agent holds that cannot be read are
-/// dropped and reported too (Q386 open).
+/// dropped and reported too (Q386, Epo 2026-10-26).
 #[derive(Debug, Default, PartialEq)]
 pub struct Damaged {
     pub sessions: Vec<u64>,
@@ -739,20 +743,20 @@ mod tests {
     }
 
     /// Review r1 M3 (Editor 2026-10-26, plan change): an agent step's
-    /// deletions are held 24 h after they arrived, whatever the sessions do,
-    /// and are written with the stores and read back. Fails if they are not
-    /// held, or held past 24 h.
+    /// deletions are held from its agent edit, whatever the sessions do, an
+    /// hour past its Undo's 24 h (review r3 N8), and are written with the
+    /// stores and read back. Fails if they are not held, or held past 25 h.
     #[test]
-    fn agent_deletions_are_held_24_hours() {
+    fn agent_deletions_are_held_25_hours() {
         let now = start();
         let mut sessions = Sessions::default();
         sessions.agent_deleted(ids(3, 0, 2), now);
         assert_eq!(sessions.holds(now).reached, None);
-        assert_eq!(sessions.holds(now + 23 * HOUR).held, ids(3, 0, 2));
+        assert_eq!(sessions.holds(now + 24 * HOUR).held, ids(3, 0, 2));
         let agent = sessions.unsaved(now, |_, _| true).agent;
         let (mut loaded, _) = Sessions::load([], [], agent.flatten());
-        assert_eq!(loaded.holds(now + 23 * HOUR).held, ids(3, 0, 2));
-        assert_eq!(loaded.holds(now + 24 * HOUR).held, IdSet::new());
+        assert_eq!(loaded.holds(now + 24 * HOUR).held, ids(3, 0, 2));
+        assert_eq!(loaded.holds(now + 25 * HOUR).held, IdSet::new());
         assert_eq!(loaded.unsaved(now, |_, _| true).agent, Some(None));
     }
 

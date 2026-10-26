@@ -306,11 +306,6 @@ function toastRefusal(effect: Undoable, code: string) {
  * showing the step, waits for the first one's answer. */
 const undoing = new Set<string>();
 
-/** Undo on created, edited and restored effects; Redo once undone. Hidden
- * unless the server says the step is available. A refusal hides it for the
- * session; an unknown outcome (no answer, a server error) or a refusal for a
- * moment (the Office pause, a busy room) keeps it, and the server answers a
- * retry with the step's receipt if the first one landed. */
 /** Whether `at` (an ISO time; none: never) has passed, re-rendering when it does. */
 function usePassed(at: string | undefined): boolean {
   const end = at ? Date.parse(at) : Number.POSITIVE_INFINITY;
@@ -325,6 +320,12 @@ function usePassed(at: string | undefined): boolean {
   return passed;
 }
 
+/** Undo on created, edited and restored effects; Redo once undone. Hidden
+ * unless the server says the step is available, and once its edit's 24 h
+ * passed (Q385). A refusal hides it for the session; an unknown outcome (no
+ * answer, a server error) or a refusal for a moment (the Office pause, a busy
+ * room) keeps it, and the server answers a retry with the step's receipt if
+ * the first one landed. */
 function UndoButton({
   effect,
   handlers,

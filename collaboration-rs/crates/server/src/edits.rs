@@ -1513,6 +1513,15 @@ async fn ask_room(
 async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     let request: UndoRequest = serde_json::from_slice(body)
         .map_err(|_| DocumentError::Invalid("invalid undo request".into()))?;
+    // A step ends as a whole once any of its rooms' 24 h passed (Q389): a
+    // quiz's rooms stamp it apart, and neither reverts alone.
+    let ended = app
+        .agent_steps
+        .until(&request.undo_of)
+        .is_some_and(|until| until <= std::time::SystemTime::now());
+    if ended {
+        return Err(undo_unavailable("this edit can no longer be undone"));
+    }
     let mut rooms = app.agent_steps.rooms(&request.undo_of);
     if rooms.is_empty() {
         // Reverted already: a request repeated after a lost answer gets the
