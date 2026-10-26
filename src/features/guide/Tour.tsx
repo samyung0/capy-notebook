@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { pastReviewsQuery, useMaterials } from '@/api/hooks';
@@ -33,6 +33,9 @@ type Step = {
   absent?: () => boolean;
   /** Gets the page ready, every frame until it reports done. */
   prepare?: () => boolean;
+  /** Opens what a room shows once it has loaded, every frame while the card
+   * is up until it reports done; the card does not wait for it. */
+  open?: () => boolean;
   /** The part lit; none puts the card in the middle. */
   spot?: () => Found;
   /** Without its part after the wait, the step still shows, centred. */
@@ -77,6 +80,7 @@ const FIND_MS = 6000;
  */
 export function Tour({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const { data: materials } = useMaterials(workspaceId, {
     errorBoundary: false,
   });
@@ -149,8 +153,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       go: () => inWorkspace({ material: note, mode: 'edit' }),
       loading: !materials,
       missing: !!materials && !note,
-      // Lit once the editor has loaded and shows its cloud.
-      prepare: () => shown(find('#viewer [data-save-state]')),
+      // The room opens under the card; the cloud is outlined once it shows.
       rings: () => [find('#viewer [data-save-state]')],
       spot: centrePanel,
       title: m.tour_editor_title,
@@ -161,7 +164,9 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       go: () => inWorkspace({ material: quiz, mode: 'edit' }),
       loading: !materials,
       missing: !!materials && !quiz,
-      prepare: () => {
+      // The quiz loads under the card, lit in the centre panel, then its first
+      // question opens for editing.
+      open: () => {
         if (questionDialog()) return true;
         const edit = find('#viewer [data-question-edit]');
         if (edit instanceof HTMLElement && once('edit')) edit.click();
@@ -171,7 +176,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
         find('[role="dialog"] [data-undo-buttons]'),
         find('[role="dialog"] [data-save-state]'),
       ],
-      spot: questionDialog,
+      spot: () => questionDialog() ?? centrePanel(),
       tip: {
         target: () => find('[role="dialog"] [data-undo-buttons]'),
         text: m.tour_undo_redo,
@@ -267,7 +272,10 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
         went = true;
         step.go?.();
       }
-      const there = !step.at || step.at(location.pathname);
+      // The rendered route, not `location`: that flips as soon as navigation
+      // starts, while a first visit's page still loads under the last one.
+      const path = router.state.resolvedLocation?.pathname;
+      const there = !step.at || (!!path && step.at(path));
       if (there && step.absent?.()) return pass();
       ready ||= there && (!step.prepare || step.prepare());
       const spot = ready ? step.spot?.() : null;
@@ -301,7 +309,9 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     let frame = 0;
     let seen = '';
     let lit: Element | null = null;
+    let opened = !step.open;
     const follow = () => {
+      if (!opened) opened = !!step.open?.();
       const found = step.spot?.();
       const element = shown(found) ? found : null;
       if (element !== lit) {
@@ -368,6 +378,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
         : 'bottom';
   const tall = !!spot && beside && spot.h > TALL;
   const align = beside ? (tall ? 'start' : 'center') : spot ? 'end' : 'center';
+  const dialogLit = spotElement?.getAttribute('role') === 'dialog';
   const tip = boxes.tip;
   const tipBelow = !!tip && tip.y < innerHeight / 2;
 
@@ -416,8 +427,9 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
         </div>
       )}
       {/* A popover per step: opened after the step's own menu or dialog, it
-          stays above it and takes clicks over its locked page. */}
-      <Popover key={index} open>
+          stays above it and takes clicks over its locked page; a dialog that
+          opens under the card opens it again. */}
+      <Popover key={`${index} ${dialogLit}`} open>
         <PopoverAnchor virtualRef={anchor} />
         <PopoverContent
           align={align}
@@ -451,7 +463,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
           <div className="mt-4 flex items-center gap-2">
             {!last && (
               <Button
-                className="-ml-2"
+                className="-ml-4"
                 onClick={stopTour}
                 size="sm"
                 variant="ghost-muted"
