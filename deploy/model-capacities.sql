@@ -55,7 +55,7 @@ WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
 INSERT INTO model_capacities (provider, model, concurrency_total, interactive_reserve)
 SELECT provider, model, concurrency_total, interactive_reserve FROM capacities c
 WHERE EXISTS (
-  SELECT 1 FROM model_configs m WHERE m.enabled AND m.platform_enabled
+  SELECT 1 FROM model_configs m WHERE m.enabled
     AND m.model_slug = c.model
     AND m.provider_slug = c.provider
 )

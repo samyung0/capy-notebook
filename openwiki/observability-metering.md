@@ -551,7 +551,7 @@ named provider directly. These exact routing exceptions are allowed:
   OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`), and
   `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
   (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
-  `model_configs_deepinfra_check` keeps each in its own slot, never BYOK.
+  `model_configs_deepinfra_check` keeps each in its own slot.
 - `zai/glm-5.3-flash` keeps its `zai` catalog identity, credit rates and
   capacity row but is served through OpenRouter (decision 2026-10-21): the
   request names OpenRouter's `z-ai/glm-5.3-flash`, routed to DigitalOcean, then
@@ -595,8 +595,7 @@ named provider directly. These exact routing exceptions are allowed:
   of `prompt_tokens` (1,024 of 1,208 observed).
 
 No exception opens a general router path. Other DeepInfra, ZAI and
-OpenRouter slugs fail registry validation. The `zai` provider takes no user
-key (`byok: false`, and `models.IsFirstPartyProvider` leaves it out).
+OpenRouter slugs fail registry validation.
 A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
 workflows run on the chat slot (migration `0044` merged the former `generate`
@@ -669,8 +668,7 @@ longer use (`remapPrefsToDefaults` in `server/internal/ops/registry.go`)
 also writes one `model_deprecated` in-app notification per moved slot; it
 sends no email and is not pushed live (the ops process has no Redis), so it
 appears on the next load of the notifications page. A pref that still names an unusable key fails
-`model_unavailable`, except BYOK-only rows that the user still has a key
-for.
+`model_unavailable`.
 
 Conversations do not snapshot a model. Each chat turn calls
 `ratesForSlot`, which reads `users.chat_model_provider_slug` and
@@ -802,15 +800,11 @@ repeated chat prompt), with reasoning under
 `completion_tokens_details.reasoning_tokens`. A split larger
 than reported input is still refused as
 `cached_gt_input` and charged in full.
-The web app offers no key entry since 2026-10-16 (Settings → LLM has no keys
-section), so the BYOK paths below stay in the backend but no user can reach
-them: saving or removing a key (`PUT /api/me/llm-credentials`, `DELETE
-/api/me/llm-credentials/{provider}`) answers 404 unless the API runs with
-`BYOK_ENABLED=true`, which no deployment sets. Before BYOK returns, stored
-keys need associated data (user and provider) and a key version, and a
-user-supplied base URL needs an SSRF policy. UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
-reranker and descriptor rows. Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
-(`model_configs_credit_rates_check`). Platform chat/generate/editor/
+There is no BYOK (Q290): users cannot bring their own provider keys, every
+model session is platform-paid, and a catalog row's only switch is `enabled`.
+UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
+reranker and descriptor rows. Every row carries credit rates
+(`model_configs_credit_rates_check`): chat/generate/editor/
 ingest/vision rows need input, cached-read, and output all > 0. Embedding needs
 input > 0; cached-read and output may be 0.
 
@@ -1007,14 +1001,12 @@ begin(session)  →  provider call  →  settle(call id, measured usage)
 
 A current session reserves 0 credits in `provider_sessions.reserved_micros`.
 The column records the session's contribution when a future workflow takes an
-estimated credit hold. Platform
-chat, generate and editor share `ConcurrentLLMLeases` (5); a chat voice
+estimated credit hold. Chat,
+generate and editor share `ConcurrentLLMLeases` (5); a chat voice
 clip's reserved session (`reserved_micros` above zero) neither takes nor
 counts as one, since its hold bounds it. The gate is
 `used + reserved >= limit` plus that cap, the same check as
-`AssertCreditsAvailable`. BYOK chat has a session for idempotent usage events
-but does not consume a concurrency slot and skips the platform used+reserved
-gate. Other BYOK routes skip the LLM lease.
+`AssertCreditsAvailable`.
 
 Every outbound attempt inserts its `provider_calls` row before the network
 call. A successful response appends its `usage_events` row and marks the call
@@ -1224,8 +1216,7 @@ catalog columns name the reranker row the pipeline called: the settle payload
 sends its `modelVersion`, the gateway requires one on every `rerank` call and
 refuses one on any other kind, and the row must serve the `rerank` slot. Billing
 therefore shows "{surface} · Rerank · deepinfra/Qwen/Qwen3-Reranker-4B" and a
-separate Rerank bucket. The call always uses the platform key; in a BYOK chat it
-skips the capacity gate, as query embeddings do. Search takes the scores as
+separate Rerank bucket. Search takes the scores as
 soon as they arrive and the settlement finishes in a background task
 (`accounting.settle_in_background`), so a slow gateway never holds a search.
 The lease is released when the provider answers; the call row stays open until
@@ -1246,8 +1237,8 @@ request and settles it with `units`: 1 for a search that returned results, 0
 for an empty one; a failed search abandons the row unbilled. The gateway
 accepts units only on this kind, at most 1 and with no tokens, and prices a
 unit at the active `web_search` resource rate (1,800,000 micros, 1.8 credits,
-from DeepSeek's $0.75 per 1,000 searches), charged like LLM tokens on a
-platform-paid session. The usage row's `unit` is `search` and its catalog
+from DeepSeek's $0.75 per 1,000 searches), charged like LLM tokens; every
+model session is platform-paid, so a search is always charged. The usage row's `unit` is `search` and its catalog
 columns are empty. Once a session's credits run out, the pipeline's call open
 refuses a search, as it refuses any call but the terminal one. The cap of 3
 counted searches per message is the agent's (agentic-retrieval.md).
@@ -1443,9 +1434,8 @@ unread pages sends `parseFee` the same way (`!ever_parsed_successfully`, parts
 design Q6), and `_parse_fee` honours the payload for every job type; a full
 retry carries none and pays like an upload.
 
-`provider_sessions.paid_by` names who pays: `platform` (platform keys, the
-actor is charged credits; every ordinary ingest session), `user` (BYOK, zero
-credits) and `system`. A maintenance republish opens its ingest session with
+`provider_sessions.paid_by` names who pays: `platform` (the actor is charged
+credits; every model session and every ordinary ingest session) and `system`. A maintenance republish opens its ingest session with
 `paid_by='system'` (`beginSystemIngestSessionTx`, reachable only through the
 unexported `requestSourceRefresh` and `reprocessTx`) and its job payload carries
 `paidBy: "system"`. So does the reprocess of an export-only file, a plain parse
@@ -1763,7 +1753,7 @@ large answer:
 and drives an agent loop the whole time, so a requests-per-hour budget alone
 still allows arbitrary parallel spend. `BeginProviderSession` counts open
 non-ingest leases in Postgres (cap 5). A replica that dies mid-stream leaves a row the
-sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
+sweeper releases after 30 minutes. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
 The retrieval process bounds itself behind those per-user caps (Epo
@@ -1803,7 +1793,6 @@ updates wait for an admission transaction to finish; subsequent attempts see the
 committed limits immediately, without a restart or the catalog's ten-minute poll.
 The app and ingest hosts share the lease table. Lowering a limit leaves existing
 calls running and blocks new admissions until usage falls below the new limit.
-Only platform-key calls take a lease; BYOK uses the user's own provider limits.
 Missing capacity raises an explicit configuration error before a call row or
 provider request is created. A full gate polls with jitter within the call budget,
 then fails as `provider_busy`. Leases use the call id and receipt deadline and are

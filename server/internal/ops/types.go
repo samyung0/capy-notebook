@@ -559,8 +559,6 @@ type CatalogConfig struct {
 	ModelName                 string          `json:"modelName"`
 	ProviderSlug              string          `json:"providerSlug"`
 	ModelSlug                 string          `json:"modelSlug"`
-	PlatformEnabled           bool            `json:"platformEnabled"`
-	ByokEnabled               bool            `json:"byokEnabled"`
 	ContextWindowTokens       int             `json:"contextWindowTokens"`
 	ThinkingLevels            []string        `json:"thinkingLevels"`
 	DefaultThinking           string          `json:"defaultThinking"`
@@ -615,8 +613,6 @@ type DraftConfig struct {
 	ModelName           string          `json:"modelName"`
 	ProviderSlug        string          `json:"providerSlug"`
 	ModelSlug           string          `json:"modelSlug"`
-	PlatformEnabled     bool            `json:"platformEnabled"`
-	ByokEnabled         bool            `json:"byokEnabled"`
 	ContextWindowTokens int             `json:"contextWindowTokens"`
 	ThinkingLevels      []string        `json:"thinkingLevels"`
 	DefaultThinking     string          `json:"defaultThinking"`
@@ -646,7 +642,6 @@ type EliteLLMProviderPage struct {
 type EliteLLMProvider struct {
 	Slug        string   `json:"slug"`
 	Name        string   `json:"name"`
-	BYOK        bool     `json:"byok"`
 	PlatformEnv string   `json:"platformEnv"`
 	Thinking    []string `json:"thinking"`
 }

@@ -675,12 +675,10 @@ export type EditorModel = {
 export async function costliestEditorModel(run: UatRun, actor: Actor) {
   const listed = await actor.request('/api/models?slot=editor');
   expect(listed.status).toBe(200);
-  const offered = arrayField(listed.body, 'models')
-    .map(object)
-    .filter((model) => model.available === true && model.usesUserKey !== true);
+  const offered = arrayField(listed.body, 'models').map(object);
   const rows = (
     await run.query<EditorModel>(
-      "SELECT DISTINCT ON (provider_slug,model_slug) provider_slug,model_slug,micros_per_input_token,micros_per_output_token FROM model_configs WHERE enabled AND platform_enabled AND 'editor'=ANY(slots) ORDER BY provider_slug,model_slug,version DESC"
+      "SELECT DISTINCT ON (provider_slug,model_slug) provider_slug,model_slug,micros_per_input_token,micros_per_output_token FROM model_configs WHERE enabled AND 'editor'=ANY(slots) ORDER BY provider_slug,model_slug,version DESC"
     )
   ).filter((row) =>
     offered.some(
@@ -692,6 +690,6 @@ export async function costliestEditorModel(run: UatRun, actor: Actor) {
   const [costliest] = rows.sort(
     (a, b) => b.micros_per_input_token - a.micros_per_input_token
   );
-  if (!costliest) throw new Error('No platform editor model is offered');
+  if (!costliest) throw new Error('No editor model is offered');
   return costliest;
 }

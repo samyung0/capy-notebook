@@ -32,10 +32,8 @@ export function ReasoningControls({
   const modelSaving = useChatModelSaving();
   if (!hasThinkingControls(selected?.thinking)) return null;
   const spec = selected.thinking;
-  const busy = modelSaving || !selected.available;
-
   return (
-    <Select disabled={busy} onValueChange={onChange} value={stored}>
+    <Select disabled={modelSaving} onValueChange={onChange} value={stored}>
       <SelectTrigger
         aria-label={m.settings_llm_thinking()}
         className="w-auto shrink-0 sm:w-34"

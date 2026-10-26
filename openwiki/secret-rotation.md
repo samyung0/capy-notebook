@@ -109,7 +109,6 @@ schedule. Rotating them on a schedule needs two-key support first.
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `SHARE_LINK_SECRET`        | Every share link already sent (the URL carries an HMAC under it).                                                         |
 | `EMAIL_UNSUBSCRIBE_SECRET` | Unsubscribe links in emails already sent.                                                                                 |
-| `LLM_CREDENTIALS_KEY`      | Stored user provider keys (BYOK, off behind `BYOK_ENABLED`); there is no key version yet, so they would need re-entering. |
 
 ## Rotate everything now when
 

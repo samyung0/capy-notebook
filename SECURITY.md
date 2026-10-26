@@ -148,8 +148,8 @@ Review these paths even when broad discovery does not select them:
    changing the wrong user's plan.
 7. Clerk identity deletion, webhook ordering, session revocation, and operator
    membership after account locks.
-8. LLM credential encryption, actor/provider confusion, prompt injection,
-   unmetered provider calls, and cross-user conversation retrieval.
+8. Actor/provider confusion, prompt injection, unmetered provider calls, and
+   cross-user conversation retrieval.
 9. Operator database role expansion, Access bypass, registry writes, and
    reconciliation execution.
 10. Production configuration that exposes a private service or enables a test

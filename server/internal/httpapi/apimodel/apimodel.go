@@ -113,8 +113,6 @@ type ModelOption struct {
 	ModelName    string         `json:"modelName"`
 	ModelSlug    string         `json:"modelSlug"`
 	IsDefault    bool           `json:"isDefault"`
-	Available    bool           `json:"available"`
-	UsesUserKey  bool           `json:"usesUserKey"`
 	ProviderSlug string         `json:"providerSlug"`
 	Thinking     *ModelThinking `json:"thinking,omitempty"`
 }
@@ -132,29 +130,6 @@ type SetModelPrefsReq struct {
 	ChatModel    *models.Ref `json:"chatModel,omitempty"`
 	EditorModel  *models.Ref `json:"editorModel,omitempty"`
 	ChatThinking *string     `json:"chatThinking,omitempty"`
-}
-
-type LLMCredential struct {
-	ProviderSlug string `json:"providerSlug"`
-	Last4        string `json:"last4"`
-}
-
-type LLMCredentialProvider struct {
-	ProviderSlug string   `json:"providerSlug"`
-	Eligible     bool     `json:"eligible"`
-	Reason       string   `json:"reason,omitempty"`
-	Unlocks      []string `json:"unlocks" nullable:"false"`
-	Last4        string   `json:"last4,omitempty"`
-}
-
-type LLMCredentialsResponse struct {
-	Credentials []LLMCredential         `json:"credentials" nullable:"false"`
-	Providers   []LLMCredentialProvider `json:"providers" nullable:"false"`
-}
-
-type UpsertLLMCredentialReq struct {
-	ProviderSlug string    `json:"providerSlug"`
-	APIKey       LLMAPIKey `json:"apiKey"`
 }
 
 // SourceUploadPolicy describes the server-owned file allowlist and parser

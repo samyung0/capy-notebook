@@ -91,8 +91,6 @@ def _spec() -> ModelConfig:
         model_name="VLM",
         provider_slug="relace",
         model_slug="vlm",
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=("instant",),
         default_thinking="instant",
         context_window_tokens=100_000,
@@ -131,7 +129,7 @@ def pages(monkeypatch, tmp_path: Path):
     async def release(*_args, **_kwargs):
         return None
 
-    registry.bind_request_llm(paid_by="platform")
+    registry.bind_request_llm()
     monkeypatch.setattr(worker.caption_cache, "caption", caption)
     monkeypatch.setattr(models.registry, "captioning_spec", _spec)
     monkeypatch.setattr(models.obs, "record_completion", lambda *a, **k: None)

@@ -92,9 +92,6 @@ class Config:
     # one place. Unset disables those tools instead of bypassing the checks.
     gateway_url: str = _env("GATEWAY_URL", "")
     pipeline_secret: str = secret("PIPELINE_SECRET")
-    # Same 32-byte value as the Go gateway. Retrieval decrypts user keys here
-    # so the plaintext never crosses the gateway hop.
-    llm_credentials_key: str = _env("LLM_CREDENTIALS_KEY", "")
 
     # ---- worker -----------------------------------------------------------
     poll_interval: float = float(_env("CAPY_POLL_INTERVAL", "2.0"))

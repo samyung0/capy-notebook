@@ -235,7 +235,6 @@ def model_spec(model: dict[str, Any]):
         model_name=adhoc.get("model_name") or model["model_slug"],
         provider_slug=model["provider_slug"],
         model_slug=model["model_slug"],
-        platform_enabled=True,
         params=adhoc.get("params") or {"temperature": 0.3},
         slots=(registry.Slot.CHAT, registry.Slot.CAPTIONING),
         thinking_levels=tuple(
@@ -2167,7 +2166,7 @@ def build_app(target: str):
         pool = await store.pool()
         async with pool.connection() as conn:
             cur = await conn.execute(
-                "SELECT provider_slug, model_slug, version, thinking_levels, default_thinking, capabilities, platform_enabled "
+                "SELECT provider_slug, model_slug, version, thinking_levels, default_thinking, capabilities "
                 "FROM model_configs WHERE enabled AND 'chat' = ANY(slots) ORDER BY 1, 2, 3"
             )
             models = [dict(r) for r in await cur.fetchall()]

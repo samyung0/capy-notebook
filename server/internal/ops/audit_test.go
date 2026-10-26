@@ -37,8 +37,6 @@ func registryRequestFromSnapshot(snapshot RegistrySnapshot) RegistrySaveRequest 
 			ModelName:           config.ModelName,
 			ProviderSlug:        config.ProviderSlug,
 			ModelSlug:           config.ModelSlug,
-			PlatformEnabled:     config.PlatformEnabled,
-			ByokEnabled:         config.ByokEnabled,
 			ContextWindowTokens: config.ContextWindowTokens,
 			ThinkingLevels:      append([]string(nil), config.ThinkingLevels...),
 			DefaultThinking:     config.DefaultThinking,

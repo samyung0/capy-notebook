@@ -100,7 +100,6 @@ export const mockScenarioOptions = [
   { id: 'chat-undo-refused', label: 'Chat edit effect + refused undo' },
   { id: 'chat-pending-sources', label: 'Chat pending source warning' },
   { id: 'chat-source-changed', label: 'Chat source changed SSE error' },
-  { id: 'chat-invalid-key', label: 'Chat invalid key SSE error' },
   ...authScenarios,
   { id: 'auth-breached', label: 'Auth: require a new password' },
   { id: 'auth-second-factor', label: 'Auth: MFA code step' },
@@ -346,7 +345,6 @@ export function getMockScenarioHandlers(
     case 'chat-undo-refused':
     case 'chat-pending-sources':
     case 'chat-source-changed':
-    case 'chat-invalid-key':
       return [
         http.post('/api/workspaces/:id/chat/stream', ({ params }) => {
           const start = {
@@ -354,17 +352,11 @@ export function getMockScenarioHandlers(
             messageId: crypto.randomUUID(),
             type: 'start',
           };
-          if (
-            scenario === 'chat-source-changed' ||
-            scenario === 'chat-invalid-key'
-          )
+          if (scenario === 'chat-source-changed')
             return sseResponse([
               start,
               {
-                code:
-                  scenario === 'chat-source-changed'
-                    ? 'source_changed'
-                    : 'invalid_key',
+                code: 'source_changed',
                 message: 'Mock generation failed.',
                 type: 'error',
               },

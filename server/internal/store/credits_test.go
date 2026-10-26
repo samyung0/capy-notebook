@@ -50,7 +50,7 @@ func mustBeginPlatformSession(t *testing.T, ctx context.Context, s *Store, userI
 	t.Helper()
 	llm, embed := platformSessionRates()
 	id, err := s.BeginProviderSession(
-		ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+		ctx, userID, "", SurfaceChat, llm, embed, "",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,6 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 		userID,
 		"",
 		SurfaceChat,
-		models.PaidByPlatform,
 		llm,
 		embed,
 		"",
@@ -252,7 +251,7 @@ func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
 	llm, _ := platformSessionRates()
 	embed := TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1}
 	sessionID, err := s.BeginProviderSession(
-		ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+		ctx, userID, "", SurfaceChat, llm, embed, "",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -388,7 +387,6 @@ func TestMiniMaxJoinsTheChatChoicesAtItsListPrice(t *testing.T) {
 		SELECT micros_per_input_token=300 AND micros_per_cached_input_token=30
 		   AND micros_per_output_token=1200 AND slots=ARRAY['chat']
 		   AND capabilities=ARRAY['vision'] AND params->>'temperature'='0.2'
-		   AND NOT byok_enabled
 		  FROM model_configs
 		 WHERE provider_slug='openrouter' AND model_slug='minimax/minimax-m3.1-flash'
 		   AND enabled`).Scan(&ok); err != nil || !ok {
@@ -474,45 +472,23 @@ func TestListUsageEventsPagesBySortColumn(t *testing.T) {
 	}
 }
 
-func TestUserKeyProviderSessionRecordsZeroCreditCallsPastPlatformLimit(t *testing.T) {
+// Every model session is platform-paid (Q290): the session is stored as
+// paid by the platform, and the schema refuses a user-paid one.
+func TestModelSessionIsPlatformPaid(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros, purchased_micros)
-		VALUES ($1, $2, 0)`, userID, limit); err != nil {
+	sessionID := mustBeginPlatformSession(t, ctx, s, userID)
+	var paidBy string
+	if err := s.pool.QueryRow(ctx, `SELECT paid_by FROM provider_sessions WHERE id=$1`, sessionID).
+		Scan(&paidBy); err != nil {
 		t.Fatal(err)
 	}
-	sessionID, err := s.BeginProviderSession(
-		ctx,
-		userID,
-		"",
-		SurfaceChat,
-		models.PaidByUser,
-		TokenRates{Model: models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-byok"}, ModelVersion: 1},
-		TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
-		"",
-	)
-	if err != nil {
-		t.Fatal(err)
+	if paidBy != models.PaidByPlatform {
+		t.Fatalf("paid_by = %q", paidBy)
 	}
-	call := ProviderCallUsage{
-		CallID:      "pc_byok",
-		Kind:        KindLLM,
-		Purpose:     "agent",
-		Thinking:    models.ThinkingInstant,
-		InputTokens: 100,
-	}
-	mustInsertProviderCall(t, s, sessionID, call)
-	settlement, err := s.SettleProviderCall(ctx, sessionID, call)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if settlement.CreditsExhausted || settlement.TerminalCallAllowed {
-		t.Fatalf("BYOK settlement = %#v", settlement)
-	}
-	if got := mustBalance(t, s, userID).UsedMicros; got != limit {
-		t.Fatalf("BYOK changed credits: %d", got)
+	if _, err := s.pool.Exec(ctx, `UPDATE provider_sessions SET paid_by='user' WHERE id=$1`, sessionID); err == nil {
+		t.Fatal("a user-paid session was stored")
 	}
 }
 
@@ -540,7 +516,6 @@ func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T
 		userID,
 		"",
 		SurfaceChat,
-		models.PaidByPlatform,
 		RatesFromConfig(llmCfg),
 		TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
 		"",
@@ -614,7 +589,7 @@ func TestBeginProviderSessionRejectsWhenUsedOrReservedAtLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := s.BeginProviderSession(
-		ctx, usedID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+		ctx, usedID, "", SurfaceChat, llm, embed, "",
 	)
 	var usedExhausted *CreditsExhaustedError
 	if !errors.As(err, &usedExhausted) {
@@ -627,7 +602,7 @@ func TestBeginProviderSessionRejectsWhenUsedOrReservedAtLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = s.BeginProviderSession(
-		ctx, reservedID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+		ctx, reservedID, "", SurfaceChat, llm, embed, "",
 	)
 	var reservedExhausted *CreditsExhaustedError
 	if !errors.As(err, &reservedExhausted) {
@@ -655,7 +630,7 @@ func TestBeginProviderSessionCapsOpenLeases(t *testing.T) {
 			defer wg.Done()
 			<-start
 			id, err := s.BeginProviderSession(
-				ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+				ctx, userID, "", SurfaceChat, llm, embed, "",
 			)
 			mu.Lock()
 			defer mu.Unlock()
@@ -694,11 +669,11 @@ func TestReservedSessionTakesNoLLMLease(t *testing.T) {
 		t.Fatalf("first clip: %v", err)
 	}
 	for i := range ConcurrentLLMLeases {
-		if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, ""); err != nil {
+		if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, llm, embed, ""); err != nil {
 			t.Fatalf("stream %d beside a clip: %v", i, err)
 		}
 	}
-	if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, ""); !errors.Is(err, ErrTooManyLLMLeases) {
+	if _, err := s.BeginProviderSession(ctx, userID, "", SurfaceChat, llm, embed, ""); !errors.Is(err, ErrTooManyLLMLeases) {
 		t.Fatalf("sixth stream: %v, want ErrTooManyLLMLeases", err)
 	}
 	if _, err := s.BeginReservedSession(ctx, userID, "", SurfaceChat, 2_000_000); err != nil {
@@ -724,7 +699,6 @@ func TestSweepThenLateProviderCallChargesOnce(t *testing.T) {
 		userID,
 		"",
 		SurfaceChat,
-		models.PaidByPlatform,
 		RatesFromConfig(llmCfg),
 		TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
 		"",
@@ -808,7 +782,6 @@ func TestSettlementFreesTheCallsCapacityLease(t *testing.T) {
 		userID,
 		"",
 		SurfaceChat,
-		models.PaidByPlatform,
 		RatesFromConfig(llmCfg),
 		TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
 		"",

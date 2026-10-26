@@ -452,11 +452,6 @@ func main() {
 		log.Fatalf("model registry: %v", err)
 	}
 	st.SetModelRegistry(modelReg)
-	if credKey, err := store.ParseCredentialKey(env("LLM_CREDENTIALS_KEY", "")); err == nil {
-		st.SetLLMCredentialKey(credKey)
-	} else if env("LLM_CREDENTIALS_KEY", "") != "" {
-		log.Printf("llm credentials key: %v", err)
-	}
 	go modelReg.Poll(ctx)
 
 	emailSender, err := newEmailSender(appEnv, emailBackend, cloudflareAccountID, cloudflareEmailToken, emailFrom, emailReplyTo)
@@ -563,7 +558,6 @@ func main() {
 		}
 	}
 	cfg := httpapi.Config{
-		BYOKEnabled:            env("BYOK_ENABLED", "false") == "true",
 		Bank:                   bankStore,
 		BankAssets:             bankAssets,
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),

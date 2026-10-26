@@ -364,32 +364,6 @@ export const failureScenarios = [
     status: 402,
   },
   {
-    code: 'invalid_llm_key',
-    id: 'ai-key',
-    label: 'AI invalid provider key 422',
-    method: 'post',
-    paths: [
-      '/api/workspaces/:id/chat/stream',
-      '/api/workspaces/:id/generate',
-      '/api/workspaces/:id/ai/command',
-      '/api/workspaces/:id/ai/copilot',
-    ],
-    status: 422,
-  },
-  {
-    code: 'llm_key_failed',
-    id: 'ai-key-failed',
-    label: 'AI provider key failed 422',
-    method: 'post',
-    paths: [
-      '/api/workspaces/:id/chat/stream',
-      '/api/workspaces/:id/generate',
-      '/api/workspaces/:id/ai/command',
-      '/api/workspaces/:id/ai/copilot',
-    ],
-    status: 422,
-  },
-  {
     code: 'provider_busy',
     id: 'ai-busy',
     label: 'AI provider busy 503',

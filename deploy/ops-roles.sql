@@ -126,7 +126,7 @@ GRANT SELECT (user_id, role) ON operators TO capy_ops;
 GRANT SELECT (role, permission) ON ops_permissions TO capy_ops;
 GRANT SELECT (
   version, provider_name, model_name, provider_slug, model_slug,
-  platform_enabled, byok_enabled, thinking_levels, default_thinking,
+  thinking_levels, default_thinking,
   context_window_tokens, params, slots, capabilities, micros_per_input_token,
   micros_per_cached_input_token, micros_per_output_token, enabled,
   is_default_for, created_at, updated_at, created_by, updated_by
@@ -199,7 +199,7 @@ GRANT EXECUTE ON FUNCTION save_resource_credit_rate(
 
 GRANT SELECT (
   version, provider_name, model_name, provider_slug, model_slug,
-  platform_enabled, byok_enabled, thinking_levels, default_thinking,
+  thinking_levels, default_thinking,
   context_window_tokens, params, slots, capabilities, micros_per_input_token,
   micros_per_cached_input_token, micros_per_output_token, enabled,
   is_default_for, created_at, updated_at, created_by, updated_by
@@ -225,12 +225,10 @@ GRANT SELECT (
   at, read_at
 ) ON notifications TO capy_ops_admin;
 GRANT SELECT (idempotency_key) ON email_outbox TO capy_ops_admin;
-GRANT SELECT (user_id, provider_slug)
-  ON user_llm_credentials TO capy_ops_admin;
 
 GRANT INSERT (
   version, provider_name, model_name, provider_slug, model_slug,
-  platform_enabled, byok_enabled, thinking_levels, default_thinking,
+  thinking_levels, default_thinking,
   context_window_tokens, params, slots, capabilities, micros_per_input_token,
   micros_per_cached_input_token, micros_per_output_token, enabled,
   is_default_for, created_by, updated_by

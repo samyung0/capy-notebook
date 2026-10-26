@@ -32,9 +32,8 @@ The Python services share one Postgres schema owned by Go migrations
 The Go gateway is the public face: it authenticates the user, proxies chat and
 generate to the retrieval service, and owns material persistence (including the
 internal materials endpoint the chat agent calls). Retrieval HTTP is
-Go-only: every route except `/healthz` requires `X-Pipeline-Secret`. User
-provider keys stay ciphertext on that hop; retrieval decrypts them with
-`LLM_CREDENTIALS_KEY`.
+Go-only: every route except `/healthz` requires `X-Pipeline-Secret`. Every
+provider call uses the platform key (see Configuration surface).
 
 Public workspace landing pages use a separate live metadata projection from Go
 at `GET /api/public/workspaces/{token}/summary` (the share token, not the bare
@@ -2860,8 +2859,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `POST /api/internal/provider-calls` before the agent chooses its next action.
    The turn spend session remains open, so this does not take another
    concurrency slot. `(sessionId, callId)` makes callback retries idempotent.
-   Query embeddings use the same protocol at zero actor credits. BYOK LLM calls
-   also write zero-credit rows. If an LLM call exhausts platform credits and
+   Query embeddings use the same protocol at zero actor credits. If an LLM call exhausts platform credits and
    emitted tools, the agent runs every accepted emitted tool, then makes one
    tools-disabled terminal call. That call may overspend and closes the loop.
    Internal material creation does not recheck inference credits, because that
@@ -5852,7 +5850,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Concern | Env | Default / note |
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
-| User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
+| Provider keys | `platformEnv` names | Every call uses the platform key named by `platformEnv` in `elitellm_providers.json`; there are no user keys (Q290). |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
 | Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `OPENROUTER_API_KEY` | The ingest queue env carries the `OPENROUTER_API_KEY` chat also uses (GLM) for the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |

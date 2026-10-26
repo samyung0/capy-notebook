@@ -78,8 +78,6 @@ class PlateCommandReq(BaseModel):
     providerSlug: str | None = None
     modelSlug: str | None = None
     configVersion: int | None = None
-    userId: str | None = None
-    paidBy: str | None = None
     thinking: ThinkingLevel
     spendSessionId: str = ""
 
@@ -93,8 +91,6 @@ class PlateCopilotReq(BaseModel):
     providerSlug: str | None = None
     modelSlug: str | None = None
     configVersion: int | None = None
-    userId: str | None = None
-    paidBy: str | None = None
     thinking: ThinkingLevel
     spendSessionId: str = ""
 
@@ -138,7 +134,7 @@ def _refuse_past_capacity() -> None:
 
 
 def _editor_spec(req: PlateCommandReq | PlateCopilotReq):
-    registry.bind_request_llm(req.userId, req.paidBy, req.thinking)
+    registry.bind_request_llm(req.thinking)
     return models.resolve_query_model(
         req.providerSlug,
         req.modelSlug,
@@ -151,8 +147,6 @@ def _ensure_provider(spec) -> None:
     try:
         key = registry.provider_api_key_for(spec)
     except registry.RegistryError as exc:
-        if registry.current_request_llm().paid_by == "user":
-            raise models.UserKeyError(models.KEY_FAILED, models.KEY_FAILED_MSG) from exc
         raise AIAdapterError(
             "ai_unavailable",
             "AI provider is not configured",
@@ -160,8 +154,6 @@ def _ensure_provider(spec) -> None:
             retryable=True,
         ) from exc
     if not key:
-        if registry.current_request_llm().paid_by == "user":
-            raise models.UserKeyError(models.KEY_FAILED, models.KEY_FAILED_MSG)
         raise AIAdapterError(
             "ai_unavailable",
             "AI provider is not configured",
@@ -671,14 +663,6 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
         yield _sse({"type": "finish", "finishReason": "stop"})
     except asyncio.CancelledError:
         return
-    except models.UserKeyError as exc:
-        yield _sse(
-            {
-                "type": "error",
-                "errorText": exc.message,
-                "data": {"code": exc.code, "retryable": False},
-            }
-        )
     except AIAdapterError as exc:
         event = {
             "type": "error",
@@ -784,11 +768,6 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
                 "message": "request cancelled",
                 "retryable": True,
             },
-        ) from exc
-    except models.UserKeyError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": exc.code, "message": exc.message, "retryable": False},
         ) from exc
     except AIAdapterError as exc:
         raise HTTPException(

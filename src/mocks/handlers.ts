@@ -134,17 +134,14 @@ function mockCatalogModels() {
   };
   return [
     {
-      available: true,
       isDefault: true,
       modelName: 'DeepSeek Flash',
       modelSlug: 'deepseek-flash',
       providerName: 'DeepSeek',
       providerSlug: 'deepseek',
       thinking,
-      usesUserKey: false,
     },
     {
-      available: true,
       isDefault: false,
       modelName: 'GLM 5.3 Flash',
       modelSlug: 'glm-5.3-flash',
@@ -154,7 +151,6 @@ function mockCatalogModels() {
         default: 'high',
         levels: ['low', 'high', 'max'],
       },
-      usesUserKey: false,
     },
   ];
 }

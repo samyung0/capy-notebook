@@ -3196,7 +3196,7 @@ Editor AI is two public routes: `POST /api/workspaces/{id}/ai/command`
 (Python `/plate-ai/command`) and `POST /api/workspaces/{id}/ai/copilot`
 (Python `/plate-ai/copilot`). Both resolve the
 `users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
-way chat does, including BYOK. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
+way chat does. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
 (off by default).
 
 The command menu always sends `ctx.toolName`. Missing or unknown values are

@@ -77,18 +77,6 @@ export function isProviderBusyError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'provider_busy';
 }
 
-export function isInvalidLLMKeyError(err: unknown): err is ApiError {
-  return isApiError(err) && err.code === 'invalid_llm_key';
-}
-
-export function isLLMKeyFailedError(err: unknown): err is ApiError {
-  return isApiError(err) && err.code === 'llm_key_failed';
-}
-
-export function isLLMKeyError(err: unknown): err is ApiError {
-  return isInvalidLLMKeyError(err) || isLLMKeyFailedError(err);
-}
-
 /** The stored document exists but the server could not decode it. Distinct from
  * a missing material, which the UI reports as deleted. */
 export function isMaterialContentUnreadable(err: unknown): err is ApiError {

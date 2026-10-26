@@ -197,7 +197,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT SELECT (user_id, role) ON operators TO %s;
 		GRANT SELECT (role, permission) ON ops_permissions TO %s;
 		GRANT SELECT (
-			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
+			version, provider_name, model_name, provider_slug, model_slug, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for,
 			created_at, updated_at, created_by, updated_by
@@ -235,7 +235,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO %s;
 
 		GRANT SELECT (
-			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
+			version, provider_name, model_name, provider_slug, model_slug, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for,
 			created_at, updated_at, created_by, updated_by
@@ -257,9 +257,8 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			at, read_at
 		) ON notifications TO %s;
 		GRANT SELECT (idempotency_key) ON email_outbox TO %s;
-		GRANT SELECT (user_id, provider_slug) ON user_llm_credentials TO %s;
 		GRANT INSERT (
-			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
+			version, provider_name, model_name, provider_slug, model_slug, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for, created_by, updated_by
 		) ON model_configs TO %s;
@@ -293,7 +292,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		adminIdent, adminIdent, adminIdent, adminIdent,
 		adminIdent, adminIdent, adminIdent, adminIdent,
 		adminIdent, adminIdent, adminIdent, adminIdent,
-		adminIdent, adminIdent, adminIdent,
+		adminIdent, adminIdent,
 	)); err != nil {
 		t.Fatal(err)
 	}
@@ -450,13 +449,13 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	if _, err := owner.Exec(ctx, `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params,
 			slots, capabilities, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
 			99, 'Ops', 'Role Model', $1, $2,
-			true, false, 100000,
+			100000,
 			ARRAY['low','high']::text[], 'high', '{}'::jsonb,
 			ARRAY['chat'], ARRAY['vision'], 1, 1, 1, true, '{}'
 		)`, modelRef.ProviderSlug, modelRef.ModelSlug,

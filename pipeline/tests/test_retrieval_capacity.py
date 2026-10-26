@@ -840,7 +840,7 @@ async def test_a_turns_second_call_does_not_encode_its_captures_again(monkeypatc
     client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
     monkeypatch.setattr(transport, "_client", lambda: client)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
-    registry.bind_request_llm(paid_by="platform", thinking="max")
+    registry.bind_request_llm(thinking="max")
     glm = ModelConfig(
         version=1,
         provider_name="Z.ai",

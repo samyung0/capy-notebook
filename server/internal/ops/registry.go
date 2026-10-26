@@ -78,7 +78,7 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 	}
 	rows, err := q.Query(ctx, `
 		SELECT version, provider_name, model_name, provider_slug, model_slug,
-			platform_enabled, byok_enabled, context_window_tokens,
+			context_window_tokens,
 			thinking_levels, default_thinking, params,
 			slots, capabilities, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for,
@@ -90,7 +90,7 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 	for rows.Next() {
 		var c CatalogConfig
 		if err := rows.Scan(&c.Version, &c.ProviderName, &c.ModelName,
-			&c.ProviderSlug, &c.ModelSlug, &c.PlatformEnabled, &c.ByokEnabled,
+			&c.ProviderSlug, &c.ModelSlug,
 			&c.ContextWindowTokens, &c.ThinkingLevels, &c.DefaultThinking, &c.Params, &c.Slots,
 			&c.Capabilities, &c.MicrosPerInputToken, &c.MicrosPerCachedInputToken,
 			&c.MicrosPerOutputToken, &c.Enabled, &c.IsDefaultFor,
@@ -208,8 +208,6 @@ type gridDraft struct {
 	ModelName                 string
 	ProviderSlug              string
 	ModelSlug                 string
-	PlatformEnabled           bool
-	ByokEnabled               bool
 	ContextWindowTokens       int
 	ThinkingLevels            []string
 	DefaultThinking           string
@@ -301,7 +299,6 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 			ID:           ref.String(),
 			ProviderName: draft.ProviderName, ModelName: draft.ModelName,
 			ProviderSlug: draft.ProviderSlug, ModelSlug: draft.ModelSlug,
-			PlatformEnabled: draft.PlatformEnabled, ByokEnabled: draft.ByokEnabled,
 			ContextWindowTokens: draft.ContextWindowTokens,
 			ThinkingLevels:      append([]string(nil), draft.ThinkingLevels...),
 			DefaultThinking:     draft.DefaultThinking,
@@ -405,8 +402,6 @@ func configIdentityMatches(current CatalogConfig, draft gridDraft) bool {
 		current.ModelName == draft.ModelName &&
 		current.ProviderSlug == draft.ProviderSlug &&
 		current.ModelSlug == draft.ModelSlug &&
-		current.PlatformEnabled == draft.PlatformEnabled &&
-		current.ByokEnabled == draft.ByokEnabled &&
 		sameStringSet(current.ThinkingLevels, draft.ThinkingLevels) &&
 		current.DefaultThinking == draft.DefaultThinking &&
 		current.ContextWindowTokens == draft.ContextWindowTokens &&
@@ -426,8 +421,6 @@ func validateEmbeddingDraft(
 		current.ProviderName != draft.ProviderName ||
 		current.ModelName != draft.ModelName ||
 		current.ModelSlug != draft.ModelSlug ||
-		current.PlatformEnabled != draft.PlatformEnabled ||
-		current.ByokEnabled != draft.ByokEnabled ||
 		!sameStringSet(current.ThinkingLevels, draft.ThinkingLevels) ||
 		current.DefaultThinking != draft.DefaultThinking ||
 		current.ContextWindowTokens != draft.ContextWindowTokens ||
@@ -604,7 +597,6 @@ func (s *RegistryStore) saveTx(
 		_, err = tx.Exec(ctx, insertModelConfigSQL,
 			drafts[i].Version, drafts[i].ProviderName, drafts[i].ModelName,
 			drafts[i].ProviderSlug, drafts[i].ModelSlug,
-			drafts[i].PlatformEnabled, drafts[i].ByokEnabled,
 			drafts[i].ContextWindowTokens, orEmpty(drafts[i].ThinkingLevels), drafts[i].DefaultThinking,
 			drafts[i].Params, drafts[i].Slots, orEmpty(drafts[i].Capabilities),
 			drafts[i].MicrosPerInputToken, drafts[i].MicrosPerCachedInputToken,
@@ -761,9 +753,6 @@ func compileGrid(
 		if use.defaults == nil {
 			use.defaults = []string{}
 		}
-		if !d.PlatformEnabled && len(use.defaults) > 0 {
-			return nil, nil, nil, validation("BYOK-only draft %q cannot be a default", d.ID)
-		}
 		if err := bindEliteLLMDraft(&d, use.slots); err != nil {
 			return nil, nil, nil, err
 		}
@@ -798,8 +787,6 @@ func compileGrid(
 				ModelName:                 config.ModelName,
 				ProviderSlug:              config.ProviderSlug,
 				ModelSlug:                 config.ModelSlug,
-				PlatformEnabled:           config.PlatformEnabled,
-				ByokEnabled:               config.ByokEnabled,
 				ContextWindowTokens:       config.ContextWindowTokens,
 				ThinkingLevels:            append([]string(nil), config.ThinkingLevels...),
 				DefaultThinking:           config.DefaultThinking,
@@ -920,16 +907,8 @@ func validateDraft(d gridDraft) error {
 	if !providerSlugPattern.MatchString(d.ProviderSlug) {
 		return validation("draft %q has an invalid provider slug", d.ID)
 	}
-	if !d.PlatformEnabled && !d.ByokEnabled {
-		return validation("draft %q needs platform or BYOK enabled", d.ID)
-	}
-	if !d.PlatformEnabled &&
-		(d.MicrosPerInputToken != 0 || d.MicrosPerCachedInputToken != 0 || d.MicrosPerOutputToken != 0) {
-		return validation("BYOK-only draft %q must have zero platform credit rates", d.ID)
-	}
-	if d.PlatformEnabled &&
-		(d.MicrosPerInputToken <= 0 || d.MicrosPerCachedInputToken <= 0 || d.MicrosPerOutputToken <= 0) {
-		return validation("platform draft %q needs positive input, cached-input, and output rates", d.ID)
+	if d.MicrosPerInputToken <= 0 || d.MicrosPerCachedInputToken <= 0 || d.MicrosPerOutputToken <= 0 {
+		return validation("draft %q needs positive input, cached-input, and output rates", d.ID)
 	}
 	var params map[string]any
 	if len(d.Params) == 0 || json.Unmarshal(d.Params, &params) != nil || params == nil {
@@ -1027,8 +1006,7 @@ func applyExistingTargets(
 			}
 			if _, err := tx.Exec(ctx, insertModelConfigSQL,
 				nextVersion, c.ProviderName, c.ModelName, c.ProviderSlug,
-				c.ModelSlug, c.PlatformEnabled, c.ByokEnabled,
-				c.ContextWindowTokens, orEmpty(c.ThinkingLevels), c.DefaultThinking,
+				c.ModelSlug, c.ContextWindowTokens, orEmpty(c.ThinkingLevels), c.DefaultThinking,
 				c.Params, slots, orEmpty(c.Capabilities),
 				c.MicrosPerInputToken, c.MicrosPerCachedInputToken,
 				c.MicrosPerOutputToken, defaultFor, actorID); err != nil {
@@ -1073,13 +1051,13 @@ func applyExistingTargets(
 const insertModelConfigSQL = `
 	INSERT INTO model_configs (
 		version, provider_name, model_name, provider_slug, model_slug,
-		platform_enabled, byok_enabled, context_window_tokens,
+		context_window_tokens,
 		thinking_levels, default_thinking, params,
 		slots, capabilities, micros_per_input_token,
 		micros_per_cached_input_token, micros_per_output_token,
 		enabled, is_default_for, created_by, updated_by
 	) VALUES (
-		$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,$17,$18,$18
+		$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true,$15,$16,$16
 	)`
 
 func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
@@ -1111,17 +1089,6 @@ func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
 			          AND c.model_slug = u.%[2]s
 			          AND c.enabled
 			          AND $3 = ANY(c.slots)
-			          AND (
-			            c.platform_enabled
-			            OR (
-			              c.byok_enabled
-			              AND EXISTS (
-			                SELECT 1 FROM user_llm_credentials k
-			                 WHERE k.user_id = u.id
-			                   AND k.provider_slug = c.provider_slug
-			              )
-			            )
-			          )
 			     )
 			  RETURNING u.id, old.%[1]s AS provider_slug, old.%[2]s AS model_slug
 			)
@@ -1197,7 +1164,6 @@ func listEliteLLMProviders() EliteLLMProviderPage {
 		out.Providers = append(out.Providers, EliteLLMProvider{
 			Slug:        provider.Slug,
 			Name:        provider.Name,
-			BYOK:        provider.BYOK,
 			PlatformEnv: provider.PlatformEnv,
 			Thinking:    append([]string(nil), provider.Thinking...),
 		})
@@ -1249,20 +1215,11 @@ func bindEliteLLMDraft(draft *gridDraft, slots []string) error {
 	if allowed, reason := catalog.AllowsThinking(slug, draft.ThinkingLevels); !allowed {
 		return codedValidation("invalid_thinking", reason, modelSlug, "", reason)
 	}
-	if draft.PlatformEnabled {
-		if ok, reason := catalog.PlatformEnvConfigured(slug); !ok {
-			return codedValidation(
-				"missing_platform_env",
-				fmt.Sprintf("platform path for %s requires %s", slug, catalog.CredentialEnv(slug)),
-				modelSlug, "", reason,
-			)
-		}
-	}
-	if spec, ok := catalog.Lookup(slug); ok && !spec.BYOK && draft.ByokEnabled {
+	if ok, reason := catalog.PlatformEnvConfigured(slug); !ok {
 		return codedValidation(
-			"byok_not_supported",
-			fmt.Sprintf("%s does not support BYOK", slug),
-			modelSlug, "", "provider byok is false",
+			"missing_platform_env",
+			fmt.Sprintf("%s requires %s", slug, catalog.CredentialEnv(slug)),
+			modelSlug, "", reason,
 		)
 	}
 	for _, slot := range slots {

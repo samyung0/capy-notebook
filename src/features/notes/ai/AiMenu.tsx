@@ -25,7 +25,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
-import { errorCopy, llmKeyUserMessage } from '@/lib/errors';
+import { errorCopy } from '@/lib/errors';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
 // The gateway takes 16 KiB per message; 4,000 characters stays under it even
@@ -103,10 +103,6 @@ const ACTIONS: AiAction[] = [
   },
 ];
 
-function editorAiError(error: unknown): string {
-  return llmKeyUserMessage(error) ?? m.editor_ai_failed();
-}
-
 export function AiMenu() {
   const editor = useEditorRef();
   const open = usePluginOption(AIChatPlugin, 'open');
@@ -126,7 +122,7 @@ export function AiMenu() {
   } | null>(null);
   const loading =
     chat.status === 'streaming' || chat.status === 'submitted' || streaming;
-  const streamError = chat.error ? editorAiError(chat.error) : null;
+  const streamError = chat.error ? m.editor_ai_failed() : null;
 
   useEffect(() => {
     if (!open) return;

@@ -34,7 +34,7 @@ type spend struct {
 
 func (a *api) beginProviderSession(
 	ctx context.Context,
-	actorUserID, workspaceID, surface, paidBy string,
+	actorUserID, workspaceID, surface string,
 	llm, embedding store.TokenRates,
 	thinking string,
 ) (*spend, error) {
@@ -43,7 +43,6 @@ func (a *api) beginProviderSession(
 		actorUserID,
 		workspaceID,
 		surface,
-		paidBy,
 		llm,
 		embedding,
 		thinking,

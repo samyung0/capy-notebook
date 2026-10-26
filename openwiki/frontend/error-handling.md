@@ -448,11 +448,7 @@ Chat SSE failures stay on the assistant turn. A `response_flagged` error clears 
 stream that closes before a terminal `done` frame, both mark that turn as errored;
 they do not crash a page boundary or emit the default mutation toast. A
 `model_unavailable` (422) response before the stream opens is the same surface,
-with copy that sends the user to Settings → LLM. A
-rejected or unclear user
-provider key (`invalid_llm_key` / `llm_key_failed`, or the matching stream
-`invalid_key` / `key_failed` frames) stays on that same chat/editor/quiz
-surface and asks the user to check the key.
+with copy that sends the user to Settings → LLM.
 
 Stop is a request, not a dropped connection (Epo 2026-10-21): the button calls
 `POST /api/conversations/{id}/messages/{messageId}/stop` (`useStopChatTurn`)

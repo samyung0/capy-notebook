@@ -34,19 +34,17 @@ import (
 
 const PollInterval = 10 * time.Minute
 
+// provider_sessions.paid_by: every model session is platform-paid (the actor
+// is charged credits) except a maintenance republish.
 const (
-	AuthPlatform       = "platform"
-	AuthUserKey        = "user_key"
-	AuthPlatformOrUser = "platform_or_user"
-	PaidByPlatform     = "platform"
-	PaidByUser         = "user"
+	PaidByPlatform = "platform"
 	// PaidBySystem is a maintenance republish: platform keys at zero credits.
 	PaidBySystem = "system"
 )
 
 const modelConfigSelect = `
 		SELECT version, provider_name, model_name, provider_slug, model_slug,
-		       platform_enabled, byok_enabled, context_window_tokens,
+		       context_window_tokens,
 		       thinking_levels, default_thinking, params, slots, capabilities,
 		       micros_per_input_token, micros_per_output_token, enabled, is_default_for,
 		       micros_per_cached_input_token
@@ -81,8 +79,6 @@ type Config struct {
 	ModelName                 string
 	ProviderSlug              string
 	ModelSlug                 string
-	PlatformEnabled           bool
-	ByokEnabled               bool
 	ContextWindowTokens       int
 	ThinkingLevels            []string
 	DefaultThinking           string
@@ -120,32 +116,6 @@ func (c Config) DefaultFor(slot string) bool {
 		}
 	}
 	return false
-}
-
-func (c Config) Auth() string {
-	switch {
-	case c.PlatformEnabled && c.ByokEnabled:
-		return AuthPlatformOrUser
-	case c.ByokEnabled:
-		return AuthUserKey
-	default:
-		return AuthPlatform
-	}
-}
-
-// Available is whether this user may select the row. Platform rows are
-// always selectable. BYOK-only rows need a credential.
-func (c Config) Available(hasCred bool) bool {
-	if c.PlatformEnabled {
-		return true
-	}
-	return c.ByokEnabled && hasCred
-}
-
-// UsesUserKey is whether a request from this user should call the provider
-// with their credential.
-func (c Config) UsesUserKey(hasCred bool) bool {
-	return c.ByokEnabled && hasCred
 }
 
 const (
@@ -374,7 +344,7 @@ func scanConfig(row rowScanner) (Config, error) {
 	)
 	err := row.Scan(
 		&c.Version, &c.ProviderName, &c.ModelName, &c.ProviderSlug, &c.ModelSlug,
-		&c.PlatformEnabled, &c.ByokEnabled, &c.ContextWindowTokens,
+		&c.ContextWindowTokens,
 		&thinking, &c.DefaultThinking,
 		&params, &slots, &capabilities, &c.MicrosPerInputToken, &c.MicrosPerOutputToken,
 		&c.Enabled, &defaultFor, &c.MicrosPerCachedInputToken,

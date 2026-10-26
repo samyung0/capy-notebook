@@ -874,9 +874,7 @@ Sources: [study routes](../server/internal/httpapi/huma_study.go) and
   model choice is an account preference (**Settings → LLM**), snapshotted onto
   new conversations; the browser cannot pick a model per request. Editor AI
   uses the `users.editor_model_provider_slug` / `users.editor_model_slug` pair
-  the same way, including provider-scoped
-  single-key BYOK, and is gated by
-  `VITE_FEATURE_EDITOR_AI`.
+  the same way and is gated by `VITE_FEATURE_EDITOR_AI`.
 - Generation, the chat `generate_material` tool, and the internal material
   callback follow the effective role: owner, member editor, or share-role
   editor. The gateway sends `canGenerate` to the pipeline, which omits the tool
