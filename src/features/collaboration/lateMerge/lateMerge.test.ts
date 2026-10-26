@@ -7,7 +7,10 @@ import { initSync } from './generated/late_merge.js';
 import {
   hiddenDocument,
   holdsUnsent,
+  joinedFrom,
   LATE_MERGE_DEADLINE_MS,
+  LateMergeUnloaded,
+  mergeBase,
   mergeLate,
 } from './lateMerge';
 import { mergeRequest } from './lateMerge.worker';
@@ -98,6 +101,29 @@ it('answers what is not a Yjs document with the reason, not a throw', async () =
   expect(reply).toEqual({
     error: expect.stringContaining('not a Yjs document'),
   });
+});
+
+// P1 interface (in-place GC): restored rows applied raw keep the JOIN at
+// their version; a late merge applies none raw, so it joins as a new
+// session, never naming the version the room just answered late.
+it('joins a late merge as a new session, other restored rows at their version', () => {
+  const rows = [{ version: 7 }, { version: 3 }];
+  expect(joinedFrom(rows, false)).toBe(3);
+  expect(joinedFrom(rows, true)).toBeUndefined();
+  expect(joinedFrom([], false)).toBeUndefined();
+});
+
+// Late merge review r2 S6: from the snapshot the merge places onto until
+// its update is stored, the session reports the version it held then.
+it('marks the session unsent at its version as the merge takes the current document', () => {
+  const doc = new Y.Doc();
+  doc.getText('t').insert(0, 'current');
+  const room = { reportedVersion: 11, unsentFrom: vi.fn() };
+  const base = mergeBase(doc, room);
+  expect(room.unsentFrom).toHaveBeenCalledWith(11);
+  const copy = new Y.Doc();
+  Y.applyUpdate(copy, base);
+  expect(copy.getText('t').toString()).toBe('current');
 });
 
 it('needs no merge when the old document holds nothing the current one lacks', () => {
@@ -204,10 +230,14 @@ it("keeps the whole blocks someone deleted, embeds and all, in the tab's order",
   ]);
 });
 
-it('counts the deadline from the loaded WASM, not from the download', async () => {
-  vi.useFakeTimers();
+/** Workers `mergeLate` starts, each with what the tab posted to it. */
+function fakeWorkers() {
   const workers: {
+    onerror:
+      | ((event: { message: string; preventDefault(): void }) => void)
+      | null;
     onmessage: (event: { data: unknown }) => void;
+    posted: unknown[];
     stopped: boolean;
   }[] = [];
   vi.stubGlobal(
@@ -215,19 +245,33 @@ it('counts the deadline from the loaded WASM, not from the download', async () =
     class {
       onmessage = (_event: { data: unknown }) => {};
       onerror = null;
+      posted: unknown[] = [];
       stopped = false;
       constructor() {
         workers.push(this);
       }
-      postMessage() {}
+      postMessage(message: unknown) {
+        this.posted.push(message);
+      }
       terminate() {
         this.stopped = true;
       }
     }
   );
+  return workers;
+}
+
+it('counts the deadline from the loaded WASM, not from the download, and reads the current document then', async () => {
+  vi.useFakeTimers();
+  const workers = fakeWorkers();
   try {
     let outcome: string | null = null;
-    void mergeLate(new Uint8Array(), new Uint8Array()).then(
+    let reads = 0;
+    const current = () => {
+      reads += 1;
+      return new Uint8Array();
+    };
+    void mergeLate(new Uint8Array(), current).then(
       () => {
         outcome = 'merged';
       },
@@ -235,10 +279,12 @@ it('counts the deadline from the loaded WASM, not from the download', async () =
         outcome = 'failed';
       }
     );
-    // A slow download: past the deadline, but the WASM has not loaded.
+    // A slow download: no time limit (Q295), nothing read or sent yet.
     await vi.advanceTimersByTimeAsync(LATE_MERGE_DEADLINE_MS * 2);
     expect(outcome).toBeNull();
+    expect([reads, workers[0].posted.length]).toEqual([0, 0]);
     workers[0].onmessage({ data: { ready: true } });
+    expect([reads, workers[0].posted.length]).toEqual([1, 1]);
     await vi.advanceTimersByTimeAsync(LATE_MERGE_DEADLINE_MS - 1);
     expect(outcome).toBeNull();
     await vi.advanceTimersByTimeAsync(1);
@@ -246,6 +292,30 @@ it('counts the deadline from the loaded WASM, not from the download', async () =
     expect(workers[0].stopped).toBe(true);
   } finally {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it('tells code that did not load (Retry may help) from a merge that failed', async () => {
+  const workers = fakeWorkers();
+  try {
+    const current = () => new Uint8Array();
+    // The WASM fetch failed: the worker answers before it is ready.
+    const fetched = mergeLate(new Uint8Array(), current);
+    workers[0].onmessage({ data: { error: 'Failed to fetch' } });
+    await expect(fetched).rejects.toBeInstanceOf(LateMergeUnloaded);
+    // The worker's own script did not load.
+    const started = mergeLate(new Uint8Array(), current);
+    workers[1].onerror?.({ message: '', preventDefault() {} });
+    await expect(started).rejects.toBeInstanceOf(LateMergeUnloaded);
+    // Loaded, then the merge itself failed.
+    const merged = mergeLate(new Uint8Array(), current);
+    workers[2].onmessage({ data: { ready: true } });
+    workers[2].onmessage({ data: { error: 'not a Yjs update' } });
+    const error = await merged.catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(LateMergeUnloaded);
+  } finally {
     vi.unstubAllGlobals();
   }
 });

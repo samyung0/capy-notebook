@@ -65,6 +65,7 @@ const STATUS_ICON = {
   connecting: 'cloudSync',
   error: 'cloudAlert',
   offline: 'cloudOff',
+  preparing: 'cloudSync',
   reconnecting: 'cloudSync',
   saved: 'CloudIcon',
   synced: 'CloudIcon',

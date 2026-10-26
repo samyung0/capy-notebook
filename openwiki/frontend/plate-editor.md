@@ -1843,7 +1843,9 @@ other item rooms and source rooms keep no sessions and their full history.
   whose record was lost, whatever version it names (Q385, review r2 M1): its
   held deletions were not kept; for a draft group, an id its grants name or
   one it writes under, which the room admits through its record (review r3
-  L4). Nothing is collected yet, so nothing is late.
+  L4). Such a JOIN is refused before it makes a session and such a group
+  answers `late`; the tab merges ([the late path](#the-late-path)). Until a
+  collection records its window only lost ids are late.
 
 ### Client protocol and the release nudge
 
@@ -2545,24 +2547,40 @@ session inside its window can name. A session older than the window may name
 one, so its edits never sync raw: they are merged in the tab, by the Rust merge
 compiled to WASM, into one ordinary update the room admits like any edit.
 
-- **Detection** is the room's (`Room::late`, `crates/server/src/room.rs`): a
-  late JOIN is refused with `collaboration-late` (`socket::LATE_REASON`), and a
-  late `/drafts` group answers the class `late` (409) and is counted. Late
-  means a stored version below the latest collection's window; that condition
-  arrives with the session bookkeeping and the collection, and until then
-  nothing is late. A client from before this code retries the refusal, so it
-  ships with a client protocol bump.
+- **Detection** is the room's (`Room::late`, `crates/server/src/room.rs`), in
+  note rooms only: a stored version below the latest collection's window, or
+  an id whose session record was lost (Q385, [editing
+  sessions](#editing-sessions)), whatever version it names. A late JOIN is
+  refused with `collaboration-late` (`socket::LATE_REASON`) after the client-id
+  binding and before the member joins, so it makes no session and a lost
+  record's marker survives the next store (P1 review r3 N9); viewers too, as a
+  viewer's token can turn writable before its eviction lands. A late
+  `/drafts` group (its version, or a lost id among its grants and the ids it
+  writes under) answers the class `late` (409) before admission and is
+  counted. Until a collection records its window only lost ids are late.
 - **The tab** (`roomRefusal` gives `late`): the editor leaves its room, keeps
   its document as one stored row flagged `late` (`recordDrafts().late()`) and
   hands the document to a new mount through the room swap. The new editor (a
   new Y.Doc, so a new client id and an empty Undo) joins with nothing
-  restored, keeps its loading pane, and once synced merges: the handed
+  restored, as a new session at version 0 (`joinedFrom`: the rows' version
+  would be answered late again), shows the tab's own copy read-only (the old
+  document, static, `data-testid="late-copy"`) with the header reading Getting
+  ready (`preparing`) and its toolbar inert, and once synced merges: the handed
   document and every restored row are the old document, the synced one the
   current, and `mergeLate` (`src/features/collaboration/lateMerge`) runs the
   merge in a worker that is gone afterwards. Neither the worker nor the WASM is
   in the main bundle; they load only here, and not at all when the old
   document holds nothing the current one lacks (no unit past its clocks, no
-  deletion it has not made). The update is applied as this session's edit
+  deletion it has not made). The download has no time limit (Developer Epo,
+  2026-10-24, Q295): the own copy stays until the code loaded. A download that
+  failed (the worker or its WASM did not load: `LateMergeUnloaded`) keeps it,
+  everything kept, with a strip offering Retry, and the browser's `online`
+  event tries again too (Q398); a room sync while it waits tries again as
+  well. Once the code loaded, the current document is read (`mergeBase`) and
+  the session marks an unsent edit at the version it holds then
+  (`RoomProvider.unsentFrom`), so its acknowledgements stay there until a
+  store holds the merged update and no collection passes the units it names
+  (late merge review r2 S6). The update is applied as this session's edit
   (sent and stored; the restored rows it stands for are replaced at once, so a
   reload never merges them again); then the note paints and swaps in. What
   the merge would hide, because someone deleted the block around it (Developer
@@ -2573,9 +2591,10 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   the merge applies (the merge view takes this over once it exists). That row
   is written before the adopted rows go; when it cannot be stored, they stay,
   the note does not open live, and the storage failure is shown. Until the
-  merge applies the editor is not shown, its toolbar is inert and it asks for
-  no receipt, so a reload during the merge still finds the stored rows, and
-  they never reach the room raw. Once it applied, the session is late like
+  merge applies the editor is not shown (the own copy is, and the swap shows
+  it as soon as it painted), its toolbar is inert and it asks for no receipt,
+  so a reload during the merge still finds the stored rows, and they never
+  reach the room raw. Once it applied, the session is late like
   any other: a later `late` answer keeps its document (the edits since
   included) as one late row for the next mount to merge.
 - **Failure is explicit**: a failed merge, one that has not answered 10 s
@@ -2590,7 +2609,11 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   outdated) leaves the rows to the next one.
 - **Stored drafts**: a sweep answered `late` marks the group's rows `late`.
   Sweeps never send them, and an editor opening with any late row merges every
-  restored row the same way instead of applying them.
+  restored row the same way instead of applying them. Late rows go to the
+  merge whoever's session they are: `draftGroups` never shows them copy-only
+  as undeliverable and `splitOpenDrafts` never hands them to the draft send.
+  Under an id the room never recorded, the merged update is refused
+  `unassigned` and the document opens copy-only.
 - **The merge** (`collaboration-rs/crates/late-merge`, the prototype's
   `rejoin::merge_unsent`): each unsent run goes right after the nearest unit on
   its left, in the old document, that the current document still holds.
@@ -2623,8 +2646,7 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   merge and its worker carry it.
 - **Expiry**: unsent edits older than 7 days get the copy-only notice instead
   (Developer Epo, 2026-10-24); the late path reads its rows through the same
-  draft groups, so the expiry covers late rows once it lands with the session
-  bookkeeping.
+  draft groups, so the expiry covers late rows.
 - **Build**: `scripts/build-late-merge.mjs`, run by `office:prepare`, builds
   the crate with wasm-pack (profile `late-merge-wasm`: no unwinding, no debug
   info, arithmetic overflow traps as in the native tests) on the workspace's

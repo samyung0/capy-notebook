@@ -1,5 +1,6 @@
 import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import * as Y from 'yjs';
+import { draftsVersion } from '@/lib/draftStore';
 import type { MergeReply, MergeRequest } from './lateMerge.worker';
 
 /** A top-level block of the tab's document (its Yjs item id) holding
@@ -12,6 +13,10 @@ export interface HiddenBlock {
 /** How long a merge may take once its WASM loaded: a late tab that would
  * wait longer keeps its edits read-only for copying instead. */
 export const LATE_MERGE_DEADLINE_MS = 10_000;
+
+/** The merge's code (the worker or its WASM) did not load: nothing was
+ * merged, and trying again may work (Epo 2026-10-24, Q295; Q398). */
+export class LateMergeUnloaded extends Error {}
 
 /**
  * The late merge of the in-place GC (openwiki/frontend/plate-editor.md "The
@@ -32,13 +37,14 @@ export const LATE_MERGE_DEADLINE_MS = 10_000;
  * replaces at once.
  *
  * Runs in a worker that is gone afterwards, so neither it nor its WASM is
- * in the main bundle or stays loaded. `LATE_MERGE_DEADLINE_MS` after the
- * WASM loaded (a slow download is not merge time) the worker is stopped
- * and the merge fails.
+ * in the main bundle or stays loaded. The download has no time limit
+ * (Q295): `current` is read once the WASM loaded, and a failure before then
+ * rejects with `LateMergeUnloaded`. `LATE_MERGE_DEADLINE_MS` after it loaded
+ * the worker is stopped and the merge fails.
  */
 export function mergeLate(
   old: Uint8Array,
-  current: Uint8Array,
+  current: () => Uint8Array,
   author?: number
 ): Promise<{ hidden: HiddenBlock[]; merged: Uint8Array }> {
   return new Promise((resolve, reject) => {
@@ -50,39 +56,65 @@ export function mergeLate(
       }
     );
     let deadline: ReturnType<typeof setTimeout> | undefined;
+    let loaded = false;
     const done = () => {
       clearTimeout(deadline);
       worker.terminate();
     };
+    const fail = (message: string) =>
+      reject(loaded ? new Error(message) : new LateMergeUnloaded(message));
     worker.onmessage = ({ data }: MessageEvent<MergeReply>) => {
       if ('ready' in data) {
+        loaded = true;
         deadline = setTimeout(() => {
           worker.terminate();
-          reject(
-            new Error(
-              `The late merge did not finish in ${LATE_MERGE_DEADLINE_MS / 1000} s`
-            )
+          fail(
+            `The late merge did not finish in ${LATE_MERGE_DEADLINE_MS / 1000} s`
           );
         }, LATE_MERGE_DEADLINE_MS);
+        const request: MergeRequest = {
+          author,
+          current: current().slice().buffer,
+          old: old.slice().buffer,
+        };
+        worker.postMessage(request, [request.current, request.old]);
         return;
       }
       done();
-      if ('error' in data) reject(new Error(data.error));
+      if ('error' in data) fail(data.error);
       else
         resolve({ hidden: data.hidden, merged: new Uint8Array(data.merged) });
     };
     worker.onerror = (event) => {
       event.preventDefault();
       done();
-      reject(new Error(event.message || 'The late merge worker failed'));
+      fail(event.message || 'The late merge worker failed');
     };
-    const request: MergeRequest = {
-      author,
-      current: current.slice().buffer,
-      old: old.slice().buffer,
-    };
-    worker.postMessage(request, [request.current, request.old]);
   });
+}
+
+/** The stored version an opening note editor's JOIN names for its restored
+ * rows (`unsentFrom`): their oldest's, since they go in raw, but none when
+ * it merges them late. The merge applies nothing raw, so its session joins
+ * new, at 0: the rows' version would be answered late again. */
+export function joinedFrom(
+  rows: readonly { version?: number }[],
+  merging: boolean
+) {
+  return rows.length && !merging ? draftsVersion([...rows]) : undefined;
+}
+
+/** The current document a late merge places onto, taken once its code
+ * loaded. The merged update names units of it: until a store holds that
+ * update the session reports no version past the one it holds now, so no
+ * collection passes them meanwhile (late merge review r2 S6; the mark
+ * clears as the merged update's own, like any edit's). */
+export function mergeBase(
+  doc: Y.Doc,
+  room?: { reportedVersion: number; unsentFrom(version: number): void }
+) {
+  room?.unsentFrom(room.reportedVersion);
+  return Y.encodeStateAsUpdate(doc);
 }
 
 /** Whether `old` holds anything `doc` lacks: a unit past its clocks, or a

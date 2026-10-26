@@ -1,6 +1,6 @@
 import { YjsPlugin } from '@platejs/yjs/react';
 import { captureException } from '@sentry/react';
-import type { YHistoryEditor } from '@slate-yjs/core';
+import { type YHistoryEditor, yTextToSlateElement } from '@slate-yjs/core';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Path } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
@@ -36,6 +36,7 @@ import type {
   MaterialCollaborationToken,
   Provenance,
 } from '@/api/types';
+import { FileBanner } from '@/components/banners/FileBanner';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import {
@@ -45,6 +46,9 @@ import {
 import {
   hiddenDocument,
   holdsUnsent,
+  joinedFrom,
+  LateMergeUnloaded,
+  mergeBase,
   mergeLate,
 } from '@/features/collaboration/lateMerge/lateMerge';
 import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
@@ -64,6 +68,7 @@ import {
   parseMaterialDocument,
 } from '@/features/materials/document';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
@@ -597,6 +602,21 @@ export function NoteEditorCore({
     return Y.mergeUpdates(late ? [late, ...parts] : parts);
   });
   const [lateMerging, setLateMerging] = useState(!!lateDocument);
+  // The header reads Getting ready until the merge applied (Q295).
+  const lateNow = useRef(!!lateDocument);
+  // The merge's code did not load: Retry, or the browser's reconnect, tries
+  // again (Q295, Q398).
+  const [lateUnloaded, setLateUnloaded] = useState(false);
+  // Until then the note shows the tab's own copy, read-only (Q295).
+  const lateCopy = useMemo<MaterialDocument | null>(() => {
+    if (!lateDocument) return null;
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, lateDocument);
+    const value = yTextToSlateElement(doc.get('content', Y.XmlText))
+      .children as MaterialValue;
+    doc.destroy();
+    return { schemaVersion: 1, value };
+  }, [lateDocument]);
   const unsavedChanges = useRef(restored.length > 0 && !lateDocument);
   const recorder = useRef<DraftRecorder | null>(null);
   // The room is unreachable: the editor keeps editing on this device.
@@ -691,10 +711,12 @@ export function NoteEditorCore({
     const shown =
       phaseNow.current === 'standby'
         ? 'reconnecting'
-        : (sendingNow.current || heldSteps.current) &&
-            (saveState === 'saved' || saveState === 'reconnecting')
-          ? 'syncing'
-          : saveState;
+        : lateNow.current && saveState !== 'offline' && saveState !== 'error'
+          ? 'preparing'
+          : (sendingNow.current || heldSteps.current) &&
+              (saveState === 'saved' || saveState === 'reconnecting')
+            ? 'syncing'
+            : saveState;
     statusChange.current?.(
       reportedSlowed.current
         ? { saveState: shown, slowed: true }
@@ -838,7 +860,9 @@ export function NoteEditorCore({
   // the swap shows it. The blocks holding what the merge would hide (inside a
   // block someone deleted) stay whole, from the old document, as one refused
   // row, which opens read-only for copying after the remount. With nothing
-  // unsent the worker never loads.
+  // unsent the worker never loads. Code that did not load is tried again on
+  // Retry and on the browser's reconnect, the own copy shown meanwhile
+  // (Q295, Q398).
   const mergeStarted = useRef(false);
   // Set once the merged update is applied: from then on this session holds
   // the note's edits as any session does.
@@ -847,14 +871,18 @@ export function NoteEditorCore({
   mergeNow.current = () => {
     if (!lateDocument || mergeStarted.current) return;
     mergeStarted.current = true;
+    setLateUnloaded(false);
     const merged = holdsUnsent(lateDocument, ydoc)
-      ? mergeLate(lateDocument, Y.encodeStateAsUpdate(ydoc))
+      ? mergeLate(lateDocument, () =>
+          mergeBase(ydoc, capyRoom(editorRef.current))
+        )
       : Promise.resolve(null);
     merged
       .then(async (result) => {
         if (rejected.current || stale.current) return;
         if (result) Y.applyUpdate(ydoc, result.merged, LATE_ORIGIN);
         mergeApplied.current = true;
+        lateNow.current = false;
         const hidden = result?.hidden.length
           ? hiddenDocument(lateDocument, result.hidden)
           : undefined;
@@ -871,10 +899,26 @@ export function NoteEditorCore({
         setLateMerging(false);
         unsavedChanges.current = true;
         saveNow.current();
+        if (reportedStatus.current) report(reportedStatus.current);
         if (hidden) reportRejection.current?.('late', 'kept');
       })
-      .catch((error: unknown) => failLate.current(lateDocument, error));
+      .catch((error: unknown) => {
+        if (!(error instanceof LateMergeUnloaded)) {
+          failLate.current(lateDocument, error);
+          return;
+        }
+        console.warn('The late merge did not load:', error);
+        mergeStarted.current = false;
+        if (!(rejected.current || stale.current)) setLateUnloaded(true);
+      });
   };
+  // A reconnecting browser tries the code again (Q398).
+  useEffect(() => {
+    if (!lateUnloaded) return;
+    const again = () => mergeNow.current();
+    window.addEventListener('online', again);
+    return () => window.removeEventListener('online', again);
+  }, [lateUnloaded]);
 
   useEffect(
     () => () => {
@@ -1221,10 +1265,8 @@ export function NoteEditorCore({
                     // Stored drafts not yet covered by a receipt (Q236).
                     unsent: () => !!recorder.current?.unsaved,
                     // The restored rows' version: the tab reports no newer
-                    // one until the room took them.
-                    unsentFrom: restored.length
-                      ? draftsVersion(restored)
-                      : undefined,
+                    // one until the room took them (none for a late merge).
+                    unsentFrom: joinedFrom(restored, !!lateDocument),
                     url: collaborationToken.url,
                   },
                   // The capy-sync room provider (features/collaboration/platePlugin).
@@ -1504,13 +1546,17 @@ export function NoteEditorCore({
   // The first paint of the content, for the swap.
   const paintedChange = useRef(onPainted);
   paintedChange.current = onPainted;
+  // A late merge paints the tab's own copy first (no editor in it, Q295).
   const paintReported = useRef(false);
   useEffect(() => {
-    if (handshaking || lateMerging || !scrollArea || paintReported.current)
+    if ((handshaking && !lateMerging) || !scrollArea || paintReported.current)
       return;
     return afterPaint(() => {
       paintReported.current = true;
-      paintedChange.current?.({ editor, scrollArea });
+      paintedChange.current?.({
+        editor: lateMerging ? null : editor,
+        scrollArea,
+      });
     });
   }, [editor, handshaking, lateMerging, scrollArea]);
 
@@ -1668,6 +1714,21 @@ export function NoteEditorCore({
                 currentUserId={currentUserId}
                 discussions={discussions}
               >
+                {lateMerging && lateUnloaded && (
+                  <FileBanner
+                    actions={[
+                      {
+                        label: m.error_action_retry(),
+                        onClick: () => mergeNow.current(),
+                      },
+                    ]}
+                    closeable={false}
+                    inline
+                    kind="late-unloaded"
+                    message={m.editor_late_unloaded()}
+                    testId="save-banner"
+                  />
+                )}
                 {/* Held back: until sent. */}
                 <div className="contents" data-note-toolbar="" inert={locked}>
                   <CollaborationHold className="contents">
@@ -1686,7 +1747,16 @@ export function NoteEditorCore({
                      * than a healthy handshake still paints, otherwise a broken
                      * collaboration service would leave a readable note hidden
                      * behind a spinner. */}
-                    {handshaking || lateMerging ? (
+                    {lateCopy && lateMerging ? (
+                      <div data-testid="late-copy">
+                        <MaterialPreview
+                          content={lateCopy}
+                          isStandalone={!material.workspaceId}
+                          kind={material.kind}
+                          title={material.title}
+                        />
+                      </div>
+                    ) : handshaking ? (
                       <FileLoading
                         message={m.editor_connecting()}
                         slowed={slowed}

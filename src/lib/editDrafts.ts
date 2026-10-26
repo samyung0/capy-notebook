@@ -360,6 +360,8 @@ function expiredSessions(
  * opens its whole document copy-only. The drafts worker decides which (its
  * `draws`), so the main thread merges and applies held rows only once, as
  * recovery or as current rows (r5 N5); rows it cannot read stay current.
+ * Late rows stay current whoever's session they are: the editor merges them
+ * (the late path).
  */
 export async function draftGroups(
   rows: EditDraft[],
@@ -375,6 +377,7 @@ export async function draftGroups(
     same(row.lineage, lineage) &&
     !row.refused &&
     !row.accepted &&
+    !row.late &&
     (!!row.held || !row.grants?.length);
   const held = rows.filter(unsendable);
   const shown =
@@ -1290,12 +1293,13 @@ async function sendGroups(
  * An opening editor's current rows (`draftGroups`, Epo 2026-10-24, Q326):
  * those of never-accepted sessions with a stored token go through the draft
  * send while the editor joins (`send`, Q319); the others are applied and
- * sync over the live channel (`apply`): accepted sessions', and held ones
- * that need the room's document (Q360).
+ * sync over the live channel (`apply`): accepted sessions', held ones that
+ * need the room's document (Q360), and late ones, which the note editor
+ * merges (no send takes them: the room answers them late).
  */
 export function splitOpenDrafts(rows: EditDraft[]) {
   const send = rows.filter(
-    (row) => !(row.accepted || row.held) && !!row.grants?.length
+    (row) => !(row.accepted || row.held || row.late) && !!row.grants?.length
   );
   return { apply: rows.filter((row) => !send.includes(row)), send };
 }

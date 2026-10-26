@@ -197,6 +197,87 @@ test('a late tab merges its unsent edits into the current note and swaps without
   expect(after.split(AGAIN.trim()).length - 1).toBe(1);
 });
 
+/** Holds the late merge's WASM download until `answer` aborts it or lets it
+ * through (a route disables the page's HTTP cache). */
+async function holdDownload(page: Page) {
+  let answer: (how: 'abort' | 'continue') => void = () => {};
+  const answered = new Promise<'abort' | 'continue'>((resolve) => {
+    answer = resolve;
+  });
+  await page.context().route('**/late_merge_bg.wasm*', async (route) => {
+    if ((await answered) === 'abort') await route.abort('failed');
+    else await route.continue();
+  });
+  return (how: 'abort' | 'continue') => answer(how);
+}
+
+// Q295, Q398: while the merge's code downloads (no time limit) the note
+// shows the tab's own copy read-only and the header reads Getting ready; a
+// failed download keeps it so, offering Retry, and a reconnecting browser
+// tries again too.
+test('a late tab shows its own copy while the merge code downloads; a failed download retries on Retry and on reconnect', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(note);
+  const live = page.locator('[data-note-mount="live"]');
+  await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
+    timeout: 30_000,
+  });
+  const saveState = page.getByTestId('editor-save-state');
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved');
+  await setReachable(page, false);
+  await live.locator('[contenteditable="true"]').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(OFFLINE);
+
+  let download = await holdDownload(page);
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, true);
+  const copy = live.getByTestId('late-copy');
+  await expect(copy).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  await expect(saveState).toHaveAttribute('data-save-state', 'preparing');
+  await expect(live.locator('[contenteditable="true"]')).toHaveCount(0);
+  await expect(page.locator('[data-note-toolbar]')).toHaveAttribute(
+    'inert',
+    ''
+  );
+  // Past the merge's 10 s: the download has no limit.
+  await page.waitForTimeout(11_000);
+  await expect(copy).toBeVisible();
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+
+  // The download fails: the copy stays, everything kept, with Retry.
+  download('abort');
+  const banner = page.locator(
+    '[data-testid="save-banner"][data-kind="late-unloaded"]'
+  );
+  await expect(banner).toBeVisible({ timeout: 30_000 });
+  await expect(copy).toContainText(OFFLINE.trim());
+  await expect(saveState).toHaveAttribute('data-save-state', 'preparing');
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+
+  // Retry fails again, then the browser reconnects and it goes through.
+  await page.context().unroute('**/late_merge_bg.wasm*');
+  download = await holdDownload(page);
+  await banner.getByRole('button', { name: 'Retry' }).click();
+  await expect(banner).toHaveCount(0);
+  download('abort');
+  await expect(banner).toBeVisible({ timeout: 30_000 });
+  await page.context().unroute('**/late_merge_bg.wasm*');
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const editor = live.locator('[contenteditable="true"]');
+  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  await expect(banner).toHaveCount(0);
+  const text = await editor.innerText();
+  expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
+  expect(text.split(seed).length - 1).toBe(1);
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 30_000,
+  });
+  await lateSessions(page, null);
+});
+
 test('a late merge that cannot finish keeps the edits read-only for copying, never dropping them', async ({
   page,
 }) => {

@@ -2,9 +2,12 @@ import { m } from '@/i18n';
 
 /** The header save/connection status of every editable file: notes, Office
  * and text sources. `connecting` is the first handshake only (the note body
- * waits for it); later drops read `reconnecting` and keep the editor. */
+ * waits for it); later drops read `reconnecting` and keep the editor.
+ * `preparing`: a late note shows its own copy until its merge applied
+ * (Getting ready, Q295). */
 export type NoteEditorSaveState =
   | 'connecting'
+  | 'preparing'
   | 'reconnecting'
   | 'syncing'
   | 'synced'
@@ -29,6 +32,8 @@ export function noteEditorStatusLabel(
   switch (status.saveState) {
     case 'connecting':
       return m.editor_connecting();
+    case 'preparing':
+      return m.editor_status_getting_ready();
     case 'reconnecting':
       return m.editor_status_reconnecting();
     case 'syncing':

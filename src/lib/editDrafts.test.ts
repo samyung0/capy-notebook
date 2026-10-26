@@ -2042,6 +2042,26 @@ describe('the draft sweep sending', () => {
     expect((await draftGroups([unstored], ROOM)).current).toEqual([unstored]);
   });
 
+  it("keeps a never-accepted session's late rows for the editor's merge, never copy-only nor sent", async () => {
+    const doc = new Y.Doc();
+    doc.getText('content').insert(0, 'late');
+    const key = 'u_split_late:material:mat_1';
+    const tokenless = draft('a:1', {
+      data: Y.encodeStateAsUpdate(doc),
+      key,
+      kind: 'state',
+      late: true,
+    });
+    const granted = draft('b:1', { grants: [grant(9)], key, late: true });
+    await putDrafts([tokenless, granted]);
+    const opened = await draftGroups([tokenless, granted], ROOM);
+    expect(opened.recovery).toEqual([]);
+    expect(splitOpenDrafts(opened.current)).toEqual({
+      apply: [tokenless, granted],
+      send: [],
+    });
+  });
+
   it("sends a closed offline tab's never-accepted rows with its stored token under the tab's id, until stored or held (Q319, Q326)", async () => {
     const editor = {
       access: 'write' as const,
