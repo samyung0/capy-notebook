@@ -971,10 +971,20 @@ async fn windows(env: &Env, material: &str) -> i64 {
 /// Asks for a receipt and waits for the one naming `id` (other members'
 /// receipts reach every channel).
 async fn persisted(client: &mut Client, id: &str) {
+    checkpoint_requested(client, id).await;
+    checkpoint_persisted(client, id).await;
+}
+
+/// Asks the room to store now, under checkpoint `id`.
+async fn checkpoint_requested(client: &mut Client, id: &str) {
     let request = serde_json::json!({ "id": id, "type": "checkpoint-request" }).to_string();
     let mut payload = Vec::new();
     varbytes(&mut payload, request.as_bytes());
     client.send(9, &payload).await;
+}
+
+/// Waits for checkpoint `id`'s receipt.
+async fn checkpoint_persisted(client: &mut Client, id: &str) {
     loop {
         let (receipt, _) = client.stateless("checkpoint-persisted").await;
         if receipt["checkpointIds"]
@@ -1528,6 +1538,120 @@ async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
     );
 }
 
+/// Q432 (agent-edits-room item 3): live collection no longer skips a room
+/// holding agent steps. An agent step admitted while a store runs (each
+/// store of this note commits a second late, a debug hook) is pending: its
+/// row and agent holds come with the next store. The running store's fold
+/// collects the cut letters, and the open room collects its own document at
+/// that fold's window meanwhile; the step's deletions, newer than any stored
+/// window, are kept, and the step's Undo restores the text. Fails if the
+/// pending step's deletions are collected.
+#[tokio::test]
+async fn an_agent_step_pending_its_store_survives_a_live_collection() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged_with(
+        &env,
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+        ],
+    )
+    .await;
+    let (user, material) = note_named(&env, "base", "capy-it-slow-store").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    // Three writers type a, c, then b between them (the middle one named by
+    // nothing), each leaving after its store.
+    let mut writers = Vec::new();
+    for (at, letter, before) in [(4, "a", "base"), (5, "c", "basea"), (5, "b", "baseac")] {
+        let mut writer = tab(server.port, &room, &user).await;
+        assert!(writer.settle(|c| c.block_text() == before).await);
+        writer.type_at(at, letter).await;
+        persisted(&mut writer, letter).await;
+        assert!(log_folded(&env, &material).await);
+        writer.leave(false).await;
+        writers.push(writer);
+    }
+    // The fourth types "xz" and "y" between in front, cuts them and leaves.
+    let mut cutter = tab(server.port, &room, &user).await;
+    assert!(cutter.settle(|c| c.block_text() == "baseabc").await);
+    cutter
+        .write(|doc| {
+            insert_unsent(doc, 0, "xz");
+            insert_unsent(doc, 1, "y");
+        })
+        .await;
+    persisted(&mut cutter, "xyz").await;
+    assert!(log_folded(&env, &material).await);
+    let y = cutter.unit_at(1);
+    cutter.write(|doc| remove_as(doc, "c", 0, 3)).await;
+    persisted(&mut cutter, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    cutter.leave(false).await;
+    writers.push(cutter);
+    assert!(a.settle(|c| c.block_text() == "baseabc").await);
+    a.ack_all().await;
+    assert!(!collected_in_base(&env, &material, y).await);
+    // A's store of "!" runs (after the 200 ms debounce); the agent step is
+    // admitted meanwhile.
+    let live = ["live document collected", material.as_str()];
+    let lives = logs.count(&live);
+    a.type_at(0, "!").await;
+    checkpoint_requested(&mut a, "!").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let (edit, undo) = (format!("e_{material}"), format!("u_{material}"));
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "abc", "text": "Z" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    checkpoint_persisted(&mut a, "!").await;
+    for _ in 0..50 {
+        if logs.count(&live) > lives {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(logs.count(&live) > lives, "the open room collected");
+    assert!(collected_in_base(&env, &material, y).await);
+    assert_eq!(
+        receipts_now(&env, &edit).await,
+        0,
+        "the live collection ran after the step's store"
+    );
+    assert!(a.settle(|c| c.block_text() == "!baseZ").await);
+    assert!(receipt_stored(&env, &edit).await, "the step's store");
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &undo, &material, &receipt),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        a.settle(|c| c.block_text() == "!baseabc").await,
+        "{}",
+        a.block_text()
+    );
+    drop(a);
+    wait_unloaded(server.port).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        fresh.settle(|c| c.block_text() == "!baseabc").await,
+        "{}",
+        fresh.block_text()
+    );
+}
+
 /// A collection that panics (debug builds: a material id holding
 /// `capy-it-panic-collection`) is a refusal, through the fold itself: every
 /// fold still stores the folded document, uncollected, and deletes its rows,
@@ -1793,6 +1917,147 @@ async fn a_late_draft_group_is_admitted_clean_unless_it_names_a_collected_unit()
     assert!(!reloaded.block_text().contains('W'));
 }
 
+/// Where an agent Undo meets a collection of the unit it names.
+#[derive(Clone, Copy, PartialEq)]
+enum UndoRoom {
+    /// No room loaded: the stored document is checked (`apply_payload`).
+    Unloaded,
+    /// The open room, whose own collection was refused (debug builds: a
+    /// material whose id holds `capy-it-refuse-live`), so it keeps the unit
+    /// the stored base dropped: the stored check on the room path.
+    LiveRefused,
+    /// The open room, collecting between the Undo's snapshot and its
+    /// admission (debug builds: `capy-it-slow-compute` computes 3 s late):
+    /// the room's check at admission.
+    CollectedMeanwhile,
+}
+
+/// Q419 (Undo's collected-names check): an agent step deletes three items,
+/// the middle one named by nothing; its agent holds then cannot be read, so
+/// a fold drops them (Q386) and collects the middle item. The step's Undo,
+/// which names it, is refused `undo_unavailable` wherever the collection
+/// meets it, and a reload shows the note as it was: never a partial restore.
+/// Each case fails with its own check removed.
+async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged_with(
+        &env,
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+        ],
+    )
+    .await;
+    let prefix = match case {
+        UndoRoom::Unloaded => "m_it",
+        UndoRoom::LiveRefused => "capy-it-refuse-live",
+        UndoRoom::CollectedMeanwhile => "capy-it-slow-compute",
+    };
+    let (user, material) = note_named(&env, "base", prefix).await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    let mut middle = None;
+    let mut writers = Vec::new();
+    for (at, letter, before) in [(4, "a", "base"), (5, "c", "basea"), (5, "b", "baseac")] {
+        let mut writer = tab(server.port, &room, &user).await;
+        assert!(writer.settle(|c| c.block_text() == before).await);
+        writer.type_at(at, letter).await;
+        persisted(&mut writer, letter).await;
+        assert!(log_folded(&env, &material).await);
+        writer.leave(false).await;
+        middle = Some(yrs::ID::new(writer.doc.client_id(), 0));
+        writers.push(writer);
+    }
+    let middle = middle.expect("the middle letter");
+    assert!(a.settle(|c| c.block_text() == "baseabc").await);
+    a.ack_all().await;
+    let (edit, undo) = (format!("e_{material}"), format!("u_{material}"));
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "abc", "text": "Z" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(a.settle(|c| c.block_text() == "baseZ").await);
+    assert!(log_folded(&env, &material).await);
+    db(&env)
+        .await
+        .execute(
+            "UPDATE material_yjs_documents SET agent_held='	'::bytea WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("unreadable agent holds");
+    let port = server.port;
+    let request = undo_step(&user, &undo, &material, &receipt);
+    let sent = (case == UndoRoom::CollectedMeanwhile).then(|| {
+        let request = request.clone();
+        tokio::spawn(async move { internal(port, "/internal/documents/undo", &request).await })
+    });
+    for mark in ["!", "?"] {
+        a.type_at(0, mark).await;
+        persisted(&mut a, mark).await;
+        assert!(log_folded(&env, &material).await);
+        a.ack_all().await;
+    }
+    assert!(
+        collected_in_base(&env, &material, middle).await,
+        "the fold collected the middle letter"
+    );
+    let live = ["live document collected", material.as_str()];
+    if case == UndoRoom::LiveRefused {
+        assert_eq!(logs.count(&live), 0, "the open room kept the unit");
+    } else {
+        assert!(logs.has(&live).await, "the open room collected the unit");
+    }
+    if case == UndoRoom::Unloaded {
+        a.leave(false).await;
+        wait_unloaded(server.port).await;
+    }
+    let (status, refusal) = match sent {
+        Some(sent) => sent.await.expect("undo"),
+        None => internal(server.port, "/internal/documents/undo", &request).await,
+    };
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("undo_unavailable")),
+        "{refusal}"
+    );
+    if case != UndoRoom::Unloaded {
+        drop(a);
+        wait_unloaded(server.port).await;
+    }
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        fresh.settle(|c| c.block_text() == "?!baseZ").await,
+        "{}",
+        fresh.block_text()
+    );
+}
+
+#[tokio::test]
+async fn an_undo_naming_a_collected_unit_is_refused_with_no_room() {
+    an_undo_naming_a_collected_unit_is_refused(UndoRoom::Unloaded).await;
+}
+
+#[tokio::test]
+async fn an_undo_naming_a_collected_unit_is_refused_when_collected_after_its_snapshot() {
+    an_undo_naming_a_collected_unit_is_refused(UndoRoom::CollectedMeanwhile).await;
+}
+
+#[tokio::test]
+async fn an_undo_naming_a_collected_unit_is_refused_when_the_live_pass_was_refused() {
+    an_undo_naming_a_collected_unit_is_refused(UndoRoom::LiveRefused).await;
+}
+
 /// A fold collects only while no other life of its room is loaded (debug
 /// builds: the folds of a material whose id holds `capy-it-fold-later` wait
 /// 2 s first): an unload fold running after the next room loaded folds
@@ -1839,6 +2104,87 @@ async fn a_fold_collects_nothing_while_a_later_room_life_is_loaded() {
 /// waits 3 s): an ended session's run "xyz" with a closed tab's draft group
 /// typed inside it before the cut ("D" after x, naming y), and a tab A
 /// counted at the cut's version.
+/// Debug builds only: a server edit of a material whose id holds this
+/// reaches its open room 3 s after its row committed (a gap, audit B1).
+const SERVICE_LATER: &str = "capy-it-service-later";
+
+/// A second block, which a replace-block server edit then replaces.
+fn second_block(text: &str) -> serde_json::Value {
+    serde_json::json!({ "type": "p", "id": "second", "children": [{ "text": text }] })
+}
+
+/// Replaces the second block's "second" with "SECOND" by a replace-block
+/// server edit (sent to the open room as a service edit), in a task:
+/// (status, answer).
+fn replace_second(
+    port: u16,
+    owner: &str,
+    material: &str,
+    room: &str,
+) -> tokio::task::JoinHandle<(u16, serde_json::Value)> {
+    let command = serde_json::json!({
+        "actorUserId": owner,
+        "expectedBlock": second_block("second"),
+        "materialId": material,
+        "replacementBlock": second_block("SECOND"),
+        "room": room,
+        "type": "replace-block",
+    });
+    tokio::spawn(async move { internal(port, "/internal/commands", &command).await })
+}
+
+/// A note holding "base" and the second block, whose material id starts
+/// with `prefix`.
+async fn note_with_second(env: &Env, prefix: &str) -> (String, String) {
+    let (user, material) = note_named(env, "base", prefix).await;
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [
+            { "type": "p", "id": "b1", "children": [{ "text": "base" }] },
+            second_block("second"),
+        ],
+    });
+    db(env)
+        .await
+        .execute(
+            "UPDATE materials SET content=$2 WHERE id=$1",
+            &[&material, &content],
+        )
+        .await
+        .expect("second block");
+    (user, material)
+}
+
+/// Whether the room holds the second block as `text`.
+fn second_reads(client: &Client, text: &str) -> bool {
+    client.block("second") == Some(second_block(text))
+}
+
+/// A material's log rows not folded yet.
+async fn log_rows(env: &Env, material: &str) -> i32 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT log_rows FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("row")
+        .get(0)
+}
+
+/// Waits up to 3 s for a material's stored version to pass `before`.
+async fn stored_past_version(env: &Env, material: &str, before: i64) -> i64 {
+    for _ in 0..30 {
+        let now = stored_version(env, material).await;
+        if now > before {
+            return now;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    stored_version(env, material).await
+}
+
 struct DraftInCut {
     user: String,
     material: String,
@@ -1853,7 +2199,17 @@ struct DraftInCut {
 }
 
 async fn draft_in_a_cut(env: &Env, server: &Server) -> DraftInCut {
-    let (user, material) = note_named(env, "base", "capy-it-store-later").await;
+    draft_in_a_cut_named(env, server, "capy-it-store-later").await
+}
+
+/// [draft_in_a_cut] on a material whose id starts with `prefix`; one a
+/// service edit replaces into (`SERVICE_LATER`) holds the second block too.
+async fn draft_in_a_cut_named(env: &Env, server: &Server, prefix: &str) -> DraftInCut {
+    let (user, material) = if prefix.contains(SERVICE_LATER) {
+        note_with_second(env, prefix).await
+    } else {
+        note_named(env, "base", prefix).await
+    };
     let room = format!("material:{material}:schema:1");
     let mut a = tab(server.port, &room, &user).await;
     let mut b = tab(server.port, &room, &user).await;
@@ -1955,66 +2311,62 @@ async fn a_draft_group_admitted_during_a_store_holds_that_stores_fold_back() {
     the_group_survives(&env, &server, cut, "!baseD").await;
 }
 
-/// The draft floor holds back a service edit's fold too (audit A1). An
-/// agent edit computes against the room's live state, so its row carries
-/// every group the room admitted before it; the race is a group admitted
-/// after the edit read that state and before the edit reaches the room
-/// (debug builds: an operation id starting with `capy-it-service-later`
-/// reaches its room 3 s after its row committed). The group's own store
-/// waits 3 s, so the edit's fold comes first, and must not collect past
-/// the group. Fails if the floor is not kept, or is consulted only after
-/// the room's own stores.
+/// The draft floor holds back a service edit's fold too (audit A1). A
+/// server edit (a replace-block) computes against the room's live state, so
+/// its row carries every group the room admitted before it; the race is a
+/// group admitted after the edit read that state and before the edit
+/// reaches the room (debug builds: a material whose id holds
+/// `capy-it-service-later` hears of a server edit 3 s after its row
+/// committed). The group's own store waits 3 s, so the edit's fold comes
+/// first, and must not collect past the group. Fails if the floor is not
+/// kept, or is consulted only after the room's own stores.
 #[tokio::test]
 async fn a_draft_group_holds_back_a_service_edits_fold() {
     let Some(env) = env() else { return };
     let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
-    let cut = draft_in_a_cut(&env, &server).await;
-    let before = stored_version(&env, &cut.material).await;
-    let edit = format!("capy-it-service-later-{}", cut.material);
-    let agent = tokio::spawn({
-        let body = serde_json::json!({
-            "actorUserId": cut.user,
-            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "ba", "text": "BA" }],
-            "operation": { "id": edit, "requestHash": edit },
-            "room": cut.room,
-            "target": { "id": cut.material, "kind": "material" },
-        });
-        let port = server.port;
-        async move { internal(port, "/internal/documents/edit", &body).await }
-    });
-    for _ in 0..30 {
-        if stored_version(&env, &cut.material).await > before {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    if env.api.is_none() {
+        return;
     }
-    assert_eq!(stored_version(&env, &cut.material).await, before + 1);
+    let mut cut = draft_in_a_cut_named(
+        &env,
+        &server,
+        &format!("capy-it-store-later-{SERVICE_LATER}"),
+    )
+    .await;
+    let before = stored_version(&env, &cut.material).await;
+    let edit = replace_second(server.port, &cut.user, &cut.material, &cut.room);
+    assert_eq!(
+        stored_past_version(&env, &cut.material, before).await,
+        before + 1
+    );
     // The edit's row committed; its room hears of it in 3 s. The group
     // arrives a second later, and its store commits a second after that.
     tokio::time::sleep(Duration::from_secs(1)).await;
     let sent = tokio::spawn(send_group(server.port, &cut));
-    let (status, receipt) = agent.await.expect("agent");
-    assert_eq!(status, 200, "{receipt}");
+    let (status, answer) = edit.await.expect("edit");
+    assert_eq!(status, 200, "{answer}");
     let (status, answer) = sent.await.expect("sent");
     assert_eq!(status, 200, "{answer}");
-    the_group_survives(&env, &server, cut, "BAseD").await;
+    assert!(cut.a.settle(|c| second_reads(c, "SECOND")).await);
+    the_group_survives(&env, &server, cut, "baseD").await;
 }
 
-/// Audit B1: a fold never folds past a row the open room has not applied.
-/// An agent edit replacing the run "xyz" reaches the room only 3 s after its
-/// row committed (debug builds: an operation id starting with
+/// Audit B1 with Q419: a room never folds while a committed row has not
+/// reached it. A replace-block reaches the room only 3 s after its row
+/// committed (debug builds: a material whose id holds
 /// `capy-it-service-later`); a closed tab's group stored meanwhile commits
 /// after it, a gap the room's stored version skips. With no session counted
-/// (a viewer keeps the room open), that store's fold stops before the gap,
-/// so the run's middle letter, which the room and its tabs still show live,
-/// is not collected; once the room applied the edit, its agent step holds
-/// the letter. Fails if the fold folds every stored row (the letter is
-/// collected while the open room still shows it).
+/// (a viewer keeps the room open), nothing folds while the gap is open; once
+/// the row arrives the room folds every stored row, and a reload shows both
+/// edits. Fails if a fold runs while the room lacks the row.
 #[tokio::test]
 async fn a_fold_stops_before_a_row_the_open_room_has_not_applied() {
     let Some(env) = env() else { return };
     let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
-    let (owner, material) = note(&env, "base").await;
+    if env.api.is_none() {
+        return;
+    }
+    let (owner, material) = note_with_second(&env, SERVICE_LATER).await;
     let room = format!("material:{material}:schema:1");
     db(&env)
         .await
@@ -2028,38 +2380,13 @@ async fn a_fold_stops_before_a_row_the_open_room_has_not_applied() {
     redeem(&env, &material, &reader).await;
     let mut viewer = Client::open(server.port).await;
     viewer.joined(&room, &token(&room, &reader, "read")).await;
-    let mut b = tab(server.port, &room, &owner).await;
-    assert!(b.settle(|c| c.block_text() == "base").await);
-    b.write(|doc| {
-        insert_unsent(doc, 4, "xz");
-        insert_unsent(doc, 5, "y");
-    })
-    .await;
-    persisted(&mut b, "typed").await;
-    assert!(log_folded(&env, &material).await);
-    let y = b.unit_at(5);
-    b.leave(false).await;
-    assert!(viewer.settle(|c| c.block_text() == "basexyz").await);
+    assert!(viewer.settle(|c| second_reads(c, "second")).await);
     let before = stored_version(&env, &material).await;
-    let edit = format!("capy-it-service-later-{material}");
-    let agent = tokio::spawn({
-        let body = serde_json::json!({
-            "actorUserId": owner,
-            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "xyz", "text": "Q" }],
-            "operation": { "id": edit, "requestHash": edit },
-            "room": room,
-            "target": { "id": material, "kind": "material" },
-        });
-        let port = server.port;
-        async move { internal(port, "/internal/documents/edit", &body).await }
-    });
-    for _ in 0..30 {
-        if stored_version(&env, &material).await > before {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    assert_eq!(stored_version(&env, &material).await, before + 1);
+    let edit = replace_second(server.port, &owner, &material, &room);
+    assert_eq!(
+        stored_past_version(&env, &material, before).await,
+        before + 1
+    );
     // A closed tab's group, typed at the start, is stored after that row.
     let id = fresh_client_id();
     let from = Doc::with_options(ydoc::doc_options(id));
@@ -2087,17 +2414,25 @@ async fn a_fold_stops_before_a_row_the_open_room_has_not_applied() {
     )
     .await;
     assert_eq!(status, 200, "{answer}");
-    let (status, receipt) = agent.await.expect("agent");
-    assert_eq!(status, 200, "{receipt}");
+    // The group's store committed behind the gap: no fold until the row.
+    assert_eq!(stored_version(&env, &material).await, before + 2);
     assert!(
-        viewer.settle(|c| c.block_text() == "!baseQ").await,
-        "{}",
-        viewer.block_text()
+        log_rows(&env, &material).await > 0,
+        "a fold ran while the room lacked a committed row"
     );
+    let (status, answer) = edit.await.expect("edit");
+    assert_eq!(status, 200, "{answer}");
+    assert!(viewer.settle(|c| second_reads(c, "SECOND")).await);
+    assert!(viewer.settle(|c| c.block_text() == "!base").await);
     assert!(log_folded(&env, &material).await);
+    drop(viewer);
+    wait_unloaded(server.port).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &owner, "write")).await;
     assert!(
-        !collected_in_base(&env, &material, y).await,
-        "a fold collected a letter the open room had not seen deleted"
+        fresh
+            .settle(|c| c.block_text() == "!base" && second_reads(c, "SECOND"))
+            .await
     );
 }
 
@@ -2106,8 +2441,8 @@ async fn a_fold_stops_before_a_row_the_open_room_has_not_applied() {
 /// so no fold runs until the gap closes; the fold then takes that store's
 /// row with the rest. A closed tab's group types "D" inside "xyz", which a
 /// counted tab then cuts before it leaves, so no session counts (a viewer
-/// keeps the room open). An agent edit commits a row the room hears of 3 s
-/// later (debug builds: an operation id starting with
+/// keeps the room open). A replace-block of a second block commits a row the
+/// room hears of 3 s later (debug builds: a material whose id holds
 /// `capy-it-service-later`); the group, sent meanwhile, is stored behind it,
 /// at the third row since the last fold. A reload shows "D". Fails if a
 /// fold runs up to the gap (it collects y, which the group names, and its
@@ -2116,7 +2451,10 @@ async fn a_fold_stops_before_a_row_the_open_room_has_not_applied() {
 async fn a_store_behind_a_gap_is_folded_with_the_gaps_row() {
     let Some(env) = env() else { return };
     let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "3")]).await;
-    let (owner, material) = note(&env, "base").await;
+    if env.api.is_none() {
+        return;
+    }
+    let (owner, material) = note_with_second(&env, SERVICE_LATER).await;
     let room = format!("material:{material}:schema:1");
     db(&env)
         .await
@@ -2150,25 +2488,11 @@ async fn a_store_behind_a_gap_is_folded_with_the_gaps_row() {
     b.leave(false).await;
     assert!(viewer.settle(|c| c.block_text() == "base").await);
     let before = stored_version(&env, &material).await;
-    let edit = format!("capy-it-service-later-{material}");
-    let agent = tokio::spawn({
-        let body = serde_json::json!({
-            "actorUserId": owner,
-            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "ba", "text": "BA" }],
-            "operation": { "id": edit, "requestHash": edit },
-            "room": room,
-            "target": { "id": material, "kind": "material" },
-        });
-        let port = server.port;
-        async move { internal(port, "/internal/documents/edit", &body).await }
-    });
-    for _ in 0..30 {
-        if stored_version(&env, &material).await > before {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    assert_eq!(stored_version(&env, &material).await, before + 1);
+    let edit = replace_second(server.port, &owner, &material, &room);
+    assert_eq!(
+        stored_past_version(&env, &material, before).await,
+        before + 1
+    );
     let (status, answer) = send_drafts_over(
         server.port,
         &room,
@@ -2182,10 +2506,11 @@ async fn a_store_behind_a_gap_is_folded_with_the_gaps_row() {
     )
     .await;
     assert_eq!(status, 200, "{answer}");
-    let (status, receipt) = agent.await.expect("agent");
-    assert_eq!(status, 200, "{receipt}");
+    let (status, answer) = edit.await.expect("edit");
+    assert_eq!(status, 200, "{answer}");
+    assert!(viewer.settle(|c| second_reads(c, "SECOND")).await);
     assert!(
-        viewer.settle(|c| c.block_text() == "BAseD").await,
+        viewer.settle(|c| c.block_text() == "baseD").await,
         "{}",
         viewer.block_text()
     );
@@ -2195,10 +2520,10 @@ async fn a_store_behind_a_gap_is_folded_with_the_gaps_row() {
     wait_unloaded(server.port).await;
     let mut fresh = Client::open(server.port).await;
     fresh.joined(&room, &token(&room, &owner, "write")).await;
-    fresh.settle(|c| c.block_text() == "BAseD").await;
+    fresh.settle(|c| c.block_text() == "baseD").await;
     assert_eq!(
         (folded, fresh.block_text().as_str()),
-        (true, "BAseD"),
+        (true, "baseD"),
         "folded once the edit arrived; the reload's text"
     );
     assert!(!collected_in_base(&env, &material, y).await);
@@ -13607,6 +13932,19 @@ async fn a_viewer_whose_token_turns_writable_gets_a_session_at_its_first_write()
     let answered = v.stored_past(0).await;
     v.stored_past(answered).await;
     assert_eq!(session_row(&env, &material, v.id()).await.2, held);
+}
+
+/// How many receipts of `operation` are stored now.
+async fn receipts_now(env: &Env, operation: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM agent_operations WHERE id=$1",
+            &[&operation],
+        )
+        .await
+        .expect("receipts")
+        .get(0)
 }
 
 /// Waits until `operation`'s receipt is stored, at most 10 s: a loaded room

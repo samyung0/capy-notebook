@@ -661,6 +661,11 @@ const IT_REFUSE_AGENT_KEYS: &str = "capy-it-refuse-agent-keys";
 #[cfg(debug_assertions)]
 pub const IT_SERVICE_LATER: &str = "capy-it-service-later";
 
+/// Debug builds only: a material whose id holds this never collects its open
+/// room's document (a refused live pass, Q419), while its stored folds do.
+#[cfg(debug_assertions)]
+const IT_REFUSE_LIVE: &str = "capy-it-refuse-live";
+
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -2472,6 +2477,12 @@ impl Room {
         let Kindly::Note(note) = &self.kind else {
             return;
         };
+        // Debug builds only: the integration tests' refused live pass (the
+        // stored fold collects; this document stays whole).
+        #[cfg(debug_assertions)]
+        if note.material_id.contains(IT_REFUSE_LIVE) {
+            return;
+        }
         let (doc, model, started) = (self.doc.clone(), note.model, Instant::now());
         let window = window.clone();
         let collected = tokio::task::spawn_blocking(move || {
