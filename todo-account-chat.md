@@ -77,3 +77,96 @@ Chat is bound to one workspace at every layer:
   unless the user names a workspace they can edit.
 - **D4, decided:** the sources switch stays, reading "Your files only" in
   place of "Workspace only".
+
+## Build contract (2026-10-27, branch `wip/mac-account-chat`)
+
+Worktree `.claude/worktrees/account-chat`, stacked on `ae9edff0e` (the
+standalone branch the train merged). Migration **0126**. Local DB tests use
+untracked copies of the train's migrations as 0122-0124 (excluded in
+`.git/info/exclude`; never commit them). Rebased onto main after the train;
+overlaps with the train in `tools.py`, `pending.py`, `agent.py`, `store.py`
+are resolved then.
+
+First version tools (Epo 2026-10-27): read and search, create, edit existing
+files. Trash, restore, study progress, source-change resolution and the trash
+listing stay workspace-only.
+
+### Go
+
+- **0126:** `conversations.workspace_id` nullable (NULL = account chat, owned
+  by `user_id`), an index for the account list;
+  `rag_search_events.workspace_id` nullable.
+- **Routes:** `POST /api/chat/stream` (account turn, same body as the
+  workspace route; same AI rate class through the `/chat/stream` suffix);
+  `GET/POST /api/conversations` (account list and create, the same shapes as
+  `/api/workspaces/{id}/conversations`). `/api/conversations/{id}/…`
+  (messages, stop, rename, delete, pin, archive) serve an account
+  conversation to its owner alone.
+- **Scope set (D2):** owned workspaces plus member workspaces whose owner is
+  live; never workspaces reached only by link or visit (a stricter sibling
+  of `visibleWorkspacesSQL`). Standalone files of the caller.
+- **Operations:** `source.read`, `material.read`, `material.create`,
+  `document.edit`, `library.read`, narrowed as workspace chat narrows them
+  for a frozen or full account.
+- **Payload to the pipeline:** the workspace body without `workspaceId`,
+  `role`, `openResource`, `studyProgress`, plus
+  `scope: {"kind": "account", "workspaceIds": [...], "userId": "<caller>"}`.
+  Workspace turns send `scope: {"kind": "workspace", "workspaceId": ...}` as
+  well, so the pipeline reads one field.
+- **Internal endpoints** (`/api/internal/documents/{list,inspect,edit}`,
+  `/documents/office/create`, `/materials`, `/files`): a request with
+  `scope: "account"` and no `workspaceId` checks the actor's access to the
+  target itself (its workspace role among the scope set, or the owner of a
+  standalone item; edit needs an editor role). Creation with no workspace
+  makes a standalone item; with a `workspaceId` it needs an editor role
+  there.
+- **New `POST /api/internal/documents/access`**
+  `{actorUserId, items: [{kind, id}]}` →
+  `[{kind, id, workspaceId, workspaceName, canRead, canEdit}]`, one query.
+  The pipeline uses it before account-scope reads and to label results.
+- **Agent tool catalog:** each `Definition` gets `Scopes` (workspace,
+  account). Workspace definitions keep their text byte for byte. New
+  account-only `search_files` and `list_files`. `ContractVersion` 43, and
+  the generated `agent_tools.json` regenerated.
+- **Billing:** surface `chat`; the query embedding is charged at each
+  searched pin's rates.
+
+### Pipeline
+
+- **Request:** `ChatStreamReq` reads `scope`. `ToolContext.scope` is
+  `WorkspaceScope(workspace_id)` or `AccountScope(user_id, workspace_ids)`;
+  workspace code keeps `ctx.workspace_id`.
+- **Profiles:** `retrieval/profiles/workspace.py` (today's prompt, tools,
+  turn context, skills, unchanged) and `profiles/account.py`. The loop,
+  compaction, citations and events are shared. A conversation keeps its
+  profile for life (cache rule).
+- **`search_files`:** the targets are the workspaces grouped by embedding
+  pin, plus the caller's standalone content grouped by its recorded pin.
+  Embed the query once per pin, run `hybrid_search` per target, merge by
+  RRF, then rerank once. Passages carry `workspaceId` and `workspaceName`
+  (none for standalone).
+- **`list_files`:** through Go `documents/list` with the account scope:
+  name, kind, workspace and id.
+- **`read_document`, `capture_page`:** check access through Go
+  `documents/access` before reading, and return `{workspaceId,
+  workspaceName, canEdit}` with the content.
+- **`inspect_document`, `inspect_office_document`:** return the same access
+  block. Edits go through Go with the account scope.
+- **Create tools:** an optional `workspace_id` argument. Without it the item
+  is standalone; with it the item lands in that workspace, which must be
+  editable.
+- **Prompt:** `prompts/account_chat.py` and an account turn context (no open
+  item, no role line). The sources switch reads "Your files only".
+  Citations keep their workspace provenance.
+
+### Frontend
+
+- **Entry:** a Chat item in the app sidebar opens `/chat` (and
+  `/chat/$conversationId`).
+- **Layout:** the workspace Chats left panel takes the app sidebar's place,
+  and the Chat panel fills the rest. The header's back arrow returns to the
+  previous page.
+- **Data:** account conversations list and create, and the account stream
+  route.
+- **Copy:** the sources switch says "Your files only". Citations show their
+  workspace, or No workspace.
