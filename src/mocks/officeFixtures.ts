@@ -85,3 +85,13 @@ export const biologyOfficeFixtures = [
       ] as const)
     : []),
 ] as const;
+
+/** A standalone DOCX (no workspace) over the exchange plan's bytes, so the
+ * Files page shows an Office file that opens read-only outside a workspace. */
+export const standaloneOfficeFixtures = [
+  {
+    ...biologyOfficeFixtures[0],
+    id: 'standalone-office-docx',
+    name: 'Internship application.docx',
+  },
+] as const;

@@ -1,6 +1,9 @@
 # Chat outside a workspace (account scope)
 
-Status 2026-10-27: proposal, nothing decided or built. Builds after the
+Status 2026-10-27: every decision made (D1-D4), nothing built; builds after
+the release train. Placement mocks (D1):
+https://claude.ai/artifact/WthyueHjY3Y74HT1Af4JBb (A dashboard, B Chat page, C Files
+panel, D ⌘K Ask). MSW seed has standalone PDF, DOCX, MD, CSV, image and audio. Builds after the
 release train (it touches `retrieval/agent.py`, `tools.py`, `pending.py`,
 `store.py`, which the train also edits). Workspace chat keeps its prompts and
 tools byte for byte.
@@ -61,12 +64,16 @@ Chat is bound to one workspace at every layer:
 
 ## Decisions needed
 
-- **D1, where it lives.** Dashboard, the Files page, its own Chat page in the
-  sidebar, or the ⌘K search.
-- **D2, what it searches.** Owned and member workspaces plus standalone
-  files (proposed), or also link/public workspaces the user has reached.
-- **D3, writes.** Read-only first (proposed); or it may create standalone
-  materials and decks (they land in No workspace); editing workspace files
-  from account chat would need that workspace's editor role per file.
-- **D4, Workspace only switch.** Account chat has no "this workspace"; does
-  it keep the library/web/knowledge toggle as "My files only"?
+- **D1, decided (E):** the workspace panels, the Chats left panel in the app
+  sidebar's place and the Chat panel filling the rest; a Chat item in the app
+  sidebar opens it, and the header's back arrow returns to where the user
+  came from.
+- **D2, decided:** owned and member workspaces plus standalone files; not
+  link or public workspaces the user only reached.
+- **D3, decided:** account chat may write. `read_document` and
+  `inspect_document` return each file's edit permission and workspace with
+  its content (inspect already precedes every edit), and every write checks
+  the permission on the server as today. Created items land in No workspace
+  unless the user names a workspace they can edit.
+- **D4, decided:** the sources switch stays, reading "Your files only" in
+  place of "Workspace only".

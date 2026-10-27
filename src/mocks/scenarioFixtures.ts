@@ -24,7 +24,10 @@ import blankXlsxStateURL from './fixtures/blank-xlsx-checkpoint.bin?url';
 import docxStateURL from './fixtures/docx-checkpoint.bin?url';
 import pptxStateURL from './fixtures/pptx-checkpoint.bin?url';
 import xlsxStateURL from './fixtures/xlsx-checkpoint.bin?url';
-import { biologyOfficeFixtures } from './officeFixtures';
+import {
+  biologyOfficeFixtures,
+  standaloneOfficeFixtures,
+} from './officeFixtures';
 import { LAST_SCENARIO } from './scenarios';
 
 export const scenarioWorkspace = 'ws_scenarios';
@@ -313,9 +316,10 @@ export async function scenarioSourceSession(
   fileId: string,
   view = false
 ): Promise<SourceSession | null> {
-  const biologyFixture = biologyOfficeFixtures.find(
-    (fixture) => fixture.id === fileId
-  );
+  const biologyFixture = [
+    ...biologyOfficeFixtures,
+    ...standaloneOfficeFixtures,
+  ].find((fixture) => fixture.id === fileId);
   if (!sourceSeeds.has(fileId) && biologyFixture)
     await prepareOfficeSource(
       fileId,

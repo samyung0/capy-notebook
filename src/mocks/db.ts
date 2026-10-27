@@ -87,7 +87,10 @@ import { seedNotes } from './noteContent';
 import { bioNearLimitNotes } from './noteContent/bio';
 import { embeddedSeeds, equation } from './noteContent/helpers';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
-import { biologyOfficeFixtures } from './officeFixtures';
+import {
+  biologyOfficeFixtures,
+  standaloneOfficeFixtures,
+} from './officeFixtures';
 import {
   buildSmallPerfDocument,
   PERF_LARGE_NOTE,
@@ -931,6 +934,85 @@ files.push({
 });
 for (const status of ['ready', 'failed'])
   fileLinks[`f_standalone_${status}`] = { ...fileLinks.f_6 };
+
+// More standalone files, one of each kind that opens outside a workspace:
+// the Office one read-only (its edit session waits for the sources work).
+const standaloneSeeds: {
+  body?: string;
+  hoursAgo: number;
+  id: string;
+  kind: SourceFile['kind'];
+  name: string;
+  url?: string;
+}[] = [
+  {
+    body: '# Reading list\n\n- *The Selfish Gene*, Richard Dawkins\n- *Sapiens*, Yuval Noah Harari\n- *Thinking, Fast and Slow*, Daniel Kahneman\n\nFinish one a month; notes go in the study group folder.',
+    hoursAgo: 5,
+    id: 'f_standalone_md',
+    kind: 'md',
+    name: 'Reading list.md',
+  },
+  {
+    body: 'week,topic,hours\n1,Cell structure,4\n2,Genetics,5\n3,Calculus limits,6\n4,Revision,3\n',
+    hoursAgo: 8,
+    id: 'f_standalone_csv',
+    kind: 'sheet',
+    name: 'Study hours.csv',
+  },
+  {
+    hoursAgo: 26,
+    id: 'f_standalone_image',
+    kind: 'image',
+    name: 'Whiteboard photo.jpg',
+    url: 'https://picsum.photos/1600/1200',
+  },
+  {
+    hoursAgo: 50,
+    id: 'f_standalone_audio',
+    kind: 'audio',
+    name: 'Lecture recording.wav',
+    url: fileLinks.f_8.url,
+  },
+];
+standaloneSeeds.forEach((seed, index) => {
+  fileLinks[seed.id] = { url: seed.url ?? textUrl(seed.body ?? '') };
+  files.push({
+    addedAt: hours(seed.hoursAgo),
+    chapterId: null,
+    hasBytes: true,
+    id: seed.id,
+    indexed: seed.kind !== 'audio',
+    isPayer: true,
+    kind: seed.kind,
+    name: seed.name,
+    position: 2 + index,
+    ...(seed.body ? { preview: { text: seed.body.slice(0, 600) } } : {}),
+    revision: 1,
+    sizeBytes: seed.body
+      ? new TextEncoder().encode(seed.body).byteLength
+      : 640 * 1024,
+    status: 'ready',
+    workspaceId: '',
+  });
+});
+for (const fixture of standaloneOfficeFixtures) {
+  fileLinks[fixture.id] = { url: fixture.sourceURL };
+  files.push({
+    addedAt: hours(2),
+    chapterId: null,
+    hasBytes: true,
+    id: fixture.id,
+    indexed: false,
+    isPayer: true,
+    kind: fixture.kind,
+    name: fixture.name,
+    position: 2 + standaloneSeeds.length,
+    revision: 1,
+    sizeBytes: fixture.sizeBytes,
+    status: 'ready',
+    workspaceId: '',
+  });
+}
 
 // A populated shared workspace for local summary and sharing previews.
 for (const [index, chapter] of [
