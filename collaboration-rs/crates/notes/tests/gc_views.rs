@@ -1983,7 +1983,11 @@ fn collections_keep_every_replica_and_every_undo_exact() {
     assert!(tally.collections > seeds && tally.units > 0 && tally.undos > seeds);
     assert!(tally.live_collections > seeds / 4 && tally.live_units > 0);
     assert!(tally.draft_episodes > seeds / 8 && tally.drafts > seeds / 8);
-    assert!(tally.agent_undos > seeds / 4 && tally.days > seeds / 2);
+    // The agent's Undo here is a live UndoManager, which ends at the open
+    // room's swap of its document; since Q432 swaps also come while agent
+    // steps are held, so fewer of them are undone (the durable payload
+    // across a swap is the rooms tests' part), and fewer tabs hold.
+    assert!(tally.agent_undos > seeds / 10 && tally.days > seeds / 2);
     assert!(
         tally.agent_episodes > seeds / 8
             && tally.lost_episodes > seeds / 8
@@ -1991,6 +1995,6 @@ fn collections_keep_every_replica_and_every_undo_exact() {
     );
     assert!(tally.late_rejoins > seeds / 4 && tally.lost_rejoins > 0);
     assert!(tally.late_rejoins - tally.lost_rejoins > seeds / 40);
-    assert!(tally.contended > seeds / 4 && tally.holding > seeds / 8);
+    assert!(tally.contended > seeds / 4 && tally.holding > seeds / 10);
     yjs_check(&tally.sample);
 }
