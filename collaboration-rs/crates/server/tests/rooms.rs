@@ -8111,9 +8111,11 @@ async fn gateway(env: &Env) -> Gateway {
 /// Q459 (Epo 2026-10-28, with Q447): a source room's save names the
 /// workspace its room opened the file in, which Go checks every contributor
 /// against. A Move (the file's row names another workspace) and its drain:
-/// the final save, the only one under a minute's debounce, still names the
-/// old workspace, and the room reopens on the new one with the edit. Fails
-/// if a save names the file's current workspace or none.
+/// the tab hears `file-moved` with the target workspace before its channel
+/// closes (Q454), the final save, the only one under a minute's debounce,
+/// still names the old workspace, and the room reopens on the new one with
+/// the edit. Fails if a save names the file's current workspace or none, or
+/// the tab never hears the move.
 #[tokio::test]
 async fn a_moved_files_drain_save_names_the_workspace_its_room_opened() {
     let Some(env) = env() else { return };
@@ -8180,6 +8182,14 @@ async fn a_moved_files_drain_save_names_the_workspace_its_room_opened() {
         .query_async(&mut connection)
         .await
         .expect("publish");
+    // Q454: the tab hears the move, with the target workspace, on its
+    // channel, so before the drain closes it (a closed channel hears nothing).
+    let (moved, _) = writer.stateless("file-moved").await;
+    assert_eq!(
+        (moved["workspaceId"].as_str(), moved["fileId"].as_str()),
+        (Some(target.as_str()), Some(file.as_str())),
+        "{moved}"
+    );
     let mut saved = Vec::new();
     for _ in 0..100 {
         saved = gateway.saved_in.lock().expect("saved in").clone();
@@ -12888,6 +12898,61 @@ async fn typing_into_a_deleted_card_is_admitted_as_before() {
     assert_eq!(fresh.cards(), [("c2".to_owned(), "Nucleus".to_owned())]);
 }
 
+/// Q445 for a diagram room: its model is a note's but its kind is not, and
+/// like the item rooms it has no late path. Drafts typing into a Mermaid
+/// source an agent's replace_block took out since (yrs collects the old
+/// block's source) are never answered late (the drafts' own check answers
+/// them hidden), and the room keeps the new block. Fails if the
+/// collected-history check runs beyond a note's content room.
+#[tokio::test]
+async fn typing_into_a_replaced_mermaid_source_is_never_late() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, material) = diagram(&env, "graph TD\n  A --> B").await;
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &owner, "write");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(writer.joined(&room, &write).await, 1);
+    assert!(writer.settle(|c| c.source() == "graph TD\n  A --> B").await);
+    let drafts = drafted(&writer.doc, |doc: &Doc| {
+        let source = mermaid_source(doc).expect("a source text");
+        let len = yrs::Text::len(&source, &doc.transact());
+        yrs::Text::insert(&source, &mut doc.transact_mut(), len, " --> C");
+    });
+    let replaced = "flowchart LR\n  X --> Y";
+    let edit = serde_json::json!({
+        "actorUserId": owner,
+        "commands": [{
+            "type": "replace_block",
+            "blockId": "d1",
+            "expectedText": "graph TD\n  A --> B",
+            "blocks": [{
+                "children": [{ "children": [{ "text": "" }], "type": "mermaid_caption" }],
+                "id": "d2",
+                "source": replaced,
+                "type": "mermaid",
+            }],
+        }],
+        "operation": { "id": format!("op_{material}"), "requestHash": "h1", "toolVersion": 1 },
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(writer.settle(|c| c.source() == replaced).await);
+    // Never late; the drafts' own check may still answer them hidden.
+    let (status, answer) =
+        send_drafts(server.port, &room, Some(&write), Some(ORIGIN), drafts).await;
+    assert_ne!(answer["class"].as_str(), Some("late"), "{status} {answer}");
+    let mut fresh = Client::open(server.port).await;
+    assert_eq!(fresh.joined(&room, &write).await, 1);
+    assert!(
+        fresh.settle(|c| c.source() == replaced).await,
+        "{}",
+        fresh.source()
+    );
+}
+
 /// A writer joined to a flashcard set's room, synced to its `cards` cards.
 async fn set_writer(port: u16, room: &str, write: &str, cards: usize) -> Client {
     let mut client = Client::open(port).await;
@@ -14933,7 +14998,7 @@ async fn a_room_whose_saves_fail_refuses_agent_edits() {
     assert_eq!(status, 200, "{receipt}");
     assert!(receipt_stored(&env, &edit).await);
     assert!(person.settle(|c| c.block_text() == "hi world").await);
-    let trigger = fail_update_rows(&env, &material).await;
+    let trigger = fail_update_rows(&env, "material_yjs_updates", &material).await;
     person.type_text("!").await;
     person.stateless("checkpoint-failed").await;
     let later = format!("l_{material}");
@@ -14978,9 +15043,117 @@ async fn a_room_whose_saves_fail_refuses_agent_edits() {
     assert!(person.settle(|c| c.block_text() == "hi there!").await);
 }
 
-/// Makes every update row `material`'s stores insert fail (a trigger, named
-/// in the answer, dropped by the caller).
-async fn fail_update_rows(env: &Env, material: &str) -> String {
+/// Q456 for a quiz's keys room (`RoomCmd::AgentKeys`): while the keys
+/// room's saves fail (a trigger refuses its update rows under a person's
+/// keys edit) it refuses an agent quiz edit that adds an answer key
+/// `saves_failing` (409), the content room's saves working, and the content
+/// room keeps none of it; once the keys room stores again, the same edit is
+/// admitted. Fails if the keys room admits an agent's keys while its saves
+/// fail.
+#[tokio::test]
+async fn a_quiz_whose_keys_room_saves_fail_refuses_agent_edits() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_DEBOUNCE_MS", "200"),
+            ("COLLABORATION_MAX_DEBOUNCE_MS", "400"),
+        ],
+    )
+    .await;
+    let port = server.port;
+    let owner = user(&env).await;
+    let question = |id: &str| {
+        serde_json::json!({
+            "type": "quiz_question", "id": id, "children": [{ "text": "" }],
+            "question": {
+                "id": id, "layout": "paper", "labels": "letters", "stem": [],
+                "parts": [{
+                    "id": format!("{id}-p"), "blocks": [{ "type": "text", "text": "Order these." }],
+                    "answer": { "type": "ordering", "items": ["a", "b"] }, "marks": 1, "solution": [],
+                }],
+            },
+        })
+    };
+    let insert = |id: &str, after: &str| serde_json::json!([{ "type": "insert_child", "parentType": "quiz", "afterNodeId": after, "node": question(id) }]);
+    let quiz = quiz_material(&env, &owner, "private").await;
+    // A person's keys edit, whose store fails: the keys room retries.
+    let keys_room = format!("keys:{quiz}:schema:1");
+    let mut keys = Client::open(port).await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q2-p", "items"]).is_some())
+            .await
+    );
+    let trigger = fail_update_rows(&env, "material_yjs_key_updates", &quiz).await;
+    keys.write(|doc| {
+        use yrs::Map;
+        let items = map_at(doc, &["keys", "q2-p", "items"]).expect("items");
+        let first = items
+            .keys(&doc.transact())
+            .next()
+            .map(str::to_owned)
+            .expect("an item");
+        items.remove(&mut doc.transact_mut(), &first);
+    })
+    .await;
+    assert!(keys.until(6).await.is_some(), "keys ack");
+    let failing = "capy_collaboration_failed_store_queue 1";
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while !metrics_text(port).await.lines().any(|line| line == failing) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the keys store never failed"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let later = note_edit(&owner, &quiz, &format!("l_{quiz}"), insert("q3", "q2"));
+    let (status, refusal) = internal(port, "/internal/documents/edit", &later).await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("saves_failing")),
+        "{refusal}"
+    );
+    let room = format!("material:{quiz}:schema:1");
+    let mut content = Client::open(port).await;
+    content.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(
+        content
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_some())
+            .await
+    );
+    assert!(map_at(&content.doc, &["questions", "q3"]).is_none());
+    db(&env)
+        .await
+        .batch_execute(&format!(
+            "DROP TRIGGER {trigger} ON material_yjs_key_updates"
+        ))
+        .await
+        .expect("drop the trigger");
+    // The retry (5 s after the failure) stores the keys room's part.
+    let stored = "capy_collaboration_failed_store_queue 0";
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while !metrics_text(port).await.lines().any(|line| line == stored) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the retry never stored"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let (status, answer) = internal(port, "/internal/documents/edit", &later).await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        content
+            .settle(|c| map_at(&c.doc, &["questions", "q3"]).is_some())
+            .await
+    );
+}
+
+/// Makes every row `material`'s stores insert into `table` fail (a trigger,
+/// named in the answer, dropped by the caller).
+async fn fail_update_rows(env: &Env, table: &str, material: &str) -> String {
     let client = db(env).await;
     client
         .batch_execute(
@@ -14992,7 +15165,7 @@ async fn fail_update_rows(env: &Env, material: &str) -> String {
     let name = format!("capy_it_fail_{material}");
     client
         .batch_execute(&format!(
-            "CREATE TRIGGER {name} BEFORE INSERT ON material_yjs_updates FOR EACH ROW
+            "CREATE TRIGGER {name} BEFORE INSERT ON {table} FOR EACH ROW
              WHEN (NEW.material_id = '{material}') EXECUTE FUNCTION capy_it_fail_update_row()"
         ))
         .await
