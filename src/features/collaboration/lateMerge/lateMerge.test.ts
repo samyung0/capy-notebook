@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 import type { MaterialValue } from '@/features/materials/document';
 import { initSync } from './generated/late_merge.js';
 import {
+  applyMerged,
   hiddenDocument,
   holdsUnsent,
   joinedFrom,
@@ -94,6 +95,25 @@ it('re-authors the same edits under the assigned id, all of them under it', asyn
     return doc.get('content', Y.XmlText).toString();
   };
   expect(read(reauthored)).toBe(read(sample('merged')));
+});
+
+it("applies a re-authored merge as the document's own edit, keeping its id", async () => {
+  const author = 4242;
+  const current = sample('current');
+  const reply = await mergeRequest({
+    author,
+    current: current.slice().buffer,
+    old: sample('old').slice().buffer,
+  });
+  if (!('merged' in reply)) throw new Error(reply.error);
+  const doc = new Y.Doc();
+  doc.clientID = author;
+  Y.applyUpdate(doc, current);
+  applyMerged(doc, new Uint8Array(reply.merged), 'late', true);
+  // Yjs would give the document another id (which the room refuses) had a
+  // remote transaction written under its own.
+  expect(doc.clientID).toBe(author);
+  expect(doc.store.pendingStructs).toBeNull();
 });
 
 it('answers what is not a Yjs document with the reason, not a throw', async () => {

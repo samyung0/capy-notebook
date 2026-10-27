@@ -835,7 +835,7 @@ export function recordDrafts({
   const keepAs = (
     flag: 'late' | 'refused',
     data = Y.encodeStateAsUpdate(doc)
-  ): DraftRef => {
+  ): EditDraft => {
     const previous = ownRows();
     stop();
     const kept = row(
@@ -948,10 +948,13 @@ export function recordDrafts({
       stop();
       return done;
     },
-    /** The room answered late (in-place GC): keep the whole document as one
-     * late row, which the next editor merges, and stop recording. */
-    late(): DraftRef {
-      return keepAs('late');
+    /** The room answered late (in-place GC): keep the whole document (or
+     * `data`, the old document a re-author merges anew) as one late row,
+     * which the next editor merges, and stop recording. Returns
+     * that row, dated as its newest edit (past the 7-day expiry it becomes
+     * pieces, Q413). */
+    late(data?: Uint8Array): EditDraft {
+      return keepAs('late', data);
     },
     /** A save refused for good: keep the whole document (or `data`, the
      * document the edits are in) as one refused row (shown for copying,
@@ -972,7 +975,8 @@ export function recordDrafts({
     /** A late merge's update is applied (recorded as this session's edit):
      * the adopted rows it stands for go now rather than at a receipt, so a
      * reload never merges them again, and `hidden` (a document of the text
-     * the merge would hide) stays as one refused row, shown for copying.
+     * the merge would hide) stays as one refused row flagged hidden, which
+     * the next open shows as the merge view's pieces.
      * That row (dated as the adopted rows, Q420) is written first, then the
      * merged document whole unless nothing was merged (`merged` false: the
      * document already held every edit), and the adopted rows go only once
@@ -981,8 +985,10 @@ export function recordDrafts({
      * that covers them. */
     async supersede(hidden?: Uint8Array, merged = true): Promise<boolean> {
       if (hidden) {
+        // Hidden typing: its pieces say so (Q237, Q410).
         const kept = {
           ...row('state', sequence, hidden, 'refused', dated(adoptedAt())),
+          hidden: true as const,
           id: `${session}:hidden`,
         };
         try {
@@ -1111,10 +1117,11 @@ function groupGrants(group: DraftInfo[]) {
 }
 
 /** A document's rows its room takes now: Yjs rows (never a note's copy),
- * not refused, not left for the editor (`held`, `late`), of the token's
- * room, one group per lineage (an Office file's rows of another base go
- * apart), with the newest of their stored tokens. */
-function sendableGroups(rows: DraftInfo[], room: string) {
+ * not refused, not left for the editor (`held`, and `late` unless a late
+ * note editor tries them clean, Q436), of the token's room, one group per
+ * lineage (an Office file's rows of another base go apart), with the newest
+ * of their stored tokens. */
+function sendableGroups(rows: DraftInfo[], room: string, late = false) {
   // An expired session's rows wait for the next open, which shows them once.
   const expired = expiredSessions(rows, Date.now());
   const groups = new Map<string, DraftInfo[]>();
@@ -1123,7 +1130,7 @@ function sendableGroups(rows: DraftInfo[], room: string) {
     if (
       row.refused ||
       row.held ||
-      row.late ||
+      (row.late && !late) ||
       row.lineage.split('@')[0] !== room
     )
       continue;
@@ -1324,11 +1331,12 @@ async function sendGroups(
   key: string,
   token: RoomToken,
   current: () => boolean,
-  only: (row: DraftInfo) => boolean = () => true
+  only: (row: DraftInfo) => boolean = () => true,
+  late = false
 ): Promise<Sent[] | null> {
   const answers: Sent[] = [];
   const rows = await call<DraftInfo[]>({ key, op: 'rows' });
-  for (const group of sendableGroups(rows.filter(only), token.room)) {
+  for (const group of sendableGroups(rows.filter(only), token.room, late)) {
     if (!current()) return null;
     const { refs, sent } = await sendGroup(token, group);
     if (!current()) return null;
@@ -1371,6 +1379,20 @@ export function splitOpenDrafts(rows: EditDraft[]) {
     (row) => !(row.accepted || row.held || row.late) && !!row.grants?.length
   );
   return { apply: rows.filter((row) => !send.includes(row)), send };
+}
+
+/** A late note editor's one try of the rows it took (`ids`, late ones
+ * included) as ordinary drafts before any merge code loads (Epo 2026-10-27,
+ * Q436): the room admits a group naming nothing it collected and answers
+ * the others late (their rows marked so). Sent rows go. Resolves each
+ * group's answer, or null when stopped or refused as outdated. */
+export function sendLateDrafts(
+  key: string,
+  token: RoomToken,
+  ids: ReadonlySet<string>,
+  current: () => boolean
+) {
+  return sendGroups(key, token, current, (row) => ids.has(row.id), true);
 }
 
 /** How long an opening editor waits, view-only, for the draft send of its

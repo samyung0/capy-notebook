@@ -12,7 +12,7 @@ export interface HiddenBlock {
 }
 
 /** How long a merge may take once its WASM loaded: a late tab that would
- * wait longer keeps its edits read-only for copying instead. */
+ * wait longer keeps its edits as the merge view's pieces instead (Q420). */
 export const LATE_MERGE_DEADLINE_MS = 10_000;
 
 /** The merge's code (the worker or its WASM) did not load: nothing was
@@ -40,8 +40,8 @@ let unloadedReported = false;
  * neighbour the current document still holds (stable left); the tab applies
  * it to the new document and sends it like any edit. `hidden` names the
  * blocks of the tab's document holding what the merged note would not show
- * (inside a block someone deleted): the tab keeps them as one refused row,
- * for copying (Developer Epo, 2026-10-24).
+ * (inside a block someone deleted): the tab keeps them as one hidden row,
+ * the merge view's pieces (Developer Epo, 2026-10-24; Q237, Q420).
  *
  * With `author` (the session's assigned client id) the edits are
  * re-authored instead: the same places, as new edits under that id, for
@@ -140,6 +140,32 @@ export function mergeLate(
   });
 }
 
+/** Applies a late merge's update to the new session's document under
+ * `origin`. A re-authored one is written under the document's own client id,
+ * so its transaction stays local: Yjs gives a document a new id when a
+ * remote transaction writes under its own, which the room refuses (Q406,
+ * merge view phase 2). */
+export function applyMerged(
+  doc: Y.Doc,
+  merged: Uint8Array,
+  origin: unknown,
+  reauthored: boolean
+) {
+  if (!reauthored) {
+    Y.applyUpdate(doc, merged, origin);
+    return;
+  }
+  Y.transact(
+    doc,
+    (transaction) => {
+      Y.applyUpdate(doc, merged, origin);
+      // Reading an update marks its transaction remote.
+      transaction.local = true;
+    },
+    origin
+  );
+}
+
 /** The stored version an opening note editor's JOIN names for its restored
  * rows (`unsentFrom`): their oldest's, since they go in raw, but none when
  * it merges them late. The merge applies nothing raw, so its session joins
@@ -178,8 +204,8 @@ export function holdsUnsent(old: Uint8Array, doc: Y.Doc): boolean {
 }
 
 /** A note holding the named blocks of the tab's document `old` whole (text,
- * inline elements, embeds), each once, in its order: the refused row the
- * recovery view shows for copying. */
+ * inline elements, embeds), each once, in its order: the hidden row the
+ * merge view shows as pieces. */
 export function hiddenDocument(
   old: Uint8Array,
   hidden: readonly HiddenBlock[]

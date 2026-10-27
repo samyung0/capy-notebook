@@ -1151,16 +1151,24 @@ export function lateSessions(materialId: string | null, every = false) {
   if (materialId) lateMaterials.set(materialId, every ? 'every' : 'joined');
   else lateMaterials.clear();
 }
-/** The room refuses an open note's update for good (over a limit): its
- * editors keep their unsaved edits as a refused draft. The service refuses
- * the update on entry; the mock applied it already, so its room is retired
- * and the next join loads the last checkpoint, without the update. */
-export function rejectMockNoteUpdate(materialId: string) {
+/** The room refuses an open note's update for good (over a limit, or
+ * `unassigned`: written under an id the room never recorded): its editors
+ * keep their unsaved edits as a refused draft. The service refuses the
+ * update on entry; the mock applied it already, so its room is retired and
+ * the next join loads the last checkpoint, without the update. */
+export function rejectMockNoteUpdate(
+  materialId: string,
+  code: 'document_size_exceeded' | 'unassigned' = 'document_size_exceeded'
+) {
   for (const provider of [...materialProviders])
-    provider.announce(materialId, {
-      code: 'document_size_exceeded',
-      type: 'document-rejected',
-    });
+    provider.announce(materialId, { code, type: 'document-rejected' });
+}
+/** A draft group the service admitted (the e2e `/drafts` stub, Q436): its
+ * update goes into the note's open room as the service applies it. */
+export function admitMockNoteDrafts(materialId: string, update: Uint8Array) {
+  const room = rooms.get(mockMaterialRoom(materialId));
+  if (!room) throw new Error(`Mock room for ${materialId} is not open`);
+  Y.applyUpdate(room.document, update);
 }
 /** The collaboration service's refusal once the account freezes: every open
  * room turns read-only for its writer. */

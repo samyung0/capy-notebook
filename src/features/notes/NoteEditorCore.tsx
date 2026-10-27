@@ -47,6 +47,7 @@ import {
   EditorHoldScope,
 } from '@/features/collaboration/CollaborationHold';
 import {
+  applyMerged,
   hiddenDocument,
   holdsUnsent,
   joinedFrom,
@@ -83,6 +84,7 @@ import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import { type DraftRef, mergedRows } from '@/lib/draftStore';
 import {
   applyDrafts,
+  DRAFT_EXPIRY_MS,
   DRAFT_SEND_WAIT_MS,
   type DraftRecorder,
   type DraftSender,
@@ -92,6 +94,7 @@ import {
   dropLostDrafts,
   type EditDraft,
   recordDrafts,
+  sendLateDrafts,
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { editorAiEnabled } from '@/lib/features';
@@ -528,6 +531,13 @@ const scrollSelectionIntoView: NonNullable<
  */
 export type NoteEditorPhase = 'live' | 'standby' | 'paused';
 
+/** A late editor's document, handed to the editor that replaces it. */
+export interface Handed {
+  reauthor?: true;
+  session: string;
+  state: Uint8Array;
+}
+
 export function NoteEditorCore({
   material,
   allowExternalAssets,
@@ -580,8 +590,12 @@ export function NoteEditorCore({
   /** The document of the editor this one replaces after the room answered
    * late (in-place GC): with the restored rows it is the old document whose
    * unsent edits the late merge places onto the room's current one, once
-   * this editor synced; nothing of it is applied raw. */
-  late?: Uint8Array;
+   * this editor synced; nothing of it is applied raw. `session`: the
+   * replaced editor's, whose late row holds the same document if it was
+   * stored. `reauthor`: its merged update was refused for an id the room
+   * never recorded, so this editor writes the edits anew under its own id,
+   * once (Q406). */
+  late?: Handed;
   /** Stored edits of never-accepted sessions: the draft send takes them
    * while the room joins (Q319, Q327). */
   pending: EditDraft[];
@@ -616,8 +630,9 @@ export function NoteEditorCore({
   /** The room answered this editor's JOIN late (its session is older than
    * the collection window): the caller replaces it, through the room swap,
    * with a new editor (a new document, client id and empty Undo) given this
-   * one's document as `late`. */
-  onLate?: (state: Uint8Array) => void;
+   * one's document as `late` (null when its edits are past the 7-day
+   * expiry: the next one shows them as pieces, Q413). */
+  onLate?: (late: Handed | null) => void;
   /** The late merge's code did not load: its Retry while the strip shows,
    * null once it loads or this editor goes (Q398). */
   onLateUnloaded?: (retry: (() => void) | null) => void;
@@ -678,16 +693,25 @@ export function NoteEditorCore({
   // raw and no draft send runs (so no Q360 hold). Rows another open tab
   // records stay out, untouched (Q420). `adoptedRows`: the rows the recorder
   // stands for; `sendRows`: the draft send's.
-  const [{ adoptedRows, lateDocument, sendRows }] = useState(() => {
+  // `lateStored`: the rows hold the handed document (its late row was
+  // read), so the server's clean try of them stands for it (Q436).
+  const [{ adoptedRows, lateDocument, lateStored, sendRows }] = useState(() => {
     if (!(late || restored.some((row) => row.late)))
-      return { adoptedRows: restored, lateDocument: null, sendRows: pending };
+      return {
+        adoptedRows: restored,
+        lateDocument: null,
+        lateStored: false,
+        sendRows: pending,
+      };
     const rows = [...restored, ...pending].filter(
       (row) => !held.has(row.session)
     );
     const parts = rows.length ? [mergedRows(rows)] : [];
     return {
       adoptedRows: rows,
-      lateDocument: Y.mergeUpdates(late ? [late, ...parts] : parts),
+      lateDocument: Y.mergeUpdates(late ? [late.state, ...parts] : parts),
+      lateStored:
+        !late || rows.some((row) => row.late && row.session === late.session),
       sendRows: [] as EditDraft[],
     };
   });
@@ -743,9 +767,11 @@ export function NoteEditorCore({
   // Until the room's first sync the editor holds the saved copy, editable
   // (Q229): the projection, or the newest stored copy's edited value, whose
   // row this mount goes on with. What is typed there is kept on this device
-  // as the copy and merges into the room's document once bound.
-  const [initialValue] = useState(
-    () => copies.adopted?.copy.mine ?? projection
+  // as the copy and merges into the room's document once bound. A late
+  // mount shows its own late copy read-only instead, and merges the copies
+  // only once its late merge applied (Q295, Q406).
+  const [initialValue] = useState(() =>
+    lateDocument ? projection : (copies.adopted?.copy.mine ?? projection)
   );
   // The copy past the offline bound (review r1 L2): the editor stops, as
   // drafts do, until the room joins.
@@ -963,8 +989,8 @@ export function NoteEditorCore({
   // The room turned read-only and the unsaved edits were discarded.
   const discarded = useRef(false);
   // The late merge failed: the old document is kept as one refused row,
-  // which the remount shows read-only for copying, and the stored rows stay
-  // until then (no edit is dropped silently).
+  // which the remount opens on the live note as the merge view's pieces
+  // (Q420); the stored rows stay until then (no edit is dropped silently).
   const failLate = useRef((_old: Uint8Array, _error: unknown) => {});
   failLate.current = (old, error) => {
     // A mount the swap set aside leaves the rows to the next one.
@@ -989,15 +1015,38 @@ export function NoteEditorCore({
     // The next mount merges the rows the draft send held (review r4 N3).
     sender.current?.stop();
     roomProvider(editorRef.current)?.disconnect();
-    recorder.current?.late();
-    reportLate.current?.(Y.encodeStateAsUpdate(ydoc));
+    const kept = recorder.current?.late();
+    // Edits past the 7-day expiry never merge (Q413): the next mount reads
+    // the stored row as expired pieces, so nothing is handed over.
+    const expired = !!kept && Date.now() - kept.savedAt > DRAFT_EXPIRY_MS;
+    reportLate.current?.(
+      kept && !expired
+        ? { session: kept.session, state: Y.encodeStateAsUpdate(ydoc) }
+        : null
+    );
+  };
+  // The merged update was refused for an id the room never recorded (rows
+  // of a never-accepted session ride in it, Q406): the old document goes to
+  // a new editor, which writes its edits anew under its own assigned id,
+  // once (merge view phase 2); what it cannot place becomes pieces.
+  const reauthorLate = useRef(() => {});
+  reauthorLate.current = () => {
+    if (!lateDocument || stale.current || rejected.current) return;
+    stale.current = true;
+    roomProvider(editorRef.current)?.disconnect();
+    const kept = recorder.current?.late(lateDocument);
+    reportLate.current?.({
+      reauthor: true,
+      session: kept?.session ?? '',
+      state: lateDocument,
+    });
   };
   // Once synced, the old document's unsent edits are merged in a worker and
   // applied as one edit of this session (sent, stored, its receipt covering
   // the restored rows, which it replaces at once); then the note paints, and
   // the swap shows it. The blocks holding what the merge would hide (inside a
   // block someone deleted) stay whole, from the old document, as one refused
-  // row, which opens read-only for copying after the remount. With nothing
+  // row flagged hidden, the merge view's pieces after the remount. With nothing
   // unsent the worker never loads. Code that did not load is tried again on
   // Retry and on the browser's reconnect, the own copy shown meanwhile
   // (Q295, Q398).
@@ -1029,7 +1078,7 @@ export function NoteEditorCore({
             base = taken.version;
             return taken.state;
           },
-          undefined,
+          late?.reauthor ? ydoc.clientID : undefined,
           signal
         )
       : Promise.resolve(null);
@@ -1051,7 +1100,7 @@ export function NoteEditorCore({
           // Marked again as it applies: a send may have taken the mark and
           // left the next store to clear it (review r4 L1).
           markedRoom(editorRef.current)?.unsentFrom(base);
-          Y.applyUpdate(ydoc, result.merged, LATE_ORIGIN);
+          applyMerged(ydoc, result.merged, LATE_ORIGIN, !!late?.reauthor);
         }
         mergeApplied.current = true;
         lateNow.current = false;
@@ -1069,6 +1118,9 @@ export function NoteEditorCore({
           return;
         }
         setLateMerging(false);
+        const waiting = boundWaiting.current;
+        boundWaiting.current = null;
+        if (waiting) bound.current(waiting);
         unsavedChanges.current = true;
         saveNow.current();
         if (reportedStatus.current) report(reportedStatus.current);
@@ -1084,6 +1136,45 @@ export function NoteEditorCore({
         mergeStarted.current = false;
         if (!(rejected.current || stale.current)) setLateUnloaded(true);
       });
+  };
+  // Before any merge code, the server tries the rows this mount took as
+  // ordinary drafts, once (Q436): every group admitted, the note opens
+  // afresh, an ordinary session with no merge; anything else (late, hidden,
+  // refused, unanswered) runs the merge. Rows not holding the handed
+  // document (its late row was not read) go straight to the merge.
+  const cleanTried = useRef(false);
+  const tryClean = useRef(() => {});
+  tryClean.current = () => {
+    // A re-author's rows name an id the room never recorded: no clean try.
+    if (!lateDocument || cleanTried.current || late?.reauthor) {
+      mergeNow.current();
+      return;
+    }
+    cleanTried.current = true;
+    if (!(lateStored && adoptedRows.length)) {
+      mergeNow.current();
+      return;
+    }
+    const ids = new Set(adoptedRows.map((row) => row.id));
+    const current = () => !(stale.current || rejected.current);
+    void (async () => {
+      let answers: string[] | null = null;
+      try {
+        const room = await getMaterialCollaborationToken(material.id);
+        if (room.access === 'write')
+          answers = await sendLateDrafts(draftKey, room, ids, current);
+      } catch (error) {
+        console.warn('Drafts cannot be sent:', error);
+      }
+      if (!current()) return;
+      if (answers?.length && answers.every((sent) => sent === 'sent')) {
+        stale.current = true;
+        roomProvider(editorRef.current)?.disconnect();
+        reportLate.current?.(null);
+        return;
+      }
+      mergeNow.current();
+    })();
   };
   // The note's strip offers Retry while the code did not load (Q398), ranked
   // after outdated and offline (NoteEditor, Q420).
@@ -1120,6 +1211,15 @@ export function NoteEditorCore({
       code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked'
     ) => {
       if (rejected.current) return;
+      if (
+        code === 'unassigned' &&
+        lateDocument &&
+        mergeApplied.current &&
+        !late?.reauthor
+      ) {
+        reauthorLate.current();
+        return;
+      }
       rejected.current = true;
       const merging = !!lateDocument && !mergeApplied.current;
       const unsaved =
@@ -1139,7 +1239,7 @@ export function NoteEditorCore({
             : 'none'
       );
     },
-    [hasUnsavedWork, lateDocument, saveDelay, setStatus]
+    [hasUnsavedWork, late, lateDocument, saveDelay, setStatus]
   );
 
   const handleStatelessEvent = useCallback(
@@ -1388,7 +1488,7 @@ export function NoteEditorCore({
             // and restored edits have none yet.
             resendCheckpoints.current();
             if (unsavedChanges.current) saveNow.current();
-            mergeNow.current();
+            tryClean.current();
             // A first sync after DRAFT_SEND_WAIT_MS still takes the held
             // steps (Q360).
             queueMicrotask(() => holdSteps.current?.());
@@ -1660,14 +1760,23 @@ export function NoteEditorCore({
   // id, in the bind's own task (Q408), so they sync as any edit and save
   // through the normal checkpoint (Q410). Blocks both sides changed become
   // pieces, and the copies' rows go only once those are stored.
+  // A late mount binds before its late merge applied: the copies and the
+  // stored groups wait for it (Q406, Q408) and never merge if it fails or
+  // the room goes (their rows stay stored).
+  const boundWaiting = useRef<MaterialValue | null>(null);
   const bound = useRef((_unbound: MaterialValue) => {});
   bound.current = (unbound) => {
+    if (lateDocument && !mergeApplied.current) {
+      boundWaiting.current = unbound;
+      return;
+    }
     store.changed();
     canApplyNow.current();
     if (sources.length) afterPaint(() => convertSources.current());
     const own = copy.stop();
-    // Past the offline bound, the copy as last written is merged.
-    const mine = copy.over ? copy.kept : unbound;
+    // Past the offline bound, the copy as last written is merged; a late
+    // mount never edited its copy, so the adopted one as stored.
+    const mine = copy.over || lateDocument ? copy.kept : unbound;
     if (copyFull) {
       setCopyFull(false);
       reportOffline.current?.(null);
@@ -1813,7 +1922,7 @@ export function NoteEditorCore({
         return;
       }
       // A group the room did not take, its steps not applied here: the
-      // remount opens it copy-only (Q360). Held ones the JOIN's refusal
+      // remount shows it as pieces (Q360, Q251). Held ones the JOIN's refusal
       // takes there.
       if (current.kept && !held) {
         reportRejection.current?.('unassigned', 'kept');
@@ -2019,8 +2128,10 @@ export function NoteEditorCore({
     ({ editor: current }: { editor: PlateEditor }) => {
       // The merge view's pieces follow the note (one frame later).
       store.changed();
-      // The saved copy shown before the room's first sync was edited (Q229).
+      // The saved copy shown before the room's first sync was edited (Q229);
+      // a late mount shows none.
       if (
+        !lateDocument &&
         !YjsEditor.connected(current as unknown as YjsEditor) &&
         current.operations.some((op) => op.type !== 'set_selection')
       ) {
@@ -2042,7 +2153,7 @@ export function NoteEditorCore({
       const next = embedKey(current.children);
       setEmbeds((previous) => (previous === next ? previous : next));
     },
-    [copy, scheduleCheckpoint, store]
+    [copy, lateDocument, scheduleCheckpoint, store]
   );
 
   // `mod+s` stays registered so the browser's own save dialog never opens, and

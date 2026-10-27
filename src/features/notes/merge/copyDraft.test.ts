@@ -14,10 +14,15 @@ vi.mock('@/lib/editDrafts', async (load) => ({
   }),
 }));
 
-import { DRAFT_EXPIRY_MS, type EditDraft } from '@/lib/editDrafts';
+import {
+  DRAFT_EXPIRY_MS,
+  type EditDraft,
+  heldDraftSessions,
+} from '@/lib/editDrafts';
 import {
   COPY_WRITE_MS,
   deleteOnceStored,
+  heldCopies,
   holdCopy,
   insertsMany,
   noteCopies,
@@ -140,6 +145,31 @@ describe('holdCopy', () => {
       else Reflect.deleteProperty(navigator, 'locks');
     }
   });
+});
+
+// The release train (P3 with the merge view): a copy's lock, a draft
+// session's lock (Q420), the document's lock and the sweep's never read as
+// one another, so a late merge never takes a copy for a session, nor a copy
+// read a session for a copy.
+it("reads only copies' locks as copies and only sessions' as sessions", async () => {
+  const original = Object.getOwnPropertyDescriptor(navigator, 'locks');
+  const held = [
+    'capy-copy:c1',
+    'capy-draft-session:s1',
+    `capy-drafts:${KEY}`,
+    'capy-drafts-sweep',
+  ].map((name) => ({ mode: 'exclusive', name }));
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { query: async () => ({ held, pending: [] }) },
+  });
+  try {
+    expect(await heldCopies()).toEqual(new Set(['c1']));
+    expect(await heldDraftSessions()).toEqual(new Set(['s1']));
+  } finally {
+    if (original) Object.defineProperty(navigator, 'locks', original);
+    else Reflect.deleteProperty(navigator, 'locks');
+  }
 });
 
 // Merge view review r2 L5 (Q421): the editor asks for its own lock before

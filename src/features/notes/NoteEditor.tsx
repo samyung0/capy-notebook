@@ -57,6 +57,7 @@ import type { NoteEditorStatus } from './editorMode';
 import type { MergeSnapshot, MergeStore } from './merge/mergeStore';
 import { type NoteDrafts, useNoteDrafts } from './merge/noteDrafts';
 import {
+  type Handed,
   NoteEditorCore,
   type NoteEditorPhase,
   type NoteOfflineState,
@@ -431,14 +432,14 @@ function CollaborativeNoteEditor({
   const swap = useRoomSwap(ready, wanted, onEditorStatusChange);
   // The room answered late (in-place GC): the paused editor's document goes
   // to the next mount, which merges its unsent edits (NoteEditorCore `late`).
-  const [late, setLate] = useState<{ key: string; state: Uint8Array } | null>(
+  const [late, setLate] = useState<{ key: string; handed: Handed } | null>(
     null
   );
   const room = collaborationTokenData?.room;
   const onLate = useCallback(
-    (state: Uint8Array) => {
+    (handed: Handed | null) => {
       const next = editorGeneration + 1;
-      setLate({ key: `${room}:${next}`, state });
+      setLate(handed && { handed, key: `${room}:${next}` });
       setEditorGeneration(next);
     },
     [editorGeneration, room]
@@ -528,7 +529,7 @@ function CollaborativeNoteEditor({
       draftKey={storedKey}
       held={mount.drafts.held}
       joinStartedAt={joinStart.current}
-      late={late?.key === mount.key ? late.state : undefined}
+      late={late?.key === mount.key ? late.handed : undefined}
       material={material}
       onDocumentRejected={onDocumentRejected}
       onEditorStatusChange={onEditorStatusChange}
