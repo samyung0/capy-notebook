@@ -115,6 +115,9 @@ pub struct Loaded {
     pub material_kind: String,
     /// The stored version of the latest collection's window (0: none yet).
     pub window: i64,
+    /// That window's delete set: every unit a collection discarded from this
+    /// document is in it (empty: none yet; Q446).
+    pub collected: IdSet,
 }
 
 /// The Plate envelope of `materials.content`, refused unless canonical in shape.
@@ -228,13 +231,17 @@ pub async fn load(
     let select = match doc {
         Doc::Content => {
             "SELECT d.state, d.room_schema, d.stored_version, d.projected_version, d.log_bytes,
-                    d.collected_window, m.kind
+                    d.collected_window, m.kind,
+                    (SELECT w.delete_set FROM material_yjs_windows w
+                     WHERE w.material_id=d.material_id AND w.document='content'
+                       AND d.collected_window > 0 AND w.stored_version >= d.collected_window
+                     ORDER BY w.stored_version LIMIT 1) AS collected
              FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
              WHERE d.material_id=$1 FOR UPDATE OF d"
         }
         Doc::Keys => {
             "SELECT k.state, d.room_schema, d.stored_version, d.projected_version, k.log_bytes,
-                    d.collected_window, m.kind
+                    d.collected_window, m.kind, NULL::bytea AS collected
              FROM material_yjs_keys k
              JOIN material_yjs_documents d ON d.material_id=k.material_id
              JOIN materials m ON m.id=k.material_id
@@ -264,9 +271,28 @@ pub async fn load(
         log_bytes: row.get("log_bytes"),
         material_kind: row.get("kind"),
         window: row.get("collected_window"),
+        collected: collected_deletes(row, doc)?,
     };
     tx.commit().await?;
     Ok(loaded)
+}
+
+/// A content document's delete set of the window the latest collection
+/// used, or of the earliest window kept after it (a superset): the fold that
+/// collects stores its own later window with it, and the newest window is
+/// never pruned, so one is there whenever a collection ran. Keys documents
+/// are never collected (Q274).
+fn collected_deletes(row: &tokio_postgres::Row, doc: Doc) -> Result<IdSet, StoreError> {
+    let window: i64 = row.get("collected_window");
+    match (row.get::<_, Option<Vec<u8>>>("collected"), window) {
+        _ if doc == Doc::Keys => Ok(IdSet::new()),
+        (Some(set), _) => IdSet::decode_v1(&set)
+            .map_err(|error| StoreError::Other(format!("invalid window snapshot: {error}"))),
+        (None, 0) => Ok(IdSet::new()),
+        (None, window) => Err(StoreError::Other(format!(
+            "no window snapshot at or after the collected window {window}"
+        ))),
+    }
 }
 
 /// One store: rechecks every contributor in the snapshot, then appends the
@@ -757,6 +783,11 @@ const IT_FOLD_LATER: &str = "capy-it-fold-later";
 /// starts, for a material whose id holds this.
 const IT_STORE_LATER: &str = "capy-it-store-later";
 
+/// Debug builds only: the integration tests' fold that, having discarded
+/// units, returns 3 s after it committed, for a material whose id holds
+/// this: its open room still holds what the stored copy collected meanwhile.
+const IT_FOLDED_LATER: &str = "capy-it-folded-later";
+
 /// Merges the base and the rows up to `through` (all when `None`) into a new
 /// base after the load check (DESIGN.md 3.5). Rows appended meanwhile stay.
 /// With `holds` (the collection's switch on, notes only) the new base is
@@ -841,14 +872,16 @@ pub async fn fold(
     let count = rows.len();
     let it_panic = cfg!(debug_assertions) && material_id.contains(IT_PANIC_COLLECTION);
     // The state, the folded document as a window candidate, the window and
-    // held set of a collection, and why the guard refused one.
+    // held set of a collection, why the guard refused one, and the units it
+    // discarded.
     type Built = (
         Vec<u8>,
         Option<Window>,
         Option<(Window, IdSet)>,
         Option<String>,
+        u64,
     );
-    let (state, window, collected, refused) =
+    let (state, window, collected, refused, discarded) =
         tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
             let scratch = ydoc::scratch_doc();
             let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
@@ -857,7 +890,7 @@ pub async fn fold(
             let txn = scratch.transact();
             model.assert_roots(&txn).map_err(StoreError::Invalid)?;
             let Some(holds) = holds else {
-                return Ok((whole(&scratch), None, None, None));
+                return Ok((whole(&scratch), None, None, None, 0));
             };
             let now = Window::of(&txn, last);
             drop(txn);
@@ -867,7 +900,7 @@ pub async fn fold(
             }
             .filter(|_| alone);
             let Some(window) = window else {
-                return Ok((whole(&scratch), Some(now), None, None));
+                return Ok((whole(&scratch), Some(now), None, None, 0));
             };
             let collected = guarded(|| {
                 if it_panic {
@@ -880,9 +913,9 @@ pub async fn fold(
             Ok(match collected {
                 Ok(collected) => {
                     let at = (window.clone(), holds.held);
-                    (collected.state, Some(now), Some(at), None)
+                    (collected.state, Some(now), Some(at), None, collected.units)
                 }
-                Err(why) => (whole(&scratch), Some(now), None, Some(why)),
+                Err(why) => (whole(&scratch), Some(now), None, Some(why), 0),
             })
         })
         .await
@@ -916,6 +949,9 @@ pub async fn fold(
     tx.commit().await?;
     if let Some(why) = refused {
         report_refusal(material_id, doc, "fold", &why);
+    }
+    if cfg!(debug_assertions) && discarded > 0 && material_id.contains(IT_FOLDED_LATER) {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
     Ok(Some(Folded {
         rows: count,

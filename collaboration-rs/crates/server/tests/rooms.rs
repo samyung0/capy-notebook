@@ -1281,7 +1281,64 @@ async fn folds_collect_the_stored_and_open_documents_and_an_undo_after_them_rest
 async fn an_update_naming_collected_history_is_answered_late_and_merged() {
     let Some(env) = env() else { return };
     let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
-    let (user, material) = note(&env, "base").await;
+    collected_history_answered_late(&env, &server, Back::Live).await;
+}
+
+/// The same, with the tab away while the room unloads: it undoes offline
+/// and comes back raw, and the next room life, loading the collection's
+/// window with the document, answers its step 2 late. Q446 tells collected
+/// history (inside that window's deletions) from what yrs dropped under a
+/// block deleted since, so this fails if the loaded room reads the
+/// collected letter as the latter and applies the Undo.
+#[tokio::test]
+async fn an_update_naming_collected_history_is_answered_late_after_a_reload() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    collected_history_answered_late(&env, &server, Back::Reload).await;
+}
+
+/// Q449 (Epo 2026-10-27): the open room's live pass of the collecting fold is
+/// refused (debug builds: a material whose id holds `capy-it-refuse-live`),
+/// so the room would keep the letter its stored copy collected and admit an
+/// update anchored on it. It drain-closes instead: the tab's channel closes
+/// as the room is reset, the room unloads, and the next room, loading the
+/// collected copy, answers the tab's Undo (its step 2 on coming back) late.
+/// Fails if a refused live pass leaves the room open.
+#[tokio::test]
+async fn a_refused_live_collection_drain_closes_its_room() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    collected_history_answered_late(&env, &server, Back::Closed("capy-it-refuse-live")).await;
+}
+
+/// Q449: the same with the live pass panicking (`capy-it-panic-live`).
+#[tokio::test]
+async fn a_panicking_live_collection_drain_closes_its_room() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    collected_history_answered_late(&env, &server, Back::Closed("capy-it-panic-live")).await;
+}
+
+/// How the undoing tab of `collected_history_answered_late` reaches the room.
+#[derive(Clone, Copy, PartialEq)]
+enum Back {
+    /// Connected: its Undo goes live.
+    Live,
+    /// Away while the room unloads: its Undo goes as its step 2.
+    Reload,
+    /// Closed by the room's drain-close after a failed live pass (Q449; the
+    /// material id holds the debug hook), then as `Reload`.
+    Closed(&'static str),
+}
+
+/// `an_update_naming_collected_history_is_answered_late_and_merged`, the tab
+/// coming back as `back` says.
+async fn collected_history_answered_late(env: &Env, server: &Server, back: Back) {
+    let prefix = match back {
+        Back::Closed(hook) => hook,
+        Back::Live | Back::Reload => "m_it",
+    };
+    let (user, material) = note_named(env, "base", prefix).await;
     let room = format!("material:{material}:schema:1");
     let mut a = tab(server.port, &room, &user).await;
     let mut b = tab(server.port, &room, &user).await;
@@ -1295,7 +1352,7 @@ async fn an_update_naming_collected_history_is_answered_late_and_merged() {
     })
     .await;
     persisted(&mut a, "typed").await;
-    assert!(log_folded(&env, &material).await);
+    assert!(log_folded(env, &material).await);
     a.ack_all().await;
     let x = a.unit_at(8);
     // A deletes X and keeps it unsent; B cuts the run around it, X too,
@@ -1304,7 +1361,7 @@ async fn an_update_naming_collected_history_is_answered_late_and_merged() {
     assert!(b.settle(|c| c.block_text() == "baserstpXq").await);
     b.write(|doc| remove_as(doc, "b", 4, 6)).await;
     persisted(&mut b, "cut").await;
-    assert!(log_folded(&env, &material).await);
+    assert!(log_folded(env, &material).await);
     b.leave(false).await;
     // A sends its deletion, which the room holds already: its session
     // holds nothing. Once A acknowledged the cut, a fold collects the
@@ -1313,12 +1370,27 @@ async fn an_update_naming_collected_history_is_answered_late_and_merged() {
     for mark in ["!", "?"] {
         a.type_at(0, mark).await;
         persisted(&mut a, mark).await;
-        assert!(log_folded(&env, &material).await);
+        assert!(log_folded(env, &material).await);
         a.ack_all().await;
     }
-    assert!(collected_in_base(&env, &material, x).await);
-    // A's Undo restores X, naming the collected X: answered late.
-    a.write(|_| assert!(undo.undo_blocking())).await;
+    assert!(collected_in_base(env, &material, x).await);
+    // A's Undo restores X, naming the collected X: answered late, live or
+    // as the step 2 of A coming back to the room's next life.
+    if let Back::Closed(_) = back {
+        let closed = a.until(4).await.expect("the room closes the tab's channel");
+        let closed = String::from_utf8_lossy(&closed);
+        assert!(closed.contains("being reset"), "{closed}");
+    }
+    if back != Back::Live {
+        let version = stored_version(env, &material).await as u64;
+        let doc = a.doc.clone();
+        drop(a);
+        wait_unloaded(server.port).await;
+        assert!(undo.undo_blocking());
+        a = returning(server.port, doc, &room, &user, version).await;
+    } else {
+        a.write(|_| assert!(undo.undo_blocking())).await;
+    }
     assert_eq!(a.block_text(), "?!baseX");
     let refusal = a.until(2).await.expect("the room answers the update");
     assert_eq!(text_payload(&refusal), "collaboration-late");
@@ -2010,10 +2082,12 @@ async fn a_late_draft_group_is_admitted_clean_unless_it_names_a_collected_unit()
 enum UndoRoom {
     /// No room loaded: the stored document is checked (`apply_payload`).
     Unloaded,
-    /// The open room, whose own collection was refused (debug builds: a
-    /// material whose id holds `capy-it-refuse-live`), so it keeps the unit
-    /// the stored base dropped: the stored check on the room path.
-    LiveRefused,
+    /// The open room, told of the fold that collected 3 s after it
+    /// committed (debug builds: a material whose id holds
+    /// `capy-it-folded-later`), so it still holds the unit the stored base
+    /// dropped: the stored check on the room path. (A refused live pass
+    /// drain-closes the room since Q449.)
+    FoldedLater,
     /// The open room, collecting between the Undo's snapshot and its
     /// admission (debug builds: `capy-it-slow-compute` computes 3 s late):
     /// the room's check at admission.
@@ -2038,11 +2112,19 @@ async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
     .await;
     let prefix = match case {
         UndoRoom::Unloaded => "m_it",
-        UndoRoom::LiveRefused => "capy-it-refuse-live",
+        UndoRoom::FoldedLater => "capy-it-folded-later",
         UndoRoom::CollectedMeanwhile => "capy-it-slow-compute",
     };
     let (user, material) = note_named(&env, "base", prefix).await;
     let room = format!("material:{material}:schema:1");
+    // A fold that discarded units (contributor markers too) tells the room
+    // 3 s late in the FoldedLater case: a store meanwhile starts no fold, so
+    // each waits that out but the last.
+    let told = || async {
+        if case == UndoRoom::FoldedLater {
+            tokio::time::sleep(Duration::from_millis(3500)).await;
+        }
+    };
     let mut a = tab(server.port, &room, &user).await;
     let mut middle = None;
     let mut writers = Vec::new();
@@ -2052,6 +2134,7 @@ async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
         writer.type_at(at, letter).await;
         persisted(&mut writer, letter).await;
         assert!(log_folded(&env, &material).await);
+        told().await;
         writer.leave(false).await;
         middle = Some(yrs::ID::new(writer.doc.client_id(), 0));
         writers.push(writer);
@@ -2075,6 +2158,7 @@ async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
     assert_eq!(status, 200, "{receipt}");
     assert!(a.settle(|c| c.block_text() == "baseZ").await);
     assert!(log_folded(&env, &material).await);
+    told().await;
     db(&env)
         .await
         .execute(
@@ -2094,14 +2178,17 @@ async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
         persisted(&mut a, mark).await;
         assert!(log_folded(&env, &material).await);
         a.ack_all().await;
+        if mark == "!" {
+            told().await;
+        }
     }
     assert!(
         collected_in_base(&env, &material, middle).await,
         "the fold collected the middle letter"
     );
     let live = ["live document collected", material.as_str()];
-    if case == UndoRoom::LiveRefused {
-        assert_eq!(logs.count(&live), 0, "the open room kept the unit");
+    if case == UndoRoom::FoldedLater {
+        assert_eq!(logs.count(&live), 0, "the open room holds the unit");
     } else {
         assert!(logs.has(&live).await, "the open room collected the unit");
     }
@@ -2118,6 +2205,9 @@ async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
         (409, Some("undo_unavailable")),
         "{refusal}"
     );
+    if case == UndoRoom::FoldedLater {
+        assert!(logs.has(&live).await, "the open room collects once told");
+    }
     if case != UndoRoom::Unloaded {
         drop(a);
         wait_unloaded(server.port).await;
@@ -2142,8 +2232,8 @@ async fn an_undo_naming_a_collected_unit_is_refused_when_collected_after_its_sna
 }
 
 #[tokio::test]
-async fn an_undo_naming_a_collected_unit_is_refused_when_the_live_pass_was_refused() {
-    an_undo_naming_a_collected_unit_is_refused(UndoRoom::LiveRefused).await;
+async fn an_undo_naming_a_collected_unit_is_refused_before_its_room_collects() {
+    an_undo_naming_a_collected_unit_is_refused(UndoRoom::FoldedLater).await;
 }
 
 /// A fold collects only while no other life of its room is loaded (debug
@@ -11644,17 +11734,20 @@ async fn draft_sends_are_refused_with_their_class() {
     }
 }
 
-/// Typing into a block someone deleted since (Q237, Q443, Q444): yrs drops a
-/// deleted block's contents, so typing after its letters names collected
-/// history and is answered late, as a closed tab's drafts (409 `late`,
-/// counted) and over a socket alike (`collaboration-late`), nothing stored;
-/// the tab's late merge (the late-merge crate, as the browser runs it)
-/// reports the block as hidden, which the editor keeps as hidden-typing
-/// pieces. Typing that names only the deleted block itself (into an empty
-/// block) is still refused `hidden` (409, counted). Fails if typing into a
-/// deleted block is admitted or answered hidden, or the hidden class goes.
+/// Typing into a block someone deleted since (Q237, Q443, Q444, Q446): yrs
+/// drops a deleted block's contents, so a closed tab's drafts typing after
+/// its letters name collected history and are answered late (409 `late`,
+/// counted), and the tab's late merge (the late-merge crate, as the browser
+/// runs it) reports the block as hidden, which the editor keeps as
+/// hidden-typing pieces; drafts that name only the deleted block itself
+/// (typing into an empty block) are refused `hidden` (409, counted). The
+/// same typing over a connected tab's socket is admitted as plain Yjs admits
+/// it and goes with the block: no `collaboration-late`, nothing of it in the
+/// room's text, and the tab converges with a fresh one. Fails if drafts into
+/// a deleted block are admitted or answered hidden, the hidden class goes, or
+/// a connected tab's typing there is answered late.
 #[tokio::test]
-async fn typing_into_a_deleted_block_is_answered_late_and_merged_as_hidden() {
+async fn typing_into_a_deleted_block_is_late_as_drafts_and_plain_yjs_live() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "base").await;
@@ -11728,10 +11821,6 @@ async fn typing_into_a_deleted_block_is_answered_late_and_merged_as_hidden() {
             "{line} in {metrics}"
         );
     }
-    // Live: the same typing over the writer's socket is answered late too.
-    writer.send(5, &sync(2, &named)).await;
-    let refusal = writer.until(2).await.expect("the room answers the update");
-    assert_eq!(text_payload(&refusal), "collaboration-late");
     let fresh = synced(server.port, &room, &user, "second").await;
     for id in [writer.id(), other.id()] {
         assert_eq!(
@@ -11741,9 +11830,24 @@ async fn typing_into_a_deleted_block_is_answered_late_and_merged_as_hidden() {
                 .state_vector()
                 .get(&yrs::block::ClientID::new(id)),
             0,
-            "nothing of the typing is stored"
+            "nothing of the drafts is stored"
         );
     }
+    // Live (Q446): the same typing over the writer's socket is admitted and
+    // goes with the block.
+    writer.send(5, &sync(2, &named)).await;
+    assert!(writer.until(6).await.is_some(), "the typing's ack");
+    assert!(
+        writer.settle(|c| c.block_text() == "second").await,
+        "{}",
+        writer.block_text()
+    );
+    persisted(&mut writer, "live").await;
+    let later = synced(server.port, &room, &user, "second").await;
+    let value = |c: &Client| notes::plate::value(&c.doc.transact()).expect("the value");
+    assert_eq!(value(&later), value(&writer));
+    let text = serde_json::to_string(&value(&later)).expect("json");
+    assert!(!text.contains("hidden"), "{text}");
     // The late merge keeps the typing in the deleted block's tombstone and
     // reports that block hidden: the editor's hidden-typing pieces.
     let current = fresh
@@ -14599,6 +14703,170 @@ async fn a_slow_agent_compute_holds_no_pool_connection() {
         let (status, body) = edit.await.expect("edit");
         assert_eq!(status, 200, "{body}");
     }
+}
+
+/// Q446 (Epo 2026-10-27, REVIEW-final-rust L1): an agent edit computed on a
+/// snapshot whose block a person deletes before its admission (a slow
+/// compute, a debug hook) types among letters yrs dropped with the block
+/// (`named_collected`'s `Since`): it is refused `stale_target`, so the agent
+/// re-reads, never answered late or as an unknown outcome (503, reported),
+/// and nothing of it lands. Fails if the room admits it or answers it
+/// otherwise.
+#[tokio::test]
+async fn an_agent_edit_into_a_block_deleted_meanwhile_is_stale() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note_named(&env, "hello world", "capy-it-slow-compute").await;
+    let room = format!("material:{material}:schema:1");
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    person
+        .insert_blocks(
+            1,
+            &[serde_json::json!({ "type": "p", "id": "kept", "children": [{ "text": "kept" }] })],
+        )
+        .await;
+    assert!(person.until(6).await.is_some(), "the block's ack");
+    let operation = format!("e_{material}");
+    let body = note_edit(
+        &user,
+        &material,
+        &operation,
+        serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
+    );
+    let port = server.port;
+    let edit = tokio::spawn(async move { internal(port, "/internal/documents/edit", &body).await });
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    person
+        .write(|doc| {
+            let root = doc.get_or_insert_text("content");
+            root.remove_range(&mut doc.transact_mut(), 0, 1);
+        })
+        .await;
+    assert!(person.until(6).await.is_some(), "the deletion's ack");
+    let (status, refusal) = edit.await.expect("edit");
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("stale_target")),
+        "{refusal}"
+    );
+    let _ = person.hears(5, 300).await;
+    assert_eq!(person.block_text(), "kept");
+    assert!(!receipt_stored_now(&env, &operation).await);
+}
+
+/// Q456 (Epo 2026-10-27): while a room's saves fail (a trigger refuses the
+/// note's update rows: its store retries after the failure), it refuses an
+/// agent edit `saves_failing` (409, which the agent's tool tells the model
+/// not to retry this turn) and an agent Undo `unavailable_target` (its
+/// button stays), applying neither, while the person keeps typing. Once a
+/// store succeeds, the same edit is admitted. Fails if the room admits agent
+/// edits while its saves fail, or still refuses them after.
+#[tokio::test]
+async fn a_room_whose_saves_fail_refuses_agent_edits() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "hello world").await;
+    let room = format!("material:{material}:schema:1");
+    let port = server.port;
+    let mut person = Client::open(port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    let edit = format!("e_{material}");
+    let (status, receipt) = internal(
+        port,
+        "/internal/documents/edit",
+        &note_edit(
+            &user,
+            &material,
+            &edit,
+            serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "hello", "text": "hi" }]),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(receipt_stored(&env, &edit).await);
+    assert!(person.settle(|c| c.block_text() == "hi world").await);
+    let trigger = fail_update_rows(&env, &material).await;
+    person.type_text("!").await;
+    person.stateless("checkpoint-failed").await;
+    let later = format!("l_{material}");
+    let body = note_edit(
+        &user,
+        &material,
+        &later,
+        serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, refusal) = internal(port, "/internal/documents/edit", &body).await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("saves_failing")),
+        "{refusal}"
+    );
+    let undo = undo_step(&user, &format!("u_{material}"), &material, &receipt);
+    let (status, refusal) = internal(port, "/internal/documents/undo", &undo).await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("unavailable_target")),
+        "{refusal}"
+    );
+    let _ = person.hears(5, 300).await;
+    assert_eq!(person.block_text(), "hi world!");
+    let rows = update_rows(&env, "material_yjs_updates", &material).await;
+    db(&env)
+        .await
+        .batch_execute(&format!("DROP TRIGGER {trigger} ON material_yjs_updates"))
+        .await
+        .expect("drop the trigger");
+    // The retry (5 s after the failure) stores the person's typing.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while update_rows(&env, "material_yjs_updates", &material).await <= rows {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the retry never stored"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let (status, answer) = internal(port, "/internal/documents/edit", &body).await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(person.settle(|c| c.block_text() == "hi there!").await);
+}
+
+/// Makes every update row `material`'s stores insert fail (a trigger, named
+/// in the answer, dropped by the caller).
+async fn fail_update_rows(env: &Env, material: &str) -> String {
+    let client = db(env).await;
+    client
+        .batch_execute(
+            "CREATE OR REPLACE FUNCTION capy_it_fail_update_row() RETURNS trigger
+             LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'integration test store failure'; END $$",
+        )
+        .await
+        .expect("the trigger function");
+    let name = format!("capy_it_fail_{material}");
+    client
+        .batch_execute(&format!(
+            "CREATE TRIGGER {name} BEFORE INSERT ON material_yjs_updates FOR EACH ROW
+             WHEN (NEW.material_id = '{material}') EXECUTE FUNCTION capy_it_fail_update_row()"
+        ))
+        .await
+        .expect("the trigger");
+    name
+}
+
+/// Whether an agent operation's receipt is stored, without waiting.
+async fn receipt_stored_now(env: &Env, operation: &str) -> bool {
+    db(env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM agent_operations WHERE id=$1",
+            &[&operation],
+        )
+        .await
+        .expect("receipts")
+        .get::<_, i64>(0)
+        > 0
 }
 
 /// Q432 (review r1 M2): a receipt the room's store cannot write is passed

@@ -75,6 +75,22 @@ pub enum DocumentError {
 
 /// An edit's refusal while its room is reset or discarded ([DocumentError::Unavailable]).
 pub const ROOM_RESET: &str = "collaboration room is being reset";
+
+/// An agent edit, Undo or Redo refused while its room's saves fail (Q456),
+/// before anything applied: an edit as `saves_failing`, which the agent's
+/// tool tells the model not to retry this turn; an Undo or Redo as
+/// `unavailable_target`, which keeps its button for later.
+pub(crate) fn saves_failing(undo: bool) -> DocumentError {
+    let message = "the document's saves are failing; nothing was applied";
+    DocumentError::edit(
+        if undo {
+            "unavailable_target"
+        } else {
+            "saves_failing"
+        },
+        message,
+    )
+}
 /// A write whose update is over `ydoc::MAX_UPDATE_BYTES` (Epo 2026-10-18),
 /// refused before anything commits: the agent's `quota_rejected` reason, the
 /// replace-block command's 413.

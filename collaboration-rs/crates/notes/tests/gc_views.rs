@@ -24,9 +24,11 @@
 //! their edit (25 h), and the live pass runs while the agent has steps
 //! (Q432). The agent's Undo is modelled as a live revert; a live swap drops
 //! it (the server's payload Undo after a swap is checked against what the
-//! room collected, rooms.rs). A tab's update or closed tab's group that
-//! names a unit the room holds collected is answered late (Q443): the tab
-//! loads the room's document anew, its unsent edits left to the late merge.
+//! room collected, rooms.rs). A closed tab's group that names a unit the
+//! room holds collected is answered late (Q443), and so is a tab's update
+//! naming one a collection's window deleted (what yrs dropped under a block
+//! deleted since goes with the block, Q446): the tab loads the room's
+//! document anew, its unsent edits left to the late merge.
 //!
 //! The window and H come from the room's `Sessions`, driven as the room
 //! drives it: a JOIN names the tab's version and the step 1 answer syncs it,
@@ -884,6 +886,8 @@ struct World {
     hours: BTreeMap<i64, u64>,
     /// The latest collection's window version (`collected_window`).
     window: i64,
+    /// The collections' windows' delete sets (the room's `collected`, Q446).
+    collected: IdSet,
     /// The open room's sessions, and what their rows and the agent holds
     /// store; ids an accepted write recorded (only those get rows).
     sessions: sessions::Sessions,
@@ -1274,7 +1278,7 @@ impl World {
             tally.late_drafts += 1;
             return;
         }
-        if self.names_collected(t) {
+        if self.names_collected(t, false) {
             tally.answered_late += 1;
             return;
         }
@@ -1439,12 +1443,20 @@ impl World {
         self.new_session(c);
     }
 
-    /// Whether what tab `i` would send names a unit S holds collected: the
-    /// room answers it late (Q443).
-    fn names_collected(&self, i: usize) -> bool {
+    /// Whether what tab `i` would send names a unit S holds collected: a
+    /// closed tab's group is answered late (Q443, Q444); with `live`, only
+    /// one a collection's window deleted is, and what yrs dropped under a
+    /// block deleted since goes with the block (Q446).
+    fn names_collected(&self, i: usize, live: bool) -> bool {
         let sv = self.s.doc.transact().state_vector();
         let update = self.tabs[i].g.doc.transact().encode_state_as_update_v1(&sv);
-        gc::names_collected(&self.s.doc.transact(), &ydoc::decode(&update).unwrap())
+        let update = ydoc::decode(&update).unwrap();
+        let txn = self.s.doc.transact();
+        if live {
+            gc::named_collected(&txn, &update, &self.collected) == gc::Named::Window
+        } else {
+            gc::names_collected(&txn, &update)
+        }
     }
 
     /// The room's own change since its last row (an agent edit, or its Undo
@@ -1468,7 +1480,7 @@ impl World {
     fn store_from(&mut self, i: usize) {
         // Naming collected history, it is answered late (Q443): the tab's
         // channel closes (its session counts as dropped) and it goes late.
-        if self.names_collected(i) {
+        if self.names_collected(i, true) {
             self.answered_late += 1;
             self.drop_tab(i);
             self.reload_late(i);
@@ -1635,6 +1647,7 @@ impl World {
                         named_but_collected(&t.g.doc, &folded.doc, &loaded.doc) as u64;
                 }
                 self.window = self.window.max(window.stored_version);
+                self.collected.merge_with(window.delete_set.clone());
                 // The open room collects its own document too (Q401).
                 if self.open {
                     self.collect_live(&window, &holds.held, tally);
@@ -1750,6 +1763,7 @@ fn run(seed: u64, tally: &mut Tally) {
         windows: Vec::new(),
         hours: BTreeMap::new(),
         window: 0,
+        collected: IdSet::new(),
         sessions: sessions::Sessions::default(),
         session_rows: BTreeMap::new(),
         agent_held: None,

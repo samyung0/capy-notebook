@@ -385,41 +385,70 @@ fn encode_cut(item: &ItemPtr, encoder: &mut EncoderV1) {
 /// collected, as origin, right origin or parent: Yjs and yrs integrate such
 /// an item as collected too, so an Undo payload naming one would restore only
 /// part of its edit (the durable Undo route refuses it, `undo_unavailable`),
-/// and any update naming one is answered late at a room's admission (Q436,
-/// Q443). An item the document already holds names nothing new; one it
-/// holds in part (a draft carries its session's whole document, where a
+/// and a draft group naming one is answered late at a room's admission
+/// (Q436, Q443). An item the document already holds names nothing new; one
+/// it holds in part (a draft carries its session's whole document, where a
 /// unit typed right after the session's own last one joined that item) is
 /// integrated from its first unit the document lacks, whose origin is the
 /// unit before. The state vector is read only for an item the document
 /// holds at all, so a live edit's new items cost three lookups each.
 pub fn names_collected<T: ReadTxn>(txn: &T, update: &Update) -> bool {
+    named_collected(txn, update, &IdSet::new()) != Named::Nothing
+}
+
+/// Which collected units an update names ([names_collected]).
+#[derive(Debug, PartialEq)]
+pub enum Named {
+    Nothing,
+    /// One a collection window deleted: history a collection may have
+    /// discarded.
+    Window,
+    /// Only ones the window did not delete: no collection discarded them, so
+    /// yrs did, under a holder deleted since (typing into a block a
+    /// co-editor just deleted, Q446).
+    Since,
+}
+
+/// What collected units an update's new items name, told apart by `window`,
+/// the delete set of the latest collection's window: every unit a
+/// collection discarded is in it ([names_collected] reads them alike).
+pub fn named_collected<T: ReadTxn>(txn: &T, update: &Update, window: &IdSet) -> Named {
     let store = txn.store();
     let mut held: Option<StateVector> = None;
-    update.blocks().any(|block| match block {
-        UpdateBlock::Item(item) => {
-            let id = *item.id();
-            let origin = if store.get_block_range(&id).is_some() {
-                let have = held
-                    .get_or_insert_with(|| txn.state_vector())
-                    .get(&id.client);
-                if id.clock + item.len() <= have {
-                    return false;
+    let mut named = Named::Nothing;
+    for block in update.blocks() {
+        let UpdateBlock::Item(item) = block else {
+            continue;
+        };
+        let id = *item.id();
+        let origin = if store.get_block_range(&id).is_some() {
+            let have = held
+                .get_or_insert_with(|| txn.state_vector())
+                .get(&id.client);
+            if id.clock + item.len() <= have {
+                continue;
+            }
+            Some(ID::new(id.client, have - 1))
+        } else {
+            item.origin().copied()
+        };
+        let parent = match item.update_parent() {
+            UpdateParent::Item(id) => Some(*id),
+            _ => None,
+        };
+        for id in [origin, item.right_origin().copied(), parent]
+            .into_iter()
+            .flatten()
+        {
+            if matches!(store.get_block_range(&id), Some((_, None))) {
+                if window.contains(&id) {
+                    return Named::Window;
                 }
-                Some(ID::new(id.client, have - 1))
-            } else {
-                item.origin().copied()
-            };
-            let parent = match item.update_parent() {
-                UpdateParent::Item(id) => Some(*id),
-                _ => None,
-            };
-            [origin, item.right_origin().copied(), parent]
-                .into_iter()
-                .flatten()
-                .any(|id| matches!(store.get_block_range(&id), Some((_, None))))
+                named = Named::Since;
+            }
         }
-        UpdateBlock::Gc(_) | UpdateBlock::Skip(_) => false,
-    })
+    }
+    named
 }
 
 #[cfg(test)]

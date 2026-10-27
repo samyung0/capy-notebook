@@ -975,10 +975,15 @@ and swaps the result in: its state vector, unstored edits and own marker
 chains stay, tabs joining get the collected state, and open tabs keep their
 tombstones until they reload. With the same W and H it drops only units the
 stored pass drops too (a unit newer than W only ends a run), except a deleted
-block's children, which Yjs drops with the block either way. It can also
-keep units the stored base dropped: a refused or skipped pass, or one that
-found nothing while the stored pass did, leaves its document whole. A check
-of what a payload names therefore reads both documents (Q419). Rooms with
+block's children, which Yjs drops with the block either way. Between the
+fold's commit and its pass the room still holds units the stored base
+dropped, and a pass that found nothing while the stored pass did leaves its
+document whole, so a check of what a payload names reads both documents
+(Q419). A pass the guard refuses, or that panics, drain-closes the room
+(Q449, `Room::reload`): its channels close as the room is reset (tabs
+reconnect and keep their editors), it stores what it holds and unloads, and
+the next join loads the collected stored copy, so the room never admits an
+update anchored on history its stored copy dropped. Rooms with
 agent edits waiting to be stored collect like any other (Q432): those
 edits' deletions are newer than any window. Kept list items keep their
 origins, and a map value drops its
@@ -1039,6 +1044,16 @@ and tabs loading the collected state agree.
   Only a note's content room checks this, the one room collected in place:
   quiz, quiz keys, flashcard, diagram and mindmap rooms admit such an update
   and Yjs drops what lands in a deleted item, as before the release (Q445).
+  A collected unit outside the delete set of the latest collection's window
+  (`material_yjs_windows`, the earliest kept at or after `collected_window`,
+  loaded with the room) was dropped by yrs under a block deleted since, not
+  by a collection: a connected tab's typing there is admitted as plain Yjs
+  admits it, a draft group's is still late, and an agent edit's is refused
+  `stale_target` (Q446). The split is exact for a connected tab: a window
+  never covers a deletion a counted session has not acknowledged. Typing a
+  tab made offline into a block deleted before that window counts as
+  collected history and is answered late (its merge keeps it as hidden
+  pieces), where plain Yjs would drop it.
   While a fold runs, its room checks JOINs
   against the most that fold may move the window to (the version every
   counted session reached, or the stored version when none counts). A fold
@@ -1080,7 +1095,8 @@ and tabs loading the collected state agree.
   collection, and reports the refusal to Sentry once per material (tagged
   `file_id`) while the process runs, logging every refusal; a panic in the
   collection or the guard is a refusal too. The next fold collects again (Epo 2026-10-24). The open room's own
-  collection has the same guard: a refusal keeps its document as it is.
+  collection has the same guard: a refusal (or a panic) drain-closes the
+  room, which reloads the collected stored copy (Q449).
 - **Undo.** An item that names a collected unit as origin, right origin or
   parent integrates as collected, so a durable Undo payload whose items name
   one would restore only part of its edit. `ydoc::gc::names_collected` finds
@@ -1088,7 +1104,8 @@ and tabs loading the collected state agree.
   against the stored state with no room loaded, and with one loaded against
   the stored state, the room's snapshot it computes on and the room's
   document at admission (Q419; agent edits naming one are refused
-  `unavailable_target`).
+  `unavailable_target`, or `stale_target` when yrs dropped it under a block
+  deleted since, Q446).
 - **Switch.** `COLLABORATION_GC_COLLECT=true` turns the collection on, in
   any environment; it is off by default. The startup refusal outside tests
   lifted with the release that brought the late merge and the durable Undo

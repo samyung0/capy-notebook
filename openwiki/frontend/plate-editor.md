@@ -2400,14 +2400,15 @@ Items, Office and text files keep copy-only recovery.
   an offline episode, a socket blip and typing between the two steps; a new
   block can
   never be hidden, and text the room had seen and then deleted is never a
-  piece. Yjs drops a deleted block's contents with it, so typing next to
-  any of its letters names collected history and is answered late like any
-  such update, a draft send's group `late` (409) and live typing
-  `collaboration-late` (Developer Epo, 2026-10-27, Q444 over Q237's direct
-  `hidden` answer, Q443): the tab's late merge ([the late
+  piece. Yjs drops a deleted block's contents with it, so a draft send
+  typing next to any of its letters names collected history and its group
+  is answered `late` (409; Developer Epo, 2026-10-27, Q444 over Q237's
+  direct `hidden` answer, Q443): the tab's late merge ([the late
   path](#the-late-path)) lists that block in `hidden`, kept as one refused
   row flagged hidden that the next open shows as `hidden` pieces, so the
-  typing is never lost. Typing that names only the deleted block itself (a
+  typing is never lost. A connected tab's live typing there is admitted as
+  plain Yjs admits it and goes with the block, with no late answer and no
+  merge view (Q446, reversing Q444's live part). Typing that names only the deleted block itself (a
   block that was empty) is not late: a draft send cannot see it (it holds
   no room state), so the service refuses a note's draft whose typing would
   land in a deleted holder (`ydoc::inspect`'s `hidden_units`) as `hidden`
@@ -2826,17 +2827,27 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   binding and before the member joins, so it makes no session and a lost
   record's marker survives the next store (P1 review r3 N9); viewers too, as a
   viewer's token can turn writable before its eviction lands. Any update
-  that names a unit the room holds collected (`ydoc::gc::names_collected`,
+  that names a unit the room holds collected (`ydoc::gc::named_collected`,
   at admission, before the validator; a note's content room only, Q445:
   item, diagram and mindmap rooms admit it and Yjs drops it) is answered
-  late (Q443): a live
-  update with `collaboration-late` on its channel, so the tab goes late as
-  for a JOIN; a `/drafts` group with the class `late` (409, counted); an
-  agent Undo `undo_unavailable` and an agent edit `unavailable_target`. A
-  group naming nothing collected is admitted as an ordinary draft, late or
-  not (Q436). Typing into a block someone deleted names its contents, which
-  Yjs drops with it, so it is answered late too and the merge turns it into
-  `hidden` pieces (Q444, [hidden typing](#the-merge-view)). Until a collection records its window only lost ids are late.
+  late (Q443), told apart by the delete set of the latest collection's
+  window (loaded with the document, then each collecting fold's), which
+  holds every unit a collection discarded. A unit inside it is collected
+  history: a live update naming one gets `collaboration-late` on its
+  channel, so the tab goes late as for a JOIN; a `/drafts` group the class
+  `late` (409, counted); an agent Undo `undo_unavailable` and an agent edit
+  `unavailable_target`. A collected unit outside it was dropped by yrs
+  under a block deleted since (typing into a block someone deleted names
+  its contents, which Yjs drops with it): a connected tab's update is
+  admitted as plain Yjs admits it and goes with the block (Q446); a
+  `/drafts` group is still `late`, and the merge turns it into `hidden`
+  pieces (Q444, [hidden typing](#the-merge-view)); an agent edit is refused
+  `stale_target` so the agent re-reads, its Undo `undo_unavailable`, as is
+  an agent edit the validator finds typing into a deleted empty block. In
+  practice the late answer reaches a tab only for edits it made offline and
+  sends on reconnect (gc_views seed 8462), or an Undo of a deletion another
+  tab made first. A group naming nothing collected is admitted as an
+  ordinary draft, late or not (Q436). Until a collection records its window only lost ids are late.
   An older build reads `collaboration-late` as a retryable refusal and would
   rejoin with backoff forever, so the release that turns lateness on ships
   with client protocol 22: its raised `MIN_MATERIAL` (22) refuses the older

@@ -519,6 +519,11 @@ struct Note {
     /// document; while a fold runs, the most that fold may move it to
     /// (`maybe_fold`).
     window: i64,
+    /// The delete set of the latest collection's window (`note_store::Loaded`,
+    /// then each collecting fold's): every unit a collection discarded from
+    /// this document is in it, so a collected unit outside it was dropped by
+    /// yrs under a holder deleted since (Q446).
+    collected: yrs::IdSet,
     /// Versions below `stored_version` the room has not applied: service
     /// edits whose rows committed before a later store's (`sessions::took`).
     /// No fold runs while one is open (Q419). Note content rooms only.
@@ -661,10 +666,15 @@ const IT_REFUSE_AGENT_KEYS: &str = "capy-it-refuse-agent-keys";
 #[cfg(debug_assertions)]
 pub const IT_SERVICE_LATER: &str = "capy-it-service-later";
 
-/// Debug builds only: a material whose id holds this never collects its open
-/// room's document (a refused live pass, Q419), while its stored folds do.
+/// Debug builds only: a material whose id holds this has its open room's live
+/// pass refused (Q419, Q449), while its stored folds collect.
 #[cfg(debug_assertions)]
 const IT_REFUSE_LIVE: &str = "capy-it-refuse-live";
+
+/// Debug builds only: a material whose id holds this has its open room's live
+/// pass panic (Q449), while its stored folds collect.
+#[cfg(debug_assertions)]
+const IT_PANIC_LIVE: &str = "capy-it-panic-live";
 
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -827,7 +837,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
             } else {
                 note_store::Doc::Content
             };
-            let loaded = note_store::load(&app.db, material_id, *schema, doc_kind)
+            let mut loaded = note_store::load(&app.db, material_id, *schema, doc_kind)
                 .await
                 .map_err(|error| error.to_string())?;
             let kind = loaded.material_kind.clone();
@@ -846,6 +856,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 loaded.log_bytes,
                 loaded.window,
             );
+            let collected = std::mem::take(&mut loaded.collected);
             let material_kind = kind.clone();
             let (doc, durable, metrics, mut refused) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
@@ -929,6 +940,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 base_bytes,
                 folding: false,
                 window,
+                collected,
                 gaps: std::collections::BTreeSet::new(),
                 stall: None,
             };
@@ -1299,6 +1311,13 @@ impl Room {
         });
     }
 
+    /// Whether the room's saves are failing (Q456): a store retrying after a
+    /// failure, or a source save failing within its slow-save clock.
+    fn saves_failing(&self) -> bool {
+        self.store.failed_event.is_some()
+            || matches!(&self.kind, Kindly::Source(source) if source.failing_since.is_some())
+    }
+
     fn unloadable(&self) -> bool {
         let empty = self.members.is_empty() && self.rows.is_empty() && !self.rows_running;
         if self.discard_pending.is_some() || !self.forced_unload.is_empty() {
@@ -1459,6 +1478,9 @@ impl Room {
                 }
                 if let Some(collected) = collected {
                     let (window, held) = *collected;
+                    if let Kindly::Note(note) = &mut self.kind {
+                        note.collected.merge_with(window.delete_set.clone());
+                    }
                     self.collect_live(&window, held).await;
                 }
             }
@@ -1559,6 +1581,10 @@ impl Room {
                     let _ = reply.send(Err(crate::edits::DocumentError::Unavailable(
                         crate::edits::ROOM_RESET,
                     )));
+                    return;
+                }
+                if self.saves_failing() {
+                    let _ = reply.send(Err(crate::edits::saves_failing(undo)));
                     return;
                 }
                 let context = agent_context(&actor);
@@ -1753,6 +1779,11 @@ impl Room {
             return Err(DocumentError::Unavailable(
                 "too many agent edits of this document wait to be saved",
             ));
+        }
+        // An agent step lives only in the room until stored: none while the
+        // room's saves fail (Q456). People keep editing.
+        if self.saves_failing() {
+            return Err(crate::edits::saves_failing(undo.is_some()));
         }
         if let Some(of) = &undo {
             // The step as this room admitted it, else as stored: a click
@@ -2434,23 +2465,35 @@ impl Room {
     /// (what arrives meanwhile waits), and swaps the result in: tabs joining
     /// get the collected state, open tabs keep their tombstones. The state
     /// vector, the unstored edits, the room's own marker chains and its
-    /// window stay. A guard refusal (or a panic) keeps the document as it
-    /// is, reported once. Agent edits waiting to be stored do not hold it
-    /// back (Q432): their deletions are newer than any window, and their
-    /// Undo is a payload checked against what the room holds collected.
+    /// window stay. A guard refusal (or a panic), reported once, drain-closes
+    /// the room (Q449): it stores what it holds and unloads, its tabs
+    /// reconnect, and the next room loads the collected stored copy, so the
+    /// room never admits an update anchored on history its stored copy
+    /// dropped. Agent edits waiting to be stored do not hold it back
+    /// (Q432): their deletions are newer than any window, and their Undo is
+    /// a payload checked against what the room holds collected.
     async fn collect_live(&mut self, window: &ydoc::gc::Window, held: yrs::IdSet) {
         let Kindly::Note(note) = &self.kind else {
             return;
         };
-        // Debug builds only: the integration tests' refused live pass (the
-        // stored fold collects; this document stays whole).
+        // Debug builds only: the integration tests' refused or panicking
+        // live pass (the stored fold collects).
         #[cfg(debug_assertions)]
-        if note.material_id.contains(IT_REFUSE_LIVE) {
-            return;
-        }
+        let (refuse, panics) = (
+            note.material_id.contains(IT_REFUSE_LIVE),
+            note.material_id.contains(IT_PANIC_LIVE),
+        );
+        #[cfg(not(debug_assertions))]
+        let (refuse, panics) = (false, false);
         let (doc, model, started) = (self.doc.clone(), note.model, Instant::now());
         let window = window.clone();
         let collected = tokio::task::spawn_blocking(move || {
+            if panics {
+                panic!("integration test live collection panic");
+            }
+            if refuse {
+                return Err("integration test refusal".to_owned());
+            }
             note_store::collect_live(&doc, &window, &held, model)
         })
         .await
@@ -2471,6 +2514,7 @@ impl Room {
             Ok(None) => {}
             Err(why) => {
                 note_store::report_refusal(&note.material_id, note.doc, "live", &why);
+                self.reload();
             }
         }
     }
@@ -3165,7 +3209,7 @@ impl Room {
                 "client update changed collaboration metadata",
             ));
         }
-        // An update naming history the collection discarded would integrate
+        // An update naming history a collection discarded would integrate
         // as collected, its text lost: it is answered late, and its writer's
         // late merge places it (Q443). Live updates, draft groups (Q436) and
         // agent edits and Undo all come through here; before admission, so a
@@ -3173,13 +3217,31 @@ impl Room {
         // content room only, the one collected in place: item, diagram and
         // mindmap rooms have no late path and drop typing into a deleted item
         // as Yjs does (Q445).
-        if matches!(&self.kind, Kindly::Note(note) if note.sessioned())
-            && ydoc::gc::names_collected(&self.doc.transact(), &update)
+        if let Kindly::Note(note) = &self.kind
+            && note.sessioned()
         {
-            return Err(Outcome::refused(
+            use ydoc::gc::Named;
+            let late = Outcome::refused(
                 Class::Late,
                 "the update names units the collection discarded",
-            ));
+            );
+            match ydoc::gc::named_collected(&self.doc.transact(), &update, &note.collected) {
+                Named::Nothing => {}
+                Named::Window => return Err(late),
+                // Only what yrs dropped under a block deleted since: a
+                // connected tab's typing goes with the block, as plain Yjs
+                // has it (Q446); an agent edit re-reads the note (answered as
+                // a hidden draft is, `agent_refusal`); a draft group stays
+                // late, its merge keeping the typing as hidden pieces (Q444).
+                Named::Since if writer.is_some() => {}
+                Named::Since if context.token_id == AGENT_TOKEN => {
+                    return Err(Outcome::refused(
+                        Class::Hidden,
+                        "the edit types into a block deleted since its snapshot",
+                    ));
+                }
+                Named::Since => return Err(late),
+            }
         }
         // A writer adds structs only under ids its user holds (Q213): ones
         // recorded to the user, bound to one of the user's live channels (a
@@ -5215,6 +5277,10 @@ fn agent_refusal(outcome: Outcome, undo: bool) -> crate::edits::DocumentError {
         // It names units collected since its snapshot (Q419, Q443).
         Class::Late if undo => undo_unavailable(UNDO_GONE),
         Class::Late => DocumentError::Unavailable(crate::edits::ROOM_RESET),
+        // It types into a block someone deleted since its snapshot: the
+        // agent re-reads (Q446).
+        Class::Hidden if undo => undo_unavailable(UNDO_GONE),
+        Class::Hidden => DocumentError::edit("stale_target", reason),
         Class::Limit if undo => undo_unavailable(UNDO_TOO_LARGE),
         Class::Limit => {
             let code = payloads
