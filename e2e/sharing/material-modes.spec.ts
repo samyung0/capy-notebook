@@ -1,5 +1,5 @@
 import { expect, test } from '../fixtures/actors';
-import { expectEditorLive } from '../helpers/editor';
+import { expectEditorLive, showNoteToolbar } from '../helpers/editor';
 import { openWorkspaceMaterial, summaryPath } from '../helpers/workspace';
 import { m } from '../i18n';
 
@@ -65,9 +65,7 @@ test.describe('shared material modes', () => {
       true
     );
     await expectEditorLive(otherPage);
-    await expect(
-      otherPage.getByRole('toolbar', { name: m.editor_doc_formatting() })
-    ).toBeVisible();
+    await showNoteToolbar(otherPage);
     const editor = otherPage
       .locator('[data-slate-editor="true"][contenteditable="true"]')
       .first();

@@ -2265,6 +2265,16 @@ export function NoteEditorCore({
     mergeStoreChange.current?.(store, true);
     return () => mergeStoreChange.current?.(store, false);
   }, [shown, store]);
+  // Edit opens without the toolbar; the Tools toggle brings it back for this
+  // opening only.
+  const [toolbarShown, setToolbarShown] = useState(false);
+  const toolbarToggle = useMemo(
+    () => ({
+      onToggle: () => setToolbarShown((shown) => !shown),
+      shown: toolbarShown,
+    }),
+    [toolbarShown]
+  );
   return (
     <EditorHoldScope>
       <NoteSeatContext.Provider value={seat}>
@@ -2275,8 +2285,13 @@ export function NoteEditorCore({
                 currentUserId={currentUserId}
                 discussions={discussions}
               >
-                {/* Held back: until sent. */}
-                <div className="contents" data-note-toolbar="" inert={locked}>
+                {/* Held back: until sent. Hidden, not unmounted, until the
+                 * Tools toggle asks. */}
+                <div
+                  className={cn('contents', !toolbarShown && 'hidden')}
+                  data-note-toolbar=""
+                  inert={locked}
+                >
                   <CollaborationHold className="contents">
                     <NoteToolbar />
                   </CollaborationHold>
@@ -2286,7 +2301,7 @@ export function NoteEditorCore({
                   data-note-scroll=""
                   ref={setScrollArea}
                 >
-                  <NoteDisplayToggles />
+                  <NoteDisplayToggles toolbar={toolbarToggle} />
                   <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
                     {/* The room replaces the projection copy the moment it syncs,
                      * so painting that copy first renders the whole document

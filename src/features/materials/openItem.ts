@@ -33,6 +33,9 @@ export type WorkspaceOpenSearch = {
   item?: string;
   page?: number;
   mode?: MaterialMode;
+  /** The open item fills the page, header and side panels hidden. In the URL
+   * so the back gesture leaves it. */
+  fullscreen?: true;
   /** The workspace's Study page, shown while nothing is open. */
   study?: true;
   /** The Study page's picked plan, kept in this workspace (the Study page
@@ -74,9 +77,11 @@ function parseDocumentMode(value: unknown): MaterialMode | undefined {
 
 export function parseDocumentModeSearch(search: Record<string, unknown>): {
   mode?: MaterialMode;
+  fullscreen?: true;
 } {
   const mode = parseDocumentMode(search.mode);
-  return mode ? { mode } : {};
+  const fullscreen = search.fullscreen === true || search.fullscreen === 'true';
+  return { ...(mode ? { mode } : {}), ...(fullscreen ? { fullscreen } : {}) };
 }
 
 export function parseWorkspaceOpenSearch(
@@ -108,10 +113,13 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
     };
   }
   if (material) {
-    const mode = parseDocumentMode(search.mode);
     const item =
       typeof search.item === 'string' && search.item ? search.item : undefined;
-    return { material, ...(mode ? { mode } : {}), ...(item ? { item } : {}) };
+    return {
+      material,
+      ...parseDocumentModeSearch(search),
+      ...(item ? { item } : {}),
+    };
   }
   if (typeof search.plan === 'string' && search.plan)
     return { plan: search.plan };

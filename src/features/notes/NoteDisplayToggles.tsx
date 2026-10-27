@@ -11,7 +11,12 @@ import { useTheme } from '@/theme/theme';
  * corner of a note's scroll area in View and Edit. Each flips between the two
  * choices; the note itself shows which one is on. The scroll area must be
  * `relative` so they scroll away with the note's top. */
-export function NoteDisplayToggles() {
+export function NoteDisplayToggles({
+  toolbar,
+}: {
+  /** The toolbar toggle; Edit passes it, View has no toolbar. */
+  toolbar?: { shown: boolean; onToggle: () => void } | null;
+}) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   const setDisplayWidth = useNoteEditorPrefs((state) => state.setDisplayWidth);
   const { style } = useTheme();
@@ -20,7 +25,22 @@ export function NoteDisplayToggles() {
     // button's bubble (Collaboration.tsx): 40px gutter, ml-0.5 and px-1.5 put
     // it 23px from the edge, less half the 30px (32px from sm) button.
     <div className="absolute top-0 right-2 z-10 flex sm:right-1.75">
-      {/* Both look like that thread button: muted, filled on hover. */}
+      {/* All look like that thread button: muted, filled on hover. */}
+      {toolbar && (
+        <ToolbarButton
+          active={toolbar.shown}
+          className={cn(
+            buttonVariants({ size: null, variant: 'ghost-hover' }),
+            'mr-0.5 text-fg-muted hover:text-fg-muted'
+          )}
+          label={
+            toolbar.shown ? m.editor_toolbar_hide() : m.editor_toolbar_show()
+          }
+          onClick={toolbar.onToggle}
+        >
+          <EditorIcon name="bolt" />
+        </ToolbarButton>
+      )}
       <ToolbarButton
         className={cn(
           buttonVariants({ size: null, variant: 'ghost-hover' }),

@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
-import { expectEditorLive } from '../helpers/editor';
+import { expectEditorLive, showNoteToolbar } from '../helpers/editor';
 import { m } from '../i18n';
 
 /** The top of an element, in page coordinates. */
@@ -63,6 +63,7 @@ test('a note credits its embedded quiz inside the embed and in its footer', asyn
 
   await ownerPage.goto(`${base}&mode=edit`);
   await expectEditorLive(ownerPage);
+  await showNoteToolbar(ownerPage);
   await check(ownerPage);
 
   // Removing its last question (confirmed) removes the embed, and the footer

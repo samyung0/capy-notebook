@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
+import { showNoteToolbar } from '../helpers/editor';
 import { m } from '../i18n';
 
 export async function openEditorNote(
@@ -15,6 +16,7 @@ export async function openEditorNote(
   await expect(editor.getByText(readyText).first()).toBeVisible({
     timeout: 30_000,
   });
+  await showNoteToolbar(page);
   return editor;
 }
 
