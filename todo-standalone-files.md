@@ -1,16 +1,15 @@
 # Standalone files: uploads with no workspace
 
 Status 2026-10-27, branch `wip/mac-ui-2026-10-27`, nothing committed.
-Built: migration (file `0122_standalone_files.sql`), Go uploads/imports,
+Built: migration (`0125_standalone_files.sql`), Go uploads/imports,
 access, listing, Recent, search, trash, clone; pipeline scope, fence,
 progress, thumbnails, owner-scoped rag SQL in `retrieval/store.py` (cleared
 by the Rust harness session); frontend Add file, chooser, dialog, filters, events.
 Left:
 - Sources crate and Go source-session/publication (Office/text view and edit
   of standalone files): base on `train/2026-10-27-release` or wait for main.
-- Renumber the migration at landing: the release takes 0122-0124 (Epo Q438),
-  so this becomes the next free number (0125 once the train is on main). It
-  stays 0122 here because the migrator refuses gaps.
+- Landing: folded into the release train as its last branch (the train takes
+  0122-0124, Epo Q438), so the migration is 0125.
 - Deviation: a clone into or out of standalone re-ingests in its own scope
   instead of copying the index (same-owner donors spare the parse).
 - Move built 2026-10-27 (dialog B, Clone to…, Your files, isPayer) and the
@@ -106,9 +105,9 @@ Approved 2026-10-27:
 
 ## Sequencing (Rust harness session, 2026-10-27)
 
-- Migration `0122` is reserved for this work. The release train's three
+- Migration `0125` (first reserved as 0122) is this work's. The release train's three
   migrations become 0123 to 0125 when it lands, and the migrator refuses gaps
-  and out-of-order files, so 0122 reaches main before or inside the train.
+  and out-of-order files, so it lands inside the train.
   Never push to main directly: message the Rust harness session, which folds
   this branch into the train if it is ready first.
 - The release branches (`editor/effects-on-read`, `editor/agent-edits-room`)
@@ -123,7 +122,7 @@ Approved 2026-10-27:
 
 ## Work
 
-### Schema (`0122`)
+### Schema (`0125`)
 
 - `files.workspace_id` drops `NOT NULL`. A CHECK keeps `chapter_id` empty
   without a workspace. Fix the stale payer comment at `0001:237`.

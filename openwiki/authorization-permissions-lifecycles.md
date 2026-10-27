@@ -524,7 +524,7 @@ the caller can edit) and then opens the same Add file dialog for it.
   the index.
 - The Files page (`location=standalone`), dashboard Recent, the quick open and
   search list it for its owner; it opens at `/files/{id}`.
-- Account deletion cancels its pending upload (0122 made
+- Account deletion cancels its pending upload (0125 made
   `cancel_user_async_work` find uploads without a workspace), and an owner
   lock evicts its source rooms.
 - Not yet: editing its Office and text files through the source room waits
@@ -556,7 +556,7 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   the file is ingested there, paid by the mover as a cross-space clone is;
   so is a target still building the same content.
   Open source rooms are evicted to reconnect through the new access, and both
-  workspaces' trees hear of it (0122 `notify_workspace_tree`).
+  workspaces' trees hear of it (0125 `notify_workspace_tree`).
 - Entry points: Move to… in the Files page and workspace file menus (it
   replaces the chapter-only move for files) and the workspace Add file
   dialog's Your files tab (`GET /api/files?q=`). Clone to… opens the same

@@ -176,7 +176,7 @@ func TestAccountDeletionCancelsStandaloneUpload(t *testing.T) {
 }
 
 // A standalone file's owner-scoped index goes with the file: the composite
-// (id, workspace_id) keys skip a NULL workspace, so 0122's single-column keys
+// (id, workspace_id) keys skip a NULL workspace, so 0125's single-column keys
 // carry the cascade.
 func TestStandaloneFileIndexGoesWithTheFile(t *testing.T) {
 	s := openAccessTestStore(t)
