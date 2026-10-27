@@ -69,7 +69,7 @@ type PageFrameColor struct {
 }
 
 // StudyPreferences are the learner's defaults for what the agent builds
-// (todo-learning.md, 1.4). Zero values are unset, so the pipeline's defaults
+// (openwiki/study-progress.md). Zero values are unset, so the pipeline's defaults
 // apply to them.
 type StudyPreferences struct {
 	// MainFormat is the output file that explains each chapter (Capy Note or

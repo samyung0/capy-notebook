@@ -401,7 +401,7 @@ fixture workspace without any database row: `run` on the UAT host only, since
 it calls providers, and `check`, which reads every fixture and its pictures
 and charts by id through the tools with no model, anywhere.
 
-### Acceptance (todo-learning.md, 1.9)
+### Acceptance
 
 The scenarios for the end-to-end prompt tuning. Type the request, set the
 switch or preference shown, run it and save the run; a prompt change is

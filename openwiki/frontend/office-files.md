@@ -1360,7 +1360,7 @@ command runs in suggesting mode, and heading list numbers are not copied into
 the entries. Not yet seen: a table inside a block content control (Word's
 References › Table of Contents gallery wraps the field in one), so Update is
 not offered for it and Insert adds a second table; and headings inside table
-cells and content controls are not listed (a follow-up in `todo-office.md`).
+cells and content controls are not listed (a follow-up in the central todo list).
 
 View › Show ruler (`show-ruler`, a checkbox item that does not edit, so it
 stays usable while paused) shows docx-react's rulers as Google Docs does: the
@@ -1374,7 +1374,7 @@ beside the page, about 1280px wide with the side panel open, it overlaps the
 page's left edge). A document whose sections differ in page size or margins
 (portrait pages and a final landscape section) shows the last section's
 horizontal ruler over every page; following the section at the cursor is a
-fork follow-up in `todo-office.md`. A read-only editor keeps them, not draggable, as it keeps
+fork follow-up in the central todo list. A read-only editor keeps them, not draggable, as it keeps
 the toolbar. Margin drags and the indent markers work as before; the margin
 zones take `--doc-ruler-margin` (Capy's divider tint) with the ticks drawn
 over them. Rulers start hidden; the choice is one per person for every DOCX
@@ -2370,7 +2370,7 @@ unedited save's document.xml is about the source's size: 5.6 MB for the
 handbook export takes about 16 s against 13.3 s before; the TS projection
 of the x10 handbook 1.6 s against 1.36 s and of the 96-table ladder 6.9 s
 against 6.1 s. A paragraph made in the session still saves resolved values
-(`todo-office.md`).
+(a follow-up in the central todo list).
 The pPr children the model has no field for
 (`w:kinsoku`, `w:wordWrap`, `w:overflowPunct`, `w:topLinePunct`,
 `w:adjustRightInd`, `w:mirrorIndents`, `w:suppressOverlap`, `w:textDirection`,

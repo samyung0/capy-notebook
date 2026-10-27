@@ -215,7 +215,7 @@ fn every_fixture_round_trips_through_both_documents() {
     }
 }
 
-/// The live quiz's block kinds against the embed catalog (todo-embeds.md):
+/// The live quiz's block kinds against the embed catalog (openwiki/embeds.md):
 /// the room admits every question block the catalog lists, and the shared
 /// fixtures hold a block of every kind it admits, so the round trip above
 /// reads each one back: a kind added without a reader fails here instead of

@@ -35,5 +35,5 @@ format page](https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-
 are not stored: learners and the chat agent filter by the parts' answer types
 (Epo, 2026-10-06).
 
-Generation status is in `todo-question-bank.md` at the repository root.
+Open generation work is in the central todo list; the last status notes: `git show 4dd037d92:todo-question-bank.md`.
 Catalog presence does not mean questions have been generated or published.
