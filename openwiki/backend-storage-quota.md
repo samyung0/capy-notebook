@@ -1071,15 +1071,15 @@ and tabs loading the collected state agree.
 - **Undo.** An item that names a collected unit as origin, right origin or
   parent integrates as collected, so a durable Undo payload whose items name
   one would restore only part of its edit. `ydoc::gc::names_collected` finds
-  such a payload; the durable Undo route must refuse it (`undo_unavailable`)
-  before the collection is turned on, checking both the loaded room's
-  document and the stored state (Q419).
-- **Switch.** `COLLABORATION_GC_COLLECT=true` turns the collection on. It is
-  off by default, and the server refuses to start with it on outside tests
-  (`APP_ENV=test`) until the rest of the release lands: the merge of a tab or
-  draft older than the window (without it, a late tab's unsent edits would be
-  lost), the durable Undo payloads' holds and the durable Undo route's
-  refusal.
+  such a payload, and the durable Undo route refuses it (`undo_unavailable`)
+  against the stored state with no room loaded, and with one loaded against
+  the stored state, the room's snapshot it computes on and the room's
+  document at admission (Q419; agent edits naming one are refused
+  `unavailable_target`).
+- **Switch.** `COLLABORATION_GC_COLLECT=true` turns the collection on, in
+  any environment; it is off by default. The startup refusal outside tests
+  lifted with the release that brought the late merge and the durable Undo
+  holds and checks.
 
 On the most churned note measured (1,000 characters after 100,000 edit
 bursts in 605 sessions) one collection takes the stored state from 716 KB to

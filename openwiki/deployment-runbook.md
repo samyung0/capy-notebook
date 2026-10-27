@@ -563,7 +563,9 @@ gateway's boot sweep and the single collaboration instance need that.
 The in-place Yjs collection requires one collaboration process per database
 (Q400): never scale `collaboration` to replicas, roll it out start-first, or
 point another collaboration server (a developer's) at an environment's
-database. A fold collects nothing while it sees another process's heartbeat
+database. Agent edits rely on it too (Q403): they are admitted by the room
+loaded on this process and never forwarded, so while two processes overlap
+a direct write does not reach a room loaded on the other one. A fold collects nothing while it sees another process's heartbeat
 in that Redis (within a minute) or cannot read the registry, and reports
 each cause once per process: a Sentry event and a `captured error` log line,
 `in-place collection withheld: <cause>` with the other id or the Redis
