@@ -115,6 +115,7 @@ it('offers the payer Move to… and opens the moved file in its new workspace', 
   onMoved({ id: 'f1', workspaceId: 'ws_2' });
   expect(header.navigate).toHaveBeenCalledWith({
     params: { workspaceId: 'ws_2' },
+    replace: true,
     search: { file: 'f1' },
     to: '/workspaces/$workspaceId',
   });
