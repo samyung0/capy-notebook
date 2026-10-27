@@ -87,6 +87,14 @@ describe("an Office file's open from its route", () => {
     );
   });
 
+  it('opens a standalone file in View, its editing not yet landed (R4)', async () => {
+    rows.set('file:f_own', async () => ({ ...DECK, workspaceId: '' }));
+    load('f_own', { mode: 'edit' });
+    await vi.waitFor(() =>
+      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_own', 'view')
+    );
+  });
+
   it("starts nothing for a hover's preload, a file that is not Office or one without bytes", async () => {
     const read = vi.fn(async () => DECK);
     rows.set('file:f_hover', read);

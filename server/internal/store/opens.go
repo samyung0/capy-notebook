@@ -117,11 +117,7 @@ func (s *Store) RecordItemOpen(ctx context.Context, userID string, kind OpenKind
 		return nil
 	}
 	if kind == OpenFile {
-		wsID, err := s.FileWorkspaceID(ctx, id)
-		if err != nil {
-			return err
-		}
-		if _, err := s.WorkspaceAccess(ctx, userID, wsID); err != nil {
+		if _, err := s.FileEffectiveRole(ctx, userID, id); err != nil {
 			return err
 		}
 	} else {
@@ -168,13 +164,15 @@ type ItemOpen struct {
 
 // RecentOpens lists the caller's newest opens that a Member listing still
 // shows them: untrashed files and top-level materials of materialKinds in the
-// workspace list's set, and their own standalone materials.
+// workspace list's set, and their own standalone files and materials.
 func (s *Store) RecentOpens(ctx context.Context, userID string, materialKinds []string, limit int) ([]ItemOpen, error) {
 	rows, err := s.pool.Query(ctx, `SELECT o.file_id, o.material_id, o.opened_at FROM item_opens o
 		LEFT JOIN files f ON f.id = o.file_id
 		LEFT JOIN materials m ON m.id = o.material_id
 		WHERE o.user_id = $1 AND (
-			(f.id IS NOT NULL AND f.trashed_at IS NULL AND f.workspace_id IN (`+visibleWorkspacesSQL("$1")+`))
+			(f.id IS NOT NULL AND f.trashed_at IS NULL AND (
+				(f.workspace_id IS NULL AND f.user_id = $1)
+				OR f.workspace_id IN (`+visibleWorkspacesSQL("$1")+`)))
 			OR (m.id IS NOT NULL AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($3) AND (
 				(m.workspace_id IS NULL AND m.owner_user_id = $1)
 				OR m.workspace_id IN (`+visibleWorkspacesSQL("$1")+`))))

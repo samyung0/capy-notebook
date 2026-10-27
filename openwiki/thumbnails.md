@@ -136,7 +136,8 @@ other render failure.
   (`db.share_file_thumbnail`). A file in any other workspace never lends its
   key, the same owner's included
   (`test_a_reuse_never_shares_a_key_from_another_workspace`, a security
-  regression test). The shared key outlives the original while the copy
+  regression test). A standalone file only takes a key from the
+  same owner's standalone files, never across that boundary. The shared key outlives the original while the copy
   references it. Text sources need no copy: their preview is read from the
   reused bytes, which are identical.
 - The parser's page render is optional too: a failure prints `page thumbnail

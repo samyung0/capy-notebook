@@ -6,12 +6,29 @@ import { createEditorStatusStore, Header } from './CenterContentHeader';
 
 const HIDDEN = /\bhidden\b/;
 
+// The ⋮'s props, and where the header sends the reader.
+const header = vi.hoisted(() => ({
+  actions: [] as Record<string, unknown>[],
+  isPayer: false,
+  navigate: vi.fn(),
+}));
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => header.navigate,
+}));
+
 vi.mock('@/api/hooks', () => ({
   materialQuery: (id: string | null) => ({
     queryFn: () => null,
     queryKey: ['material', id],
   }),
-  useFile: () => ({ data: { id: 'f1', kind: 'office', name: 'Deck.pptx' } }),
+  useFile: () => ({
+    data: {
+      id: 'f1',
+      isPayer: header.isPayer,
+      kind: 'office',
+      name: 'Deck.pptx',
+    },
+  }),
   useMaterials: () => ({ data: [], isPending: false }),
   useWorkspace: () => ({ data: undefined }),
 }));
@@ -20,7 +37,10 @@ vi.mock('@/features/study/studyItems', () => ({
   useStudyStates: () => ({ enabled: false, states: new Map() }),
 }));
 vi.mock('@/features/workspace/ContentActions', () => ({
-  ContentActions: () => null,
+  ContentActions: (props: Record<string, unknown>) => {
+    header.actions.push(props);
+    return null;
+  },
 }));
 vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   OfflineStatus: () => null,
@@ -79,4 +99,28 @@ it('keeps one row until the file loads and the status beside the name', () => {
     const container = html.slice(html.lastIndexOf('<div', at), at);
     expect(HIDDEN.test(container)).toBe(!loaded);
   }
+});
+
+/** A workspace file is moved by its workspace's owner or its payer (Epo
+ * 2026-10-27), and the open one follows itself into its new workspace. */
+it('offers the payer Move to… and opens the moved file in its new workspace', () => {
+  header.isPayer = true;
+  header.actions.length = 0;
+  render(true);
+  const { canMoveTo, onMoved } = header.actions[0] as {
+    canMoveTo: boolean;
+    onMoved: (file: { id: string; workspaceId: string }) => void;
+  };
+  expect(canMoveTo).toBe(true);
+  onMoved({ id: 'f1', workspaceId: 'ws_2' });
+  expect(header.navigate).toHaveBeenCalledWith({
+    params: { workspaceId: 'ws_2' },
+    search: { file: 'f1' },
+    to: '/workspaces/$workspaceId',
+  });
+  // Another editor keeps the chapter-only Move.
+  header.isPayer = false;
+  header.actions.length = 0;
+  render(true);
+  expect(header.actions[0]?.canMoveTo).toBe(false);
 });

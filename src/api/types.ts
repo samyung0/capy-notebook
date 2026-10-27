@@ -123,6 +123,7 @@ export type {
   ModelOption,
   ModelsResponse,
   ModelThinking,
+  MoveFilesReq,
   NoteChange,
   Notification as AppNotification,
   NotificationCountOutputBody as NotificationCount,
@@ -687,9 +688,14 @@ export interface MaterialListParams {
   workspaceIds?: string[];
 }
 export type FileListSort = ListOwnedFilesSort;
+/** A file with no workspace is standalone, its uploader's alone. */
+export type FileListLocation = MaterialListLocation;
 export interface FileListParams {
   dir?: 'asc' | 'desc';
   kinds?: FileKind[];
+  locations?: FileListLocation[];
+  /** Name contains, any case. */
+  q?: string;
   scope?: ListScope;
   sort?: FileListSort;
   workspaceIds?: string[];

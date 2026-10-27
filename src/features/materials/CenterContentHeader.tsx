@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { createContext, type ReactNode, useEffect, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
 import {
@@ -29,6 +30,7 @@ import { useSlowedLine } from '@/features/collaboration/SlowedOpen';
 import {
   clampImageZoom,
   fileCanClone,
+  fileCanMoveTo,
   IMAGE_MAX_ZOOM,
   IMAGE_MIN_ZOOM,
   IMAGE_ZOOM_STEP,
@@ -262,6 +264,9 @@ function useHeader(
   /** Members and editors copy a workspace's items; any reader a standalone
    * one. An embedded row or an unprocessed file is never offered. */
   canClone: boolean;
+  /** Move to… on a workspace pane's file (fileCanMoveTo); the standalone
+   * page has no Move. */
+  canMoveTo?: boolean;
   material?: Material | MaterialRef;
   materialCapabilities?: AccessCapabilities;
   showImageZoom: boolean;
@@ -282,7 +287,8 @@ function useHeader(
     inWorkspace ? workspaceId : '',
     { errorBoundary: false }
   );
-  // Files always sit in a workspace; its canClone gates their Clone too.
+  // A workspace's canClone gates its files' Clone too; a standalone file is
+  // its owner's, who may always copy it.
   const { data: workspace } = useWorkspace(standalone ? '' : workspaceId, {
     errorBoundary: false,
   });
@@ -301,7 +307,12 @@ function useHeader(
   });
   if (item.kind === 'file') {
     return {
-      canClone: !!fileData && fileCanClone(fileData) && !!workspace?.canClone,
+      canClone:
+        !!fileData &&
+        fileCanClone(fileData) &&
+        (!fileData.workspaceId || !!workspace?.canClone),
+      canMoveTo:
+        !standalone && !!fileData && fileCanMoveTo(fileData, workspace),
       file: fileData,
       icon: fileData ? fileIconName(fileData) : '_file',
       showImageZoom: !!fileData && isImageFile(fileData),
@@ -426,6 +437,7 @@ export function Header({
 }) {
   const {
     canClone,
+    canMoveTo,
     file,
     icon,
     material,
@@ -440,6 +452,7 @@ export function Header({
     : materialMode && modes?.includes(materialMode)
       ? materialMode
       : defaultMode;
+  const navigate = useNavigate();
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   const { enabled: studying, states: studyStates } = useStudyStates(
@@ -522,6 +535,7 @@ export function Header({
         beforeDelete={file ? beforeFileDelete : undefined}
         beforeDeleteItems={oneColumn?.settingsItems}
         canClone={canClone}
+        canMoveTo={canMoveTo}
         chapters={chapters}
         color={color}
         content={
@@ -559,6 +573,14 @@ export function Header({
           </ToolbarButton>
         }
         onDeleted={onDeleted}
+        // The open file follows itself into its new workspace.
+        onMoved={(moved) =>
+          void navigate({
+            params: { workspaceId: moved.workspaceId },
+            search: { file: moved.id },
+            to: '/workspaces/$workspaceId',
+          })
+        }
         onShare={shareable?.sharePath ? () => setSharing(true) : undefined}
         readOnly={
           readOnly ||

@@ -3,21 +3,26 @@ import { API_BASE } from './client';
 import { consumeSSE, sseData, sseEvent } from './sse';
 import type { AppNotification, FileStatus } from './types';
 
-export interface NotificationStreamEvent {
-  ids?: string[];
-  notification?: AppNotification;
-  /** `billing` and `customization` carry nothing: they ask the tab to
-   * refetch billing, or /api/me and adopt the look another device synced. */
-  type: 'billing' | 'created' | 'customization' | 'read' | 'removed';
-}
-
 export interface IngestEvent {
   fileId: string;
   indexed?: boolean;
+  message?: string;
   pct: number;
   stage?: string;
   status: FileStatus;
 }
+
+export type NotificationStreamEvent =
+  | {
+      ids?: string[];
+      notification?: AppNotification;
+      /** `billing` and `customization` carry nothing: they ask the tab to
+       * refetch billing, or /api/me and adopt the look another device synced. */
+      type: 'billing' | 'created' | 'customization' | 'read' | 'removed';
+    }
+  /** A standalone file's ingest progress: it has no workspace channel, so it
+   * rides the owner's notifications. */
+  | (IngestEvent & { type: 'ingest' });
 
 export type StreamEvent =
   | { data: NotificationStreamEvent; name: 'notification' }
@@ -30,6 +35,15 @@ const FILE_STATUSES: readonly string[] = [
   'ready',
   'failed',
 ];
+
+function isIngestEvent(value: Record<string, unknown>) {
+  return (
+    typeof value.fileId === 'string' &&
+    typeof value.pct === 'number' &&
+    Number.isFinite(value.pct) &&
+    FILE_STATUSES.includes(String(value.status))
+  );
+}
 
 function parseEvent(chunk: string): StreamEvent | null {
   const raw = sseData(chunk);
@@ -44,19 +58,13 @@ function parseEvent(chunk: string): StreamEvent | null {
   const value = data as Record<string, unknown>;
   switch (sseEvent(chunk)) {
     case 'notification':
+      if (value.type === 'ingest' && !isIngestEvent(value)) return null;
       return {
         data: value as unknown as NotificationStreamEvent,
         name: 'notification',
       };
     case 'ingest':
-      if (
-        typeof value.fileId !== 'string' ||
-        typeof value.pct !== 'number' ||
-        !Number.isFinite(value.pct) ||
-        !FILE_STATUSES.includes(String(value.status))
-      ) {
-        return null;
-      }
+      if (!isIngestEvent(value)) return null;
       return { data: value as unknown as IngestEvent, name: 'ingest' };
     case 'tree':
       if (value.kind !== 'files' && value.kind !== 'materials') return null;

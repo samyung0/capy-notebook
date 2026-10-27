@@ -133,6 +133,7 @@ import {
   type ParseMode,
   parseModeIssues,
 } from './sourceUpload';
+import { YourFilesPanel } from './YourFilesPanel';
 
 function reportPickerFailure(
   provider: Provider,
@@ -349,7 +350,12 @@ function localRows(
   });
 }
 
-export type AddSourceMode = 'upload' | 'import' | 'create' | 'generate';
+export type AddSourceMode =
+  | 'upload'
+  | 'import'
+  | 'create'
+  | 'files'
+  | 'generate';
 
 /* Connecting a drive sends the whole tab through the provider's consent
  * screen and back, which drops the dialog. The workspace page reopens it on
@@ -357,19 +363,21 @@ export type AddSourceMode = 'upload' | 'import' | 'create' | 'generate';
  * OneDrive's picker is a popup, so it still needs a click. */
 const CONNECT_RESUME_KEY = 'capy:connect-resume';
 
-export function resumedConnect(workspaceId: string): Provider | null {
+/** The provider to resume on this destination; null `workspaceId` is No
+ * workspace, which the Files page reopens. */
+export function resumedConnect(workspaceId: string | null): Provider | null {
   try {
     const saved = JSON.parse(
       sessionStorage.getItem(CONNECT_RESUME_KEY) ?? 'null'
-    ) as { provider: Provider; workspaceId: string } | null;
-    return saved?.workspaceId === workspaceId ? saved.provider : null;
+    ) as { provider: Provider; workspaceId: string | null } | null;
+    return saved && saved.workspaceId === workspaceId ? saved.provider : null;
   } catch {
     return null;
   }
 }
 
 function setConnectResume(
-  value: { provider: Provider; workspaceId: string } | null
+  value: { provider: Provider; workspaceId: string | null } | null
 ) {
   try {
     if (value)
@@ -613,11 +621,13 @@ function SourceList({
   /** A stored file being retried: its chapter stays and it can't be removed. */
   fixed?: boolean;
   uploadPolicy: SourceUploadPolicy;
-  workspaceId: string;
+  /** null: standalone files, which have no chapter. */
+  workspaceId: string | null;
 }) {
-  const { data: chapters } = useChapters(workspaceId, {
+  const { data: chapters } = useChapters(workspaceId ?? '', {
     errorBoundary: false,
   });
+  const pickChapter = !fixed && !!workspaceId;
   const [creatingKey, setCreatingKey] = useState<string | null>(null);
   const [newChapterName, setNewChapterName] = useState('');
 
@@ -695,33 +705,35 @@ function SourceList({
                 </span>
               )}
               <div className="ml-auto flex items-center">
-                {fixed ? null : creatingKey === source.key ? (
-                  <NewChapterInput
-                    onCancel={() => setCreatingKey(null)}
-                    onChange={setNewChapterName}
-                    onConfirm={() => confirmCreateChapter(source.key)}
-                    value={newChapterName}
-                  />
-                ) : (
-                  <ChapterSelect
-                    chapterName={source.chapterName}
-                    chapters={chapters ?? []}
-                    onChange={(chapterId) =>
-                      batch.patchSource(source.key, {
-                        chapterId,
-                        chapterName: null,
-                      })
-                    }
-                    onCreateRequest={() => {
-                      setCreatingKey(source.key);
-                      setNewChapterName('');
-                    }}
-                    value={source.chapterId}
-                  />
-                )}
+                {pickChapter ? (
+                  creatingKey === source.key ? (
+                    <NewChapterInput
+                      onCancel={() => setCreatingKey(null)}
+                      onChange={setNewChapterName}
+                      onConfirm={() => confirmCreateChapter(source.key)}
+                      value={newChapterName}
+                    />
+                  ) : (
+                    <ChapterSelect
+                      chapterName={source.chapterName}
+                      chapters={chapters ?? []}
+                      onChange={(chapterId) =>
+                        batch.patchSource(source.key, {
+                          chapterId,
+                          chapterName: null,
+                        })
+                      }
+                      onCreateRequest={() => {
+                        setCreatingKey(source.key);
+                        setNewChapterName('');
+                      }}
+                      value={source.chapterId}
+                    />
+                  )
+                ) : null}
                 {hasParseModes(source, uploadPolicy) && (
                   <>
-                    {!fixed && (
+                    {pickChapter && (
                       <span
                         aria-hidden
                         className="size-0.75 shrink-0 translate-y-px rounded-full bg-fg-muted"
@@ -853,7 +865,9 @@ export function AddSourceDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  workspaceId: string;
+  /** The destination; null adds standalone files (No workspace): no
+   * chapters, no workspace file room and no Create tab. */
+  workspaceId: string | null;
   /** Opens what the Create tab made. */
   onOpenItem?: (item: OpenItem) => void;
   /** Tab to open on: the plus menu lands New file on `create`. */
@@ -868,12 +882,13 @@ export function AddSourceDialog({
    * from the stored bytes, and submits Retry processing. */
   retryFile?: SourceFile;
 }) {
-  const { data: workspace } = useWorkspace(workspaceId, {
+  const { data: workspace } = useWorkspace(workspaceId ?? '', {
     errorBoundary: false,
   });
-  const { data: uploadPolicy } = useSourceUploadPolicy(workspaceId, {
-    errorBoundary: false,
-  });
+  const { data: uploadPolicy } = useSourceUploadPolicy(
+    workspaceId ?? undefined,
+    { errorBoundary: false }
+  );
   const [mode, setMode] = useState<string>(initialMode);
   const [inspectionGuard] = useState(createSourceInspectionGuard);
   const uploads = useSourceBatch(
@@ -920,7 +935,13 @@ export function AddSourceDialog({
     useInspectSourceImports(workspaceId, { errorToast: false });
   const connectProvider = useProviderConnect();
   const microsoftLoginHint = useMicrosoftLoginHint();
-  const { filesLimit, filesUsed, workspaceRoom } = workspaceFileRoom(workspace);
+  const room = workspaceFileRoom(workspace);
+  const { filesLimit, filesUsed } = room;
+  // Standalone files take no workspace room: only the per-request and
+  // storage limits apply.
+  const workspaceRoom = workspaceId
+    ? room.workspaceRoom
+    : Number.POSITIVE_INFINITY;
   // Rows waiting in either list already claim workspace room.
   const pendingCount =
     uploads.sources.length + imports.sources.length + inFlightCount;
@@ -1302,12 +1323,16 @@ export function AddSourceDialog({
     setConnectResume(null);
   }, []);
   useEffect(() => {
-    if (pendingResume.current !== 'google' || !uploadPolicy || !workspace)
+    if (
+      pendingResume.current !== 'google' ||
+      !uploadPolicy ||
+      (workspaceId && !workspace)
+    )
       return;
     if (!integrations?.googleDriveReadonly || !canAdd) return;
     pendingResume.current = null;
     void openGooglePicker();
-  }, [canAdd, integrations, uploadPolicy, workspace]);
+  }, [canAdd, integrations, uploadPolicy, workspace, workspaceId]);
 
   async function onGoogleClick() {
     if (
@@ -1478,18 +1503,28 @@ export function AddSourceDialog({
               label: tabLabel(m.action_import(), imports.sources.length),
               value: 'import',
             },
-            { label: m.action_create(), value: 'create' },
+            // Standalone notes and sets come from Blocks' New block, and
+            // blank Office files are workspace-scoped (P2, 2026-10-27).
+            ...(workspaceId
+              ? [
+                  { label: m.action_create(), value: 'create' },
+                  // Moves files the user pays for in from elsewhere.
+                  { label: m.source_tab_your_files(), value: 'files' },
+                ]
+              : []),
             // TODO: refine with agentic harness. AI generate is hidden until
             // then; its panel below still opens for initialMode 'generate'.
           ]}
           value={mode}
         />
-        <p className="t-meta text-fg-muted">
-          {m.source_workspace_file_capacity({
-            limit: filesLimit,
-            used: filesUsed,
-          })}
-        </p>
+        {workspaceId && (
+          <p className="t-meta text-fg-muted">
+            {m.source_workspace_file_capacity({
+              limit: filesLimit,
+              used: filesUsed,
+            })}
+          </p>
+        )}
         {mode === 'upload' && (
           <div className="flex min-h-0 flex-1 flex-col">
             {uploads.sources.length === 0 ? (
@@ -1598,14 +1633,16 @@ export function AddSourceDialog({
             )}
           </div>
         )}
-        {mode === 'generate' ? (
+        {workspaceId && mode === 'generate' ? (
           <GenerateFilePanel
             onClose={onClose}
             onGeneratingChange={onGeneratingChange}
             onOpenItem={onOpenItem}
             workspaceId={workspaceId}
           />
-        ) : mode === 'create' ? (
+        ) : workspaceId && mode === 'files' ? (
+          <YourFilesPanel onMoved={onClose} workspaceId={workspaceId} />
+        ) : workspaceId && mode === 'create' ? (
           <CreateFilePanel
             onCreated={(item) => {
               onOpenItem?.(item);

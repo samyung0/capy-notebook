@@ -71,7 +71,8 @@ import {
 import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
-function locationLabel(location: MaterialListLocation): string {
+/** A Location filter option, shared by the Files and Blocks tabs. */
+export function locationLabel(location: MaterialListLocation): string {
   switch (location) {
     case 'workspace':
       return m.create_location_workspace();
@@ -327,7 +328,7 @@ export function MaterialsTab({
       items.push({
         disabled: frozen,
         icon: 'clone',
-        label: m.action_clone(),
+        label: m.action_clone_to(),
         onClick: () => setCloning(item),
       });
       items.push({

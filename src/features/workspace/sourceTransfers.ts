@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { USE_MSW } from '@/api/auth';
 import { api, isApiError, qk } from '@/api/client';
 import type { useImportSources, useUploadSource } from '@/api/hooks';
-import { ingestSlotsQuery } from '@/api/hooks';
+import { ingestSlotsQuery, sourcesPath } from '@/api/hooks';
 import { FILE_NAME_CHARACTER_LIMIT } from '@/api/limits.generated';
 import { queryClient } from '@/api/queryClient';
 import type {
@@ -38,8 +38,9 @@ import {
 
 export type SourceProvider = 'google' | 'microsoft';
 
-/** Where one source is before it becomes a workspace file. Once `added`, the
- * file's own status (parsing, ready, failed) comes from the files cache. */
+/** Where one source is before it becomes a file. Once `added`, the file's
+ * own status (parsing, ready, failed) comes from the files cache: its
+ * workspace's list, or a standalone file's own query. */
 export type TransferStage =
   | 'waiting'
   | 'compressing'
@@ -60,7 +61,8 @@ export interface SourceTransfer {
   queuePosition?: number;
   stage: TransferStage;
   uploadPct: number;
-  workspaceId: string;
+  /** null: a standalone file (no workspace). */
+  workspaceId: string | null;
 }
 
 interface TransferRequest {
@@ -88,7 +90,7 @@ export interface RemoteTransferRequest extends TransferRequest {
 type StartTransfer = {
   importSources: ReturnType<typeof useImportSources>['mutateAsync'];
   uploadSource: ReturnType<typeof useUploadSource>['mutateAsync'];
-  workspaceId: string;
+  workspaceId: string | null;
 } & (
   | {
       /** The uploader's caps the browser compresses to and checks before
@@ -243,21 +245,23 @@ async function freeIngestSlots() {
 }
 
 /** Resolves once the file is ready or failed. The workspace event stream
- * patches the files cache while that workspace is open; the poll keeps the
- * next wave moving after the user navigates elsewhere. */
+ * patches the files cache while that workspace is open, and the owner's
+ * notifications patch a standalone file's own query (seeded at upload); the
+ * poll keeps the next wave moving after the user navigates elsewhere or an
+ * event is missed. */
 function waitForFileTerminal(
-  workspaceId: string,
+  workspaceId: string | null,
   fileId: string,
   signal: AbortSignal
 ) {
-  const files = () =>
-    queryClient.getQueryData<SourceFile[]>(qk.files(workspaceId));
+  const queryKey = workspaceId ? qk.files(workspaceId) : qk.file(fileId);
+  const files = () => {
+    const data = queryClient.getQueryData<SourceFile[] | SourceFile>(queryKey);
+    return Array.isArray(data) ? data : data && [data];
+  };
   return new Promise<void>((resolve) => {
     const poll = setInterval(() => {
-      void queryClient.invalidateQueries({
-        queryKey: qk.files(workspaceId),
-        refetchType: 'all',
-      });
+      void queryClient.invalidateQueries({ queryKey, refetchType: 'all' });
     }, 5000);
     const unsubscribe = queryClient.getQueryCache().subscribe(() => {
       if (fileReachedTerminal(files(), fileId)) finish();
@@ -321,7 +325,7 @@ export function startSourceTransfer(start: StartTransfer) {
   function countRemoved(cancel: AbortSignal) {
     if (cancel.reason !== uploadRemoved) return;
     api
-      .post(`/workspaces/${workspaceId}/sources/batches/${batchId}/removed`, {
+      .post(`${sourcesPath(workspaceId)}/batches/${batchId}/removed`, {
         source: start.local ? 'upload' : 'import',
         total: requests.length,
       })
@@ -452,7 +456,7 @@ export function startSourceTransfer(start: StartTransfer) {
   function pollImport(key: string, name: string, jobId: string) {
     return waitForSourceImport(
       (id, pollSignal) =>
-        api.get(`/workspaces/${workspaceId}/sources/imports/${id}`, {
+        api.get(`${sourcesPath(workspaceId)}/imports/${id}`, {
           signal: pollSignal,
         }),
       jobId,
@@ -465,7 +469,9 @@ export function startSourceTransfer(start: StartTransfer) {
       ({ fileId, name: stored, removedPictures }) => {
         patchTransfer(key, { fileId, name: stored, stage: 'added' });
         picturesRemovedToast(stored, removedPictures);
-        void queryClient.invalidateQueries({ queryKey: qk.files(workspaceId) });
+        void queryClient.invalidateQueries({
+          queryKey: workspaceId ? qk.files(workspaceId) : qk.ownedFilesRoot,
+        });
         // The upload counts as opening it (Recent).
         void queryClient.invalidateQueries({ queryKey: qk.recent });
       },
@@ -583,10 +589,16 @@ export function startSourceTransfer(start: StartTransfer) {
       await Promise.all(polls);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: qk.ingestSlots }),
-        queryClient.invalidateQueries({ queryKey: qk.workspace(workspaceId) }),
-        queryClient.invalidateQueries({
-          queryKey: qk.workspaceStats(workspaceId),
-        }),
+        ...(workspaceId
+          ? [
+              queryClient.invalidateQueries({
+                queryKey: qk.workspace(workspaceId),
+              }),
+              queryClient.invalidateQueries({
+                queryKey: qk.workspaceStats(workspaceId),
+              }),
+            ]
+          : []),
       ]);
       remaining = rest;
     }

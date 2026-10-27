@@ -91,6 +91,7 @@ import type {
   MaterialUpdateResult,
   ModelSlot,
   ModelsResponse,
+  MoveFilesReq,
   NotificationCount,
   NotificationPage,
   NotificationPrefs,
@@ -391,6 +392,11 @@ export function applyNotificationEvent(
   qc: QueryClient,
   event: NotificationStreamEvent
 ) {
+  // A standalone file's ingest progress (no workspace to stream it on).
+  if (event.type === 'ingest') {
+    applyIngestEvent(qc, null, event);
+    return;
+  }
   // Stripe or the reload worker changed billing. A pending billing save
   // refetches when it settles, so it is left to that refetch.
   if (event.type === 'billing') {
@@ -485,6 +491,8 @@ export function useEventStream(wsId: string) {
         qk.notifications,
         qk.notificationUnread,
         qk.billing,
+        // Standalone files' ingest events ride the notifications.
+        qk.ownedFilesRoot,
       ];
       if (wsId) {
         keys.push(qk.files(wsId), qk.materials(wsId), qk.chapters(wsId));
@@ -889,8 +897,13 @@ export const integrationsQuery = () =>
 export const useIntegrations = (options?: QueryUiOptions) =>
   useQuery({ ...integrationsQuery(), meta: queryMeta(options) });
 
+/** Where a destination's source routes live: a workspace's, or the unscoped
+ * ones for a standalone file (no workspace). */
+export const sourcesPath = (workspaceId: string | null) =>
+  workspaceId ? `/workspaces/${workspaceId}/sources` : '/sources';
+
 export function useImportSources(
-  workspaceId: string,
+  workspaceId: string | null,
   options?: MutationUiOptions
 ) {
   return useMutation({
@@ -908,10 +921,11 @@ export function useImportSources(
       requestId?: string;
       signal?: AbortSignal;
     }) => {
-      const { signal, ...request } = body;
+      const { signal, chapterId, chapterName, ...request } = body;
       return api.post<unknown>(
-        `/workspaces/${workspaceId}/sources/import`,
-        request,
+        `${sourcesPath(workspaceId)}/import`,
+        // A standalone file has no chapter.
+        workspaceId ? { ...request, chapterId, chapterName } : request,
         { signal }
       );
     },
@@ -919,14 +933,14 @@ export function useImportSources(
 }
 
 export function useInspectSourceImports(
-  workspaceId: string,
+  workspaceId: string | null,
   options?: MutationUiOptions
 ) {
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: (body: InspectSourceImportsReq) =>
       api.post<InspectSourceImportsResponse>(
-        `/workspaces/${workspaceId}/sources/import-inspect`,
+        `${sourcesPath(workspaceId)}/import-inspect`,
         body
       ),
   });
@@ -1269,6 +1283,8 @@ export const ownedFilesQuery = (params: FileListParams = {}) => ({
         {
           dir: params.dir,
           kind: params.kinds,
+          location: params.locations,
+          q: params.q,
           scope: params.scope,
           sort: params.sort,
           workspaceId: params.workspaceIds,
@@ -1360,6 +1376,28 @@ export function useMoveFile(wsId: string) {
     onSettled: () => refetchContentIfLast(qc, wsId),
   });
 }
+/** Move files into a workspace the caller edits (never out of one). `from`
+ * holds the workspaces they leave, whose lists, chapters, stats and study
+ * progress change too. A 409 `progress_loss` asks before dropping study
+ * progress: resend with `confirmProgressLoss`. */
+export function useMoveFiles(options?: MutationUiOptions) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: ({ body }: { body: MoveFilesReq; from: string[] }) =>
+      api.post<SourceFile[]>('/files/move', body),
+    onSuccess: (files, { body, from }) => {
+      for (const wsId of new Set([...from, body.workspaceId]))
+        if (wsId) qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
+      for (const file of files)
+        qc.invalidateQueries({ queryKey: qk.file(file.id) });
+      qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+      qc.invalidateQueries({ queryKey: qk.recent });
+      // The left workspaces' progress and plan steps for the files are gone.
+      void invalidateStudy(qc);
+    },
+  });
+}
 function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
   qc.invalidateQueries({ queryKey: qk.files(wsId) });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
@@ -1379,11 +1417,12 @@ export function useDeleteFile(wsId: string, options?: MutationUiOptions) {
   });
 }
 
-const retryProcessingKey = (wsId: string) => ['retryProcessing', wsId] as const;
+const retryProcessingKey = (wsId: string | null) =>
+  ['retryProcessing', wsId ?? ''] as const;
 
 /** Process a failed file again on its stored bytes (owner only, charged like
  * automatic reprocessing). The file list shows it pending once it lands. */
-export function useRetryFileProcessing(wsId: string) {
+export function useRetryFileProcessing(wsId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, parseMode }: { id: string } & RetryProcessingReq) =>
@@ -1393,18 +1432,26 @@ export function useRetryFileProcessing(wsId: string) {
     mutationKey: retryProcessingKey(wsId),
     // Awaited, so the retry stays pending until the refetched list shows the
     // file out of `failed` (useRetryingFileIds).
-    onSettled: () =>
-      Promise.all([
-        qc.invalidateQueries({ queryKey: qk.files(wsId) }),
-        qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) }),
-      ]),
+    onSettled: (_data, _error, { id }) =>
+      Promise.all(
+        wsId
+          ? [
+              qc.invalidateQueries({ queryKey: qk.files(wsId) }),
+              qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) }),
+            ]
+          : // A standalone file: the Files page's list and its own query.
+            [
+              qc.invalidateQueries({ queryKey: qk.ownedFilesRoot }),
+              qc.invalidateQueries({ queryKey: qk.file(id) }),
+            ]
+      ),
   });
 }
 
 /** Files whose Retry processing is still running: the POST, then the list
  * refetch. Their Retry stays off, so no second click meets the queued job's
  * 409. */
-export const useRetryingFileIds = (wsId: string) =>
+export const useRetryingFileIds = (wsId: string | null) =>
   useMutationState({
     filters: { mutationKey: retryProcessingKey(wsId), status: 'pending' },
     select: (mutation) =>
@@ -1613,16 +1660,30 @@ export function useDeleteChapter(wsId: string) {
     },
   });
 }
-/** Patch a single file across both the workspace list cache and its detail cache. */
+/** Patch a single file across its list cache (the workspace's, or the owned
+ * files lists for a standalone file) and its detail cache. */
 function patchFileInCache(
   qc: QueryClient,
-  wsId: string,
+  wsId: string | null,
   fileId: string,
   patch: Partial<SourceFile>
 ) {
-  qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) =>
-    prev ? prev.map((f) => (f.id === fileId ? { ...f, ...patch } : f)) : prev
-  );
+  const apply = (f: SourceFile) => (f.id === fileId ? { ...f, ...patch } : f);
+  if (wsId) {
+    qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) => prev?.map(apply));
+  } else {
+    qc.setQueriesData<InfiniteData<FilePage>>(
+      { queryKey: qk.ownedFilesRoot },
+      (prev) =>
+        prev && {
+          ...prev,
+          pages: prev.pages.map((page) => ({
+            ...page,
+            items: page.items.map(apply),
+          })),
+        }
+    );
+  }
   qc.setQueryData<SourceFile>(qk.file(fileId), (prev) =>
     prev ? { ...prev, ...patch } : prev
   );
@@ -1631,15 +1692,18 @@ function patchFileInCache(
 // MSW has no SSE channel, so fake the progress animation client-side in dev.
 function trackIngestTerminal(
   qc: QueryClient,
-  wsId: string,
+  wsId: string | null,
   fileId: string,
   status: 'ready' | 'failed',
   stage?: unknown
 ) {
   const taken = ingestTracker.takeTerminal(fileId, status);
   if (!taken) return;
-  const list = qc.getQueryData<SourceFile[]>(qk.files(wsId));
-  const file = list?.find((entry) => entry.id === fileId);
+  const file = wsId
+    ? qc
+        .getQueryData<SourceFile[]>(qk.files(wsId))
+        ?.find((entry) => entry.id === fileId)
+    : qc.getQueryData<SourceFile>(qk.file(fileId));
   const kind = file?.kind ?? 'unknown';
   if (status === 'ready') {
     track('source_ingest_completed', {
@@ -1658,7 +1722,11 @@ function trackIngestTerminal(
 
 /** Animates a mock ingest, then reads the outcome from the mock server, which
  * decides it (ready, unindexed or failed) the way a worker would. */
-function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
+function simulateMswProgress(
+  qc: QueryClient,
+  wsId: string | null,
+  fileId: string
+) {
   let pct = 0;
   ingestTracker.markStart(fileId);
   const timer = setInterval(() => {
@@ -1671,7 +1739,9 @@ function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
       return;
     }
     clearInterval(timer);
-    void qc.invalidateQueries({ queryKey: qk.files(wsId) });
+    void qc.invalidateQueries({
+      queryKey: wsId ? qk.files(wsId) : qk.ownedFilesRoot,
+    });
     void qc.invalidateQueries({ queryKey: qk.file(fileId) });
   }, 450);
 }
@@ -1691,7 +1761,7 @@ async function simulateMswUploadProgress(
 
 /** Stream the file through the gateway, which stores it, records its SHA-256
  * and queues its processing in the same request (Epo 2026-10-22). */
-export function useUploadSource(wsId: string) {
+export function useUploadSource(wsId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
@@ -1741,8 +1811,10 @@ export function useUploadSource(wsId: string) {
       const metadata = {
         batchId,
         batchTotal,
-        chapterId: chapterId ?? null,
-        chapterName: chapterName ?? null,
+        // A standalone file has no chapter: the fields stay out.
+        ...(wsId
+          ? { chapterId: chapterId ?? null, chapterName: chapterName ?? null }
+          : {}),
         contentType: file.type || 'application/octet-stream',
         durationSeconds: durationSeconds || undefined,
         estimatedCreditMicros: estimatedCreditMicros || undefined,
@@ -1753,7 +1825,7 @@ export function useUploadSource(wsId: string) {
         sizeBytes: file.size,
       };
       return uploadWithTicket(
-        `/workspaces/${wsId}/sources/uploads`,
+        `${sourcesPath(wsId)}/uploads`,
         metadata,
         async (path) => {
           if (USE_MSW)
@@ -1775,22 +1847,24 @@ export function useUploadSource(wsId: string) {
         sizeBucket: sizeBucket(vars.file.size),
       });
       ingestTracker.markStart(file.id);
-      // Insert immediately so the row (with its progress bar) shows up at once.
-      qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) => {
-        const next = prev ? [...prev] : [];
-        if (!next.some((f) => f.id === file.id)) {
-          next.push({
-            ...file,
-            ingestPct: 0,
-            status: file.status ?? 'pending',
-          });
-        }
-        return next;
-      });
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
-      // The file counts against the workspace from upload, not from ingest.
-      qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
-      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
+      const added = { ...file, ingestPct: 0, status: file.status ?? 'pending' };
+      if (wsId) {
+        // Insert immediately so the row (with its progress bar) shows up at once.
+        qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) => {
+          const next = prev ? [...prev] : [];
+          if (!next.some((f) => f.id === file.id)) next.push(added);
+          return next;
+        });
+        qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+        // The file counts against the workspace from upload, not from ingest.
+        qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
+        qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
+      } else {
+        // A standalone file's status lives in its own query, which its
+        // ingest events patch, and in the Files page's list.
+        qc.setQueryData<SourceFile>(qk.file(file.id), added);
+        qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+      }
       if (file.status === 'ready') {
         trackIngestTerminal(qc, wsId, file.id, 'ready', 'done');
       }
@@ -1799,8 +1873,13 @@ export function useUploadSource(wsId: string) {
   });
 }
 
-/** Patch the file caches from one ingest progress event. */
-function applyIngestEvent(qc: QueryClient, wsId: string, value: IngestEvent) {
+/** Patch the file caches from one ingest progress event; a standalone file's
+ * (no workspace) patches the owned files lists. */
+function applyIngestEvent(
+  qc: QueryClient,
+  wsId: string | null,
+  value: IngestEvent
+) {
   const { fileId, status } = value;
   const patch: Partial<SourceFile> = { ingestPct: value.pct, status };
   if (typeof value.indexed === 'boolean') patch.indexed = value.indexed;
@@ -1810,7 +1889,10 @@ function applyIngestEvent(qc: QueryClient, wsId: string, value: IngestEvent) {
   patchFileInCache(qc, wsId, fileId, patch);
   if (status === 'ready' || status === 'failed') {
     trackIngestTerminal(qc, wsId, fileId, status, value.stage);
-    qc.invalidateQueries({ queryKey: qk.files(wsId) });
+    // The refetch brings the thumbnail.
+    qc.invalidateQueries({
+      queryKey: wsId ? qk.files(wsId) : qk.ownedFilesRoot,
+    });
     qc.invalidateQueries({ queryKey: qk.file(fileId) });
     // A ready file has downloadable source bytes; refresh pending links.
     qc.invalidateQueries({
@@ -2042,7 +2124,8 @@ export function useCloneMaterial(options?: MutationUiOptions) {
   });
 }
 
-/** Copy a file into a workspace the caller edits, in a chapter or none. */
+/** Copy a file into a workspace the caller edits, in a chapter or none, or
+ * into No workspace (no workspaceId). */
 export function useCloneFile(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
@@ -2051,7 +2134,8 @@ export function useCloneFile(options?: MutationUiOptions) {
       api.post<SourceFile>(`/files/${id}/clone`, body),
     onSuccess: (file, { body }) => {
       trackItemCloned('file');
-      qc.invalidateQueries({ queryKey: qk.files(file.workspaceId) });
+      if (file.workspaceId)
+        qc.invalidateQueries({ queryKey: qk.files(file.workspaceId) });
       qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       if (body.chapterName)
         qc.invalidateQueries({ queryKey: qk.chapters(file.workspaceId) });

@@ -213,6 +213,20 @@ func (s *Store) ingestJobPayload(ctx context.Context, q rowsQueryer, actorUserID
 		return nil, fmt.Errorf("%w: no actor", ErrIngestUnpinnable)
 	}
 	base["actorUserId"] = actorUserID
+	// A standalone file has no workspace pin: its job carries the retrieval
+	// default of now, which a first ingest records on its owner-scoped content
+	// (Epo 2026-10-27), as newWorkspaceEmbedding does for a new workspace.
+	if ws, _ := base["workspaceId"].(string); ws == "" {
+		delete(base, "workspaceId")
+		embed, err := s.newWorkspaceEmbedding(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrIngestUnpinnable, err)
+		}
+		base["embeddingProviderSlug"] = embed.Pin.ProviderSlug
+		base["embeddingModelSlug"] = embed.Pin.ModelSlug
+		base["embeddingModelVersion"] = embed.Pin.Version
+		base["embeddingDim"] = embed.Dim
+	}
 	if s.registry == nil {
 		return nil, fmt.Errorf("%w: no model registry", ErrIngestUnpinnable)
 	}
@@ -258,15 +272,15 @@ func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseM
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var wsID string
-	err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID)
+	var wsID, payerID string
+	err = tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID, &payerID)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID)
+	ownerID, err := s.lockFileEditorMutationTx(ctx, tx, wsID, payerID, actorID)
 	if err != nil {
 		return err
 	}

@@ -82,7 +82,7 @@ func (s *Store) BeginSourceImportRequest(
 	ctx context.Context,
 	actorUserID, workspaceID, requestID, fingerprint string,
 ) (json.RawMessage, bool, error) {
-	if actorUserID == "" || workspaceID == "" || requestID == "" ||
+	if actorUserID == "" || requestID == "" ||
 		fingerprint == "" || len(requestID) > 128 {
 		return nil, false, errors.New("invalid source import request")
 	}
@@ -91,14 +91,15 @@ func (s *Store) BeginSourceImportRequest(
 		return nil, false, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := s.lockWorkspaceEditorMutationTx(
-		ctx, tx, workspaceID, actorUserID,
+	// No workspace: a standalone import the actor alone owns (Epo 2026-10-27).
+	if _, err := s.lockFileEditorMutationTx(
+		ctx, tx, workspaceID, actorUserID, actorUserID,
 	); err != nil {
 		return nil, false, err
 	}
 	tag, err := tx.Exec(ctx, `INSERT INTO source_import_requests
 		(actor_user_id, request_id, workspace_id, fingerprint)
-		VALUES ($1,$2,$3,$4)
+		VALUES ($1,$2,NULLIF($3,''),$4)
 		ON CONFLICT (actor_user_id, request_id) DO NOTHING`,
 		actorUserID, requestID, workspaceID, fingerprint)
 	if err != nil {
@@ -111,7 +112,7 @@ func (s *Store) BeginSourceImportRequest(
 	var storedWorkspace, storedFingerprint string
 	var response []byte
 	var completed bool
-	err = tx.QueryRow(ctx, `SELECT workspace_id, fingerprint,
+	err = tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), fingerprint,
 		COALESCE(response,'null'::jsonb), response IS NOT NULL
 		FROM source_import_requests
 		WHERE actor_user_id=$1 AND request_id=$2`,
@@ -192,7 +193,7 @@ func (s *Store) createSourceImports(
 	completion *sourceImportRequestCompletion,
 ) ([]SourceImportJob, error) {
 	if completion != nil && (completion.actorUserID == "" ||
-		completion.workspaceID == "" || completion.requestID == "" ||
+		completion.requestID == "" ||
 		completion.fingerprint == "" || !json.Valid(completion.response)) {
 		return nil, errors.New("invalid source import request completion")
 	}
@@ -244,7 +245,7 @@ func (s *Store) createSourceImports(
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, payerID); err != nil {
+	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, payerID, payerID); err != nil {
 		return nil, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
@@ -254,7 +255,7 @@ func (s *Store) createSourceImports(
 		var storedWorkspace, storedFingerprint string
 		var stored []byte
 		var completed bool
-		err := tx.QueryRow(ctx, `SELECT workspace_id, fingerprint,
+		err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), fingerprint,
 			COALESCE(response,'null'::jsonb), response IS NOT NULL
 			FROM source_import_requests
 			WHERE actor_user_id=$1 AND request_id=$2
@@ -315,8 +316,10 @@ func (s *Store) createSourceImports(
 	if err := s.reserveStorageTx(ctx, tx, payerID, total); err != nil {
 		return nil, err
 	}
-	if err := s.gateWorkspaceFilesTx(ctx, tx, workspaceID, len(imports)); err != nil {
-		return nil, err
+	if workspaceID != "" {
+		if err := s.gateWorkspaceFilesTx(ctx, tx, workspaceID, len(imports)); err != nil {
+			return nil, err
+		}
 	}
 
 	batchID := ""
@@ -330,7 +333,7 @@ func (s *Store) createSourceImports(
 			(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
 			 object_path, final_path, name, kind, content_type, declared_size, reserved_size,
 			 parse_mode, expires_at, batch_id)
-			VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
+			VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
 			u.ID, u.WorkspaceID, payerID, nullStr(u.CreatedBy), u.ChapterID,
 			u.ChapterName, u.ObjectPath, u.FinalPath, u.Name, u.Kind,
 			u.ContentType, u.DeclaredSize, u.ParseMode,
@@ -382,7 +385,7 @@ func (s *Store) createSourceImports(
 		var stored []byte
 		err := tx.QueryRow(ctx, `UPDATE source_import_requests
 			SET response=$5::jsonb, completed_at=now()
-			WHERE actor_user_id=$1 AND request_id=$2 AND workspace_id=$3
+			WHERE actor_user_id=$1 AND request_id=$2 AND workspace_id IS NOT DISTINCT FROM NULLIF($3,'')
 				AND fingerprint=$4 AND response IS NULL
 			RETURNING response`, completion.actorUserID, completion.requestID,
 			completion.workspaceID, completion.fingerprint,
@@ -402,7 +405,7 @@ func (s *Store) createSourceImports(
 	return out, nil
 }
 
-const sourceImportSelect = `SELECT j.id, j.upload_session_id, u.workspace_id,
+const sourceImportSelect = `SELECT j.id, j.upload_session_id, COALESCE(u.workspace_id, ''),
 	u.user_id, j.actor_user_id, j.provider, j.provider_file_id, j.provider_drive_id,
 	j.max_bytes, j.idempotency_key, j.trace_id, j.status, j.attempts,
 	COALESCE(j.lease_token,''), j.lease_expires_at,
@@ -431,9 +434,12 @@ func scanSourceImport(row interface{ Scan(...any) error }) (SourceImportJob, err
 	return job, err
 }
 
-func (s *Store) GetSourceImport(ctx context.Context, workspaceID, jobID string) (SourceImportJob, error) {
+// GetSourceImport reads one import of workspaceID for its editors, or with no
+// workspace one of callerID's own standalone imports.
+func (s *Store) GetSourceImport(ctx context.Context, workspaceID, callerID, jobID string) (SourceImportJob, error) {
 	job, err := scanSourceImport(s.pool.QueryRow(ctx,
-		sourceImportSelect+` WHERE j.id=$1 AND u.workspace_id=$2`, jobID, workspaceID))
+		sourceImportSelect+` WHERE j.id=$1 AND u.workspace_id IS NOT DISTINCT FROM NULLIF($2,'')
+			AND (u.workspace_id IS NOT NULL OR u.user_id=$3)`, jobID, workspaceID, callerID))
 	if isNoRows(err) {
 		return job, ErrNotFound
 	}
@@ -539,7 +545,7 @@ func (s *Store) prepareSourceImportUpload(
 
 	var workspaceID, payerID string
 	var actorID *string
-	if err := tx.QueryRow(ctx, `SELECT u.workspace_id, u.user_id, j.actor_user_id
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(u.workspace_id, ''), u.user_id, j.actor_user_id
 		FROM source_import_jobs j
 		JOIN upload_sessions u ON u.id=j.upload_session_id
 		WHERE j.id=$1`, jobID).Scan(&workspaceID, &payerID, &actorID); err != nil {
@@ -552,7 +558,7 @@ func (s *Store) prepareSourceImportUpload(
 	if actorID != nil {
 		actor = *actorID
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor); err != nil {
+	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, payerID, actor); err != nil {
 		return SourceImportJob{}, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
@@ -678,7 +684,7 @@ func (s *Store) finalizeSourceImport(
 
 	var workspaceID, payerID string
 	var actorID *string
-	if err := tx.QueryRow(ctx, `SELECT u.workspace_id, u.user_id, j.actor_user_id
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(u.workspace_id, ''), u.user_id, j.actor_user_id
 		FROM source_import_jobs j
 		JOIN upload_sessions u ON u.id=j.upload_session_id
 		WHERE j.id=$1`, jobID).Scan(&workspaceID, &payerID, &actorID); err != nil {
@@ -691,7 +697,7 @@ func (s *Store) finalizeSourceImport(
 	if actorID != nil {
 		actor = *actorID
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor); err != nil {
+	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, payerID, actor); err != nil {
 		return File{}, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
@@ -764,6 +770,10 @@ func assertSourceImportActorTx(
 	}
 	if deletedAt != nil || suspendedAt != nil || deletionRequestedAt != nil {
 		return ErrForbidden
+	}
+	// A standalone import is its actor's own file.
+	if job.WorkspaceID == "" {
+		return nil
 	}
 	var ownerID string
 	if err := tx.QueryRow(ctx, `SELECT user_id FROM workspaces

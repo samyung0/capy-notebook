@@ -36,7 +36,7 @@ test('a file clones into another workspace under a new name', async ({
   await ownerPage.goto(`/workspaces/${workspaceId}`);
   await openRowMenu(ownerPage, file.name);
   await ownerPage
-    .getByRole('menuitem', { exact: true, name: m.action_clone() })
+    .getByRole('menuitem', { exact: true, name: m.action_clone_to() })
     .click();
   const dialog = ownerPage.getByRole('dialog', { name: m.action_clone_file() });
   const name = dialog.getByRole('textbox');
@@ -83,7 +83,7 @@ test('a read-only member clones a note to No workspace from its row menu', async
   // A viewer's menu offers Clone only.
   await expect(viewerPage.getByRole('menuitem')).toHaveCount(1);
   await viewerPage
-    .getByRole('menuitem', { exact: true, name: m.action_clone() })
+    .getByRole('menuitem', { exact: true, name: m.action_clone_to() })
     .click();
   const dialog = viewerPage.getByRole('dialog', {
     name: m.action_clone_note(),

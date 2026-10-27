@@ -210,7 +210,7 @@ class _Store:
 def _capture(source: Path, route=ingest_plan.IMAGE_CAPTION, format_name="png"):
     thumbnail.capture_source(
         file_id="f_1",
-        workspace_id="ws_1",
+        scope=thumbnail.db.Scope("ws_1"),
         plan=_plan(route, format_name),
         local_path=str(source),
         source_sha256="aa" * 32,
@@ -343,7 +343,7 @@ async def test_a_failed_capture_leaves_the_ingest_ready(monkeypatch, tmp_path, c
                 "parseArtifact": {"key": "artifacts/x.zip"},
             },
             "f_1",
-            "ws_1",
+            worker.db.Scope("ws_1"),
             "pdf",
             _plan(ingest_plan.DOCUMENT_PARSE, "pdf"),
         )
@@ -372,7 +372,7 @@ def test_a_reuse_without_a_bundle_shares_the_identical_files_key(workspace, tmp_
 
     thumbnail.capture_source(
         file_id=copy,
-        workspace_id=workspace.id,
+        scope=thumbnail.db.Scope(workspace.id),
         plan=_plan(ingest_plan.DOCUMENT_PARSE, "pptx"),
         local_path=str(source),
         source_sha256=sha,
@@ -433,7 +433,7 @@ def test_a_reuse_never_shares_a_key_from_another_workspace(
     try:
         thumbnail.capture_source(
             file_id=copy,
-            workspace_id=workspace.id,
+            scope=thumbnail.db.Scope(workspace.id),
             plan=_plan(ingest_plan.DOCUMENT_PARSE, "pdf"),
             local_path=str(source),
             source_sha256=sha,
@@ -476,7 +476,9 @@ def test_ingest_leaves_a_browser_capture_alone(workspace):
         assert not thumbnail.db.set_file_thumbnail(
             cur, captured, sha, f"thumbs/{captured}/{'a' * 64}.webp"
         )
-        assert not thumbnail.db.share_file_thumbnail(cur, captured, workspace.id, sha)
+        assert not thumbnail.db.share_file_thumbnail(
+            cur, captured, thumbnail.db.Scope(workspace.id), sha
+        )
     assert (
         workspace.scalar("SELECT thumbnail_key FROM files WHERE id=%s", (captured,))
         == capture_key

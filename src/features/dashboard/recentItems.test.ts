@@ -16,6 +16,7 @@ function file(id: string, addedAt: string, workspaceId = 'ws_1'): SourceFile {
     hasBytes: true,
     id,
     indexed: true,
+    isPayer: true,
     kind: 'pdf',
     name: `${id}.pdf`,
     position: 0,

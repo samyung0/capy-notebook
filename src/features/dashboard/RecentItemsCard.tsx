@@ -91,6 +91,13 @@ function RecentActions({
 }
 
 export function recentLink(item: RecentItem) {
+  // A standalone item (no workspace) opens on its own page.
+  if (!item.workspaceId && item.kind === 'file') {
+    return linkOptions({
+      params: { fileId: item.id },
+      to: '/files/$fileId',
+    });
+  }
   if (!item.workspaceId) {
     return linkOptions({
       params: { materialId: item.id },

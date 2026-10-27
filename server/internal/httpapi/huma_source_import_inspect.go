@@ -56,7 +56,7 @@ func (a *api) inspectSourceImports(
 	ctx context.Context,
 	in *inspectSourceImportsInput,
 ) (*inspectSourceImportsOutput, error) {
-	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
+	if err := a.assertSourceDestination(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	if in.Body.Provider != integrations.ProviderGoogle &&
@@ -137,18 +137,30 @@ func (a *api) inspectSourceImports(
 		if in.Body.Provider == integrations.ProviderGoogle && !integrations.HasGoogleDriveReadScope(scopes) {
 			expandErr = integrations.ErrGoogleDriveScopeRequired
 		} else {
-			workspace, err := a.s.GetWorkspace(ctx, userID(ctx), in.ID)
-			if err != nil {
-				return nil, hErr(err)
+			// A folder expands to at most what its destination can take: the
+			// workspace's room, or one request's files for a standalone import.
+			var limit int
+			if in.ID == "" {
+				limits, err := a.s.PayerPlanLimits(ctx, userID(ctx))
+				if err != nil {
+					return nil, hErr(err)
+				}
+				limit = limits.FilesPerUpload
+			} else {
+				workspace, err := a.s.GetWorkspace(ctx, userID(ctx), in.ID)
+				if err != nil {
+					return nil, hErr(err)
+				}
+				limit = workspace.FilesLimit
 			}
 			if in.Body.Provider == integrations.ProviderGoogle {
 				ids := make([]string, len(folders))
 				for i, ref := range folders {
 					ids[i] = ref.ID
 				}
-				expanded, expandErr = integrations.ExpandGoogleFolders(ctx, token, ids, workspace.FilesLimit)
+				expanded, expandErr = integrations.ExpandGoogleFolders(ctx, token, ids, limit)
 			} else {
-				expanded, expandErr = integrations.ExpandMicrosoftFolders(ctx, token, folders, workspace.FilesLimit)
+				expanded, expandErr = integrations.ExpandMicrosoftFolders(ctx, token, folders, limit)
 			}
 		}
 		if expandErr != nil {
@@ -263,12 +275,17 @@ func (a *api) inspectSourceImports(
 			ContentType:  contentType,
 			SizeBytes:    sizeBytes,
 			SizeEstimate: sizeEstimate,
-			AnalysisURL: fmt.Sprintf(
-				"/api/workspaces/%s/sources/import-content?%s",
-				url.PathEscape(in.ID),
-				query.Encode(),
-			),
+			AnalysisURL:  importContentURL(in.ID, query),
 		})
 	}
 	return &inspectSourceImportsOutput{Body: response}, nil
+}
+
+// importContentURL is where the browser reads an inspected file for its
+// analysis: under its workspace, or the standalone route.
+func importContentURL(workspaceID string, query url.Values) string {
+	if workspaceID == "" {
+		return "/api/sources/import-content?" + query.Encode()
+	}
+	return fmt.Sprintf("/api/workspaces/%s/sources/import-content?%s", url.PathEscape(workspaceID), query.Encode())
 }

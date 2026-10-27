@@ -28,6 +28,11 @@ catalog for every numeric limit that may vary by subscription plan:
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      2 MiB |
 
+Files per workspace counts nothing outside a workspace: a standalone file
+(no workspace, its uploader's alone) takes no count cap for now, only the
+storage, per-file and per-request limits (Epo 2026-10-27, to revisit once the
+agent's file listing reaches across workspaces).
+
 Monthly credits are the allowance only: every account also starts with a
 one-off 800-credit grant in its never-expiring purchased balance, and top-ups
 add to that balance (`observability-metering.md`, purchased credits).

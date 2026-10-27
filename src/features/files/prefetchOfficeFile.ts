@@ -44,11 +44,15 @@ export function prefetchOfficeFile(
     const format = file.hasBytes ? officeFormatOf(file) : null;
     if (!format) return;
     void VIEW_CHUNKS[format]();
-    // The view mounts once the capability that picks its mode is known.
-    void qc.prefetchQuery(workspaceQuery(file.workspaceId));
+    // The view mounts once the capability that picks its mode is known. A
+    // standalone file (no workspace) opens in View until its editing lands
+    // (R4, Epo 2026-10-27).
+    if (file.workspaceId)
+      void qc.prefetchQuery(workspaceQuery(file.workspaceId));
     const mode = requested ?? readDocumentMode({ id: fileId, kind: 'file' });
     const canEdit =
       mode === 'edit' &&
+      !!file.workspaceId &&
       (await qc.ensureQueryData(workspaceQuery(file.workspaceId))).capabilities
         .canEditContent;
     if (signal.aborted) return;

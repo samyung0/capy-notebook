@@ -12,7 +12,7 @@ import {
   useUpdateFile,
   useUpdateMaterial,
 } from '@/api/hooks';
-import type { Chapter, UserColor } from '@/api/types';
+import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
@@ -26,6 +26,7 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { CloneItemDialog } from './CloneItemDialog';
 import type { ContentActionTarget } from './contentActionTarget';
+import { MoveFileDialog } from './MoveFileDialog';
 
 /** Why the server refused to trash a file, as the trash dialog shows it. */
 export function trashErrorMessage(error: unknown): string {
@@ -38,6 +39,7 @@ export function ContentActions({
   showMove = true,
   beforeDelete,
   canClone = false,
+  canMoveTo = false,
   chapters,
   color,
   confirmInMenu = false,
@@ -52,6 +54,7 @@ export function ContentActions({
   hoverIconContainerClassName,
   onDeleted,
   onMove,
+  onMoved,
   onShare,
   propertiesClassName,
   propertyLabelClassName,
@@ -59,11 +62,17 @@ export function ContentActions({
   renameTitle,
   readOnly = false,
   workspaceId,
+  workspaceName,
 }: {
+  /** Offers the chapter-only Move (a file with `canMoveTo` gets Move to…). */
   showMove?: boolean;
   beforeDelete?: () => boolean;
   /** Offers Clone, also to a read-only viewer who may copy (workspace.canClone). */
   canClone?: boolean;
+  /** Offers Move to… for a file: into another workspace or chapter. The
+   * server lets the source workspace's owner or the file's payer move it
+   * (a standalone file: its owner). */
+  canMoveTo?: boolean;
   chapters: Chapter[];
   color?: UserColor;
   /** Delete asks again in the menu itself (a second click trashes) instead
@@ -81,6 +90,8 @@ export function ContentActions({
   hoverIconContainerClassName?: string;
   onDeleted?: () => void;
   onMove?: (chapterId: string | null) => void;
+  /** After Move to… put the file into another workspace. */
+  onMoved?: (file: SourceFile) => void;
   /** Offers Share after Rename; the caller owns the dialog. */
   onShare?: () => void;
   propertiesClassName?: string;
@@ -89,6 +100,8 @@ export function ContentActions({
   renameFieldLabel?: string;
   renameTitle?: string;
   workspaceId: string;
+  /** The item's workspace name, for Move to…'s progress confirmation. */
+  workspaceName?: string;
 }) {
   const { mutateAsync: updateFile } = useUpdateFile(workspaceId);
   const { mutate: moveFile } = useMoveFile(workspaceId);
@@ -106,9 +119,11 @@ export function ContentActions({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
+  const [moveToOpen, setMoveToOpen] = useState(false);
+  const moveTo = canMoveTo && content?.type === 'file';
 
   // One order on every item menu (cards, rows, the open item's header):
-  // open or view, Rename, Share, Clone, Move, Properties, Delete.
+  // open or view, Rename, Share, Move, Clone, Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
     ...(!readOnly && content
@@ -123,26 +138,32 @@ export function ContentActions({
     ...(onShare
       ? [{ icon: 'link' as const, label: m.action_share(), onClick: onShare }]
       : []),
+    ...(!readOnly && content && (moveTo || showMove)
+      ? [
+          moveTo
+            ? {
+                icon: 'files' as const,
+                label: m.action_move_to(),
+                onClick: () => setMoveToOpen(true),
+              }
+            : {
+                icon: 'files' as const,
+                label: m.content_move_file(),
+                onClick: () => setMoveOpen(true),
+              },
+        ]
+      : []),
     ...(canClone && content
       ? [
           {
             icon: 'clone' as const,
-            label: m.action_clone(),
+            label: m.action_clone_to(),
             onClick: () => setCloneOpen(true),
           },
         ]
       : []),
     ...(!readOnly && content
       ? [
-          ...(showMove
-            ? [
-                {
-                  icon: 'files' as const,
-                  label: m.content_move_file(),
-                  onClick: () => setMoveOpen(true),
-                },
-              ]
-            : []),
           {
             icon: 'help' as const,
             label: m.content_properties(),
@@ -153,6 +174,7 @@ export function ContentActions({
             danger: true,
             icon: 'trash' as const,
             label: m.action_delete(),
+            separated: true,
             ...(confirmInMenu
               ? {
                   confirmLabel: m.action_confirm_delete(),
@@ -261,6 +283,19 @@ export function ContentActions({
                     }
               }
               onClose={() => setCloneOpen(false)}
+            />
+          )}
+          {moveToOpen && (
+            <MoveFileDialog
+              file={{
+                chapterId: content.chapterId,
+                id: content.id,
+                name: content.name,
+                workspaceId,
+                workspaceName,
+              }}
+              onClose={() => setMoveToOpen(false)}
+              onMoved={onMoved}
             />
           )}
           {renameOpen && (

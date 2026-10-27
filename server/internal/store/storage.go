@@ -215,6 +215,25 @@ func (s *Store) lockWorkspaceEditorMutationTx(
 	return ownerID, nil
 }
 
+// lockFileEditorMutationTx is lockWorkspaceEditorMutationTx in a file's
+// scope: a standalone file ("" workspace) admits only its payer, who is its
+// owner, under the same account and frozen checks.
+func (s *Store) lockFileEditorMutationTx(ctx context.Context, tx pgx.Tx, workspaceID, payerID, actorID string) (string, error) {
+	if workspaceID != "" {
+		return s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
+	}
+	if actorID == "" || actorID != payerID {
+		return "", ErrNotFound
+	}
+	if err := s.lockAccountSessionsTx(ctx, tx, actorID); err != nil {
+		return "", err
+	}
+	if err := s.assertEditableTx(ctx, tx, actorID); err != nil {
+		return "", err
+	}
+	return actorID, nil
+}
+
 // lockWorkspaceEditorRecoveryTx is the editor admission for the deletions a
 // frozen account keeps. The workspace row is already locked before the role
 // read, so a concurrent demotion, removal or sharing change either happens
@@ -518,11 +537,15 @@ func (s *Store) AssertSourceUploadRoom(ctx context.Context, workspaceID, userID 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, userID, userID); err != nil {
 		return err
 	}
 	if err := s.gateStorageTx(ctx, tx, userID, size); err != nil {
 		return err
+	}
+	// Standalone files take no count cap for now (Epo 2026-10-27).
+	if workspaceID == "" {
+		return nil
 	}
 	return s.gateWorkspaceFilesTx(ctx, tx, workspaceID, 1)
 }

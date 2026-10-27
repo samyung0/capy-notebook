@@ -1679,6 +1679,8 @@ export const ExploreWorkspacesResponse = zod.object({
 /**
  * @summary List the files the caller pays for, or can open (scope=member)
  */
+export const listOwnedFilesQueryQMax = 120;
+
 export const listOwnedFilesQueryScopeDefault = `owned`;
 export const listOwnedFilesQuerySortDefault = `added`;
 export const listOwnedFilesQueryDirDefault = `desc`;
@@ -1690,6 +1692,8 @@ export const listOwnedFilesQueryLimitMax = 100;
 export const ListOwnedFilesQueryParams = zod.object({
   "kind": zod.string().optional().describe('Comma-separated file kinds'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
+  "location": zod.string().optional().describe('Comma-separated locations: workspace, standalone'),
+  "q": zod.string().max(listOwnedFilesQueryQMax).optional().describe('Keeps files whose name holds this text, any case'),
   "scope": zod.enum(['owned', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of'),
   "sort": zod.enum(['added', 'name', 'size', 'kind', 'workspace']).default(listOwnedFilesQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedFilesQueryDirDefault),
@@ -1708,6 +1712,7 @@ export const ListOwnedFilesResponse = zod.object({
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
@@ -1774,6 +1779,98 @@ export const ListOwnedFilesResponse = zod.object({
 
 
 /**
+ * @summary Move files into a workspace
+ */
+export const moveFilesBodyChapterNameMax = 60;
+
+export const moveFilesBodyFileIdsMax = 20;
+
+
+
+
+export const MoveFilesBody = zod.object({
+  "chapterId": zod.string().optional().describe('A chapter of the workspace; exclusive with chapterName'),
+  "chapterName": zod.string().max(moveFilesBodyChapterNameMax).optional().describe('A chapter of this name (any case), created when missing'),
+  "confirmProgressLoss": zod.boolean().optional().describe('Drop the left workspaces\' study progress and plan steps for these files'),
+  "fileIds": zod.array(zod.string()).min(1).max(moveFilesBodyFileIdsMax).nullable(),
+  "workspaceId": zod.string().min(1)
+})
+
+export const MoveFilesResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
+  "hasBytes": zod.boolean(),
+  "id": zod.string(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
+  "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
+  "name": zod.string(),
+  "position": zod.int(),
+  "preview": zod.object({
+  "text": zod.string()
+}).optional(),
+  "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "questions": zod.record(zod.string(), zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+})).optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
+}).optional(),
+  "revision": zod.int(),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string().optional()
+})
+export const MoveFilesResponse = zod.array(MoveFilesResponseItem)
+
+
+/**
  * @summary Move a file to the trash
  */
 export const DeleteFileParams = zod.object({
@@ -1807,6 +1904,7 @@ export const GetFileResponse = zod.object({
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
@@ -1895,6 +1993,7 @@ export const UpdateFileResponse = zod.object({
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
@@ -2154,7 +2253,7 @@ export const UpdatePDFAnnotationResponse = zod.object({
 
 
 /**
- * @summary Clone a file into a workspace
+ * @summary Clone a file into a workspace or standalone
  */
 export const CloneFileParams = zod.object({
   "id": zod.string()
@@ -2166,12 +2265,11 @@ export const cloneFileBodyNameMax = 120;
 
 
 
-
 export const CloneFileBody = zod.object({
   "chapterId": zod.string().optional().describe('A chapter of the workspace; exclusive with chapterName'),
   "chapterName": zod.string().max(cloneFileBodyChapterNameMax).optional().describe('A chapter of this name (any case), created when missing'),
   "name": zod.string().min(1).max(cloneFileBodyNameMax).describe('The copy\'s name'),
-  "workspaceId": zod.string().min(1)
+  "workspaceId": zod.string().optional().describe('Omitted for a standalone copy')
 })
 
 export const CloneFileResponse = zod.object({
@@ -2183,6 +2281,7 @@ export const CloneFileResponse = zod.object({
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
@@ -5283,6 +5382,7 @@ export const ListRecentResponse = zod.object({
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
@@ -5784,6 +5884,99 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "mode": zod.enum(['fast', 'none'])
 })),
   "vlmIngestPageCreditMicros": zod.int()
+})
+
+
+/**
+ * @summary Queue standalone sources from a connected drive
+ */
+export const importStandaloneSourcesBodyBatchIdMax = 64;
+
+
+export const importStandaloneSourcesBodyBatchIdRegExp = new RegExp('^[A-Za-z0-9_-]+$');
+export const importStandaloneSourcesBodyBatchTotalMax = 10000;
+
+export const importStandaloneSourcesBodyChapterNameMax = 60;
+
+export const importStandaloneSourcesBodyFileIdsMax = 20;
+
+export const importStandaloneSourcesBodyRequestIdMax = 128;
+
+
+
+export const ImportStandaloneSourcesBody = zod.object({
+  "batchId": zod.string().min(1).max(importStandaloneSourcesBodyBatchIdMax).regex(importStandaloneSourcesBodyBatchIdRegExp),
+  "batchTotal": zod.int().min(1).max(importStandaloneSourcesBodyBatchTotalMax),
+  "chapterId": zod.string().optional(),
+  "chapterName": zod.string().max(importStandaloneSourcesBodyChapterNameMax).optional(),
+  "driveIds": zod.array(zod.string()).optional(),
+  "fileIds": zod.array(zod.string()).min(1).max(importStandaloneSourcesBodyFileIdsMax),
+  "parseMode": zod.enum(['fast', 'none']).optional(),
+  "provider": zod.enum(['google', 'microsoft']),
+  "requestId": zod.string().max(importStandaloneSourcesBodyRequestIdMax).optional()
+})
+
+export const ImportStandaloneSourcesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "jobs": zod.array(zod.object({
+  "jobId": zod.string(),
+  "name": zod.string(),
+  "uploadId": zod.string()
+})),
+  "rejected": zod.array(zod.object({
+  "code": zod.string(),
+  "fileId": zod.string()
+}))
+})
+
+
+/**
+ * @summary Inspect standalone sources selected from a connected drive
+ */
+export const inspectStandaloneSourceImportsBodyFileIdsMax = 20;
+
+
+
+export const InspectStandaloneSourceImportsBody = zod.object({
+  "driveIds": zod.array(zod.string()).optional(),
+  "fileIds": zod.array(zod.string()).min(1).max(inspectStandaloneSourceImportsBodyFileIdsMax),
+  "provider": zod.enum(['google', 'microsoft'])
+})
+
+export const InspectStandaloneSourceImportsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "analysisUrl": zod.string(),
+  "contentType": zod.string(),
+  "driveId": zod.string().optional(),
+  "fileId": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "sizeEstimate": zod.boolean()
+})),
+  "rejected": zod.array(zod.object({
+  "code": zod.string(),
+  "fileId": zod.string()
+}))
+})
+
+
+/**
+ * @summary Get standalone source import status
+ */
+export const GetStandaloneSourceImportParams = zod.object({
+  "jobId": zod.string()
+})
+
+export const GetStandaloneSourceImportResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "errorCode": zod.string().optional(),
+  "fileId": zod.string().optional(),
+  "jobId": zod.string(),
+  "name": zod.string(),
+  "removedPictures": zod.int(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled'])
 })
 
 
@@ -6708,6 +6901,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
@@ -6798,6 +6992,7 @@ export const CreateBlankFileResponse = zod.object({
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
@@ -7222,6 +7417,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
+  "isPayer": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),

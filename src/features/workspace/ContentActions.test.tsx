@@ -79,3 +79,33 @@ describe('trashing a file', () => {
     );
   });
 });
+
+describe('moving a file', () => {
+  function labels(props: { canMoveTo?: boolean }) {
+    menus.length = 0;
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <ContentActions
+          canClone
+          chapters={[]}
+          content={file('pdf', 'ready')}
+          display="menu"
+          workspaceId="ws_1"
+          {...props}
+        />
+      </QueryClientProvider>
+    );
+    return menus[0]?.map((item) => item.label);
+  }
+
+  it('offers Move to… in place of the chapter move, before Clone to…', () => {
+    expect(labels({ canMoveTo: true })).toEqual([
+      m.action_rename(),
+      m.action_move_to(),
+      m.action_clone_to(),
+      m.content_properties(),
+      m.action_delete(),
+    ]);
+    expect(labels({})).toContain(m.content_move_file());
+  });
+});

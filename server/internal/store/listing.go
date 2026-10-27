@@ -367,13 +367,23 @@ var fileListSorts = map[string]listSort{
 }
 
 // fileWorkspaceNameSQL is the shown workspace name the workspace sort pages on.
-var fileWorkspaceNameSQL = workspaceNameSQL("w.id", "w.name")
+var fileWorkspaceNameSQL = "COALESCE(" + workspaceNameSQL("w.id", "w.name") + ", '')"
+
+// fileLocations are FileListFilter.Locations' values, as materialLocations.
+var fileLocations = map[string]string{
+	"workspace":  `f.workspace_id IS NOT NULL`,
+	"standalone": `f.workspace_id IS NULL`,
+}
 
 type FileListFilter struct {
 	Kinds        []string
 	WorkspaceIDs []string
 	// IDs keeps only these rows; the access filter still applies.
-	IDs       []string
+	IDs []string
+	// Locations holds fileLocations keys.
+	Locations []string
+	// Query keeps names holding it, any case.
+	Query     string
 	Member    bool
 	Sort      string
 	Ascending bool
@@ -386,9 +396,9 @@ type FilePage struct {
 	NextCursor string `json:"nextCursor,omitempty"`
 }
 
-// ListOwnedFiles pages through the files of every workspace the caller owns
-// and every file they pay for, or with Member also every workspace they
-// belong to.
+// ListOwnedFiles pages through the files the caller pays for, wherever they
+// sit, or with Member the files it can open: in the workspaces it reaches and
+// its own standalone files.
 func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFilter) (FilePage, error) {
 	sort, ok := fileListSorts[f.Sort]
 	if !ok {
@@ -402,7 +412,8 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	// Recent) what it can open (Sam 2026-10-19).
 	where := ` WHERE f.user_id=$1 AND f.trashed_at IS NULL`
 	if f.Member {
-		where = ` WHERE f.workspace_id IN (` + visibleWorkspacesSQL("$1") + `) AND f.trashed_at IS NULL`
+		where = ` WHERE (f.workspace_id IN (` + visibleWorkspacesSQL("$1") + `)
+			OR (f.workspace_id IS NULL AND f.user_id=$1)) AND f.trashed_at IS NULL`
 	}
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)
@@ -416,6 +427,21 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 		args = append(args, f.IDs)
 		where += fmt.Sprintf(` AND f.id = ANY($%d)`, len(args))
 	}
+	if f.Query != "" {
+		args = append(args, f.Query)
+		where += fmt.Sprintf(` AND strpos(lower(f.name), lower($%d)) > 0`, len(args))
+	}
+	if len(f.Locations) > 0 {
+		preds := make([]string, 0, len(f.Locations))
+		for _, location := range f.Locations {
+			pred, ok := fileLocations[location]
+			if !ok {
+				return FilePage{}, fmt.Errorf("unknown file location %q", location)
+			}
+			preds = append(preds, pred)
+		}
+		where += ` AND (` + strings.Join(preds, " OR ") + `)`
+	}
 	clause, cursorArgs, err := cursorClause(sort, "f.id", f.Ascending, f.Cursor, len(args)+1)
 	if err != nil {
 		return FilePage{}, err
@@ -424,7 +450,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+fileWorkspaceNameSQL+`, `+lostAccessSQL("f.workspace_id", "$1")+
-		` FROM files f JOIN workspaces w ON w.id=f.workspace_id`+
+		` FROM files f LEFT JOIN workspaces w ON w.id=f.workspace_id`+
 		where+orderClause(sort, "f.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return FilePage{}, err

@@ -47,7 +47,7 @@ func (a *api) registerShare(api huma.API) {
 	const tag = "Sharing"
 	reg(api, http.MethodPost, "/api/share/redeem", "redeemShareLink", tag, "Open a signed share link once", http.StatusOK, a.redeemShareLink)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/clone", "cloneWorkspace", tag, "Clone a shared workspace", http.StatusCreated, a.cloneWorkspace)
-	reg(api, http.MethodPost, "/api/files/{id}/clone", "cloneFile", tag, "Clone a file into a workspace", http.StatusCreated, a.cloneFile)
+	reg(api, http.MethodPost, "/api/files/{id}/clone", "cloneFile", tag, "Clone a file into a workspace or standalone", http.StatusCreated, a.cloneFile)
 	reg(api, http.MethodPost, "/api/materials/{id}/clone", "cloneMaterial", tag, "Clone a material into a workspace or standalone", http.StatusCreated, a.cloneMaterial)
 	reg(api, http.MethodGet, "/api/explore/flashcards", "exploreFlashcardSets", "Explore", "Public flashcards", http.StatusOK, a.exploreFlashcardSets)
 }
@@ -65,13 +65,14 @@ func (a *api) materialRead(ctx context.Context, matID string) (bool, error) {
 	return a.s.MaterialAccess(ctx, userID(ctx), matID)
 }
 
-// fileRead resolves a file's workspace and applies workspaceRead.
+// fileRead applies the file's workspace read rule, or its owner's alone for a
+// standalone file; returns isOwner.
 func (a *api) fileRead(ctx context.Context, fileID string) (bool, error) {
-	wsID, err := a.s.FileWorkspaceID(ctx, fileID)
+	role, err := a.s.FileEffectiveRole(ctx, userID(ctx), fileID)
 	if err != nil {
 		return false, err
 	}
-	return a.workspaceRead(ctx, wsID)
+	return role == store.RoleOwner, nil
 }
 
 // Resource-editor helpers gate writes addressed by a child id.
@@ -84,11 +85,14 @@ func (a *api) assertChapterEditor(ctx context.Context, chapterID string) error {
 }
 
 func (a *api) assertFileEditor(ctx context.Context, fileID string) error {
-	wsID, err := a.s.FileWorkspaceID(ctx, fileID)
+	role, err := a.s.FileEffectiveRole(ctx, userID(ctx), fileID)
 	if err != nil {
 		return err
 	}
-	return a.assertWorkspaceEditor(ctx, wsID)
+	if !store.RoleCanEdit(role) {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 // orPayer lets the item's payer through a refused access check (denied), so

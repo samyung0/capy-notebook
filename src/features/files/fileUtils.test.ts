@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { m } from '@/i18n';
-import { fileCanClone, fileIsIngesting, notIndexedMessage } from './fileUtils';
+import {
+  fileCanClone,
+  fileCanMoveTo,
+  fileIsIngesting,
+  notIndexedMessage,
+} from './fileUtils';
 
 describe('fileIsIngesting', () => {
   it('treats pending and processing as in-flight ingest', () => {
@@ -23,6 +28,14 @@ describe('fileCanClone', () => {
     expect(fileCanClone({ indexed: false, status: 'failed' })).toBe(false);
     expect(fileCanClone({ indexed: true, status: 'processing' })).toBe(false);
     expect(fileCanClone({ indexed: false, status: 'pending' })).toBe(false);
+  });
+});
+
+describe('fileCanMoveTo', () => {
+  it("offers Move to… to the workspace's owner and the file's payer", () => {
+    expect(fileCanMoveTo({ isPayer: true }, { isOwner: false })).toBe(true);
+    expect(fileCanMoveTo({ isPayer: false }, { isOwner: true })).toBe(true);
+    expect(fileCanMoveTo({ isPayer: false }, { isOwner: false })).toBe(false);
   });
 });
 

@@ -19,7 +19,11 @@ describe('list search', () => {
         sort: 'title',
         workspace: 'ws_a,ws_b',
       })
-    ).toEqual({ kind: 'pdf,doc', workspace: 'ws_a,ws_b' });
+    ).toEqual({
+      kind: 'pdf,doc',
+      location: 'standalone',
+      workspace: 'ws_a,ws_b',
+    });
     expect(
       parseFilesSearch({
         dir: 'asc',
@@ -52,6 +56,11 @@ describe('list search', () => {
 
   it('builds the list queries the loaders prefetch', () => {
     expect(fileListParams({})).toEqual({ dir: 'desc', sort: 'added' });
+    expect(fileListParams({ location: 'standalone' })).toEqual({
+      dir: 'desc',
+      locations: ['standalone'],
+      sort: 'added',
+    });
     expect(
       materialListParams({
         dir: 'asc',

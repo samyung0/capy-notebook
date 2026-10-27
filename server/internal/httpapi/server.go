@@ -308,6 +308,10 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Get("/api/uploads/tickets/{ticketId}", a.waitUploadTicket)
 	r.Delete("/api/uploads/tickets/{ticketId}", a.cancelUploadTicket)
 	r.Post("/api/workspaces/{id}/sources/batches/{batchId}/removed", a.removeUnsentSource)
+	// The same flow with no workspace: a standalone file (Epo 2026-10-27).
+	r.Post("/api/sources/uploads/tickets", a.sourceUploadTicket)
+	r.Post("/api/sources/uploads", a.uploadSource)
+	r.Post("/api/sources/batches/{batchId}/removed", a.removeUnsentSource)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)
@@ -335,6 +339,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/import/fail", a.internalFailSourceImport)
 	}
 	r.Get("/api/workspaces/{id}/sources/import-content", a.getSourceImportContent)
+	r.Get("/api/sources/import-content", a.getSourceImportContent)
 	if served != nil {
 		r.Get(blob.ServedPath+"*", e2eBlobs(served))
 		r.Put(blob.ServedPath+"*", e2eBlobs(served))

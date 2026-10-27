@@ -113,11 +113,11 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	rows.Close()
 
 	// Files in what the caller can open: the workspaces above (Sam
-	// 2026-10-19). Never rows it only pays for.
-	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name, f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
-		JOIN workspaces w ON w.id=f.workspace_id
-		JOIN users owner ON owner.id=w.user_id
-		WHERE f.workspace_id IN (`+visibleWorkspacesSQL("$2")+`)
+	// 2026-10-19) and its own standalone files. Never rows it only pays for.
+	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, COALESCE(f.workspace_id, ''), COALESCE(w.name, ''), f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
+		LEFT JOIN workspaces w ON w.id=f.workspace_id
+		JOIN users owner ON owner.id=COALESCE(w.user_id, f.user_id)
+		WHERE (f.workspace_id IN (`+visibleWorkspacesSQL("$2")+`) OR (f.workspace_id IS NULL AND f.user_id=$2))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND f.trashed_at IS NULL AND lower(f.name) LIKE $1
 		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
@@ -131,7 +131,11 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		if err := rows.Scan(&id, &name, &wsID, &wsName, &fileKind, &thumbKey, &preview); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: "/workspaces/" + wsID + "?file=" + id, ThumbnailKey: thumbKey, Preview: preview})
+		href := "/workspaces/" + wsID + "?file=" + id
+		if wsID == "" {
+			href = "/files/" + id
+		}
+		out = append(out, SearchResult{ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: href, ThumbnailKey: thumbKey, Preview: preview})
 	}
 	rows.Close()
 
@@ -959,21 +963,21 @@ func (s *Store) DeleteChapter(ctx context.Context, actorID, id string) error {
 
 // previewUrl is a presence marker shaped like the historical route; the
 // fetchable URL comes from the links endpoint.
-const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, COALESCE(blob_path, '') <> '',
+const fileCols = `id, COALESCE(workspace_id, ''), chapter_id, position, name, kind, size_bytes, added_at, status, indexed, COALESCE(blob_path, '') <> '',
 	CASE WHEN status='ready' AND (kind='pdf' AND blob_path IS NOT NULL)
 		THEN '/api/files/' || id || '/preview' END,
-	revision, provenance, index_limit, COALESCE(thumbnail_key, ''), preview`
+	revision, provenance, index_limit, COALESCE(thumbnail_key, ''), preview, user_id`
 
 // fileListCols is fileCols qualified for joins.
-const fileListCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, COALESCE(f.blob_path, '') <> '',
+const fileListCols = `f.id, COALESCE(f.workspace_id, ''), f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, COALESCE(f.blob_path, '') <> '',
 	CASE WHEN f.status='ready' AND (f.kind='pdf' AND f.blob_path IS NOT NULL)
 		THEN '/api/files/' || f.id || '/preview' END,
-	f.revision, f.provenance, f.index_limit, COALESCE(f.thumbnail_key, ''), f.preview`
+	f.revision, f.provenance, f.index_limit, COALESCE(f.thumbnail_key, ''), f.preview, f.user_id`
 
 func scanFile(row pgx.Row) (File, error) {
 	var f File
 	var provenance []byte
-	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance, &f.IndexLimit, &f.ThumbnailKey, &f.Preview)
+	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance, &f.IndexLimit, &f.ThumbnailKey, &f.Preview, &f.PayerID)
 	if err == nil {
 		f.Provenance, err = decodeProvenance(provenance)
 	}
@@ -1101,23 +1105,27 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 	}
 	defer tx.Rollback(ctx)
 	var wsID, payerID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id, user_id FROM files WHERE id=$1 AND trashed_at IS NULL`, id).
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id FROM files WHERE id=$1 AND trashed_at IS NULL`, id).
 		Scan(&wsID, &payerID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
 		return File{}, err
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID); err != nil {
+	if _, err := s.lockFileEditorMutationTx(ctx, tx, wsID, payerID, actorID); err != nil {
 		return File{}, err
 	}
 	// Nobody edits what a frozen account pays for.
 	if err := s.assertEditableTx(ctx, tx, payerID); err != nil {
 		return File{}, HideOtherAccountLock(err, actorID)
 	}
+	// A standalone file has no chapters to be filed in.
+	if wsID == "" && p.ChapterID != nil {
+		return File{}, ErrNotFound
+	}
 	if p.Name != nil {
 		if _, err := tx.Exec(ctx, `UPDATE files SET name=$2
-			WHERE id=$1 AND workspace_id=$3 AND trashed_at IS NULL`, id, *p.Name, wsID); err != nil {
+			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($3, '') AND trashed_at IS NULL`, id, *p.Name, wsID); err != nil {
 			return File{}, err
 		}
 	}
@@ -1143,7 +1151,7 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 		}
 	}
 	f, err := scanFile(tx.QueryRow(ctx, `SELECT `+fileCols+`
-		FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`, id, wsID))
+		FROM files WHERE id=$1 AND trashed_at IS NULL`, id))
 	if err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound

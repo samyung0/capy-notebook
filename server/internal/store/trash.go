@@ -114,15 +114,26 @@ func (s *Store) TrashFile(ctx context.Context, actorID, fileID string, op AgentO
 func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID string, op AgentOperation) (AgentOperation, error) {
 	var wsID, payerID, name, kind string
 	var trashedAt *time.Time
-	if err := tx.QueryRow(ctx, `SELECT workspace_id, user_id, name, kind, trashed_at FROM files WHERE id=$1`, fileID).
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id, name, kind, trashed_at FROM files WHERE id=$1`, fileID).
 		Scan(&wsID, &payerID, &name, &kind, &trashedAt); err != nil {
 		if isNoRows(err) {
 			return AgentOperation{}, ErrNotFound
 		}
 		return AgentOperation{}, err
 	}
-	if err := s.lockTrashActorTx(ctx, tx, wsID, actorID, payerID); err != nil {
-		return AgentOperation{}, err
+	// A standalone file is trashed by its payer alone, as a standalone
+	// material is by its owner.
+	if wsID != "" {
+		if err := s.lockTrashActorTx(ctx, tx, wsID, actorID, payerID); err != nil {
+			return AgentOperation{}, err
+		}
+	} else {
+		if payerID != actorID {
+			return AgentOperation{}, ErrNotFound
+		}
+		if err := s.lockAccountSessionsTx(ctx, tx, payerID, actorID); err != nil {
+			return AgentOperation{}, err
+		}
 	}
 	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
 		return AgentOperation{}, err
@@ -149,7 +160,7 @@ func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID stri
 		var purgeAfter time.Time
 		err := tx.QueryRow(ctx, `UPDATE files SET trashed_at=now(), trashed_by=$3, trash_episode_id=$4,
 			purge_after=now() + interval '30 days'
-			WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL RETURNING purge_after`,
+			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2, '') AND trashed_at IS NULL RETURNING purge_after`,
 			fileID, wsID, actorID, episode).Scan(&purgeAfter)
 		if isNoRows(err) {
 			return nil, ErrNotFound
@@ -321,10 +332,10 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 			trashed_at, purge_after, trash_episode_id, thumbnail_key, preview, `+lostAccessSQL("t.workspace_id", "$1")+`,
 			t.workspace_id = '' OR `+editableWorkspaceSQL("t.workspace_id", "$1")+`
 		FROM (
-			SELECT 'source_file' AS kind, f.id, f.name AS title, f.kind AS sub_kind, f.workspace_id,
-				w.name AS workspace_name, f.size_bytes, f.trashed_at, f.purge_after, f.trash_episode_id,
+			SELECT 'source_file' AS kind, f.id, f.name AS title, f.kind AS sub_kind, COALESCE(f.workspace_id, '') AS workspace_id,
+				COALESCE(w.name, '') AS workspace_name, f.size_bytes, f.trashed_at, f.purge_after, f.trash_episode_id,
 				COALESCE(f.thumbnail_key, '') AS thumbnail_key, f.preview
-			FROM files f JOIN workspaces w ON w.id=f.workspace_id
+			FROM files f LEFT JOIN workspaces w ON w.id=f.workspace_id
 			WHERE f.trashed_at IS NOT NULL AND (($2='' AND f.user_id=$1) OR (f.workspace_id=$2 AND w.user_id=$1))
 			UNION ALL
 			SELECT 'material', m.id, m.title, m.kind, COALESCE(m.workspace_id,''), m.workspace_name,
