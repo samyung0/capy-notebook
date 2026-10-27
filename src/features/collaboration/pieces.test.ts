@@ -166,6 +166,27 @@ it('cuts a long run of values, and sends what cannot be cut whole', () => {
   expect(receiver.getMap('images').get('photo')).toEqual(photo);
 });
 
+// Q440: a DOCX state row holds one run of about 218k structs; its piece
+// encodes them without spreading them into one call (past V8's argument
+// limit that throws RangeError and the group never splits).
+it('splits a state row of one 218k-struct run', () => {
+  const editor = new Y.Doc();
+  const cells = editor.getArray<number>('cells');
+  // Each prepended value is a struct of its own (its right origin differs).
+  editor.transact(() => {
+    for (let index = 0; index < 218_000; index += 1) cells.insert(0, [index]);
+  });
+  const state = Y.encodeStateAsUpdate(editor);
+  const pieces = splitUpdate(state, state.byteLength - 1);
+  expect(pieces.length).toBeGreaterThan(1);
+  const receiver = new Y.Doc();
+  for (const piece of pieces) Y.applyUpdate(receiver, piece);
+  expect(receiver.store.pendingStructs).toBeNull();
+  // Compared as bytes: a deep equality of 2.6 MB takes seconds.
+  const same = Buffer.from(Y.encodeStateAsUpdate(receiver)).equals(state);
+  expect(same).toBe(true);
+});
+
 it('sends a delete set larger than a piece in pieces after the structs', () => {
   const base = new Y.Doc();
   const text = base.getText('t');

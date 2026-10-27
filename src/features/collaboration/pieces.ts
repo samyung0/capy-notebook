@@ -250,9 +250,12 @@ class Piece {
       parts.push(
         varUint(to - from),
         varUint(client),
-        varUint(run.structs[from].id.clock),
-        ...run.bytes.slice(from, to)
+        varUint(run.structs[from].id.clock)
       );
+      // One push per struct: a DOCX state row holds a run of ~218k structs,
+      // past V8's argument limit for a spread (Q440).
+      for (let index = from; index < to; index += 1)
+        parts.push(run.bytes[index]);
     }
     const deletes = [...this.deletes.entries()].sort(([a], [b]) => b - a);
     parts.push(varUint(deletes.length));
