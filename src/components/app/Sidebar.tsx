@@ -50,6 +50,8 @@ function items(): {
 function general(): NavItem[] {
   return [
     { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
+    // Chat across all the user's files (Epo 2026-10-27).
+    { icon: 'message', label: m.nav_chat(), to: '/chat' },
     { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
     { icon: 'knowledge', label: m.nav_learning(), to: '/learning' },
     ...(features.schedule

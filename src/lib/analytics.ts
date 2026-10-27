@@ -213,11 +213,12 @@ export type AnalyticsEvent =
     }
   | {
       name: 'chat_turn_sent';
-      props: { workspaceId: string; hasScope: boolean };
+      /** `workspaceId` null: the account chat. */
+      props: { workspaceId: string | null; hasScope: boolean };
     }
   | {
       name: 'chat_turn_completed';
-      props: { workspaceId: string; status: string; citations: number };
+      props: { workspaceId: string | null; status: string; citations: number };
     }
   | { name: 'material_generated'; props: { kind: string; workspaceId: string } }
   | {

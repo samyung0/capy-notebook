@@ -84,6 +84,11 @@ type Citation struct {
 	URL       string   `json:"url,omitempty"`
 	SiteName  string   `json:"siteName,omitempty"`
 	Published string   `json:"published,omitempty"`
+	// WorkspaceID and WorkspaceName say where an account chat's source lives
+	// (Epo 2026-10-27); both empty for a file with no workspace and for every
+	// workspace chat citation.
+	WorkspaceID   string `json:"workspaceId,omitempty"`
+	WorkspaceName string `json:"workspaceName,omitempty"`
 }
 
 // ActivityBlock is one completed narration or tool-display item persisted on
@@ -426,7 +431,7 @@ func (s *Store) UpdateConversation(ctx context.Context, userID, convID string, u
 func (s *Store) UnarchiveConversations(ctx context.Context, userID, wsID string) error {
 	return s.archivedConversationsTx(ctx, userID, wsID,
 		`UPDATE conversations SET archived_at=NULL
-		  WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NOT NULL`)
+		  WHERE user_id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2,'') AND archived_at IS NOT NULL`)
 }
 
 // DeleteArchivedConversations deletes every archived thread of the user's in a
@@ -434,7 +439,7 @@ func (s *Store) UnarchiveConversations(ctx context.Context, userID, wsID string)
 func (s *Store) DeleteArchivedConversations(ctx context.Context, userID, wsID string) error {
 	return s.archivedConversationsTx(ctx, userID, wsID,
 		`DELETE FROM conversations
-		  WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NOT NULL`)
+		  WHERE user_id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2,'') AND archived_at IS NOT NULL`)
 }
 
 func (s *Store) archivedConversationsTx(ctx context.Context, userID, wsID, stmt string) error {
@@ -443,8 +448,11 @@ func (s *Store) archivedConversationsTx(ctx context.Context, userID, wsID, stmt 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if err := s.lockWorkspaceChatTx(ctx, tx, wsID, userID); err != nil {
-		return err
+	// No workspace: the caller's own account chat, which needs no lock.
+	if wsID != "" {
+		if err := s.lockWorkspaceChatTx(ctx, tx, wsID, userID); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(ctx, stmt, userID, wsID); err != nil {
 		return err
@@ -764,7 +772,15 @@ func (s *Store) ChatOpenResource(ctx context.Context, wsID, kind, id string) (ti
 // VoiceContext is what voice input sends ahead of a recording so course
 // vocabulary comes out right: the workspace's title and its newest sources'
 // names, at most limit of them.
-func (s *Store) VoiceContext(ctx context.Context, wsID string, limit int) (title string, sources []string, err error) {
+func (s *Store) VoiceContext(ctx context.Context, userID, wsID string, limit int) (title string, sources []string, err error) {
+	// Account chat has no workspace to name: its context is the caller's own
+	// newest files, wherever they sit.
+	if wsID == "" {
+		err = s.pool.QueryRow(ctx, `SELECT ARRAY(
+			SELECT f.name FROM files f WHERE f.user_id = $1 AND f.trashed_at IS NULL
+			ORDER BY f.added_at DESC LIMIT $2)`, userID, limit).Scan(&sources)
+		return "", sources, err
+	}
 	err = s.pool.QueryRow(ctx, `
 		SELECT w.name, ARRAY(
 		  SELECT f.name FROM files f

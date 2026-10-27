@@ -84,8 +84,9 @@ export interface ChatStreamBody {
   /** What the learner has open; the server looks up its title. */
   openResource?: { id: string; kind: 'file' | 'material' };
   text: string;
-  /** The per-message Workspace only switch: on, only the workspace's files
-   * and materials are sources. */
+  /** The per-message sources switch: on, only the workspace's files and
+   * materials are sources (Your files only in the account chat: the user's
+   * own). */
   workspaceOnly: boolean;
 }
 
@@ -138,10 +139,12 @@ export function chatErrorMessage(payload: unknown, fallback: string): string {
   }
 }
 
-/** POST to the workspace chat stream and dispatch parsed SSE events. Resolves
- * when the stream ends (naturally, on error, or on abort). */
+/** POST to a chat stream and dispatch parsed SSE events: the workspace's, or
+ * with a null `workspaceId` the account chat's across all the user's files
+ * (which ignores `openResource`). Resolves when the stream ends (naturally,
+ * on error, or on abort). */
 export async function streamChat(
-  workspaceId: string,
+  workspaceId: string | null,
   body: ChatStreamBody,
   handlers: ChatStreamHandlers,
   signal?: AbortSignal
@@ -155,7 +158,10 @@ export async function streamChat(
   let res: Response;
   try {
     const auth = await authHeaders();
-    res = await fetch(`${API_BASE}/workspaces/${workspaceId}/chat/stream`, {
+    const path = workspaceId
+      ? `/workspaces/${workspaceId}/chat/stream`
+      : '/chat/stream';
+    res = await fetch(`${API_BASE}${path}`, {
       body: JSON.stringify(body),
       headers: {
         Accept: 'text/event-stream',

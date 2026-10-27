@@ -2353,6 +2353,30 @@ export const conversations: Conversation[] = [
     updatedAt: days(30),
     workspaceId: workspaces[0].id,
   },
+  // Account chats (workspaceId ""): across all the user's files.
+  {
+    createdAt: days(2),
+    id: 'conv_account_pinned',
+    pinnedAt: hours(1),
+    title: 'What should I read this month?',
+    updatedAt: hours(4),
+    workspaceId: '',
+  },
+  {
+    createdAt: days(5),
+    id: 'conv_account_older',
+    title: 'Plan my week across all subjects',
+    updatedAt: days(4),
+    workspaceId: '',
+  },
+  {
+    archivedAt: days(6),
+    createdAt: days(12),
+    id: 'conv_account_archived',
+    title: 'Old revision timetable',
+    updatedAt: days(11),
+    workspaceId: '',
+  },
 ];
 
 /** Owner-only trash bin: metadata rows plus the original record so restore can
@@ -2486,6 +2510,45 @@ export const chatMessages: WireMessage[] = [
     conversationId: 'conv_seed1',
     createdAt: days(1),
     id: 'm_seed2',
+    modelDisplayName: 'DeepSeek Flash',
+    modelSlug: 'deepseek-flash',
+    modelVersion: 1,
+    providerSlug: 'deepseek',
+    role: 'assistant',
+    status: 'complete',
+  },
+  {
+    citations: null,
+    content: 'What should I read this month?',
+    conversationId: 'conv_account_pinned',
+    createdAt: hours(4),
+    id: 'm_account1',
+    role: 'user',
+    status: 'complete',
+  },
+  {
+    // Account citations name where each source lives ("" is No workspace).
+    citations: [
+      {
+        fileId: 'f_2',
+        fileName: 'Organelles cheatsheet.md',
+        snippet: 'Mitochondria transfer energy from food into ATP.',
+        workspaceId: 'ws_bio',
+        workspaceName: 'Biology 101',
+      },
+      {
+        fileId: 'f_standalone_md',
+        fileName: 'Reading list.md',
+        snippet: 'Finish one a month; notes go in the study group folder.',
+        workspaceId: '',
+        workspaceName: '',
+      },
+    ],
+    content:
+      'Start with *The Selfish Gene* from your reading list: it fits the genetics unit after the organelles in your Biology 101 cheatsheet.',
+    conversationId: 'conv_account_pinned',
+    createdAt: hours(4),
+    id: 'm_account2',
     modelDisplayName: 'DeepSeek Flash',
     modelSlug: 'deepseek-flash',
     modelVersion: 1,

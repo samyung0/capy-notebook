@@ -1178,6 +1178,10 @@ components:
           type: string
         url:
           type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
       required:
         - fileId
         - fileName
@@ -8654,6 +8658,36 @@ paths:
       summary: Start a new account chat conversation
       tags:
         - Chat
+  /api/conversations/archived:
+    delete:
+      operationId: deleteArchivedAccountConversations
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete every archived account conversation
+      tags:
+        - Chat
+  /api/conversations/unarchive:
+    post:
+      operationId: unarchiveAccountConversations
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Put every archived account conversation back in the list
+      tags:
+        - Chat
   /api/conversations/{id}:
     delete:
       operationId: deleteConversation
@@ -12076,6 +12110,43 @@ paths:
       summary: Usage events, sorted, newest first by default
       tags:
         - Billing & integrations
+  /api/voice-transcriptions:
+    post:
+      operationId: transcribeAccountVoice
+      requestBody:
+        content:
+          audio/mp4:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+          audio/ogg:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+          audio/webm:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceTranscription"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Transcribe an account chat voice recording for the composer
+      tags:
+        - Chat
   /api/workspace-invites/{token}/accept:
     post:
       operationId: acceptWorkspaceInvite

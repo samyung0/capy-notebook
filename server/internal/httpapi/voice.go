@@ -66,17 +66,28 @@ type voiceTranscriptionOutput struct {
 	Body apimodel.VoiceTranscription
 }
 
+type accountVoiceTranscriptionInput struct {
+	ContentType string `header:"Content-Type" hidden:"true"`
+	RawBody     []byte `contentType:"audio/webm"`
+}
+
 func (a *api) registerVoice(api huma.API) {
+	voiceOperation := func(op *huma.Operation) {
+		op.BodyReadTimeout = voiceBodyReadTimeout
+		content := map[string]*huma.MediaType{}
+		for mediaType := range voiceFormats {
+			content[mediaType] = &huma.MediaType{Schema: &huma.Schema{Type: "string", Format: "binary"}}
+		}
+		op.RequestBody = &huma.RequestBody{Required: true, Content: content}
+	}
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/voice-transcriptions", "transcribeVoice", "Chat",
-		"Transcribe a chat voice recording for the composer", http.StatusOK, voiceMaxBytes, a.transcribeVoice,
-		func(op *huma.Operation) {
-			op.BodyReadTimeout = voiceBodyReadTimeout
-			content := map[string]*huma.MediaType{}
-			for mediaType := range voiceFormats {
-				content[mediaType] = &huma.MediaType{Schema: &huma.Schema{Type: "string", Format: "binary"}}
-			}
-			op.RequestBody = &huma.RequestBody{Required: true, Content: content}
-		})
+		"Transcribe a chat voice recording for the composer", http.StatusOK, voiceMaxBytes, a.transcribeVoice, voiceOperation)
+	// Account chat's composer (Epo 2026-10-27): the same transcription.
+	regWithMaxBody(api, http.MethodPost, "/api/voice-transcriptions", "transcribeAccountVoice", "Chat",
+		"Transcribe an account chat voice recording for the composer", http.StatusOK, voiceMaxBytes,
+		func(ctx context.Context, in *accountVoiceTranscriptionInput) (*voiceTranscriptionOutput, error) {
+			return a.transcribeVoice(ctx, &voiceTranscriptionInput{ContentType: in.ContentType, RawBody: in.RawBody})
+		}, voiceOperation)
 }
 
 // transcribeVoice holds the two-minute maximum of the caller's credits while
@@ -84,8 +95,13 @@ func (a *api) registerVoice(api huma.API) {
 // the two minutes held) once, or nothing when the call fails or the clip is
 // refused.
 func (a *api) transcribeVoice(ctx context.Context, in *voiceTranscriptionInput) (*voiceTranscriptionOutput, error) {
-	// Anyone who may chat in the workspace, the chat stream's own check.
-	if _, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), in.ID); err != nil {
+	// Anyone who may chat in the workspace, the chat stream's own check; with
+	// no workspace, the signed-in caller's account chat.
+	if in.ID == "" {
+		if userID(ctx) == "" {
+			return nil, hErr(store.ErrNotFound)
+		}
+	} else if _, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	mediaType, _, err := mime.ParseMediaType(in.ContentType)
@@ -97,7 +113,7 @@ func (a *api) transcribeVoice(ctx context.Context, in *voiceTranscriptionInput) 
 	if a.cfg.Voice == nil {
 		return nil, voiceError(http.StatusServiceUnavailable, "voice_unavailable", "voice input is not configured")
 	}
-	title, sources, err := a.s.VoiceContext(ctx, in.ID, voiceContextSources)
+	title, sources, err := a.s.VoiceContext(ctx, userID(ctx), in.ID, voiceContextSources)
 	if err != nil {
 		return nil, hErr(err)
 	}

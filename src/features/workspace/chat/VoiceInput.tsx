@@ -23,7 +23,8 @@ export interface VoiceInput {
   /** The last failure, shown under the composer until the next recording. */
   error: string | null;
   phase: VoicePhase;
-  /** False where the browser cannot record: the button is not shown. */
+  /** False where the browser cannot record, or in the account chat, which
+   * has no transcription route: the button is not shown. */
   supported: boolean;
   toggle: () => void;
 }
@@ -35,11 +36,12 @@ export interface VoiceInput {
  * hidden (`shown` false) or goes; a transcription under way still lands.
  */
 export function useVoiceInput(
-  workspaceId: string,
+  workspaceId: string | null,
   onText: (text: string) => void,
   shown: boolean
 ): VoiceInput {
-  const [mimeType] = useState(recordingType);
+  const [recordable] = useState(recordingType);
+  const mimeType = recordable;
   const { mutate, isPending, error, reset } = useTranscribeVoice(workspaceId);
   const [phase, setPhase] = useState<Exclude<VoicePhase, 'pending'>>('idle');
   const [startedAt, setStartedAt] = useState(0);

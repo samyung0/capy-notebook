@@ -62,6 +62,7 @@ import {
 } from '@/features/settings/llmOptions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
+import { accountChatHandlers } from './accountChat';
 import { gradeQuestions, learnerView } from './answerKeys';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -2681,24 +2682,32 @@ export const handlers = [
     }
     return HttpResponse.json(conv);
   }),
-  http.post('/api/workspaces/:id/conversations/unarchive', ({ params }) => {
-    for (const c of db.conversations)
-      if (c.workspaceId === params.id) c.archivedAt = undefined;
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.delete('/api/workspaces/:id/conversations/archived', ({ params }) => {
-    const gone = new Set(
-      db.conversations
-        .filter((c) => c.workspaceId === params.id && c.archivedAt)
-        .map((c) => c.id)
-    );
-    for (let i = db.conversations.length - 1; i >= 0; i--)
-      if (gone.has(db.conversations[i].id)) db.conversations.splice(i, 1);
-    for (let i = db.chatMessages.length - 1; i >= 0; i--)
-      if (gone.has(db.chatMessages[i].conversationId))
-        db.chatMessages.splice(i, 1);
-    return new HttpResponse(null, { status: 204 });
-  }),
+  ...[
+    [
+      '/api/workspaces/:id/conversations/unarchive',
+      '/api/workspaces/:id/conversations/archived',
+    ],
+    ['/api/conversations/unarchive', '/api/conversations/archived'],
+  ].flatMap(([unarchive, archived]) => [
+    http.post(unarchive, ({ params }) => {
+      for (const c of db.conversations)
+        if (c.workspaceId === (params.id ?? '')) c.archivedAt = undefined;
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete(archived, ({ params }) => {
+      const gone = new Set(
+        db.conversations
+          .filter((c) => c.workspaceId === (params.id ?? '') && c.archivedAt)
+          .map((c) => c.id)
+      );
+      for (let i = db.conversations.length - 1; i >= 0; i--)
+        if (gone.has(db.conversations[i].id)) db.conversations.splice(i, 1);
+      for (let i = db.chatMessages.length - 1; i >= 0; i--)
+        if (gone.has(db.chatMessages[i].conversationId))
+          db.chatMessages.splice(i, 1);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ]),
   http.post(
     '/api/workspaces/:id/conversations',
     async ({ params, request }) => {
@@ -2738,6 +2747,7 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   mockChatStream(),
+  ...accountChatHandlers,
   mockUndo,
   http.post('/api/workspaces/:id/ai/copilot', async ({ request }) => {
     const body = (await request.json()) as { before?: string };

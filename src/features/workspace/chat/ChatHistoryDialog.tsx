@@ -19,7 +19,8 @@ export function ChatHistoryDialog({
   onNew,
   onRemoved,
 }: {
-  workspaceId: string;
+  /** Null: the account chat. */
+  workspaceId: string | null;
   open: boolean;
   onClose: () => void;
   activeId: string | null;

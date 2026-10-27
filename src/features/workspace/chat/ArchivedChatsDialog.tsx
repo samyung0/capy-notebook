@@ -13,15 +13,16 @@ import { Icon } from '@/components/ui/Icon';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 
-/** The workspace's archived chats: each row unarchives or deletes; the footer
- * does either for all; every delete asks first. Phones show the row buttons as
- * icons only, so a row stays one line. */
+/** The workspace's archived chats (or with a null `workspaceId` the account
+ * chat's): each row unarchives or deletes; the footer does either for all;
+ * every delete asks first.
+ * Phones show the row buttons as icons only, so a row stays one line. */
 export function ArchivedChatsDialog({
   workspaceId,
   open,
   onClose,
 }: {
-  workspaceId: string;
+  workspaceId: string | null;
   open: boolean;
   onClose: () => void;
 }) {

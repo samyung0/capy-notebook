@@ -473,8 +473,13 @@ export type UpdateWorkspaceMemberReq = Omit<
 export type { Conversation, FileLinks } from './gen/model';
 
 /** `n` is the passage number the answer program cites; its index in the
- * message's citation list is the number the reader sees. */
-export type Citation = GenCitation & { chunkId?: string; n?: number };
+ * message's citation list is the number the reader sees. An account chat's
+ * citations say where the source lives: `workspaceId` and `workspaceName`
+ * ("" for No workspace); a workspace chat's carry neither. */
+export type Citation = GenCitation & {
+  chunkId?: string;
+  n?: number;
+};
 
 /* Shared agent-tool result contract (server/internal/agenttools). A tool block
    without an outcome is still running in the browser; the outcome, safe error

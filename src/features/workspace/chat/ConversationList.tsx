@@ -16,9 +16,10 @@ import { PanelNewRow } from '../PanelNewRow';
 import { matchesSearch, PanelSearch } from '../PanelSearch';
 
 /**
- * A workspace's chats for the left panel and the Chat history dialog: a
- * title search, New chat, then Pinned and Older. Each row's ⋮ pins, renames,
- * archives or deletes it (after a confirm).
+ * A workspace's chats (or with a null `workspaceId` the account chat's) for
+ * the left panel and the Chat history dialog: a title search, New chat, then
+ * Pinned and Older. Each row's ⋮ pins, renames, archives or deletes it
+ * (after a confirm).
  */
 export function ConversationList({
   workspaceId,
@@ -28,7 +29,7 @@ export function ConversationList({
   onRemoved,
   listClassName,
 }: {
-  workspaceId: string;
+  workspaceId: string | null;
   /** The thread the chat panel shows, highlighted. */
   activeId: string | null;
   onOpen: (id: string) => void;

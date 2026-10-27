@@ -1253,6 +1253,18 @@ export const CreateAccountConversationResponse = zod.object({
 
 
 /**
+ * @summary Delete every archived account conversation
+ */
+export const DeleteArchivedAccountConversationsResponse = zod.void()
+
+
+/**
+ * @summary Put every archived account conversation back in the list
+ */
+export const UnarchiveAccountConversationsResponse = zod.void()
+
+
+/**
  * @summary Delete a conversation
  */
 export const DeleteConversationParams = zod.object({
@@ -1366,7 +1378,9 @@ export const ListMessagesResponseItem = zod.object({
 })).nullish(),
   "siteName": zod.string().optional(),
   "snippet": zod.string(),
-  "url": zod.string().optional()
+  "url": zod.string().optional(),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string().optional()
 })).nullish(),
   "content": zod.string(),
   "conversationId": zod.string(),
@@ -6429,6 +6443,15 @@ export const ListUsageEventsResponse = zod.object({
   "units": zod.int()
 })),
   "next": zod.string().optional()
+})
+
+
+/**
+ * @summary Transcribe an account chat voice recording for the composer
+ */
+export const TranscribeAccountVoiceResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "text": zod.string()
 })
 
 

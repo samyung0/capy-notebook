@@ -5,7 +5,10 @@ import type { VoiceTranscription } from '@/api/types';
  * biology fixtures after a provider-like pause; other types are refused as
  * the gateway does. */
 export const voiceInputHandlers = [
-  http.post('/api/workspaces/:id/voice-transcriptions', async ({ request }) => {
+  '/api/workspaces/:id/voice-transcriptions',
+  '/api/voice-transcriptions',
+].map((path) =>
+  http.post(path, async ({ request }) => {
     const type = request.headers.get('Content-Type')?.split(';')[0];
     if (!(type && ['audio/webm', 'audio/ogg', 'audio/mp4'].includes(type)))
       return HttpResponse.json(
@@ -16,5 +19,5 @@ export const voiceInputHandlers = [
     return HttpResponse.json<VoiceTranscription>({
       text: 'What does the Krebs cycle produce, and where in the cell does it happen?',
     });
-  }),
-];
+  })
+);

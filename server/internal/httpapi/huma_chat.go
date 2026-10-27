@@ -63,6 +63,14 @@ func (a *api) registerChat(api huma.API) {
 	reg(api, http.MethodDelete, "/api/conversations/{id}", "deleteConversation", tag, "Delete a conversation", http.StatusNoContent, a.deleteConversation)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/conversations/unarchive", "unarchiveConversations", tag, "Put every archived conversation back in the list", http.StatusNoContent, a.unarchiveConversations)
 	reg(api, http.MethodDelete, "/api/workspaces/{id}/conversations/archived", "deleteArchivedConversations", tag, "Delete every archived conversation", http.StatusNoContent, a.deleteArchivedConversations)
+	reg(api, http.MethodPost, "/api/conversations/unarchive", "unarchiveAccountConversations", tag, "Put every archived account conversation back in the list", http.StatusNoContent,
+		func(ctx context.Context, _ *struct{}) (*Empty, error) {
+			return a.unarchiveConversations(ctx, &wsConversationsInput{})
+		})
+	reg(api, http.MethodDelete, "/api/conversations/archived", "deleteArchivedAccountConversations", tag, "Delete every archived account conversation", http.StatusNoContent,
+		func(ctx context.Context, _ *struct{}) (*Empty, error) {
+			return a.deleteArchivedConversations(ctx, &wsConversationsInput{})
+		})
 }
 
 func (a *api) listConversations(ctx context.Context, in *listConversationsInput) (*conversationsOutput, error) {

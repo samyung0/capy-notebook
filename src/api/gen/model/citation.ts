@@ -21,4 +21,6 @@ export interface Citation {
   siteName?: string;
   snippet: string;
   url?: string;
+  workspaceId?: string;
+  workspaceName?: string;
 }
