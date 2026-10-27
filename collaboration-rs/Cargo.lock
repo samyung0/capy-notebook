@@ -3011,6 +3011,7 @@ dependencies = [
  "futures",
  "hmac 0.12.1",
  "items",
+ "late-merge",
  "notes",
  "rand 0.9.5",
  "redis",

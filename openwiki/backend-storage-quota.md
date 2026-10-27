@@ -1029,9 +1029,14 @@ and tabs loading the collected state agree.
     the deleted items).
 - **Late tabs.** A fold that collected keeps its window's stored_version as
   the latest (`material_yjs_documents.collected_window`), and a room loads it
-  with the document. A JOIN or `/drafts` group naming an older version, or
-  under a lost session's id, is late (`sessions::late`): the late merge takes
-  it (logged until that lands). While a fold runs, its room checks JOINs
+  with the document. A JOIN naming an older version, or under a lost
+  session's id, is late (`sessions::late`) and refused. A session holds only
+  the deletions new to the room, so a tab can still write next to history a
+  fold collected (an Undo of a deletion another tab made first, gc_views
+  seed 8462): any update naming a unit the room holds collected, live or a
+  `/drafts` group (tried clean first, Q436) or an agent edit or Undo, is
+  answered late at admission (Q443), and the tab's late merge places it.
+  While a fold runs, its room checks JOINs
   against the most that fold may move the window to (the version every
   counted session reached, or the stored version when none counts). A fold
   collects only while no other life of its room is loaded, asked under the

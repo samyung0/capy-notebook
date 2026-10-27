@@ -1651,42 +1651,17 @@ impl Room {
         version: u64,
     ) -> Result<Option<Outcome>, Refused> {
         let decoded = ydoc::decode(update).ok();
-        // A group older than the window, or under a lost session's id (an id
-        // its grants name, or one it writes under, which the room admits
-        // through its record, review r3 L4), may name units a collection
-        // discarded. It is tried clean first (Q436): one naming nothing the
-        // room holds collected is admitted as an ordinary draft; any other
-        // is held for the editor's late merge before anything is admitted.
-        // The check draws on the user's draft allowance.
-        let mut ids = granted.to_vec();
-        if let Some(decoded) = &decoded {
-            ids.extend(client_ids::written(
-                &self.doc.transact().state_vector(),
-                decoded,
-            ));
-        }
-        let late = self.late(&ids, Some(version));
-        if late {
-            self.take_draft_allowance(context, update.len())?;
-            let collected = decoded
-                .as_ref()
-                .is_none_or(|decoded| ydoc::gc::names_collected(&self.doc.transact(), decoded));
-            if collected {
-                return Err(Refused::new(
-                    Class::Late,
-                    "the drafts name units the collection discarded",
-                ));
-            }
-        }
+        // A group older than the window, or under a lost session's id, is
+        // tried clean like any other (Q436): one naming nothing the room
+        // holds collected is admitted as an ordinary draft; one naming
+        // collected units is answered late at admission (Q443).
         if decoded
             .as_ref()
             .is_some_and(|decoded| !ydoc::contains_changes(&self.doc.transact(), decoded))
         {
             return Ok(None);
         }
-        if !late {
-            self.take_draft_allowance(context, update.len())?;
-        }
+        self.take_draft_allowance(context, update.len())?;
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
         let read_only = context.access != Access::Write;
         let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1858,18 +1833,8 @@ impl Room {
         }
         if let Some(update) = update {
             // Computed on a snapshot: a live collection since may have
-            // dropped a unit it names, which would integrate as collected
-            // (Q419, Q432).
-            if matches!(self.kind, Kindly::Note(_))
-                && ydoc::decode(&update)
-                    .is_ok_and(|decoded| ydoc::gc::names_collected(&self.doc.transact(), &decoded))
-            {
-                return Err(if undoing {
-                    undo_unavailable(UNDO_GONE)
-                } else {
-                    DocumentError::Unavailable(crate::edits::ROOM_RESET)
-                });
-            }
+            // dropped a unit it names, answered late at admission (Q419,
+            // Q432, Q443).
             let granted = self.server_ids(&update);
             let outcome = self.admit_update(None, &context, false, &update, None, &granted);
             if !matches!(outcome, Outcome::Admitted) {
@@ -3090,6 +3055,21 @@ impl Room {
         match self.admit_update(Some(key), &context, read_only, bytes, None, &[]) {
             Outcome::Admitted => {}
             Outcome::Unheld => self.resync(key, step2, &context),
+            // Q443: the tab goes late, as for a late JOIN, and merges its
+            // unsent edits into a new session.
+            Outcome::Refused {
+                class: Class::Late, ..
+            } => {
+                self.send(
+                    key,
+                    Kind::Refused,
+                    &protocol::text(crate::socket::LATE_REASON),
+                );
+                if let Some(member) = self.members.get(&key) {
+                    member.out.channel_closed(key.1);
+                }
+                self.leave(key);
+            }
             Outcome::Refused {
                 payloads, reason, ..
             } => self.refuse(key, &payloads, &reason),
@@ -3183,6 +3163,19 @@ impl Room {
             return Err(Outcome::refused(
                 Class::Malformed,
                 "client update changed collaboration metadata",
+            ));
+        }
+        // An update naming history the collection discarded would integrate
+        // as collected, its text lost: it is answered late, and its writer's
+        // late merge places it (Q443). Live updates, draft groups (Q436) and
+        // agent edits and Undo all come through here; before admission, so a
+        // late group is never answered hidden (merge view V-N1).
+        if matches!(self.kind, Kindly::Note(_))
+            && ydoc::gc::names_collected(&self.doc.transact(), &update)
+        {
+            return Err(Outcome::refused(
+                Class::Late,
+                "the update names units the collection discarded",
             ));
         }
         // A writer adds structs only under ids its user holds (Q213): ones
@@ -5205,7 +5198,7 @@ fn agent_context(actor: &str) -> Context {
 /// A person's refusal as the agent hears it (Q402): the edit's own codes
 /// (an Undo past a limit: too large to undo).
 fn agent_refusal(outcome: Outcome, undo: bool) -> crate::edits::DocumentError {
-    use crate::edits::{DocumentError, UNDO_TOO_LARGE, undo_unavailable};
+    use crate::edits::{DocumentError, UNDO_GONE, UNDO_TOO_LARGE, undo_unavailable};
     let Outcome::Refused {
         payloads,
         reason,
@@ -5216,6 +5209,9 @@ fn agent_refusal(outcome: Outcome, undo: bool) -> crate::edits::DocumentError {
         return DocumentError::Unavailable(crate::edits::ROOM_RESET);
     };
     match class {
+        // It names units collected since its snapshot (Q419, Q443).
+        Class::Late if undo => undo_unavailable(UNDO_GONE),
+        Class::Late => DocumentError::Unavailable(crate::edits::ROOM_RESET),
         Class::Limit if undo => undo_unavailable(UNDO_TOO_LARGE),
         Class::Limit => {
             let code = payloads

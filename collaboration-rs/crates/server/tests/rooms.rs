@@ -1267,6 +1267,94 @@ async fn folds_collect_the_stored_and_open_documents_and_an_undo_after_them_rest
     );
 }
 
+/// Q443 (Epo 2026-10-27, gc_views seed 8462): a session holds only the
+/// deletions new to the room, so a tab that deleted offline a letter
+/// another tab then deleted first, in a run it cut, holds nothing once it
+/// sends; with the cutting tab's session ended, a fold collects the run's
+/// middle, and the first tab's Undo restores its letter anchored on that
+/// collected history. The room answers the Undo's update late
+/// (`collaboration-late`) instead of applying it; the tab's late merge (the
+/// late-merge crate, as the browser runs it) places it on the room's current
+/// document from a new session, and a reload shows the letter. Fails if the
+/// room applies the update (the letter integrates as collected, lost).
+#[tokio::test]
+async fn an_update_naming_collected_history_is_answered_late_and_merged() {
+    let Some(env) = env() else { return };
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    let mut undo = own_undo(&a.doc, "a");
+    // "rtpq", then "s" and "X" typed inside it: items nothing names.
+    a.write(|doc| {
+        insert_unsent(doc, 4, "rtpq");
+        insert_unsent(doc, 5, "s");
+        insert_unsent(doc, 8, "X");
+    })
+    .await;
+    persisted(&mut a, "typed").await;
+    assert!(log_folded(&env, &material).await);
+    a.ack_all().await;
+    let x = a.unit_at(8);
+    // A deletes X and keeps it unsent; B cuts the run around it, X too,
+    // and its session ends.
+    remove_as(&a.doc, "a", 8, 1);
+    assert!(b.settle(|c| c.block_text() == "baserstpXq").await);
+    b.write(|doc| remove_as(doc, "b", 4, 6)).await;
+    persisted(&mut b, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    b.leave(false).await;
+    // A sends its deletion, which the room holds already: its session
+    // holds nothing. Once A acknowledged the cut, a fold collects the
+    // run's middle.
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    for mark in ["!", "?"] {
+        a.type_at(0, mark).await;
+        persisted(&mut a, mark).await;
+        assert!(log_folded(&env, &material).await);
+        a.ack_all().await;
+    }
+    assert!(collected_in_base(&env, &material, x).await);
+    // A's Undo restores X, naming the collected X: answered late.
+    a.write(|_| assert!(undo.undo_blocking())).await;
+    assert_eq!(a.block_text(), "?!baseX");
+    let refusal = a.until(2).await.expect("the room answers the update");
+    assert_eq!(text_payload(&refusal), "collaboration-late");
+    // The late merge: A's document onto the room's current one, sent from
+    // a new session of A's user.
+    let mut merged_by = tab(server.port, &room, &user).await;
+    assert!(merged_by.settle(|c| c.block_text() == "?!base").await);
+    let old = a
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let current = merged_by
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let merged = late_merge::merge(&old, &current).expect("the late merge");
+    merged_by
+        .write(|doc| {
+            doc.transact_mut()
+                .apply_update(Update::decode_v1(&merged.update).expect("merged"))
+                .expect("apply");
+        })
+        .await;
+    assert_eq!(merged_by.block_text(), "?!baseX");
+    persisted(&mut merged_by, "merged").await;
+    drop((a, merged_by));
+    wait_unloaded(server.port).await;
+    let mut fresh = Client::open(server.port).await;
+    fresh.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        fresh.settle(|c| c.block_text() == "?!baseX").await,
+        "{}",
+        fresh.block_text()
+    );
+}
+
 /// A tab away from the room holds the window back at the version it
 /// acknowledged: it drops and types offline after a letter in the middle of
 /// a run that another session then deletes before it leaves; the

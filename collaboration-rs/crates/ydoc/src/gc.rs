@@ -385,22 +385,26 @@ fn encode_cut(item: &ItemPtr, encoder: &mut EncoderV1) {
 /// collected, as origin, right origin or parent: Yjs and yrs integrate such
 /// an item as collected too, so an Undo payload naming one would restore only
 /// part of its edit (the durable Undo route refuses it, `undo_unavailable`),
-/// and a late draft group naming one goes to the editor's late merge (Q436).
-/// An item the document already holds names nothing new; one it holds in
-/// part (a draft carries its session's whole document, where a unit typed
-/// right after the session's own last one joined that item) is integrated
-/// from its first unit the document lacks, whose origin is the unit before.
+/// and any update naming one is answered late at a room's admission (Q436,
+/// Q443). An item the document already holds names nothing new; one it
+/// holds in part (a draft carries its session's whole document, where a
+/// unit typed right after the session's own last one joined that item) is
+/// integrated from its first unit the document lacks, whose origin is the
+/// unit before. The state vector is read only for an item the document
+/// holds at all, so a live edit's new items cost three lookups each.
 pub fn names_collected<T: ReadTxn>(txn: &T, update: &Update) -> bool {
     let store = txn.store();
-    let held = txn.state_vector();
+    let mut held: Option<StateVector> = None;
     update.blocks().any(|block| match block {
         UpdateBlock::Item(item) => {
             let id = *item.id();
-            let have = held.get(&id.client);
-            if id.clock + item.len() <= have {
-                return false;
-            }
-            let origin = if id.clock < have {
+            let origin = if store.get_block_range(&id).is_some() {
+                let have = held
+                    .get_or_insert_with(|| txn.state_vector())
+                    .get(&id.client);
+                if id.clock + item.len() <= have {
+                    return false;
+                }
                 Some(ID::new(id.client, have - 1))
             } else {
                 item.origin().copied()

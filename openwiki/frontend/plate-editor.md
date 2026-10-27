@@ -2817,10 +2817,14 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   refused with `collaboration-late` (`socket::LATE_REASON`) after the client-id
   binding and before the member joins, so it makes no session and a lost
   record's marker survives the next store (P1 review r3 N9); viewers too, as a
-  viewer's token can turn writable before its eviction lands. A late
-  `/drafts` group (its version, or a lost id among its grants and the ids it
-  writes under) answers the class `late` (409) before admission and is
-  counted. Until a collection records its window only lost ids are late.
+  viewer's token can turn writable before its eviction lands. Any update
+  that names a unit the room holds collected (`ydoc::gc::names_collected`,
+  at admission, before the validator) is answered late (Q443): a live
+  update with `collaboration-late` on its channel, so the tab goes late as
+  for a JOIN; a `/drafts` group with the class `late` (409, counted); an
+  agent Undo `undo_unavailable` and an agent edit `unavailable_target`. A
+  group naming nothing collected is admitted as an ordinary draft, late or
+  not (Q436). Until a collection records its window only lost ids are late.
   An older build reads `collaboration-late` as a retryable refusal and would
   rejoin with backoff forever, so the release that turns lateness on ships
   with client protocol 22: its raised `MIN_MATERIAL` (22) refuses the older

@@ -18,12 +18,15 @@
 //! room open also collects the room's own document at the same window and
 //! held set, and the room swaps the result in (Q401):
 //! tabs joining after load the collected state, open tabs keep their
-//! tombstones. Agent edits are admitted by the open room and stored at once
+//! tombstones. Agent edits are computed on the room's snapshot (a fresh load,
+//! as `edits.rs` computes them), admitted by the open room and stored at once
 //! (Q402, Q403), their deletions held in the document's agent record from
 //! their edit (25 h), and the live pass runs while the agent has steps
 //! (Q432). The agent's Undo is modelled as a live revert; a live swap drops
 //! it (the server's payload Undo after a swap is checked against what the
-//! room collected, rooms.rs).
+//! room collected, rooms.rs). A tab's update or closed tab's group that
+//! names a unit the room holds collected is answered late (Q443): the tab
+//! loads the room's document anew, its unsent edits left to the late merge.
 //!
 //! The window and H come from the room's `Sessions`, driven as the room
 //! drives it: a JOIN names the tab's version and the step 1 answer syncs it,
@@ -249,6 +252,25 @@ impl Note {
         let mut txn = self.doc.transact_mut_with(origin);
         let y_root = plate::content_root(&txn).unwrap();
         slate_yjs::apply_ops(&mut txn, y_root, &mut self.root, ops).unwrap();
+    }
+
+    /// An agent edit as the room path computes it (Q402, Q403): `ops` run on
+    /// a fresh load of this document's state (`edits.rs`: `live_state`, then
+    /// `Scratch::new`), whose tombstones hold no text, and the update is
+    /// admitted here under [AGENT] so the agent's Undo tracks it. Run on the
+    /// document itself, yrs's format cleanup on a removal would read the
+    /// text the agent's Undo keeps in deleted items, which R keeps across a
+    /// swap and S does not.
+    fn admit_agent(&mut self, ops: &[Operation]) {
+        let mut snapshot = Note::load(self.doc.client_id().get(), "s", &self.state());
+        snapshot.apply_as(AGENT, ops);
+        let vector = self.doc.transact().state_vector();
+        let update = snapshot.doc.transact().encode_state_as_update_v1(&vector);
+        self.doc
+            .transact_mut_with(AGENT)
+            .apply_update(ydoc::decode(&update).unwrap())
+            .unwrap();
+        self.refresh();
     }
 
     fn state(&self) -> Vec<u8> {
@@ -801,6 +823,9 @@ struct Tally {
     /// dropped as late.
     drafts: u64,
     late_drafts: u64,
+    /// Tabs' updates and groups that named collected history, answered
+    /// late (Q443).
+    answered_late: u64,
     /// The open room's own collections (Q401), and the units they discarded.
     live_collections: u64,
     live_units: u64,
@@ -877,6 +902,8 @@ struct World {
     next_client: u64,
     /// Every tab and its twin applied the same edits.
     twins_agree: bool,
+    /// Tabs' updates answered late (Q443), for the tally.
+    answered_late: u64,
 }
 
 impl World {
@@ -1141,8 +1168,8 @@ impl World {
             return;
         };
         let before = self.s.delete_set();
-        self.s.apply_as(AGENT, &ops);
-        self.r.apply_as(AGENT, &ops);
+        self.s.admit_agent(&ops);
+        self.r.admit_agent(&ops);
         let deleted = self.s.delete_set().diff(&before);
         self.agent_deleted(deleted);
         self.room_store();
@@ -1245,6 +1272,10 @@ impl World {
         );
         if sessions::late(self.window, version as u64, self.sessions.lost(client)) {
             tally.late_drafts += 1;
+            return;
+        }
+        if self.names_collected(t) {
+            tally.answered_late += 1;
             return;
         }
         sync(&self.tabs[t].g, &mut self.s);
@@ -1387,6 +1418,13 @@ impl World {
         }
         tally.late_rejoins += 1;
         tally.lost_rejoins += u64::from(lost);
+        self.reload_late(i);
+    }
+
+    /// Tab `i` is late: it loads the room's document under a new client and
+    /// session, its unsent edits left to the late merge (dropped on both
+    /// sides, the merge's stand-in).
+    fn reload_late(&mut self, i: usize) {
         let c = self.next_client;
         self.next_client += 1;
         let t = &mut self.tabs[i];
@@ -1399,6 +1437,14 @@ impl World {
         t.reached = self.version;
         t.unsent = None;
         self.new_session(c);
+    }
+
+    /// Whether what tab `i` would send names a unit S holds collected: the
+    /// room answers it late (Q443).
+    fn names_collected(&self, i: usize) -> bool {
+        let sv = self.s.doc.transact().state_vector();
+        let update = self.tabs[i].g.doc.transact().encode_state_as_update_v1(&sv);
+        gc::names_collected(&self.s.doc.transact(), &ydoc::decode(&update).unwrap())
     }
 
     /// The room's own change since its last row (an agent edit, or its Undo
@@ -1420,6 +1466,14 @@ impl World {
     /// writes the writer's contributor marker and the store claims it, so
     /// the row carries it deleted; the store writes the sessions' rows.
     fn store_from(&mut self, i: usize) {
+        // Naming collected history, it is answered late (Q443): the tab's
+        // channel closes (its session counts as dropped) and it goes late.
+        if self.names_collected(i) {
+            self.answered_late += 1;
+            self.drop_tab(i);
+            self.reload_late(i);
+            return;
+        }
         let client = self.tabs[i].client();
         let before = self.s.delete_set();
         sync(&self.tabs[i].g, &mut self.s);
@@ -1464,12 +1518,23 @@ impl World {
             return;
         }
         let before = self.s.delete_set();
-        let batches = self.s.edit_as(AGENT, rng);
-        if batches.is_empty() {
+        let ops = self.s.random_ops(rng);
+        if ops.is_empty() {
             return;
         }
+        self.s.admit_agent(&ops);
+        let mut batches = vec![ops];
+        if let Some(Operation::SetNode { path, .. }) = batches[0].last()
+            && path.len() == 2
+        {
+            let normalize = self.s.normalize_leaves(path[0]);
+            if !normalize.is_empty() {
+                self.s.admit_agent(&normalize);
+                batches.push(normalize);
+            }
+        }
         for ops in &batches {
-            self.r.apply_as(AGENT, ops);
+            self.r.admit_agent(ops);
         }
         let deleted = self.s.delete_set().diff(&before);
         self.agent_deleted(deleted);
@@ -1696,6 +1761,7 @@ fn run(seed: u64, tally: &mut Tally) {
         tabs: Vec::new(),
         next_client: 10,
         twins_agree: true,
+        answered_late: 0,
     };
     for _ in 0..3 {
         w.join(&mut rng, tally);
@@ -1808,6 +1874,7 @@ fn run(seed: u64, tally: &mut Tally) {
         pending |= t.g.pending();
     }
     tally.seeds += 1;
+    tally.answered_late += w.answered_late;
     let converged = !pending && values.iter().all(|v| *v == values[0]);
     let equals_reference = w.twins_agree && values[0] == w.r.value();
     tally.converged += u64::from(converged);
@@ -1938,7 +2005,7 @@ fn collections_keep_every_replica_and_every_undo_exact() {
         }
     }
     eprintln!(
-        "gc_views: seeds {} converged {} equals R {} | collections {} (units collected {}, live {} with {} units, loads differing {}, unnameable {} (live {}), reloads differing {}) | contended {} (holding {}) | rejoins raw {} late {} (lost {}, rows damaged {}) | undos {} | agent edits {} undos {} | days {} | episodes agent {} lost {} day {} drafts {} (admitted {}, late {}) | {:.1} s",
+        "gc_views: seeds {} converged {} equals R {} | collections {} (units collected {}, live {} with {} units, loads differing {}, unnameable {} (live {}), reloads differing {}) | contended {} (holding {}) | rejoins raw {} late {} (lost {}, rows damaged {}) | undos {} | agent edits {} undos {} | days {} | episodes agent {} lost {} day {} drafts {} (admitted {}, late {}) | answered late {} | {:.1} s",
         tally.seeds,
         tally.converged,
         tally.equals_reference,
@@ -1966,6 +2033,7 @@ fn collections_keep_every_replica_and_every_undo_exact() {
         tally.draft_episodes,
         tally.drafts,
         tally.late_drafts,
+        tally.answered_late,
         started.elapsed().as_secs_f64()
     );
     assert!(tally.failures.is_empty(), "{:?}", tally.failures);
@@ -1985,9 +2053,10 @@ fn collections_keep_every_replica_and_every_undo_exact() {
     assert!(tally.draft_episodes > seeds / 8 && tally.drafts > seeds / 8);
     // The agent's Undo here is a live UndoManager, which ends at the open
     // room's swap of its document; since Q432 swaps also come while agent
-    // steps are held, so fewer of them are undone (the durable payload
-    // across a swap is the rooms tests' part), and fewer tabs hold.
-    assert!(tally.agent_undos > seeds / 10 && tally.days > seeds / 2);
+    // steps are held, so fewer of them are undone (about 16% of seeds; the
+    // durable payload across a swap is the rooms tests' part), and fewer
+    // tabs hold (about 13%).
+    assert!(tally.agent_undos > seeds / 8 && tally.days > seeds / 2);
     assert!(
         tally.agent_episodes > seeds / 8
             && tally.lost_episodes > seeds / 8
