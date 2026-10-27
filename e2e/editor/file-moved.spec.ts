@@ -41,6 +41,15 @@ async function announceMove(page: Page, workspaceId: string) {
   );
 }
 
+/** The room holds source save receipts back (a busy store) or sends them. */
+async function holdReceipts(page: Page, hold: boolean) {
+  await page.evaluate(async (on) => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdSourceSaveReceipts } = await import(path);
+    holdSourceSaveReceipts(on);
+  }, hold);
+}
+
 /** The file becomes unreadable (deleted or access lost: 404 either way). */
 async function dropRow(page: Page) {
   await page.evaluate(async (id) => {
@@ -85,7 +94,9 @@ test('a Move heard while typing follows the file at once, with no dialog and no 
   await page.evaluate(() => {
     (window as { stayed?: boolean }).stayed = true;
   });
-  // Typed and moved before the save (Q465): nothing asks on the way.
+  // Typed and moved before the save (Q465): the room holds its receipts
+  // back, so the edit stays unacknowledged, and nothing asks on the way.
+  await holdReceipts(page, true);
   await input.fill(`${await input.inputValue()}\nTyped before the move.`);
   await announceMove(page, MOVED_TO);
   await expect(
@@ -98,6 +109,7 @@ test('a Move heard while typing follows the file at once, with no dialog and no 
     page.getByText(MOVED_TO_NAME, { exact: true }).first()
   ).toBeVisible();
   // The drained room's reconnect joined again: still editing, nothing lost.
+  await holdReceipts(page, false);
   await expect(input).toBeEditable();
   await expect(input).toHaveValue(/Typed before the move\./);
   await input.fill(`${await input.inputValue()}\nTyped after the move.`);
