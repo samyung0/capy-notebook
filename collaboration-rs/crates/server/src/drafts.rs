@@ -58,9 +58,10 @@ pub enum Class {
     /// The rows grew from another lineage: a token for another room, a moved
     /// schema or epoch, another Office base.
     Lineage,
-    /// The rows grew from a state older than the room's collection window:
-    /// they may name units it collected, so they wait for the editor, which
-    /// merges them (the late path, `Room::late`).
+    /// The rows name units the room's collection discarded (Q443; typing
+    /// into a deleted block names its dropped contents, Q444), or grew from
+    /// a state older than its window: they wait for the editor, which merges
+    /// them (the late path, `Room::late`).
     Late,
     /// Over a document limit (the content limits, a source's state cap).
     Limit,
@@ -77,8 +78,9 @@ pub enum Class {
     /// Structs under a client id not assigned to the sender's user: the
     /// editor re-applies them under its own id (Epo 2026-10-24).
     Unassigned,
-    /// A note's typing into a block the room deleted, which the room would
-    /// never show (Q237): held for the editor, whose join shows it for
+    /// A note's typing that names only a block the room deleted (an empty
+    /// one; typing next to its letters is `Late`, Q444), which the room
+    /// would never show (Q237): held for the editor, whose join shows it for
     /// review.
     Hidden,
     /// The room or a lookup is busy or failing: try at a later page load.

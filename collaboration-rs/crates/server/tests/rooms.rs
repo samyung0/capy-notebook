@@ -11644,12 +11644,17 @@ async fn draft_sends_are_refused_with_their_class() {
     }
 }
 
-/// Hidden typing (Q237): a closed tab's drafts typing into a block someone
-/// deleted since are refused `hidden` (409, counted), nothing stored, so the
-/// editor's join shows them for review; the same update over a socket is
-/// ordinary collaboration and admitted. Fails without the draft-only refusal.
+/// Typing into a block someone deleted since (Q237, Q443, Q444): yrs drops a
+/// deleted block's contents, so typing after its letters names collected
+/// history and is answered late, as a closed tab's drafts (409 `late`,
+/// counted) and over a socket alike (`collaboration-late`), nothing stored;
+/// the tab's late merge (the late-merge crate, as the browser runs it)
+/// reports the block as hidden, which the editor keeps as hidden-typing
+/// pieces. Typing that names only the deleted block itself (into an empty
+/// block) is still refused `hidden` (409, counted). Fails if typing into a
+/// deleted block is admitted or answered hidden, or the hidden class goes.
 #[tokio::test]
-async fn a_draft_typing_into_a_deleted_block_is_refused_hidden_and_a_socket_takes_it() {
+async fn typing_into_a_deleted_block_is_answered_late_and_merged_as_hidden() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "base").await;
@@ -11657,69 +11662,117 @@ async fn a_draft_typing_into_a_deleted_block_is_refused_hidden_and_a_socket_take
     let mut peer = synced(server.port, &room, &user, "base").await;
     peer.insert_blocks(
         1,
-        &[serde_json::json!({ "type": "p", "id": "second", "children": [{ "text": "second" }] })],
+        &[
+            serde_json::json!({ "type": "p", "id": "empty", "children": [{ "text": "" }] }),
+            serde_json::json!({ "type": "p", "id": "second", "children": [{ "text": "second" }] }),
+        ],
     )
     .await;
     assert!(peer.until(6).await.is_some(), "the peer's ack");
     let mut writer = synced(server.port, &room, &user, "base").await;
     assert!(writer.settle(|c| c.block("second").is_some()).await);
-    // Typed into the first block while offline; the peer then deletes it.
-    let drafts = drafted(&writer.doc, typed_into_note(" hidden"));
+    let mut other = synced(server.port, &room, &user, "base").await;
+    assert!(other.settle(|c| c.block("second").is_some()).await);
+    let deleted = {
+        let root = writer.doc.get_or_insert_text("content");
+        let txn = writer.doc.transact();
+        root.diff(&txn, yrs::types::text::YChange::identity)
+            .into_iter()
+            .find_map(|chunk| match chunk.insert {
+                yrs::Out::YXmlText(block) => {
+                    let branch =
+                        yrs::branch::BranchPtr::from(block.as_ref() as &yrs::branch::Branch);
+                    branch.item().map(|item| *item.id())
+                }
+                _ => None,
+            })
+            .expect("the first block")
+    };
+    // Typed while offline: after "base", and into the empty block (naming
+    // only that block); the peer then deletes both blocks.
+    let named = drafted(&writer.doc, typed_into_note(" hidden"));
+    let block_only = drafted(&other.doc, typed_into_block_start(1, "x"));
     peer.write(|doc| {
         let root = doc.get_or_insert_text("content");
-        root.remove_range(&mut doc.transact_mut(), 0, 1);
+        root.remove_range(&mut doc.transact_mut(), 0, 2);
     })
     .await;
     assert!(peer.until(6).await.is_some(), "the peer's ack");
 
+    let write = token(&room, &user, "write");
     let (status, answer) = send_drafts(
         server.port,
         &room,
-        Some(&token(&room, &user, "write")),
+        Some(&write),
         Some(ORIGIN),
-        drafts.clone(),
+        named.clone(),
     )
     .await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (409, Some("late")),
+        "{answer}"
+    );
+    let (status, answer) =
+        send_drafts(server.port, &room, Some(&write), Some(ORIGIN), block_only).await;
     assert_eq!(
         (status, answer["class"].as_str()),
         (409, Some("hidden")),
         "{answer}"
     );
-    let id = writer.id();
+    let metrics = metrics_text(server.port).await;
+    for class in ["late", "hidden"] {
+        let line = format!("capy_collaboration_draft_refusals_total{{class=\"{class}\"}} 1");
+        assert!(
+            metrics.lines().any(|known| known == line),
+            "{line} in {metrics}"
+        );
+    }
+    // Live: the same typing over the writer's socket is answered late too.
+    writer.send(5, &sync(2, &named)).await;
+    let refusal = writer.until(2).await.expect("the room answers the update");
+    assert_eq!(text_payload(&refusal), "collaboration-late");
     let fresh = synced(server.port, &room, &user, "second").await;
-    assert_eq!(
-        fresh
-            .doc
-            .transact()
-            .state_vector()
-            .get(&yrs::block::ClientID::new(id)),
-        0,
-        "nothing of the drafts is stored"
-    );
-    let line = "capy_collaboration_draft_refusals_total{class=\"hidden\"} 1";
-    assert!(
-        metrics_text(server.port)
-            .await
-            .lines()
-            .any(|known| known == line),
-        "{line}"
-    );
-
-    // Live: the same typing over the writer's socket is admitted.
-    writer.send(5, &sync(2, &drafts)).await;
-    assert!(writer.until(6).await.is_some(), "the writer's ack");
-    let mut later = synced(server.port, &room, &user, "second").await;
-    assert!(
-        later
-            .settle(|c| c
+    for id in [writer.id(), other.id()] {
+        assert_eq!(
+            fresh
                 .doc
                 .transact()
                 .state_vector()
-                .get(&yrs::block::ClientID::new(id))
-                > 0)
-            .await,
-        "the room holds the socket's update"
-    );
+                .get(&yrs::block::ClientID::new(id)),
+            0,
+            "nothing of the typing is stored"
+        );
+    }
+    // The late merge keeps the typing in the deleted block's tombstone and
+    // reports that block hidden: the editor's hidden-typing pieces.
+    let current = fresh
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let merged = late_merge::merge(&named, &current).expect("the late merge");
+    assert_eq!(merged.hidden, vec![deleted]);
+}
+
+/// Inserts `text` at the start of the note's top-level block `index`.
+fn typed_at_start(doc: &Doc, index: usize, text: &str) {
+    let root = doc.get_or_insert_text("content");
+    let mut txn = doc.transact_mut();
+    let block = root
+        .diff(&txn, yrs::types::text::YChange::identity)
+        .into_iter()
+        .filter_map(|chunk| match chunk.insert {
+            yrs::Out::YXmlText(block) => Some(block),
+            _ => None,
+        })
+        .nth(index)
+        .expect("the block");
+    block.insert(&mut txn, 0, text);
+}
+
+/// [typed_at_start] as a [drafted] edit.
+fn typed_into_block_start(index: usize, text: &str) -> impl FnOnce(&Doc) + '_ {
+    move |doc| typed_at_start(doc, index, text)
 }
 
 /// Security regression (drafts-send S1): a draft send writes only with the

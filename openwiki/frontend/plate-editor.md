@@ -2400,15 +2400,22 @@ Items, Office and text files keep copy-only recovery.
   an offline episode, a socket blip and typing between the two steps; a new
   block can
   never be hidden, and text the room had seen and then deleted is never a
-  piece. A draft send cannot see this (it holds no room state), so the
-  service refuses a note's draft whose typing would land in a deleted
-  holder, or next to a unit the room collected with its deleted container
-  (`ydoc::inspect`'s `hidden_units`), as `hidden` (409); the send (a sweep's
-  or the editor's own) holds the group for the editor's next open and marks
-  its rows `held` and `hidden` in one write: applied there, the join finds the typing; drawn on its
-  own, the group becomes `hidden` pieces (Q410). Live typing over a
-  socket into a block someone just deleted is ordinary collaboration and
-  admitted. Hidden typing is never an incident (Q261).
+  piece. Yjs drops a deleted block's contents with it, so typing next to
+  any of its letters names collected history and is answered late like any
+  such update, a draft send's group `late` (409) and live typing
+  `collaboration-late` (Developer Epo, 2026-10-27, Q444 over Q237's direct
+  `hidden` answer, Q443): the tab's late merge ([the late
+  path](#the-late-path)) lists that block in `hidden`, kept as one refused
+  row flagged hidden that the next open shows as `hidden` pieces, so the
+  typing is never lost. Typing that names only the deleted block itself (a
+  block that was empty) is not late: a draft send cannot see it (it holds
+  no room state), so the service refuses a note's draft whose typing would
+  land in a deleted holder (`ydoc::inspect`'s `hidden_units`) as `hidden`
+  (409); the send (a sweep's or the editor's own) holds the group for the
+  editor's next open and marks its rows `held` and `hidden` in one write:
+  applied there, the join finds the typing; drawn on its own, the group
+  becomes `hidden` pieces (Q410). Over a socket such typing is admitted and
+  the watch above draws it. Hidden typing is never an incident (Q261).
 - **Lifecycle.** The live mount's store is the sheet's, and a paused one's
   while it is on screen, its choices off; a standby mount registers none, and
   the sheet's open state lives in `NoteEditor`, so it survives a room swap.
@@ -2500,9 +2507,10 @@ class
   once per open, not per page load;
 - `unheld` (409, the room lacks the update's base), `unassigned` (409,
   structs under a client id not assigned to the user, Epo 2026-10-24),
-  `hidden` (409, a note's typing into a block the room deleted since, which
-  the room would never show; only the editor's join finds it, see [hidden
-  typing](#the-merge-view), Q237), `too_large` (413) and `lineage` (409, a
+  `hidden` (409, a note's typing that names only a block the room deleted
+  since, which the room would never show; only the editor's join finds it;
+  typing next to the block's letters is `late` instead, see [hidden
+  typing](#the-merge-view), Q237, Q444), `too_large` (413) and `lineage` (409, a
   token for another room, a schema
   or epoch that moved on, another Office base): marked `held`, left for the
   editor's next open, which applies a held group of an accepted session and
@@ -2824,7 +2832,9 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   for a JOIN; a `/drafts` group with the class `late` (409, counted); an
   agent Undo `undo_unavailable` and an agent edit `unavailable_target`. A
   group naming nothing collected is admitted as an ordinary draft, late or
-  not (Q436). Until a collection records its window only lost ids are late.
+  not (Q436). Typing into a block someone deleted names its contents, which
+  Yjs drops with it, so it is answered late too and the merge turns it into
+  `hidden` pieces (Q444, [hidden typing](#the-merge-view)). Until a collection records its window only lost ids are late.
   An older build reads `collaboration-late` as a retryable refusal and would
   rejoin with backoff forever, so the release that turns lateness on ships
   with client protocol 22: its raised `MIN_MATERIAL` (22) refuses the older
