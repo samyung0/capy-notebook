@@ -654,6 +654,8 @@
   "content_move_file": "Move file",
   "move_file_processing": "A file is still being processed. Try again once it's ready.",
   "move_progress_title": "Move to {workspace}?",
+  "file_moved_to_workspace": "This file was moved to {workspace}",
+  "file_moved_elsewhere": "This file was moved to another workspace",
   "move_progress_lead": "Moving {file} out of {workspace} removes:",
   "move_progress_lead_files": "Moving {count} files out of their workspaces removes:",
   "move_progress_people_one": "Study progress for 1 person",

@@ -53,6 +53,7 @@ import { CopyError, errorCopy } from '@/lib/errors';
 import { officeMark } from '@/lib/officeMarks';
 import { sawRoom } from '@/lib/undoPayloads';
 import { PresenceContext } from './fileModeContext';
+import { fileMoved } from './fileMoved';
 import { createOfficeCursors } from './officeCursors';
 import { takeSourceOpen } from './sourceOpen';
 import {
@@ -928,6 +929,7 @@ export function useSourceSession(
             recoverable?: boolean;
             lostAccess?: 'forbidden' | 'not_found';
             room?: string;
+            workspaceId?: string;
           };
           try {
             event = JSON.parse(payload);
@@ -941,6 +943,12 @@ export function useSourceSession(
             return;
           }
           if (event.fileId !== fileId) return;
+          // A Move, right before the room drains (Q454): the close that
+          // follows reconnects as any drain does.
+          if (event.type === 'file-moved') {
+            if (event.workspaceId) fileMoved(qc, fileId, event.workspaceId);
+            return;
+          }
           if (event.type === 'source-handoff-cancel') {
             active.handedOff = -1;
             setHandoff(false);

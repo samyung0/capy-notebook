@@ -555,8 +555,26 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   copy made in the target, when the target embeds in the same space; else
   the file is ingested there, paid by the mover as a cross-space clone is;
   so is a target still building the same content.
-  Open source rooms are evicted to reconnect through the new access, and both
-  workspaces' trees hear of it (0125 `notify_workspace_tree`).
+  Each open source room drains (Q447): it stores what it admitted, people's
+  typing and agent edits, before it closes, and its tabs reconnect through
+  the access check of the new place. Right before the drain the room tells
+  every tab of the move (Q454): the outbox row is
+  `enqueue_source_collaboration_eviction`'s shape with type `file-moved`,
+  mode `drain` and the target `workspaceId` (written directly in
+  `MoveFiles`, no migration), which the room sends as a stateless message
+  before Closed. The tab (`useSourceSession`, Office and text files alike;
+  `fileMoved.ts`) toasts once per tab per move, naming the workspace when it
+  can read it (`file_moved_to_workspace`, else `file_moved_elsewhere`), and
+  refetches the file and the lists that show it; `/files/{id}` stays put.
+  The workspace page follows an open file into its current workspace
+  (Q455, `useFollowOpenFile` in `routes/WorkspaceOpen.tsx`): a fresh settled
+  read naming another workspace replaces the URL with
+  `/workspaces/<its workspace>?file=<id>` (page and mode kept, no history
+  entry), a standalone file goes to `/files/{id}`, and a file whose new
+  workspace this user cannot read, or which this tab heard moved and can no
+  longer read, closes in the old workspace (`?file` dropped) with the moved
+  toast; old bookmarks and files without a room (PDF) follow on their next
+  read. Both workspaces' trees hear of it (0125 `notify_workspace_tree`).
 - Entry points: Move to… in the Files page and workspace file menus (it
   replaces the chapter-only move for files) and the workspace Add file
   dialog's Your files tab (`GET /api/files?q=`). Clone to… opens the same

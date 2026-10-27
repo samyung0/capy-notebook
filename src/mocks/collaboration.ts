@@ -992,8 +992,13 @@ class MockSourceProvider implements SourceProvider {
   readonly hasUnsyncedChanges = false;
   isAuthenticated = true;
   private readonly config: SourceProviderConfig;
-  private readonly leave: () => void;
-  readonly room: Room;
+  private leave: () => void;
+  room: Room;
+  /** A drain closed the channel on an open socket (`announceMoved`): the
+   * reconnect's `connect` joins the room again, reopened from its
+   * checkpoint once the last participant left. */
+  private drained = false;
+  socketStatus?: 'connected';
 
   constructor(config: SourceProviderConfig) {
     const room = rooms.get(config.name);
@@ -1073,8 +1078,29 @@ class MockSourceProvider implements SourceProvider {
     else queueMicrotask(send);
   }
 
-  // The in-page room never closes a connection by itself.
-  connect() {}
+  // The in-page room never closes a connection by itself; after a drain
+  // the reconnect joins again.
+  connect() {
+    if (!this.drained) return;
+    this.drained = false;
+    this.socketStatus = undefined;
+    this.isAuthenticated = true;
+    sourceProviders.add(this);
+    this.room = sourceRoom(
+      this.room.target.id,
+      Number(this.config.name.split(':')[3]),
+      '',
+      undefined,
+      this.room.format
+    );
+    this.leave = join(this.room, {
+      awareness: this.awareness,
+      document: this.config.document,
+      onPresence: this.config.onPresence,
+      origin: this,
+    });
+    queueMicrotask(() => this.config.onSynced?.({ state: true }));
+  }
 
   disconnect() {
     sourceProviders.delete(this);
@@ -1108,6 +1134,25 @@ class MockSourceProvider implements SourceProvider {
     this.config.onStateless?.({
       payload: JSON.stringify({ fileId, type: 'source-editing-paused' }),
     });
+  }
+
+  /** A Move (Q454): the room names it, then drains and closes the channel
+   * on the open socket, and the tab rejoins. */
+  announceMoved(fileId: string, workspaceId: string) {
+    if (this.room.target.id !== fileId) return;
+    this.config.onStateless?.({
+      payload: JSON.stringify({
+        evictionId: crypto.randomUUID(),
+        fileId,
+        mode: 'drain',
+        room: this.config.name,
+        type: 'file-moved',
+        workspaceId,
+      }),
+    });
+    this.drained = true;
+    this.socketStatus = 'connected';
+    this.config.onClose?.();
   }
 
   announceEpoch(fileId: string, newEpoch: number) {
@@ -1230,6 +1275,17 @@ export function holdSourceSessions(hold: boolean) {
   sourceSessionsHeld = hold;
 }
 export const sourceSessionHeld = () => sourceSessionsHeld;
+/** A Move of an open source file to `workspaceId` (Q454): the mock file row
+ * moves, then every open room of it says so and drains. */
+export function announceSourceMoved(fileId: string, workspaceId: string) {
+  const file = db.files.find((row) => row.id === fileId);
+  if (file) {
+    file.workspaceId = workspaceId;
+    file.chapterId = null;
+  }
+  for (const provider of [...sourceProviders])
+    provider.announceMoved(fileId, workspaceId);
+}
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
     provider.announceEpoch(fileId, epoch);

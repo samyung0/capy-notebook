@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useNavigate,
   useParams,
@@ -17,14 +18,17 @@ import {
   useGroupRef,
 } from 'react-resizable-panels';
 import { createStore, type StoreApi, useStore } from 'zustand';
+import { isApiError } from '@/api/client';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
   useChapters,
+  useFile,
   useFiles,
   useUpdateChapter,
   useVisitWorkspace,
   useWorkspace,
+  workspaceQuery,
 } from '@/api/hooks';
 import type { Citation, Region, ResourceRef } from '@/api/types';
 import { AccountFooter } from '@/components/app/AccountFooter';
@@ -51,6 +55,7 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/Resizable';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { heardMove, toastFileMoved } from '@/features/files/fileMoved';
 import { officeFormatOf } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
@@ -256,12 +261,85 @@ function usePanelLayout({
   }, [group, groupRef, left, right]);
 }
 
+/** A read this user may not make (gone or forbidden). */
+function missing(error: unknown): boolean {
+  return isApiError(error) && (error.status === 404 || error.status === 403);
+}
+
+/** Q455 (Epo 2026-10-27): the open file's current workspace. A file another
+ * workspace holds now opens there, the URL replaced (page and mode kept), a
+ * standalone one at `/files`; one this user cannot follow (its new workspace
+ * unreadable, or the file itself after this tab heard it moved) closes here
+ * with the moved toast. Only a fresh settled read counts (the loader's
+ * prefetch, a refetch after a Move's room message or a focus), so a row
+ * restored from storage or a read in flight never moves the page, and the
+ * file's own workspace never redirects again. */
+function useFollowOpenFile(workspaceId: string, search: WorkspaceOpenSearch) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const fileId = search.file ?? null;
+  const {
+    data: file,
+    error,
+    isFetching,
+    isStale,
+  } = useFile(fileId, { errorBoundary: false });
+  const settled = !!fileId && !isFetching;
+  const elsewhere =
+    settled &&
+    !isStale &&
+    !error &&
+    file?.id === fileId &&
+    file.workspaceId !== workspaceId
+      ? file.workspaceId
+      : undefined;
+  const { data: target, error: targetError } = useQuery({
+    ...workspaceQuery(elsewhere ?? ''),
+    enabled: !!elsewhere,
+    meta: { errorBoundary: false },
+  });
+  const lost = settled && missing(error) ? heardMove(fileId) : undefined;
+  const { mode, page } = search;
+  useEffect(() => {
+    if (!fileId) return;
+    const close = (to: string) => {
+      void toastFileMoved(qc, fileId, to);
+      navigate({
+        replace: true,
+        search: (previous) => ({
+          ...previous,
+          file: undefined,
+          mode: undefined,
+          page: undefined,
+        }),
+        to: '.',
+      });
+    };
+    if (elsewhere === '') {
+      navigate({ params: { fileId }, replace: true, to: '/files/$fileId' });
+    } else if (elsewhere && target) {
+      void toastFileMoved(qc, fileId, elsewhere);
+      navigate({
+        params: { workspaceId: elsewhere },
+        replace: true,
+        search: { file: fileId, mode, page },
+        to: '/workspaces/$workspaceId',
+      });
+    } else if (elsewhere && missing(targetError)) {
+      close(elsewhere);
+    } else if (lost) {
+      close(lost);
+    }
+  }, [elsewhere, fileId, lost, mode, navigate, page, qc, target, targetError]);
+}
+
 export default function WorkspaceOpen() {
   const params = useParams({ strict: false });
   const workspaceId = (params as { workspaceId: string }).workspaceId;
   const navigate = useNavigate();
   const router = useRouter();
   const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
+  useFollowOpenFile(workspaceId, search);
 
   // Other failures without data go to the error boundary.
   const {

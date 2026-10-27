@@ -654,6 +654,8 @@
   "content_move_file": "移动文件",
   "move_file_processing": "有文件仍在处理中，处理完成后再试。",
   "move_progress_title": "移动到 {workspace}？",
+  "file_moved_to_workspace": "此文件已移至 {workspace}",
+  "file_moved_elsewhere": "此文件已移至另一个工作区",
   "move_progress_lead": "将 {file} 移出 {workspace} 会删除：",
   "move_progress_lead_files": "将 {count} 个文件移出所在工作区会删除：",
   "move_progress_people_one": "1 人的学习进度",
