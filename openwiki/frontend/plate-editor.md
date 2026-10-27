@@ -2041,6 +2041,18 @@ design, option d), and the nudge's release file on 2026-10-17.
   Epo 2026-10-26, Q394) raised `CLIENT_PROTOCOL` to 21 and `MIN_SOURCE` to
   20; `MIN_MATERIAL` stays 20. Its deploy request names "client protocol
   20 -> 21, source 19 -> 20".
+  The in-place collection release (Epo 2026-10-26: the collection on, the
+  late path's `collaboration-late` JOIN refusal and `late` draft class, the
+  `hidden` draft class of hidden typing, the merge view, Q229's editable
+  copy, Q402's agent edits through the open room) raised `CLIENT_PROTOCOL`
+  to 22 and `MIN_MATERIAL` to 22: an older note tab reads `collaboration-late`
+  and `late` as retryable and rejoins with its stale version forever, reads
+  `hidden` as `later` and holds every JOIN behind a draft send that never
+  settles, and holds tombstones the room may collect (Q410, the late path's
+  protocol note). `MIN_SOURCE` stays 20: source rooms are never collected,
+  an older source tab reads no new answer, and Q402's room-admitted agent
+  edits reach it as ordinary updates. Its deploy request names "client
+  protocol 21 -> 22, material 20 -> 22".
 
 #### When to bump
 
@@ -2809,8 +2821,8 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   counted. Until a collection records its window only lost ids are late.
   An older build reads `collaboration-late` as a retryable refusal and would
   rejoin with backoff forever, so the release that turns lateness on ships
-  with the next protocol (fixed at landing): its raised `MIN_MATERIAL` refuses
-  the older build as outdated first, and it reloads.
+  with client protocol 22: its raised `MIN_MATERIAL` (22) refuses the older
+  build as outdated first, and it reloads.
 - **The tab** (`roomRefusal` gives `late`, and a draft send answered `late`,
   Q406): the editor leaves its room, keeps
   its document as one stored row flagged `late` (`recordDrafts().late()`) and
