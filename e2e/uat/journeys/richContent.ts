@@ -3,7 +3,12 @@
 // each actor edits, what the user sees in the editor and viewer, and what the
 // exported and published bytes keep.
 import assert from 'node:assert/strict';
-import { expect, type FrameLocator, type Page } from '@playwright/test';
+import {
+  expect,
+  type FrameLocator,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 import { strFromU8, type Unzipped, unzipSync } from 'fflate';
 import { type Range, read as readWorkbook, utils } from 'xlsx';
 import { m } from '../../i18n';
@@ -221,17 +226,19 @@ export async function expectRichContent(
   } else if (format === 'xlsx') {
     const cell = (name: string) =>
       frame.getByRole('gridcell', { exact: true, name });
-    // The mirror holds only painted cells. At the journeys' 1280x720 the
-    // runtime paints `CC info` up to column G, so the grid scrolls right, as
-    // a user would, until H5 is painted.
-    await frame.getByRole('tab', { exact: true, name: 'CC info' }).click();
+    // The mirror holds only painted cells and charts. The owner's frame is
+    // narrow (left panel and rail open at 1280x720), so the grid scrolls
+    // right, as a user would, until what it checks is painted.
     const page = frame.owner().page();
-    await expect(async () => {
-      if (await cell('H5, 4').count()) return;
-      await frame.owner().hover();
-      await page.mouse.wheel(200, 0);
-      await expect(cell('H5, 4')).toBeAttached({ timeout: 1000 });
-    }).toPass({ timeout });
+    const scrollRightTo = (target: Locator) =>
+      expect(async () => {
+        if (await target.count()) return;
+        await frame.owner().hover();
+        await page.mouse.wheel(200, 0);
+        await expect(target).toBeAttached({ timeout: 1000 });
+      }).toPass({ timeout });
+    await frame.getByRole('tab', { exact: true, name: 'CC info' }).click();
+    await scrollRightTo(cell('H5, 4'));
     for (const [sheet, label] of [
       ['Faculty Database', `C3, ${XLSX_NOTE}`],
       ['Summary', 'D4, 5.4'],
@@ -240,9 +247,10 @@ export async function expectRichContent(
       await expect(cell(label)).toBeAttached({ timeout });
     }
     await expect(cell('C4, 10')).toBeAttached();
-    await expect(
+    // The chart starts at column F.
+    await scrollRightTo(
       frame.getByRole('img', { name: /^Average workload by area, / })
-    ).toBeAttached();
+    );
   } else if (mode === 'edit') {
     await frame.locator('aside button').nth(1).click();
     // Speaker notes start hidden; the choice is remembered per browser.
