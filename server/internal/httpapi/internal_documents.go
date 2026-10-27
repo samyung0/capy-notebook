@@ -221,6 +221,26 @@ func officeIDs(raw []string) ([]string, string) {
 // tools (Epo 2026-10-20).
 const officeToolsMessage = `Office files are read and edited with inspect_office_document and edit_office_document, offered after read_skill("office_building").`
 
+// documentInWorkspace answers false, with the refusal written, for a
+// document outside the request's workspace. A file there that this
+// workspace's chat edited answers `moved_out` (Q468), so the model learns it
+// was moved out; anything else is a plain not found, which never confirms a
+// document exists elsewhere.
+func (a *api) documentInWorkspace(w http.ResponseWriter, r *http.Request, target agenttools.ResourceRef, workspaceID string) bool {
+	wsID, err := a.s.ResourceWorkspaceID(r.Context(), target.Kind, target.ID, true)
+	if err == nil && wsID == workspaceID {
+		return true
+	}
+	if err == nil && target.Kind == agenttools.KindSourceFile {
+		if edited, err := a.s.FileEditedInWorkspace(r.Context(), target.ID, workspaceID); err == nil && edited {
+			writeJSON(w, http.StatusNotFound, map[string]string{"code": "moved_out", "message": "this file was moved out of this workspace"})
+			return false
+		}
+	}
+	a.fail(w, store.ErrNotFound)
+	return false
+}
+
 // pageCount is an inspection page's size: 60 targets unless 1 to 200 are asked.
 func pageCount(count int) int {
 	if count <= 0 || count > 200 {
@@ -240,9 +260,7 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Start, req.Count = max(req.Start, 0), pageCount(req.Count)
 	ctx := r.Context()
-	wsID, err := a.s.ResourceWorkspaceID(ctx, req.Target.Kind, req.Target.ID, true)
-	if err != nil || wsID != req.WorkspaceID {
-		a.fail(w, store.ErrNotFound)
+	if !a.documentInWorkspace(w, r, req.Target, req.WorkspaceID) {
 		return
 	}
 	switch req.Target.Kind {
@@ -559,9 +577,7 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		a.fail(w, err)
 		return
 	}
-	wsID, err := a.s.ResourceWorkspaceID(ctx, req.Target.Kind, req.Target.ID, true)
-	if err != nil || wsID != req.WorkspaceID {
-		a.fail(w, store.ErrNotFound)
+	if !a.documentInWorkspace(w, r, req.Target, req.WorkspaceID) {
 		return
 	}
 	var normalized []json.RawMessage

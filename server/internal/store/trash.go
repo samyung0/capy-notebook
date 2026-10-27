@@ -739,6 +739,18 @@ func (s *Store) ResourceWorkspaceID(ctx context.Context, kind agenttools.Resourc
 	return deref(wsID), err
 }
 
+// FileEditedInWorkspace reports whether this workspace holds an agent edit
+// receipt for the file (Q468). Asked only for a file found outside the
+// workspace, so the scan stays off the hot path.
+func (s *Store) FileEditedInWorkspace(ctx context.Context, fileID, workspaceID string) (bool, error) {
+	var edited bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM agent_operations
+		WHERE workspace_id=$1 AND kind='edit_document'
+		  AND effect->'resource'->>'kind'='source_file' AND effect->'resource'->>'id'=$2)`,
+		workspaceID, fileID).Scan(&edited)
+	return edited, err
+}
+
 // CurrentTrashEpisode returns the episode id of a trashed resource so a chat
 // restore by resource id targets exactly the episode the listing showed.
 func (s *Store) CurrentTrashEpisode(ctx context.Context, kind agenttools.ResourceKind, id string) (string, error) {

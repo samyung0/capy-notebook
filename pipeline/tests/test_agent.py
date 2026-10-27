@@ -3214,6 +3214,51 @@ async def test_an_edit_refused_for_failing_saves_says_not_to_retry(monkeypatch):
     assert "Do not try this or another edit of it again this turn" in text
 
 
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        (
+            "edit_document",
+            {
+                "target": {"kind": "source_file", "id": "f_1"},
+                "commands": [
+                    {"type": "replace_text", "expected_text": "a", "text": "b"}
+                ],
+                "_tool_call_id": "c1",
+            },
+        ),
+        ("inspect_document", {"target": {"kind": "source_file", "id": "f_1"}}),
+    ],
+)
+async def test_a_file_moved_out_of_the_workspace_tells_the_model(
+    monkeypatch, tool, args
+):
+    """Q468: Go answers `moved_out` for a file this workspace's chat edited
+    that now lives elsewhere; the edit and the read both tell the model, in
+    Epo's words, and never name the destination."""
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_1"]
+    ctx.skills_read = {"editing"}
+
+    def _post(*_a, **_k):
+        return _JsonResp(
+            {
+                "code": "moved_out",
+                "message": "this file was moved out of this workspace",
+            },
+            404,
+        )
+
+    _gateway(monkeypatch, post=_post)
+    result = await tools.run(tool, args, ctx)
+    assert result.refused
+    assert result.error_code == "unavailable_target"
+    assert result.error == (
+        "This file was moved out of this workspace, so this chat can no longer "
+        "read or edit it. Tell the user."
+    )
+
+
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
     monkeypatch,
 ):

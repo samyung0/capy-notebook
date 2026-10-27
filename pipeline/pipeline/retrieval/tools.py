@@ -1969,6 +1969,13 @@ SAVES_FAILING = (
     "the user the server is having trouble saving."
 )
 
+# A file this workspace's chat edited, moved to another workspace since
+# (Q468); the answer never names where it went.
+MOVED_OUT = (
+    "This file was moved out of this workspace, so this chat can no longer "
+    "read or edit it. Tell the user."
+)
+
 # Gateway codes for an actor who may no longer act in the workspace: a role
 # change, a removed membership, a frozen or locked account. Chat turns run no
 # periodic access check, so the refused call tells the model to stop
@@ -1999,6 +2006,8 @@ def _gateway_refused(
         code = str(resp.json().get("code") or "")
     except ValueError:
         code = ""
+    if code == "moved_out":
+        return _refused(MOVED_OUT, code="unavailable_target")
     if code in _NO_PERMISSION_CODES:
         detail = "\n\n".join(part for part in (detail, NO_PERMISSION) if part)
     if code == "saves_failing":

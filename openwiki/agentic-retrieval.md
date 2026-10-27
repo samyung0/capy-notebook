@@ -4463,7 +4463,18 @@ anything applies, since an agent step lives only in the room until stored
 result telling the model the server is failing and not to try again this
 turn (`tools.py` `SAVES_FAILING`); an Undo or Redo as 409
 `unavailable_target`, which the chat keeps as a refusal for a moment (its
-button stays). People keep editing as before. A request holds
+button stays). People keep editing as before. A file outside the request's
+workspace (in another or in none) is a plain not found to the internal
+edit and inspect routes, unless this workspace holds an agent edit receipt
+for it: then the answer is 404 `moved_out` (Q468, `documentInWorkspace` in
+`internal_documents.go`, `FileEditedInWorkspace`), which the tool turns
+into an `unavailable_target` result saying the file was moved out of this
+workspace, so this chat can no longer read or edit it, and to tell the user
+(`tools.py` `MOVED_OUT`); it never names the destination, and the plain not
+found never confirms a file exists elsewhere. A Move is not recorded. The
+tools' scope check reads the workspace outline once per turn, so a later
+turn, whose outline no longer lists the file, refuses it before Go with the
+usual missing-item message. A request holds
 a pooled connection and its operation's advisory lock only for its receipt
 checks (the stored receipt, then the room's: `known`) and for its
 admission, never through the compute or an Office engine call (Q432): the
