@@ -88,7 +88,7 @@ function CitationPlace({ citation }: { citation: Citation }) {
       {iconId && (
         <img
           alt=""
-          className="size-3.5 shrink-0 rounded-[4px]"
+          className="size-3.5 shrink-0 -translate-y-px rounded-[4px]"
           height={14}
           src={iconUrl(iconId)}
           width={14}
