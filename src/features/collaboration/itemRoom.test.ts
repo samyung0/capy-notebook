@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError } from '@/api/client';
+import { COLLABORATION_LATE_REASON } from '@/features/notes/collaborationEvents';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
@@ -302,6 +303,24 @@ it('rejoins after a close the server gives everyone', async () => {
   await vi.advanceTimersByTimeAsync(2000);
   expect(provider.connects).toBe(2);
   expect(onReplace).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// Q425: a note View's read channel answered late (its version behind the
+// collection window) ends, so a fresh document joins naming no version,
+// instead of rejoining with the same version, late again, forever.
+it('joins afresh when a read channel is answered late, never rejoining late', async () => {
+  tokens.push({ access: 'read', room: 'material:n:schema:1' });
+  const onReplace = vi.fn();
+  const room = new ItemRoom('n', { onReplace, read: true });
+  await room.start();
+  const [provider] = providers;
+  provider.config.onAuthenticationFailed?.({
+    reason: COLLABORATION_LATE_REASON,
+  });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(onReplace).toHaveBeenCalledTimes(1);
+  expect(provider.connects).toBe(1);
   room.destroy();
 });
 

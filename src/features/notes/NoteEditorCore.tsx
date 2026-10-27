@@ -1791,16 +1791,21 @@ export function NoteEditorCore({
       if (reported) return;
       reported = true;
       discarded.current = true;
-      // The room refused the unsaved edits: they are discarded.
-      const unsaved = recorder.current;
-      if (refusedConnect && unsaved?.unsaved)
-        reportIncident('discard_unsaved', 'read_only', unsaved.unsavedBytes);
-      void recorder.current?.discard();
+      // While a late merge waits every draft row stays, none of it in this
+      // document yet: the next open that can write merges them (Q426).
+      if (!lateDocument || mergeApplied.current) {
+        // The room refused the unsaved edits: they are discarded.
+        const unsaved = recorder.current;
+        if (refusedConnect && unsaved?.unsaved)
+          reportIncident('discard_unsaved', 'read_only', unsaved.unsavedBytes);
+        void recorder.current?.discard();
+      }
       onReadOnly?.(code);
     };
     resendCheckpoints.current = resendPendingCheckpoints;
     saveNow.current = saveImmediately;
   }, [
+    lateDocument,
     onDocumentRejected,
     onLate,
     onLateUnloaded,

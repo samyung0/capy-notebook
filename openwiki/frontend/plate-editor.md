@@ -2656,7 +2656,10 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   outdated) leaves the rows to the next one. A room eviction while the merge
   waits (`document-rejected`, `authorization-revoked`) touches no draft row,
   writing nothing and deleting nothing: none of them is in the late mount's
-  document yet, and the reopened note takes the late path again (Q420). A
+  document yet, and the reopened note takes the late path again (Q420). The
+  room turning read-only then (a frozen account, storage full) likewise keeps
+  every row instead of discarding unsaved edits: the note drops to View, and
+  the next open that can write merges them (Q426). A
   row rewritten from others (the late row, a refused or hidden row) keeps the
   newest date of the rows it replaces (this session's last edit, the adopted
   rows'), so the 7-day expiry runs from the edits, not the rewrite (Q420); an
@@ -2718,8 +2721,14 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   fails it), and CI keeps it in the `cache-betteroffice` cache under a key of
   the same files.
 - Notes take the late path. Item rooms have none: their late rows open
-  read-only for copying and are never applied raw, and they and source rooms
-  retry a late refusal like any other.
+  read-only for copying and are never applied raw, and source rooms retry a
+  late refusal like any other. A note's View follows the note room through
+  an `ItemRoom` read channel (`notes/liveNoteRead.ts`), which hears the
+  stored version only in its step 1's answer: rejoining after a drop it names
+  that version, so once a collection passed it the room answers late. The
+  read channel holds nothing of its own, so it ends (`moved`) and a fresh
+  document joins naming no version, as a first open does (Developer Epo,
+  2026-10-27, Q425).
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from

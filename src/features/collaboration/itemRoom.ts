@@ -359,6 +359,14 @@ export class ItemRoom {
           this.refused();
           return;
         }
+        // Behind a collection (in-place GC; only note rooms collect, which a
+        // note's View reads here): a read channel holds nothing of its own,
+        // so a fresh document joins naming no version, as a first open does
+        // (Q425), rather than the same old version answered late again.
+        if (refusal === 'late') {
+          this.moved();
+          return;
+        }
         if (reason.includes('collaboration room moved')) return;
         // Read-only now (a frozen account, a full owner, a demotion) or a
         // refusal the client retries: join again with a fresh token.

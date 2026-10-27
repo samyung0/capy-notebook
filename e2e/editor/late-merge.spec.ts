@@ -952,3 +952,52 @@ test("a late merge leaves another open tab's draft rows alone", async ({
     await other.close();
   }
 });
+
+// Q426: the room turning read-only (a frozen account, storage full) while
+// the late merge waits keeps every draft row; the next open that can write
+// merges them.
+test('a room turned read-only while the late merge waits keeps every draft for the next open', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto(note);
+  const live = page.locator('[data-note-mount="live"]');
+  await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
+    timeout: 30_000,
+  });
+  const saveState = page.getByTestId('editor-save-state');
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved');
+  await setReachable(page, false);
+  await live.locator('[contenteditable="true"]').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(OFFLINE);
+  const download = await holdDownload(page);
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, true);
+  await expect(saveState).toHaveAttribute('data-save-state', 'preparing', {
+    timeout: 30_000,
+  });
+  await expect
+    .poll(async () => (await storedRows(page)).some((row) => row.late))
+    .toBe(true);
+  const before = await storedRows(page);
+  await page.evaluate(async (path) => {
+    const { announceReadOnly } = await import(path);
+    announceReadOnly();
+  }, MOCK);
+  // The note drops to View, every row kept.
+  await expect(page.getByTestId('material-preview')).toBeVisible({
+    timeout: 30_000,
+  });
+  expect(await storedRows(page)).toEqual(before);
+  // The account can write again: the next open merges the words, once.
+  download('continue');
+  await page.goto(note);
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  const text = await editor.innerText();
+  expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
+  await expect(page.getByTestId('note-recovery')).toHaveCount(0);
+});
