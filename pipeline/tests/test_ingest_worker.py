@@ -2571,14 +2571,19 @@ def _summary_path(monkeypatch, *, ready: bool, summary_error, fill_error=None):
     return seen
 
 
-async def _run_text_ingest(waits: int) -> None:
+async def _run_text_ingest(
+    waits: int,
+    kind: str = "txt",
+    format_name: str = "txt",
+    route: str = ingest_plan.RAW_TEXT,
+) -> None:
     await worker._process_ingest_job(
         {"id": "job_1", "type": "ingest", "attempts": 1, "provider_waits": waits},
         _ingest_payload(),
         "f_1",
         worker.db.Scope("ws_1"),
-        "txt",
-        _plan(ingest_plan.RAW_TEXT, format_name="txt"),
+        kind,
+        _plan(route, format_name=format_name),
     )
 
 
@@ -2635,15 +2640,31 @@ async def test_the_spent_re_pend_reaches_the_vlm_page_reads(
     assert last_waits == [waits >= worker.PROVIDER_WAITS_MAX]
 
 
-async def test_a_text_file_takes_the_note_summary_rule(monkeypatch):
-    """Q457: a text file's descriptor follows the note rule, written on a new
-    index and filled on the content-reuse path."""
-    seen = _summary_path(monkeypatch, ready=False, summary_error=None)
-    await _run_text_ingest(waits=0)
-    assert seen["note_rule"] == [True]
-    seen = _summary_path(monkeypatch, ready=True, summary_error=None)
-    await _run_text_ingest(waits=0)
-    assert seen["note_rule"] == [True]
+@pytest.mark.parametrize(
+    ("kind", "format_name", "route"),
+    [
+        ("txt", "txt", ingest_plan.RAW_TEXT),
+        ("txt", "py", ingest_plan.RAW_TEXT),
+        ("md", "md", ingest_plan.RAW_TEXT),
+        ("json", "json", ingest_plan.RAW_TEXT),
+        ("sheet", "csv", ingest_plan.DELIMITED_TEXT),
+        ("sheet", "tsv", ingest_plan.DELIMITED_TEXT),
+    ],
+)
+async def test_a_plain_text_file_takes_the_note_summary_rule(
+    monkeypatch, kind, format_name, route
+):
+    """Q457, Q458: every uploaded file edited as plain text (txt, code files
+    included, md, json, and csv and tsv, whose kind is `sheet` as an XLSX's
+    is) follows the note rule, written on a new index and filled on the
+    content-reuse path; PDF, Office and images keep the 2% gate."""
+    for ready in (False, True):
+        seen = _summary_path(monkeypatch, ready=ready, summary_error=None)
+        monkeypatch.setattr(worker, "_read_name", lambda *_a: f"notes.{format_name}")
+        await _run_text_ingest(waits=0, kind=kind, format_name=format_name, route=route)
+        assert seen["note_rule"] == [True]
+    for other in (ingest_plan.DOCUMENT_PARSE, ingest_plan.IMAGE_CAPTION):
+        assert not worker._note_rule(other)
 
 
 async def test_a_failed_summary_finishes_the_file_with_the_summary_missing(

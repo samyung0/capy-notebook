@@ -19,6 +19,7 @@ import psycopg
 import pytest
 
 from pipeline.config import cfg
+from pipeline.ingest import plan as ingest_plan
 from pipeline.ingest import worker
 from pipeline.retrieval import indexing, store
 from pipeline.retrieval.chunking import Chunk, search_query_terms
@@ -66,7 +67,6 @@ def _job(ws, file_id: str, job_id: str, **extra) -> tuple[dict, dict]:
     revision = ws.scalar("SELECT revision FROM files WHERE id = %s", (file_id,))
     payload = {
         "fileId": file_id,
-        "kind": "pdf",
         "workspaceId": ws.id,
         "actorUserId": ws.user_id,
         "reservationId": "",
@@ -198,7 +198,12 @@ async def test_parts_only_retry_fills_the_summary_without_parse_or_embedding(
 
     job, payload = _job(workspace, first, "job_parts", partsOnly=True)
     await worker._process_parts_bound(
-        job, payload, first, worker.db.Scope(workspace.id), "report.pdf"
+        job,
+        payload,
+        first,
+        worker.db.Scope(workspace.id),
+        "report.pdf",
+        ingest_plan.DOCUMENT_PARSE,
     )
 
     assert fakes.embedded == [] and fakes.summaries == 1
@@ -246,7 +251,12 @@ async def test_a_parts_only_job_keeps_unread_pages_missing(workspace, fakes):
 
     job, payload = _job(workspace, first, "job_parts_scan", partsOnly=True)
     await worker._process_parts_bound(
-        job, payload, first, worker.db.Scope(workspace.id), "scan.pdf"
+        job,
+        payload,
+        first,
+        worker.db.Scope(workspace.id),
+        "scan.pdf",
+        ingest_plan.DOCUMENT_PARSE,
     )
 
     assert await store.has_content_summary(content_id)
