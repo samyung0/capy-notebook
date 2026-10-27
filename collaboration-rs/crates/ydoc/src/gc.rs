@@ -384,20 +384,35 @@ fn encode_cut(item: &ItemPtr, encoder: &mut EncoderV1) {
 /// Whether an update's new items name a unit `txn`'s document holds
 /// collected, as origin, right origin or parent: Yjs and yrs integrate such
 /// an item as collected too, so an Undo payload naming one would restore only
-/// part of its edit. The durable Undo route is to refuse it
-/// (`undo_unavailable`).
+/// part of its edit (the durable Undo route refuses it, `undo_unavailable`),
+/// and a late draft group naming one goes to the editor's late merge (Q436).
+/// An item the document already holds names nothing new; one it holds in
+/// part (a draft carries its session's whole document, where a unit typed
+/// right after the session's own last one joined that item) is integrated
+/// from its first unit the document lacks, whose origin is the unit before.
 pub fn names_collected<T: ReadTxn>(txn: &T, update: &Update) -> bool {
     let store = txn.store();
+    let held = txn.state_vector();
     update.blocks().any(|block| match block {
         UpdateBlock::Item(item) => {
+            let id = *item.id();
+            let have = held.get(&id.client);
+            if id.clock + item.len() <= have {
+                return false;
+            }
+            let origin = if id.clock < have {
+                Some(ID::new(id.client, have - 1))
+            } else {
+                item.origin().copied()
+            };
             let parent = match item.update_parent() {
-                UpdateParent::Item(id) => Some(id),
+                UpdateParent::Item(id) => Some(*id),
                 _ => None,
             };
-            [item.origin(), item.right_origin(), parent]
+            [origin, item.right_origin().copied(), parent]
                 .into_iter()
                 .flatten()
-                .any(|id| matches!(store.get_block_range(id), Some((_, None))))
+                .any(|id| matches!(store.get_block_range(&id), Some((_, None))))
         }
         UpdateBlock::Gc(_) | UpdateBlock::Skip(_) => false,
     })

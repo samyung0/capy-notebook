@@ -1498,8 +1498,11 @@ impl Room {
         let decoded = ydoc::decode(update).ok();
         // A group older than the window, or under a lost session's id (an id
         // its grants name, or one it writes under, which the room admits
-        // through its record, review r3 L4), is held for the editor's late
-        // merge before anything is admitted.
+        // through its record, review r3 L4), may name units a collection
+        // discarded. It is tried clean first (Q436): one naming nothing the
+        // room holds collected is admitted as an ordinary draft; any other
+        // is held for the editor's late merge before anything is admitted.
+        // The check draws on the user's draft allowance.
         let mut ids = granted.to_vec();
         if let Some(decoded) = &decoded {
             ids.extend(client_ids::written(
@@ -1507,11 +1510,18 @@ impl Room {
                 decoded,
             ));
         }
-        if self.late(&ids, Some(version)) {
-            return Err(Refused::new(
-                Class::Late,
-                "the drafts grew from a state older than the collection window",
-            ));
+        let late = self.late(&ids, Some(version));
+        if late {
+            self.take_draft_allowance(context, update.len())?;
+            let collected = decoded
+                .as_ref()
+                .is_none_or(|decoded| ydoc::gc::names_collected(&self.doc.transact(), decoded));
+            if collected {
+                return Err(Refused::new(
+                    Class::Late,
+                    "the drafts name units the collection discarded",
+                ));
+            }
         }
         if decoded
             .as_ref()
@@ -1519,12 +1529,8 @@ impl Room {
         {
             return Ok(None);
         }
-        let verdict = self
-            .app
-            .allowances
-            .take(&context.user_id, update.len(), Instant::now());
-        if let Some(refusal) = Refused::timed_out(&self.app, &context.user_id, verdict) {
-            return Err(refusal);
+        if !late {
+            self.take_draft_allowance(context, update.len())?;
         }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
         let read_only = context.access != Access::Write;
@@ -1549,6 +1555,19 @@ impl Room {
             sessions.draft_admitted(version.min(note.stored_version));
         }
         Ok(Some(outcome))
+    }
+
+    /// Charges a draft piece to the user's update allowance; a user in a
+    /// timeout is refused (`too_fast`).
+    fn take_draft_allowance(&self, context: &Context, bytes: usize) -> Result<(), Refused> {
+        let verdict = self
+            .app
+            .allowances
+            .take(&context.user_id, bytes, Instant::now());
+        match Refused::timed_out(&self.app, &context.user_id, verdict) {
+            Some(refusal) => Err(refusal),
+            None => Ok(()),
+        }
     }
 
     /// A draft's receipt: answered once nothing is left to store, so after

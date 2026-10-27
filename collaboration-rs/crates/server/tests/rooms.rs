@@ -1572,21 +1572,15 @@ async fn a_panicking_collection_still_folds_uncollected() {
 
 /// The latest collection's window makes older JOINs late (switch on, every
 /// store folds): once a fold collected at a window, a session naming a
-/// version below it is late, in the room that folded (it raised its window
-/// for the fold) and after the room reloads (the window is stored with the
-/// document), while one naming the window's version is not. Fails if the
-/// room's own folds leave its window behind, or the window is not loaded.
+/// version below it is refused late (`collaboration-late`), in the room that
+/// folded (it raised its window for the fold) and after the room reloads (the
+/// window is stored with the document), while one naming the window's
+/// version joins. Fails if the room's own folds leave its window behind, or
+/// the window is not loaded.
 #[tokio::test]
 async fn a_join_older_than_the_collected_window_is_late() {
     let Some(env) = env() else { return };
-    let (server, logs) = start_logged_with(
-        &env,
-        &[
-            ("COLLABORATION_GC_COLLECT", "true"),
-            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
-        ],
-    )
-    .await;
+    let server = start_collecting(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
     let (user, material) = note(&env, "base").await;
     let room = format!("material:{material}:schema:1");
     let mut a = tab(server.port, &room, &user).await;
@@ -1612,7 +1606,6 @@ async fn a_join_older_than_the_collected_window_is_late() {
     // A fresh note is at version 1: that fold collected B's cut at the
     // window of the cut's store, version 3.
     assert_eq!(collected_window(&env, &material).await, 3);
-    let late = |version: u64| format!("\"version\":{version}");
     let port = server.port;
     let join_at = |version: u64| {
         let (room, user) = (room.clone(), user.clone());
@@ -1626,34 +1619,160 @@ async fn a_join_older_than_the_collected_window_is_late() {
                     &join_payload_at(&room, &join, Some(client_protocol()), id, version),
                 )
                 .await;
-            client.until(1).await.expect("joined");
             client
         }
     };
+    let refusal = |client: Client| async move {
+        let mut client = client;
+        text_payload(&client.until(2).await.expect("refused"))
+    };
     let mut current = join_at(3).await;
-    let mut older = join_at(2).await;
-    assert!(
-        logs.has(&["late session joined", &late(2)]).await,
+    current
+        .until(1)
+        .await
+        .expect("joined at the window's version");
+    assert_eq!(
+        refusal(join_at(2).await).await,
+        "collaboration-late",
         "late in the room that folded"
     );
-    assert_eq!(logs.count(&["late session joined", &late(3)]), 0);
-    for client in [&mut a, &mut current, &mut older] {
+    for client in [&mut a, &mut current] {
         client.leave(false).await;
     }
     wait_unloaded(server.port).await;
-    let mut again = join_at(2).await;
-    for _ in 0..50 {
-        if logs.count(&["late session joined", &late(2)]) == 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
     assert_eq!(
-        logs.count(&["late session joined", &late(2)]),
-        2,
+        refusal(join_at(2).await).await,
+        "collaboration-late",
         "late after the room reloaded"
     );
-    again.leave(false).await;
+}
+
+/// Q436 (Epo 2026-10-27): a late draft group (made below the collected
+/// window) is tried clean first. Typing that names a unit the room collected
+/// answers `late` (409, counted) before admission, never `hidden` (merge view
+/// V-N1: the late check stays first), and nothing of it is admitted; typing
+/// that names nothing collected is admitted as an ordinary draft, stored, and
+/// a reload shows it. Both groups go to the open room after its own document
+/// was collected (Q401). Fails if late groups skip the check, or if a group
+/// naming a collected unit is admitted.
+#[tokio::test]
+async fn a_late_draft_group_is_admitted_clean_unless_it_names_a_collected_unit() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged_with(
+        &env,
+        &[
+            ("COLLABORATION_GC_COLLECT", "true"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "1"),
+        ],
+    )
+    .await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut a = tab(server.port, &room, &user).await;
+    let mut b = tab(server.port, &room, &user).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    // B types "xz" and "y" between (version 2).
+    b.write(|doc| {
+        insert_unsent(doc, 4, "xz");
+        insert_unsent(doc, 5, "y");
+    })
+    .await;
+    persisted(&mut b, "typed").await;
+    assert!(log_folded(&env, &material).await);
+    let y = b.unit_at(5);
+    // Closed tabs offline at version 2, each under its own unrecorded id
+    // (granted by its stored token): typing after "y" (which the collection
+    // drops below) and typing after "base" (live).
+    let offline = |at: u32, text: &str| {
+        let id = fresh_client_id();
+        let doc = Doc::with_options(ydoc::doc_options(id));
+        let state = b
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        doc.transact_mut()
+            .apply_update(Update::decode_v1(&state).expect("state"))
+            .expect("apply");
+        insert_unsent(&doc, at, text);
+        let body = doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        (token_offering(&room, &user, "write", id), body)
+    };
+    let (named_grant, named) = offline(6, "W");
+    let (clean_grant, clean) = offline(4, "Q");
+    // B deletes "xyz" (version 3) and leaves; A's next store collects "y".
+    b.write(|doc| remove_as(doc, "b", 4, 3)).await;
+    persisted(&mut b, "cut").await;
+    assert!(log_folded(&env, &material).await);
+    b.leave(false).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    a.ack_all().await;
+    a.type_text("1").await;
+    persisted(&mut a, "1").await;
+    assert!(log_folded(&env, &material).await);
+    assert_eq!(collected_window(&env, &material).await, 3);
+    assert!(collected_in_base(&env, &material, y).await);
+    assert!(logs.has(&["live document collected", &material]).await);
+    let mut joined = tab(server.port, &room, &user).await;
+    assert!(joined.settle(|c| c.block_text().contains("base")).await);
+    assert!(collected_in(&joined.doc, y), "the open room collected y");
+    let token = token(&room, &user, "write");
+    let late = |grant: &str| {
+        [
+            ("x-capy-grants", grant.to_owned()),
+            ("x-capy-version", "2".into()),
+        ]
+    };
+    let headers = late(&named_grant);
+    let headers: Vec<(&str, &str)> = headers
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    let (status, answer) = send_drafts_over(
+        server.port,
+        &room,
+        Some(&token),
+        Some(ORIGIN),
+        &headers,
+        named,
+    )
+    .await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (409, Some("late")),
+        "{answer}"
+    );
+    let line = "capy_collaboration_draft_refusals_total{class=\"late\"} 1";
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics.lines().any(|known| known == line),
+        "{line} in {metrics}"
+    );
+    let headers = late(&clean_grant);
+    let headers: Vec<(&str, &str)> = headers
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    let (status, answer) = send_drafts_over(
+        server.port,
+        &room,
+        Some(&token),
+        Some(ORIGIN),
+        &headers,
+        clean,
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(a.settle(|c| c.block_text().contains('Q')).await);
+    assert!(!a.block_text().contains('W'));
+    for client in [&mut a, &mut joined] {
+        client.leave(false).await;
+    }
+    wait_unloaded(server.port).await;
+    let mut reloaded = tab(server.port, &room, &user).await;
+    assert!(reloaded.settle(|c| c.block_text().contains('Q')).await);
+    assert!(!reloaded.block_text().contains('W'));
 }
 
 /// A fold collects only while no other life of its room is loaded (debug
@@ -12409,8 +12528,9 @@ async fn an_agent_edit_announces_no_stored_version() {
 /// row's session columns are cleared, and another session's row stays.
 /// Fails if one damaged row keeps the note from loading. Its tab returns
 /// late (Q385): the JOIN is refused before it makes a session, so the next
-/// store keeps the record lost (P1 review r3 N9), and its drafts answer
-/// `late` for the editor's merge.
+/// store keeps the record lost (P1 review r3 N9). Its drafts are late too,
+/// so the room tries them clean (Q436): naming nothing collected (nothing
+/// is, here), they are admitted as ordinary drafts.
 #[tokio::test]
 async fn a_damaged_session_row_drops_only_that_session() {
     let Some(env) = env() else { return };
@@ -12460,7 +12580,8 @@ async fn a_damaged_session_row_drops_only_that_session() {
         "still lost"
     );
     // Review r3 L4: so is a draft group written under the lost id, which
-    // the room admits through its record without any grant.
+    // the room admits through its record without any grant; it names
+    // nothing collected, so it is admitted (Q436).
     let lost = Doc::with_options(ydoc::doc_options(damaged));
     let state = reader
         .doc
@@ -12473,16 +12594,12 @@ async fn a_damaged_session_row_drops_only_that_session() {
     let body = lost
         .transact()
         .encode_state_as_update_v1(&StateVector::default());
-    let (status, answer) = send_drafts(server.port, &room, Some(&join), Some(ORIGIN), body).await;
-    assert_eq!(
-        (status, answer),
-        (409, serde_json::json!({ "class": "late" }))
-    );
-    let metrics = metrics_text(server.port).await;
-    let line = "capy_collaboration_draft_refusals_total{class=\"late\"} 1";
+    let (status, _) = send_drafts(server.port, &room, Some(&join), Some(ORIGIN), body).await;
+    assert_eq!(status, 200);
     assert!(
-        metrics.lines().any(|known| known == line),
-        "{line} in {metrics}"
+        reader
+            .settle(|c| c.block_text().ends_with(" offline"))
+            .await
     );
 }
 

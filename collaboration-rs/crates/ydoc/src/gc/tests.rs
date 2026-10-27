@@ -251,6 +251,40 @@ fn an_update_naming_a_collected_parent_is_detected() {
     assert!(!names_collected(&room.transact(), &typed));
 }
 
+/// A draft carries its session's whole document, so a unit typed right
+/// after the session's own last one joins that item: the room integrates
+/// it from the first unit it lacks, whose origin is the unit before (the
+/// collected y here), and the check reads that origin too (Q436).
+#[test]
+fn an_update_the_document_partly_holds_names_the_unit_before_its_new_part() {
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "LR");
+    let tab = doc(2);
+    sync(&room, &tab);
+    let text = tab.get_or_insert_text("t");
+    text.insert(&mut tab.transact_mut(), 1, "xz");
+    text.insert(&mut tab.transact_mut(), 2, "y");
+    sync(&tab, &room);
+    // Offline, the tab types W right after y; the room deletes "xyz".
+    text.insert(&mut tab.transact_mut(), 3, "W");
+    room.get_or_insert_text("t")
+        .remove_range(&mut room.transact_mut(), 1, 3);
+    let collected = collected(&room, &IdSet::new());
+    assert!(is_collected(&collected, id(2, 2)));
+    let drafts = tab
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    let drafts = decode(&drafts).unwrap();
+    // W went into y's item: the update names only y's origin, x.
+    assert!(drafts.blocks().any(|block| matches!(
+        block,
+        UpdateBlock::Item(item) if *item.id() == id(2, 2) && item.len() == 2
+    )));
+    assert!(names_collected(&collected.transact(), &drafts));
+    assert!(!names_collected(&room.transact(), &drafts));
+}
+
 /// `L a c R`; tab T holds it and goes offline; b lands between a and c, T
 /// types Y between a and c, and a b c are deleted. The window is that state.
 /// Returns the room, T and the window, before T comes back.
