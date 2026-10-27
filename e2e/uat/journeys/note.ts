@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { crc32, deflateSync } from 'node:zlib';
 import type { Browser, Locator, Page } from '@playwright/test';
 import { unzipSync } from 'fflate';
+import { showNoteToolbar } from '../../helpers/editor';
 import { showPanelView } from '../../helpers/panelView';
 import { m } from '../../i18n';
 import {
@@ -244,10 +245,9 @@ export async function openNote(
   );
   const editor = actor.page.locator('[contenteditable="true"]').first();
   await expect(editor).toBeVisible({ timeout: 60_000 });
-  // Edit opens with the toolbar hidden; the import and export steps use it.
-  await actor.page
-    .getByRole('button', { exact: true, name: m.editor_toolbar_show() })
-    .click();
+  // The import and export steps use the toolbar; this browser keeps it shown
+  // after the first open (Q461).
+  await showNoteToolbar(actor.page);
   return editor;
 }
 
@@ -269,7 +269,26 @@ export async function lineAfter(page: Page, editor: Locator, text: string) {
     };
   });
   await line.click({ position });
-  await page.keyboard.press('End');
+  // End moves only the browser's caret. Slate reads it on a 100 ms throttled
+  // selectionchange, and an Enter or re-render before then puts the click's
+  // caret back: the line lands before the text. End until the caret is still
+  // at the text's end once Slate has read it.
+  await expect(async () => {
+    await page.keyboard.press('End');
+    await page.waitForTimeout(150);
+    expect(
+      await line.evaluate((element) => {
+        const selection = getSelection();
+        const node = selection?.focusNode;
+        return (
+          !!node &&
+          !!selection?.isCollapsed &&
+          element.contains(node) &&
+          selection.focusOffset === node.textContent?.length
+        );
+      })
+    ).toBe(true);
+  }).toPass();
   await page.keyboard.press('Enter');
 }
 
@@ -1213,11 +1232,7 @@ export async function pastedQuizCopies(
       blocks[0].materialId !== quiz
   );
   // Copy and paste of B's own block within B: the second block gets a second quiz.
-  await editorB
-    .getByText(notes.bBody, { exact: true })
-    .click({ position: { x: 2, y: 2 } });
-  await page.keyboard.press('End');
-  await page.keyboard.press('Enter');
+  await lineAfter(page, editorB, notes.bBody);
   await pasteQuizBlock(editorB, {
     id: pasted.id,
     materialId: string(pasted.materialId),
