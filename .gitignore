@@ -35,6 +35,9 @@ dist-ssr/
 src/i18n/paraglide/
 e2e/.paraglide/
 
+# The late merge's WASM (scripts/build-late-merge.mjs)
+src/features/collaboration/lateMerge/generated/
+
 # --- Logs ---
 logs/
 *.log

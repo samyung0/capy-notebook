@@ -848,7 +848,9 @@ export function useSourceSession(
           const refusal = roomRefusal(reason, failedToken);
           tokenError = null;
           if (refusal === 'readOnly') replace('readOnly', true);
-          else if (refusal === 'retry') reconnect.refused();
+          // Source rooms are never collected in place, so never late.
+          else if (refusal === 'retry' || refusal === 'late')
+            reconnect.refused();
           // The room holds this document's client id for no one: not retried.
           else if (refusal === 'unassigned') refuse();
           else if (refusal === 'outdated') stale();

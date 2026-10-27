@@ -19,6 +19,10 @@ export const COLLABORATION_UNASSIGNED_ID_REASON = 'collaboration-unassigned-id';
 /** Refusal reason for a client protocol its room family no longer (or not
  * yet) accepts: the editor stops and asks for a reload (the version gate). */
 export const COLLABORATION_OUTDATED_REASON = 'collaboration-outdated';
+/** Refusal reason for a session older than its room's collection window
+ * (in-place GC): the editor takes the late path, merging its unsent edits
+ * into a new session (`LATE_REASON` in collaboration-rs socket.rs). */
+export const COLLABORATION_LATE_REASON = 'collaboration-late';
 
 /** Why a room is read-only for this writer, when the room says: the stored
  * document holds a block this version cannot edit (Epo 2026-10-13). */

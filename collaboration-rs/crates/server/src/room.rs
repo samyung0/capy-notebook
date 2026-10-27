@@ -1222,7 +1222,15 @@ impl Room {
                 let answer = self
                     .client_ids
                     .bind(&context, client, history, live)
-                    .and_then(|bound| self.join(key, context, bound, out, socket, inside));
+                    .and_then(|bound| {
+                        // A late session neither syncs raw nor becomes a
+                        // session: its first store would overwrite a lost
+                        // record (P1 review r3 N9).
+                        if self.late(&[bound.client], version) {
+                            return Err(crate::socket::LATE_REASON.into());
+                        }
+                        self.join(key, context, bound, out, socket, inside)
+                    });
                 if answer.is_ok() {
                     self.session_joined(key, version);
                 }
@@ -1488,10 +1496,10 @@ impl Room {
         version: u64,
     ) -> Result<Option<Outcome>, Refused> {
         let decoded = ydoc::decode(update).ok();
-        // A group under a lost session's id is late: an id its grants name,
-        // or one it writes under, which the room admits through its record
-        // (review r3 L4). The late merge holds such a group once it lands;
-        // logged until then.
+        // A group older than the window, or under a lost session's id (an id
+        // its grants name, or one it writes under, which the room admits
+        // through its record, review r3 L4), is held for the editor's late
+        // merge before anything is admitted.
         let mut ids = granted.to_vec();
         if let Some(decoded) = &decoded {
             ids.extend(client_ids::written(
@@ -1500,11 +1508,10 @@ impl Room {
             ));
         }
         if self.late(&ids, Some(version)) {
-            log(
-                Level::Info,
-                "late draft group",
-                json!({ "room": self.name, "version": version }),
-            );
+            return Err(Refused::new(
+                Class::Late,
+                "the drafts grew from a state older than the collection window",
+            ));
         }
         if decoded
             .as_ref()
@@ -4004,18 +4011,8 @@ impl Room {
 
     /// A channel joined a note's room: its session counts at the version
     /// its JOIN names, never above the room's (a viewer, who never edits,
-    /// has none).
+    /// has none). A late JOIN never gets here (`handle`).
     fn session_joined(&mut self, key: MemberKey, version: Option<u64>) {
-        let client = self.members.get(&key).map(|member| member.client);
-        if self.late(client.as_slice(), version) {
-            // The late merge refuses such a JOIN once it lands; logged until
-            // then.
-            log(
-                Level::Info,
-                "late session joined",
-                json!({ "room": self.name, "version": version }),
-            );
-        }
         let (Some(sessions), Kindly::Note(note), Some(member)) =
             (&mut self.sessions, &self.kind, self.members.get_mut(&key))
         else {
@@ -4054,7 +4051,11 @@ impl Room {
 
     /// Whether a JOIN or draft group under `clients` naming `version` is
     /// older than the latest collection's window, or comes under an id whose
-    /// session record was lost (`sessions::late`, Q385); notes only.
+    /// session record was lost (`sessions::late`, Q385); notes only. Its
+    /// document may name units a collection discarded, so it never syncs
+    /// raw: a late JOIN is refused with `socket::LATE_REASON` and a late
+    /// group answers `Class::Late`, and the tab merges its unsent edits in a
+    /// new session (src/features/collaboration/lateMerge).
     fn late(&self, clients: &[u64], version: Option<u64>) -> bool {
         match (&self.kind, &self.sessions) {
             (Kindly::Note(note), Some(sessions)) => {

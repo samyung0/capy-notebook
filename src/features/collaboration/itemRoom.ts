@@ -359,6 +359,14 @@ export class ItemRoom {
           this.refused();
           return;
         }
+        // Behind a collection (in-place GC; only note rooms collect, which a
+        // note's View reads here): a read channel holds nothing of its own,
+        // so a fresh document joins naming no version, as a first open does
+        // (Q425), rather than the same old version answered late again.
+        if (refusal === 'late') {
+          this.moved();
+          return;
+        }
         if (reason.includes('collaboration room moved')) return;
         // Read-only now (a frozen account, a full owner, a demotion) or a
         // refusal the client retries: join again with a fresh token.
@@ -563,10 +571,16 @@ export class ItemRoom {
    * document (synced on connect), a refused or other-lineage group opens in
    * recovery instead of the room. False when the room stays in recovery. */
   private async restore(key: string) {
-    let rows = await readDrafts(key).catch((error) => {
-      console.warn('Draft storage failed:', error);
-      return [] as EditDraft[];
-    });
+    let rows = await readDrafts(key).then(
+      // Item rooms have no late merge: late rows open read-only for copying,
+      // never applied raw.
+      (stored) =>
+        stored.map((row) => (row.late ? { ...row, refused: true } : row)),
+      (error) => {
+        console.warn('Draft storage failed:', error);
+        return [] as EditDraft[];
+      }
+    );
     for (;;) {
       if (this.destroyed) return false;
       const { current, expired, recovery, refused } = await draftGroups(

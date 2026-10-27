@@ -57,6 +57,10 @@ pub const DEFAULT_REFUSAL: &str = "permission-denied";
 /// A client protocol its room family no longer (or not yet) accepts: the
 /// client stops and asks for a reload.
 pub const OUTDATED_REASON: &str = "collaboration-outdated";
+/// A session older than its room's collection window (`Room::late`): the
+/// client joins again with a new document and merges its unsent edits into
+/// it (`COLLABORATION_LATE_REASON` in src/features/notes/collaborationEvents.ts).
+pub const LATE_REASON: &str = "collaboration-late";
 /// A socket with no room joined (and none authenticating) after this long
 /// closes (Epo 2026-10-19): a client joins as soon as it opens one.
 const JOIN_DEADLINE: Duration = Duration::from_secs(10);
@@ -235,6 +239,14 @@ async fn join_room(
             Ok(Err(error)) if error == "room unloaded" => continue,
             Ok(Err(error)) if error == room::DISK_FULL => {
                 return Err(Refusal {
+                    authentication: false,
+                    ..Refusal::plain(error)
+                });
+            }
+            Ok(Err(error)) if error == LATE_REASON => {
+                return Err(Refusal {
+                    reason: LATE_REASON.into(),
+                    class: Class::Late,
                     authentication: false,
                     ..Refusal::plain(error)
                 });

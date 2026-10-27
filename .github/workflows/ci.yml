@@ -218,7 +218,7 @@ jobs:
           node-version: 22
       - run: pnpm install --frozen-lockfile
       # The workspace's own crates (--all would reach into the fork's yrs).
-      - run: cargo fmt --manifest-path collaboration-rs/Cargo.toml -p server -p sources -p notes -p ydoc --check
+      - run: cargo fmt --manifest-path collaboration-rs/Cargo.toml -p server -p sources -p notes -p ydoc -p late-merge --check
       - run: cargo clippy --manifest-path collaboration-rs/Cargo.toml --workspace --all-targets -- -D warnings
       - run: docker compose -f deploy/docker-compose.e2e.yml -p collaboration-it up --no-build -d --wait db redis server
       # The notes crate's markdown tests read the bundle the image ships.

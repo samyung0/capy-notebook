@@ -75,6 +75,11 @@ export interface EditDraft {
    * takes: its saved copy edited before its room joined (`copy`, Q229) and
    * the merge view's pieces (`piece`, Q251), features/notes/merge/. */
   kind: 'state' | 'update' | 'copy' | 'piece';
+  /** The room answered late for these edits (a session older than its
+   * collection window, in-place GC): they may name units it collected, so
+   * they are never applied raw nor sent by a sweep; the next editor merges
+   * them (the late path). */
+  late?: true;
   lineage: string;
   /** A save refused for good: shown for copying, never merged back. */
   refused?: true;
@@ -312,7 +317,7 @@ export async function dropLostDrafts(
 function markDrafts(
   key: string,
   ids: string[],
-  ...flags: ('accepted' | 'held' | 'hidden' | 'refused' | 'reported')[]
+  ...flags: ('accepted' | 'held' | 'hidden' | 'late' | 'refused' | 'reported')[]
 ): Promise<void> {
   if (!(stored(key) && ids.length)) return Promise.resolve();
   return call({ flags, ids, key, op: 'mark' });
@@ -370,6 +375,8 @@ function expiredSessions(
  * group. The drafts worker decides which (its
  * `draws`), so the main thread merges and applies held rows only once, as
  * recovery or as current rows (r5 N5); rows it cannot read stay current.
+ * Late rows stay current whoever's session they are: the editor merges them
+ * (the late path).
  */
 export async function draftGroups(
   all: EditDraft[],
@@ -386,6 +393,7 @@ export async function draftGroups(
     same(row.lineage, lineage) &&
     !row.refused &&
     !row.accepted &&
+    !row.late &&
     (!!row.held || !row.grants?.length);
   const held = rows.filter(unsendable);
   const shown =
@@ -497,27 +505,41 @@ export function recoveryDocument(
 const RETRY_MS = 5000;
 
 // Web Locks: a document an editor records (shared: several tabs may edit it),
-// and the one sweep that runs at a time in this browser.
+// each recording session's own rows (Q420), and the one sweep that runs at a
+// time in this browser.
 const documentLock = (key: string) => `capy-drafts:${key}`;
+const SESSION_LOCK = 'capy-draft-session:';
 const SWEEP_LOCK = 'capy-drafts-sweep';
 
 function webLocks(): LockManager | undefined {
   return typeof navigator === 'undefined' ? undefined : navigator.locks;
 }
 
-/** Holds a document's lock until the returned release (an editor's
- * session): a sweep skips the documents an editor holds. */
-function holdDocument(key: string): () => void {
+/** Holds a lock until the returned release (an editor's session): a sweep
+ * skips the documents an editor holds, a late merge the sessions. */
+function holdLock(name: string, mode: LockMode): () => void {
   const locks = webLocks();
   if (!locks) return () => undefined;
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  void locks
-    .request(documentLock(key), { mode: 'shared' }, () => held)
-    .catch(() => undefined);
+  void locks.request(name, { mode }, () => held).catch(() => undefined);
   return release;
+}
+
+/** The sessions an open tab records now (their locks held): a late merge
+ * leaves their rows alone (Q406, Q420). None where the browser has no Web
+ * Locks, which may then merge another open tab's rows (Q420). */
+export async function heldDraftSessions(): Promise<ReadonlySet<string>> {
+  const snapshot = await webLocks()
+    ?.query()
+    .catch(() => undefined);
+  return new Set(
+    (snapshot?.held ?? []).flatMap(({ name }) =>
+      name?.startsWith(SESSION_LOCK) ? [name.slice(SESSION_LOCK.length)] : []
+    )
+  );
 }
 
 let persistenceRequested = false;
@@ -628,14 +650,30 @@ export function recordDrafts({
   let over = false;
   let stopped = false;
   let storageOk = true;
-  // While this session records, a sweep leaves the document alone.
-  const release = keep ? holdDocument(key) : () => undefined;
+  // While this session records, a sweep leaves the document alone and another
+  // tab's late merge its rows (Q420).
+  const releaseDocument = keep
+    ? holdLock(documentLock(key), 'shared')
+    : () => undefined;
+  const releaseSession = keep
+    ? holdLock(SESSION_LOCK + session, 'exclusive')
+    : () => undefined;
+  // This session's last edit: a row rewritten from its edits keeps that date,
+  // so the 7-day expiry runs from it (Q420).
+  let lastEdit = Number.NEGATIVE_INFINITY;
+  const adoptedAt = () =>
+    pendingAdopted.reduce(
+      (at, adopted) => Math.max(at, adopted.savedAt),
+      Number.NEGATIVE_INFINITY
+    );
+  const dated = (at: number) => (Number.isFinite(at) ? at : Date.now());
 
   const row = (
     kind: EditDraft['kind'],
     seq: number,
     data: Uint8Array,
-    refused?: true
+    flag?: 'late' | 'refused',
+    savedAt = Date.now()
   ): EditDraft => ({
     ...grantsOf(token?.()),
     ...(accepted && { accepted }),
@@ -645,11 +683,11 @@ export function recordDrafts({
     key,
     kind,
     lineage,
-    savedAt: Date.now(),
+    savedAt,
     seq,
     session,
     ...(base && { base: base.sha }),
-    ...(refused && { refused }),
+    ...(flag && { [flag]: true as const }),
   });
   // Rows go out in order once the base is in; until then a write waits for
   // it. A base that failed to download is not stored: the rows still are.
@@ -737,6 +775,7 @@ export function recordDrafts({
   const onUpdate = (update: Uint8Array, origin: unknown) => {
     if (stopped || ignore(origin)) return;
     sequence++;
+    lastEdit = Date.now();
     // Past the offline bound the editor stopped taking edits; anything that
     // still arrives stays in memory and syncs on reconnect.
     if (over) return;
@@ -766,7 +805,8 @@ export function recordDrafts({
 
   const stop = () => {
     stopped = true;
-    release();
+    releaseDocument();
+    releaseSession();
     clearTimeout(retry);
     appendFailures.delete(session);
     doc.off('update', onUpdate);
@@ -789,6 +829,25 @@ export function recordDrafts({
     ...(state ? [stateRow(state.seq)] : []),
     ...pendingAdopted,
   ];
+  // The whole document (or `data`) as one row flagged `flag` in place of
+  // every row this session wrote or adopted, dated as the newest of them,
+  // and no more recording.
+  const keepAs = (
+    flag: 'late' | 'refused',
+    data = Y.encodeStateAsUpdate(doc)
+  ): DraftRef => {
+    const previous = ownRows();
+    stop();
+    const kept = row(
+      'state',
+      sequence,
+      data,
+      flag,
+      dated(Math.max(lastEdit, adoptedAt()))
+    );
+    void write(Promise.all([deleteDrafts(previous), putWithBase([kept])]));
+    return kept;
+  };
 
   return {
     /** Rows an opening editor applied after it began recording (a draft
@@ -889,16 +948,17 @@ export function recordDrafts({
       stop();
       return done;
     },
-    /** A save refused for good: keep the whole document as one refused row
-     * (shown for copying, never merged) and stop recording. Returns that
-     * row, which a later delete (queued after the write) removes. */
-    refuse(): DraftRef {
-      const previous = ownRows();
-      const data = Y.encodeStateAsUpdate(doc);
-      stop();
-      const refused = row('state', sequence, data, true);
-      void write(Promise.all([deleteDrafts(previous), putWithBase([refused])]));
-      return refused;
+    /** The room answered late (in-place GC): keep the whole document as one
+     * late row, which the next editor merges, and stop recording. */
+    late(): DraftRef {
+      return keepAs('late');
+    },
+    /** A save refused for good: keep the whole document (or `data`, the
+     * document the edits are in) as one refused row (shown for copying,
+     * never merged) and stop recording. Returns that row, which a later
+     * delete (queued after the write) removes. */
+    refuse(data?: Uint8Array): DraftRef {
+      return keepAs('refused', data);
     },
     /** Local edits so far (1 for adopted rows): a checkpoint request
      * records it. */
@@ -909,6 +969,36 @@ export function recordDrafts({
     /** Write the whole document now if unsaved work outgrew the last one:
      * edits about to open in recovery. */
     snapshot,
+    /** A late merge's update is applied (recorded as this session's edit):
+     * the adopted rows it stands for go now rather than at a receipt, so a
+     * reload never merges them again, and `hidden` (a document of the text
+     * the merge would hide) stays as one refused row, shown for copying.
+     * That row (dated as the adopted rows, Q420) is written first, then the
+     * merged document whole unless nothing was merged (`merged` false: the
+     * document already held every edit), and the adopted rows go only once
+     * both landed (review r3 L5); resolves whether the hidden row did. When
+     * the whole document did not land the adopted rows stay for the receipt
+     * that covers them. */
+    async supersede(hidden?: Uint8Array, merged = true): Promise<boolean> {
+      if (hidden) {
+        const kept = {
+          ...row('state', sequence, hidden, 'refused', dated(adoptedAt())),
+          id: `${session}:hidden`,
+        };
+        try {
+          await putWithBase([kept]);
+        } catch (error) {
+          failed(error);
+          return false;
+        }
+      }
+      if (merged) await writeState();
+      if (gap) return true;
+      const previous = pendingAdopted;
+      pendingAdopted = [];
+      void write(deleteDrafts(previous));
+      return true;
+    },
     get unsaved() {
       return sequence > covered;
     },
@@ -979,6 +1069,8 @@ function roomToken(
  *   open; `hidden` too, its rows marked as typing into a deleted block;
  * - `later`: the service answered something else (busy, failing, lost
  *   access): tried again at the next page load;
+ * - `late`: the rows grew from a state older than the room's collection
+ *   window (in-place GC): the editor merges them at the file's next open;
  * - `retry`: no answer (offline), the rows changed, or the user is in a
  *   timeout (`too_fast`, Epo 2026-10-18): tried at the next trigger;
  * - `outdated`: the service refuses this build's client protocol (Capy was
@@ -989,6 +1081,7 @@ type Sent =
   | 'refused'
   | 'waits'
   | 'hidden'
+  | 'late'
   | 'later'
   | 'retry'
   | 'outdated';
@@ -1018,16 +1111,22 @@ function groupGrants(group: DraftInfo[]) {
 }
 
 /** A document's rows its room takes now: Yjs rows (never a note's copy),
- * not refused, not left for the editor (`held`), of the token's room, one
- * group per lineage (an Office file's rows of another base go apart), with
- * the newest of their stored tokens. */
+ * not refused, not left for the editor (`held`, `late`), of the token's
+ * room, one group per lineage (an Office file's rows of another base go
+ * apart), with the newest of their stored tokens. */
 function sendableGroups(rows: DraftInfo[], room: string) {
   // An expired session's rows wait for the next open, which shows them once.
   const expired = expiredSessions(rows, Date.now());
   const groups = new Map<string, DraftInfo[]>();
   for (const row of rows) {
     if (!yjsRow(row)) continue;
-    if (row.refused || row.held || row.lineage.split('@')[0] !== room) continue;
+    if (
+      row.refused ||
+      row.held ||
+      row.late ||
+      row.lineage.split('@')[0] !== room
+    )
+      continue;
     if (expired.has(row.session)) continue;
     groups.set(row.lineage, [...(groups.get(row.lineage) ?? []), row]);
   }
@@ -1143,6 +1242,8 @@ async function sendPiece(
     case 'unassigned':
     case 'unheld':
       return 'waits';
+    case 'late':
+      return 'late';
     case 'outdated':
       return 'outdated';
     case 'too_fast':
@@ -1172,8 +1273,8 @@ interface SweepOptions {
  * its own; one that needs the room's state, and a group only the editor can
  * send, are marked `held`, never sent again: the editor's next open applies
  * a held group of an accepted session and shows any other copy-only
- * (`draftGroups`, Q360). Resolves whether the rows are settled for this
- * page load.
+ * (`draftGroups`, Q360). A late group is marked `late`: the editor's next
+ * open merges it. Resolves whether the rows are settled for this page load.
  */
 async function sweepDocument(
   key: string,
@@ -1238,6 +1339,12 @@ async function sendGroups(
     }
     answers.push(sent);
     if (sent === 'sent') await deleteDrafts(refs);
+    else if (sent === 'late')
+      await markDrafts(
+        key,
+        refs.map((row) => row.id),
+        'late'
+      );
     else if (sent === 'refused' || sent === 'waits' || sent === 'hidden') {
       const ids = refs.map((row) => row.id);
       const draws =
@@ -1255,12 +1362,13 @@ async function sendGroups(
  * An opening editor's current rows (`draftGroups`, Epo 2026-10-24, Q326):
  * those of never-accepted sessions with a stored token go through the draft
  * send while the editor joins (`send`, Q319); the others are applied and
- * sync over the live channel (`apply`): accepted sessions', and held ones
- * that need the room's document (Q360).
+ * sync over the live channel (`apply`): accepted sessions', held ones that
+ * need the room's document (Q360), and late ones, which the note editor
+ * merges (no send takes them: the room answers them late).
  */
 export function splitOpenDrafts(rows: EditDraft[]) {
   const send = rows.filter(
-    (row) => !(row.accepted || row.held) && !!row.grants?.length
+    (row) => !(row.accepted || row.held || row.late) && !!row.grants?.length
   );
   return { apply: rows.filter((row) => !send.includes(row)), send };
 }
@@ -1289,6 +1397,7 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
   let done = false;
   let stopped = false;
   let kept = false;
+  let late = false;
   // Asked again during a try: the next one goes as it ends (Q360).
   let rerun = false;
   let flight: Promise<void> | null = null;
@@ -1327,9 +1436,13 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
         kept ||= !!answers?.some(
           (sent) => sent === 'refused' || sent === 'waits' || sent === 'hidden'
         );
+        late ||= !!answers?.includes('late');
+        // A late group settles the send at once: the editor's late merge
+        // takes every row, so no hold applies one raw (review r4 N5).
         again =
           !stopped &&
           !outdated &&
+          !late &&
           !!answers?.some((sent) => sent === 'later' || sent === 'retry');
       } catch (error) {
         console.warn('Drafts cannot be sent:', error);
@@ -1361,6 +1474,11 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
     /** Whether a group was left for recovery (held or refused). */
     get kept() {
       return kept;
+    },
+    /** Whether a group was answered late (marked `late`): the editor takes
+     * the late path for it in this session (Q406). */
+    get late() {
+      return late;
     },
     /** A try now, or as the one in flight ends: a reconnect while steps
      * are held (Q328, Q360). */

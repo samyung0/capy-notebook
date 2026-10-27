@@ -235,10 +235,19 @@ function CollaborativeNoteEditor({
   // and Review reopens it on the same piece.
   const [reviewPiece, setReviewPiece] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
-  // One strip at a time, by priority (Q252).
+  // A late note's merge code did not load: its Retry (Q398).
+  const [lateRetry, setLateRetry] = useState<{ retry: () => void } | null>(
+    null
+  );
+  const onLateUnloaded = useCallback(
+    (retry: (() => void) | null) => setLateRetry(retry && { retry }),
+    []
+  );
+  // One strip at a time, by priority (Q252, Q420).
   const banner: SaveBannerState | null =
     outdated ??
     offline ??
+    (lateRetry ? 'late-unloaded' : null) ??
     (saveDelayed ? 'delayed' : null) ??
     (merge.unresolved ? 'review' : null);
   const closeReview = useCallback(() => {
@@ -251,13 +260,19 @@ function CollaborativeNoteEditor({
   );
   const onDocumentRejected = useCallback(
     (
-      code: MaterialLimitCode | 'invalid_document' | 'unassigned' | 'revoked',
+      code:
+        | MaterialLimitCode
+        | 'invalid_document'
+        | 'unassigned'
+        | 'revoked'
+        | 'late',
       edits: 'none' | 'kept' | 'lost'
     ) => {
       if (
         code !== 'invalid_document' &&
         code !== 'unassigned' &&
-        code !== 'revoked'
+        code !== 'revoked' &&
+        code !== 'late'
       )
         userToast({
           description: m.editor_too_large_body({
@@ -414,11 +429,26 @@ function CollaborativeNoteEditor({
       ? { drafts, key: wanted, token: collaborationTokenData }
       : null;
   const swap = useRoomSwap(ready, wanted, onEditorStatusChange);
+  // The room answered late (in-place GC): the paused editor's document goes
+  // to the next mount, which merges its unsent edits (NoteEditorCore `late`).
+  const [late, setLate] = useState<{ key: string; state: Uint8Array } | null>(
+    null
+  );
+  const room = collaborationTokenData?.room;
+  const onLate = useCallback(
+    (state: Uint8Array) => {
+      const next = editorGeneration + 1;
+      setLate({ key: `${room}:${next}`, state });
+      setEditorGeneration(next);
+    },
+    [editorGeneration, room]
+  );
   // The paused editor's banners went with its room: the next starts clean.
   useEffect(() => {
     if (!swap.pending) return;
     setOffline(null);
     setSaveDelayed(false);
+    setLateRetry(null);
   }, [swap.pending]);
 
   if (unavailable === 'notFound')
@@ -496,10 +526,14 @@ function CollaborativeNoteEditor({
       currentUserId={meData.id}
       discussions={discussionsData ?? NO_DISCUSSIONS}
       draftKey={storedKey}
+      held={mount.drafts.held}
       joinStartedAt={joinStart.current}
+      late={late?.key === mount.key ? late.state : undefined}
       material={material}
       onDocumentRejected={onDocumentRejected}
       onEditorStatusChange={onEditorStatusChange}
+      onLate={onLate}
+      onLateUnloaded={onLateUnloaded}
       onMergeStore={onMergeStore}
       onOffline={setOffline}
       onOutdated={markOutdated}
@@ -532,6 +566,7 @@ function CollaborativeNoteEditor({
             {banner && (
               <SaveBanner
                 onDiscard={() => setDiscarding(true)}
+                onRetry={lateRetry?.retry}
                 onReview={() => setReviewing(true)}
                 state={banner}
               />

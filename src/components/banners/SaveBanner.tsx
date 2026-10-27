@@ -21,12 +21,15 @@ import { FileBanner } from './FileBanner';
  *   the reloaded page to send, and Reload waits for the new app.
  *   `outdated-unstored`: and this device could not store the unsent edits,
  *   so the reload loses them.
+ * - `late-unloaded`: a late note's merge code did not load; its edits stay
+ *   read-only on this device until Retry or a reconnect loads it (Q398).
  * - `review`: a note has edits that could not sync waiting in the merge view
  *   (Q252): Review opens it and Discard drops them all; it cannot be closed
  *   and has the lowest priority.
  */
 export type SaveBannerState =
   | 'delayed'
+  | 'late-unloaded'
   | 'offline'
   | 'offline-unstored'
   | 'offline-limit'
@@ -61,6 +64,7 @@ const MESSAGES: Record<
   changed: () => m.editor_recovery_changed(),
   delayed: () => m.editor_save_delayed(),
   expired: () => m.editor_recovery_expired(),
+  'late-unloaded': () => m.editor_late_unloaded(),
   offline: () => m.editor_offline_banner(),
   'offline-limit': () => m.editor_offline_limit(),
   'offline-unstored': () => m.editor_offline_unstored(),
@@ -78,6 +82,7 @@ export function SaveBanner({
   onDiscard,
   onReload,
   onReview,
+  onRetry,
   reloading = false,
 }: {
   state: SaveBannerState;
@@ -86,11 +91,14 @@ export function SaveBanner({
   onReload?: () => void;
   /** `review`: open the merge view. */
   onReview?: () => void;
+  /** `late-unloaded`'s Retry. */
+  onRetry?: () => void;
   reloading?: boolean;
 }) {
   if (isOutdatedBanner(state))
     return <OutdatedBanner stored={state === 'outdated'} />;
   const review = state === 'review' && onReview && onDiscard;
+  const retry = state === 'late-unloaded' && onRetry;
   return (
     <FileBanner
       actions={
@@ -107,15 +115,26 @@ export function SaveBanner({
                   onClick: onReload,
                 },
               ]
-            : []
+            : retry
+              ? [{ label: m.error_action_retry(), onClick: retry }]
+              : []
       }
-      closeable={!(isRecoveryBanner(state) || state === 'review')}
+      closeable={
+        !(
+          isRecoveryBanner(state) ||
+          state === 'review' ||
+          state === 'late-unloaded'
+        )
+      }
       inline
       kind={state}
       message={MESSAGES[state]()}
       testId="save-banner"
       tone={
-        state === 'offline' || state === 'offline-limit' || state === 'review'
+        state === 'offline' ||
+        state === 'offline-limit' ||
+        state === 'late-unloaded' ||
+        state === 'review'
           ? 'neutral'
           : 'error'
       }

@@ -58,6 +58,10 @@ pub enum Class {
     /// The rows grew from another lineage: a token for another room, a moved
     /// schema or epoch, another Office base.
     Lineage,
+    /// The rows grew from a state older than the room's collection window:
+    /// they may name units it collected, so they wait for the editor, which
+    /// merges them (the late path, `Room::late`).
+    Late,
     /// Over a document limit (the content limits, a source's state cap).
     Limit,
     /// No write access: a bad, expired or read-only token, lost access, an
@@ -88,8 +92,9 @@ pub enum Class {
 }
 
 impl Class {
-    pub const ALL: [Class; 11] = [
+    pub const ALL: [Class; 12] = [
         Class::Lineage,
+        Class::Late,
         Class::Limit,
         Class::Permission,
         Class::Malformed,
@@ -105,6 +110,7 @@ impl Class {
     pub fn as_str(self) -> &'static str {
         match self {
             Class::Lineage => "lineage",
+            Class::Late => "late",
             Class::Limit => "limit",
             Class::Permission => "permission",
             Class::Malformed => "malformed",
@@ -120,7 +126,7 @@ impl Class {
 
     fn status(self) -> StatusCode {
         match self {
-            Class::Lineage | Class::Unheld | Class::Unassigned | Class::Hidden => {
+            Class::Lineage | Class::Late | Class::Unheld | Class::Unassigned | Class::Hidden => {
                 StatusCode::CONFLICT
             }
             Class::Limit => StatusCode::UNPROCESSABLE_ENTITY,

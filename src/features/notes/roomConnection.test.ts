@@ -15,6 +15,7 @@ describe('roomRefusal', () => {
     expect(roomRefusal('collaboration-not-found')).toBe('notFound');
     expect(roomRefusal('collaboration-forbidden')).toBe('forbidden');
     expect(roomRefusal('collaboration-outdated')).toBe('outdated');
+    expect(roomRefusal('collaboration-late')).toBe('late');
     // A client id the room holds no more never joins again (Epo
     // 2026-10-24); a clash on a fresh offer is retried.
     expect(roomRefusal('collaboration-unassigned-id')).toBe('unassigned');

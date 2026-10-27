@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError } from '@/api/client';
+import { COLLABORATION_LATE_REASON } from '@/features/notes/collaborationEvents';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
@@ -305,6 +306,24 @@ it('rejoins after a close the server gives everyone', async () => {
   room.destroy();
 });
 
+// Q425: a note View's read channel answered late (its version behind the
+// collection window) ends, so a fresh document joins naming no version,
+// instead of rejoining with the same version, late again, forever.
+it('joins afresh when a read channel is answered late, never rejoining late', async () => {
+  tokens.push({ access: 'read', room: 'material:n:schema:1' });
+  const onReplace = vi.fn();
+  const room = new ItemRoom('n', { onReplace, read: true });
+  await room.start();
+  const [provider] = providers;
+  provider.config.onAuthenticationFailed?.({
+    reason: COLLABORATION_LATE_REASON,
+  });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(onReplace).toHaveBeenCalledTimes(1);
+  expect(provider.connects).toBe(1);
+  room.destroy();
+});
+
 // REVIEW1 M5: a fresh token naming another room (discarded) ends
 // this room; a fresh one joins the new lineage.
 it('follows a room that moved to a new lineage', async () => {
@@ -329,6 +348,18 @@ it('opens stored refused edits in recovery until Reload', async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(drafts.rows).toEqual([]);
   expect(onReplace).toHaveBeenCalledTimes(1);
+  room.destroy();
+});
+
+// Item rooms have no late merge (in-place GC): stored late edits open
+// read-only for copying and are never applied raw.
+it('opens stored late edits in recovery, never applying them raw', async () => {
+  vi.mocked(applyDrafts).mockClear();
+  drafts.rows = [{ late: true, lineage: 'material:q:schema:1' }];
+  const { room } = await started();
+  expect(providers).toHaveLength(0);
+  expect(applyDrafts).not.toHaveBeenCalled();
+  expect(room.getSnapshot().recovery?.refused).toBe(true);
   room.destroy();
 });
 

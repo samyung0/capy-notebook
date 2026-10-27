@@ -35,7 +35,10 @@ import {
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
-import { COLLABORATION_OUTDATED_REASON } from '@/features/notes/collaborationEvents';
+import {
+  COLLABORATION_LATE_REASON,
+  COLLABORATION_OUTDATED_REASON,
+} from '@/features/notes/collaborationEvents';
 import { withoutBlanks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import {
@@ -540,8 +543,9 @@ export function mockNotePeer(materialId: string) {
     /** The peer's own document, for edits inside a block (a figure's map). */
     document,
     leave,
-    /** Deletes the top-level block `id`. */
-    remove: (id: string) => root.delete(indexOf(id), 1),
+    /** Deletes the top-level block `id`, or the one at an index. */
+    remove: (block: string | number) =>
+      root.delete(typeof block === 'number' ? block : indexOf(block), 1),
     /** Puts `block` where the top-level block `id` is. */
     replace: (id: string, block: MaterialValue[number]) => {
       const index = indexOf(id);
@@ -686,22 +690,59 @@ interface MockCollaborationOptions {
   onStateless?: (event: { payload: string }) => void;
   /** As the room provider's: the room's state vector before the sync. */
   onStep1?: (stateVector: Uint8Array) => void;
+  /** As the room provider's: the stored version the session's JOIN names
+   * for drafts it applies (in-place GC). */
+  unsentFrom?: number;
+}
+
+/** What each note session named (in-place GC), for the late-path e2e: its
+ * JOIN version (`unsentFrom`, null for a new session) and the late merge's
+ * marks (`unsentFrom()` calls). */
+const sessionVersions = new Map<
+  string,
+  { joins: (number | null)[]; marks: number[]; reported: number }
+>();
+const versionsOf = (materialId: string) => {
+  let versions = sessionVersions.get(materialId);
+  if (!versions) {
+    versions = { joins: [], marks: [], reported: 0 };
+    sessionVersions.set(materialId, versions);
+  }
+  return versions;
+};
+
+/** The JOIN versions and late-merge marks a note's sessions named. */
+export function mockSessionVersions(materialId: string) {
+  const { joins, marks } = versionsOf(materialId);
+  return { joins: [...joins], marks: [...marks] };
+}
+
+/** The stored version a note's sessions report from now (as stores the
+ * mock does not run would raise it). */
+export function setMockReportedVersion(materialId: string, version: number) {
+  versionsOf(materialId).reported = version;
 }
 
 const outdated = { reason: COLLABORATION_OUTDATED_REASON };
 // Set by refuseThisBuild(): a note room refuses every join until the page
 // reloads (the reloaded page is the new build).
 let buildRefused = false;
+// Notes collected past this tab's sessions (in-place GC): a session that
+// joined before is answered `collaboration-late` on every join, a new one
+// joins, unless every session is late (lateSessions).
+const lateMaterials = new Map<string, 'joined' | 'every'>();
 
 class MockCollaborationProvider implements UnifiedProvider {
   readonly awareness: UnifiedProvider['awareness'];
   readonly document: Y.Doc;
   // The room channel the editor reaches through the wrapper, as the capy
   // provider's (a held draft send closes and reopens it, Q327).
-  readonly provider = {
-    connect: () => this.connect(),
-    disconnect: () => this.disconnect(),
-    sendStateless: (payload: string) => this.handleStateless(payload),
+  readonly provider: {
+    connect: () => void;
+    disconnect: () => void;
+    readonly reportedVersion: number;
+    sendStateless: (payload: string) => void;
+    unsentFrom: (version: number) => void;
   };
   readonly type = 'mock';
   isConnected = false;
@@ -716,6 +757,8 @@ class MockCollaborationProvider implements UnifiedProvider {
   private leave?: () => void;
   // Connected unless disconnected on purpose: a lost service reconnects.
   private wanted = false;
+  /** This session joined its room before (`lateSessions`). */
+  private joined = false;
   // The page's beforeJoin holding the JOIN (a held draft send, Q360).
   private waiting: Promise<void> | null = null;
   private readonly onReachability = () => {
@@ -742,6 +785,19 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.onError = onError;
     this.onSyncChange = onSyncChange;
     this.options = options;
+    const versions = versionsOf(options.materialId);
+    versions.joins.push(options.unsentFrom ?? null);
+    this.provider = {
+      connect: () => this.connect(),
+      disconnect: () => this.disconnect(),
+      get reportedVersion() {
+        return versions.reported;
+      },
+      sendStateless: (payload: string) => this.handleStateless(payload),
+      unsentFrom: (version: number) => {
+        versions.marks.push(version);
+      },
+    };
     if (browser)
       for (const type of ['online', 'offline', REACHABILITY])
         window.addEventListener(type, this.onReachability);
@@ -780,6 +836,13 @@ class MockCollaborationProvider implements UnifiedProvider {
       return;
     }
     if (roomJoinsHeld) return;
+    const late = lateMaterials.get(this.options.materialId);
+    if (late === 'every' || (late === 'joined' && this.joined)) {
+      this.options.onAuthenticationFailed?.({
+        reason: COLLABORATION_LATE_REASON,
+      });
+      return;
+    }
     const room = materialRoom(this.options.name, this.options.initialValue);
     this.room = room;
     materialProviders.add(this);
@@ -793,6 +856,7 @@ class MockCollaborationProvider implements UnifiedProvider {
     });
     this.isConnected = true;
     this.isSynced = true;
+    this.joined = true;
     this.onConnect?.();
     this.onSyncChange?.(true);
     // As the collaboration server joins a writer of a document holding a
@@ -1073,6 +1137,20 @@ export function discardMockMaterialRoom(materialId: string) {
   moveMockMaterialRoom(materialId);
   for (const provider of providers) provider.evicted(materialId);
 }
+/** The text the open room of a note holds now (null when none is open),
+ * for e2e checks of what reached the room. */
+export function mockNoteRoomText(materialId: string): string | null {
+  const room = rooms.get(mockMaterialRoom(materialId));
+  return room ? room.document.get('content', Y.XmlText).toString() : null;
+}
+/** A collection left this tab's sessions of a note behind (in-place GC):
+ * from now on each answers its next join `collaboration-late`, and a new
+ * session joins as usual (`every`: a new one is late too, which the late path
+ * takes for a failure); null ends it. */
+export function lateSessions(materialId: string | null, every = false) {
+  if (materialId) lateMaterials.set(materialId, every ? 'every' : 'joined');
+  else lateMaterials.clear();
+}
 /** The room refuses an open note's update for good (over a limit): its
  * editors keep their unsaved edits as a refused draft. The service refuses
  * the update on entry; the mock applied it already, so its room is retired
@@ -1134,6 +1212,8 @@ export function announceSourcePaused(fileId: string) {
 }
 export function resetScenarioRooms() {
   roomJoinsHeld = false;
+  lateMaterials.clear();
+  sessionVersions.clear();
   sourceSessionsHeld = false;
   failedSourceSaves.clear();
   refusedSourceSaves.clear();

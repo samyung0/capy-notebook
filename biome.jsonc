@@ -19,6 +19,8 @@
       // Vendored crates stay byte for byte as published (plus their marked patches).
       "!!collaboration-rs/third_party",
       "!!**/src/api/gen",
+      // wasm-pack's output (scripts/build-late-merge.mjs).
+      "!!src/features/collaboration/lateMerge/generated",
       "!!ops/src/api-gen",
       "!!workers/site/worker-configuration.d.ts",
       "!!**/public/mockServiceWorker.js",
