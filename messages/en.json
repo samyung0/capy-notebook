@@ -1227,6 +1227,8 @@
   "editor_delete_col": "Delete column",
   "editor_drag_row": "Drag table row",
   "editor_study_actions": "Study block actions",
+  "editor_study_tools": "Study tools",
+  "editor_study": "Study",
   "editor_code_language": "Code language",
   "editor_callout_style": "Callout style",
   "editor_latex_prompt": "LaTeX expression",

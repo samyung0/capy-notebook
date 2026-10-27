@@ -132,7 +132,7 @@ export function QuizForm({
         )}
       />
       <Button
-        fullWidth
+        className="w-full max-w-xs justify-self-center"
         iconLeft="plus"
         onClick={() => {
           const added = blankQuestion();

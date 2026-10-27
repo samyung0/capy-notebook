@@ -61,6 +61,7 @@ import {
 } from '@/features/notes/toolbar/ToolbarImportMenu';
 import { ToolbarMathMenu } from '@/features/notes/toolbar/ToolbarMathMenu';
 import { MediaUploadMenu } from '@/features/notes/toolbar/ToolbarMediaUploadMenu';
+import { ToolbarStudyMenu } from '@/features/notes/toolbar/ToolbarStudyMenu';
 import { TableMenu } from '@/features/notes/toolbar/ToolbarTableMenu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -127,6 +128,9 @@ export function NoteToolbar({ className }: { className?: string }) {
   );
   const mentionCommand = allBlockCommands.find(
     (command) => command.id === 'mention'
+  );
+  const studyCommands = allBlockCommands.filter(
+    (command) => command.id === 'quiz' || command.id === 'flashcards'
   );
 
   const block = (type: string) => {
@@ -221,6 +225,9 @@ export function NoteToolbar({ className }: { className?: string }) {
                 >
                   <EditorIcon name="commentAdd" />
                 </ToolbarButton>
+              )}
+              {studyCommands.length > 0 && (
+                <ToolbarStudyMenu commands={studyCommands} editor={editor} />
               )}
               <ToolbarAllBlocksMenu
                 allBlockCommands={allBlockCommands}

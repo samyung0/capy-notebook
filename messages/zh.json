@@ -1227,6 +1227,8 @@
   "editor_delete_col": "删除列",
   "editor_drag_row": "拖动表格行",
   "editor_study_actions": "学习块操作",
+  "editor_study_tools": "学习工具",
+  "editor_study": "学习",
   "editor_code_language": "代码语言",
   "editor_callout_style": "标注样式",
   "editor_latex_prompt": "LaTeX 表达式",
