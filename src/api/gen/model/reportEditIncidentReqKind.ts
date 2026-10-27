@@ -15,4 +15,5 @@ export const ReportEditIncidentReqKind = {
   unconfirmed_edit: 'unconfirmed_edit',
   offline_episode: 'offline_episode',
   discard_unsaved: 'discard_unsaved',
+  merge_view: 'merge_view',
 } as const;

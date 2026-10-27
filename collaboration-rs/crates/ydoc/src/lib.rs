@@ -387,6 +387,12 @@ pub struct Inspection {
     /// The room with the update applied, when [inspect] tried it on a copy
     /// (any update past a small edit the room can place).
     pub trial: Option<Doc>,
+    /// Typed units (text, embeds, inserted elements) the room would never
+    /// show: they land inside a deleted holder, or next to a unit the room
+    /// collected with its deleted container (hidden typing, Q237). Read by a
+    /// note's draft send alone; live typing into a block someone just deleted
+    /// is ordinary collaboration.
+    pub hidden_units: u32,
 }
 
 enum Found {
@@ -607,32 +613,41 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
     let held = |client: &ClientID| state.get(client);
     let store = txn.store();
     let incoming_at = |id: &ID| incoming.item_at(id);
-    let held_at = |id: &ID| -> Found {
+    // Where a held reference sits, and whether what lands there is hidden:
+    // a holder above it is deleted (the reference itself too when it is the
+    // explicit parent, not when it is a sibling), or the room collected it
+    // with its deleted container.
+    let held_at = |id: &ID, parent: bool| -> (Found, bool) {
         let Some(mut top) = store.get_item(id) else {
-            return Found::Gone;
+            return (Found::Gone, true);
         };
+        let mut hidden = parent && top.is_deleted();
         loop {
             steps::step(steps::Walk::Holders);
             let Some(branch) = top.parent_branch() else {
-                return Found::Unknown;
+                return (Found::Unknown, hidden);
             };
             match branch.item() {
-                Some(holder) => top = holder,
+                Some(holder) => {
+                    top = holder;
+                    hidden |= top.is_deleted();
+                }
                 None => {
-                    return match branch.id() {
+                    let found = match branch.id() {
                         BranchID::Root(root) => Found::At(Container {
                             root,
                             key: top.parent_sub().cloned(),
                         }),
                         BranchID::Nested(_) => Found::Unknown,
                     };
+                    return (found, hidden);
                 }
             }
         }
     };
-    let mut resolved: HashMap<ID, Found> = HashMap::new();
+    let mut resolved: HashMap<ID, (Found, bool)> = HashMap::new();
     // Iterative: an update typed character by character chains its origins.
-    let mut container_of = |start: &Item| -> Found {
+    let mut container_of = |start: &Item| -> (Found, bool) {
         let mut chain: Vec<ID> = Vec::new();
         let mut item = start;
         let found = loop {
@@ -641,28 +656,31 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
                 break known.clone();
             }
             // A reference cycle stays unknown.
-            resolved.insert(*item.id(), Found::Unknown);
+            resolved.insert(*item.id(), (Found::Unknown, false));
             chain.push(*item.id());
-            let reference = match item.update_parent() {
+            let (reference, parent) = match item.update_parent() {
                 UpdateParent::Root(root) => {
-                    break Found::At(Container {
-                        root: root.clone(),
-                        key: item.parent_sub().cloned(),
-                    });
+                    break (
+                        Found::At(Container {
+                            root: root.clone(),
+                            key: item.parent_sub().cloned(),
+                        }),
+                        false,
+                    );
                 }
-                UpdateParent::Item(parent) => Some(*parent),
-                UpdateParent::Unknown => item.origin().or(item.right_origin()).copied(),
-                UpdateParent::Branch(_) => None,
+                UpdateParent::Item(parent) => (Some(*parent), true),
+                UpdateParent::Unknown => (item.origin().or(item.right_origin()).copied(), false),
+                UpdateParent::Branch(_) => (None, false),
             };
             let Some(reference) = reference else {
-                break Found::Unknown;
+                break (Found::Unknown, false);
             };
             if reference.clock < held(&reference.client) {
-                break held_at(&reference);
+                break held_at(&reference, parent);
             }
             match incoming_at(&reference) {
                 Some(next) => item = next,
-                None => break Found::Unknown,
+                None => break (Found::Unknown, false),
             }
         };
         for id in chain {
@@ -727,17 +745,21 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
         Some(trial(txn, incoming)?)
     };
     let mut containers = Vec::new();
+    let mut hidden_units = 0;
     for item in incoming.items() {
         if item.id().clock + item.len() <= held(&item.id().client) {
             continue;
         }
         // Place an item that overlaps the held clock, or sits next to a
         // collected unit, where yrs integrates it (phase 0 review).
-        let found = match incoming.landing(store, &state, item) {
-            Landing::Gone => Found::Gone,
-            Landing::At(id) => held_at(&id),
+        let (found, hidden) = match incoming.landing(store, &state, item) {
+            Landing::Gone => (Found::Gone, true),
+            Landing::At(id) => held_at(&id, false),
             Landing::Chain => container_of(item),
         };
+        if hidden && typed(item) {
+            hidden_units += item.len();
+        }
         match found {
             Found::Gone => {}
             Found::Unknown => unheld = true,
@@ -751,7 +773,20 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
         containers,
         unheld,
         trial,
+        hidden_units,
     })
+}
+
+/// Typed content (Q259): text, an embed or an inserted element, never an
+/// attribute or a format.
+fn typed(item: &Item) -> bool {
+    item.parent_sub().is_none()
+        && matches!(
+            item.content(),
+            yrs::block::ItemContent::String(_)
+                | yrs::block::ItemContent::Embed(_)
+                | yrs::block::ItemContent::Type(_)
+        )
 }
 
 /// `yjsUpdateContainsChanges`: whether a read-only connection's sync frame

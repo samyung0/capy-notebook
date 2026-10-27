@@ -644,6 +644,20 @@ describe('lineage', () => {
     expect(kept.current.map((row) => row.id)).toEqual(['dead:1', 'dead:3']);
   });
 
+  // Q229, Q251: a note's copy and piece rows hold JSON, not Yjs; applying
+  // one as an update would throw. Fails if draftGroups takes them.
+  it("leaves a note's copy and piece rows to their own readers", async () => {
+    const copy = draft('s:copy', {
+      data: new TextEncoder().encode('{"base":[],"mine":[]}'),
+      kind: 'copy',
+    });
+    const piece = draft('piece:k:b', { kind: 'piece', session: 'piece' });
+    const live = draft('live', { accepted: true });
+    const opened = await draftGroups([copy, piece, live], ROOM);
+    expect(opened.current.map((row) => row.id)).toEqual(['live']);
+    expect(opened.recovery).toEqual([]);
+  });
+
   it('drops an expired group it opened, reporting its bytes', async () => {
     const key = 'u_expired:material:mat_1';
     const rows = [draft('gone', { data: new Uint8Array([1, 2, 3]), key })];
@@ -1575,6 +1589,38 @@ describe('the draft sweep sending', () => {
     expect((await readDrafts(key)).map((row) => row.id)).toEqual(['old:state']);
   });
 
+  // Q229, Q251: a note's copy merges in its editor and its pieces wait
+  // there. Fails if the sweep sends either with the Yjs rows.
+  it("never sends a note's copy or piece rows, and keeps them for the editor", async () => {
+    const key = 'u_copy:material:mat_1';
+    await putDrafts([
+      draft('c:copy', {
+        data: new TextEncoder().encode('{"base":[],"mine":[]}'),
+        key,
+        kind: 'copy',
+        session: 'c',
+      }),
+      draft('piece:x', {
+        data: new TextEncoder().encode('{"block":"b"}'),
+        key,
+        kind: 'piece',
+        session: 'piece',
+      }),
+    ]);
+    await leftRows(key);
+    requests.length = 0;
+    storeNext();
+    await sweepDrafts('u_copy', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, requests[0].body);
+    expect(doc.getText('content').toString()).toBe('base typed');
+    expect((await readDrafts(key)).map((row) => row.id).sort()).toEqual([
+      'c:copy',
+      'piece:x',
+    ]);
+  });
+
   it('skips a document an editor has open, and sends it once the editor closed', async () => {
     const key = 'u_open:material:mat_1';
     await leftRows(key);
@@ -1642,8 +1688,34 @@ describe('the draft sweep sending', () => {
     ).toHaveLength(1);
   });
 
+  // Merge view review r2 L3 (Q421): rows held as hidden typing are a group
+  // of their own; refused rows beside them keep their reason.
+  it('keeps hidden rows apart from refused rows of the same lineage', async () => {
+    const limit = draft('l:state', {
+      kind: 'state',
+      refused: true,
+      session: 'l',
+    });
+    const typed = draft('h:state', {
+      hidden: true,
+      kind: 'state',
+      refused: true,
+      session: 'h',
+    });
+    const first = await draftGroups([limit, typed], ROOM);
+    expect(first).toMatchObject({
+      hidden: false,
+      recovery: [limit],
+      refused: true,
+    });
+    expect(await draftGroups([typed], ROOM)).toMatchObject({
+      hidden: true,
+      recovery: [typed],
+    });
+  });
+
   it('leaves a group only the editor can send for its next open, without sending it again', async () => {
-    const keys = ['too_large', 'unheld', 'unassigned', 'lineage'].map(
+    const keys = ['too_large', 'unheld', 'unassigned', 'lineage', 'hidden'].map(
       (_, index) => `u_waits:material:mat_${index}`
     );
     for (const key of keys) await leftRows(key);
@@ -1652,13 +1724,23 @@ describe('the draft sweep sending', () => {
     answer(409, 'unheld');
     answer(409, 'unassigned');
     answer(409, 'lineage');
+    answer(409, 'hidden');
     await sweepDrafts('u_waits', tokens(ROOM));
-    expect(requests).toHaveLength(4);
+    expect(requests).toHaveLength(5);
     for (const key of keys)
       expect((await readDrafts(key)).every((row) => row.held)).toBe(true);
     const later = await nextPageLoad();
     await later.sweepDrafts('u_waits', tokens(ROOM));
-    expect(requests).toHaveLength(4);
+    expect(requests).toHaveLength(5);
+    // Review r1 V-N4 (Q410): the `hidden` group's rows say why, so the
+    // editor's next open labels its pieces typed where someone deleted.
+    const hidden = await readDrafts(keys[4]);
+    expect(hidden.every((row) => row.hidden)).toBe(true);
+    expect((await readDrafts(keys[3])).some((row) => row.hidden)).toBe(false);
+    expect(await later.draftGroups(hidden, ROOM)).toMatchObject({
+      hidden: true,
+      refused: true,
+    });
   });
 
   it('sends a group larger than a piece as pieces of at most 2 MiB, in order, and its rows go once the last is stored', async () => {

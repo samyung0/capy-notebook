@@ -38,12 +38,12 @@ export type DraftRequest =
    * ones), merged into their last row, the others deleted: the row kept, or
    * null when one of them is gone or was rewritten since. */
   | { op: 'unsent'; rows: DraftRef[]; from: number }
-  /** Sets `flag` on these rows of a document. */
+  /** Sets `flags` on these rows of a document, in one write. */
   | {
       op: 'mark';
       key: string;
       ids: string[];
-      flag: 'accepted' | 'held' | 'refused' | 'reported';
+      flags: ('accepted' | 'held' | 'hidden' | 'refused' | 'reported')[];
     }
   /** Every document of an account with its row ids, read from the index
    * alone (no row is loaded). */
@@ -443,13 +443,14 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
       }).then(() => kept);
     }
     case 'mark': {
-      const { flag } = message;
+      const { flags } = message;
       const ids = new Set(message.ids);
+      const set = Object.fromEntries(flags.map((flag) => [flag, true]));
       return transact(name, 'readwrite', (stores) => {
         eachRow(stores, message.key, (rows) => {
           for (const row of rows)
-            if (ids.has(row.id) && !row[flag])
-              stores.drafts.put({ ...row, [flag]: true });
+            if (ids.has(row.id) && flags.some((flag) => !row[flag]))
+              stores.drafts.put({ ...row, ...set });
         });
       });
     }

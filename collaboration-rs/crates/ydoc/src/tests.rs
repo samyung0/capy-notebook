@@ -153,6 +153,69 @@ fn a_struct_in_a_collected_type_is_gone() {
     assert!(inspection.containers.is_empty());
 }
 
+/// A room holding `text` in the map entry "n" of root "m", a client synced
+/// with it, and that client's nested text.
+fn nested(text: &str) -> (Doc, Doc, yrs::TextRef) {
+    let room = doc(1);
+    room.get_or_insert_map("m")
+        .insert(&mut room.transact_mut(), "n", yrs::TextPrelim::new(text));
+    let client = doc(2);
+    sync(&room, &client);
+    let nested = client
+        .get_or_insert_map("m")
+        .get(&client.transact(), "n")
+        .unwrap()
+        .cast::<yrs::TextRef>()
+        .unwrap();
+    (room, client, nested)
+}
+
+fn hidden_units(room: &Doc, update: &[u8]) -> u32 {
+    inspect_update(&room.transact(), &decode(update).unwrap())
+        .unwrap()
+        .hidden_units
+}
+
+// Hidden typing (Q237): typing into a paragraph the room deleted lands next
+// to units the room collected with it, so the room would never show it.
+#[test]
+fn typing_into_a_deleted_paragraph_is_hidden() {
+    let (room, client, nested) = nested("abc");
+    room.get_or_insert_map("m")
+        .remove(&mut room.transact_mut(), "n");
+    let update = delta(&client, |txn| nested.insert(txn, 3, "xy"));
+    assert_eq!(hidden_units(&room, &update), 2);
+}
+
+// An explicit-parent insert (an empty paragraph has no neighbour) into an
+// element the room deleted: its holder is deleted.
+#[test]
+fn an_insert_whose_parent_the_room_deleted_is_hidden() {
+    let (room, client, nested) = nested("");
+    room.get_or_insert_map("m")
+        .remove(&mut room.transact_mut(), "n");
+    let update = delta(&client, |txn| nested.insert(txn, 0, "xyz"));
+    assert_eq!(hidden_units(&room, &update), 3);
+}
+
+// Typing after a sibling the room deleted shows: the sibling's own
+// deletion hides nothing, and neither do attributes or a live paragraph.
+#[test]
+fn typing_after_a_deleted_sibling_is_not_hidden() {
+    let (room, client, nested) = nested("abc");
+    let room_nested = room
+        .get_or_insert_map("m")
+        .get(&room.transact(), "n")
+        .unwrap()
+        .cast::<yrs::TextRef>()
+        .unwrap();
+    room_nested.remove_range(&mut room.transact_mut(), 1, 1);
+    let update = delta(&client, |txn| nested.insert(txn, 2, "x"));
+    assert_eq!(hidden_units(&room, &update), 0);
+    let update = delta(&client, |txn| nested.insert(txn, 0, "y"));
+    assert_eq!(hidden_units(&room, &update), 0);
+}
+
 // yjsUpdateMessage.test: a read-only acknowledgement against client changes.
 #[test]
 fn an_acknowledgement_is_no_change() {

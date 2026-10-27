@@ -1,11 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -30,6 +33,7 @@ import {
   SaveBanner,
   type SaveBannerState,
 } from '@/components/banners/SaveBanner';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import type { PresenceConnection } from '@/features/collaboration/presence';
@@ -50,12 +54,13 @@ import {
   type EditorRuntimeValue,
 } from './EditorRuntime';
 import type { NoteEditorStatus } from './editorMode';
+import type { MergeSnapshot, MergeStore } from './merge/mergeStore';
+import { type NoteDrafts, useNoteDrafts } from './merge/noteDrafts';
 import {
   NoteEditorCore,
   type NoteEditorPhase,
   type NoteOfflineState,
 } from './NoteEditorCore';
-import { type NoteDrafts, NoteRecovery, useNoteDrafts } from './NoteRecovery';
 import { RECONNECT_GRACE_MS } from './roomConnection';
 import {
   captureNotePosition,
@@ -67,6 +72,38 @@ import {
   tabHidden,
 } from './roomSwap';
 import { toastSaveUndone } from './saveFailure';
+
+// The merge view's sheet loads only once there are pieces to review.
+const NoteMergeView = lazy(() => import('./merge/NoteMergeView'));
+const noSubscription = () => () => {};
+const NO_PIECES: MergeSnapshot = {
+  canApply: false,
+  pieces: [],
+  stale: null,
+  unresolved: 0,
+};
+const noPieces = () => NO_PIECES;
+
+/** Scrolls the note on screen to a piece's block, else to the block before
+ * it, and marks it for 1.5 s (a DOM attribute: no Slate render). On a phone
+ * the sheet covers the note's lower part, so it closes (`close`). */
+function showPieceBlock(
+  block: string,
+  after: string | null,
+  close: () => void
+) {
+  const live = document.querySelector('[data-note-mount="live"]');
+  const find = (id: string | null) =>
+    id === null
+      ? null
+      : live?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(id)}"]`);
+  const target = find(block) ?? find(after);
+  if (!target) return;
+  if (onPhone()) close();
+  target.scrollIntoView({ block: 'center' });
+  target.setAttribute('data-merge-highlight', '');
+  setTimeout(() => target.removeAttribute('data-merge-highlight'), 1500);
+}
 
 /** Shared so a pending discussions query does not hand the editor a new array
  * identity on every render. */
@@ -179,8 +216,35 @@ function CollaborativeNoteEditor({
   const [outdated, setOutdated] = useState<
     'outdated' | 'outdated-unstored' | null
   >(null);
+  // The live (or paused) mount's pieces (merge view, Q251) and the sheet's
+  // state, which a room swap keeps.
+  const [mergeStore, setMergeStore] = useState<MergeStore | null>(null);
+  const onMergeStore = useCallback(
+    (store: MergeStore, on: boolean) =>
+      setMergeStore((current) =>
+        on ? store : current === store ? null : current
+      ),
+    []
+  );
+  const merge = useSyncExternalStore(
+    mergeStore?.subscribe ?? noSubscription,
+    mergeStore?.getSnapshot ?? noPieces
+  );
+  const [reviewing, setReviewing] = useState(false);
+  // The piece open in the sheet: a phone's sheet closes to show its block,
+  // and Review reopens it on the same piece.
+  const [reviewPiece, setReviewPiece] = useState<string | null>(null);
+  const [discarding, setDiscarding] = useState(false);
+  // One strip at a time, by priority (Q252).
   const banner: SaveBannerState | null =
-    outdated ?? offline ?? (saveDelayed ? 'delayed' : null);
+    outdated ??
+    offline ??
+    (saveDelayed ? 'delayed' : null) ??
+    (merge.unresolved ? 'review' : null);
+  const closeReview = useCallback(() => {
+    setReviewing(false);
+    mergeStore?.close();
+  }, [mergeStore]);
   const markOutdated = useCallback(
     (stored: boolean) => setOutdated(stored ? 'outdated' : 'outdated-unstored'),
     []
@@ -202,7 +266,7 @@ function CollaborativeNoteEditor({
           title: m.editor_too_large_title(),
           variant: 'error',
         });
-      // Kept edits open read-only for copying after the remount.
+      // Kept edits come back as the merge view's pieces after the remount.
       if (edits === 'lost') toastSaveUndone();
       setSaveDelayed(false);
       setOffline(null);
@@ -424,40 +488,33 @@ function CollaborativeNoteEditor({
   // Stored edits are read for each room and mount before the editor opens.
   if (!(meData && storedKey && swap.shown)) return <FileLoading />;
 
-  const renderMount = (mount: NoteMount, phase: NoteEditorPhase) =>
-    mount.drafts.recovery ? (
-      <NoteRecovery
-        material={material}
-        onEditorStatusChange={
-          phase === 'live' ? onEditorStatusChange : undefined
-        }
-        onPainted={(view) => swap.painted(mount.key, view)}
-        onReload={() => setEditorGeneration((value) => value + 1)}
-        recovery={mount.drafts.recovery}
-      />
-    ) : (
-      <NoteEditorCore
-        allowExternalAssets={allowExternalAssets}
-        collaborationToken={mount.token}
-        currentUserId={meData.id}
-        discussions={discussionsData ?? NO_DISCUSSIONS}
-        draftKey={storedKey}
-        joinStartedAt={joinStart.current}
-        material={material}
-        onDocumentRejected={onDocumentRejected}
-        onEditorStatusChange={onEditorStatusChange}
-        onOffline={setOffline}
-        onOutdated={markOutdated}
-        onPainted={(view) => swap.painted(mount.key, view)}
-        onPresenceChange={onPresenceChange}
-        onReadOnly={reportReadOnly}
-        onSaveDelayed={setSaveDelayed}
-        onUnavailable={onUnavailable}
-        pending={mount.drafts.pending}
-        phase={phase}
-        restored={mount.drafts.current}
-      />
-    );
+  const renderMount = (mount: NoteMount, phase: NoteEditorPhase) => (
+    <NoteEditorCore
+      allowExternalAssets={allowExternalAssets}
+      collaborationToken={mount.token}
+      copies={mount.drafts.copies}
+      currentUserId={meData.id}
+      discussions={discussionsData ?? NO_DISCUSSIONS}
+      draftKey={storedKey}
+      joinStartedAt={joinStart.current}
+      material={material}
+      onDocumentRejected={onDocumentRejected}
+      onEditorStatusChange={onEditorStatusChange}
+      onMergeStore={onMergeStore}
+      onOffline={setOffline}
+      onOutdated={markOutdated}
+      onPainted={(view) => swap.painted(mount.key, view)}
+      onPresenceChange={onPresenceChange}
+      onReadOnly={reportReadOnly}
+      onSaveDelayed={setSaveDelayed}
+      onUnavailable={onUnavailable}
+      pending={mount.drafts.pending}
+      phase={phase}
+      pieces={mount.drafts.pieces}
+      restored={mount.drafts.current}
+      sources={mount.drafts.sources}
+    />
+  );
 
   return (
     <MaterialRenderProvider value={renderContext}>
@@ -465,9 +522,19 @@ function CollaborativeNoteEditor({
         {/* One drag-and-drop backend for every editor mounted here: react-dnd
          * refuses two HTML5 backends at once. */}
         <DndProvider backend={HTML5Backend}>
-          <div className="relative flex h-full flex-col gap-0 overflow-hidden">
-            {banner && !swap.shown.drafts.recovery && (
-              <SaveBanner state={banner} />
+          <div
+            className={cn(
+              'relative flex h-full flex-col gap-0 overflow-hidden',
+              // A piece's block, marked for a moment as the sheet shows it.
+              '[&_[data-merge-highlight]]:rounded-sm [&_[data-merge-highlight]]:bg-tint-warning'
+            )}
+          >
+            {banner && (
+              <SaveBanner
+                onDiscard={() => setDiscarding(true)}
+                onReview={() => setReviewing(true)}
+                state={banner}
+              />
             )}
             {swap.mounts.map(({ mount, phase, hidden }) => (
               // Keyed by room and mount: the swap only changes the classes, so
@@ -493,6 +560,31 @@ function CollaborativeNoteEditor({
                 ref={swap.copyTarget}
               />
             )}
+            {reviewing && mergeStore && (
+              <Suspense fallback={null}>
+                <NoteMergeView
+                  onClose={closeReview}
+                  onOpen={setReviewPiece}
+                  onShow={(block, after) =>
+                    showPieceBlock(block, after, () => setReviewing(false))
+                  }
+                  open={reviewPiece}
+                  store={mergeStore}
+                  underStrip={!!banner}
+                />
+              </Suspense>
+            )}
+            <ConfirmDialog
+              body={m.merge_discard_body()}
+              confirmLabel={m.merge_discard_confirm()}
+              onClose={() => setDiscarding(false)}
+              onConfirm={() => {
+                mergeStore?.dismissAll();
+                setReviewing(false);
+              }}
+              open={discarding}
+              title={m.merge_discard_title()}
+            />
           </div>
         </DndProvider>
       </EditorRuntimeProvider>

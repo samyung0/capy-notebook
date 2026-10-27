@@ -4711,6 +4711,7 @@ components:
             - unconfirmed_edit
             - offline_episode
             - discard_unsaved
+            - merge_view
           type: string
         reason:
           enum:
@@ -4728,6 +4729,11 @@ components:
             - read_only
             - forbidden
             - not_found
+            - unreadable
+            - refused
+            - changed
+            - conflict
+            - hidden
           type: string
         sizeBytes:
           format: int64

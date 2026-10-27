@@ -4,6 +4,7 @@ import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { MockDialogId } from '@/components/dev/mockDialogOptions';
 import { decodeSourceState } from '@/features/files/sourceState';
+import { pieceRow } from '@/features/notes/merge/pieceRows';
 import { m } from '@/i18n';
 import { draftKey, putDrafts, sourceLineage } from '@/lib/editDrafts';
 import { PREF_KEYS, writePref } from '@/lib/localPrefs';
@@ -15,6 +16,7 @@ import {
   announceReadOnly,
   announceSourceEpoch,
   failNextSourceSave,
+  mockMaterialRoom,
   refuseNextSourceSave,
   rooms,
   savedSourceState,
@@ -297,6 +299,53 @@ export async function runJourney(
     announceReadOnly();
     await readOnlyStrip();
     return 'The source drops to view mode under the read-only strip, showing its saved edit and discarding the unsaved text.';
+  }
+  if (id === 'note-merge-review') {
+    // Pieces the merge view shows (Q251): a block changed on both sides and
+    // one someone else deleted.
+    const key = draftKey(db.user.id, 'material', scenarioNote);
+    const lineage = mockMaterialRoom(scenarioNote);
+    const at = Date.now();
+    const intro = 'mock-scenario-note-intro';
+    await putDrafts([
+      pieceRow(
+        key,
+        lineage,
+        {
+          after: null,
+          at,
+          block: intro,
+          mine: {
+            children: [
+              { text: 'A note for trying application errors, edited offline.' },
+            ],
+            id: intro,
+            type: 'p',
+          },
+          source: 'changed',
+        },
+        1
+      ),
+      pieceRow(
+        key,
+        lineage,
+        {
+          after: intro,
+          at,
+          block: 'mock-scenario-note-gone',
+          mine: {
+            children: [{ text: 'A paragraph someone else deleted.' }],
+            id: 'mock-scenario-note-gone',
+            type: 'p',
+          },
+          source: 'refused',
+        },
+        1
+      ),
+    ]);
+    await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+    await ui.element('[data-testid="save-banner"][data-kind="review"]');
+    return;
   }
   if (id === 'note-permission-lost') {
     await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);

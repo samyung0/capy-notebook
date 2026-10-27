@@ -220,6 +220,233 @@ test('offline edits outlive a reload and save once the room is back', async ({
   );
 });
 
+// Q229: a note whose join ran out (its 30 s) shows its saved copy, editable.
+// What is typed there is kept on this device as the copy, and the next
+// open's first sync merges it into the room block by block, as ordinary
+// edits that save.
+test('a copy edited before the join merges into the room at the next first sync', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto('/workspaces/ws_scenarios');
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  await setReachable(page, false);
+  await page.goto(note);
+  const saveState = page.getByTestId('editor-save-state');
+  await expect(saveState).toHaveAttribute('data-save-state', 'error', {
+    timeout: 60_000,
+  });
+  const editor = page.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText(seed);
+  await type(page, ' Typed in the copy.');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('A block of the copy.');
+  // The copy alone: nothing reached the Yjs document.
+  await expect.poll(() => draftKinds(page)).toEqual(['copy']);
+  await page.reload();
+  await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await setReachable(page, true);
+  await expect(editor).toContainText('Typed in the copy.', {
+    timeout: 30_000,
+  });
+  await expect(editor).toContainText('A block of the copy.');
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved');
+  await expect.poll(() => draftKinds(page)).toEqual([]);
+  // The room holds them: a reload with nothing stored shows them.
+  await page.reload();
+  await expect(editor).toContainText('A block of the copy.', {
+    timeout: 30_000,
+  });
+  await expect(
+    page.locator('[data-testid="save-banner"][data-kind="review"]')
+  ).toHaveCount(0);
+});
+
+// Q229: a note opened offline with no earlier sync on this device shows its
+// saved copy, editable. Back online, a block only the user changed merges
+// into the room; a block the room changed meanwhile too waits in the merge
+// view (Q251) with the user's version, the room's kept.
+test('a block both the copy and the room changed waits in the merge view while the rest merges', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openNote(page);
+  await typeSaved(page, ' Room edit.');
+  // MSW rebuilds the projection on each load: the next one is behind the
+  // room, as a projection a co-editor's edit has not reached yet.
+  await setReachable(page, false);
+  await page.reload();
+  await expect(page.getByText(m.editor_connecting()).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await setOnline(page, false);
+  const editor = page.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText(seed, { timeout: 30_000 });
+  await expect(editor).not.toContainText('Room edit.');
+  await type(page, ' Mine.');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('A clean block.');
+  await setReachable(page, true);
+  await setOnline(page, true);
+  const strip = page.locator('[data-testid="save-banner"][data-kind="review"]');
+  await expect(strip).toBeVisible({ timeout: 30_000 });
+  await expect(editor).toContainText('Room edit.');
+  await expect(editor).toContainText('A clean block.');
+  await expect(editor).not.toContainText('Mine.');
+  await strip.getByRole('button', { name: m.merge_review() }).click();
+  const piece = page.locator('[data-merge-piece="mock-scenario-note-intro"]');
+  await expect(piece).toHaveAttribute('data-status', 'conflict');
+  await expect(piece).toContainText('Mine.');
+  await expect(piece).toContainText(m.merge_source_conflict());
+  await expect.poll(() => draftKinds(page)).toEqual(['piece']);
+});
+
+/** Opens the scenario note with the service down: past the join's 30 s it
+ * shows its saved copy, editable (Q229). */
+async function openCopy(page: Page) {
+  await page.goto('/workspaces/ws_scenarios');
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  await setReachable(page, false);
+  await page.goto(note);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'error',
+    { timeout: 60_000 }
+  );
+  const editor = page
+    .locator('[data-note-mount="live"] [contenteditable]')
+    .first();
+  await expect(editor).toContainText(seed);
+  return editor;
+}
+
+// Merge view review r1 Q-M3 (Q409): a room swap before the first bind (the
+// room moved while the service was away) pauses the editor, which stores
+// its copy and lets go of it: the next mount shows it and merges it into
+// the next room at its sync.
+test('a copy edited before the join survives a room swap and merges into the next room', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openCopy(page);
+  await type(page, ' Typed before the swap.');
+  await expect.poll(() => draftKinds(page)).toEqual(['copy']);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { moveMockMaterialRoom } = await import(path);
+    moveMockMaterialRoom('mock-scenario-note');
+  });
+  await setReachable(page, true);
+  const live = page.locator('[data-note-mount="live"] [contenteditable]');
+  await expect(page.locator('[data-note-mount]')).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await expect(live.first()).toContainText('Typed before the swap.');
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  await expect.poll(() => draftKinds(page)).toEqual([]);
+  await page.reload();
+  await expect(live.first()).toContainText('Typed before the swap.', {
+    timeout: 30_000,
+  });
+});
+
+// Merge view review r1 Q-L4 and Q-L5 (Q410): a copy pasted past the offline
+// bound stops the editor under the offline-limit strip; the typing just
+// before the paste was written first, so the join merges it alone.
+test('a copy pasted past the offline bound locks the editor and merges the typing before it', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const editor = await openCopy(page);
+  await type(page, ' Typed before the paste.');
+  // As Chromium pastes HTML: a beforeinput carrying the data.
+  await editor.evaluate((element) => {
+    const transfer = new DataTransfer();
+    const big = 'x'.repeat(2.2 * 1024 * 1024);
+    transfer.setData('text/html', `<p>Pasted.</p><p>${big}</p>`);
+    element.dispatchEvent(
+      new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer,
+        inputType: 'insertFromPaste',
+      })
+    );
+  });
+  await expect(
+    page.locator('[data-testid="save-banner"][data-kind="offline-limit"]')
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+  await expect(page.locator('[data-note-toolbar]').first()).toHaveAttribute(
+    'inert'
+  );
+  await setReachable(page, true);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await expect(editor).toContainText('Typed before the paste.');
+  await expect(editor).not.toContainText('Pasted.');
+  await expect.poll(() => draftKinds(page)).toEqual([]);
+});
+
+// Merge view review r2 L5 (Q421): a tab holds its copy's lock while it
+// records it, so a second tab of the note neither shows nor merges that copy.
+test("a second tab leaves an open tab's copy alone", async ({
+  context,
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openCopy(page);
+  await type(page, ' Typed in the first tab.');
+  await expect.poll(() => draftKinds(page)).toEqual(['copy']);
+  const second = await context.newPage();
+  await second.goto(note);
+  const editor = second
+    .locator('[data-note-mount="live"] [contenteditable="true"]')
+    .first();
+  await expect(editor).toContainText(seed, { timeout: 30_000 });
+  await expect(second.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
+  await expect(editor).not.toContainText('Typed in the first tab.');
+  expect(await draftKinds(page)).toEqual(['copy']);
+  await second.close();
+});
+
+// Merge view review r2 L2 (Q421): a tab whose own copy was last edited over
+// 7 days ago never merges it at its bind: its blocks wait in the merge view
+// as expired pieces.
+test("a tab's own copy past the 7-day expiry becomes pieces at its bind", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.clock.install();
+  const editor = await openCopy(page);
+  await type(page, ' Typed a week ago.');
+  await expect.poll(() => draftKinds(page)).toEqual(['copy']);
+  // Eight days on, as a sleeping device wakes (no timer runs between).
+  await page.clock.setSystemTime(Date.now() + 8 * 24 * 60 * 60 * 1000);
+  await setReachable(page, true);
+  const strip = page.locator('[data-testid="save-banner"][data-kind="review"]');
+  await expect(strip).toBeVisible({ timeout: 30_000 });
+  await expect(editor).not.toContainText('Typed a week ago.');
+  await strip.getByRole('button', { name: m.merge_review() }).click();
+  const piece = page.locator('[data-merge-piece="mock-scenario-note-intro"]');
+  await expect(piece).toContainText('Typed a week ago.');
+  await expect(piece).toContainText(m.merge_source_expired());
+  await expect.poll(() => draftKinds(page)).toEqual(['piece']);
+});
+
 // Q327, Q328, Q360: a closed session's never-accepted steps go through the
 // draft send while the note opens view-only; not delivered 30 s on, the
 // synced note takes them itself and edits on, syncing, with nothing of them
@@ -318,10 +545,10 @@ test('a note whose room syncs after 30 s takes its stored steps then, and sends 
   await expect.poll(() => draftSends(page), { timeout: 10_000 }).toBe(3);
 });
 
-// Q360: a send that settles before the 30 s with its group not taken (the
-// room never assigned its ids) opens the steps copy-only instead of letting
-// them vanish, reported once as held.
-test('a note whose draft send leaves its group opens the steps copy-only', async ({
+// Q360, Q251: a send that settles before the 30 s with its group not taken
+// (the room never assigned its ids) turns the steps into the merge view's
+// pieces instead of letting them vanish, reported once as held.
+test('a note whose draft send leaves its group shows the steps in the merge view', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -330,9 +557,14 @@ test('a note whose draft send leaves its group opens the steps copy-only', async
   await answerDrafts(page, 'unassigned');
   await page.goto(note);
   await setReachable(page, true);
-  const recovery = page.getByTestId('note-recovery');
-  await expect(recovery).toContainText('Held steps.', { timeout: 25_000 });
-  await expect(recovery.locator('[contenteditable="true"]')).toHaveCount(0);
+  const strip = page.locator('[data-testid="save-banner"][data-kind="review"]');
+  await expect(strip).toBeVisible({ timeout: 25_000 });
+  const editor = page.locator('[contenteditable="true"]').first();
+  await expect(editor).not.toContainText('Held steps.');
+  await strip.getByRole('button', { name: m.merge_review() }).click();
+  await expect(
+    page.locator('[data-merge-piece="mock-scenario-note-intro"]')
+  ).toContainText('Held steps.');
   await expect
     .poll(() => reportedIncidents(page))
     .toContainEqual(
@@ -344,45 +576,29 @@ test('a note whose draft send leaves its group opens the steps copy-only', async
     );
 });
 
-test('edits from a room that moved on open read-only for copying until Reload', async ({
+// Q251: edits from a room that moved on open the live note with the merge
+// view (the 2026-10-04 copy-only recovery, for notes); entering it from
+// another lineage is still an editing incident, and Keep current drops the
+// piece for good.
+test('edits from a room that moved on wait in the merge view until kept or applied', async ({
   page,
 }) => {
   test.setTimeout(150_000);
-  await openNote(page);
-  const banner = page.getByTestId('save-banner');
-  const recovery = page.getByTestId('note-recovery');
-  const editor = page.locator('[contenteditable="true"]').first();
-  // Offline edits, then the service discards unsaved room state while this
-  // tab is away.
-  const moveWhileOffline = async (text: string) => {
-    await setOnline(page, false);
-    await type(page, text);
-    await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
-    await page.evaluate(async () => {
-      const path = '/src/mocks/collaboration.ts';
-      const { moveMockMaterialRoom } = await import(path);
-      moveMockMaterialRoom('mock-scenario-note');
-    });
-    await setOnline(page, true);
-  };
-  const shown = async (text: string) => {
-    await expect(banner).toHaveAttribute('data-kind', 'changed', {
-      timeout: 30_000,
-    });
-    await expect(recovery).toContainText(text);
-    await expect(recovery.locator('[contenteditable="true"]')).toHaveCount(0);
-    // Reload is the only way out.
-    await expect(banner.getByRole('button')).toHaveCount(1);
-    await expect(
-      banner.getByRole('button', { name: m.error_action_reload() })
-    ).toBeVisible();
-  };
-
-  // Reload straight from recovery opens the live note with no stale offline
-  // banner from the editor that went before.
-  await moveWhileOffline(' Copied first.');
-  await shown(' Copied first.');
-  // Entering recovery from another lineage is an editing incident.
+  const editor = await openNote(page);
+  const strip = page.locator('[data-testid="save-banner"][data-kind="review"]');
+  await setOnline(page, false);
+  await type(page, ' Typed offline.');
+  await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { moveMockMaterialRoom } = await import(path);
+    moveMockMaterialRoom('mock-scenario-note');
+  });
+  await setOnline(page, true);
+  await expect(strip).toBeVisible({ timeout: 30_000 });
+  await expect(editor).toContainText(seed);
+  await expect(editor).not.toContainText('Typed offline.');
+  await expect(page.locator('[data-note-mount]')).toHaveCount(1);
   await expect
     .poll(() => reportedIncidents(page))
     .toContainEqual(
@@ -393,26 +609,18 @@ test('edits from a room that moved on open read-only for copying until Reload', 
         reason: 'reopen',
       })
     );
-  await banner.getByRole('button', { name: m.error_action_reload() }).click();
-  await expect(editor).toContainText(seed, { timeout: 30_000 });
-  await expect(editor).not.toContainText('Copied first.');
-  await expect(banner).toHaveCount(0);
-  await expect.poll(() => storedDrafts(page)).toBe(0);
-
-  await moveWhileOffline(' Kept for copying.');
-  await shown('Kept for copying.');
-  await shot(page, 'recovery');
-  // Never merged: a reload shows the same recovery.
-  await page.evaluate(() => localStorage.setItem('capy.theme', 'mocha'));
+  // The group's rows became one piece, which a reload keeps.
+  await expect.poll(() => draftKinds(page)).toEqual(['piece']);
+  await shot(page, 'review');
   await page.reload();
-  await shown('Kept for copying.');
-  await shot(page, 'recovery-dark');
-  await page.evaluate(() => localStorage.setItem('capy.theme', 'latte'));
-
-  await banner.getByRole('button', { name: m.error_action_reload() }).click();
-  await expect(editor).toContainText(seed, { timeout: 30_000 });
-  await expect(editor).not.toContainText('Kept for copying.');
-  await expect(banner).toHaveCount(0);
+  await expect(strip).toBeVisible({ timeout: 30_000 });
+  await strip.getByRole('button', { name: m.merge_review() }).click();
+  const piece = page.locator('[data-merge-piece="mock-scenario-note-intro"]');
+  await expect(piece).toContainText('Typed offline.');
+  await piece.getByRole('button').first().click();
+  await piece.getByRole('button', { name: m.merge_keep() }).click();
+  await expect(piece).toHaveCount(0);
+  await expect(strip).toHaveCount(0);
   await expect.poll(() => storedDrafts(page)).toBe(0);
 });
 

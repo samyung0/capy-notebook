@@ -63,12 +63,18 @@ export interface EditDraft {
    * it (it needs the room's state, a piece is over the service's cap, or it
    * is of another lineage or Office base), so no sweep sends it again. */
   held?: true;
+  /** The service held it as typing into a block the room deleted
+   * (`hidden`, Q237): its pieces say so (Q410). */
+  hidden?: true;
   /** `${session}:state`, or `${session}:${seq}` for an update (or a run
-   * ending at `seq`). */
+   * ending at `seq`), or `${session}:copy`. */
   id: string;
   /** `${actorId}:material:${id}` or `${actorId}:file:${id}`. */
   key: string;
-  kind: 'state' | 'update';
+  /** Yjs rows (`state`, `update`), or a note's JSON rows no Yjs reader
+   * takes: its saved copy edited before its room joined (`copy`, Q229) and
+   * the merge view's pieces (`piece`, Q251), features/notes/merge/. */
+  kind: 'state' | 'update' | 'copy' | 'piece';
   lineage: string;
   /** A save refused for good: shown for copying, never merged back. */
   refused?: true;
@@ -306,10 +312,10 @@ export async function dropLostDrafts(
 function markDrafts(
   key: string,
   ids: string[],
-  flag: 'accepted' | 'held' | 'refused' | 'reported'
+  ...flags: ('accepted' | 'held' | 'hidden' | 'refused' | 'reported')[]
 ): Promise<void> {
   if (!(stored(key) && ids.length)) return Promise.resolve();
-  return call({ flag, ids, key, op: 'mark' });
+  return call({ flags, ids, key, op: 'mark' });
 }
 
 /** Marks these rows of a document reported (edit_incidents). */
@@ -317,11 +323,16 @@ export function markDraftsReported(key: string, ids: string[]): Promise<void> {
   return markDrafts(key, ids, 'reported');
 }
 
+/** A row of Yjs updates: every other kind (a note's `copy` and `piece`
+ * rows) is JSON that only its own reader takes. */
+export const yjsRow = (row: { kind: EditDraft['kind'] }) =>
+  row.kind === 'state' || row.kind === 'update';
+
 /** Unsent edits expire 7 days after their last edit (Epo 2026-10-24,
- * human/frontend/error-handling.md): the next open on the device shows them
- * once copy-only with a line that they are too old to sync, then deletes
- * them, and no sweep sends them. For notes until the merge view exists
- * (Q251); other kinds keep it. */
+ * human/frontend/error-handling.md), and no sweep sends them: the next open
+ * of a note on the device turns them into the merge view's pieces (Q251),
+ * never applying them raw; other kinds show them once copy-only with a line
+ * that they are too old to sync, then delete them. */
 export const DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The sessions among `rows` past the expiry: each session's edits expire
@@ -344,25 +355,30 @@ function expiredSessions(
  * Split a document's rows against the room it opens: `current` merges into
  * the live document; `recovery` is one group (refused rows, one other
  * lineage, or one session's rows past the 7-day expiry) to show read-only
- * first, `refused` and `expired` saying which. Further groups wait for the
- * next open. `same` compares lineages (text sources ignore the base).
+ * first, `refused` and `expired` saying which (`hidden`: rows the service
+ * held as typing into a deleted block, a group of their own, Q421). Further
+ * groups wait for the next open. `same` compares lineages (text sources ignore the base). Only
+ * Yjs rows are split; a note's copy and piece rows go to their own readers.
+ * A note turns every recovery group into the merge view's pieces (Q251);
+ * other kinds show it copy-only.
  *
  * Rows of this lineage from a session the room never accepted that no draft
- * send delivers (held after one, or with no stored token) open copy-only
- * with the refused ones when they draw on their own (Epo 2026-10-25, Q360:
- * Q237 and Q251 until the merge view). Ones that need the room's document
- * stay current: the editor applies them, and the room's refusal of them
- * opens its whole document copy-only. The drafts worker decides which (its
+ * send delivers (held after one, or with no stored token) join the refused
+ * ones when they draw on their own (Epo 2026-10-25, Q360: Q237 and Q251).
+ * Ones that need the room's document stay current: the editor applies them,
+ * and the room's refusal of them keeps its whole document as a refused
+ * group. The drafts worker decides which (its
  * `draws`), so the main thread merges and applies held rows only once, as
  * recovery or as current rows (r5 N5); rows it cannot read stay current.
  */
 export async function draftGroups(
-  rows: EditDraft[],
+  all: EditDraft[],
   lineage: string,
   same: (left: string, right: string) => boolean = (left, right) =>
     left === right,
   now = Date.now()
 ) {
+  const rows = all.filter(yjsRow);
   const expired = expiredSessions(rows, now);
   const old = (row: EditDraft) => expired.has(row.session);
   const unsendable = (row: EditDraft) =>
@@ -396,13 +412,16 @@ export async function draftGroups(
         )
       : rows.filter(
           (row) =>
-            same(row.lineage, first.lineage) && refused(row) === refused(first)
+            same(row.lineage, first.lineage) &&
+            refused(row) === refused(first) &&
+            !!row.hidden === !!first.hidden
         );
   return {
     current: rows.filter(
       (row) => !(old(row) || refused(row)) && same(row.lineage, lineage)
     ),
     expired: stale,
+    hidden: !stale && !!first?.hidden,
     recovery,
     refused: !stale && !!first && refused(first),
   };
@@ -957,7 +976,7 @@ function roomToken(
  * - `refused`: over a limit or not an update a writer may send;
  * - `waits`: only the editor can send it (a piece over the service's cap, a
  *   base the room lacks, another lineage or Office base), at the file's next
- *   open;
+ *   open; `hidden` too, its rows marked as typing into a deleted block;
  * - `later`: the service answered something else (busy, failing, lost
  *   access): tried again at the next page load;
  * - `retry`: no answer (offline), the rows changed, or the user is in a
@@ -965,7 +984,14 @@ function roomToken(
  * - `outdated`: the service refuses this build's client protocol (Capy was
  *   updated): nothing more goes until the page reloads, and no row changes.
  */
-type Sent = 'sent' | 'refused' | 'waits' | 'later' | 'retry' | 'outdated';
+type Sent =
+  | 'sent'
+  | 'refused'
+  | 'waits'
+  | 'hidden'
+  | 'later'
+  | 'retry'
+  | 'outdated';
 
 // Set once a send was refused as outdated: sweeps stop for the page load.
 let outdated = false;
@@ -991,15 +1017,16 @@ function groupGrants(group: DraftInfo[]) {
   return [...byId.values()].slice(0, MAX_GRANTS);
 }
 
-/** A document's rows its room takes now: not refused, not left for the
- * editor (`held`), of the token's room, one group per lineage (an Office
- * file's rows of another base go apart), with the newest of their stored
- * tokens. */
+/** A document's rows its room takes now: Yjs rows (never a note's copy),
+ * not refused, not left for the editor (`held`), of the token's room, one
+ * group per lineage (an Office file's rows of another base go apart), with
+ * the newest of their stored tokens. */
 function sendableGroups(rows: DraftInfo[], room: string) {
   // An expired session's rows wait for the next open, which shows them once.
   const expired = expiredSessions(rows, Date.now());
   const groups = new Map<string, DraftInfo[]>();
   for (const row of rows) {
+    if (!yjsRow(row)) continue;
     if (row.refused || row.held || row.lineage.split('@')[0] !== room) continue;
     if (expired.has(row.session)) continue;
     groups.set(row.lineage, [...(groups.get(row.lineage) ?? []), row]);
@@ -1107,6 +1134,10 @@ async function sendPiece(
     case 'limit':
     case 'malformed':
       return 'refused';
+    // Typing into a block the room deleted, which only the editor's join
+    // can show (Q237).
+    case 'hidden':
+      return 'hidden';
     case 'lineage':
     case 'too_large':
     case 'unassigned':
@@ -1207,15 +1238,14 @@ async function sendGroups(
     }
     answers.push(sent);
     if (sent === 'sent') await deleteDrafts(refs);
-    else if (sent === 'refused' || sent === 'waits') {
+    else if (sent === 'refused' || sent === 'waits' || sent === 'hidden') {
+      const ids = refs.map((row) => row.id);
       const draws =
         sent === 'refused' &&
         (await call<boolean | null>({ op: 'draws', rows: refs }));
-      await markDrafts(
-        key,
-        refs.map((row) => row.id),
-        draws ? 'refused' : 'held'
-      );
+      // One write, so a held row is never left unlabelled (review r2 N4).
+      if (sent === 'hidden') await markDrafts(key, ids, 'held', 'hidden');
+      else await markDrafts(key, ids, draws ? 'refused' : 'held');
     }
   }
   return answers;
@@ -1295,7 +1325,7 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
               )
             : [];
         kept ||= !!answers?.some(
-          (sent) => sent === 'refused' || sent === 'waits'
+          (sent) => sent === 'refused' || sent === 'waits' || sent === 'hidden'
         );
         again =
           !stopped &&

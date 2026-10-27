@@ -80,6 +80,10 @@ export function seedScenarioFixtures() {
       content: createMaterialDocument([
         {
           children: [{ text: 'A note for trying application errors.' }],
+          // Kept across reloads, as a stored note's ids are (MSW rebuilds
+          // the fixture on every load), so a copy edited before the room
+          // joined merges by block id after one (Q229).
+          id: 'mock-scenario-note-intro',
           type: 'p',
         },
       ]),
