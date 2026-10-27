@@ -3169,8 +3169,11 @@ impl Room {
         // as collected, its text lost: it is answered late, and its writer's
         // late merge places it (Q443). Live updates, draft groups (Q436) and
         // agent edits and Undo all come through here; before admission, so a
-        // late group is never answered hidden (merge view V-N1).
-        if matches!(self.kind, Kindly::Note(_))
+        // late group is never answered hidden (merge view V-N1). A note's
+        // content room only, the one collected in place: item, diagram and
+        // mindmap rooms have no late path and drop typing into a deleted item
+        // as Yjs does (Q445).
+        if matches!(&self.kind, Kindly::Note(note) if note.sessioned())
             && ydoc::gc::names_collected(&self.doc.transact(), &update)
         {
             return Err(Outcome::refused(

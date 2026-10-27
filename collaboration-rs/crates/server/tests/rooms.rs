@@ -12591,6 +12591,70 @@ async fn live_item_drafts_reach_their_rooms() {
     );
 }
 
+/// Q445 (Epo 2026-10-27): Q443's collected-history check runs in a note's
+/// content room only. In a flashcard set, typing into a card a co-editor
+/// just deleted (yrs collects its faces) is admitted and dropped as Yjs
+/// drops it, as a draft (200) and over a live socket (acknowledged), as
+/// before the release: item rooms have no late path. Fails if an item room
+/// answers it late (409 `late`, `collaboration-late`).
+#[tokio::test]
+async fn typing_into_a_deleted_card_is_admitted_as_before() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let set = flashcard_set(
+        &env,
+        &owner,
+        None,
+        &[
+            ("c1", "Cell", "unit of life"),
+            ("c2", "Nucleus", "holds DNA"),
+        ],
+    )
+    .await;
+    let room = format!("material:{set}:schema:1");
+    let write = token(&room, &owner, "write");
+    let port = server.port;
+    let mut peer = set_writer(port, &room, &write, 2).await;
+    let writer = set_writer(port, &room, &write, 2).await;
+    let mut other = set_writer(port, &room, &write, 2).await;
+    let typed = |text: &'static str| {
+        move |doc: &Doc| {
+            let front = card_face(doc, "c1", "front").expect("the front");
+            let len = yrs::Text::len(&front, &doc.transact());
+            yrs::Text::insert(&front, &mut doc.transact_mut(), len, text);
+        }
+    };
+    let drafts = drafted(&writer.doc, typed(" membrane"));
+    let live = drafted(&other.doc, typed(" wall"));
+    peer.write(|doc| {
+        use yrs::Map;
+        let root = doc.get_or_insert_map(items::flashcards::ROOT);
+        root.remove(&mut doc.transact_mut(), "c1");
+    })
+    .await;
+    assert!(peer.until(6).await.is_some(), "the peer's ack");
+
+    let (status, answer) = send_drafts(port, &room, Some(&write), Some(ORIGIN), drafts).await;
+    assert_eq!(status, 200, "{answer}");
+    other.send(5, &sync(2, &live)).await;
+    assert!(other.until(6).await.is_some(), "the live typing's ack");
+    let fresh = set_writer(port, &room, &write, 1).await;
+    assert_eq!(fresh.cards(), [("c2".to_owned(), "Nucleus".to_owned())]);
+}
+
+/// A writer joined to a flashcard set's room, synced to its `cards` cards.
+async fn set_writer(port: u16, room: &str, write: &str, cards: usize) -> Client {
+    let mut client = Client::open(port).await;
+    client.joined(room, write).await;
+    assert!(
+        client.settle(|c| c.cards().len() == cards).await,
+        "{:?}",
+        client.cards()
+    );
+    client
+}
+
 // ------------------------------------------------- room reset as last resort
 
 /// The note room's lineage (`room_schema`): 1 until a reset moves it.

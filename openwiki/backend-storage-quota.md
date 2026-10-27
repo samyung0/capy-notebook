@@ -1036,6 +1036,9 @@ and tabs loading the collected state agree.
   seed 8462): any update naming a unit the room holds collected, live or a
   `/drafts` group (tried clean first, Q436) or an agent edit or Undo, is
   answered late at admission (Q443), and the tab's late merge places it.
+  Only a note's content room checks this, the one room collected in place:
+  quiz, quiz keys, flashcard, diagram and mindmap rooms admit such an update
+  and Yjs drops what lands in a deleted item, as before the release (Q445).
   While a fold runs, its room checks JOINs
   against the most that fold may move the window to (the version every
   counted session reached, or the stored version when none counts). A fold
