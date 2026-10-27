@@ -99,9 +99,11 @@ test('Blocks and Files open the shared document page in View', async ({
     page.getByRole('menuitem', { exact: true, name: m.content_move_file() })
   ).toHaveCount(0);
   await page.keyboard.press('Escape');
+  // The body comes after the header: the markdown worker loads and converts
+  // it first, which on a cold dev server takes several seconds.
   await expect(
     page.getByText('The cell membrane is a', { exact: false })
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
 });
 
 // TODO: better UX for PDF highlighting and overlays. These need the PDF's
