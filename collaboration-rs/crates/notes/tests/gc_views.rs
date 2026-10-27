@@ -1607,7 +1607,8 @@ impl World {
     }
 
     /// The open room collects its own document at a fold's window and held
-    /// set and swaps the result in (Q401), agent steps or not (Q432). The
+    /// set and swaps the result in (Q401), unless it keeps agent steps
+    /// (Q441). The
     /// new document must read as S does, with the same state vector and
     /// nothing pending, and no connected tab, nor one that would come back
     /// raw, may name a unit it dropped. As at the stored fold, units are
@@ -1616,6 +1617,11 @@ impl World {
     /// them as deleted items; an edit next to one lands in a deleted block,
     /// lost with or without the collection.
     fn collect_live(&mut self, window: &Window, held: &IdSet, tally: &mut Tally) {
+        // Q441: not while the room keeps agent steps (the stored pass still
+        // collects).
+        if !(self.agent_s.undo_stack().is_empty() && self.agent_s.redo_stack().is_empty()) {
+            return;
+        }
         let client = self.s.doc.client_id();
         let collected = gc::collect(&self.s.doc, window, held, Some(client));
         if collected.units == 0 {
@@ -1643,7 +1649,6 @@ impl World {
         }
         self.s = live;
         self.agent_s = undo_manager(&self.s, AGENT);
-        self.agent_r.clear_all();
         tally.live_collections += 1;
         tally.live_units += collected.units;
     }
@@ -1983,11 +1988,7 @@ fn collections_keep_every_replica_and_every_undo_exact() {
     assert!(tally.collections > seeds && tally.units > 0 && tally.undos > seeds);
     assert!(tally.live_collections > seeds / 4 && tally.live_units > 0);
     assert!(tally.draft_episodes > seeds / 8 && tally.drafts > seeds / 8);
-    // The agent's Undo here is a live UndoManager, which ends at the open
-    // room's swap of its document; since Q432 swaps also come while agent
-    // steps are held, so fewer of them are undone (the durable payload
-    // across a swap is the rooms tests' part), and fewer tabs hold.
-    assert!(tally.agent_undos > seeds / 10 && tally.days > seeds / 2);
+    assert!(tally.agent_undos > seeds / 4 && tally.days > seeds / 2);
     assert!(
         tally.agent_episodes > seeds / 8
             && tally.lost_episodes > seeds / 8
@@ -1995,6 +1996,6 @@ fn collections_keep_every_replica_and_every_undo_exact() {
     );
     assert!(tally.late_rejoins > seeds / 4 && tally.lost_rejoins > 0);
     assert!(tally.late_rejoins - tally.lost_rejoins > seeds / 40);
-    assert!(tally.contended > seeds / 4 && tally.holding > seeds / 10);
+    assert!(tally.contended > seeds / 4 && tally.holding > seeds / 8);
     yjs_check(&tally.sample);
 }
