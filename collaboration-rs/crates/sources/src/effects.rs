@@ -510,9 +510,23 @@ pub fn markers_only(txn: &TransactionMut<'_>) -> bool {
 /// count nothing. Read before the commit, while what it deleted still holds
 /// its content.
 pub fn edited_text(txn: &TransactionMut<'_>) -> TextCount {
-    let store = ReadTxn::store(txn);
+    counted(ReadTxn::store(txn), [txn.insert_set(), txn.delete_set()])
+}
+
+/// [edited_text] of a change applied in a transaction of its own (an Undo
+/// payload's, `ydoc::undo::apply_payload`), read off `doc`, which kept what
+/// it deleted (Q451).
+pub fn edited_change(doc: &yrs::Doc, change: &ydoc::undo::Captured) -> TextCount {
+    let txn = yrs::Transact::transact(doc);
+    counted(
+        ReadTxn::store(&txn),
+        [&change.insertions, &change.deletions],
+    )
+}
+
+fn counted(store: &yrs::Store, sets: [&yrs::IdSet; 2]) -> TextCount {
     let mut count = TextCount::default();
-    for set in [txn.insert_set(), txn.delete_set()] {
+    for set in sets {
         for (client, ranges) in set.iter() {
             for range in ranges.iter() {
                 for (block, item) in store.blocks_in(client, range.clone()) {

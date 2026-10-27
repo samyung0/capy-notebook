@@ -24,7 +24,7 @@ use axum::routing::{get, put};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
-use sources::edit::EditInput;
+use sources::edit::{EditInput, SentBack};
 use sources::engine::PoolConfig;
 use sources::handoff::{Handoff, PUBLICATION_HOLD_MARKER, SourcePublish};
 use sources::pending::OFFICE_CHANGES_BUDGET;
@@ -1107,6 +1107,43 @@ async fn an_office_save_counts_its_edited_text_until_the_trigger() {
     assert!(due().await, "3,000 tokens are due");
 }
 
+/// Q451 (Epo 2026-10-27): with no room loaded, an Office agent Undo adds the
+/// text it inserts and deletes to `net_tokens`, as the edit it reverses did
+/// and as a room counts every transaction it admits. Fails if the Undo
+/// counts nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn an_office_undo_with_no_room_counts_its_edited_text() {
+    let h = harness().await;
+    let (room, _, _, id, _) = docx_room(&h).await;
+    let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
+    let input = |operation: &str, commands: Vec<Value>, undo: Option<SentBack>| EditInput {
+        actor_user_id: h.user.clone(),
+        commands,
+        file_id: room.file_id.clone(),
+        operation: json!({ "id": operation, "requestHash": operation }),
+        undo,
+    };
+    let insert = json!({ "type": "insert_paragraph", "afterId": id, "text": "a".repeat(400) });
+    let edited = h
+        .sources
+        .apply_edit(input("op_counted", vec![insert], None), live)
+        .await
+        .unwrap();
+    let after_edit = net_tokens(&h, &room).await;
+    assert!(after_edit > 0, "the edit counted its text");
+    let undo = SentBack {
+        epoch: edited.epoch,
+        update: edited.undo.expect("the edit's Undo payload"),
+        undo_of: "op_counted".into(),
+    };
+    h.sources
+        .apply_edit(input("op_counted_undo", Vec::new(), Some(undo)), live)
+        .await
+        .unwrap();
+    assert_eq!(net_tokens(&h, &room).await, 2 * after_edit);
+}
+
 /// One file's Office effects as `office_changes` reads them, as JSON.
 async fn office_read<F>(sources: &Sources, workspace: &str, files: &[String], live: &F) -> String
 where
@@ -1411,6 +1448,43 @@ async fn files_not_read_within_the_budget_answer_failed() {
     assert_eq!(read_ids, [&room.file_id]);
     assert!(!read.files[0].changes.is_empty());
     assert_eq!(read.failed, [cold.file_id]);
+}
+
+/// Security regression (Q451, final review L4): `office_changes` reads only
+/// the named workspace's files. Another workspace's file with a saved edit,
+/// read under its own workspace, comes back neither read nor failed when
+/// named under this one. Fails without the read's workspace filter.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn office_changes_read_only_the_named_workspaces_files() {
+    let h = harness().await;
+    let other = harness().await;
+    let (room, bytes, doc, id, text) = docx_room(&other).await;
+    let mut durable = doc.transact().state_vector();
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "replace_text", "targetId": id, "expectedText": text, "text": format!("{text} saved") }),
+    );
+    save_office(&other, &room, &doc, &mut durable)
+        .await
+        .unwrap();
+    let live = live_of(&doc);
+    let files = std::slice::from_ref(&room.file_id);
+    let read = |workspace: String| {
+        let (sources, live) = (other.sources.clone(), &live);
+        async move {
+            sources
+                .office_changes(&workspace, files, live, OFFICE_CHANGES_BUDGET)
+                .await
+                .unwrap()
+        }
+    };
+    let own = read(other.workspace.clone()).await;
+    assert_eq!(own.files.len(), 1, "its own workspace reads it");
+    let foreign = read(h.workspace.clone()).await;
+    assert!(foreign.files.is_empty(), "read under another workspace");
+    assert!(foreign.failed.is_empty(), "{:?}", foreign.failed);
 }
 
 /// Q435: a cache write that fails is logged, and the read still answers

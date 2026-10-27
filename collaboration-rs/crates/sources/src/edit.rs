@@ -465,7 +465,13 @@ impl Sources {
                 match ydoc::undo::apply_payload(doc, update)
                     .map_err(|_| undo_gone("this edit can no longer be undone"))?
                 {
-                    ydoc::undo::Applied::Changed(change) => change,
+                    // An Office Undo's text counts as an edit's (Q451).
+                    ydoc::undo::Applied::Changed(change) => {
+                        if format.is_some() {
+                            edited = crate::effects::edited_change(doc, &change);
+                        }
+                        change
+                    }
                     ydoc::undo::Applied::Before => return Ok(Applied::Before),
                     ydoc::undo::Applied::Nothing => {
                         return Err(undo_gone("nothing of this edit is left to undo"));

@@ -12237,6 +12237,16 @@ async fn a_draft_send_is_refused_while_an_eviction_lease_is_held() {
 /// An Office file over the engine tests' `lesson.<format>` fixture (docx or
 /// pptx), owned by a fresh user; returns (user, file, the base's SHA-256).
 async fn office_file(env: &Env, gateway: &Gateway, format: &str) -> (String, String, String) {
+    office_file_named(env, gateway, format, "f_it").await
+}
+
+/// [office_file] with an id starting with `prefix` (a debug hook).
+async fn office_file_named(
+    env: &Env,
+    gateway: &Gateway,
+    format: &str,
+    prefix: &str,
+) -> (String, String, String) {
     let bytes = std::fs::read(format!(
         "{}/../../../e2e/fixtures/files/basic/lesson.{format}",
         env!("CARGO_MANIFEST_DIR")
@@ -12247,7 +12257,7 @@ async fn office_file(env: &Env, gateway: &Gateway, format: &str) -> (String, Str
     let (user, workspace, file) = (
         format!("u_it_{suffix}"),
         format!("ws_it_{suffix}"),
-        format!("f_it_{suffix}"),
+        format!("{prefix}_{suffix}"),
     );
     client
         .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[&user])
@@ -15121,6 +15131,125 @@ async fn a_source_undo_of_another_users_step_is_refused() {
             .load(std::sync::atomic::Ordering::Relaxed),
         checkpoints,
         "the refused Undo reached a checkpoint"
+    );
+}
+
+/// Security regression (Q451, REVIEW-final-rust L4): A's Undo of A's agent
+/// step is admitted by the open room and waits for its store (a debug hook
+/// delays every store a second); B, an editor holding A's payload, sends an
+/// Undo of the same step meanwhile and is refused 403, never answered with
+/// A's Undo receipt, and nothing of B's request is stored; so is B's Undo
+/// with no room loaded, the reversal stored. Fails if the room's receipt
+/// probe, or the no-room path's, answers another user's reversal.
+#[tokio::test]
+async fn an_undo_of_another_users_step_gets_no_receipt_of_its_reversal() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note_named(&env, "hello world", "capy-it-slow-store").await;
+    let material = material_of(&room).to_owned();
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    let edit = format!("e_{material}");
+    let request = note_edit(
+        &owner,
+        &material,
+        &edit,
+        serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &request).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(receipt_stored(&env, &edit).await);
+    let ours = format!("u_a_{material}");
+    let (status, undone) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&owner, &ours, &material, &receipt),
+    )
+    .await;
+    assert_eq!(status, 200, "{undone}");
+    let theirs = format!("u_b_{material}");
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&editor, &theirs, &material, &receipt),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (403, Some("lifecycle_rejected")),
+        "{refusal}"
+    );
+    assert!(receipt_stored(&env, &ours).await);
+    assert!(!receipt_stored_now(&env, &theirs).await);
+    drop(person);
+    wait_unloaded(server.port).await;
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&editor, &format!("u_b2_{material}"), &material, &receipt),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (403, Some("lifecycle_rejected")),
+        "{refusal}"
+    );
+}
+
+/// Security regression (Q451, REVIEW-final-rust L4): B's Undo of A's agent
+/// step on an open Office room is refused 403 before anything computes: the
+/// compute of a file whose id holds the debug hook waits three seconds, and
+/// the refusal comes well within them. Fails if the actor check waits for
+/// the room's admission, after the engine ran.
+#[tokio::test]
+async fn an_office_undo_of_another_users_step_is_refused_before_it_computes() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file, _) = office_file_named(&env, &gateway, "docx", "capy-it-slow-compute").await;
+    let other = user(&env).await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    assert_eq!(
+        client.joined(&room, &token(&room, &owner, "write")).await,
+        1
+    );
+    let inspect = serde_json::json!({
+        "actorUserId": owner,
+        "office": { "start": 0, "count": 200 },
+        "target": { "id": file, "kind": "source_file" },
+    });
+    let (_, entries) = office_entries(server.port, &inspect).await;
+    let (anchor, _) = entries
+        .iter()
+        .find(|(_, text)| text.starts_with("Owner sentence"))
+        .cloned()
+        .expect("the owner sentence");
+    let body = source_edit(
+        &owner,
+        &file,
+        &format!("e_{file}"),
+        serde_json::json!([{ "type": "insert_paragraph", "afterId": anchor, "text": "Inserted" }]),
+    );
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &body).await;
+    assert_eq!(status, 200, "{receipt}");
+    let started = std::time::Instant::now();
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &source_undo(&other, &format!("u_{file}"), &file, &receipt),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (403, Some("lifecycle_rejected")),
+        "{refusal}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "refused after {:?}: the compute ran first",
+        started.elapsed()
     );
 }
 

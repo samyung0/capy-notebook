@@ -57,7 +57,7 @@ func internalTestRouter() http.Handler {
 func TestInternalRoutesRefuseWithoutTheSecretBeforeReadingTheBody(t *testing.T) {
 	h := internalTestRouter()
 	collaboration := []string{"/internal/collaboration/files/f_1/checkpoint", "/internal/collaboration/materials/m_1/children"}
-	pipeline := []string{"/api/internal/trash", "/api/internal/documents/list"}
+	pipeline := []string{"/api/internal/trash", "/api/internal/documents/list", "/api/internal/source-changes"}
 	for _, tc := range []struct {
 		paths         []string
 		header, value string

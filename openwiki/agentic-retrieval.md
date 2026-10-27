@@ -4561,7 +4561,17 @@ not stored yet has no stored receipt: its signed payload names its document
 the actor and gives the Undo's receipt the step's chat (Q403). With no room
 loaded, the collaboration service checks the stored step itself before
 writing: a missing step is `undo_unavailable` and another user's is
-`lifecycle_rejected`, for a material and a source alike (Q432). A no-room
+`lifecycle_rejected`, for a material and a source alike (Q432). The actor
+check comes before any receipt answers and before anything computes, on
+both paths (Q451): the room's receipt probe (`AgentSteps::known`, which
+knows the actor) refuses a step it holds, or a reversal of one, made by
+another user, `stored_step` refuses a stored step or stored reversal of
+another user before the room path's compute (an Office engine call
+included), and the no-room note path checks the step's actor before it
+answers a stored reversal. A note Undo's stored-state check
+(`stored_names_collected`) reads the base and rows on the first
+transaction and replays them after it commits, holding neither the pooled
+connection nor the operation's lock (Q451). A no-room
 source retry refused `stale_target` or `invalid_input` reads its stored
 receipt again and answers it when the first request landed meanwhile.
 
@@ -5779,7 +5789,8 @@ document's version as it captures a save's row (`Sources::take_edits`, Q435):
 a save adds that count to `net_tokens` and marks that version saved, so an
 edit the room applies while the save runs stays unsaved; a failed save gives
 the count back. An agent edit with no room
-loaded counts its own transaction (`edit.rs`). Text counts Y.Text strings
+loaded counts its own transaction (`edit.rs`), and so does an agent Undo or
+Redo, from the change its payload made (`effects::edited_change`, Q451). Text counts Y.Text strings
 (Word and PowerPoint stories, comments) and an XLSX cell's value and formula
 text (`contents` under `xlsx:sheets`); formatting, attributes, styles,
 pictures and structure (row and column changes, moves) count 0

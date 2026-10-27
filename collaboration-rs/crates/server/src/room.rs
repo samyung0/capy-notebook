@@ -201,6 +201,7 @@ pub enum RoomCmd {
         id: String,
         request_hash: String,
         undo_of: Option<String>,
+        actor: String,
         reply: oneshot::Sender<Result<Option<Value>, crate::edits::DocumentError>>,
     },
 }
@@ -352,12 +353,16 @@ impl AgentSteps {
     }
 
     /// The receipt of a step this room holds for this request: its own
-    /// (a retry's), or another request's that reversed the same step.
+    /// (a retry's), or another request's that reversed the same step. An
+    /// Undo or Redo of a step `actor` did not make, or whose reversal is
+    /// another user's, is refused here, before any receipt answers it or
+    /// anything computes (Q432, Q451).
     fn known(
         &self,
         id: &str,
         request_hash: &str,
         undo_of: Option<&str>,
+        actor: &str,
     ) -> Result<Option<Value>, crate::edits::DocumentError> {
         if let Some(known) = self.find(|known| known.id == id) {
             if known.request_hash != request_hash {
@@ -368,8 +373,19 @@ impl AgentSteps {
             }
             return Ok(Some(known.answer()));
         }
-        Ok(undo_of
-            .and_then(|of| self.find(|known| known.undo_of.as_deref() == Some(of)))
+        let Some(of) = undo_of else {
+            return Ok(None);
+        };
+        if self
+            .find(|known| known.id == of || known.undo_of.as_deref() == Some(of))
+            .is_some_and(|known| known.actor != actor)
+        {
+            return Err(crate::edits::DocumentError::Lifecycle(
+                "the step is another user's".into(),
+            ));
+        }
+        Ok(self
+            .find(|known| known.undo_of.as_deref() == Some(of))
             .map(note_store::AgentReceipt::answer))
     }
 
@@ -645,8 +661,9 @@ pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
 #[cfg(debug_assertions)]
 pub const IT_SLOW_STORE: &str = "capy-it-slow-store";
 
-/// See `edits::edit_in_room`: an agent edit of a material whose id holds
-/// this computes three seconds late, in debug builds only.
+/// See `edits::edit_in_room` and `edits::source_in_room`: an agent edit of a
+/// material or source file whose id holds this computes three seconds late,
+/// in debug builds only.
 #[cfg(debug_assertions)]
 pub const IT_SLOW_COMPUTE: &str = "capy-it-slow-compute";
 
@@ -661,7 +678,7 @@ pub const IT_SLOW_RECHECK: &str = "capy-it-slow-recheck";
 #[cfg(debug_assertions)]
 const IT_REFUSE_AGENT_KEYS: &str = "capy-it-refuse-agent-keys";
 
-/// See `edits::send_writes`: a note edit whose step id starts with this
+/// See `edits::send_writes`: a server edit of a material whose id holds this
 /// reaches its room 3 s after its rows committed, in debug builds only.
 #[cfg(debug_assertions)]
 pub const IT_SERVICE_LATER: &str = "capy-it-service-later";
@@ -1604,9 +1621,14 @@ impl Room {
                 id,
                 request_hash,
                 undo_of,
+                actor,
                 reply,
             } => {
-                let _ = reply.send(self.agent.known(&id, &request_hash, undo_of.as_deref()));
+                let _ =
+                    reply.send(
+                        self.agent
+                            .known(&id, &request_hash, undo_of.as_deref(), &actor),
+                    );
             }
         }
     }
@@ -1771,7 +1793,7 @@ impl Room {
         let undo = receipt.undo_of.clone();
         if let Some(known) =
             self.agent
-                .known(&receipt.id, &receipt.request_hash, undo.as_deref())?
+                .known(&receipt.id, &receipt.request_hash, undo.as_deref(), actor)?
         {
             return Ok(Some(known));
         }

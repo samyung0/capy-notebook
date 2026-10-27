@@ -1232,23 +1232,9 @@ pub async fn edit_material(
         return Ok(receipt);
     }
     access::lock_material(&tx, &material_id).await?;
-    // A step reversed already (a retry whose answer was lost, another
-    // request's): its receipt answers, under the lock its write took.
-    if let Some(step) = &request.undo_of
-        && let Some(row) = tx
-            .query_opt(
-                &format!("SELECT {RECEIPT_COLUMNS} FROM agent_operations WHERE undo_of=$1"),
-                &[step],
-            )
-            .await?
-    {
-        let receipt = receipt_from_row(&row);
-        tx.commit().await?;
-        return Ok(receipt);
-    }
     // An Undo or Redo reverses a stored step of its own actor, as the room
     // checks one it holds (Q432): a missing step is gone, another user's is
-    // refused.
+    // refused, before any receipt answers it (Q451).
     let step_operation = match &request.undo_of {
         Some(step) => {
             let row = tx
@@ -1270,6 +1256,21 @@ pub async fn edit_material(
         }
         None => None,
     };
+    // A step reversed already (a retry whose answer was lost, another
+    // request of the same actor's): its receipt answers, under the lock its
+    // write took.
+    if let Some(step) = &request.undo_of
+        && let Some(row) = tx
+            .query_opt(
+                &format!("SELECT {RECEIPT_COLUMNS} FROM agent_operations WHERE undo_of=$1"),
+                &[step],
+            )
+            .await?
+    {
+        let receipt = receipt_from_row(&row);
+        tx.commit().await?;
+        return Ok(receipt);
+    }
     access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor), &[]).await?;
     access::assert_access(&tx, &material_id, &actor, crate::auth::Access::Write).await?;
     let select = "SELECT d.state, d.room_schema, d.stored_version, m.kind
@@ -1535,7 +1536,9 @@ async fn stored_receipt<C: deadpool_postgres::GenericClient>(
 }
 
 /// What an Undo reads of its step as stored: the receipt of another request
-/// that reversed it already, or the step itself (none: not stored yet).
+/// that reversed it already, or the step itself (none: not stored yet). A
+/// step another user made, or reversed, is refused first, before any
+/// receipt answers or anything computes (Q432, Q451).
 async fn stored_step<C: deadpool_postgres::GenericClient>(
     client: &C,
     request: &DocumentRequest,
@@ -1543,6 +1546,19 @@ async fn stored_step<C: deadpool_postgres::GenericClient>(
     let Some(of) = &request.undo_of else {
         return Ok(Ok(None));
     };
+    let others = client
+        .query_one(
+            "SELECT EXISTS (SELECT 1 FROM agent_operations
+               WHERE (id=$1 OR undo_of=$1) AND actor_user_id IS DISTINCT FROM $2)",
+            &[of, &request.actor_user_id],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if others {
+        return Err(DocumentError::Lifecycle(
+            "the step is another user's".into(),
+        ));
+    }
     if let Some(row) = client
         .query_opt(
             &format!("SELECT {RECEIPT_COLUMNS} FROM agent_operations WHERE undo_of=$1"),
@@ -1578,7 +1594,7 @@ async fn known(
     tx: &deadpool_postgres::Transaction<'_>,
     room: &str,
     operation: &Operation,
-    undo_of: Option<&str>,
+    (undo_of, actor): (Option<&str>, &str),
 ) -> Result<Option<Value>, DocumentError> {
     note_store::lock_operations(tx, std::iter::once(operation.id.as_str())).await?;
     if let Some(receipt) = stored_receipt(tx, operation).await? {
@@ -1592,6 +1608,7 @@ async fn known(
         id: operation.id.clone(),
         request_hash: operation.request_hash.clone(),
         undo_of: undo_of.map(str::to_owned),
+        actor: actor.to_owned(),
         reply,
     };
     if handle.tx.send(probe).await.is_err() {
@@ -1606,7 +1623,7 @@ async fn known_now(
     app: &Shared,
     room: &str,
     operation: &Operation,
-    undo_of: Option<&str>,
+    undo_of: (Option<&str>, &str),
 ) -> Result<Option<Value>, DocumentError> {
     let mut client = app
         .db
@@ -1625,7 +1642,7 @@ async fn refused_unless_known(
     app: &Shared,
     room: &str,
     operation: &Operation,
-    undo_of: Option<&str>,
+    undo_of: (Option<&str>, &str),
     refusal: DocumentError,
 ) -> Result<Option<Value>, DocumentError> {
     match known_now(app, room, operation, undo_of).await? {
@@ -1715,7 +1732,8 @@ async fn edit_in_room(
 ) -> Result<Option<Value>, DocumentError> {
     let actor = &request.actor_user_id;
     let undo = request.undo.is_some();
-    let undo_of = request.undo_of.as_deref();
+    // The step an Undo names, and who asks (Q451).
+    let undo_of = (request.undo_of.as_deref(), request.actor_user_id.as_str());
     let mut client = app
         .db
         .get()
@@ -1745,17 +1763,21 @@ async fn edit_in_room(
         Err(reversed) => return Ok(Some(reversed)),
     };
     // A note's Undo or Redo is checked against the stored state too: the
-    // open room's document can keep a unit the stored base collected (a
-    // refused live pass), and the room's rows load onto that base (Q419).
-    if let Change::Undo(updates) = &change
-        && kind == "note"
-        && stored_names_collected(&tx, material_id, updates).await?
-    {
-        return Err(undo_unavailable(UNDO_GONE));
-    }
+    // open room's document can keep a unit the stored base collected (before
+    // it hears of the fold), and the room's rows load onto that base (Q419).
+    // Read here, replayed once the transaction is done (Q451).
+    let stored = match &change {
+        Change::Undo(_) if kind == "note" => Some(stored_note(&tx, material_id).await?),
+        _ => None,
+    };
     let mut assigned = assigned_ids(&tx, material_id).await?;
     tx.commit().await?;
     drop(client);
+    if let (Some(stored), Change::Undo(updates)) = (stored, &change)
+        && stored_names_collected(stored, updates).await?
+    {
+        return Err(undo_unavailable(UNDO_GONE));
+    }
     let quiz = kind == "quiz";
     if quiz {
         // Both rooms admit it together: the one not loaded loads (Q403).
@@ -1870,19 +1892,19 @@ async fn edit_in_room(
     }))
 }
 
-/// Whether a payload's content part names a unit the stored note holds
-/// collected (`ydoc::gc::names_collected` over its base and rows).
-async fn stored_names_collected(
+/// A note's stored state (base and rows), read for [stored_names_collected]
+/// under the edit's first transaction: the replay runs after it commits, so
+/// neither the pooled connection nor the operation's lock waits on it (Q432,
+/// Q451).
+struct StoredNote {
+    base: Vec<u8>,
+    rows: Vec<Vec<u8>>,
+}
+
+async fn stored_note(
     tx: &deadpool_postgres::Transaction<'_>,
     material_id: &str,
-    updates: &[(note_store::Doc, Vec<u8>)],
-) -> Result<bool, DocumentError> {
-    let Some((_, update)) = updates
-        .iter()
-        .find(|(doc, _)| *doc == note_store::Doc::Content)
-    else {
-        return Ok(false);
-    };
+) -> Result<StoredNote, DocumentError> {
     let base: Vec<u8> = tx
         .query_one(
             "SELECT state FROM material_yjs_documents WHERE material_id=$1",
@@ -1895,12 +1917,27 @@ async fn stored_names_collected(
         .into_iter()
         .map(|(_, row)| row)
         .collect();
+    Ok(StoredNote { base, rows })
+}
+
+/// Whether an Undo's content update names a unit the stored note holds
+/// collected (`ydoc::gc::names_collected` over its base and rows).
+async fn stored_names_collected(
+    stored: StoredNote,
+    updates: &[(note_store::Doc, Vec<u8>)],
+) -> Result<bool, DocumentError> {
+    let Some((_, update)) = updates
+        .iter()
+        .find(|(doc, _)| *doc == note_store::Doc::Content)
+    else {
+        return Ok(false);
+    };
     let update = update.clone();
     tokio::task::spawn_blocking(move || {
-        let stored = ydoc::scratch_doc();
-        ydoc::replay(&stored, &base, &rows).map_err(|error| error.to_string())?;
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &stored.base, &stored.rows).map_err(|error| error.to_string())?;
         let update = ydoc::decode(&update).map_err(|error| error.to_string())?;
-        Ok::<_, String>(ydoc::gc::names_collected(&stored.transact(), &update))
+        Ok::<_, String>(ydoc::gc::names_collected(&doc.transact(), &update))
     })
     .await
     .map_err(|error| DocumentError::Unknown(error.to_string()))?
@@ -1924,7 +1961,8 @@ async fn source_in_room(
     // (Q432). Go's checkpoint takes the file's locks before the operation's,
     // and nothing here waits on the file's locks.
     let room = &session.room;
-    let undo_of = request.undo_of.as_deref();
+    // The step an Undo names, and who asks (Q451).
+    let undo_of = (request.undo_of.as_deref(), request.actor_user_id.as_str());
     let (step, name) = {
         let mut client = app
             .db
@@ -1950,6 +1988,12 @@ async fn source_in_room(
     let Some(live) = live_state(app, room).await else {
         return Ok(None);
     };
+    // Debug builds only: the integration test's slow compute, which must
+    // come after the actor check.
+    #[cfg(debug_assertions)]
+    if request.target.id.contains(crate::room::IT_SLOW_COMPUTE) {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
     let edit = match app.sources.edit_live(input, session, live).await {
         Ok(edit) => edit,
         Err(refusal) => {
