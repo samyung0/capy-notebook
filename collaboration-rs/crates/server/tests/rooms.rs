@@ -10700,6 +10700,38 @@ async fn stored_keys(env: &Env, quiz: &str) -> String {
         .get(0)
 }
 
+/// Whether a quiz's stored keys document, its base and its log read in one
+/// statement (an unload's fold between two reads would hide the row), holds
+/// the key of `part`.
+async fn stored_keys_hold(env: &Env, quiz: &str, part: &str) -> bool {
+    let Some(row) = db(env)
+        .await
+        .query_opt(
+            "SELECT k.state, ARRAY(SELECT u.update FROM material_yjs_key_updates u
+               WHERE u.material_id=k.material_id ORDER BY u.seq)
+             FROM material_yjs_keys k WHERE k.material_id=$1",
+            &[&quiz],
+        )
+        .await
+        .expect("keys")
+    else {
+        return false;
+    };
+    let state: Vec<u8> = row.get(0);
+    let rows: Vec<Vec<u8>> = row.get(1);
+    let doc = Doc::with_options(ydoc::doc_options(0));
+    {
+        let mut txn = doc.transact_mut();
+        txn.apply_update(Update::decode_v1(&state).expect("base decodes"))
+            .expect("base applies");
+        for update in rows {
+            txn.apply_update(Update::decode_v1(&update).expect("row decodes"))
+                .expect("row applies");
+        }
+    }
+    map_at(&doc, &["keys", part]).is_some()
+}
+
 /// Waits until a material document has more than `rows` stored update rows,
 /// at most 10 s: a loaded room stores an agent edit after admitting it.
 async fn rows_past(env: &Env, table: &str, material: &str, rows: i64) -> bool {
@@ -14433,7 +14465,6 @@ async fn a_quiz_edit_is_admitted_by_both_its_rooms_or_neither() {
             .await
     );
     assert_eq!(active_rooms(server.port).await, 1);
-    let key_rows = update_rows(&env, "material_yjs_key_updates", &quiz).await;
     let (status, receipt) = internal(
         server.port,
         "/internal/documents/edit",
@@ -14454,13 +14485,18 @@ async fn a_quiz_edit_is_admitted_by_both_its_rooms_or_neither() {
             .await
     );
     assert!(receipt_stored(&env, &format!("e_{quiz}")).await);
+    // Stored well before the minute's debounce: the stored keys document
+    // holds the key, whether the memberless room's unload folded its row into
+    // the base or not (a row count can drop at that fold).
+    let mut held = false;
     for _ in 0..50 {
-        if update_rows(&env, "material_yjs_key_updates", &quiz).await > key_rows {
+        held = stored_keys_hold(&env, &quiz, "q3-p").await;
+        if held {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    assert!(update_rows(&env, "material_yjs_key_updates", &quiz).await > key_rows);
+    assert!(held, "the keys room did not store its part");
 
     let refused = quiz_named(&env, &owner, "capy-it-refuse-agent-keys").await;
     let room = format!("material:{refused}:schema:1");
