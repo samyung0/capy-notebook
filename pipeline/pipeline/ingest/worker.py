@@ -855,12 +855,21 @@ def _summary_reason(job: dict, error: Exception | None) -> str | None:
     return str(error) or type(error).__name__
 
 
+def _note_rule(kind: str) -> bool:
+    """Text and markdown files take a note's summary rule (Epo 2026-10-27,
+    Q457); Office, PDF and every other kind keep the 2% gate."""
+    return kind.lower() in ("txt", "md")
+
+
 async def _fill_summary(
-    job: dict, scope: db.Scope, content_id: str, name: str
+    job: dict, scope: db.Scope, content_id: str, name: str, kind: str
 ) -> str | None:
     """Fill published content's pending descriptor (a no-op when present)."""
     error = await indexing.fill_descriptor(
-        workspace_id=scope.workspace_id, content_id=content_id, file_name=name
+        workspace_id=scope.workspace_id,
+        content_id=content_id,
+        file_name=name,
+        note_rule=_note_rule(kind),
     )
     return _summary_reason(job, error)
 
@@ -2372,7 +2381,7 @@ async def _reuse_donor(
             return handed_off
         missing = COMPLETE
     else:
-        missing = Missing(await _fill_summary(job, scope, content_id, name))
+        missing = Missing(await _fill_summary(job, scope, content_id, name, kind))
     committed = await asyncio.to_thread(
         _finish_ok,
         file_id,
@@ -2406,7 +2415,7 @@ async def _process_parts_bound(
     if content is None or content["status"] != "ready":
         raise TerminalError("parts-only job found no published content")
     missing = Missing(
-        await _fill_summary(job, scope, content["id"], name),
+        await _fill_summary(job, scope, content["id"], name, payload["kind"]),
         unread=content["pipeline_identity"] is None,
     )
     committed = await asyncio.to_thread(
@@ -2737,7 +2746,7 @@ async def _process_ingest_job(
         telemetry.record(donor_reused=True)
         note = f"{name}: identical content already indexed; reusing its index."
         missing = Missing(
-            await _fill_summary(job, scope, association["content_id"], name),
+            await _fill_summary(job, scope, association["content_id"], name, kind),
             tuple(unread),
         )
         committed = await asyncio.to_thread(
@@ -2780,6 +2789,7 @@ async def _process_ingest_job(
             chunks=chunks,
             allow_empty=payload.get("sourceRefresh") is True
             and payload.get("format") == "text",
+            note_rule=_note_rule(kind),
             on_progress=lambda pct: _publish_progress(scope, file_id, "indexing", pct),
             claim_job_id=job["id"],
         )

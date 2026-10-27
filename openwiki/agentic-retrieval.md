@@ -2014,7 +2014,9 @@ exists; the local bundle is gone once the first ingest finished.
   and the published descriptor is kept while that sum stays under 2%
   (`SUMMARY_REUSE_SHARE`), with its `updated_at` (when it was written). At 2%
   or more, or with no previous descriptor, the descriptor is regenerated
-  and the share resets to 0. The call reads `descriptor_excerpt`: the whole
+  and the share resets to 0. Text and markdown files (kinds `txt` and `md`)
+  take a note's rule instead (Epo 2026-10-27, Q457; see the text refresh
+  below). The call reads `descriptor_excerpt`: the whole
   content up to `DESCRIPTOR_INPUT_TOKENS` (8,000 estimated tokens), else the
   heading outline (halved until it fits 1,200), the opening chunks up to half
   the budget, then the first ~130 tokens of evenly spaced later chunks. A
@@ -2026,7 +2028,8 @@ exists; the local bundle is gone once the first ingest finished.
   next run tries again (a present, stale descriptor is not a missing part;
   decided 2026-10-15, Q4); with no previous descriptor it is pending: no row,
   never a blank one (Q10), since a blank would be copied to future donors and
-  never refilled. A fill (below) reads the same excerpt of the stored chunks.
+  never refilled. (A short text file's blank descriptor is the Q457 rule's
+  "none", not a failure.) A fill (below) reads the same excerpt of the stored chunks.
   A descriptor carries no prompt version: rewording
   the prompt or swapping the ingest model leaves stored descriptors in place.
   An accounting error is not a part failure: `_descriptor` and
@@ -5627,7 +5630,8 @@ reaches 10% (`NOTE_SUMMARY_SHARE`) and the summary is at least 24 hours old
 (`NOTE_SUMMARY_MIN_AGE_S`), else carried forward to the new content with its
 share and `updated_at`. The age bound keeps a note under active editing from
 paying for a summary per burst of typing. It is checked only when the note is
-indexed; there is no timer. The call is the file descriptor's prompt and
+indexed; there is no timer. Text and markdown files take the same rule
+(Q457, `_descriptor`'s `note_rule`; see the text refresh below). The call is the file descriptor's prompt and
 excerpt without the title (`summarize_note`, purpose `note_summary`), under
 the job's ingest accounting, so the workspace owner pays. A failed call does
 not fail the job, which would abandon the new chunks: the note publishes
@@ -6131,9 +6135,21 @@ records the indexed checkpoint it was sent at; processing advances
 Text refresh uses normal full-file normalization and chunking with parsing
 skipped. A small lookup reuses embeddings only for exact indexed input and the
 same immutable model pin. Canonical content hashes include heading context,
-reference classification and citation geometry. The descriptor follows the
-reuse gate above: kept below 2% net change, otherwise regenerated from every
-current chunk, with full coverage in the large-document reduction path.
+reference classification and citation geometry. A text or markdown file's
+descriptor (kinds `txt` and `md`, on its first ingest, a refresh or a fill)
+takes the note summary rule (Epo 2026-10-27, Q457): under 200 estimated tokens
+it is blank, a row with an empty descriptor, so the file is ready with no
+summary and drops one it had; with none (missing or blank) one is written;
+otherwise the change adds to the carried share and the descriptor is rewritten
+once the share reaches 10% and it is at least 24 hours old, else carried to
+the new content with its share and `updated_at`. Before, the 2% gate gave a
+blank text file a summary from its first typed character and rewrote short
+files every few edits. The share and age follow each file: a refresh reads
+the summary row of the content the file publishes and carries it to the
+file's new content, while a file of identical text keeps the shared row as it
+was. Every other refresh (Office, CSV and TSV, JSON) follows the reuse gate
+above: kept below 2% net change, otherwise regenerated from every current
+chunk, with full coverage in the large-document reduction path.
 
 ## Configuration surface
 

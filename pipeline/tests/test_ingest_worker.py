@@ -2500,7 +2500,13 @@ async def _noop_capture(*_args):
 def _summary_path(monkeypatch, *, ready: bool, summary_error, fill_error=None):
     """Fakes for _process_ingest_job from the content claim on: the content
     is new (indexed here) or already published (the content-reuse path)."""
-    seen: dict[str, list] = {"index": [], "publish": [], "fill": [], "finish": []}
+    seen: dict[str, list] = {
+        "index": [],
+        "publish": [],
+        "fill": [],
+        "finish": [],
+        "note_rule": [],
+    }
 
     async def _pin(_ws):
         return {
@@ -2524,6 +2530,7 @@ def _summary_path(monkeypatch, *, ready: bool, summary_error, fill_error=None):
 
     async def _index(**kwargs):
         seen["index"].append(kwargs["content_id"])
+        seen["note_rule"].append(kwargs["note_rule"])
         return {"chunks": 1, "summary_error": summary_error}
 
     async def _publish(**kwargs):
@@ -2531,6 +2538,7 @@ def _summary_path(monkeypatch, *, ready: bool, summary_error, fill_error=None):
 
     async def _fill(**kwargs):
         seen["fill"].append(kwargs["content_id"])
+        seen["note_rule"].append(kwargs["note_rule"])
         return fill_error
 
     def _finish(*_args, **kwargs):
@@ -2625,6 +2633,17 @@ async def test_the_spent_re_pend_reaches_the_vlm_page_reads(
         _plan(),
     )
     assert last_waits == [waits >= worker.PROVIDER_WAITS_MAX]
+
+
+async def test_a_text_file_takes_the_note_summary_rule(monkeypatch):
+    """Q457: a text file's descriptor follows the note rule, written on a new
+    index and filled on the content-reuse path."""
+    seen = _summary_path(monkeypatch, ready=False, summary_error=None)
+    await _run_text_ingest(waits=0)
+    assert seen["note_rule"] == [True]
+    seen = _summary_path(monkeypatch, ready=True, summary_error=None)
+    await _run_text_ingest(waits=0)
+    assert seen["note_rule"] == [True]
 
 
 async def test_a_failed_summary_finishes_the_file_with_the_summary_missing(

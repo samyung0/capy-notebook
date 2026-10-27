@@ -413,6 +413,137 @@ async def test_a_busy_provider_publishes_the_note_without_a_summary(
     ) == len(chunk_markdown("\n\n".join(_TOPICS)))
 
 
+async def _index_text(ws, file_id: str, lines: list[str]) -> tuple | None:
+    """A text file's attach, index and publish, as the worker's text refresh
+    runs them (``note_rule``, Q457): new content per text, or identical
+    content already ready, which only fills a missing descriptor. The
+    published descriptor and change share, or None without a row."""
+    chunks = chunk_markdown("\n\n".join(lines)) if lines else []
+    job = f"job_{secrets.token_hex(4)}"
+    association = await store.attach_file_content(
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_hash=indexing.content_hash(chunks),
+        claim_job_id=job,
+    )
+    if association["ready"]:
+        await indexing.fill_descriptor(
+            workspace_id=ws.id,
+            content_id=association["content_id"],
+            file_name="notes.txt",
+            note_rule=True,
+        )
+    else:
+        await indexing.index_file(
+            workspace_id=ws.id,
+            content_id=association["content_id"],
+            file_id=file_id,
+            file_name="notes.txt",
+            chunks=chunks,
+            claim_job_id=job,
+            allow_empty=True,
+            note_rule=True,
+        )
+        await store.publish_file_content(
+            workspace_id=ws.id,
+            file_id=file_id,
+            content_id=association["content_id"],
+            claim_job_id=job,
+        )
+    rows = _rows(
+        ws,
+        "SELECT cs.descriptor, cs.change_share FROM rag_file_contents fc "
+        "JOIN rag_content_summaries cs ON cs.content_id = fc.content_id "
+        "WHERE fc.file_id = %s",
+        (file_id,),
+    )
+    return rows[0] if rows else None
+
+
+def _text_summary_written(ws, file_id: str):
+    return ws.scalar(
+        "SELECT cs.updated_at FROM rag_file_contents fc JOIN rag_content_summaries cs "
+        "ON cs.content_id = fc.content_id WHERE fc.file_id = %s",
+        (file_id,),
+    )
+
+
+async def test_a_blank_text_file_gets_no_summary_from_one_typed_character(
+    workspace, fake_models
+):
+    """Q457: a text file takes the note rule. Blank, then one typed character,
+    it keeps a blank descriptor (ready, no summary) with no provider call,
+    where the 2% gate summarized it; from 200 tokens one is written, and
+    shrunk below 200 it is dropped."""
+    file_id = workspace.add_file("notes.txt")
+    assert await _index_text(workspace, file_id, []) == ("", 0)
+    assert await _index_text(workspace, file_id, ["a"]) == ("", 0)
+    assert fake_models["summarized"] == []
+
+    assert await _index_text(workspace, file_id, _TOPICS) == (
+        "Photosynthesis in two stages.",
+        0,
+    )
+    assert len(fake_models["summarized"]) == 1
+    assert await _index_text(workspace, file_id, _TOPICS[:10]) == ("", 0)
+    assert len(fake_models["summarized"]) == 1
+
+
+async def test_a_text_file_summary_is_rewritten_at_10_percent_and_24_hours(
+    workspace, fake_models
+):
+    """Q457: over 200 tokens, a text file's summary stays under 10% change
+    (where the 2% gate rewrote it) and while it is under 24 hours old, and is
+    rewritten past both. A file with identical content shares the content
+    row and its summary; the other file's refreshes never write that row."""
+    file_id = workspace.add_file("notes.txt")
+    twin = workspace.add_file("twin.txt")
+    lines = list(_TOPICS)
+    await _index_text(workspace, file_id, lines)
+    assert await _index_text(workspace, twin, lines) == (
+        "Photosynthesis in two stages.",
+        0,
+    )
+    assert len(fake_models["summarized"]) == 1
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE rag_content_summaries SET updated_at = now() - interval '25 hours' "
+            "WHERE content_id = (SELECT content_id FROM rag_file_contents WHERE file_id = %s)",
+            (file_id,),
+        )
+    written = _text_summary_written(workspace, file_id)
+
+    # A day old and between 2% and 10%: kept, with when it was written.
+    lines[5] = lines[5].replace("plain", "simple")
+    lines[8] = "Rewritten passage says something quite new here."
+    _, kept = await _index_text(workspace, file_id, lines)
+    assert indexing.SUMMARY_REUSE_SHARE < kept < indexing.NOTE_SUMMARY_SHARE
+    assert _text_summary_written(workspace, file_id) == written
+    assert len(fake_models["summarized"]) == 1
+
+    # Past 10% and a day old: rewritten from the whole file.
+    lines[10:16] = [f"Rewritten passage {i} says something new." for i in range(6)]
+    assert (await _index_text(workspace, file_id, lines))[1] == 0
+    assert len(fake_models["summarized"]) == 2
+    assert "Rewritten passage 5" in fake_models["summarized"][-1][-1]["content"]
+
+    # Past 10% again, but the summary is new: kept, the share growing.
+    lines[20:26] = [f"Another passage {i} replaces the old one." for i in range(6)]
+    _, share = await _index_text(workspace, file_id, lines)
+    assert share >= indexing.NOTE_SUMMARY_SHARE
+    assert len(fake_models["summarized"]) == 2
+
+    # The twin still serves the first content and its summary row as it was.
+    assert _rows(
+        workspace,
+        "SELECT cs.descriptor, cs.change_share FROM rag_file_contents fc "
+        "JOIN rag_content_summaries cs ON cs.content_id = fc.content_id "
+        "WHERE fc.file_id = %s",
+        (twin,),
+    ) == [("Photosynthesis in two stages.", 0)]
+    assert _text_summary_written(workspace, twin) == written
+
+
 def _pages(pages: list[int]) -> list[Chunk]:
     return [
         Chunk(

@@ -97,11 +97,13 @@ async def index_file(
     claim_job_id: str | None = None,
     allow_empty: bool = False,
     pin: dict[str, Any] | None = None,
+    note_rule: bool = False,
 ) -> dict[str, Any]:
     """Write chunks and the descriptor for canonical parsed content; the
     caller publishes it (``store.publish_file_content``). A standalone file
     passes no workspace and its ``pin``; its rows are owner-scoped through
-    their content row.
+    their content row. ``note_rule``: a text or markdown file, whose
+    descriptor follows a note's summary rule (Q457).
 
     The descriptor is a part: when it fails, no summary row is written (the
     descriptor is pending, never blank) and ``summary_error`` carries the
@@ -184,7 +186,7 @@ async def index_file(
         on_progress(85)
 
     descriptor, change_share, written_at, summary_error = await _descriptor(
-        file_name, chunks, published
+        file_name, chunks, published, note_rule=note_rule
     )
     if descriptor is not None:
         await store.upsert_content_summary(
@@ -205,7 +207,11 @@ async def index_file(
 
 
 async def fill_descriptor(
-    *, workspace_id: str | None, content_id: str, file_name: str
+    *,
+    workspace_id: str | None,
+    content_id: str,
+    file_name: str,
+    note_rule: bool = False,
 ) -> Exception | None:
     """Describe published content whose descriptor is pending, from its stored
     chunks: one summary call, no parse and no embedding. The row is inserted
@@ -215,7 +221,9 @@ async def fill_descriptor(
         return None
     rows = await store.load_content_chunks(content_id)
     chunks = [Chunk(text=r["text"], section_path=r["section_path"] or "") for r in rows]
-    descriptor, _, _, error = await _descriptor(file_name, chunks, None)
+    descriptor, _, _, error = await _descriptor(
+        file_name, chunks, None, note_rule=note_rule
+    )
     if descriptor is not None:
         await store.fill_content_summary(
             workspace_id=workspace_id, content_id=content_id, descriptor=descriptor
@@ -382,10 +390,11 @@ _DESCRIPTOR_MAX_TOKENS = 400
 # last regeneration reaches this share of the document.
 SUMMARY_REUSE_SHARE = 0.02
 
-# A note's summary (Epo 2026-10-20): none under NOTE_SUMMARY_MIN_TOKENS, and a
-# rewrite once the change reaches NOTE_SUMMARY_SHARE and the summary is at
-# least NOTE_SUMMARY_MIN_AGE_S old. Notes reindex after every burst of typing,
-# so the age bound keeps an active note from paying for a summary per session.
+# A note's summary (Epo 2026-10-20), and a text or markdown file's (Q457):
+# none under NOTE_SUMMARY_MIN_TOKENS, and a rewrite once the change reaches
+# NOTE_SUMMARY_SHARE and the summary is at least NOTE_SUMMARY_MIN_AGE_S old.
+# Notes and text files reindex after every burst of typing, so the age bound
+# keeps an active one from paying for a summary per session.
 NOTE_SUMMARY_MIN_TOKENS = 200
 NOTE_SUMMARY_SHARE = 0.10
 NOTE_SUMMARY_MIN_AGE_S = 24 * 3600
@@ -397,26 +406,31 @@ async def _descriptor(
     published: dict[str, Any] | None,
     *,
     note: bool = False,
+    note_rule: bool = False,
 ) -> tuple[str | None, float, datetime | None, Exception | None]:
     """The descriptor to store, the running change share kept next to it, when
     the descriptor was written (``None``: now), and the failure that left the
     descriptor pending (``None`` to store).
 
     Regenerates from the complete content when no published descriptor exists
-    or once the change reaches the share (for a note, the note share and age).
-    A failed regeneration keeps a non-blank published descriptor with the
-    accumulated share, so the next run tries again; without one the descriptor
-    is pending. An accounting error (a SettlementError among them) raises: it
-    is no part failure.
+    (a blank one is none) or once the change reaches the share. A note, and a
+    file under ``note_rule``, takes the note rule: blank under the minimum
+    tokens, else the note share and age. A failed regeneration keeps a
+    non-blank published descriptor with the accumulated share, so the next
+    run tries again; without one the descriptor is pending. An accounting
+    error (a SettlementError among them) raises: it is no part failure.
     """
+    note_rule = note_rule or note
+    # The document size is the same estimate as the full summary input.
+    document = estimate_tokens("\n\n".join(c.indexed_text() for c in chunks))
+    if note_rule and document < NOTE_SUMMARY_MIN_TOKENS:
+        return "", 0.0, None, None
     share = 0.0
-    if published is not None:
-        # The document size is the same estimate as the full summary input.
-        document = estimate_tokens("\n\n".join(c.indexed_text() for c in chunks))
+    if published is not None and published["descriptor"]:
         changed = text_change_tokens(published["chunks"], chunks)
         share = published["change_share"] + changed / max(1, document)
-        if share < (NOTE_SUMMARY_SHARE if note else SUMMARY_REUSE_SHARE) or (
-            note and published["age"] < NOTE_SUMMARY_MIN_AGE_S
+        if share < (NOTE_SUMMARY_SHARE if note_rule else SUMMARY_REUSE_SHARE) or (
+            note_rule and published["age"] < NOTE_SUMMARY_MIN_AGE_S
         ):
             return published["descriptor"], share, published["updated_at"], None
     try:
@@ -468,13 +482,11 @@ async def _note_summary(
     and UAT context, never prompt input. A failure publishes the note
     without a summary, or with its previous one, and the next index writes it:
     failing the job would abandon the new chunks with it."""
-    text = "\n\n".join(chunk.indexed_text() for chunk in chunks)
-    if estimate_tokens(text) < NOTE_SUMMARY_MIN_TOKENS:
-        return
     descriptor, share, written_at, _ = await _descriptor(
         name, chunks, published, note=True
     )
-    if descriptor is None:
+    if not descriptor:
+        # Blank under the minimum tokens: a note stores no row.
         return
     await store.upsert_content_summary(
         workspace_id=workspace_id,

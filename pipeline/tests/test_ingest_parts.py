@@ -66,6 +66,7 @@ def _job(ws, file_id: str, job_id: str, **extra) -> tuple[dict, dict]:
     revision = ws.scalar("SELECT revision FROM files WHERE id = %s", (file_id,))
     payload = {
         "fileId": file_id,
+        "kind": "pdf",
         "workspaceId": ws.id,
         "actorUserId": ws.user_id,
         "reservationId": "",
