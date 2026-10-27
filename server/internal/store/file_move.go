@@ -149,9 +149,19 @@ func (s *Store) MoveFiles(ctx context.Context, actorID string, fileIDs []string,
 			return nil, err
 		}
 	}
-	// Open source rooms reconnect through the access check of their new place.
-	if _, err := tx.Exec(ctx, `SELECT enqueue_source_collaboration_eviction(file_id, 'discard')
-		FROM source_documents WHERE file_id = ANY($1)`, ids); err != nil {
+	// Each open source room drains (Q447): it stores what it admitted,
+	// people's typing and agent edits, then closes; its tabs first hear the
+	// move with the target workspace (Q454) and reconnect through the access
+	// check of the file's new place. The row is
+	// enqueue_source_collaboration_eviction's with this type and workspace.
+	if _, err := tx.Exec(ctx, `INSERT INTO collaboration_eviction_outbox (id, channel, payload)
+		SELECT e.id, 'capy:collaboration:evict', jsonb_build_object(
+			'evictionId', e.id, 'fileId', d.file_id,
+			'room', 'source:' || d.file_id || ':epoch:' || d.epoch::text,
+			'type', 'file-moved', 'mode', 'drain', 'workspaceId', $2::text)
+		FROM source_documents d,
+			LATERAL (SELECT 'cev_' || substr(md5(random()::text || clock_timestamp()::text || d.file_id), 1, 24) AS id) e
+		WHERE d.file_id = ANY($1)`, ids, target.WorkspaceID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
