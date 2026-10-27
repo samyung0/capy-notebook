@@ -5,27 +5,44 @@ import type { SourceFile } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 
-/** Moves this tab heard of through a file's room (Q454): file id to the
- * workspace it moved to. */
-const heard = new Map<string, string>();
-/** Moves this tab told the user of, as `file:workspace`. */
-const told = new Set<string>();
+/** The open workspace page's follow of a moved file: into `workspaceId`
+ * when this user can read it, else closed where it is (`null`). */
+type Follow = (fileId: string, workspaceId: string | null) => void;
+const follows = new Set<Follow>();
+/** Room messages already acted on (one per Move, however many of this tab's
+ * sessions of the file hear it). */
+const handled = new Set<string>();
 
-/** The workspace a file moved to, when this tab heard of the move. */
-export function heardMove(fileId: string): string | undefined {
-  return heard.get(fileId);
+/** Registers the open workspace page's follow; returns its removal. */
+export function followMoves(follow: Follow): () => void {
+  follows.add(follow);
+  return () => {
+    follows.delete(follow);
+  };
 }
 
-/** Tells the user once per tab per move that a file moved, naming the
- * workspace when this user can read it (Q454, Q455). */
-export async function toastFileMoved(
+/** A Move's room message (`file-moved`, Q454), heard right before the room
+ * drains, acted on at once (Q467): the lists that show the file refetch, the
+ * toast names the target workspace when this user can read it, and the open
+ * workspace page follows the file there, or closes it where it is when the
+ * workspace cannot be read. Nothing is remembered: a later open of the file
+ * follows the general rule. */
+export async function fileMoved(
   qc: QueryClient,
   fileId: string,
-  workspaceId: string
+  workspaceId: string,
+  eventId: string | undefined
 ): Promise<void> {
-  const key = `${fileId}:${workspaceId}`;
-  if (told.has(key)) return;
-  told.add(key);
+  if (eventId) {
+    if (handled.has(eventId)) return;
+    handled.add(eventId);
+  }
+  const left = qc.getQueryData<SourceFile>(qk.file(fileId))?.workspaceId;
+  void qc.invalidateQueries({ queryKey: qk.file(fileId) });
+  for (const id of new Set([left, workspaceId]))
+    if (id) void qc.invalidateQueries({ queryKey: qk.workspace(id) });
+  void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+  void qc.invalidateQueries({ queryKey: qk.recent });
   const name = await qc
     .fetchQuery(workspaceQuery(workspaceId))
     .then((workspace) => workspace.name)
@@ -35,23 +52,6 @@ export async function toastFileMoved(
       ? m.file_moved_to_workspace({ workspace: name })
       : m.file_moved_elsewhere(),
   });
-}
-
-/** A Move's room message (`file-moved`, Q454), heard right before the room
- * drains: toast, then refetch the file and the lists that show it so the
- * header, panel and chapter follow; the drained room's reconnect rejoins
- * through the access check of the file's new place. */
-export function fileMoved(
-  qc: QueryClient,
-  fileId: string,
-  workspaceId: string
-): void {
-  heard.set(fileId, workspaceId);
-  const left = qc.getQueryData<SourceFile>(qk.file(fileId))?.workspaceId;
-  void toastFileMoved(qc, fileId, workspaceId);
-  void qc.invalidateQueries({ queryKey: qk.file(fileId) });
-  for (const id of new Set([left, workspaceId]))
-    if (id) void qc.invalidateQueries({ queryKey: qk.workspace(id) });
-  void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
-  void qc.invalidateQueries({ queryKey: qk.recent });
+  for (const follow of follows)
+    follow(fileId, name === undefined ? null : workspaceId);
 }

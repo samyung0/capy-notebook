@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   useNavigate,
   useParams,
@@ -55,7 +55,7 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/Resizable';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { heardMove, toastFileMoved } from '@/features/files/fileMoved';
+import { followMoves } from '@/features/files/fileMoved';
 import { officeFormatOf } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import {
@@ -268,28 +268,36 @@ function missing(error: unknown): boolean {
   return isApiError(error) && (error.status === 404 || error.status === 403);
 }
 
-/** Q455 (Epo 2026-10-27): the open file's current workspace. A file another
- * workspace holds now opens there, the URL replaced (page and mode kept), a
- * standalone one at `/files`; one this user cannot follow (its new workspace
- * unreadable, or the file itself after this tab heard it moved) closes here
- * with the moved toast. Only a fresh settled read counts (the loader's
- * prefetch, a refetch after a Move's room message or a focus), so a row
- * restored from storage or a read in flight never moves the page, and the
- * file's own workspace never redirects again. */
-function useFollowOpenFile(workspaceId: string, search: WorkspaceOpenSearch) {
+/** The open file follows its workspace (Q455, Q462, Q467). A Move's room
+ * message is acted on at once (`followMoves`): into the target workspace
+ * when this user can read it, else the file closes here. Without it (an old
+ * bookmark, a PDF, a tab that was closed), a fresh settled file read naming
+ * another workspace opens the file there once that workspace reads, a
+ * standalone file at `/files`; an unreadable file shows the usual panel. A
+ * file read is fresh once this page saw it within its staleness window, and
+ * stays so however long the workspace read takes (L4); a row restored from
+ * storage, a read in flight or one seen fresh on another page never moves
+ * the page. Opened PDFs never refetch their
+ * file, so they follow on their next open. Every follow replaces history and
+ * opens the file as a normal open does: its mode and the panels from this
+ * device, out of full screen. */
+function useFollowOpenFile(workspaceId: string, fileId: string | null) {
   const navigate = useNavigate();
-  const qc = useQueryClient();
-  const fileId = search.file ?? null;
   const {
     data: file,
+    dataUpdatedAt,
     error,
     isFetching,
     isStale,
   } = useFile(fileId, { errorBoundary: false });
   const settled = !!fileId && !isFetching;
+  // The read last seen fresh on this page (L4).
+  const fresh = useRef({ at: 0, workspaceId: '' });
+  if (settled && !isStale) fresh.current = { at: dataUpdatedAt, workspaceId };
   const elsewhere =
     settled &&
-    !isStale &&
+    fresh.current.at === dataUpdatedAt &&
+    fresh.current.workspaceId === workspaceId &&
     !error &&
     file?.id === fileId &&
     file.workspaceId !== workspaceId
@@ -300,39 +308,45 @@ function useFollowOpenFile(workspaceId: string, search: WorkspaceOpenSearch) {
     enabled: !!elsewhere,
     meta: { errorBoundary: false },
   });
-  const lost = settled && missing(error) ? heardMove(fileId) : undefined;
-  const { mode, page } = search;
+  const follow = useCallback(
+    (to: string | null) => {
+      if (!fileId) return;
+      if (to === null)
+        navigate({
+          replace: true,
+          search: (previous) => ({
+            ...previous,
+            file: undefined,
+            fullscreen: undefined,
+            mode: undefined,
+            page: undefined,
+          }),
+          to: '.',
+        });
+      else if (to === '')
+        navigate({ params: { fileId }, replace: true, to: '/files/$fileId' });
+      else
+        navigate({
+          params: { workspaceId: to },
+          replace: true,
+          search: { file: fileId },
+          to: '/workspaces/$workspaceId',
+        });
+    },
+    [fileId, navigate]
+  );
+  useEffect(
+    () =>
+      followMoves((moved, to) => {
+        if (moved === fileId) follow(to);
+      }),
+    [fileId, follow]
+  );
   useEffect(() => {
-    if (!fileId) return;
-    const close = (to: string) => {
-      void toastFileMoved(qc, fileId, to);
-      navigate({
-        replace: true,
-        search: (previous) => ({
-          ...previous,
-          file: undefined,
-          mode: undefined,
-          page: undefined,
-        }),
-        to: '.',
-      });
-    };
-    if (elsewhere === '') {
-      navigate({ params: { fileId }, replace: true, to: '/files/$fileId' });
-    } else if (elsewhere && target) {
-      void toastFileMoved(qc, fileId, elsewhere);
-      navigate({
-        params: { workspaceId: elsewhere },
-        replace: true,
-        search: { file: fileId, mode, page },
-        to: '/workspaces/$workspaceId',
-      });
-    } else if (elsewhere && missing(targetError)) {
-      close(elsewhere);
-    } else if (lost) {
-      close(lost);
-    }
-  }, [elsewhere, fileId, lost, mode, navigate, page, qc, target, targetError]);
+    if (elsewhere === '') follow('');
+    else if (elsewhere && target) follow(elsewhere);
+    else if (elsewhere && missing(targetError)) follow(null);
+  }, [elsewhere, follow, target, targetError]);
 }
 
 export default function WorkspaceOpen() {
@@ -341,7 +355,7 @@ export default function WorkspaceOpen() {
   const navigate = useNavigate();
   const router = useRouter();
   const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
-  useFollowOpenFile(workspaceId, search);
+  useFollowOpenFile(workspaceId, search.file ?? null);
 
   // Other failures without data go to the error boundary.
   const {

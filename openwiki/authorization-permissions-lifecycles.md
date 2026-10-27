@@ -567,18 +567,24 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   mode `drain` and the target `workspaceId` (written directly in
   `MoveFiles`, no migration), which the room sends as a stateless message
   before Closed. The tab (`useSourceSession`, Office and text files alike;
-  `fileMoved.ts`) toasts once per tab per move, naming the workspace when it
-  can read it (`file_moved_to_workspace`, else `file_moved_elsewhere`), and
-  refetches the file and the lists that show it; `/files/{id}` stays put.
-  The workspace page follows an open file into its current workspace
-  (Q455, `useFollowOpenFile` in `routes/WorkspaceOpen.tsx`): a fresh settled
-  read naming another workspace replaces the URL with
-  `/workspaces/<its workspace>?file=<id>` (page and mode kept, no history
-  entry), a standalone file goes to `/files/{id}`, and a file whose new
-  workspace this user cannot read, or which this tab heard moved and can no
-  longer read, closes in the old workspace (`?file` dropped) with the moved
-  toast; old bookmarks and files without a room (PDF) follow on their next
-  read. Both workspaces' trees hear of it (0125 `notify_workspace_tree`).
+  `fileMoved.ts`) acts on the message at once (Q467): it refetches the file
+  and the lists that show it, reads the target workspace, toasts once per
+  message (`file_moved_to_workspace` naming it when readable, else
+  `file_moved_elsewhere`), and the open workspace page (`followMoves`)
+  follows the file there, or closes it where it is (`?file` dropped) when
+  that workspace cannot be read; nothing remembers the move afterwards, and
+  `/files/{id}` stays put. Without the message (an old bookmark, a PDF with
+  no room, a tab that was closed) the workspace page follows by the general
+  rule (Q455, `useFollowOpenFile` in `routes/WorkspaceOpen.tsx`): a fresh
+  settled file read naming another workspace opens the file there once that
+  workspace reads, latched by the read so a slow workspace read still
+  follows (Q462 L4), a standalone file goes to `/files/{id}`, and an
+  unreadable file shows the usual file error with no toast. Every follow
+  replaces history (the Move dialog's own navigation too) and is a normal
+  open: `/workspaces/<its workspace>?file=<id>` with the mode and panels
+  from this device, no page or full screen (Q462). An opened PDF never
+  refetches its file, so it follows on its next open. Both workspaces'
+  trees hear of it (0125 `notify_workspace_tree`).
 - Entry points: Move to… in the Files page and workspace file menus (it
   replaces the chapter-only move for files) and the workspace Add file
   dialog's Your files tab (`GET /api/files?q=`). Clone to… opens the same

@@ -933,6 +933,7 @@ export function useSourceSession(
             lostAccess?: 'forbidden' | 'not_found';
             room?: string;
             workspaceId?: string;
+            evictionId?: string;
           };
           try {
             event = JSON.parse(payload);
@@ -949,7 +950,8 @@ export function useSourceSession(
           // A Move, right before the room drains (Q454): the close that
           // follows reconnects as any drain does.
           if (event.type === 'file-moved') {
-            if (event.workspaceId) fileMoved(qc, fileId, event.workspaceId);
+            if (event.workspaceId)
+              void fileMoved(qc, fileId, event.workspaceId, event.evictionId);
             return;
           }
           if (event.type === 'source-handoff-cancel') {

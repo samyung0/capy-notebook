@@ -147,6 +147,7 @@ export function FileListItem({
                 ? (moved) =>
                     void navigate({
                       params: { workspaceId: moved.workspaceId },
+                      replace: true,
                       search: { file: moved.id },
                       to: '/workspaces/$workspaceId',
                     })
