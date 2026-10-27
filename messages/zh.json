@@ -1329,6 +1329,8 @@
   "editor_prefs_settings": "编辑器设置",
   "editor_toggle_font": "切换笔记字体",
   "editor_toggle_width": "切换笔记宽度",
+  "editor_toolbar_show": "显示工具栏",
+  "editor_toolbar_hide": "隐藏工具栏",
   "editor_doc_formatting": "文档格式",
   "editor_text_color": "文字颜色",
   "editor_bg_color": "背景颜色",

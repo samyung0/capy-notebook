@@ -3,7 +3,12 @@ import {
   type QueryClient,
   useQueryClient,
 } from '@tanstack/react-query';
-import { Link, useNavigate } from '@tanstack/react-router';
+import {
+  Link,
+  useNavigate,
+  useRouter,
+  useSearch,
+} from '@tanstack/react-router';
 import {
   type ComponentProps,
   lazy,
@@ -80,7 +85,10 @@ import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
-import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
+import {
+  NoteDisplayToggles,
+  NoteToolbarToggleContext,
+} from '@/features/notes/NoteDisplayToggles';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
@@ -219,7 +227,51 @@ export function CenterContent({
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
   const materialMode =
     requestedMode ?? (item ? readDocumentMode(item) : 'view');
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Full screen lives in the URL (`?fullscreen=true`) so the back gesture
+  // leaves it; opening another item drops it with the rest of the search.
+  const isFullscreen =
+    useSearch({ select: (search) => search.fullscreen, strict: false }) ===
+    true;
+  const navigate = useNavigate();
+  const router = useRouter();
+  // Full screen opens a note's Edit without its toolbar; Tools brings it
+  // back until full screen ends.
+  const [toolbarShown, setToolbarShown] = useState(false);
+  useEffect(() => {
+    if (!isFullscreen) setToolbarShown(false);
+  }, [isFullscreen]);
+  const toolbarToggle = useMemo(
+    () =>
+      isFullscreen
+        ? {
+            onToggle: () => setToolbarShown((shown) => !shown),
+            shown: toolbarShown,
+          }
+        : null,
+    [isFullscreen, toolbarShown]
+  );
+  // Set when this pane pushed the entry: leaving pops it, so back afterwards
+  // does not land on the same page again. A loaded full screen URL replaces.
+  const pushedFullscreen = useRef(false);
+  const setFullscreen = useCallback(
+    (on: boolean) => {
+      if (!on && pushedFullscreen.current) {
+        pushedFullscreen.current = false;
+        router.history.back();
+        return;
+      }
+      pushedFullscreen.current = on;
+      void navigate({
+        replace: !on,
+        search: (previous) => ({
+          ...previous,
+          fullscreen: on ? (true as const) : undefined,
+        }),
+        to: '.',
+      });
+    },
+    [navigate, router]
+  );
   const [editorStatus] = useState(createEditorStatusStore);
   // Stable: the store's own setter, so reporting never re-renders this pane.
   const setEditorStatus = editorStatus.getState().report;
@@ -234,8 +286,19 @@ export function CenterContent({
     setEditorStatus(null);
     setPresence(null);
     setMenuShown(false);
-    setIsFullscreen(false);
   }, [item?.kind, item?.id]);
+
+  // Escape leaves full screen unless something open (a menu, a dialog)
+  // already took it.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented)
+        setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isFullscreen, setFullscreen]);
 
   useEffect(() => {
     if (item && requestedMode) saveDocumentMode(item, requestedMode);
@@ -288,96 +351,103 @@ export function CenterContent({
               <EditorStatusStoreContext.Provider value={editorStatus}>
                 <PresenceContext.Provider value={setPresence}>
                   <FileMenuShown.Provider value={setMenuShown}>
-                    <div
-                      className={cn(
-                        // Only fullscreen needs its own fill; in the panel the
-                        // panel's shows through, frosted or not.
-                        'flex min-h-0 flex-1 flex-col',
-                        isFullscreen && 'fixed inset-0 z-40 bg-surface'
-                      )}
-                    >
-                      <Header
-                        beforeFileDelete={beforeFileDelete}
-                        chapters={chapters}
-                        color={color}
-                        editorStatus={editorStatus}
-                        fileActions={
-                          <span
-                            className="flex items-center"
-                            ref={setFileActions}
+                    <NoteToolbarToggleContext.Provider value={toolbarToggle}>
+                      <div
+                        className={cn(
+                          // Only fullscreen needs its own fill; in the panel the
+                          // panel's shows through, frosted or not. Fixed, it
+                          // covers both side panels without closing them.
+                          'flex min-h-0 flex-1 flex-col',
+                          isFullscreen && 'fixed inset-0 z-40 bg-surface'
+                        )}
+                      >
+                        {/* Hidden, not unmounted: the file's controls portal
+                         * into the header's slots. */}
+                        <div className={isFullscreen ? 'hidden' : 'contents'}>
+                          <Header
+                            beforeFileDelete={beforeFileDelete}
+                            chapters={chapters}
+                            color={color}
+                            editorStatus={editorStatus}
+                            fileActions={
+                              <span
+                                className="flex items-center"
+                                ref={setFileActions}
+                              />
+                            }
+                            fileControls={
+                              <span
+                                className="flex items-center"
+                                ref={setFileHeader}
+                              />
+                            }
+                            imageZoom={imageZoom}
+                            isFullscreen={isFullscreen}
+                            item={item}
+                            leading={leading}
+                            materialMode={materialMode}
+                            menuBar={
+                              <span
+                                className="flex min-w-0 items-center"
+                                ref={setFileMenu}
+                              />
+                            }
+                            menuShown={menuShown}
+                            onDeleted={onDeleted}
+                            oneColumn={oneColumn}
+                            onImageZoomChange={setImageZoom}
+                            onMaterialModeChange={changeMaterialMode}
+                            onToggleFullscreen={() =>
+                              setFullscreen(!isFullscreen)
+                            }
+                            presence={presence}
+                            readOnly={readOnly}
+                            standalone={standalone}
+                            trailing={trailing}
+                            workspaceId={workspaceId}
                           />
-                        }
-                        fileControls={
-                          <span
-                            className="flex items-center"
-                            ref={setFileHeader}
-                          />
-                        }
-                        imageZoom={imageZoom}
-                        isFullscreen={isFullscreen}
-                        item={item}
-                        leading={leading}
-                        materialMode={materialMode}
-                        menuBar={
-                          <span
-                            className="flex min-w-0 items-center"
-                            ref={setFileMenu}
-                          />
-                        }
-                        menuShown={menuShown}
-                        onDeleted={onDeleted}
-                        oneColumn={oneColumn}
-                        onImageZoomChange={setImageZoom}
-                        onMaterialModeChange={changeMaterialMode}
-                        onToggleFullscreen={() =>
-                          setIsFullscreen((value) => !value)
-                        }
-                        presence={presence}
-                        readOnly={readOnly}
-                        standalone={standalone}
-                        trailing={trailing}
-                        workspaceId={workspaceId}
-                      />
-                      {/* One strip at a time under the header: the newest shows. */}
-                      <BannerStack key={item.id}>
-                        <div
-                          className={cn(
-                            'relative min-h-0 flex-1',
-                            item.kind === 'file'
-                              ? 'flex flex-col overflow-hidden'
-                              : 'overflow-auto'
-                          )}
-                        >
-                          {item.kind === 'material' && (
-                            <MaterialBody
-                              allowExternalAssets={!readOnly}
-                              centerQuiz={!standalone}
-                              key={item.id}
-                              materialId={item.id}
-                              mode={materialMode}
-                              onEditorStatusChange={setEditorStatus}
-                              onPresenceChange={setPresence}
-                              readOnly={readOnly}
-                              target={item.target}
-                              workspaceId={workspaceId}
-                            />
-                          )}
-                          {item.kind === 'file' && (
-                            <FileBody
-                              citation={item.citation}
-                              color={color}
-                              fileId={item.id}
-                              imageZoom={imageZoom}
-                              key={item.id}
-                              onImageZoomChange={setImageZoom}
-                              onViewerDirtyChange={onFileViewerDirtyChange}
-                              page={item.page}
-                              regions={item.regions}
-                            />
-                          )}
                         </div>
-                      </BannerStack>
-                    </div>
+                        {/* One strip at a time under the header: the newest shows. */}
+                        <BannerStack key={item.id}>
+                          <div
+                            className={cn(
+                              'relative min-h-0 flex-1',
+                              item.kind === 'file'
+                                ? 'flex flex-col overflow-hidden'
+                                : 'overflow-auto'
+                            )}
+                          >
+                            {item.kind === 'material' && (
+                              <MaterialBody
+                                allowExternalAssets={!readOnly}
+                                centerQuiz={!standalone}
+                                key={item.id}
+                                materialId={item.id}
+                                mode={materialMode}
+                                onEditorStatusChange={setEditorStatus}
+                                onPresenceChange={setPresence}
+                                readOnly={readOnly}
+                                target={item.target}
+                                workspaceId={workspaceId}
+                              />
+                            )}
+                            {item.kind === 'file' && (
+                              <FileBody
+                                citation={item.citation}
+                                color={color}
+                                fileId={item.id}
+                                imageZoom={imageZoom}
+                                key={item.id}
+                                onImageZoomChange={setImageZoom}
+                                onViewerDirtyChange={onFileViewerDirtyChange}
+                                page={item.page}
+                                regions={item.regions}
+                              />
+                            )}
+                          </div>
+                        </BannerStack>
+                      </div>
+                    </NoteToolbarToggleContext.Provider>
                   </FileMenuShown.Provider>
                 </PresenceContext.Provider>
               </EditorStatusStoreContext.Provider>

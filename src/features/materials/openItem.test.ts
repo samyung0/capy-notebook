@@ -40,6 +40,15 @@ describe('parseWorkspaceOpenSearch', () => {
     expect(parseDocumentModeSearch({ mode })).toEqual({ mode });
   });
 
+  it('keeps full screen with the open item', () => {
+    expect(
+      parseWorkspaceOpenSearch({ fullscreen: 'true', material: 'mat_1' })
+    ).toEqual({ fullscreen: true, material: 'mat_1' });
+    expect(parseDocumentModeSearch({ fullscreen: true })).toEqual({
+      fullscreen: true,
+    });
+  });
+
   it('drops an invalid standalone document mode', () => {
     expect(parseDocumentModeSearch({ mode: 'invalid' })).toEqual({});
   });

@@ -1329,6 +1329,8 @@
   "editor_prefs_settings": "Editor settings",
   "editor_toggle_font": "Switch note font",
   "editor_toggle_width": "Switch note width",
+  "editor_toolbar_show": "Show toolbar",
+  "editor_toolbar_hide": "Hide toolbar",
   "editor_doc_formatting": "Document formatting",
   "editor_text_color": "Text color",
   "editor_bg_color": "Background color",

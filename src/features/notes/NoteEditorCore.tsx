@@ -60,7 +60,10 @@ import {
 } from '@/features/materials/document';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
-import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
+import {
+  NoteDisplayToggles,
+  NoteToolbarToggleContext,
+} from '@/features/notes/NoteDisplayToggles';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
@@ -1534,6 +1537,7 @@ export function NoteEditorCore({
   // editor's content stops edits without Slate's readOnly (pauseEdits).
   const locked =
     offlineLimit || outdated || phase === 'paused' || draftsSending;
+  const toolbarToggle = useContext(NoteToolbarToggleContext);
   return (
     <EditorHoldScope>
       <NoteSeatContext.Provider value={seat}>
@@ -1544,8 +1548,16 @@ export function NoteEditorCore({
                 currentUserId={currentUserId}
                 discussions={discussions}
               >
-                {/* Held back: until sent. */}
-                <div className="contents" data-note-toolbar="" inert={locked}>
+                {/* Held back: until sent. Full screen hides it until the
+                 * Tools toggle asks; hidden, not unmounted. */}
+                <div
+                  className={cn(
+                    'contents',
+                    toolbarToggle && !toolbarToggle.shown && 'hidden'
+                  )}
+                  data-note-toolbar=""
+                  inert={locked}
+                >
                   <CollaborationHold className="contents">
                     <NoteToolbar />
                   </CollaborationHold>
@@ -1555,7 +1567,7 @@ export function NoteEditorCore({
                   data-note-scroll=""
                   ref={setScrollArea}
                 >
-                  <NoteDisplayToggles />
+                  <NoteDisplayToggles toolbar={toolbarToggle} />
                   <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
                     {/* The room replaces the projection copy the moment it syncs,
                      * so painting that copy first renders the whole document
