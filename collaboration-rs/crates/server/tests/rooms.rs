@@ -14264,7 +14264,9 @@ async fn a_quiz_edit_is_admitted_by_both_its_rooms_or_neither() {
     .await;
     assert_eq!(status, 200, "{receipt}");
     assert!(content.settle(has_q3).await);
-    assert_eq!(active_rooms(server.port).await, 2, "the keys room loaded");
+    // The keys room loaded for the edit has no member, so it may store and
+    // unload before a room count is read: its part shows in its stored rows
+    // and in its document once joined.
     let keys_room = format!("keys:{quiz}:schema:1");
     let mut keys = Client::open(server.port).await;
     keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
