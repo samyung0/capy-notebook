@@ -2,17 +2,19 @@
 //! (TestRefreshSchedulerQuery, TestReprocessSelection,
 //! TestStaleRefreshesNeverHoldTheExportQueue).
 
-/// Automatic Office refresh: this many trimmed net tokens after the idle
-/// window, or any saved change left unedited for the stale window. Go
-/// admission (RequestSourceRefresh) applies the same values.
+/// Automatic Office refresh: this many tokens of edited text (the count each
+/// save adds, Q405) after the idle window, or any saved change left
+/// unedited for the stale window, whatever it counts (pictures, formatting:
+/// Q435). Go admission (RequestSourceRefresh) applies
+/// the same values.
 pub const OFFICE_REFRESH_TOKENS: i64 = 3000;
 pub const OFFICE_REFRESH_IDLE: &str = "60 seconds";
 pub const OFFICE_REFRESH_STALE: &str = "7 days";
 
 /// Refresh candidates, oldest first. A text file is due once its saves have
 /// paused 30 s (a note's projection idle; Go's `textRefreshIdle`). Like Go
-/// admission it skips a change list worth no tokens, except an Office list of
-/// moves only (0 tokens), which publishes through the stale rule. A file
+/// admission it skips a text file whose edits are worth no tokens (undone);
+/// an Office file's saved edits that count 0 wait for the stale rule. A file
 /// refused because its owner is at the concurrent ingest-job limit (429) is
 /// stamped by [`REFRESH_DEFER_SQL`] and orders behind the other due files. A
 /// refused rebuild makes an Office file due whatever its edits weigh.
@@ -35,7 +37,7 @@ pub const REFRESH_CANDIDATES_SQL: &str = "
     (SELECT d.file_id,w.user_id,d.checkpoint,false,GREATEST(d.last_edited_at,d.last_refresh_requested_at)
       FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
       WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND d.refresh_error IS NULL
-        AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb) OR d.rebuild_refusal IS NOT NULL)
+        AND (d.net_tokens>0 OR d.format<>'text' OR d.rebuild_refusal IS NOT NULL)
         AND ((d.format='text' AND ((w.auto_process AND (f.status<>'failed' OR f.indexed)) OR d.desired_manual) AND d.last_edited_at < now()-interval '30 seconds')
           OR(d.format<>'text' AND d.last_edited_at < now()-$2::text::interval AND (d.desired_manual
             OR ((f.status<>'failed' OR f.indexed) AND (d.net_tokens>=$1 OR d.last_edited_at < now()-$3::text::interval OR d.rebuild_refusal IS NOT NULL) AND ((w.auto_process AND f.ever_parsed_successfully)

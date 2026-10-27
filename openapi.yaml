@@ -6000,7 +6000,6 @@ components:
         netTokens:
           format: int64
           type: integer
-        pendingEffects: {}
         publishedSourceSHA256:
           type: string
         publishedSourceURL:
@@ -6038,7 +6037,6 @@ components:
         workspaceId:
           type: string
       required:
-        - pendingEffects
         - fileId
         - workspaceId
         - format

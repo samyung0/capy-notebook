@@ -19,6 +19,7 @@ doc = false
 base64.workspace = true
 cpu-time = "1"
 deadpool-postgres.workspace = true
+futures.workspace = true
 # Picture sizes from headers only (pictures.rs, Epo 2026-10-24).
 imagesize = "0.15"
 memory-stats = "1"
@@ -28,6 +29,7 @@ redis.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
@@ -47,7 +49,6 @@ axum.workspace = true
 # Reads an XLSX room's computed values as an editor's engine does
 # (tests/live_undo_office.rs); office-service builds it already.
 betteroffice-xlsx = { path = "../../../vendor/betteroffice/crates/betteroffice-xlsx", default-features = false }
-futures.workspace = true
 # Builds a DOCX fixture variant (tests/live_undo_office.rs); office-service
 # builds it already.
 ooxml-opc = { package = "betteroffice-opc", path = "../../../vendor/betteroffice/crates/ooxml-opc" }

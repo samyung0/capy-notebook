@@ -338,9 +338,11 @@ func TestExportOnlyPublication(t *testing.T) {
 		t.Fatalf("refresh candidate key = %q, want a 128-bit id", candidate.SourceBlobPath)
 	}
 	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b"}
+	plantEffectsCache(t, s, file)
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {
 		t.Fatal(err)
 	}
+	effectsCacheCleared(t, s, file, "an export-only publication")
 
 	var blobPath, sha string
 	var size, revision int64
@@ -811,6 +813,12 @@ func TestOfficeReadiness(t *testing.T) {
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "office_readiness")
 	unpublished := maintenanceTestEdited(t, s, owner, "lesson.docx", false)
+	// Q435 (review L1): a count of edits is unpublished by itself, as the
+	// window reset's guard reads it.
+	counted := maintenanceTestEdited(t, s, owner, "counted.docx", false)
+	if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=checkpoint,net_tokens=5 WHERE file_id=$1`, counted); err != nil {
+		t.Fatal(err)
+	}
 	_, textFile := sourceTestFile(t, s, owner, "notes.txt", "txt")
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, textFile.ID), "text-edit")
 	refresh, err := s.RequestSourceRefresh(ctx, owner, unpublished, false)
@@ -838,7 +846,7 @@ func TestOfficeReadiness(t *testing.T) {
 		flying := func(id string) bool {
 			return slices.ContainsFunc(ready.InFlight, func(j InFlightJob) bool { return j.ID == id })
 		}
-		if ready.Paused != paused || !listed(unpublished) || listed(textFile.ID) || !flying(refresh.JobID) || !flying(reprocess) || flying(upload) || ready.Ready() {
+		if ready.Paused != paused || !listed(unpublished) || !listed(counted) || listed(textFile.ID) || !flying(refresh.JobID) || !flying(reprocess) || flying(upload) || ready.Ready() {
 			t.Fatalf("readiness %+v", ready)
 		}
 		return ready
@@ -876,7 +884,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 		t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
 		for _, q := range append([]string{
 			// Other tests' rows count as published.
-			`UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',running_job_id=NULL WHERE file_id<>'` + file + `'`,
+			`UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',net_tokens=0,running_job_id=NULL WHERE file_id<>'` + file + `'`,
 		}, steps...) {
 			if _, err = tx.Exec(ctx, q); err != nil {
 				t.Fatal(q, err)
@@ -887,7 +895,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 		}
 		return tx, err
 	}
-	published := `UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]' WHERE file_id='` + file + `'`
+	published := `UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',net_tokens=0 WHERE file_id='` + file + `'`
 	if _, err = run(); err == nil || !strings.Contains(err.Error(), "unpublished edits") {
 		t.Fatalf("reset with an unpublished file: %v", err)
 	}

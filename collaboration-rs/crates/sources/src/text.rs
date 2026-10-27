@@ -9,7 +9,7 @@ use yrs::branch::{BranchID, BranchPtr};
 use yrs::updates::decoder::Decode;
 use yrs::{ClientID, Doc, GetString, ID, ReadTxn, Text, Transact, Update, UpdateBlock};
 
-use crate::effects::{text_effects, text_effects_with, utf16};
+use crate::effects::{TextChange, text_effects, text_effects_with, utf16};
 
 pub const TEXT_ROOT: &str = "source";
 
@@ -63,46 +63,43 @@ pub struct TextWindow {
     pub len: usize,
 }
 
-impl TextWindow {
-    fn of(effects: &[NetEffect], len: usize) -> Option<Self> {
-        let effect = effects.first()?;
-        let prefix = effect
-            .label
-            .strip_prefix("Text at UTF-16 offset ")
-            .and_then(|offset| offset.parse().ok())?;
-        Some(Self {
-            prefix,
-            inserted: effect
-                .after
-                .as_deref()
-                .map_or(0, |text| text.encode_utf16().count()),
-            len,
-        })
-    }
-}
-
-/// A text save's effects, the window the next save starts from, and the
-/// opening text the file's list card shows (Go writes it to `files.preview`).
+/// A text save's effects and their tokens, the window the next save starts
+/// from, and the opening text the file's list card shows (Go writes it to
+/// `files.preview`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextSave {
     pub effects: Vec<NetEffect>,
+    pub tokens: u64,
     pub window: Option<TextWindow>,
     pub preview: String,
+}
+
+impl TextSave {
+    fn new(change: TextChange, len: usize, preview: String) -> Self {
+        Self {
+            effects: change.effects,
+            tokens: change.tokens,
+            window: change.span.map(|(prefix, inserted)| TextWindow {
+                prefix,
+                inserted,
+                len,
+            }),
+            preview,
+        }
+    }
 }
 
 /// The text's effects and window against `baseline`, read whole (the load,
 /// and the slow paths of a save).
 pub fn full_text_effects(text: &str, baseline: &[u16]) -> TextSave {
     let current = utf16(text);
-    let effects = text_effects(baseline, &current);
-    let window = TextWindow::of(&effects, current.len());
     let mut preview = Preview::default();
     preview.push(text);
-    TextSave {
-        effects,
-        window,
-        preview: preview.text,
-    }
+    TextSave::new(
+        text_effects(baseline, &current),
+        current.len(),
+        preview.text,
+    )
 }
 
 /// How many characters of a text source its list card shows.
@@ -308,11 +305,7 @@ pub fn text_effects_from_change<T: ReadTxn>(
     }
     let preview = text_preview(branch);
     let Some((lo, hi)) = window else {
-        return TextSave {
-            effects: Vec::new(),
-            window: None,
-            preview,
-        };
+        return TextSave::new(TextChange::default(), len, preview);
     };
     let lo = lo.min(len);
     let hi = hi.clamp(lo, len);
@@ -327,13 +320,11 @@ pub fn text_effects_from_change<T: ReadTxn>(
             baseline[(index as i64 - shift) as usize]
         }
     };
-    let effects = text_effects_with(baseline, len, at, lo, len - hi);
-    let window = TextWindow::of(&effects, len);
-    TextSave {
-        effects,
-        window,
+    TextSave::new(
+        text_effects_with(baseline, len, at, lo, len - hi),
+        len,
         preview,
-    }
+    )
 }
 
 #[cfg(test)]
@@ -447,6 +438,41 @@ mod tests {
                 durable = txn.state_vector();
             }
         }
+    }
+
+    // Q416: a save whose change undoes the room's earlier edits back to the
+    // baseline has no effect and no window, in a large file too.
+    #[test]
+    fn an_undo_back_to_the_baseline_has_no_effect() {
+        let base: String = (0..20_000).map(|i| format!("line {i}\n")).collect();
+        let baseline = utf16(&base);
+        let room = text_doc(1);
+        room.transact_mut()
+            .apply_update(Update::decode_v1(&text_seed(base.as_bytes()).unwrap()).unwrap())
+            .unwrap();
+        let text = room.get_or_insert_text(TEXT_ROOT);
+        let save = |durable: &yrs::StateVector, window| {
+            let row = room.transact().encode_state_as_update_v1(durable);
+            let row = Update::decode_v1(&row).unwrap();
+            let txn = room.transact();
+            (
+                text_effects_from_change(&txn, &row, &baseline, window),
+                txn.state_vector(),
+            )
+        };
+        let durable = room.transact().state_vector();
+        text.insert(&mut room.transact_mut(), 7, "EDIT ");
+        text.insert(&mut room.transact_mut(), 150_000, "FAR ");
+        let (edited, durable) = save(&durable, None);
+        assert_eq!(edited.effects.len(), 2);
+        assert!(edited.window.is_some());
+        text.remove_range(&mut room.transact_mut(), 150_000, 4);
+        text.remove_range(&mut room.transact_mut(), 7, 5);
+        let (undone, _) = save(&durable, edited.window);
+        assert_eq!(
+            (undone.effects, undone.tokens, undone.window),
+            (Vec::new(), 0, None)
+        );
     }
 
     fn preview(text: &str) -> String {

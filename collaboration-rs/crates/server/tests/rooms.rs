@@ -11371,6 +11371,98 @@ async fn office_entries(
     (view, entries)
 }
 
+/// Review r1 H1 (Q435): the store's clear of the contributor markers is no
+/// edit, so an Office room is saved once its writer's typing stores: the
+/// next `/internal/source-changes` read writes the cache, and the read after
+/// it answers from that cache (a planted label), with no engine call.
+#[tokio::test]
+async fn an_office_room_reads_its_cache_once_a_writers_edit_stores() {
+    use yrs::{Map, Out};
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_configured(
+        &env,
+        Some(&gateway.url),
+        &[
+            ("COLLABORATION_SOURCE_DEBOUNCE_MS", "200"),
+            ("COLLABORATION_SOURCE_MAX_DEBOUNCE_MS", "1000"),
+        ],
+    )
+    .await;
+    let (user, file, _) = office_file(&env, &gateway, "docx").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    let body = |c: &Client| {
+        let txn = c.doc.transact();
+        match txn.get_map("stories")?.get(&txn, "body") {
+            Some(Out::YText(text)) => Some(text),
+            _ => None,
+        }
+    };
+    assert!(client.settle(|c| body(c).is_some()).await, "the body story");
+    let before = client.doc.transact().state_vector();
+    let story = body(&client).expect("the body story");
+    story.insert(&mut client.doc.transact_mut(), 0, "Typed ");
+    let update = client.doc.transact().encode_state_as_update_v1(&before);
+    client.send(5, &sync(2, &update)).await;
+    let mut stored = false;
+    for _ in 0..100 {
+        if stored_checkpoint(&env, &file).await > 0 {
+            stored = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(stored, "the writer's edit never stored");
+    // The store's marker clear follows it: the writer's marker is gone.
+    let cleared = |c: &Client| {
+        let txn = c.doc.transact();
+        txn.get_map(ydoc::CONTRIBUTORS_ROOT)
+            .is_some_and(|markers| markers.len(&txn) == 0)
+    };
+    assert!(client.settle(cleared).await, "the markers were not cleared");
+
+    let changes = serde_json::json!({
+        "workspaceId": file.replacen("f_it_", "ws_it_", 1),
+        "fileIds": [file],
+    });
+    let (status, read) = internal(server.port, "/internal/source-changes", &changes).await;
+    assert_eq!(status, 200, "{read}");
+    assert_eq!(read["failed"], serde_json::json!([]), "{read}");
+    assert!(
+        read["files"][0]["changes"].to_string().contains("Typed"),
+        "{read}"
+    );
+    let client_db = db(&env).await;
+    let at: Option<serde_json::Value> = client_db
+        .query_one(
+            "SELECT effects_cache->'at' FROM source_documents WHERE file_id=$1",
+            &[&file],
+        )
+        .await
+        .expect("source row")
+        .get(0);
+    assert_eq!(
+        at.map(|at| at["checkpoint"].clone()),
+        Some(serde_json::json!(stored_checkpoint(&env, &file).await)),
+        "the saved room's read writes the cache"
+    );
+    client_db
+        .execute(
+            "UPDATE source_documents SET effects_cache=jsonb_set(effects_cache,'{effects,0,label}','\"planted\"') WHERE file_id=$1",
+            &[&file],
+        )
+        .await
+        .expect("plant");
+    let (status, read) = internal(server.port, "/internal/source-changes", &changes).await;
+    assert_eq!(status, 200, "{read}");
+    assert_eq!(
+        read["files"][0]["changes"][0]["label"], "planted",
+        "the next read answers from the cache: {read}"
+    );
+}
+
 /// Security regression (drafts-send REVIEW1 S6): an Office file's drafts go
 /// in only over the room's base (the editor's lineage rule), and none while
 /// the Office maintenance pause holds. The pause row pauses every Office

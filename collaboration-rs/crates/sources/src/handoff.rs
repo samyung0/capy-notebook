@@ -771,16 +771,13 @@ impl Handoff {
                 if attempt > 0 {
                     latest = self.sources.current(&input.file_id).await?;
                 }
-                let effects = self
+                let (effects, tokens) = self
                     .sources
                     .effects_of_durable(&latest, Some(&baseline), &job)
                     .await?;
                 let mut body = publication.clone();
                 body.insert("expectedLatestCheckpoint".into(), json!(latest.checkpoint));
-                body.insert(
-                    "netTokens".into(),
-                    json!(crate::effects::effect_tokens(&effects)),
-                );
+                body.insert("netTokens".into(), json!(tokens));
                 body.insert("pendingEffects".into(), json!(effects));
                 match gateway
                     .file(&input.file_id, "publish", Some(&body), None, None)
@@ -823,8 +820,9 @@ impl Handoff {
     }
 
     /// A deferred publication: the file and its index change while every
-    /// editor keeps its document; pending effects are the latest save against
-    /// the capture on the same base; the rebuild waits for an empty room.
+    /// editor keeps its document; the count restarts from the latest save's
+    /// effects against the capture on the same base; the rebuild waits for an
+    /// empty room.
     async fn publish_deferred(
         self: &Arc<Self>,
         input: &SourcePublish,
@@ -841,8 +839,8 @@ impl Handoff {
             if latest.epoch != input.epoch {
                 return Err(SourceError::request(409, "Source epoch changed", None));
             }
-            let effects = if latest.checkpoint == input.checkpoint {
-                Vec::new()
+            let (_, tokens) = if latest.checkpoint == input.checkpoint {
+                (Vec::new(), 0)
             } else {
                 let published = SourceSession {
                     published_state: captured.0.clone(),
@@ -854,14 +852,13 @@ impl Handoff {
                     .effects_of_durable(&published, None, &job)
                     .await?
             };
+            // The residual resets the count; Office effects are read on
+            // demand, never stored (Q405).
             let mut body = publication.clone();
             body.insert("deferred".into(), json!(true));
             body.insert("expectedLatestCheckpoint".into(), json!(latest.checkpoint));
-            body.insert(
-                "netTokens".into(),
-                json!(crate::effects::effect_tokens(&effects)),
-            );
-            body.insert("pendingEffects".into(), json!(effects));
+            body.insert("netTokens".into(), json!(tokens));
+            body.insert("pendingEffects".into(), json!([]));
             match self
                 .sources
                 .gateway()

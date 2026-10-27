@@ -438,29 +438,27 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	owner := newBlobTestUser(t, s, "source_auto_refresh")
+	// Q405: the count is the text saves inserted and deleted. Saves worth 0
+	// (pictures, formatting) wait for the stale rule (Q435).
 	for _, c := range []struct {
 		tokens   int
 		idle     string
 		admitted bool
-		effects  string
 	}{
-		{3000, "61 seconds", true, ""},
-		{3000, "30 seconds", false, ""},
-		{2999, "6 days", false, ""},
-		{1, "7 days 1 minute", true, ""},
-		// Moves only (reordered entries) weigh 0 tokens and publish through
-		// the stale rule; a save whose edits only shifted entries stores no
-		// effects and never does.
-		{0, "7 days 1 minute", true, `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`},
-		{0, "6 days", false, `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`},
-		{0, "8 days", false, `[]`},
+		{3000, "61 seconds", true},
+		{2999, "61 seconds", false},
+		{3000, "30 seconds", false},
+		{2999, "6 days", false},
+		{1, "7 days 1 minute", true},
+		{0, "6 days", false},
+		{0, "8 days", true},
 	} {
 		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
 		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
 		if _, err = s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=true WHERE id=$1`, file.ID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval,pending_effects=COALESCE(NULLIF($4,'')::jsonb,pending_effects) WHERE file_id=$1`, file.ID, c.tokens, c.idle, c.effects); err != nil {
+		if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval WHERE file_id=$1`, file.ID, c.tokens, c.idle); err != nil {
 			t.Fatal(err)
 		}
 		_, err = s.RequestSourceRefresh(ctx, owner, file.ID, true)
@@ -536,42 +534,44 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	owner := newBlobTestUser(t, s, "source_scheduler")
-	editedAs := func(name, kind string, netTokens int, ago, effects string) string {
+	editedAs := func(name, kind string, netTokens int, ago string) string {
 		_, file := sourceTestFile(t, s, owner, name, kind)
 		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
 		if _, err := s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=true WHERE id=$1`, file.ID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval,last_refresh_requested_at=now()-$3::interval,pending_effects=COALESCE(NULLIF($4,'')::jsonb,pending_effects) WHERE file_id=$1`, file.ID, netTokens, ago, effects); err != nil {
+		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval,last_refresh_requested_at=now()-$3::interval WHERE file_id=$1`, file.ID, netTokens, ago); err != nil {
 			t.Fatal(err)
 		}
 		return file.ID
 	}
-	edited := func(netTokens int, ago, effects string) string {
-		return editedAs("lesson.docx", "doc", netTokens, ago, effects)
+	edited := func(netTokens int, ago string) string {
+		return editedAs("lesson.docx", "doc", netTokens, ago)
 	}
-	due := edited(3000, "2 minutes", "")
-	// An empty change list (edits that only shifted entries): Go refuses it.
-	worthless := edited(0, "8 days", `[]`)
-	// Moves only (reordered entries): 0 tokens, published by the stale rule.
-	reordered := edited(0, "9 days", `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`)
-	unedited := edited(5, "8 days", "")
+	due := edited(3000, "2 minutes")
+	// One token under the trigger, idle as long: not yet.
+	under := edited(2999, "2 minutes")
+	// Saves worth 0 (pictures only, Q405) are due once stale (Q435), and
+	// not before.
+	formatted := edited(0, "9 days")
+	picturesFresh := edited(0, "2 minutes")
+	unedited := edited(5, "8 days")
 	// Due by its edits, but failed: only the owner's Retry processing runs it.
-	failed := edited(3000, "3 minutes", "")
+	failed := edited(3000, "3 minutes")
 	if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, failed); err != nil {
 		t.Fatal(err)
 	}
 	// Failed but still indexed (partial, parts design Q1): a refresh may fill
 	// its missing part, Office and text alike.
-	partial := edited(3000, "4 minutes", "")
-	textPartial := editedAs("notes.txt", "txt", 5, "35 seconds", "")
+	partial := edited(3000, "4 minutes")
+	textPartial := editedAs("notes.txt", "txt", 5, "35 seconds")
 	if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed',indexed=true WHERE id=ANY($1)`, []string{partial, textPartial}); err != nil {
 		t.Fatal(err)
 	}
 	// Text is due once its saves pause 30 s (textRefreshIdle), however long
 	// ago its last refresh was requested.
-	textPaused := editedAs("notes.txt", "txt", 5, "31 seconds", "")
-	textTyping := editedAs("notes.txt", "txt", 5, "1 hour", "")
+	textPaused := editedAs("notes.txt", "txt", 5, "31 seconds")
+	textTyping := editedAs("notes.txt", "txt", 5, "1 hour")
 	if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET last_edited_at=now()-interval '20 seconds' WHERE file_id=$1`, textTyping); err != nil {
 		t.Fatal(err)
 	}
@@ -581,7 +581,7 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	}
 	defer tx.Rollback(ctx)
 	// Only this test's rows compete for the batch; the rollback restores the rest.
-	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited, failed, partial, textPartial, textPaused, textTyping}); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, under, formatted, picturesFresh, unedited, failed, partial, textPartial, textPaused, textTyping}); err != nil {
 		t.Fatal(err)
 	}
 	candidates := func() []string {
@@ -606,14 +606,14 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 		}
 		return files
 	}
-	if got := candidates(); !slices.Equal(got, []string{reordered, unedited, partial, due, textPartial, textPaused}) {
-		t.Fatalf("candidates %v, want the reordered file, the unedited one, the partial one, the due one, then the partial and the paused text", got)
+	if got := candidates(); !slices.Equal(got, []string{formatted, unedited, partial, due, textPartial, textPaused}) {
+		t.Fatalf("candidates %v, want the stale pictures-only file, the unedited one, the partial one, the due one, then the partial and the paused text", got)
 	}
 	// A 429 (owner at the ingest-job limit) rotates the file behind the others.
 	if _, err = tx.Exec(ctx, deferSQL, unedited); err != nil {
 		t.Fatal(err)
 	}
-	if got := candidates(); !slices.Equal(got, []string{reordered, partial, due, textPartial, textPaused, unedited}) {
+	if got := candidates(); !slices.Equal(got, []string{formatted, partial, due, textPartial, textPaused, unedited}) {
 		t.Fatalf("candidates after a 429 %v, want the refused file last", got)
 	}
 	if err = tx.Rollback(ctx); err != nil {
@@ -812,10 +812,12 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldRefs, newRefs := blobRefCount(t, s, oldBase), blobRefCount(t, s, newBase)
+	plantEffectsCache(t, s, file.ID)
 	published, err := s.PublishSourceRefresh(ctx, file.ID, publish)
 	if err != nil {
 		t.Fatal(err)
 	}
+	effectsCacheCleared(t, s, file.ID, "a publication onto the export")
 	if got, want := blobRefCount(t, s, oldBase), oldRefs-2; got != want {
 		t.Fatalf("old base references = %d, want %d", got, want)
 	}
@@ -830,8 +832,12 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT $1::jsonb`, residual).Scan(&normalizedResidual); err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 2 || published.Checkpoint != doc.Checkpoint || published.IndexedCheckpoint != 1 || published.NetTokens != 3 || sourceTestDocument(published) != "rebased-newest-state" || published.StateSeedSHA256 == nil || *published.StateSeedSHA256 != sourceTestStateSeed || published.BaseRevision != 2 || string(published.PendingEffects) != string(normalizedResidual) {
+	if published.Epoch != 2 || published.Checkpoint != doc.Checkpoint || published.IndexedCheckpoint != 1 || published.NetTokens != 3 || sourceTestDocument(published) != "rebased-newest-state" || published.StateSeedSHA256 == nil || *published.StateSeedSHA256 != sourceTestStateSeed || published.BaseRevision != 2 {
 		t.Fatalf("bad base promotion: %+v", published)
+	}
+	var storedResidual []byte
+	if err = s.pool.QueryRow(ctx, `SELECT pending_effects FROM source_documents WHERE file_id=$1`, file.ID).Scan(&storedResidual); err != nil || string(storedResidual) != string(normalizedResidual) {
+		t.Fatalf("residual %s (err %v), want %s", storedResidual, err, normalizedResidual)
 	}
 	// The rebased change is charged as stored.
 	var seedBytes, storage int64
@@ -861,6 +867,26 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 // An owner's Office publication swaps the file and its index while editing
 // stays on its base and epoch; the rebuild later moves editing onto the
 // published file with a compare-and-swap.
+// plantEffectsCache stands for an agent read's cached Office effects (Q423),
+// which every save and publication clears.
+func plantEffectsCache(t *testing.T, s *Store, fileID string) {
+	t.Helper()
+	if _, err := s.pool.Exec(context.Background(), `UPDATE source_documents SET effects_cache='{"at":{},"effects":[]}' WHERE file_id=$1`, fileID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func effectsCacheCleared(t *testing.T, s *Store, fileID, how string) {
+	t.Helper()
+	var cached bool
+	if err := s.pool.QueryRow(context.Background(), `SELECT effects_cache IS NOT NULL FROM source_documents WHERE file_id=$1`, fileID).Scan(&cached); err != nil {
+		t.Fatal(err)
+	}
+	if cached {
+		t.Fatalf("%s kept the cached effects", how)
+	}
+}
+
 func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -885,7 +911,9 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	captured := doc.Checkpoint
+	plantEffectsCache(t, s, file.ID)
 	doc = sourceTestEdit(t, s, owner, doc, "later-state")
+	effectsCacheCleared(t, s, file.ID, "a save")
 	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
 		t.Fatal(err)
 	}
@@ -913,10 +941,12 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 		t.Fatalf("deferred publication with a rebase: %v", err)
 	}
 	publish.RebasedState, publish.RebasedStateSeedSHA256 = nil, ""
+	plantEffectsCache(t, s, file.ID)
 	published, err := s.PublishSourceRefresh(ctx, file.ID, publish)
 	if err != nil {
 		t.Fatal(err)
 	}
+	effectsCacheCleared(t, s, file.ID, "a deferred publication")
 	if published.Epoch != 1 || sourceTestDocument(published) != "captured-state+later-state" || published.BaseBlobPath != oldBase || published.IndexedCheckpoint != captured || published.BaseRevision != 2 || !published.RebuildPending || string(published.PublishedState) != "captured-state" || published.PublishedSourceSHA256 != export || published.PublishedBlobPath != newBase || published.NetTokens != 2 {
 		t.Fatalf("deferred publication: %+v", published)
 	}
@@ -977,14 +1007,16 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 	if err = s.CancelSourceRefresh(ctx, owner, file.ID); err != nil {
 		t.Fatal(err)
 	}
+	plantEffectsCache(t, s, file.ID)
 	if err = s.RebuildSource(ctx, file.ID, rebuild); err != nil {
 		t.Fatal(err)
 	}
+	effectsCacheCleared(t, s, file.ID, "a rebuild")
 	rebuilt, err := s.SourceSession(ctx, owner, file.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rebuilt.Epoch != 2 || rebuilt.BaseBlobPath != newBase || rebuilt.BaseSourceSHA256 != export || sourceTestDocument(rebuilt) != "rebased-newest" || rebuilt.StateSeedSHA256 == nil || *rebuilt.StateSeedSHA256 != sourceTestStateSeed || rebuilt.RebuildPending || rebuilt.PublishedState != nil || string(rebuilt.PendingEffects) != "[]" {
+	if rebuilt.Epoch != 2 || rebuilt.BaseBlobPath != newBase || rebuilt.BaseSourceSHA256 != export || sourceTestDocument(rebuilt) != "rebased-newest" || rebuilt.StateSeedSHA256 == nil || *rebuilt.StateSeedSHA256 != sourceTestStateSeed || rebuilt.RebuildPending || rebuilt.PublishedState != nil || rebuilt.NetTokens != 0 {
 		t.Fatalf("rebuild: %+v", rebuilt)
 	}
 	if got := blobRefCount(t, s, oldBase); got != oldRefs-2 {
@@ -1693,6 +1725,10 @@ func TestFileChangesQueueAndCancel(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "queued-state")
+	// Q435: a saved Office edit worth no tokens (pictures only) is listed.
+	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=0 WHERE file_id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
 	state := func() string {
 		t.Helper()
 		stats, err := s.WorkspaceStats(ctx, owner, ws.ID)
@@ -1703,6 +1739,9 @@ func TestFileChangesQueueAndCancel(t *testing.T) {
 			t.Fatalf("file changes = %+v", stats.FileChanges)
 		}
 		return stats.FileChanges[0].State
+	}
+	if got := state(); got != "waiting" {
+		t.Fatalf("a pictures-only save is %s", got)
 	}
 	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
 	if err != nil {

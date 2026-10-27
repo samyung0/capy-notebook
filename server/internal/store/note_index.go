@@ -27,9 +27,10 @@ import (
 // noteIndexDirtySQL is the SET fragment a content write appends: a workspace
 // note becomes dirty (keeping an earlier dirty mark) and forgets its last
 // index failures (migration 0098), so the next scheduler pass retries, and
-// its pending tokens are measured again.
+// its pending tokens and changes are measured again (Q415).
 const noteIndexDirtySQL = `index_dirty_at=CASE WHEN kind='note' AND workspace_id IS NOT NULL
-	THEN COALESCE(index_dirty_at, now()) END, index_error=NULL, pending_tokens=NULL, index_failures=0`
+	THEN COALESCE(index_dirty_at, now()) END, index_error=NULL, pending_tokens=NULL, index_failures=0,
+	effects_cache=NULL`
 
 // A dirty note is reindexed once its change since the last index reaches
 // NoteIndexTokens net tokens, or once it has been dirty for NoteIndexStale
@@ -96,6 +97,11 @@ func noteBlocks(ctx context.Context, q rowsQueryer, materialID, workspaceID, con
 	return before, now, nil
 }
 
+// noteEffectsFormat versions cached note changes (Q435): raise it when the
+// index text or the note effects change, and every cached entry is read
+// again.
+const noteEffectsFormat = 1
+
 // NotePending is one note's changes since its last index, for chat.
 type NotePending struct {
 	MaterialID string                   `json:"materialId"`
@@ -107,25 +113,34 @@ type NotePending struct {
 // NotePendingChanges reads the changes of the workspace's notes the index
 // does not hold as they stand (dirty, being indexed or failed), from their
 // stored content: the per-turn read of Epo 2026-10-17 (the live room comes
-// later). materialIDs narrows the notes when not nil.
+// later). A note's changes are computed once per revision and kept in its
+// effects_cache (Q415): a cached note reads neither its content nor its
+// baseline. materialIDs narrows the notes when not nil.
 func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, materialIDs []string) ([]NotePending, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, title, revision, content, indexed_blocks FROM materials
-		WHERE workspace_id=$1 AND kind='note' AND trashed_at IS NULL
-		  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL OR index_error IS NOT NULL)
-		  AND ($2::text[] IS NULL OR id=ANY($2::text[]))
-		ORDER BY id`, workspaceID, materialIDs)
+	rows, err := s.pool.Query(ctx, `SELECT id, title, revision, xmin::text, cached,
+			CASE WHEN cached IS NULL THEN content END, CASE WHEN cached IS NULL THEN indexed_blocks END
+		FROM (SELECT *, xmin, CASE WHEN effects_cache->'at'=jsonb_build_object('revision', revision, 'format', $3::int)
+				THEN effects_cache->'effects' END AS cached
+			FROM materials
+			WHERE workspace_id=$1 AND kind='note' AND trashed_at IS NULL
+			  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL OR index_error IS NOT NULL)
+			  AND ($2::text[] IS NULL OR id=ANY($2::text[]))) m
+		ORDER BY id`, workspaceID, materialIDs, noteEffectsFormat)
 	if err != nil {
 		return nil, err
 	}
 	type note struct {
 		pending  NotePending
-		content  string
+		xmin     string
+		cached   []byte
+		content  *string
 		baseline []byte
 	}
 	var notes []note
 	for rows.Next() {
 		var n note
-		if err := rows.Scan(&n.pending.MaterialID, &n.pending.Title, &n.pending.Revision, &n.content, &n.baseline); err != nil {
+		if err := rows.Scan(&n.pending.MaterialID, &n.pending.Title, &n.pending.Revision, &n.xmin, &n.cached,
+			&n.content, &n.baseline); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -137,7 +152,24 @@ func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, mate
 	}
 	out := []NotePending{}
 	for _, n := range notes {
-		before, now, err := noteBlocks(ctx, s.pool, n.pending.MaterialID, workspaceID, n.content, n.baseline)
+		if n.cached != nil {
+			err := json.Unmarshal(n.cached, &n.pending.Changes)
+			if err == nil {
+				if len(n.pending.Changes) > 0 {
+					out = append(out, n.pending)
+				}
+				continue
+			}
+			// An entry that no longer decodes is a miss (Q435): the note is
+			// read and its changes computed again.
+			obs.Log(ctx).Warn("note changes cache unreadable", "material_id", n.pending.MaterialID, "error", err)
+			n.pending.Changes = nil
+			if err := s.pool.QueryRow(ctx, `SELECT content, indexed_blocks FROM materials WHERE id=$1`,
+				n.pending.MaterialID).Scan(&n.content, &n.baseline); err != nil {
+				return nil, err
+			}
+		}
+		before, now, err := noteBlocks(ctx, s.pool, n.pending.MaterialID, workspaceID, *n.content, n.baseline)
 		if errors.Is(err, materialdoc.ErrInvalid) {
 			// A stored note the rules refuse is unreadable: it gives no
 			// changes, and the rest of the workspace still does.
@@ -147,11 +179,32 @@ func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, mate
 		if err != nil {
 			return nil, err
 		}
-		if n.pending.Changes, _ = materialdoc.NoteChanges(before, now); len(n.pending.Changes) > 0 {
+		n.pending.Changes, _ = materialdoc.NoteChanges(before, now)
+		s.cacheNoteChanges(ctx, n.pending.MaterialID, n.pending.Revision, n.xmin, n.pending.Changes)
+		if len(n.pending.Changes) > 0 {
 			out = append(out, n.pending)
 		}
 	}
 	return out, nil
+}
+
+// cacheNoteChanges keeps a note's changes for the revision they were
+// computed at, unless its row changed since it was read (xmin): an embedded
+// item's write and the index clear the cache without a new revision. A
+// failed write is logged: the changes were computed and still answer (Q435).
+func (s *Store) cacheNoteChanges(ctx context.Context, materialID string, revision int64, xmin string, changes []materialdoc.NoteEffect) {
+	if changes == nil {
+		changes = []materialdoc.NoteEffect{}
+	}
+	raw, err := json.Marshal(changes)
+	if err == nil {
+		_, err = s.pool.Exec(ctx, `UPDATE materials
+			SET effects_cache=jsonb_build_object('at', jsonb_build_object('revision', revision, 'format', $5::int), 'effects', $4::jsonb)
+			WHERE id=$1 AND revision=$2 AND xmin::text=$3`, materialID, revision, xmin, raw, noteEffectsFormat)
+	}
+	if err != nil {
+		obs.Log(ctx).Warn("note changes cache write failed", "material_id", materialID, "error", err)
+	}
 }
 
 // NoteChangeText is one note block's index text at the last index and now,
@@ -236,17 +289,17 @@ func markParentNoteDirtyTx(ctx context.Context, tx pgx.Tx, itemID string) error 
 // revision, so one landing mid-measure can leave an older count until the
 // note goes stale.
 func (s *Store) measureNoteChange(ctx context.Context, materialID string) (*int64, int64, error) {
-	var workspaceID string
+	var workspaceID, xmin string
 	var revision int64
 	var content *string
 	var baseline []byte
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id, revision,
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id, revision, xmin::text,
 			CASE WHEN due THEN content END, CASE WHEN due THEN indexed_blocks END
-		FROM (SELECT *, index_dirty_at IS NOT NULL AND pending_tokens IS NULL
+		FROM (SELECT *, xmin, index_dirty_at IS NOT NULL AND pending_tokens IS NULL
 				AND index_dirty_at >= now()-make_interval(secs => $2) AS due
 			FROM materials
 			WHERE id=$1 AND kind='note' AND workspace_id IS NOT NULL AND trashed_at IS NULL) m`,
-		materialID, NoteIndexStale.Seconds()).Scan(&workspaceID, &revision, &content, &baseline)
+		materialID, NoteIndexStale.Seconds()).Scan(&workspaceID, &revision, &xmin, &content, &baseline)
 	if isNoRows(err) {
 		return nil, 0, ErrNotFound
 	}
@@ -257,7 +310,9 @@ func (s *Store) measureNoteChange(ctx context.Context, materialID string) (*int6
 	if err != nil {
 		return nil, 0, err
 	}
-	_, tokens := materialdoc.NoteChanges(before, now)
+	// The changes it computes are the next read's (Q415).
+	changes, tokens := materialdoc.NoteChanges(before, now)
+	s.cacheNoteChanges(ctx, materialID, revision, xmin, changes)
 	return &tokens, revision, nil
 }
 

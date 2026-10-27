@@ -5584,9 +5584,22 @@ comparison data: exact plain text, or Office entry IDs, text, positions, image
 hashes/references and visual fingerprints. It is never stored (migration 0043
 dropped `indexed_baseline`): the collaboration service derives it from the
 published base, as the decoded text or the engine baseline of seed(base), and
-caches it by base SHA. The collaboration server projects the merged current
-state and compares it to this baseline on each durable save; net-zero changes
-and Undo cancel by equality. Office publication rebases the latest saved state
+caches it by base SHA. Text compares its merged current state to this
+baseline on each durable save, line by line (Q416, Epo 2026-10-27): Myers'
+O(ND) diff over the lines of the changed window (from the first changed line
+to the last), so its cost grows with the changed lines, not the file. Each run
+of changed lines is one effect, trimmed like Office's (`Text at UTF-16 offset
+N` names where the run starts now), and only the trimmed effects are stored; a
+change whose diff would pass 2^18 trace cells (about 511 changed lines, notes'
+bound) or 2^24 line comparisons (its work budget, `LINE_DIFF_STEPS`, Q435) is
+one placeholder without text, `N of M lines changed`, counting the whole
+change's tokens (`effects::text_effects`); M counts the text's lines, a final
+newline ending the last. A run worth more than a read's cap
+(`READ_PENDING_TOKENS`, 16,000 tokens, the pipeline's value in `pending.py`)
+is the same placeholder for that run (Q435), so a long line edited in two far
+places does not store the text between them. Office compares only when the
+agent reads the file (Q405, below); its saves store no effects. Net-zero changes and Undo
+cancel by equality. Office publication rebases the latest saved state
 onto seed(export), so the new baseline derives from the export. Text publication
 compares the captured candidate with the latest state and retains later edits.
 The transient candidate still fixes one export while editing continues. The
@@ -5611,25 +5624,44 @@ gates every automatic Office reparse, text reindex and note index; off, file
 edits wait for the owner's Process, and notes wait for the owner's Process in
 the Indexing tab (Epo 2026-10-21) or until the switch is on again.
 Office effects keep only the changed span plus 40 characters on each side
-(`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
-tokens count those excerpts. Net tokens measure editing, not context size: the
-context (what an effect's before and after share at either end) counts 4 UTF-16
-units a token in every script, and only changed CJK characters count one token
-each, so a one-character CJK edit weighs what an English word edit does and CJK
-and English files reach the trigger after about the same number of edited
-paragraphs. A move (unchanged text at a new position, as every
-later paragraph becomes when one is inserted) carries no text and counts 0
-tokens in `effectTokens`. Office requires a successful prior parse and 60
-seconds idle, and is due at 3,000 net tokens or once saved changes have had no
-edit for 7 days; the scheduler query (`OFFICE_REFRESH_*`) and Go admission
+(`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair). A
+text file's net tokens count its effects (`effectTokens`): the context (what an
+effect's before and after share at either end) counts 4 UTF-16 units a token in
+every script, and only changed CJK characters count one token each, so a
+one-character CJK edit weighs what an English word edit does. A move
+(unchanged text at a new position) carries no text and counts 0 tokens.
+
+An Office file's count is the text its saves inserted and deleted (Q405, Epo
+2026-10-26), gross rather than net, at the same rate: 4 UTF-16 units a token,
+a CJK character one (`TextCount::tokens`). A loaded room counts each
+transaction on its document as it applies it, before collection drops what it
+deleted (`pending::Edits`, an after-transaction observer, so writers, service
+edits and Undo all count); a transaction that changes only the contributor
+markers (`ydoc::CONTRIBUTORS_ROOT`, such as a store's marker clear) is no edit
+(`effects::markers_only`, Q435). The room task takes the count and the
+document's version as it captures a save's row (`Sources::take_edits`, Q435):
+a save adds that count to `net_tokens` and marks that version saved, so an
+edit the room applies while the save runs stays unsaved; a failed save gives
+the count back. An agent edit with no room
+loaded counts its own transaction (`edit.rs`). Text counts Y.Text strings
+(Word and PowerPoint stories, comments) and an XLSX cell's value and formula
+text (`contents` under `xlsx:sheets`); formatting, attributes, styles,
+pictures and structure (row and column changes, moves) count 0
+(`effects::edited_text`), so a file whose saves only formatted waits for the
+7-day rule below rather than the token trigger: any saved but unprocessed
+Office file (`checkpoint > indexed_checkpoint`) stays on it and in the file
+changes list, whatever its count (Q435).
+Publication resets the count to its residual's effect tokens, as before. Office
+requires a successful prior parse and 60 seconds idle, and is due at 3,000
+tokens or once its saved changes have had no edit for 7 days; the scheduler
+query (`OFFICE_REFRESH_*`) and Go admission
 (`officeRefresh*`) hold the same constants, and the Go store tests run the
 scheduler's SQL from `collaboration-rs/crates/sources/src/refresh.rs` against
 them. A text source is due once its saves have paused 30 seconds (Go's
 `textRefreshIdle`, the note projection's idle; Epo 2026-10-14), so it
 re-indexes after a pause rather than every few seconds while someone types. The
-scheduler, like Go
-admission, skips a change list worth no tokens, except an Office list of moves
-only, which publishes through the 7-day rule, and takes files oldest first by the
+scheduler, like Go admission, skips a text file whose edits are worth no
+tokens, and takes files oldest first by the
 later of `last_edited_at` and `last_refresh_requested_at`. A refused automatic
 admission stores `refresh_error` and the scheduler skips the file until its
 next save, except a 429 (the owner at the concurrent ingest-job limit), which
@@ -5648,7 +5680,8 @@ leaves the file until its next save; finishing it as superseded would leave it
 due and admit it again on every pass.
 
 The workspace stats (`fileChanges`) list each file with unprocessed saved edits
-(the scheduler's predicate) or a refresh in flight, as the settings Indexing
+(a count above 0, or an Office file saved past its indexed checkpoint) or a
+refresh in flight, as the settings Indexing
 tab shows them: waiting, queued (a `source_refresh` job not yet claimed:
 pending with no attempts), processing (claimed, exporting, parsing or
 indexing) or failed (`refresh_error`). A maintenance republish is left out.
@@ -5696,7 +5729,38 @@ and carry the saved edits as the copy's own `source_documents` row
 ([office-files.md](frontend/office-files.md)).
 
 `retrieval/pending.py` captures all scoped durable changes once per answer,
-including sources with no index or search hit. Chat passes a document's
+including sources with no index or search hit. Text changes come from
+`source_documents.pending_effects`. Office changes are computed when read (Q405):
+for every scoped Office file with unprocessed edits the load calls
+`POST /api/internal/source-changes` (`{workspaceId, fileIds}`, pipeline
+secret), which Go forwards to the collaboration service. There
+`Sources::office_changes` compares the stored document, with this instance's
+live room merged in, against the published baseline (`office_effects`, the
+engine's baseline diff, or XLSX overrides through the room's replica) and
+keeps the result on the file's row (Q423, Epo 2026-10-27):
+`source_documents.effects_cache` holds `{"at": {epoch, checkpoint,
+baseRevision, engine}, "effects"}`, served only while `at` names the row's
+version and this engine, and not charged to storage (migration 0122).
+`engine` is the first 16 hex digits of the engine program's SHA-256, hashed
+once per process (Q435), so a new build, a BetterOffice pin bump included,
+reads every file anew without a manual bump; an entry that no longer decodes
+is a miss, logged and read again. Every save and publication moves that
+version and clears the column, so a cold read writes it once per saved
+version (a conditional write, skipped when the row moved meanwhile; a failed
+write is logged and the read still answers), and it survives restarts; the
+cached files of a read are one statement and no engine call. A room loaded
+here with edits its last save did not store (`Edits::unsaved`) is read live,
+its state merged into the stored document, and never written. The other
+files are read four at a time within the read's budget
+(`OFFICE_CHANGES_BUDGET`, 20 s; Go's proxy waits 30 s,
+`sourceChangesTimeout`): a file not read by then, or whose read failed, is
+listed as failed, the others still answer, and a read of a failed file
+carries the outdated-source notice. The load asks only for files with
+`checkpoint > indexedCheckpoint` or a count above 0, so right after a
+publication a room's first unsaved edits are read from its first save, 5 to
+30 s later (Q435). `resolve_source_change` finds its change among the
+same read effects and resolves the image from the same document, unsaved
+edits included. Chat passes a document's
 changes on only once the agent reads that document this turn
 (`inspect_document`, `capture_page`, `read_document`; `PendingSources.read`),
 never every turn or with search results (Epo 2026-10-20). Generation reads
@@ -5854,7 +5918,17 @@ Notes get the same evidence from Go (Epo 2026-10-17). The same read calls
 each scoped note the index does not hold as it stands (dirty, being indexed or
 failed), its index blocks now (`MaterialIndexText`'s blocks from
 `materials.content`) against `indexed_blocks`, aligned by element id
-(`materialdoc.NoteChanges`). A never-indexed note reads as added blocks. A stored note the rules refuse gives none (logged), and the other notes still do. Each
+(`materialdoc.NoteChanges`, from one parse of the note). A note's changes are
+computed once per revision and kept in `materials.effects_cache` (Q415, Epo
+2026-10-27; a column rather than API memory, which would hold RAM): `{"at":
+{"revision", "format"}, "effects"}`, served only at that revision and format
+(`noteEffectsFormat`, raised when the index text or the note effects change,
+Q435), not charged to storage (materials charge their content); an entry that
+no longer decodes is a miss, and a failed write is logged. Content writes clear it
+(`noteIndexDirtySQL`, an embedded item's write included), and so does the
+index's write of `indexed_blocks`; a computed entry is written only if the row
+did not change since it was read (`xmin`), and the reindex measure
+(`measureNoteChange`) fills it too. A never-indexed note reads as added blocks. A stored note the rules refuse gives none (logged), and the other notes still do. Each
 change names its `blockId`. Text changes have Office's shape: one span with
 40 UTF-16 units of context. Reordered blocks are moves without text. An
 embed's small change is a line diff of its index text. A chart, plot, graph or

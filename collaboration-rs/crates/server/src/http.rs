@@ -28,6 +28,7 @@ pub fn router(app: Shared) -> Router {
         .route("/livez", get(livez))
         .route("/metrics", get(metrics))
         .route("/internal/materials/{id}/project", post(project))
+        .route("/internal/source-changes", post(source_changes))
         .route(
             "/internal/source-changes/resolve",
             post(resolve_source_change),
@@ -286,12 +287,54 @@ async fn resolve_source_change(
             json!({ "message": "Invalid source image request" }),
         );
     };
+    let rooms = app.clone();
     let result = app
         .sources
-        .resolve(&input)
+        .resolve(&input, move |room| {
+            let app = rooms.clone();
+            Box::pin(async move { crate::edits::live_state(&app, &room).await })
+        })
         .await
         .map(|asset| serde_json::to_value(asset).unwrap_or(Value::Null));
     source_answer("source_resolve", result)
+}
+
+/// The pending effects of a workspace's Office files, read when the agent
+/// needs them and cached until an edit (Q405): `{workspaceId, fileIds}`.
+async fn source_changes(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "Unauthorized" }),
+        );
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Input {
+        workspace_id: String,
+        file_ids: Vec<String>,
+    }
+    let Ok(input) = serde_json::from_slice::<Input>(&body) else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "message": "Invalid source changes request" }),
+        );
+    };
+    let rooms = app.clone();
+    let result = app
+        .sources
+        .office_changes(
+            &input.workspace_id,
+            &input.file_ids,
+            move |room| {
+                let app = rooms.clone();
+                Box::pin(async move { crate::edits::live_state(&app, &room).await })
+            },
+            sources::pending::OFFICE_CHANGES_BUDGET,
+        )
+        .await
+        .map(|changes| serde_json::to_value(changes).unwrap_or(Value::Null));
+    source_answer("source_changes", result)
 }
 
 /// A finalized candidate's publication (the handoff).

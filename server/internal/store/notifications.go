@@ -373,7 +373,7 @@ func (s *Store) NotifyPendingEditsTooLarge(ctx context.Context, workspaceID stri
 		SET overflow_notified_checkpoint=d.indexed_checkpoint
 		FROM files f JOIN workspaces w ON w.id=f.workspace_id
 		WHERE d.file_id=f.id AND f.workspace_id=$1 AND f.id=ANY($2)
-		  AND d.pending_effects<>'[]'::jsonb
+		  AND d.net_tokens>0
 		  AND d.overflow_notified_checkpoint IS DISTINCT FROM d.indexed_checkpoint
 		RETURNING f.id, f.name, w.user_id`, workspaceID, fileIDs)
 	if err != nil {

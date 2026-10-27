@@ -15,7 +15,7 @@ use ydoc::undo::Captured;
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, GetString, ReadTxn, StateVector, Transact};
 
-use crate::effects::{effect_tokens, utf16};
+use crate::effects::{TextCount, edited_text, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, FailureKind};
 use crate::gateway::{CheckpointBody, CheckpointSaved};
@@ -226,6 +226,9 @@ impl Sources {
         .map_err(|error| SourceError::Other(format!("source edit: {error}")))??;
         let mut notice = None;
         let undo_cost: usize;
+        // An Office edit's text, counted here when no room took part; an open
+        // room counts what it applies (Q405).
+        let mut edited = TextCount::default();
         let captured = match office(session.format) {
             None => {
                 let root = doc.get_or_insert_text(TEXT_ROOT);
@@ -271,6 +274,9 @@ impl Sources {
                 let mut txn = doc.transact_mut();
                 txn.apply_update(update)
                     .map_err(|error| SourceError::State(error.to_string()))?;
+                if !undoable {
+                    edited = edited_text(&txn);
+                }
                 Captured::of(&mut txn)
             }
         };
@@ -290,10 +296,11 @@ impl Sources {
                 None,
             ));
         }
-        let (effects, preview) = match office(session.format) {
+        // Office effects are read on demand (Q405): the edit adds its count.
+        let (effects, net_tokens, preview) = match office(session.format) {
             Some(_) => (
-                self.office_effects(&session, &base, &sha, &whole, &name, Reader::Job(job))
-                    .await?,
+                Vec::new(),
+                session.net_tokens.max(0) as u64 + edited.tokens(),
                 None,
             ),
             None => {
@@ -303,7 +310,7 @@ impl Sources {
                     .map(|text| text.get_string(&txn))
                     .unwrap_or_default();
                 let save = full_text_effects(&text, &utf16(text_of(&base)?));
-                (save.effects, Some(save.preview))
+                (save.effects, save.tokens, Some(save.preview))
             }
         };
         let (row, after) = {
@@ -327,7 +334,7 @@ impl Sources {
             expected_checkpoint: stored.checkpoint,
             base_revision: session.base_revision,
             update: Some(row.clone()),
-            net_tokens: effect_tokens(&effects),
+            net_tokens,
             pending_effects: effects,
             state_seed_sha256: office(session.format).map(|_| seed.sha256.clone()),
             base_source_sha256: seeded.then(|| sha.clone()),

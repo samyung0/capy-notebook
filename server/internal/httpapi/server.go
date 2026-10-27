@@ -316,6 +316,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
 		r.Post("/api/internal/files", a.internalCreateFile)
 		r.Post("/api/internal/study-progress", a.internalStudyProgress)
+		r.Post("/api/internal/source-changes", a.internalSourceAuthority)
 		r.Post("/api/internal/source-changes/resolve", a.internalSourceAuthority)
 		r.Post("/api/internal/source-refresh/publish", a.internalSourceAuthority)
 		r.Get("/api/internal/agent-operations/{operationId}", a.internalGetAgentOperation)

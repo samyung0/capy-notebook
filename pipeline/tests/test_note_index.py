@@ -283,11 +283,21 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
         seen_during.append(_baseline(workspace, material_id))
 
     provider["during"] = during
+    # Changes Go cached against the old baseline (Q415).
+    with workspace._connect() as conn:
+        conn.execute(
+            'UPDATE materials SET effects_cache = \'{"at": {}, "effects": []}\' WHERE id = %s',
+            (material_id,),
+        )
     job = await _run(workspace, _admit(workspace, material_id))
 
-    # The baseline Go diffs pending note changes against moves with the alias.
+    # The baseline Go diffs pending note changes against moves with the alias,
+    # and the changes cached against the old one go.
     assert seen_during == [(first, "ready"), _blocks(_text())]
     assert _baseline(workspace, material_id) == _blocks(provider["text"])
+    assert _rows(
+        workspace, "SELECT effects_cache FROM materials WHERE id=%s", (material_id,)
+    ) == [(None,)]
     assert len(provider["inputs"]) == 1 and "Xylem" in provider["inputs"][0]
     second, status = _alias(workspace, material_id)
     assert second != first and status == "ready"

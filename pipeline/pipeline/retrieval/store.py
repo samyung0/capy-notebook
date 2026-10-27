@@ -286,10 +286,11 @@ async def _alias_material_content(
     blocks: list[dict[str, Any]],
 ) -> None:
     # The blocks become the note's indexed_blocks, the baseline Go measures
-    # its pending changes against (Epo 2026-10-17); its pending tokens are
-    # measured again.
+    # its pending changes against (Epo 2026-10-17); its pending tokens and
+    # cached changes (Q415) are measured again.
     await conn.execute(
-        "UPDATE materials SET indexed_blocks = %s, pending_tokens = NULL WHERE id = %s",
+        "UPDATE materials SET indexed_blocks = %s, pending_tokens = NULL,"
+        " effects_cache = NULL WHERE id = %s",
         (Jsonb(blocks), material_id),
     )
     await conn.execute(

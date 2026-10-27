@@ -27,6 +27,7 @@ use serde_json::{Value, json};
 use sources::edit::EditInput;
 use sources::engine::PoolConfig;
 use sources::handoff::{Handoff, PUBLICATION_HOLD_MARKER, SourcePublish};
+use sources::pending::OFFICE_CHANGES_BUDGET;
 use sources::text::{TEXT_ROOT, text_doc};
 use sources::{
     BoxFuture, Channel, ChannelId, Rooms, Save, SourceError, SourceRoom, Sources, SourcesConfig,
@@ -223,7 +224,7 @@ async fn checkpoint(fake: Fake, id: String, body: Value) -> Response {
     .await
     .unwrap();
     txn.execute(
-        "UPDATE source_documents SET checkpoint=$2,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$5,log_rows=log_rows+1,state_seed_sha256=COALESCE(state_seed_sha256,$6),seed_bytes=COALESCE($7,seed_bytes),base_source_sha256=COALESCE($8,base_source_sha256),last_edited_at=now() WHERE file_id=$1",
+        "UPDATE source_documents SET effects_cache=NULL,checkpoint=$2,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$5,log_rows=log_rows+1,state_seed_sha256=COALESCE(state_seed_sha256,$6),seed_bytes=COALESCE($7,seed_bytes),base_source_sha256=COALESCE($8,base_source_sha256),last_edited_at=now() WHERE file_id=$1",
         &[
             &id,
             &next,
@@ -250,7 +251,11 @@ async fn checkpoint(fake: Fake, id: String, body: Value) -> Response {
         .unwrap();
     }
     txn.commit().await.unwrap();
-    axum::Json(json!({ "checkpoint": next })).into_response()
+    // An agent edit's receipt comes back as Go records it.
+    match body["operation"]["receipt"].clone() {
+        Value::Null => axum::Json(json!({ "checkpoint": next })).into_response(),
+        receipt => axum::Json(json!({ "checkpoint": next, "operation": receipt })).into_response(),
+    }
 }
 
 async fn blob(State(fake): State<Fake>, Path(id): Path<String>) -> Response {
@@ -463,6 +468,7 @@ async fn save_text(
                 text: Some(effects),
                 actors: vec![h.user.clone()],
                 retry_event: None,
+                edits: None,
             },
         )
         .await?;
@@ -495,7 +501,7 @@ async fn a_text_room_appends_rows_reloads_and_folds() {
         (1, 1, 1)
     );
     let effects: Value = row.get(5);
-    assert_eq!(effects[0]["after"], "X");
+    assert_eq!(effects[0]["after"], "Xhello");
     assert_eq!(effects[0]["label"], "Text at UTF-16 offset 0");
     // The first save over the seed reported its size; nothing else is stored.
     assert!(row.get::<_, i64>(7) > 0);
@@ -504,8 +510,8 @@ async fn a_text_room_appends_rows_reloads_and_folds() {
     type_into(&doc, 8, 7, "Y");
     assert_eq!(save_text(&h, &room, &doc, &mut durable).await.unwrap(), 2);
     let effects: Value = h.row(&room).await.get(5);
-    assert_eq!(effects[0]["before"], "hello\n");
-    assert_eq!(effects[0]["after"], "Xhello\nY");
+    assert_eq!(effects[0]["before"], "hello\nworld");
+    assert_eq!(effects[0]["after"], "Xhello\nYworld");
 
     // A fresh load replays base and rows to the same text.
     let again = text_doc(101);
@@ -712,6 +718,7 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
                 state: Some(encode(&doc, &StateVector::default())),
                 text: Some(effects),
                 actors: vec![h.user.clone()],
+                edits: None,
                 retry_event: None,
             },
         )
@@ -845,7 +852,7 @@ async fn a_fold_keeps_the_rows_an_unexported_capture_needs_and_the_export_materi
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
-async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_load() {
+async fn an_office_room_appends_rows_with_its_text_count_and_checks_its_seed_on_load() {
     let h = harness().await;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let bytes = std::fs::read(root.join("e2e/fixtures/files/basic/grades.xlsx")).unwrap();
@@ -892,6 +899,7 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
                 row: row.clone(),
                 state: Some(encode(&doc, &StateVector::default())),
                 text: None,
+                edits: h.sources.take_edits(&room),
                 actors: vec![h.user.clone()],
                 retry_event: None,
             },
@@ -899,14 +907,11 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
         .await
         .unwrap();
     assert_eq!(saved.checkpoint, 1);
+    // Office effects are read on demand (Q405): the save stores the count of
+    // the cell text it replaced and wrote.
     let stored = h.row(&room).await;
-    let effects: Value = stored.get(5);
-    assert!(
-        effects
-            .as_array()
-            .is_some_and(|effects| !effects.is_empty()),
-        "{effects}"
-    );
+    assert_eq!(stored.get::<_, Value>(5), json!([]));
+    assert!(stored.get::<_, i64>(6) >= 2, "{}", stored.get::<_, i64>(6));
     assert_eq!(stored.get::<_, i64>(2), row.len() as i64);
     let seed_sha: String = stored.get(4);
     assert_eq!(
@@ -940,6 +945,508 @@ async fn an_office_room_appends_rows_with_engine_effects_and_checks_its_seed_on_
         .unwrap_err();
     assert_eq!(error, SourceError::SeedChanged);
     assert!(error.refused());
+}
+
+/// A DOCX fixture loaded in a room, its first paragraph with text.
+async fn docx_room(h: &Harness) -> (SourceRoom, Vec<u8>, Doc, String, String) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let bytes = std::fs::read(root.join("e2e/fixtures/files/basic/lesson.docx")).unwrap();
+    let room = h.file("docx", "lesson.docx", &bytes).await;
+    let doc = Doc::with_client_id(100);
+    h.sources.load(&room, &h.user, &doc).await.unwrap();
+    let sha = office_service::sha256_hex(&bytes);
+    let state = encode(&doc, &StateVector::default());
+    let entry = office_service::inspect(&bytes, docx_checkpoint(&sha, &state))
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.value.len() > 3)
+        .unwrap();
+    (room, bytes, doc, entry.id, entry.value)
+}
+
+fn docx_checkpoint<'a>(sha: &'a str, state: &'a [u8]) -> office_service::Checkpoint<'a> {
+    office_service::Checkpoint {
+        format: office_service::Format::Docx,
+        schema_version: 1,
+        base_sha256: sha,
+        state,
+    }
+}
+
+/// The engine's edit of the room's document, reaching the room as a
+/// client's would.
+fn engine_edit(doc: &Doc, bytes: &[u8], command: Value) {
+    let sha = office_service::sha256_hex(bytes);
+    let state = encode(doc, &StateVector::default());
+    let command: office_service::Command = serde_json::from_value(command).unwrap();
+    let edited =
+        office_service::apply_commands(bytes, docx_checkpoint(&sha, &state), &[command]).unwrap();
+    let edit_doc = Doc::new();
+    apply(&edit_doc, &edited.state);
+    let held = doc.transact().state_vector();
+    apply(doc, &encode(&edit_doc, &held));
+}
+
+async fn save_office(
+    h: &Harness,
+    room: &SourceRoom,
+    doc: &Doc,
+    durable: &mut StateVector,
+) -> Result<u64, SourceError> {
+    let saved = h
+        .sources
+        .store(
+            room,
+            Save {
+                row: encode(doc, durable),
+                state: Some(encode(doc, &StateVector::default())),
+                edits: h.sources.take_edits(room),
+                text: None,
+                actors: vec![h.user.clone()],
+                retry_event: None,
+            },
+        )
+        .await?;
+    *durable = doc.transact().state_vector();
+    Ok(saved.checkpoint)
+}
+
+/// The file's stored count of edited text (`net_tokens`).
+async fn net_tokens(h: &Harness, room: &SourceRoom) -> i64 {
+    h.row(room).await.get(6)
+}
+
+/// Engine calls since the last look, on both lanes.
+fn engine_calls(h: &Harness) -> usize {
+    let (save, background) = h.sources.engines().take_stats();
+    save.calls + background.calls
+}
+
+/// Q405 (Epo 2026-10-26): an Office save stores no effects, only the text its
+/// edits inserted and deleted; a save that only formatted adds nothing, a
+/// failed save hands its count to the next, and the scheduler takes the file
+/// once the count reaches the trigger, not a token before.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn an_office_save_counts_its_edited_text_until_the_trigger() {
+    let h = harness().await;
+    let (room, bytes, doc, id, text) = docx_room(&h).await;
+    let mut durable = doc.transact().state_vector();
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "format_text", "targetId": id, "text": text, "bold": true }),
+    );
+    assert!(
+        encode(&doc, &durable).len() > 2,
+        "the format changed the document"
+    );
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    let row = h.row(&room).await;
+    assert_eq!((row.get::<_, i64>(0), row.get::<_, i64>(6)), (1, 0));
+    assert_eq!(row.get::<_, Value>(5), json!([]));
+
+    // 11,996 characters (a paragraph holds at most 5,000): 2,999 tokens,
+    // one short of the trigger. The save fails once (a moved checkpoint) and
+    // the next one stores its count.
+    for length in [5_000, 5_000, 1_996] {
+        engine_edit(
+            &doc,
+            &bytes,
+            json!({ "type": "insert_paragraph", "afterId": id, "text": "a".repeat(length) }),
+        );
+    }
+    h.fake.moved.lock().unwrap().insert(room.file_id.clone(), 0);
+    save_office(&h, &room, &doc, &mut durable)
+        .await
+        .unwrap_err();
+    h.fake.moved.lock().unwrap().clear();
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    assert_eq!(net_tokens(&h, &room).await, 2999);
+    let due = || async {
+        let mut client = h.fake.db.get().await.unwrap();
+        let txn = client.transaction().await.unwrap();
+        // Only this file competes for the batch; the rollback restores the rest.
+        for statement in [
+            "UPDATE source_documents SET refresh_error='other test' WHERE file_id<>$1",
+            "UPDATE source_documents SET last_edited_at=now()-interval '2 minutes' WHERE file_id=$1",
+            "UPDATE files SET ever_parsed_successfully=true WHERE id=$1",
+        ] {
+            txn.execute(statement, &[&room.file_id]).await.unwrap();
+        }
+        let picked = txn
+            .query(
+                sources::refresh::REFRESH_CANDIDATES_SQL,
+                &[
+                    &sources::refresh::OFFICE_REFRESH_TOKENS,
+                    &sources::refresh::OFFICE_REFRESH_IDLE,
+                    &sources::refresh::OFFICE_REFRESH_STALE,
+                ],
+            )
+            .await
+            .unwrap();
+        txn.rollback().await.unwrap();
+        picked
+            .iter()
+            .any(|row| row.get::<_, String>(0) == room.file_id)
+    };
+    assert!(!due().await, "2,999 tokens are not due");
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "insert_paragraph", "afterId": id, "text": "abcd" }),
+    );
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    assert_eq!(net_tokens(&h, &room).await, 3000);
+    assert!(due().await, "3,000 tokens are due");
+}
+
+/// One file's Office effects as `office_changes` reads them, as JSON.
+async fn office_read<F>(sources: &Sources, workspace: &str, files: &[String], live: &F) -> String
+where
+    F: Fn(String) -> BoxFuture<Option<Vec<u8>>>,
+{
+    let read = sources
+        .office_changes(workspace, files, live, OFFICE_CHANGES_BUDGET)
+        .await
+        .unwrap();
+    assert!(read.failed.is_empty(), "{:?}", read.failed);
+    let [file] = <[_; 1]>::try_from(read.files).unwrap();
+    serde_json::to_string(&file.changes).unwrap()
+}
+
+/// Q423 (Epo 2026-10-27): an Office file's read effects are cached on its
+/// source-document row for the saved version they were read at, uncharged:
+/// a cached read calls no engine, on a restarted server too; a save and a
+/// publication each make the next read compute again; unsaved edits in the
+/// room are computed live and never written.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn office_effects_are_cached_on_the_row_per_saved_version() {
+    let h = harness().await;
+    let (room, bytes, doc, id, text) = docx_room(&h).await;
+    let mut durable = doc.transact().state_vector();
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "replace_text", "targetId": id, "expectedText": text, "text": format!("{text} saved") }),
+    );
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    let live_doc = doc.clone();
+    let live = move |_: String| -> BoxFuture<Option<Vec<u8>>> {
+        let state = encode(&live_doc, &StateVector::default());
+        Box::pin(async move { Some(state) })
+    };
+    let files = [room.file_id.clone()];
+    // The row's cache: its version and effects, and the row's storage charge.
+    let cached = || async {
+        let row = h
+            .fake
+            .db
+            .get()
+            .await
+            .unwrap()
+            .query_one(
+                "SELECT effects_cache->'at', (effects_cache->'effects')::text, storage_bytes, checkpoint FROM source_documents WHERE file_id=$1",
+                &[&room.file_id],
+            )
+            .await
+            .unwrap();
+        (
+            row.get::<_, Option<Value>>(0),
+            row.get::<_, Option<String>>(1).unwrap_or_default(),
+            row.get::<_, i64>(2),
+            row.get::<_, i64>(3),
+        )
+    };
+    let (none, _, charged, checkpoint) = cached().await;
+    assert_eq!(none, None);
+    engine_calls(&h);
+    let json = office_read(&h.sources, &h.workspace, &files, &live).await;
+    assert!(engine_calls(&h) > 0 && json.contains(" saved"), "{json}");
+    let (at, stored, charge, _) = cached().await;
+    assert_eq!(charge, charged, "the cache is not charged to storage");
+    assert_eq!(
+        at.unwrap()["checkpoint"],
+        json!(checkpoint),
+        "a cold read writes its version"
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&stored).unwrap(),
+        serde_json::from_str::<Value>(&json).unwrap()
+    );
+    office_read(&h.sources, &h.workspace, &files, &live).await;
+    assert_eq!(engine_calls(&h), 0, "a cached read calls no engine");
+    let (restarted, _disk) = sources_on(&h.fake, h.fake.db.clone());
+    assert_eq!(
+        office_read(&restarted, &h.workspace, &files, &live).await,
+        json
+    );
+    let (save, background) = restarted.engines().take_stats();
+    assert_eq!(
+        save.calls + background.calls,
+        0,
+        "the cache survives a restart"
+    );
+
+    // An unsaved edit in the room: computed live each read, never written.
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "insert_paragraph", "afterId": id, "text": "typed live" }),
+    );
+    for _ in 0..2 {
+        let json = office_read(&h.sources, &h.workspace, &files, &live).await;
+        assert!(
+            engine_calls(&h) > 0 && json.contains("typed live"),
+            "{json}"
+        );
+    }
+    let (_, stored, _, _) = cached().await;
+    assert!(!stored.contains("typed live") && stored.contains(" saved"));
+
+    // Its save moves the version: the next read computes and writes again.
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    let json = office_read(&h.sources, &h.workspace, &files, &live).await;
+    assert!(engine_calls(&h) > 0 && json.contains("typed live"));
+    let (at, _, _, checkpoint) = cached().await;
+    assert_eq!(at.unwrap()["checkpoint"], json!(checkpoint));
+    office_read(&h.sources, &h.workspace, &files, &live).await;
+    assert_eq!(engine_calls(&h), 0);
+
+    // A publication moves the base revision.
+    h.fake
+        .db
+        .get()
+        .await
+        .unwrap()
+        .execute(
+            "UPDATE source_documents SET base_revision=base_revision+1 WHERE file_id=$1",
+            &[&room.file_id],
+        )
+        .await
+        .unwrap();
+    office_read(&h.sources, &h.workspace, &files, &live).await;
+    assert!(engine_calls(&h) > 0, "a publication's version is read anew");
+    office_read(&h.sources, &h.workspace, &files, &live).await;
+    assert_eq!(engine_calls(&h), 0);
+}
+
+/// A live-room answer of `doc`'s whole state, for `office_changes`.
+fn live_of(doc: &Doc) -> impl Fn(String) -> BoxFuture<Option<Vec<u8>>> + use<> {
+    let doc = doc.clone();
+    move |_: String| -> BoxFuture<Option<Vec<u8>>> {
+        let state = encode(&doc, &StateVector::default());
+        Box::pin(async move { Some(state) })
+    }
+}
+
+/// A file's `effects_cache` column.
+async fn effects_cache(h: &Harness, room: &SourceRoom) -> Option<Value> {
+    h.fake
+        .db
+        .get()
+        .await
+        .unwrap()
+        .query_one(
+            "SELECT effects_cache FROM source_documents WHERE file_id=$1",
+            &[&room.file_id],
+        )
+        .await
+        .unwrap()
+        .get(0)
+}
+
+/// Q435 (Epo 2026-10-27): a save takes the room's count and version as the
+/// room captures its row, so an edit the room applies while that save runs
+/// stays unsaved: the next read computes it live and writes no cache.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn an_edit_applied_while_a_save_runs_stays_unsaved() {
+    let h = harness().await;
+    let (room, bytes, doc, id, text) = docx_room(&h).await;
+    let durable = doc.transact().state_vector();
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "replace_text", "targetId": id, "expectedText": text, "text": format!("{text} captured") }),
+    );
+    // The room captures the row and takes its count ...
+    let row = encode(&doc, &durable);
+    let state = encode(&doc, &StateVector::default());
+    let edits = h.sources.take_edits(&room);
+    // ... and applies the next edit before the save stores.
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "insert_paragraph", "afterId": id, "text": "during the save" }),
+    );
+    h.sources
+        .store(
+            &room,
+            Save {
+                row,
+                state: Some(state),
+                edits,
+                text: None,
+                actors: vec![h.user.clone()],
+                retry_event: None,
+            },
+        )
+        .await
+        .unwrap();
+    let json = office_read(
+        &h.sources,
+        &h.workspace,
+        std::slice::from_ref(&room.file_id),
+        &live_of(&doc),
+    )
+    .await;
+    assert!(json.contains("during the save"), "{json}");
+    assert_eq!(effects_cache(&h, &room).await, None);
+}
+
+/// Q435: a cached entry carries the engine's build, its program's hash; an
+/// entry of another build, or one that no longer decodes, is a miss: read
+/// again and replaced.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_cache_entry_of_another_engine_or_unreadable_is_read_again() {
+    let h = harness().await;
+    let (room, bytes, doc, id, text) = docx_room(&h).await;
+    let mut durable = doc.transact().state_vector();
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "replace_text", "targetId": id, "expectedText": text, "text": format!("{text} saved") }),
+    );
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    let (files, live) = ([room.file_id.clone()], live_of(&doc));
+    let json = office_read(&h.sources, &h.workspace, &files, &live).await;
+    let program = std::fs::read(env!("CARGO_BIN_EXE_sources-test-engine")).unwrap();
+    let engine = json!(office_service::sha256_hex(&program)[..16]);
+    assert_eq!(
+        effects_cache(&h, &room).await.unwrap()["at"]["engine"],
+        engine
+    );
+    for (plant, entry) in [
+        (
+            "jsonb_set(effects_cache,'{at,engine}','\"other\"')",
+            "another engine's entry",
+        ),
+        (
+            r#"jsonb_set(effects_cache,'{effects}','[{"id":"x","kind":"text","operation":5}]')"#,
+            "an unreadable entry",
+        ),
+    ] {
+        h.fake
+            .db
+            .get()
+            .await
+            .unwrap()
+            .execute(
+                &format!("UPDATE source_documents SET effects_cache={plant} WHERE file_id=$1"),
+                &[&room.file_id],
+            )
+            .await
+            .unwrap();
+        engine_calls(&h);
+        assert_eq!(
+            office_read(&h.sources, &h.workspace, &files, &live).await,
+            json,
+            "{entry}"
+        );
+        assert!(engine_calls(&h) > 0, "{entry} is read again");
+        let cache = effects_cache(&h, &room).await.unwrap();
+        assert_eq!(cache["at"]["engine"], engine, "{entry} is replaced");
+        assert_eq!(
+            cache["effects"],
+            serde_json::from_str::<Value>(&json).unwrap(),
+            "{entry} is replaced"
+        );
+    }
+}
+
+/// Q435: a read past its budget answers the files it has not read as
+/// failed; the files it did read, here a cached one, still answer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn files_not_read_within_the_budget_answer_failed() {
+    let h = harness().await;
+    let (room, bytes, doc, id, text) = docx_room(&h).await;
+    let mut durable = doc.transact().state_vector();
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "replace_text", "targetId": id, "expectedText": text, "text": format!("{text} saved") }),
+    );
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    let live = live_of(&doc);
+    office_read(
+        &h.sources,
+        &h.workspace,
+        std::slice::from_ref(&room.file_id),
+        &live,
+    )
+    .await;
+    let cold = h.file("docx", "cold.docx", &bytes).await;
+    let read = h
+        .sources
+        .office_changes(
+            &h.workspace,
+            &[room.file_id.clone(), cold.file_id.clone()],
+            &live,
+            Duration::ZERO,
+        )
+        .await
+        .unwrap();
+    let read_ids: Vec<_> = read.files.iter().map(|file| &file.file_id).collect();
+    assert_eq!(read_ids, [&room.file_id]);
+    assert!(!read.files[0].changes.is_empty());
+    assert_eq!(read.failed, [cold.file_id]);
+}
+
+/// Q435: a cache write that fails is logged, and the read still answers
+/// the effects it computed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_failed_cache_write_still_answers_the_read() {
+    let h = harness().await;
+    let (room, bytes, doc, id, text) = docx_room(&h).await;
+    let mut durable = doc.transact().state_vector();
+    engine_edit(
+        &doc,
+        &bytes,
+        json!({ "type": "replace_text", "targetId": id, "expectedText": text, "text": format!("{text} saved") }),
+    );
+    save_office(&h, &room, &doc, &mut durable).await.unwrap();
+    // A trigger refuses this file's cache writes.
+    let refuse = format!("\"{}\"", unique("refuse"));
+    let client = h.fake.db.get().await.unwrap();
+    client
+        .batch_execute(&format!(
+            "CREATE FUNCTION {refuse}() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'refused'; END$$;
+             CREATE TRIGGER {refuse} BEFORE UPDATE OF effects_cache ON source_documents FOR EACH ROW
+             WHEN (NEW.file_id='{}' AND NEW.effects_cache IS NOT NULL) EXECUTE FUNCTION {refuse}()",
+            room.file_id
+        ))
+        .await
+        .unwrap();
+    let json = office_read(
+        &h.sources,
+        &h.workspace,
+        std::slice::from_ref(&room.file_id),
+        &live_of(&doc),
+    )
+    .await;
+    client
+        .batch_execute(&format!(
+            "DROP TRIGGER {refuse} ON source_documents; DROP FUNCTION {refuse}()"
+        ))
+        .await
+        .unwrap();
+    assert!(json.contains(" saved"), "{json}");
+    assert_eq!(effects_cache(&h, &room).await, None);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1119,6 +1626,8 @@ async fn the_uat_hold_holds_a_text_publication_and_keeps_the_save_made_meanwhile
     let published = h.fake.published.lock().unwrap().clone();
     assert_eq!(published.len(), 1, "{published:?}");
     assert_eq!(published[0]["expectedLatestCheckpoint"], 2);
-    assert_eq!(published[0]["pendingEffects"][0]["after"], " three");
+    // The residual is the changed line against the published text (Q416).
+    assert_eq!(published[0]["pendingEffects"][0]["before"], "one two");
+    assert_eq!(published[0]["pendingEffects"][0]["after"], "one two three");
     assert!(published[0]["netTokens"].as_i64().unwrap() > 0);
 }

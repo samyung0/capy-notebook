@@ -145,7 +145,7 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context, opts OfficePublishO
 			AND NOT COALESCE((j.payload->>'exportOnly')::boolean,false)
 			AND j.payload->>'sourceCheckpoint'=d.checkpoint::text)
 		FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=w.user_id
-		WHERE d.format<>'text' AND (d.checkpoint>d.indexed_checkpoint OR d.pending_effects<>'[]'::jsonb) AND d.running_job_id IS NULL
+		WHERE d.format<>'text' AND (d.checkpoint>d.indexed_checkpoint OR d.net_tokens>0) AND d.running_job_id IS NULL
 		ORDER BY d.updated_at,d.file_id`)
 	if err != nil {
 		return nil, err
@@ -188,7 +188,7 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context, opts OfficePublishO
 // is the published file itself: no state, no pending effects.
 func (s *Store) rebuildTrashedOfficeSources(ctx context.Context) ([]OfficePublication, error) {
 	rows, err := s.pool.Query(ctx, `SELECT d.file_id,d.epoch,d.checkpoint,f.source_sha256 FROM source_documents d JOIN files f ON f.id=d.file_id
-		WHERE d.format<>'text' AND d.rebuild_pending AND d.checkpoint=d.indexed_checkpoint AND d.pending_effects='[]'::jsonb
+		WHERE d.format<>'text' AND d.rebuild_pending AND d.checkpoint=d.indexed_checkpoint AND d.net_tokens=0
 		AND d.running_job_id IS NULL AND f.trashed_at IS NOT NULL AND f.source_sha256 IS NOT NULL ORDER BY d.file_id`)
 	if err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (s *Store) OfficeReadiness(ctx context.Context) (OfficeReadiness, error) {
 	// A pending rebuild counts: its state is still a change over the old
 	// base's seed. The collaboration service rebuilds it while rooms are
 	// closed for the pause.
-	rows, err := s.pool.Query(ctx, `SELECT file_id,format,COALESCE(running_job_id,''),COALESCE(refresh_error,''),checkpoint,indexed_checkpoint,rebuild_pending FROM source_documents WHERE format<>'text' AND (checkpoint>indexed_checkpoint OR pending_effects<>'[]'::jsonb OR rebuild_pending) ORDER BY file_id`)
+	rows, err := s.pool.Query(ctx, `SELECT file_id,format,COALESCE(running_job_id,''),COALESCE(refresh_error,''),checkpoint,indexed_checkpoint,rebuild_pending FROM source_documents WHERE format<>'text' AND (checkpoint>indexed_checkpoint OR net_tokens>0 OR rebuild_pending) ORDER BY file_id`)
 	if err != nil {
 		return out, err
 	}
@@ -377,14 +377,14 @@ func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublic
 		return err
 	}
 	if p.deferred {
-		if _, err := tx.Exec(ctx, `UPDATE source_documents d SET indexed_checkpoint=$2,base_revision=d.base_revision+1,pending_effects=$3,net_tokens=$4,rebuild_pending=true,rebuild_refusal=NULL,published_state=$5,published_state_seed_sha256=$6,running_job_id=NULL,desired_checkpoint=CASE WHEN $3::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $3::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.effects, p.netTokens, p.captured, p.capturedSeed); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE source_documents d SET effects_cache=NULL,indexed_checkpoint=$2,base_revision=d.base_revision+1,pending_effects=$3,net_tokens=$4,rebuild_pending=true,rebuild_refusal=NULL,published_state=$5,published_state_seed_sha256=$6,running_job_id=NULL,desired_checkpoint=CASE WHEN $4::bigint=0 THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $4::bigint<>0,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.effects, p.netTokens, p.captured, p.capturedSeed); err != nil {
 			return err
 		}
 	} else {
 		if err := dropSourceRowsTx(ctx, tx, fileID); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.sourcePath, p.sha, p.effects, p.netTokens, p.stateSeed); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE source_documents d SET effects_cache=NULL,epoch=d.epoch+1,log_bytes=0,log_rows=0,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::bigint=0 THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::bigint<>0,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.sourcePath, p.sha, p.effects, p.netTokens, p.stateSeed); err != nil {
 			return err
 		}
 	}

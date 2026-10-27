@@ -98,13 +98,14 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     // The owner's editor shows the collaborator's edit as well as its own.
     await expectRichContent(ownerFrame, format, marker, 'edit');
     // Edits are stored as their change over seed(base) and charged as stored.
+    // An Office save stores no effects, only the count of the text it edited
+    // (Q405): effects are computed when the agent reads the file.
     const editCharge = async () => {
       await saved(run.owner.page);
       await saved(editor.page);
       const charged = await officeCharge(run, fileId, before);
       assert.equal(charged.state_seed_sha256, seed);
-      assert(Array.isArray(charged.pending_effects));
-      assert(charged.pending_effects.length > 0);
+      assert.deepEqual(charged.pending_effects, []);
       return charged;
     };
     // The paste passes the automatic trigger; 60 s after this save the file
