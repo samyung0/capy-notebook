@@ -28,11 +28,19 @@ export async function expectEditorLive(page: Page): Promise<void> {
   );
 }
 
-/** A note's Edit opens with its toolbar hidden; the Tools toggle shows it. */
+/** A note's Edit opens with its toolbar as this browser last left it,
+ * hidden at first (Q461); the Tools toggle shows it when hidden. */
 export async function showNoteToolbar(page: Page): Promise<void> {
-  await page
-    .getByRole('button', { exact: true, name: m.editor_toolbar_show() })
-    .click();
+  const show = page.getByRole('button', {
+    exact: true,
+    name: m.editor_toolbar_show(),
+  });
+  const hide = page.getByRole('button', {
+    exact: true,
+    name: m.editor_toolbar_hide(),
+  });
+  await expect(show.or(hide)).toBeVisible();
+  if (await show.isVisible()) await show.click();
   await expect(
     page.getByRole('toolbar', { name: m.editor_doc_formatting() })
   ).toBeVisible();

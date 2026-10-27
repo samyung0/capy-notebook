@@ -3609,7 +3609,11 @@ in View and Edit alike (`NoteDisplayToggles.tsx`): an Aa button flips the font
 and a ↔ button (from `md`, where the width shows) flips the width, each saving
 at once like Apply. Their icons stay the same either way; the note shows which
 pick is on. They sit in the scroll area, not the toolbar, so they scroll away
-with the note's top.
+with the note's top. In Edit a bolt button leads them and shows or hides the
+note's toolbar, which starts hidden (Epo 2026-10-27); the choice is this
+browser's (`PREF_KEYS.noteToolbar` in localStorage, Q461): no key, or storage
+blocked, means hidden, and it holds across the editor's remounts and later
+opens.
 
 Slate's editable root spans the pane at either size. A stable `as` component
 wraps its children in the width-constrained inner container, leaving margin

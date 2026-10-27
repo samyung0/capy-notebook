@@ -98,6 +98,7 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { editorAiEnabled } from '@/lib/features';
+import { isBoolean, PREF_KEYS, readPref, writePref } from '@/lib/localPrefs';
 import { AiMenu } from './ai/AiMenu';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
 import {
@@ -2265,12 +2266,17 @@ export function NoteEditorCore({
     mergeStoreChange.current?.(store, true);
     return () => mergeStoreChange.current?.(store, false);
   }, [shown, store]);
-  // Edit opens without the toolbar; the Tools toggle brings it back for this
-  // opening only.
-  const [toolbarShown, setToolbarShown] = useState(false);
+  // Edit opens with the toolbar as this device last left it: hidden by
+  // default and when storage is blocked (Q461). The bolt toggles and saves it.
+  const [toolbarShown, setToolbarShown] = useState(() =>
+    readPref(PREF_KEYS.noteToolbar, false, isBoolean)
+  );
   const toolbarToggle = useMemo(
     () => ({
-      onToggle: () => setToolbarShown((shown) => !shown),
+      onToggle: () => {
+        writePref(PREF_KEYS.noteToolbar, !toolbarShown);
+        setToolbarShown(!toolbarShown);
+      },
       shown: toolbarShown,
     }),
     [toolbarShown]

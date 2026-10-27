@@ -67,3 +67,27 @@ test('editor settings keep drafts until Apply, persist the width and keep margin
   await settings.click();
   await expect(displaySize).toHaveAttribute('data-width', 'full');
 });
+
+// Q461: the note toolbar's shown state is this device's: shown once, a
+// reload opens it shown; hidden again, a reload opens it hidden.
+test('the note toolbar opens as this browser last left it', async ({
+  page,
+}) => {
+  await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+  const toolbar = page.getByRole('toolbar', {
+    name: m.editor_doc_formatting(),
+  });
+  await page.reload();
+  await expectEditorLive(page);
+  await expect(toolbar).toBeVisible();
+  await page
+    .getByRole('button', { exact: true, name: m.editor_toolbar_hide() })
+    .click();
+  await expect(toolbar).toBeHidden();
+  await page.reload();
+  await expectEditorLive(page);
+  await expect(
+    page.getByRole('button', { exact: true, name: m.editor_toolbar_show() })
+  ).toBeVisible();
+  await expect(toolbar).toBeHidden();
+});

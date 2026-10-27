@@ -25,6 +25,8 @@ export const PREF_KEYS = {
   leftView: 'capy.workspace.leftView',
   /** Progress maps whose finish animation has played: `topic:<id>:<count>`, `workspace:<id>:<count>`. */
   mapFinishPlayed: 'capy.map.finishPlayed',
+  /** A note's toolbar is shown in Edit (Q461; no key: hidden). */
+  noteToolbar: 'capy.note.toolbar',
   openChapters: (workspaceId: string) =>
     `capy.workspace.openChapters.${workspaceId}`,
   /** A Quick review batch: its items, when it began, which are done; per
