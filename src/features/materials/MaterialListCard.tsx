@@ -5,6 +5,7 @@ import { ItemCard, itemMenuIcon } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { formatFileSize } from '@/features/files/fileUtils';
+import { toastLostAccess } from '@/features/files/lostAccess';
 import { getLocale, m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
 import { cardCountLabel, questionCountLabel } from './countLabels';
@@ -84,6 +85,7 @@ export const MaterialCard = memo(function MaterialCard({
       icon={materialIconName(item.kind)}
       link={item.lostAccess ? undefined : linkFor(item)}
       meta={relativeTime(item.updatedAt)}
+      onOpen={item.lostAccess ? toastLostAccess : undefined}
       pickKey={item.id}
       selected={selected}
       thumbnail={{

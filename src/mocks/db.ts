@@ -698,6 +698,7 @@ export const files: SourceFile[] = [
       hasBytes: true,
       id: file.id,
       indexed: false,
+      isPayer: true,
       kind: file.kind,
       name: file.name,
       position: position + dialogFiles.length + 4,
@@ -718,6 +719,7 @@ export const files: SourceFile[] = [
       hasBytes: true,
       id: `bio-state-${status}`,
       indexed: false,
+      isPayer: true,
       kind: 'md',
       name: `Biology notes - ${status === 'ready' ? 'stored without indexing' : status}.md`,
       position: position + dialogFiles.length,
@@ -738,6 +740,7 @@ export const files: SourceFile[] = [
     id: 'bio-state-too-large',
     indexed: false,
     indexLimit: 'tabular_column_limit',
+    isPayer: true,
     kind: 'sheet',
     name: 'Field counts - too large to index.csv',
     position: dialogFiles.length + 4 + biologyOfficeFixtures.length,
@@ -752,6 +755,7 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'f_1',
     indexed: true,
+    isPayer: true,
     kind: 'pdf',
     name: 'Cell structure.pdf',
     position: 0,
@@ -766,6 +770,7 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'f_2',
     indexed: true,
+    isPayer: true,
     kind: 'md',
     name: 'Organelles cheatsheet.md',
     position: 1,
@@ -780,6 +785,7 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'f_3',
     indexed: true,
+    isPayer: true,
     kind: 'txt',
     name: 'Osmosis notes.txt',
     position: 0,
@@ -794,6 +800,9 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'f_4',
     indexed: true,
+    // A member uploaded it: as a non-owner editor (the workspace-owner-*
+    // scenarios) the viewer gets only the chapter Move on it.
+    isPayer: false,
     kind: 'pdf',
     name: 'Mendelian genetics.pdf',
     position: 0,
@@ -808,6 +817,7 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'f_5',
     indexed: true,
+    isPayer: true,
     kind: 'image',
     name: 'Punnett squares.png',
     position: 0,
@@ -822,6 +832,7 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'f_6',
     indexed: true,
+    isPayer: true,
     kind: 'pdf',
     name: 'Integration by parts.pdf',
     position: 0,
@@ -836,6 +847,7 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'f_7',
     indexed: true,
+    isPayer: true,
     kind: 'md',
     name: 'Taylor series.md',
     position: 0,
@@ -850,6 +862,7 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'f_8',
     indexed: false,
+    isPayer: true,
     kind: 'audio',
     name: 'dummy_audio.wav',
     position: 1,
@@ -866,6 +879,7 @@ export const files: SourceFile[] = [
       hasBytes: true,
       id: file.id,
       indexed: true,
+      isPayer: true,
       kind: file.kind,
       name: file.name,
       position:
@@ -877,7 +891,49 @@ export const files: SourceFile[] = [
       workspaceId: 'ws_bio',
     })
   ),
+  // Standalone files (no workspace): the Files tab's No workspace rows.
+  ...(['ready', 'failed'] as const).map(
+    (status, position): SourceFile => ({
+      addedAt: hours(3 + position),
+      chapterId: null,
+      hasBytes: true,
+      id: `f_standalone_${status}`,
+      indexed: status === 'ready',
+      isPayer: true,
+      kind: 'pdf',
+      name: status === 'ready' ? 'Past paper 2025.pdf' : 'Scanned handout.pdf',
+      position,
+      revision: 1,
+      sizeBytes: 1830 * 1024,
+      status,
+      workspaceId: '',
+      ...(status === 'failed'
+        ? { errorId: 'b5c7d1e3f9a24b6c8d0e2f4a6b8c0d1e' }
+        : {}),
+    })
+  ),
 ];
+// A file the user still pays for in a workspace it left: the Files tab shows
+// it as lost access, delete only.
+files.push({
+  addedAt: hours(30),
+  chapterId: null,
+  hasBytes: true,
+  id: 'f_lost_access',
+  indexed: true,
+  isPayer: true,
+  kind: 'pdf',
+  lostAccess: true,
+  name: 'Group project brief.pdf',
+  position: 0,
+  revision: 1,
+  sizeBytes: 920 * 1024,
+  status: 'ready',
+  workspaceId: 'ws_left_group',
+  workspaceName: 'Study group',
+});
+for (const status of ['ready', 'failed'])
+  fileLinks[`f_standalone_${status}`] = { ...fileLinks.f_6 };
 
 // A populated shared workspace for local summary and sharing previews.
 for (const [index, chapter] of [
@@ -916,6 +972,8 @@ for (const [index, chapter] of [
       hasBytes: true,
       id,
       indexed: true,
+      // The study group's readings, uploaded by another member.
+      isPayer: false,
       kind: 'md',
       name: `${title}.md`,
       position,
@@ -2260,6 +2318,40 @@ files
     });
   });
 
+// A trashed standalone file restores to No workspace.
+{
+  const file: SourceFile = {
+    addedAt: days(4),
+    chapterId: null,
+    hasBytes: true,
+    id: 'trash_standalone_notes',
+    indexed: true,
+    isPayer: true,
+    kind: 'pdf',
+    name: 'Old revision notes.pdf',
+    position: 0,
+    revision: 1,
+    sizeBytes: 640 * 1024,
+    status: 'ready',
+    workspaceId: '',
+  };
+  fileLinks[file.id] = { ...fileLinks.f_6 };
+  trash.push({
+    file,
+    item: {
+      canRestore: true,
+      episodeId: `episode_${file.id}`,
+      fileKind: file.kind,
+      id: file.id,
+      kind: 'source_file',
+      purgeAfter: days(-26),
+      sizeBytes: file.sizeBytes,
+      title: file.name,
+      trashedAt: days(4),
+    },
+  });
+}
+
 // Trashed diagrams lead the bin, where their previews are on show.
 trash.unshift(
   ...galleryMaterials
@@ -2977,7 +3069,7 @@ export function listRecent(url: URL): RecentPage {
   );
   const rows: RecentOpen[] = [
     ...files
-      .filter((f) => visible.has(f.workspaceId))
+      .filter((f) => !f.workspaceId || visible.has(f.workspaceId))
       .map((f) => ({
         file: f,
         openedAt: itemOpens.get(`file:${f.id}`) ?? f.addedAt,

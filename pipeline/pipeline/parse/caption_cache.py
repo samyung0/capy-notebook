@@ -18,6 +18,8 @@ from ..store import db as sync_db
 log = logging.getLogger("capy.parse.caption_cache")
 
 
+# Workspace files only: a standalone file (no workspace) is neither a donor nor
+# a target here, so it reuses only its own captions (_LOOKUP_OWN).
 _RESOURCES = """
 WITH resources AS (
     SELECT f.id AS file_id, w.id AS workspace_id, w.privacy
@@ -153,7 +155,8 @@ async def _lock(file_id: str, digest: str):
         async with db.connection() as conn:
             row = await (
                 await conn.execute(
-                    "SELECT 'workspace:' || workspace_id AS scope FROM files WHERE id=%s",
+                    "SELECT COALESCE('workspace:' || workspace_id, 'owner:' || user_id)"
+                    " AS scope FROM files WHERE id=%s",
                     (file_id,),
                 )
             ).fetchone()

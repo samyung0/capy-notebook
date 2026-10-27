@@ -18,6 +18,15 @@ kind?: string;
  */
 workspaceId?: string;
 /**
+ * Comma-separated locations: workspace, standalone
+ */
+location?: string;
+/**
+ * Keeps files whose name holds this text, any case
+ * @maxLength 120
+ */
+q?: string;
+/**
  * owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of
  */
 scope?: ListOwnedFilesScope;

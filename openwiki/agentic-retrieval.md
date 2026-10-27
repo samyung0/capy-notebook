@@ -5482,7 +5482,19 @@ Workspace notes (`materials.kind='note'` with a workspace) are indexed into
 the same canonical content files use. `rag_material_contents` aliases a note
 to a ready `rag_contents` row exactly as `rag_file_contents` does for files,
 so chunks, vectors, summaries, orphan cleanup and clone copying are shared.
-Standalone notes have no workspace and are never indexed. Embedded quizzes
+Standalone notes have no workspace and are never indexed. Standalone files
+(no workspace, their uploader's alone, Epo 2026-10-27) are: their job carries
+no `workspaceId` but the retrieval default's embedding pin
+(`embeddingProviderSlug`, `embeddingModelSlug`, `embeddingModelVersion`,
+`embeddingDim`, added by Go's `ingestJobPayload`), and the worker passes one
+`db.Scope` (a workspace, or the owner with that pin) to every index step. Their
+content rows hold `user_id` instead of `workspace_id`; a re-ingest keeps the
+space its content already records. Donors stay inside a scope: a standalone
+file only takes the same owner's standalone content, and never lends to a
+workspace. The source fence admits only `files.user_id` while that account is
+live, and progress goes to `notif:{owner}` as a notification `type: "ingest"`.
+Chat and generate never see these rows (their queries match a workspace).
+Embedded quizzes
 and flashcard sets are not indexed on their own: their text is indexed inside
 the parent note, at their reference (Epo 2026-10-17).
 

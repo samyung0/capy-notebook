@@ -21,6 +21,7 @@ export interface File {
   id: string;
   indexLimit?: FileIndexLimit;
   indexed: boolean;
+  isPayer: boolean;
   kind: FileKind;
   /** The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it */
   lostAccess?: boolean;

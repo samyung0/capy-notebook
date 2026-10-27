@@ -3153,7 +3153,7 @@ async def test_incomplete_content_is_never_a_donor(workspace, monkeypatch):
             "reservationId": "cr_1",
         },
         file_id,
-        workspace.id,
+        worker.db.Scope(workspace.id),
         "pdf",
         plan,
     )
@@ -4109,7 +4109,7 @@ async def test_waiting_never_returns_a_claim_another_job_holds(workspace, monkey
     async def wait() -> dict:
         return await worker._wait_for_content(
             dict(association),
-            workspace_id=workspace.id,
+            scope=worker.db.Scope(workspace.id),
             file_id=waiter_file,
             content_hash=content_hash,
             claim_job_id=waiter_job,

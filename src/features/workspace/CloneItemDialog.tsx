@@ -14,41 +14,21 @@ import {
   cloneFileBodyNameMax,
   cloneMaterialBodyTitleMax,
 } from '@/api/gen/validators';
-import {
-  useChapters,
-  useCloneFile,
-  useCloneMaterial,
-  useWorkspaces,
-} from '@/api/hooks';
+import { useCloneFile, useCloneMaterial } from '@/api/hooks';
 import type { Material } from '@/api/types';
-import { SettingRow } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/Select';
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/analytics';
-import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
-import { iconUrl } from '@/lib/icon-catalog';
 import { textLength } from '@/lib/textLength';
-import {
-  ChapterSelect,
-  chapterByName,
-  FIELD_WIDTH,
-  NewChapterInput,
-} from './ChapterSelect';
+import { DestinationFields, useItemDestination } from './ItemDestination';
 
-/** What a clone copies: a file (into a workspace only) or a material; an
- * empty workspaceId is a standalone material. */
+/** What a clone copies: a file or a material; an empty workspaceId is a
+ * standalone one. */
 export type CloneItem =
   | { type: 'file'; id: string; name: string; workspaceId: string }
   | {
@@ -58,8 +38,6 @@ export type CloneItem =
       name: string;
       workspaceId: string;
     };
-
-const STANDALONE = '__standalone__';
 
 /** "Name (copy)"; a file keeps its extension last: "lesson (copy).pdf". */
 export function copyName(name: string, keepExtension = false) {
@@ -107,8 +85,8 @@ function cloneTitle(item: CloneItem) {
 }
 
 /**
- * Clone a file or material: a destination workspace the user edits (a
- * material may also go to No workspace), a chapter in it, and the copy's name,
+ * Clone a file or material: a destination workspace the user edits or No
+ * workspace, a chapter in the workspace, and the copy's name,
  * `Name (copy)` while it sits next to its source. Clone spins and the dialog
  * stays open until the copy opens; a taken name shows under the field and any
  * other refusal under the form.
@@ -125,24 +103,11 @@ export function CloneItemDialog({
 }) {
   const navigate = useNavigate();
   const isFile = item.type === 'file';
-  const { data: workspaces, isPending: workspacesPending } = useWorkspaces();
-  const editable = (workspaces ?? []).filter((ws) => ws.capabilities.canEdit);
-  // The source's workspace when the user edits it, else the first one they
-  // edit; a standalone material stays standalone.
-  const fallback = isFile || item.workspaceId ? editable[0]?.id : undefined;
-  const [picked, setPicked] = useState('');
-  const destination =
-    picked ||
-    (editable.some((ws) => ws.id === item.workspaceId)
-      ? item.workspaceId
-      : (fallback ?? (isFile ? '' : STANDALONE)));
-  const workspaceId = destination === STANDALONE ? '' : destination;
-  const { data: chapters } = useChapters(workspaceId);
-  const [chapter, setChapter] = useState<{
-    chapterId: string | null;
-    chapterName: string | null;
-  }>({ chapterId: null, chapterName: null });
-  const [newChapter, setNewChapter] = useState<string | null>(null);
+  const dest = useItemDestination({
+    standalone: true,
+    workspaceId: item.workspaceId,
+  });
+  const { destination, workspaceId } = dest;
   const [nameEdited, setNameEdited] = useState(false);
   const [formError, setFormError] = useState<{
     errorId: string | null;
@@ -184,10 +149,7 @@ export function CloneItemDialog({
   const submit = handleSubmit(async ({ name }) => {
     setFormError(null);
     // A chapter name still being typed counts, so Clone never drops it.
-    const typed = newChapter?.trim();
-    const { chapterId, chapterName } = typed
-      ? chapterByName(chapters, typed)
-      : chapter;
+    const { chapterId, chapterName } = dest.resolve();
     const where = {
       chapterId: chapterId ?? undefined,
       chapterName: chapterName ?? undefined,
@@ -195,13 +157,22 @@ export function CloneItemDialog({
     };
     try {
       if (isFile) {
-        const file = await cloneFile({ body: { ...where, name }, id: item.id });
-        onCloned?.();
-        await navigate({
-          params: { workspaceId: file.workspaceId },
-          search: { file: file.id },
-          to: '/workspaces/$workspaceId',
+        // No workspaceId: a standalone copy, which opens on its own page.
+        const file = await cloneFile({
+          body: workspaceId ? { ...where, name } : { name },
+          id: item.id,
         });
+        onCloned?.();
+        await (file.workspaceId
+          ? navigate({
+              params: { workspaceId: file.workspaceId },
+              search: { file: file.id },
+              to: '/workspaces/$workspaceId',
+            })
+          : navigate({
+              params: { fileId: file.id },
+              to: '/files/$fileId',
+            }));
       } else {
         const material = await cloneMaterial({
           body: workspaceId ? { ...where, title: name } : { title: name },
@@ -253,12 +224,11 @@ export function CloneItemDialog({
     }
   }
 
-  const noDestination = !(workspacesPending || editable.length || !isFile);
   return (
     <SimpleDialog
       action={
         <Button
-          disabled={isSubmitting || !destination || workspacesPending}
+          disabled={isSubmitting || !destination || dest.pending}
           size="lg"
           type="submit"
           variant="accent"
@@ -277,127 +247,48 @@ export function CloneItemDialog({
       title={cloneTitle(item)}
       width={560}
     >
-      {noDestination ? (
-        <p className="text-fg-muted">
-          {m.question_ui_no_editable_workspaces()}
-        </p>
-      ) : (
-        // The form draws while workspaces load, so nothing shifts when they land.
-        <div className="flex flex-col gap-4">
-          <SettingRow title={m.question_ui_workspace()}>
-            <Select
-              onValueChange={(id) => {
-                // The form's hidden native select reports '' while options load.
-                if (!id) return;
-                setPicked(id);
-                // A refusal belonged to the old destination.
-                setFormError(null);
-                void trigger('name');
-                // Chapters belong to the old workspace.
-                setChapter({ chapterId: null, chapterName: null });
-                setNewChapter(null);
-              }}
-              value={destination}
-            >
-              <SelectTrigger
-                aria-label={m.question_ui_workspace()}
-                className={FIELD_WIDTH}
-                disabled={workspacesPending || isSubmitting}
-                layout="row"
-                loading={workspacesPending}
+      {/* The form draws while workspaces load, so nothing shifts when they
+          land. */}
+      <div className="flex flex-col gap-4">
+        <DestinationFields
+          dest={dest}
+          disabled={isSubmitting}
+          onPick={() => {
+            // A refusal belonged to the old destination.
+            setFormError(null);
+            void trigger('name');
+          }}
+        />
+        <Controller
+          control={control}
+          name="name"
+          render={({ field, fieldState }) => (
+            <label className="flex flex-col gap-1.5">
+              <InputTitle
+                count={{ max: nameMax, value: textLength(field.value) }}
+                required
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {!isFile && (
-                  <SelectItem value={STANDALONE}>
-                    <span className="text-fg-muted">
-                      {m.clone_no_workspace()}
-                    </span>
-                  </SelectItem>
-                )}
-                {editable.map((ws) => (
-                  <SelectItem key={ws.id} value={ws.id}>
-                    <span className="flex min-w-0 items-center gap-2">
-                      <img
-                        alt=""
-                        className="size-5 shrink-0 -translate-y-px rounded-md"
-                        src={iconUrl(ws.iconId)}
-                      />
-                      <span className="truncate">{ws.name}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </SettingRow>
-          {/* Hidden, not removed, without a workspace: no layout shift. */}
-          <div
-            aria-hidden={!workspaceId}
-            className={cn(!workspaceId && 'invisible')}
-          >
-            <SettingRow title={m.question_ui_chapter()}>
-              {newChapter === null ? (
-                <ChapterSelect
-                  chapterName={chapter.chapterName}
-                  chapters={chapters ?? []}
-                  disabled={!workspaceId || isSubmitting}
-                  field
-                  onChange={(chapterId) =>
-                    setChapter({ chapterId, chapterName: null })
-                  }
-                  onCreateRequest={() => setNewChapter('')}
-                  value={chapter.chapterId}
-                />
-              ) : (
-                <NewChapterInput
-                  field
-                  onCancel={() => setNewChapter(null)}
-                  onChange={setNewChapter}
-                  onConfirm={() => {
-                    const name = newChapter.trim();
-                    if (!name) return;
-                    setChapter(chapterByName(chapters, name));
-                    setNewChapter(null);
-                  }}
-                  value={newChapter}
-                />
-              )}
-            </SettingRow>
-          </div>
-          <Controller
-            control={control}
-            name="name"
-            render={({ field, fieldState }) => (
-              <label className="flex flex-col gap-1.5">
-                <InputTitle
-                  count={{ max: nameMax, value: textLength(field.value) }}
-                  required
-                >
-                  {m.common_name()}
-                </InputTitle>
-                <Input
-                  {...field}
-                  aria-invalid={fieldState.invalid}
-                  autoComplete="off"
-                  onChange={(event) => {
-                    setNameEdited(true);
-                    field.onChange(event);
-                  }}
-                  required
-                />
-                {fieldState.invalid && (
-                  <InputError errors={[fieldState.error]} />
-                )}
-              </label>
-            )}
-          />
-          <FormAlert
-            errorId={formError?.errorId}
-            message={formError?.message ?? null}
-          />
-        </div>
-      )}
+                {m.common_name()}
+              </InputTitle>
+              <Input
+                {...field}
+                aria-invalid={fieldState.invalid}
+                autoComplete="off"
+                onChange={(event) => {
+                  setNameEdited(true);
+                  field.onChange(event);
+                }}
+                required
+              />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </label>
+          )}
+        />
+        <FormAlert
+          errorId={formError?.errorId}
+          message={formError?.message ?? null}
+        />
+      </div>
     </SimpleDialog>
   );
 }

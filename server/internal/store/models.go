@@ -197,7 +197,13 @@ type File struct {
 	Provenance *Provenance `json:"provenance,omitempty"`
 	// ThumbnailKey is the page-1 WebP object; list handlers sign it into
 	// ThumbnailURL for rows the caller can already read.
-	ThumbnailKey string  `json:"-"`
+	ThumbnailKey string `json:"-"`
+	// PayerID is the uploader who pays; handlers turn it into IsPayer for the
+	// caller, so no other account id leaves the server.
+	PayerID string `json:"-"`
+	// IsPayer: the caller pays for the file, so it may move it (Epo
+	// 2026-10-27) whatever its role in the workspace.
+	IsPayer      bool    `json:"isPayer"`
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of the page-1 thumbnail; list rows only"`
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`

@@ -1,15 +1,20 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { memo, useCallback, useContext, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useMediaQuery } from 'usehooks-ts';
 import {
   useDeleteOwnedFile,
   useOwnedFiles,
   usePurgeTrashed,
   useRestoreTrashed,
+  useRetryFileProcessing,
+  useRetryingFileIds,
   useTrash,
   useWorkspaces,
 } from '@/api/hooks';
 import type {
   FileKind,
+  FileListLocation,
   FileListSort,
   SourceFile,
   TrashItem,
@@ -40,9 +45,11 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
+import { AddFileDestinationDialog } from '@/features/files/AddFileDestinationDialog';
 import { EmbedsTab } from '@/features/files/EmbedsTab';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
 import { formatFileSize } from '@/features/files/fileUtils';
+import { toastLostAccess } from '@/features/files/lostAccess';
 import {
   clearOnBlank,
   SelectionAction,
@@ -57,10 +64,21 @@ import {
   questionCountLabel,
 } from '@/features/materials/countLabels';
 import { relativeTime } from '@/features/materials/MaterialListCard';
-import { MaterialsTab } from '@/features/materials/MaterialsTab';
+import { locationLabel, MaterialsTab } from '@/features/materials/MaterialsTab';
+import {
+  AddSourceDialog,
+  resumedConnect,
+} from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
-import { AccountStatusButton } from '@/features/workspace/WorkspaceHealth';
+import {
+  type RetryProcessing,
+  retryFailedFile,
+} from '@/features/workspace/retryProcessing';
+import {
+  AccountStatusButton,
+  useAccountFrozen,
+} from '@/features/workspace/WorkspaceHealth';
 import { getLocale, m } from '@/i18n';
 import { describeError } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
@@ -70,6 +88,7 @@ import {
   FILE_SORT_DEFAULT,
   type FilesSearch,
   fileListParams,
+  MATERIAL_LOCATIONS,
   sortSearch,
 } from '@/lib/listSearch';
 import { PREF_KEYS } from '@/lib/localPrefs';
@@ -91,8 +110,8 @@ export default function Files() {
           actions={
             <>
               <AccountStatusButton />
-              {/* Blocks' New block moves here on phones, so the toolbar
-                  keeps one row. */}
+              {/* Blocks' New block and Files' Add file move here on phones,
+                  so the toolbar keeps one row. */}
               <div className="sm:hidden" ref={setHeaderSlot} />
             </>
           }
@@ -148,6 +167,7 @@ export default function Files() {
         />
       ) : (
         <ActiveFiles
+          headerSlot={headerSlot}
           onBusyChange={setBusy}
           onViewChange={changeView}
           view={view}
@@ -158,14 +178,18 @@ export default function Files() {
 }
 
 function ActiveFiles({
+  headerSlot,
   view,
   onViewChange,
   onBusyChange,
 }: {
+  /** Where Add file goes on phones (beside the page title). */
+  headerSlot: HTMLElement | null;
   view: ListView;
   onViewChange: (view: ListView) => void;
   onBusyChange: (busy: boolean) => void;
 }) {
+  const phone = !useMediaQuery('(min-width: 640px)');
   const sorts: SortOption<FileListSort>[] = [
     {
       icon: 'clock',
@@ -195,6 +219,7 @@ function ActiveFiles({
     void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
   const params = useMemo(() => fileListParams(search), [search]);
   const { sort = FILE_SORT_DEFAULT, kinds = [], workspaceIds = [] } = params;
+  const location = search.location;
   const sorting: ColumnSort<FileListSort> = {
     ascending: params.dir === 'asc',
     ascendingFirst: ['name', 'workspace', 'kind'],
@@ -228,10 +253,38 @@ function ActiveFiles({
     { errorBoundary: false }
   );
   const revealRef = useLoadingReveal(isLoading);
+  // A standalone file's Retry processing, one mutation for the whole list.
+  const { mutateAsync: retryStandalone } = useRetryFileProcessing(null);
+  const retryingIds = useRetryingFileIds(null);
+
+  // Add file: the destination chooser, then the Add file dialog aimed at the
+  // pick. A drive connected for No workspace comes back here on Import.
+  const frozen = useAccountFrozen();
+  const [choosing, setChoosing] = useState(false);
+  const [resumeProvider] = useState(() => resumedConnect(null));
+  const [adding, setAdding] = useState<{
+    resume: boolean;
+    workspaceId: string | null;
+  } | null>(resumeProvider ? { resume: true, workspaceId: null } : null);
+  const addFile = (
+    <Button
+      className="px-1.5 font-bold text-link"
+      disabled={frozen}
+      iconLeft="plus"
+      onClick={() => setChoosing(true)}
+      size="sm"
+      variant="ghost-hover"
+    >
+      {m.action_add_file()}
+    </Button>
+  );
+  const addFileInHeader = phone && !!headerSlot;
 
   return (
     <>
+      {addFileInHeader && createPortal(addFile, headerSlot)}
       <ListToolbar
+        action={addFileInHeader ? undefined : addFile}
         filters={[
           {
             key: 'kind',
@@ -243,6 +296,20 @@ function ActiveFiles({
               value: kind,
             })),
             selected: kinds,
+          },
+          {
+            key: 'location',
+            label: m.create_filter_location(),
+            onToggle: (value) =>
+              setSearch({
+                location:
+                  location === value ? undefined : (value as FileListLocation),
+              }),
+            options: MATERIAL_LOCATIONS.map((value) => ({
+              label: locationLabel(value),
+              value,
+            })),
+            selected: location ? [location] : [],
           },
           {
             emptyLabel: m.create_filter_no_workspaces(),
@@ -257,7 +324,11 @@ function ActiveFiles({
           },
         ]}
         onResetFilters={() =>
-          setSearch({ kind: undefined, workspace: undefined })
+          setSearch({
+            kind: undefined,
+            location: undefined,
+            workspace: undefined,
+          })
         }
         onViewChange={onViewChange}
         selection={
@@ -297,7 +368,7 @@ function ActiveFiles({
           )
         ) : files.length === 0 ? (
           <p className="py-10 text-center text-fg-muted">
-            {kinds.length || workspaceIds.length
+            {kinds.length || workspaceIds.length || location
               ? m.files_empty()
               : m.files_none()}
           </p>
@@ -319,6 +390,8 @@ function ActiveFiles({
                     file={file}
                     key={file.id}
                     onDelete={setDeleteTargets}
+                    retry={retryStandalone}
+                    retryPending={retryingIds.includes(file.id)}
                     selected={selection.isSelected(file)}
                     view={view}
                     workspace={workspaces.find(
@@ -349,6 +422,36 @@ function ActiveFiles({
         open={!!deleteTargets}
         title={m.files_delete_selected_title()}
       />
+      {choosing && (
+        <AddFileDestinationDialog
+          onClose={() => setChoosing(false)}
+          onPick={(workspaceId) => {
+            setChoosing(false);
+            setAdding({ resume: false, workspaceId });
+          }}
+        />
+      )}
+      {adding && (
+        <AddSourceDialog
+          initialMode={adding.resume ? 'import' : 'upload'}
+          onClose={() => setAdding(null)}
+          onOpenItem={(item) => {
+            // The Create tab's file or block, in the workspace it went to.
+            if (!adding.workspaceId) return;
+            void navigate({
+              params: { workspaceId: adding.workspaceId },
+              search:
+                item.kind === 'file'
+                  ? { file: item.id }
+                  : { material: item.id },
+              to: '/workspaces/$workspaceId',
+            });
+          }}
+          open
+          resumeProvider={adding.resume ? resumeProvider : null}
+          workspaceId={adding.workspaceId}
+        />
+      )}
     </>
   );
 }
@@ -358,6 +461,8 @@ function ActiveFiles({
 const FileItem = memo(function FileItem({
   file,
   onDelete,
+  retry,
+  retryPending,
   selected,
   view,
   workspace,
@@ -365,63 +470,100 @@ const FileItem = memo(function FileItem({
   file: SourceFile;
   /** A file in a workspace the viewer lost access to can only be deleted. */
   onDelete: (files: SourceFile[]) => void;
+  /** Retry processing of a failed standalone file (its owner is the viewer). */
+  retry: RetryProcessing;
+  retryPending: boolean;
   selected: boolean;
   view: ListView;
   workspace?: Workspace;
 }) {
   const busy = !!useContext(ItemPick)?.busy;
+  // No workspace: the viewer's own file, never shared on its own.
+  const standalone = !file.workspaceId;
+  const [retrying, setRetrying] = useState(false);
   return (
-    <ItemCard
-      actions={
-        file.lostAccess ? (
-          <Menu
-            items={[
-              {
-                danger: true,
-                disabled: busy,
-                icon: 'trash',
-                label: m.action_delete(),
-                onClick: () => onDelete([file]),
-              },
-            ]}
-            triggerIcon={itemMenuIcon(view)}
-          />
-        ) : (
-          <ContentActions
-            canClone={file.status === 'ready' && !!workspace?.canClone}
-            chapters={[]}
-            content={toFileActionTarget(file)}
-            display="menu"
-            menuAlign="end"
-            menuTriggerIcon={itemMenuIcon(view)}
-            renameFieldLabel={m.files_file_name()}
-            renameTitle={m.files_rename()}
-            showMove={false}
-            workspaceId={file.workspaceId}
-          />
-        )
-      }
-      details={formatFileSize(file.sizeBytes)}
-      icon={fileIconName(file)}
-      link={
-        file.lostAccess
-          ? undefined
-          : { params: { fileId: file.id }, to: '/files/$fileId' }
-      }
-      meta={relativeTime(file.addedAt)}
-      pickKey={file.id}
-      selected={selected}
-      thumbnail={{
-        fileKind: file.kind,
-        preview: file.preview,
-        thumbnailUrl: file.thumbnailUrl,
-      }}
-      title={file.name}
-      view={view}
-      workspace={workspace?.name ?? file.workspaceName ?? ''}
-      workspaceIconId={workspace?.iconId}
-      workspaceLost={file.lostAccess}
-    />
+    <>
+      <ItemCard
+        actions={
+          file.lostAccess ? (
+            <Menu
+              items={[
+                {
+                  danger: true,
+                  disabled: busy,
+                  icon: 'trash',
+                  label: m.action_delete(),
+                  onClick: () => onDelete([file]),
+                },
+              ]}
+              triggerIcon={itemMenuIcon(view)}
+            />
+          ) : (
+            <ContentActions
+              canClone={
+                file.status === 'ready' && (standalone || !!workspace?.canClone)
+              }
+              // The Files page lists what the viewer pays for, which the
+              // payer may always move.
+              canMoveTo
+              chapters={[]}
+              content={toFileActionTarget(file)}
+              display="menu"
+              leadingItems={
+                standalone && file.status === 'failed'
+                  ? [
+                      {
+                        disabled: retryPending,
+                        icon: 'refresh',
+                        label: m.files_retry_processing(),
+                        onClick: () =>
+                          retryFailedFile(file, retry, () => setRetrying(true)),
+                        warning: true,
+                      },
+                    ]
+                  : []
+              }
+              menuAlign="end"
+              menuTriggerIcon={itemMenuIcon(view)}
+              renameFieldLabel={m.files_file_name()}
+              renameTitle={m.files_rename()}
+              showMove={false}
+              workspaceId={file.workspaceId}
+              workspaceName={workspace?.name ?? file.workspaceName}
+            />
+          )
+        }
+        details={formatFileSize(file.sizeBytes)}
+        icon={fileIconName(file)}
+        link={
+          file.lostAccess
+            ? undefined
+            : { params: { fileId: file.id }, to: '/files/$fileId' }
+        }
+        meta={relativeTime(file.addedAt)}
+        onOpen={file.lostAccess ? toastLostAccess : undefined}
+        pickKey={file.id}
+        selected={selected}
+        thumbnail={{
+          fileKind: file.kind,
+          preview: file.preview,
+          thumbnailUrl: file.thumbnailUrl,
+        }}
+        title={file.name}
+        view={view}
+        workspace={workspace?.name ?? file.workspaceName ?? ''}
+        workspaceIconId={workspace?.iconId}
+        workspaceLost={file.lostAccess}
+      />
+      {retrying && (
+        <AddSourceDialog
+          onClose={() => setRetrying(false)}
+          open
+          retryFile={file}
+          workspaceId={null}
+        />
+      )}
+    </>
   );
 });
 

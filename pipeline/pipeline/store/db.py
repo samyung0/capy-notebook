@@ -14,6 +14,7 @@ import logging
 import secrets
 import threading
 import time
+from dataclasses import dataclass
 from datetime import UTC
 from typing import Any
 
@@ -23,6 +24,34 @@ from psycopg_pool import ConnectionPool
 from .. import plan_limits
 from ..config import cfg
 from ..jobs import TerminalError, policy_key
+
+
+@dataclass(frozen=True)
+class Scope:
+    """Where a file's index rows and progress events live: its workspace, or,
+    for a standalone file (no workspace, todo-standalone-files.md), its owner,
+    who is the only actor its jobs carry. ``pin`` is a standalone file's
+    embedding space, set once the worker has resolved it; a workspace's is
+    read from the workspace row."""
+
+    workspace_id: str | None
+    owner_id: str | None = None
+    pin: dict[str, Any] | None = None
+
+    @classmethod
+    def of(cls, workspace_id: str | None, actor_user_id: str | None) -> Scope:
+        if workspace_id:
+            return cls(str(workspace_id))
+        if not actor_user_id:
+            raise TerminalError("a standalone file's job names no owner")
+        return cls(None, str(actor_user_id))
+
+    @property
+    def owner(self) -> dict[str, str]:
+        """The store argument naming a standalone file's owner; none for a
+        workspace file."""
+        return {} if self.workspace_id else {"owner_user_id": str(self.owner_id)}
+
 
 _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
@@ -654,7 +683,8 @@ def _pipeline_source_cancellation(
             "ingest source identity is invalid",
         )
     source_etag = str(payload.get("sourceETag") or "")
-    if not (file_id or material_id) or not workspace_id:
+    # A note always has a workspace here; a file without one is standalone.
+    if not (file_id or material_id) or (material_id and not workspace_id):
         return (
             "failed",
             "lifecycle",
@@ -662,20 +692,37 @@ def _pipeline_source_cancellation(
             "ingest source identity is invalid",
         )
 
-    # The workspace row is the common first lock for Go and Python. It also
-    # freezes ownership while we derive the storage owner and actor checks.
-    cur.execute(
-        """
-        SELECT user_id FROM workspaces WHERE id=%s
-        FOR SHARE
-        """,
-        (workspace_id,),
-    )
-    workspace = cur.fetchone()
-    if workspace is None:
-        return ("failed", "lifecycle", "source_deleted", "source deleted")
-    owner_user_id = str(workspace[0] or "")
     actor_user_id = str(payload.get("actorUserId") or "")
+    if workspace_id:
+        # The workspace row is the common first lock for Go and Python. It also
+        # freezes ownership while we derive the storage owner and actor checks.
+        cur.execute(
+            """
+            SELECT user_id FROM workspaces WHERE id=%s
+            FOR SHARE
+            """,
+            (workspace_id,),
+        )
+        workspace = cur.fetchone()
+        if workspace is None:
+            return ("failed", "lifecycle", "source_deleted", "source deleted")
+        owner_user_id = str(workspace[0] or "")
+    else:
+        # A standalone file is its owner's alone (files.user_id, set once at
+        # insert, so an unlocked read is stable) and only the owner acts on
+        # it. Go locks the owner's account and then the file, as below.
+        cur.execute("SELECT user_id FROM files WHERE id=%s", (file_id,))
+        standalone = cur.fetchone()
+        if standalone is None:
+            return ("failed", "lifecycle", "source_deleted", "source deleted")
+        owner_user_id = str(standalone[0] or "")
+        if actor_user_id != owner_user_id:
+            return (
+                "failed",
+                "authorization",
+                "file_access_revoked",
+                "only a standalone file's owner may process it",
+            )
     expected_user_ids = {str(owner_user_id or ""), actor_user_id}
     # The source's payer (its uploader or creator, uploader pays) is set once
     # at insert, so an unlocked read is stable; its account joins the fence
@@ -775,7 +822,8 @@ def _pipeline_source_cancellation(
     if source is None:
         return ("failed", "lifecycle", "source_deleted", "source deleted")
     # files.user_id is the uploader who pays (uploader pays), not the
-    # workspace owner, so only the workspace has to match.
+    # workspace owner, so only the workspace (none for a standalone file) has
+    # to match.
     source_workspace, _, current_revision, current_etag = source
     if str(source_workspace or "") != workspace_id:
         return ("failed", "lifecycle", "source_deleted", "source moved")
@@ -1586,22 +1634,24 @@ def set_file_thumbnail(cur, file_id: str, source_sha256: str, key: str) -> bool:
     return cur.rowcount == 1
 
 
-def share_file_thumbnail(
-    cur, file_id: str, workspace_id: str, source_sha256: str
-) -> bool:
+def share_file_thumbnail(cur, file_id: str, scope: Scope, source_sha256: str) -> bool:
     """Give a file reused from identical indexed bytes, with no parse bundle to
     take a page from, the thumbnail of a live file holding the same bytes in
-    the same workspace. A key names its file, and a file id leads to its
-    workspace, so a key from any other workspace, the same owner's included,
-    would hand that workspace to this file's readers. The blob triggers count
-    the shared key. A file a browser captured keeps its own (set_file_thumbnail)."""
+    the same scope: its workspace, or its owner's standalone files. A key
+    names its file, and a file id leads to its workspace or owner, so a key
+    from any other scope, the same owner's workspaces included, would hand
+    that scope to this file's readers. The blob triggers count the shared
+    key. A file a browser captured keeps its own (set_file_thumbnail)."""
     cur.execute(
         """
         UPDATE files f SET thumbnail_key = src.thumbnail_key
         FROM (
             SELECT s.thumbnail_key
             FROM files s
-            WHERE s.workspace_id = %s AND s.source_sha256 = %s AND s.id <> %s
+            WHERE (s.workspace_id = %s
+                   OR (%s::text IS NOT NULL AND s.workspace_id IS NULL
+                       AND s.user_id = %s))
+              AND s.source_sha256 = %s AND s.id <> %s
               AND s.thumbnail_key IS NOT NULL AND s.trashed_at IS NULL
             ORDER BY s.added_at DESC
             LIMIT 1
@@ -1610,9 +1660,41 @@ def share_file_thumbnail(
           AND f.thumbnail_captured_at IS NULL
           AND f.thumbnail_key IS DISTINCT FROM src.thumbnail_key
         """,
-        (workspace_id, source_sha256, file_id, file_id, source_sha256),
+        (
+            scope.workspace_id,
+            scope.owner_id,
+            scope.owner_id,
+            source_sha256,
+            file_id,
+            file_id,
+            source_sha256,
+        ),
     )
     return cur.rowcount == 1
+
+
+def file_embedding_pin(cur, file_id: str) -> dict[str, Any] | None:
+    """The embedding space of the content a file serves, None before its first
+    index. A standalone file re-ingests in it (todo-standalone-files.md)."""
+    cur.execute(
+        """
+        SELECT rc.embedding_provider_slug, rc.embedding_model_slug,
+               rc.embedding_model_version, rc.embedding_dim
+        FROM rag_file_contents fc
+        JOIN rag_contents rc ON rc.id = fc.content_id
+        WHERE fc.file_id = %s AND rc.embedding_provider_slug IS NOT NULL
+        """,
+        (file_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    return {
+        "embedding_provider_slug": row[0],
+        "embedding_model_slug": row[1],
+        "embedding_model_version": int(row[2]),
+        "embedding_dim": int(row[3]),
+    }
 
 
 def set_file_text_preview(cur, file_id: str, source_sha256: str, text: str) -> None:

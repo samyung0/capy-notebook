@@ -196,7 +196,9 @@ async def test_parts_only_retry_fills_the_summary_without_parse_or_embedding(
     fakes.summary = "A report on osmosis."
 
     job, payload = _job(workspace, first, "job_parts", partsOnly=True)
-    await worker._process_parts_bound(job, payload, first, workspace.id, "report.pdf")
+    await worker._process_parts_bound(
+        job, payload, first, worker.db.Scope(workspace.id), "report.pdf"
+    )
 
     assert fakes.embedded == [] and fakes.summaries == 1
     with psycopg.connect(workspace.dsn, autocommit=True) as conn:
@@ -242,7 +244,9 @@ async def test_a_parts_only_job_keeps_unread_pages_missing(workspace, fakes):
     fakes.summary = "A scanned report on osmosis."
 
     job, payload = _job(workspace, first, "job_parts_scan", partsOnly=True)
-    await worker._process_parts_bound(job, payload, first, workspace.id, "scan.pdf")
+    await worker._process_parts_bound(
+        job, payload, first, worker.db.Scope(workspace.id), "scan.pdf"
+    )
 
     assert await store.has_content_summary(content_id)
     assert _file(workspace, first) == ("failed", True)
@@ -404,7 +408,7 @@ async def test_a_waiter_aliases_the_content_once_it_is_ready(
 
     association = await worker._wait_for_content(
         dict(waiting),
-        workspace_id=workspace.id,
+        scope=worker.db.Scope(workspace.id),
         file_id=waiter,
         content_hash=digest,
         claim_job_id="job_waiter",

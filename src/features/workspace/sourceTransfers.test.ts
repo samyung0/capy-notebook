@@ -245,6 +245,37 @@ describe('compressing before the upload', () => {
   });
 });
 
+// A standalone import (no workspace) polls the unscoped import route and
+// lands the file in the Files page's list.
+describe('a standalone transfer', () => {
+  it('polls the unscoped import status', async () => {
+    const importSources = vi.fn().mockResolvedValue({
+      jobs: [{ jobId: 'imp_1', name: 'notes.pdf', uploadId: 'up_1' }],
+      rejected: [],
+    });
+    get.mockResolvedValue({
+      fileId: 'f_alone',
+      jobId: 'imp_1',
+      name: 'notes.pdf',
+      status: 'succeeded',
+    });
+    startSourceTransfer({
+      importSources: importSources as never,
+      remote: [remote('notes.pdf')],
+      uploadSource: vi.fn(),
+      workspaceId: null,
+    });
+    await vi.waitFor(() =>
+      expect(useSourceTransfers.getState().transfers[0]).toMatchObject({
+        fileId: 'f_alone',
+        stage: 'added',
+        workspaceId: null,
+      })
+    );
+    expect(get.mock.calls[0][0]).toBe('/sources/imports/imp_1');
+  });
+});
+
 // An upload past the upload rate class waits in the gateway's line; one the
 // gateway still refuses 429 fails its row without a browser retry (security
 // regression: rate-limit audit Q282).

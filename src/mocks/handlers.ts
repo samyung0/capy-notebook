@@ -22,6 +22,7 @@ import type {
   MaterialRef,
   MaterialRefType,
   ModelRef,
+  MoveFilesReq,
   PDFAnnotation,
   PDFAnnotationBody,
   Question,
@@ -421,6 +422,12 @@ interface MockSourceImport {
 }
 
 const sourceImports = new Map<string, MockSourceImport>();
+
+/** A workspace's source route and its unscoped twin for standalone files. */
+const sourceRoutes = (suffix: string) => [
+  `/api/workspaces/:id/sources${suffix}`,
+  `/api/sources${suffix}`,
+];
 const sourceImportResponses = new Map<
   string,
   {
@@ -442,6 +449,7 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
     id: sourceImport.fileId,
     indexed: true,
     ingestPct: 100,
+    isPayer: true,
     kind: 'pdf',
     name: sourceImport.name,
     position: db.nextContentPosition(
@@ -602,6 +610,9 @@ type SourceUploadMetadata = {
 
 /** A clone's chapter: the picked one, or one by name (any case), created
  * when missing. */
+/** The progress_loss 409 shows once per page load (POST /files/move). */
+let mockProgressLossAsked = false;
+
 function mockCloneChapter(
   workspaceId: string,
   { chapterId, chapterName }: { chapterId?: string; chapterName?: string }
@@ -1767,7 +1778,12 @@ export const handlers = [
   http.post('/api/files/:id/clone', async ({ params, request }) => {
     const body = (await request.json()) as CloneFileReq;
     const source = db.files.find((file) => file.id === params.id);
-    if (!source || !db.workspaces.some((ws) => ws.id === body.workspaceId))
+    // No workspaceId: a standalone copy.
+    const workspaceId = body.workspaceId ?? '';
+    if (
+      !source ||
+      (workspaceId && !db.workspaces.some((ws) => ws.id === workspaceId))
+    )
       return new HttpResponse(null, { status: 404 });
     const id = uid('f');
     const links = db.fileLinks[source.id];
@@ -1775,10 +1791,12 @@ export const handlers = [
     const file = {
       ...source,
       addedAt: new Date().toISOString(),
-      chapterId: mockCloneChapter(body.workspaceId, body),
+      chapterId: workspaceId ? mockCloneChapter(workspaceId, body) : null,
       id,
+      // The cloner pays for the copy.
+      isPayer: true,
       name: body.name.trim(),
-      workspaceId: body.workspaceId,
+      workspaceId,
     };
     db.files.push(file);
     return HttpResponse.json(file, { status: 201 });
@@ -1795,6 +1813,7 @@ export const handlers = [
       hasBytes: true,
       id: uid('f'),
       indexed: false,
+      isPayer: true,
       kind: body.format === 'docx' ? 'doc' : 'sheet',
       name: `${body.name.trim()}.${body.format}`,
       position: db.nextContentPosition(ws.id, chapterId),
@@ -1810,6 +1829,62 @@ export const handlers = [
     if (chapterId)
       db.chapters.find((c) => c.id === chapterId)?.fileIds.push(file.id);
     return HttpResponse.json(file, { status: 201 });
+  }),
+  // Move into a workspace: the first move of f_1 out of Biology asks about
+  // the progress it drops, so the confirmation can be tried.
+  http.post('/api/files/move', async ({ request }) => {
+    const body = (await request.json()) as MoveFilesReq;
+    const target = db.workspaces.find((ws) => ws.id === body.workspaceId);
+    const files = (body.fileIds ?? []).map((id) =>
+      db.files.find((file) => file.id === id)
+    );
+    if (!target || files.some((file) => !file))
+      return new HttpResponse(null, { status: 404 });
+    const moving = files.filter((file) => file !== undefined);
+    if (moving.some((file) => file.workspaceId === target.id))
+      return HttpResponse.json(
+        { errors: [{ message: 'conflict' }] },
+        { status: 409 }
+      );
+    if (
+      moving.some(
+        (file) =>
+          file.status && file.status !== 'ready' && file.status !== 'failed'
+      )
+    )
+      return HttpResponse.json(
+        { errors: [{ message: 'file_processing' }] },
+        { status: 409 }
+      );
+    if (
+      !body.confirmProgressLoss &&
+      !mockProgressLossAsked &&
+      moving.some((file) => file.id === 'f_1')
+    ) {
+      mockProgressLossAsked = true;
+      return HttpResponse.json(
+        {
+          errors: [
+            { message: 'progress_loss', value: { people: 3, planSteps: 2 } },
+          ],
+        },
+        { status: 409 }
+      );
+    }
+    const chapterId = mockCloneChapter(target.id, body);
+    for (const file of moving) {
+      const source = db.workspaces.find((ws) => ws.id === file.workspaceId);
+      if (source) source.fileCount = Math.max(0, source.fileCount - 1);
+      for (const c of db.chapters)
+        c.fileIds = c.fileIds.filter((id) => id !== file.id);
+      file.workspaceId = target.id;
+      if (file.workspaceName !== undefined) file.workspaceName = target.name;
+      file.chapterId = chapterId;
+      if (chapterId)
+        db.chapters.find((c) => c.id === chapterId)?.fileIds.push(file.id);
+      target.fileCount += 1;
+    }
+    return HttpResponse.json(moving);
   }),
   /* ---------------- chapters & files ---------------- */
   http.get('/api/workspaces/:id/chapters', async ({ params }) =>
@@ -1901,11 +1976,16 @@ export const handlers = [
     const { asc, limit, list, offset, sort } = listParams(request.url);
     const kinds = list('kind');
     const wsIds = list('workspaceId');
+    const locations = list('location');
+    const q = new URL(request.url).searchParams.get('q')?.toLowerCase() ?? '';
     const rows = db.files
       .filter(
         (f) =>
+          (!q || f.name.toLowerCase().includes(q)) &&
           (!kinds.length || kinds.includes(f.kind)) &&
-          (!wsIds.length || wsIds.includes(f.workspaceId))
+          (!wsIds.length || wsIds.includes(f.workspaceId)) &&
+          (!locations.length ||
+            locations.includes(f.workspaceId ? 'workspace' : 'standalone'))
       )
       .sort(
         sortBy(
@@ -2449,19 +2529,22 @@ export const handlers = [
   http.get('/api/source-upload-policy', async () =>
     HttpResponse.json(sourceUploadPolicy)
   ),
+  // Each source route has an unscoped twin for standalone files (no
+  // workspace), which the mocks answer alike with an empty workspace id.
   // The mock gateway always has a free slot: every ticket's turn is now.
-  http.post('/api/workspaces/:id/sources/uploads/tickets', () =>
-    HttpResponse.json({ position: 0, ticketId: 'utk_mock' }, { status: 201 })
+  ...sourceRoutes('/uploads/tickets').map((path) =>
+    http.post(path, () =>
+      HttpResponse.json({ position: 0, ticketId: 'utk_mock' }, { status: 201 })
+    )
   ),
   // A file removed before it was sent counts in its batch; mocks keep none.
-  http.post(
-    '/api/workspaces/:id/sources/batches/:batchId/removed',
-    () => new HttpResponse(null, { status: 204 })
+  ...sourceRoutes('/batches/:batchId/removed').map((path) =>
+    http.post(path, () => new HttpResponse(null, { status: 204 }))
   ),
   // Mirrors the streamed upload: one multipart request, metadata then file.
-  http.post(
-    '/api/workspaces/:id/sources/uploads',
-    async ({ params, request }) => {
+  ...sourceRoutes('/uploads').map((path) =>
+    http.post(path, async ({ params, request }) => {
+      const wsId = typeof params.id === 'string' ? params.id : '';
       const form = await request.formData();
       const body = JSON.parse(
         String(form.get('metadata'))
@@ -2497,30 +2580,35 @@ export const handlers = [
           { status: 400 }
         );
       }
+      // A standalone file has no chapter, so its metadata names none.
+      if (!wsId && ('chapterId' in body || 'chapterName' in body)) {
+        return HttpResponse.json(
+          { message: 'a standalone file has no chapter' },
+          { status: 400 }
+        );
+      }
       if (!chapterId && chapterName?.trim()) {
         const normalizedName = chapterName.trim().toLowerCase();
         const existing = db.chapters.find(
           (chapter) =>
-            chapter.workspaceId === params.id &&
+            chapter.workspaceId === wsId &&
             chapter.name.trim().toLowerCase() === normalizedName
         );
         if (existing) {
           chapterId = existing.id;
         } else {
           const order = db.chapters.filter(
-            (chapter) => chapter.workspaceId === params.id
+            (chapter) => chapter.workspaceId === wsId
           ).length;
           const chapter: Chapter = {
             fileIds: [],
             id: uid('ch'),
             name: chapterName.trim(),
             order,
-            workspaceId: String(params.id),
+            workspaceId: wsId,
           };
           db.chapters.push(chapter);
-          const ws = db.workspaces.find(
-            (workspace) => workspace.id === params.id
-          );
+          const ws = db.workspaces.find((workspace) => workspace.id === wsId);
           if (ws) ws.chapterCount += 1;
           chapterId = chapter.id;
         }
@@ -2533,13 +2621,14 @@ export const handlers = [
         hasBytes: true,
         id: uid('f'),
         indexed: false,
+        isPayer: true,
         kind,
         name,
-        position: db.nextContentPosition(String(params.id), chapterId),
+        position: db.nextContentPosition(wsId, chapterId),
         revision: 1,
         sizeBytes: bytes.size,
         status: 'pending',
-        workspaceId: String(params.id),
+        workspaceId: wsId,
       };
       db.fileLinks[f.id] = { url: URL.createObjectURL(bytes) };
       const office = /\.(docx|pptx|xlsx)$/i.exec(name)?.[1].toLowerCase();
@@ -2550,7 +2639,7 @@ export const handlers = [
           db.fileLinks[f.id].url
         );
       db.files.push(f);
-      const ws = db.workspaces.find((w) => w.id === params.id);
+      const ws = db.workspaces.find((w) => w.id === wsId);
       if (ws) ws.fileCount += 1;
       if (f.chapterId)
         db.chapters.find((c) => c.id === f.chapterId)?.fileIds.push(f.id);
@@ -2561,7 +2650,7 @@ export const handlers = [
         f.indexed = f.kind !== 'audio';
       }, 2000);
       return HttpResponse.json(f, { status: 201 });
-    }
+    })
   ),
   /* ---------------- chat & generate ---------------- */
   /* ---------------- conversations ---------------- */
@@ -3538,9 +3627,12 @@ export const handlers = [
       webUrl: 'https://onedrive.live.com/?id=root',
     })
   ),
-  http.post(
-    '/api/workspaces/:id/sources/import-inspect',
-    async ({ params, request }) => {
+  ...sourceRoutes('/import-inspect').map((path) =>
+    http.post(path, async ({ params, request }) => {
+      const base =
+        typeof params.id === 'string'
+          ? `/api/workspaces/${params.id}/sources`
+          : '/api/sources';
       const body = (await request.json()) as {
         driveIds?: string[];
         fileIds: string[];
@@ -3548,7 +3640,7 @@ export const handlers = [
       };
       return HttpResponse.json({
         items: body.fileIds.map((fileId, index) => ({
-          analysisUrl: `/api/workspaces/${params.id}/sources/import-content?provider=${body.provider}&fileId=${encodeURIComponent(fileId)}`,
+          analysisUrl: `${base}/import-content?provider=${body.provider}&fileId=${encodeURIComponent(fileId)}`,
           contentType:
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           ...(body.driveIds?.[index] ? { driveId: body.driveIds[index] } : {}),
@@ -3560,29 +3652,30 @@ export const handlers = [
         })),
         rejected: [],
       });
-    }
+    })
   ),
-  http.get('/api/workspaces/:id/sources/import-content', async () => {
-    const encoder = new TextEncoder();
-    const document = zipSync({
-      'docProps/app.xml': encoder.encode(
-        '<Properties><Pages>2</Pages></Properties>'
-      ),
-      'word/document.xml': encoder.encode(
-        `<w:document><w:t>${'Searchable mock document text. '.repeat(80)}</w:t></w:document>`
-      ),
-    });
-    return new HttpResponse(document, {
-      headers: {
-        'Content-Type':
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      },
-    });
-  }),
-  http.post(
-    '/api/workspaces/:id/sources/import',
-    async ({ params, request }) => {
-      const wsId = params.id as string;
+  ...sourceRoutes('/import-content').map((path) =>
+    http.get(path, async () => {
+      const encoder = new TextEncoder();
+      const document = zipSync({
+        'docProps/app.xml': encoder.encode(
+          '<Properties><Pages>2</Pages></Properties>'
+        ),
+        'word/document.xml': encoder.encode(
+          `<w:document><w:t>${'Searchable mock document text. '.repeat(80)}</w:t></w:document>`
+        ),
+      });
+      return new HttpResponse(document, {
+        headers: {
+          'Content-Type':
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        },
+      });
+    })
+  ),
+  ...sourceRoutes('/import').map((path) =>
+    http.post(path, async ({ params, request }) => {
+      const wsId = typeof params.id === 'string' ? params.id : '';
       const body = (await request.json()) as {
         chapterId?: string | null;
         chapterName?: string | null;
@@ -3622,29 +3715,31 @@ export const handlers = [
       const response = { jobs, rejected: [] };
       if (replayKey) sourceImportResponses.set(replayKey, response);
       return HttpResponse.json(response, { status: 202 });
-    }
+    })
   ),
-  http.get('/api/workspaces/:id/sources/imports/:jobId', async ({ params }) => {
-    const jobId = params.jobId as string;
-    const sourceImport = sourceImports.get(jobId);
-    if (!sourceImport) {
-      return HttpResponse.json({ message: 'not found' }, { status: 404 });
-    }
-    sourceImport.polls += 1;
-    const status =
-      sourceImport.polls === 1
-        ? 'pending'
-        : sourceImport.polls === 2
-          ? 'running'
-          : 'succeeded';
-    if (status === 'succeeded') completeMockSourceImport(sourceImport);
-    return HttpResponse.json({
-      ...(status === 'succeeded' ? { fileId: sourceImport.fileId } : {}),
-      jobId,
-      name: sourceImport.name,
-      status,
-    });
-  }),
+  ...sourceRoutes('/imports/:jobId').map((path) =>
+    http.get(path, async ({ params }) => {
+      const jobId = params.jobId as string;
+      const sourceImport = sourceImports.get(jobId);
+      if (!sourceImport) {
+        return HttpResponse.json({ message: 'not found' }, { status: 404 });
+      }
+      sourceImport.polls += 1;
+      const status =
+        sourceImport.polls === 1
+          ? 'pending'
+          : sourceImport.polls === 2
+            ? 'running'
+            : 'succeeded';
+      if (status === 'succeeded') completeMockSourceImport(sourceImport);
+      return HttpResponse.json({
+        ...(status === 'succeeded' ? { fileId: sourceImport.fileId } : {}),
+        jobId,
+        name: sourceImport.name,
+        status,
+      });
+    })
+  ),
 ];
 
 type SourceKindFix = 'pdf' | 'doc' | 'md' | 'image' | 'txt';

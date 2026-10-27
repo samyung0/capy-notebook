@@ -335,14 +335,43 @@ func (s *Store) AssertMaterialEditor(ctx context.Context, userID, matID string) 
 	return nil
 }
 
-// FileWorkspaceID resolves the owning workspace of a file (for access checks).
+// FileWorkspaceID resolves the owning workspace of a file (for access checks);
+// "" for a standalone file, whose access is FileEffectiveRole's.
 func (s *Store) FileWorkspaceID(ctx context.Context, fileID string) (string, error) {
 	var wsID string
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID)
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, '') FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
 	return wsID, err
+}
+
+// FileEffectiveRole is the caller's role on a file: its workspace role, or
+// for a standalone file owner to its payer alone (never shared, Epo
+// 2026-10-27), hidden by the owner's lifecycle as a standalone material is.
+func (s *Store) FileEffectiveRole(ctx context.Context, userID, fileID string) (WorkspaceRole, error) {
+	if userID == "" {
+		return "", ErrNotFound
+	}
+	wsID, err := s.FileWorkspaceID(ctx, fileID)
+	if err != nil {
+		return "", err
+	}
+	if wsID != "" {
+		return s.WorkspaceEffectiveRole(ctx, userID, wsID)
+	}
+	var owned bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM files f JOIN users owner ON owner.id=f.user_id
+		WHERE f.id=$1 AND f.workspace_id IS NULL AND f.trashed_at IS NULL AND f.user_id=$2
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL)`,
+		fileID, userID).Scan(&owned); err != nil {
+		return "", err
+	}
+	if !owned {
+		return "", ErrNotFound
+	}
+	return RoleOwner, nil
 }
 
 // ChapterWorkspaceID resolves the owning workspace of a chapter.
@@ -724,7 +753,7 @@ func insertCloneFileTx(
 		(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
 		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision,
 		 scope_file_names)
-		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+		VALUES ($1,NULLIF($2,''),$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
 		newID, workspaceID, actorID, chapterID, position, name, f.kind, f.sizeBytes, f.status, f.indexed, f.parser, f.blobPath,
 		f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance, f.preview, f.revision,
 		f.scopeFileNames); err != nil {
@@ -1840,7 +1869,8 @@ func HideOtherAccountLock(err error, actorID string) error {
 }
 
 // CloneFile copies one ready or partial file into a workspace the actor
-// edits (files live in workspaces only): its published bytes (blob shared,
+// edits or, with no target workspace, standalone (Epo 2026-10-27): its
+// published bytes (blob shared,
 // reference counted), saved edit state, captions, provenance and index, plus
 // the thumbnail the caller copies after the commit. The cloner pays.
 func (s *Store) CloneFile(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
@@ -1876,15 +1906,21 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	}
 	defer tx.Rollback(ctx)
 	var sourceWorkspaceID, sourceOwnerID string
-	if err := tx.QueryRow(ctx, `SELECT f.workspace_id, w.user_id FROM files f
-		JOIN workspaces w ON w.id=f.workspace_id
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(f.workspace_id, ''), COALESCE(w.user_id, f.user_id) FROM files f
+		LEFT JOIN workspaces w ON w.id=f.workspace_id
 		WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).
 		Scan(&sourceWorkspaceID, &sourceOwnerID); isNoRows(err) {
 		return "", nil, ErrNotFound
 	} else if err != nil {
 		return "", nil, err
 	}
-	if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
+	// A standalone file is copied by its owner alone, whose account
+	// lockCloneTargetTx checks.
+	if sourceWorkspaceID == "" {
+		if userID != sourceOwnerID {
+			return "", nil, ErrNotFound
+		}
+	} else if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
 		return "", nil, err
 	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
@@ -1902,8 +1938,10 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	if err := lockCloneBlobPathsTx(ctx, tx, cloneFileBlobPaths(files)); err != nil {
 		return "", nil, err
 	}
-	if err := s.gateWorkspaceFilesTx(ctx, tx, dest.workspaceID, 1); err != nil {
-		return "", nil, err
+	if dest.workspaceID != "" {
+		if err := s.gateWorkspaceFilesTx(ctx, tx, dest.workspaceID, 1); err != nil {
+			return "", nil, err
+		}
 	}
 	// The cloner's plan caps one file as it caps an upload (Epo 2026-10-12).
 	tier, err := s.effectivePlanTierForUser(ctx, tx, dest.payerID)
@@ -1930,9 +1968,15 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 		return "", nil, err
 	}
 	if f.indexed {
-		indexed, err := cloneRetrievalIndex(ctx, tx, sourceWorkspaceID, dest.workspaceID, map[string]string{f.id: nid}, nil)
-		if err != nil {
-			return "", nil, err
+		// The index copies between workspaces only; a copy into or out of
+		// standalone is ingested in its own scope, where a same-owner
+		// standalone donor spares the parse.
+		indexed := map[string]bool{}
+		if sourceWorkspaceID != "" && dest.workspaceID != "" {
+			indexed, err = cloneRetrievalIndex(ctx, tx, sourceWorkspaceID, dest.workspaceID, map[string]string{f.id: nid}, nil)
+			if err != nil {
+				return "", nil, err
+			}
 		}
 		if !indexed[nid] {
 			if err := s.queueCloneIngestTx(ctx, tx, userID, dest.workspaceID, nid, f); err != nil {

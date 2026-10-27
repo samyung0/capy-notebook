@@ -79,9 +79,16 @@ def content_hash(chunks: list[Chunk]) -> str:
     return digest.hexdigest()
 
 
+def _space(workspace_id: str | None, pin: dict[str, Any] | None) -> dict[str, Any]:
+    """The embedding space argument of ``store.replace_content_chunks``: none
+    for a workspace file, whose space the store reads from the workspace row;
+    a standalone file's (no workspace) is the pin its job resolved."""
+    return {} if workspace_id else {"pin": pin}
+
+
 async def index_file(
     *,
-    workspace_id: str,
+    workspace_id: str | None,
     content_id: str,
     file_id: str,
     file_name: str,
@@ -89,9 +96,12 @@ async def index_file(
     on_progress=None,
     claim_job_id: str | None = None,
     allow_empty: bool = False,
+    pin: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write chunks and the descriptor for canonical parsed content; the
-    caller publishes it (``store.publish_file_content``).
+    caller publishes it (``store.publish_file_content``). A standalone file
+    passes no workspace and its ``pin``; its rows are owner-scoped through
+    their content row.
 
     The descriptor is a part: when it fails, no summary row is written (the
     descriptor is pending, never blank) and ``summary_error`` carries the
@@ -103,6 +113,7 @@ async def index_file(
             content_id=content_id,
             rows=[],
             claim_job_id=claim_job_id,
+            **_space(workspace_id, pin),
         )
         if allow_empty:
             await store.upsert_content_summary(
@@ -167,6 +178,7 @@ async def index_file(
         content_id=content_id,
         rows=rows,
         claim_job_id=claim_job_id,
+        **_space(workspace_id, pin),
     )
     if on_progress:
         on_progress(85)
@@ -193,7 +205,7 @@ async def index_file(
 
 
 async def fill_descriptor(
-    *, workspace_id: str, content_id: str, file_name: str
+    *, workspace_id: str | None, content_id: str, file_name: str
 ) -> Exception | None:
     """Describe published content whose descriptor is pending, from its stored
     chunks: one summary call, no parse and no embedding. The row is inserted
@@ -304,9 +316,10 @@ async def index_material(
 
 async def embed_copied_chunks(
     *,
-    workspace_id: str,
+    workspace_id: str | None,
     content_id: str,
     claim_job_id: str | None = None,
+    pin: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Re-embed chunk text copied from a donor in a different vector space;
     the caller publishes the content."""
@@ -345,6 +358,7 @@ async def embed_copied_chunks(
         content_id=content_id,
         rows=rows,
         claim_job_id=claim_job_id,
+        **_space(workspace_id, pin),
     )
     return {"chunks": len(rows), "reembedded": True}
 

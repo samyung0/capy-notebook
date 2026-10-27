@@ -7,7 +7,8 @@ file's conversion), as the bundle's extraction wrote it: the worker never
 renders or converts a document itself. Without that image (a reused donor or
 identical indexed bytes, which build or extract no bundle, an older parser, a
 failed render) the file shares the key of a file with the same bytes in the
-same workspace only, if one has a thumbnail. Uploaded images go through
+same scope only (its workspace, or its owner's standalone files), if one has
+a thumbnail. Uploaded images go through
 Pillow in the sandboxed decode helper (ingest/decode.py), as does the
 bundle's page image. The 200 px wide WebP
 is stored content-addressed at ``thumbs/{file id}/{sha256}.webp`` and
@@ -44,7 +45,7 @@ CACHE_CONTROL = "public, max-age=31536000, immutable"
 def capture_source(
     *,
     file_id: str,
-    workspace_id: str,
+    scope: db.Scope,
     plan: ingest_plan.ProcessingPlan,
     local_path: str | None,
     source_sha256: str,
@@ -63,7 +64,7 @@ def capture_source(
             # No page from the parse (reused bytes, or none rendered): the file
             # shares the key of a file with the same bytes.
             with db.connect() as conn, conn.cursor() as cur:
-                db.share_file_thumbnail(cur, file_id, workspace_id, source_sha256)
+                db.share_file_thumbnail(cur, file_id, scope, source_sha256)
                 conn.commit()
             return
         data = render(plan, Path(local_path), page_image)

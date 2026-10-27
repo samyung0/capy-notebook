@@ -50,11 +50,13 @@ function PickOverlay({
   pickKey,
   label,
   link,
+  onOpen,
   selected,
 }: {
   pickKey: string;
   label: string;
   link?: LinkProps;
+  onOpen?: () => void;
   selected: boolean;
 }) {
   const selection = useContext(ItemPick);
@@ -68,6 +70,7 @@ function PickOverlay({
   }>({ held: false, touch: false, x: 0, y: 0 });
   const open = () => {
     if (link) void navigate(link);
+    else onOpen?.();
   };
   const release = () => window.clearTimeout(press.current.timer);
   return (
@@ -142,6 +145,7 @@ export function ItemCard({
   details,
   meta,
   link,
+  onOpen,
   actions,
   pickKey,
   selected = false,
@@ -165,6 +169,9 @@ export function ItemCard({
   /** Grid view only: the dashboard's cards, with a shorter thumbnail. */
   dense?: boolean;
   link?: LinkProps;
+  /** What opening a pickable item with no link does instead (a lost-access
+   * item explains itself). */
+  onOpen?: () => void;
   actions?: ReactNode;
   /** Makes the item pickable under an ItemPick provider (Files, Blocks,
    * Trash); the key the page's selection knows it by. */
@@ -179,6 +186,7 @@ export function ItemCard({
     <PickOverlay
       label={m.files_select_item({ name: title })}
       link={link}
+      onOpen={onOpen}
       pickKey={pickKey}
       selected={selected}
     />
@@ -194,6 +202,7 @@ export function ItemCard({
             'bg-tint-accent-1/60 frosted:bg-solid-accent-1/25 frosted:hover:bg-solid-accent-1/25 hover:bg-tint-accent-1/60'
         )}
         data-item
+        data-item-workspace={workspaceLabel || undefined}
       >
         {overlay}
         <div className="flex min-w-0 items-center gap-3.5">
@@ -235,6 +244,7 @@ export function ItemCard({
           'bg-tint-accent-1/60 frosted:bg-solid-accent-1/25 frosted:hover:bg-solid-accent-1/25 hover:bg-tint-accent-1/60'
       )}
       data-item
+      data-item-workspace={workspaceLabel || undefined}
       radius="button"
       theme="transparent"
     >

@@ -1,7 +1,7 @@
 import { useQueries } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { filesQuery } from '@/api/hooks';
+import { fileQuery, filesQuery } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
 import {
   GoogleDriveMonoIcon,
@@ -190,8 +190,15 @@ export function SourceTransferPanel() {
   const unsent = useSourceTransfers((state) => state.unsent);
   useUnsentBeforeUnload(unsent);
   const fileIdsByWorkspace = new Map<string, string[]>();
+  // A standalone file reads its own query, which the owner's notification
+  // stream patches with its ingest progress.
+  const standaloneIds: string[] = [];
   for (const { fileId, workspaceId } of transfers) {
     if (!fileId) continue;
+    if (!workspaceId) {
+      standaloneIds.push(fileId);
+      continue;
+    }
     fileIdsByWorkspace.set(workspaceId, [
       ...(fileIdsByWorkspace.get(workspaceId) ?? []),
       fileId,
@@ -211,8 +218,14 @@ export function SourceTransferPanel() {
           : false,
     })),
   });
+  const standaloneFiles = useQueries({
+    queries: standaloneIds.map((fileId) => fileQuery(fileId)),
+  });
   const files = new Map(
-    fileLists.flatMap(({ data }) => data ?? []).map((file) => [file.id, file])
+    [
+      ...fileLists.flatMap(({ data }) => data ?? []),
+      ...standaloneFiles.flatMap(({ data }) => (data ? [data] : [])),
+    ].map((file) => [file.id, file])
   );
   const rows = transfers.map((transfer) => ({
     file: transfer.fileId ? files.get(transfer.fileId) : undefined,

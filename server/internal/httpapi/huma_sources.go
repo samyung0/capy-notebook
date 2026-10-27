@@ -39,6 +39,21 @@ func (a *api) registerSourceUploads(api huma.API) {
 	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/import", "importSources", tag, "Queue sources from a connected drive", http.StatusAccepted, a.importSources)
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/sources/import-inspect", "inspectSourceImports", tag, "Inspect sources selected from a connected drive", http.StatusOK, 64<<10, a.inspectSourceImports)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/sources/imports/{jobId}", "getSourceImport", tag, "Get source import status", http.StatusOK, a.getSourceImport)
+	// The same with no workspace: standalone files (Epo 2026-10-27).
+	reg(api, http.MethodPost, "/api/sources/import", "importStandaloneSources", tag, "Queue standalone sources from a connected drive", http.StatusAccepted,
+		func(ctx context.Context, in *struct{ Body apimodel.ImportSourcesReq }) (*sourceImportOutput, error) {
+			return a.importSources(ctx, &importSourcesInput{Body: in.Body})
+		})
+	regWithMaxBody(api, http.MethodPost, "/api/sources/import-inspect", "inspectStandaloneSourceImports", tag, "Inspect standalone sources selected from a connected drive", http.StatusOK, 64<<10,
+		func(ctx context.Context, in *struct{ Body inspectSourceImportsReq }) (*inspectSourceImportsOutput, error) {
+			return a.inspectSourceImports(ctx, &inspectSourceImportsInput{Body: in.Body})
+		})
+	reg(api, http.MethodGet, "/api/sources/imports/{jobId}", "getStandaloneSourceImport", tag, "Get standalone source import status", http.StatusOK,
+		func(ctx context.Context, in *struct {
+			JobID string `path:"jobId"`
+		}) (*sourceImportStatusOutput, error) {
+			return a.getSourceImport(ctx, &sourceImportStatusInput{JobID: in.JobID})
+		})
 }
 
 type sourceUploadPolicyInput struct {
@@ -173,7 +188,7 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 	if err != nil {
 		return uploadTurn{}, err
 	}
-	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+	if err := a.assertSourceDestination(ctx, wsID); err != nil {
 		return uploadTurn{}, err
 	}
 	var body apimodel.CreateSourceUploadReq
@@ -187,6 +202,19 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 		return uploadTurn{}, err
 	}
 	return a.uploads.take(uid(r), sourceUploadTarget(wsID), sourceClaim(&body))
+}
+
+// assertSourceDestination admits an upload into wsID for its editors, or with
+// no workspace a standalone file the caller alone will own (Epo 2026-10-27);
+// the reservation runs that account's lifecycle checks.
+func (a *api) assertSourceDestination(ctx context.Context, wsID string) error {
+	if wsID == "" {
+		if userID(ctx) == "" {
+			return store.ErrNotFound
+		}
+		return nil
+	}
+	return a.assertWorkspaceEditor(ctx, wsID)
 }
 
 // sourceClaim is what a source upload's metadata asks for, as its ticket
@@ -256,7 +284,7 @@ func (a *api) removeUnsentSource(w http.ResponseWriter, r *http.Request) {
 func (a *api) countRemovedSource(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	wsID := id(r)
-	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+	if err := a.assertSourceDestination(ctx, wsID); err != nil {
 		return err
 	}
 	var body struct {
@@ -307,7 +335,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	if a.blob == nil {
 		return store.File{}, errors.New("blob store not configured")
 	}
-	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+	if err := a.assertSourceDestination(ctx, wsID); err != nil {
 		return store.File{}, err
 	}
 	var body apimodel.CreateSourceUploadReq
@@ -409,6 +437,9 @@ func (a *api) checkSourceUpload(
 			return "", "", err
 		}
 	}
+	if wsID == "" && (body.ChapterID != nil || chapterName != "") {
+		return "", "", huma.Error400BadRequest("a file outside a workspace has no chapter")
+	}
 	if body.ChapterID != nil {
 		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *body.ChapterID)
 		if err != nil || chapterWorkspace != wsID {
@@ -497,7 +528,7 @@ func promoteMatchingObject(
 }
 
 func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourceImportOutput, error) {
-	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
+	if err := a.assertSourceDestination(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	if err := a.openSourceBatch(ctx, in.ID, "import", in.Body.BatchID, in.Body.BatchTotal); err != nil {
@@ -608,8 +639,13 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	if a.cfg.PipelineSecret == "" {
 		return nil, huma.Error503ServiceUnavailable("source import worker is not configured")
 	}
-	if err := a.s.AssertWorkspaceFileRoom(ctx, wsID, len(refs)); err != nil {
-		return nil, hErr(err)
+	if wsID == "" && (in.Body.ChapterID != nil || chapterName != "") {
+		return nil, huma.Error400BadRequest("a file outside a workspace has no chapter")
+	}
+	if wsID != "" {
+		if err := a.s.AssertWorkspaceFileRoom(ctx, wsID, len(refs)); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	if in.Body.ChapterID != nil {
 		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *in.Body.ChapterID)
@@ -774,10 +810,10 @@ func (a *api) getSourceImport(
 	ctx context.Context,
 	in *sourceImportStatusInput,
 ) (*sourceImportStatusOutput, error) {
-	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
+	if err := a.assertSourceDestination(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	job, err := a.s.GetSourceImport(ctx, in.ID, in.JobID)
+	job, err := a.s.GetSourceImport(ctx, in.ID, userID(ctx), in.JobID)
 	if err != nil {
 		return nil, hErr(err)
 	}

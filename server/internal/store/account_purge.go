@@ -201,10 +201,12 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	}
 
 	// The account's job history names its files and workspaces, so it goes
-	// with them (attempt rows cascade; billing rows keep theirs with the
-	// attempt link cleared). Jobs it ran in other owners' workspaces stay with
+	// with them, its standalone files' too (attempt rows cascade; billing rows
+	// keep theirs with the attempt link cleared). Jobs it ran in other owners' workspaces stay with
 	// those files, without its id (below).
-	if _, err := tx.Exec(ctx, `DELETE FROM jobs WHERE payload->>'workspaceId' = ANY($1)`, owned); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM jobs WHERE payload->>'workspaceId' = ANY($1)
+		OR (type IN ('import','parse','ingest','source_refresh')
+			AND COALESCE(payload->>'workspaceId', '') = '' AND payload->>'actorUserId' = $2)`, owned, userID); err != nil {
 		return err
 	}
 

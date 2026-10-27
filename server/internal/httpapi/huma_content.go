@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -48,6 +49,8 @@ type workspaceRecentOutput struct {
 type filesListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated file kinds"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
+	Location    string `query:"location" doc:"Comma-separated locations: workspace, standalone"`
+	Query       string `query:"q" maxLength:"120" doc:"Keeps files whose name holds this text, any case"`
 	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"`
 	Sort        string `query:"sort" enum:"added,name,size,kind,workspace" default:"added"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
@@ -89,6 +92,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodGet, "/api/files/{id}/links", "getFileLinks", tag, "Get presigned file reads", http.StatusOK, a.getFileLinks)
 	reg(api, http.MethodPatch, "/api/files/{id}", "updateFile", tag, "Update a file", http.StatusOK, a.updateFile)
 	reg(api, http.MethodDelete, "/api/files/{id}", "deleteFile", tag, "Move a file to the trash", http.StatusNoContent, a.deleteFile)
+	reg(api, http.MethodPost, "/api/files/move", "moveFiles", tag, "Move files into a workspace", http.StatusOK, a.moveFiles)
 }
 
 func (a *api) assertWorkspaceEditor(ctx context.Context, wsID string) error {
@@ -167,8 +171,15 @@ func (a *api) deleteChapter(ctx context.Context, in *chapterIDInput) (*Empty, er
 }
 
 func (a *api) listOwnedFiles(ctx context.Context, in *filesListInput) (*filePageOutput, error) {
+	for _, location := range csv(in.Location) {
+		switch location {
+		case "workspace", "standalone":
+		default:
+			return nil, huma.Error400BadRequest("unsupported file location")
+		}
+	}
 	page, err := a.s.ListOwnedFiles(ctx, userID(ctx), store.FileListFilter{
-		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Member: in.Scope == "member",
+		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Locations: csv(in.Location), Query: strings.TrimSpace(in.Query), Member: in.Scope == "member",
 		Sort: in.Sort, Ascending: in.Dir == "asc", Limit: in.Limit, Cursor: in.Cursor,
 	})
 	if err != nil {
@@ -218,12 +229,15 @@ func (a *api) listWorkspaceRecent(ctx context.Context, in *workspaceIDInput) (*w
 // minted exactly for files the caller can already read (openwiki/thumbnails.md,
 // TestListThumbnailsFollowReadAccess). Signing is local: no database call.
 func (a *api) signFileThumbnails(ctx context.Context, files []store.File) error {
+	caller := userID(ctx)
 	for i := range files {
 		url, err := a.thumbnailURL(ctx, files[i].ThumbnailKey)
 		if err != nil {
 			return err
 		}
 		files[i].ThumbnailURL = url
+		// Every list ends here, so each row says whether the caller pays.
+		files[i].IsPayer = caller != "" && files[i].PayerID == caller
 	}
 	return nil
 }
@@ -247,6 +261,7 @@ func (a *api) getFile(ctx context.Context, in *fileIDInput) (*fileOutput, error)
 	if err != nil {
 		return nil, hErr(err)
 	}
+	res.IsPayer = res.PayerID == userID(ctx)
 	return &fileOutput{Body: res}, nil
 }
 
@@ -259,11 +274,7 @@ type fileLinksOutput struct {
 // the gateway.
 func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutput, error) {
 	// The read check (fileRead) and the role the strip needs, in one lookup.
-	wsID, err := a.s.FileWorkspaceID(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	role, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), wsID)
+	role, err := a.s.FileEffectiveRole(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -344,6 +355,47 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 		return nil, hErr(err)
 	}
 	return &fileOutput{Body: res}, nil
+}
+
+type moveFilesInput struct {
+	Body apimodel.MoveFilesReq
+}
+
+type filesOutputBody struct {
+	Body []apimodel.File
+}
+
+func (a *api) moveFiles(ctx context.Context, in *moveFilesInput) (*filesOutputBody, error) {
+	b := in.Body
+	target := store.MoveTarget{WorkspaceID: b.WorkspaceID, ChapterName: strings.TrimSpace(string(b.ChapterName))}
+	if b.ChapterID != "" {
+		if target.ChapterName != "" {
+			return nil, huma.Error422UnprocessableEntity("give at most one of chapterId or chapterName")
+		}
+		target.ChapterID = &b.ChapterID
+	}
+	files, err := a.s.MoveFiles(ctx, userID(ctx), b.FileIDs, target, b.ConfirmProgressLoss)
+	var loss *store.ProgressLossError
+	switch {
+	case errors.As(err, &loss):
+		return nil, &huma.ErrorModel{
+			Status: http.StatusConflict, Title: http.StatusText(http.StatusConflict),
+			Detail: "moving drops study progress",
+			Errors: []*huma.ErrorDetail{{Message: "progress_loss", Value: map[string]int{"people": loss.People, "planSteps": loss.PlanSteps}}},
+		}
+	case errors.Is(err, store.ErrFileProcessing):
+		return nil, &huma.ErrorModel{
+			Status: http.StatusConflict, Title: http.StatusText(http.StatusConflict),
+			Detail: "a file is still processing",
+			Errors: []*huma.ErrorDetail{{Message: "file_processing"}},
+		}
+	case err != nil:
+		return nil, hErr(err)
+	}
+	if err := a.signFileThumbnails(ctx, files); err != nil {
+		return nil, hErr(err)
+	}
+	return &filesOutputBody{Body: files}, nil
 }
 
 // deleteFile moves the file into the trash. Blobs, index and charges stay

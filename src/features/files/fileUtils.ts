@@ -72,6 +72,16 @@ export function fileCanClone(file: Pick<SourceFile, 'status' | 'indexed'>) {
   return file.status === 'ready' || (file.status === 'failed' && file.indexed);
 }
 
+/** Whether Move to… (another workspace or chapter) is offered on a workspace
+ * file: its workspace's owner or its payer moves it; other editors keep the
+ * chapter-only Move (Epo 2026-10-27). */
+export function fileCanMoveTo(
+  file: Pick<SourceFile, 'isPayer'>,
+  workspace: { isOwner: boolean } | undefined
+) {
+  return file.isPayer || !!workspace?.isOwner;
+}
+
 /** Why a ready file is not searchable: its content is over an ingest limit,
  * a recording has no speech, or it was stored without processing. */
 export function notIndexedMessage(file: Pick<SourceFile, 'indexLimit'>) {

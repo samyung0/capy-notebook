@@ -465,7 +465,7 @@ async def test_ready_donor_keeps_caption_ownership(workspace, monkeypatch, scena
             job=job,
             payload=job["payload"],
             file_id=file_id,
-            ws=workspace.id,
+            scope=worker.db.Scope(workspace.id),
             name="source.docx",
             kind="doc",
             route="document_parse",

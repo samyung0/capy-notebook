@@ -38,13 +38,21 @@ def test_source_refresh_publishes_only_its_ready_event(monkeypatch):
     job = {"id": "job_1", "payload": {"fileId": "f_1", "sourceRefresh": True}}
     token = worker.db.bind_source_refresh(job)
     try:
-        worker._publish_progress("ws_1", "f_1", "parsing", 15, status="processing")
-        worker._publish_progress("ws_1", "f_1", "indexing", 55)
-        worker._publish_progress("ws_1", "f_1", "failed", 100, status="failed")
-        worker._publish_progress("ws_1", "f_1", "done", 100, status="ready")
+        worker._publish_progress(
+            worker.db.Scope("ws_1"), "f_1", "parsing", 15, status="processing"
+        )
+        worker._publish_progress(worker.db.Scope("ws_1"), "f_1", "indexing", 55)
+        worker._publish_progress(
+            worker.db.Scope("ws_1"), "f_1", "failed", 100, status="failed"
+        )
+        worker._publish_progress(
+            worker.db.Scope("ws_1"), "f_1", "done", 100, status="ready"
+        )
     finally:
         worker.db.reset_source_refresh(token)
-    worker._publish_progress("ws_1", "f_1", "parsing", 15, status="processing")
+    worker._publish_progress(
+        worker.db.Scope("ws_1"), "f_1", "parsing", 15, status="processing"
+    )
 
     assert events == ["ready", "processing"]
 
@@ -267,7 +275,7 @@ async def _run():
         processing_plan=_plan(),
         local_path="/shared/sources/source-1",
         source_key="sources/source-1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         file_id="f_1",
         source_sha256="aa" * 32,
     )
@@ -592,7 +600,7 @@ async def test_unknown_contract_parser_routes_fail(parse_stub, parser_route):
             processing_plan=_plan(parser_route=parser_route),
             local_path="/shared/sources/source-1",
             source_key="sources/source-1",
-            ws="ws_1",
+            scope=worker.db.Scope("ws_1"),
             file_id="f_1",
             source_sha256="aa" * 32,
         )
@@ -691,7 +699,7 @@ async def test_admission_refusal_passes_the_full_source_identity(monkeypatch):
         {"id": "job_refused", "type": "ingest", "attempts": 1},
         payload,
         "f_1",
-        "ws_1",
+        worker.db.Scope("ws_1"),
         "txt",
         _plan(ingest_plan.RAW_TEXT, format_name="txt"),
     )
@@ -733,7 +741,7 @@ async def test_lost_claim_does_not_publish_a_stale_terminal_progress(monkeypatch
         {"id": "job_lost", "attempts": 1},
         payload,
         "f_1",
-        "ws_1",
+        worker.db.Scope("ws_1"),
         "pdf",
         _plan(ingest_plan.STORE_ONLY),
     )
@@ -874,7 +882,7 @@ async def test_parsed_document_continuation_rechecks_account_lifecycle(monkeypat
             {"id": "job_ingest", "type": "ingest", "attempts": 1},
             _ingest_payload(),
             "f_1",
-            "ws_1",
+            worker.db.Scope("ws_1"),
             "pdf",
             _plan(),
         )
@@ -897,7 +905,7 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
         processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="md"),
         local_path="/shared/sources/source-1",
         source_key="sources/source-1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         file_id="f_1",
         source_sha256="aa" * 32,
     )
@@ -917,7 +925,7 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
         processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="json"),
         local_path="/shared/sources/source-1",
         source_key="sources/source-1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         file_id="f_1",
         source_sha256="aa" * 32,
     )
@@ -945,7 +953,7 @@ async def test_a_table_over_the_token_cap_is_refused_before_chunking(
             processing_plan=_plan(ingest_plan.DELIMITED_TEXT, format_name="csv"),
             local_path=str(source),
             source_key="sources/source-1",
-            ws="ws_1",
+            scope=worker.db.Scope("ws_1"),
             file_id="f_1",
             source_sha256="aa" * 32,
         )
@@ -975,7 +983,7 @@ async def test_a_table_chunks_without_overlap(parse_stub, monkeypatch, tmp_path)
         processing_plan=_plan(ingest_plan.DELIMITED_TEXT, format_name="csv"),
         local_path=str(source),
         source_key="sources/source-1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         file_id="f_1",
         source_sha256="aa" * 32,
     )
@@ -1066,7 +1074,7 @@ async def test_office_routes_use_the_structured_bundle(parse_stub, format_name: 
         processing_plan=_plan(format_name=format_name, office=True),
         local_path="/shared/sources/source-1",
         source_key="sources/source-1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         file_id="f_1",
         source_sha256="aa" * 32,
     )
@@ -1126,7 +1134,7 @@ async def test_donor_content_is_copied_before_the_destination_becomes_ready(
             "sourceETag": "etag-a",
         },
         file_id="f_1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         name="lesson.docx",
         kind="doc",
         route=ingest_plan.DOCUMENT_PARSE,
@@ -1544,7 +1552,7 @@ async def test_terminal_parser_answers_fail_without_retry(monkeypatch, error, me
             processing_plan=_plan(),
             source_key="sources/source-1",
             source_sha256="aa" * 32,
-            workspace_id="ws_1",
+            scope=worker.db.Scope("ws_1"),
             file_id="f_1",
         )
 
@@ -1862,7 +1870,7 @@ async def test_image_donor_cache_failure_falls_through(monkeypatch):
         job={"id": "job_ingest", "attempts": 1},
         payload=_ingest_payload(),
         file_id="f_1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         name="diagram.png",
         kind="image",
         route=ingest_plan.IMAGE_CAPTION,
@@ -1927,7 +1935,7 @@ async def test_image_donor_reuses_authorized_caption_without_an_empty_artifact_k
         job={"id": "job_ingest", "attempts": 1},
         payload=_ingest_payload(),
         file_id="f_1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         name="diagram.png",
         kind="image",
         route=ingest_plan.IMAGE_CAPTION,
@@ -2022,7 +2030,7 @@ async def test_provider_busy_repends_once_then_fails_the_file(monkeypatch):
     await worker._handle_job_failure(job, busy)
     assert requeued == [] and terminal == []
     ((args, kwargs),) = yields
-    assert args[0] is job and args[1] == "f_1" and args[2] == "ws_1"
+    assert args[0] is job and args[1] == "f_1" and args[2] == worker.db.Scope("ws_1")
     assert args[7] == "waiting for the model to free up"
     assert args[8] == 12 and args[9] == "provider_busy"
     assert kwargs == {"count_provider_wait": True}
@@ -2560,7 +2568,7 @@ async def _run_text_ingest(waits: int) -> None:
         {"id": "job_1", "type": "ingest", "attempts": 1, "provider_waits": waits},
         _ingest_payload(),
         "f_1",
-        "ws_1",
+        worker.db.Scope("ws_1"),
         "txt",
         _plan(ingest_plan.RAW_TEXT, format_name="txt"),
     )
@@ -2612,7 +2620,7 @@ async def test_the_spent_re_pend_reaches_the_vlm_page_reads(
         {"id": "job_1", "type": "ingest", "attempts": 1, "provider_waits": waits},
         _ingest_payload(parseArtifact=_artifact()),
         "f_1",
-        "ws_1",
+        worker.db.Scope("ws_1"),
         "pdf",
         _plan(),
     )
@@ -2688,7 +2696,7 @@ async def test_a_donor_with_a_pending_descriptor_is_filled_for_the_new_file(
         job={"id": "job_1", "type": job_type, "attempts": 1},
         payload=_ingest_payload(),
         file_id="f_1",
-        ws="ws_1",
+        scope=worker.db.Scope("ws_1"),
         name="lesson.pdf",
         kind="pdf",
         route=ingest_plan.DOCUMENT_PARSE,
@@ -2802,5 +2810,5 @@ async def test_a_parts_only_document_job_skips_the_parse_handoff(monkeypatch):
         {"id": "job_parts", "type": "ingest", "attempts": 1, "payload": payload}
     )
 
-    assert reached == [("job_parts", "f_1", "ws_1", "notes.pdf")]
+    assert reached == [("job_parts", "f_1", worker.db.Scope("ws_1"), "notes.pdf")]
     assert events == []

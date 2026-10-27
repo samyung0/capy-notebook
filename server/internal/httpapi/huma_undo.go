@@ -100,11 +100,8 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 			return nil, hErr(store.ErrNotFound)
 		}
 	case agenttools.KindSourceFile:
-		wsID, err := a.s.FileWorkspaceID(ctx, resource.ID)
-		if err != nil {
-			return nil, hErr(store.ErrNotFound)
-		}
-		if err := a.s.AssertWorkspaceEditor(ctx, actor, wsID); err != nil {
+		role, err := a.s.FileEffectiveRole(ctx, actor, resource.ID)
+		if err != nil || !store.RoleCanEdit(role) {
 			return nil, hErr(store.ErrNotFound)
 		}
 	}

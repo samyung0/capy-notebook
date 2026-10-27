@@ -21,6 +21,6 @@ export interface CloneFileReq {
      * @maxLength 120
      */
   name: string;
-  /** @minLength 1 */
-  workspaceId: string;
+  /** Omitted for a standalone copy */
+  workspaceId?: string;
 }

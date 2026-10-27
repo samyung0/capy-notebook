@@ -47,6 +47,7 @@ export function ChapterSelect({
   chapters,
   value,
   chapterName,
+  current,
   disabled,
   field,
   onChange,
@@ -55,6 +56,8 @@ export function ChapterSelect({
   chapters: Chapter[];
   value: string | null;
   chapterName?: string | null;
+  /** Tags the item's own chapter (null: No chapter) "Current" in the list. */
+  current?: string | null;
   disabled?: boolean;
   field?: boolean;
   onChange: (value: string | null) => void;
@@ -91,7 +94,11 @@ export function ChapterSelect({
       )}
       <SelectContent align="end" className={field ? undefined : 'max-w-47'}>
         <SelectGroup>
-          <SelectItem size="sm" value={NO_CHAPTER}>
+          <SelectItem
+            hint={current === null ? m.destination_current() : null}
+            size="sm"
+            value={NO_CHAPTER}
+          >
             <span className="text-fg-muted">{m.source_no_chapter()}</span>
           </SelectItem>
           {chapterName && (
@@ -100,7 +107,12 @@ export function ChapterSelect({
             </SelectItem>
           )}
           {chapters.map((chapter) => (
-            <SelectItem key={chapter.id} size="sm" value={chapter.id}>
+            <SelectItem
+              hint={current === chapter.id ? m.destination_current() : null}
+              key={chapter.id}
+              size="sm"
+              value={chapter.id}
+            >
               <span className="line-clamp-1 translate-y-px">
                 {chapter.name}
               </span>

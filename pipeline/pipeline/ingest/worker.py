@@ -30,7 +30,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import capy_sandbox
@@ -101,12 +101,12 @@ _PARSE_ROUTES = {
 }
 
 
-def _publish_progress(workspace_id: str, file_id: str, *args, **kwargs) -> None:
+def _publish_progress(scope: db.Scope, file_id: str, *args, **kwargs) -> None:
     # Reprocessing an edited source is invisible: no progress or failure, only
     # the terminal ready event that refreshes the browser's file caches.
     if db.source_refresh_for(file_id) is not None and kwargs.get("status") != "ready":
         return
-    progress.publish(workspace_id, file_id, *args, **kwargs)
+    progress.publish(scope, file_id, *args, **kwargs)
 
 
 def _set_stage(name: str) -> None:
@@ -116,7 +116,6 @@ def _set_stage(name: str) -> None:
 
 _REQUIRED_INGEST_STRINGS = (
     "fileId",
-    "workspaceId",
     "blobPath",
     "kind",
     "actorUserId",
@@ -132,6 +131,10 @@ _REQUIRED_INGEST_INTS = (
     "sourceRevision",
 )
 _REQUIRED_INGEST_KEYS = ("sourceETag",)
+# A standalone file's job (no workspaceId) carries the embedding space its
+# first index writes in: the retrieval default when Go enqueued it.
+_STANDALONE_EMBEDDING_STRINGS = ("embeddingProviderSlug", "embeddingModelSlug")
+_STANDALONE_EMBEDDING_INTS = ("embeddingModelVersion", "embeddingDim")
 
 
 def _parse_route(parse_mode: str) -> str:
@@ -170,10 +173,11 @@ def _announce_reclaimed(row: dict) -> None:
         return
     error = f"{row.get('type') or 'pipeline'} worker died before the job completed"
     workspace_id = str(payload.get("workspaceId") or "")
+    actor_user_id = str(payload.get("actorUserId") or "")
     file_id = str(payload.get("fileId") or "")
-    if workspace_id:
+    if workspace_id or actor_user_id:
         _publish_progress(
-            workspace_id,
+            db.Scope.of(workspace_id, actor_user_id),
             file_id,
             "failed",
             100,
@@ -317,7 +321,7 @@ def _settle_published_source_refresh(job_id: str, payload: dict) -> None:
                 cur,
                 usage=usage,
                 file_id=str(payload["fileId"]),
-                workspace_id=str(payload["workspaceId"]),
+                workspace_id=str(payload.get("workspaceId") or ""),
                 actor_user_id=str(payload["actorUserId"]),
                 reservation_id=_reservation_id(payload),
                 job_id=job_id,
@@ -575,9 +579,16 @@ def _finish_ok(
     except Exception:
         obs.restore_parse_usage(usage)
         raise
+    # Siblings share the content row, so the scope: a standalone file's are
+    # its owner's (the actor) standalone files.
     for sibling in siblings:
         _publish_progress(
-            workspace_id, sibling, "done", 100, status="ready", indexed=True
+            db.Scope.of(workspace_id, actor_user_id),
+            sibling,
+            "done",
+            100,
+            status="ready",
+            indexed=True,
         )
     return True
 
@@ -789,16 +800,20 @@ def _notify_ingest_terminal(
     )
     if indexed is None:
         return
+    actor_user_id = str((payload or {}).get("actorUserId") or "")
+    scope = db.Scope.of(ws, actor_user_id) if ws or actor_user_id else None
     if index_limit:
-        if ws:
-            _publish_progress(ws, file_id, "done", 100, status="ready", indexed=False)
+        if scope:
+            _publish_progress(
+                scope, file_id, "done", 100, status="ready", indexed=False
+            )
         log.info("ingest %s is over its %s and stays unindexed", name, index_limit)
         return
     # A refused Office rebase leaves the published file as it was and due for
     # a fresh publication, so the workspace sees no failure.
-    if ws and error_code != "office_rebase_refused":
+    if scope and error_code != "office_rebase_refused":
         _publish_progress(
-            ws,
+            scope,
             file_id,
             "failed",
             100,
@@ -840,22 +855,24 @@ def _summary_reason(job: dict, error: Exception | None) -> str | None:
     return str(error) or type(error).__name__
 
 
-async def _fill_summary(job: dict, ws: str, content_id: str, name: str) -> str | None:
+async def _fill_summary(
+    job: dict, scope: db.Scope, content_id: str, name: str
+) -> str | None:
     """Fill published content's pending descriptor (a no-op when present)."""
     error = await indexing.fill_descriptor(
-        workspace_id=ws, content_id=content_id, file_name=name
+        workspace_id=scope.workspace_id, content_id=content_id, file_name=name
     )
     return _summary_reason(job, error)
 
 
 def _publish_done(
-    ws: str, file_id: str, missing: Missing, note: str | None = None
+    scope: db.Scope, file_id: str, missing: Missing, note: str | None = None
 ) -> None:
     """The terminal progress event: ready, or failed with the missing parts
     named while the content stays indexed."""
     if missing:
         _publish_progress(
-            ws,
+            scope,
             file_id,
             "failed",
             100,
@@ -865,10 +882,10 @@ def _publish_done(
         )
         return
     if note is None:
-        _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
+        _publish_progress(scope, file_id, "done", 100, status="ready", indexed=True)
     else:
         _publish_progress(
-            ws, file_id, "done", 100, status="ready", message=note, indexed=True
+            scope, file_id, "done", 100, status="ready", message=note, indexed=True
         )
 
 
@@ -877,11 +894,13 @@ def _read_name(file_id: str) -> str:
         return db.file_name(cur, file_id)
 
 
-def _audio_context(workspace_id: str, name: str) -> str:
+def _audio_context(scope: db.Scope, name: str) -> str:
     """The text sent ahead of a recording so names come out right: the
-    workspace's title and the file's name."""
+    workspace's title, if it has one, and the file's name."""
+    if not scope.workspace_id:
+        return f"File: {name}"
     with db.connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT name FROM workspaces WHERE id=%s", (workspace_id,))
+        cur.execute("SELECT name FROM workspaces WHERE id=%s", (scope.workspace_id,))
         row = cur.fetchone()
     title = str(row[0]) if row else ""
     return f"Workspace: {title}\nFile: {name}"
@@ -1152,7 +1171,7 @@ def _set_file_status(
 def _yield_for_capacity(
     job: dict,
     file_id: str,
-    workspace_id: str,
+    scope: db.Scope,
     name: str,
     source_revision: int,
     source_etag: str,
@@ -1210,7 +1229,7 @@ def _yield_for_capacity(
         conn.commit()
     if file_id:
         _publish_progress(
-            workspace_id,
+            scope,
             file_id,
             stage,
             percent,
@@ -1482,7 +1501,7 @@ async def _ensure_document_artifact(
     processing_plan: ingest_plan.ProcessingPlan,
     source_key: str,
     source_sha256: str,
-    workspace_id: str,
+    scope: db.Scope,
     file_id: str,
 ) -> dict:
     """Run only the document parse stage and return its immutable artifact."""
@@ -1501,7 +1520,7 @@ async def _ensure_document_artifact(
         str(payload.get("sourceETag") or ""),
         str(payload.get("actorUserId") or ""),
     )
-    _publish_progress(workspace_id, file_id, "parsing", 15, status="processing")
+    _publish_progress(scope, file_id, "parsing", 15, status="processing")
     try:
         _set_stage("parser_call")
         artifact = await asyncio.to_thread(
@@ -1553,7 +1572,7 @@ async def _chunks_for(
     processing_plan: ingest_plan.ProcessingPlan,
     local_path: str | None,
     source_key: str,
-    ws: str,
+    scope: db.Scope,
     file_id: str,
     source_sha256: str,
     job_id: str | None = None,
@@ -1582,7 +1601,7 @@ async def _chunks_for(
             )
         _set_stage("text_normalization")
         text = await asyncio.to_thread(_read_text, local_path)
-        _publish_progress(ws, file_id, "indexing", 40, status="processing")
+        _publish_progress(scope, file_id, "indexing", 40, status="processing")
         return chunk_markdown(text), [], None
 
     direct = {
@@ -1601,7 +1620,7 @@ async def _chunks_for(
                 str(payload.get("actorUserId") or ""),
             )
         _publish_progress(
-            ws,
+            scope,
             file_id,
             {"image": "captioning", "audio": "transcribing"}.get(direct, "indexing"),
             20,
@@ -1645,7 +1664,7 @@ async def _chunks_for(
                 local_path=local_path,
                 source_sha256=source_sha256,
                 blob_path=str(payload["blobPath"]),
-                context=await asyncio.to_thread(_audio_context, ws, name),
+                context=await asyncio.to_thread(_audio_context, scope, name),
                 second_rate_micros=_rate(_RESOURCE_AUDIO_SECOND)["creditMicrosPerUnit"],
                 credit_user_id=None
                 if payload.get("paidBy") == "system"
@@ -1674,7 +1693,7 @@ async def _chunks_for(
                     source_etag,
                     str(payload.get("actorUserId") or ""),
                 )
-        _publish_progress(ws, file_id, "indexing", 50, status="processing")
+        _publish_progress(scope, file_id, "indexing", 50, status="processing")
         if direct == "audio":
             return chunk_transcript(sentences), [], None
         if direct == "tabular":
@@ -1699,7 +1718,7 @@ async def _chunks_for(
             route=route,
             office=processing_plan.office,
         )
-        _publish_progress(ws, file_id, "indexing", 45)
+        _publish_progress(scope, file_id, "indexing", 45)
         _set_stage("vlm_pages")
         content_list, unread = await _read_vlm_pages(
             content_list, raw_dir, file_id, name, last_wait=last_wait
@@ -1708,7 +1727,7 @@ async def _chunks_for(
         chunks = await asyncio.to_thread(
             _page_chunks, content_list, raw_dir, Path(local_path or "")
         )
-        _publish_progress(ws, file_id, "indexing", 55)
+        _publish_progress(scope, file_id, "indexing", 55)
         # Extraction already bounded this entry (parser_client._entry_limit).
         page = raw_dir / parser_client.PAGE_IMAGE
         return chunks, unread, page.read_bytes() if page.is_file() else None
@@ -1854,6 +1873,15 @@ def _require_ingest_payload(payload: dict) -> None:
     for key in _REQUIRED_INGEST_KEYS:
         if key not in payload or payload[key] is None:
             missing.append(key)
+    if not str(payload.get("workspaceId") or "").strip():
+        missing += [
+            key
+            for key in _STANDALONE_EMBEDDING_STRINGS
+            if not str(payload.get(key) or "").strip()
+        ]
+        missing += [
+            key for key in _STANDALONE_EMBEDDING_INTS if payload.get(key) is None
+        ]
     if missing:
         raise TerminalError(f"ingest payload missing {', '.join(missing)}")
 
@@ -1885,7 +1913,7 @@ async def _process_ingest_job_bound(job: dict) -> None:
         return
     _require_ingest_payload(payload)
     file_id = payload["fileId"]
-    ws = payload["workspaceId"]
+    scope = db.Scope.of(payload.get("workspaceId"), payload["actorUserId"])
     kind = str(payload["kind"]).lower()
     processing_plan = ingest_plan.require(payload.get("processingPlan"))
     job_type = str(job.get("type") or "ingest")
@@ -1910,9 +1938,12 @@ async def _process_ingest_job_bound(job: dict) -> None:
         return
 
     try:
-        pins = registry.pins_from_payload(
-            payload, embedding=await _workspace_embedding_spec(ws)
-        )
+        if scope.workspace_id:
+            embedding = await _workspace_embedding_spec(scope.workspace_id)
+        else:
+            scope = replace(scope, pin=await _standalone_pin(file_id, payload))
+            embedding = _embedding_spec(scope.pin)
+        pins = registry.pins_from_payload(payload, embedding=embedding)
     except (registry.RegistryError, TerminalError) as exc:
         raise TerminalError(
             f"ingest refused because its model pins could not be resolved: {exc}"
@@ -1928,7 +1959,7 @@ async def _process_ingest_job_bound(job: dict) -> None:
             job_attempt_id=telemetry.current_attempt_id(),
             job_stage=telemetry.current_stage(),
         )
-        await _process_ingest_job(job, payload, file_id, ws, kind, processing_plan)
+        await _process_ingest_job(job, payload, file_id, scope, kind, processing_plan)
     except source_text.FiletransWait as wait:
         # The transcription task runs at Alibaba; the job polls it next claim.
         name = await asyncio.to_thread(_read_name, file_id)
@@ -1936,7 +1967,7 @@ async def _process_ingest_job_bound(job: dict) -> None:
             _yield_for_capacity,
             job,
             file_id,
-            ws,
+            scope,
             name,
             int(payload["sourceRevision"]),
             str(payload.get("sourceETag") or ""),
@@ -1953,7 +1984,7 @@ async def _process_ingest_job_bound(job: dict) -> None:
             _yield_for_capacity,
             job,
             file_id,
-            ws,
+            scope,
             name,
             int(payload["sourceRevision"]),
             str(payload.get("sourceETag") or ""),
@@ -2107,7 +2138,48 @@ async def _workspace_embedding_spec(workspace_id: str) -> registry.ModelConfig:
     default: the workspace's existing chunks are in this space, and there is no
     reindex job that could move them into another one.
     """
-    pin = await store.workspace_embedding_pin(workspace_id)
+    return _embedding_spec(await store.workspace_embedding_pin(workspace_id))
+
+
+async def _embedding_pin(scope: db.Scope) -> dict:
+    """The embedding space a file's index is written in: its workspace's, or a
+    standalone file's own, resolved at job start (``_standalone_pin``)."""
+    if scope.workspace_id:
+        return await store.workspace_embedding_pin(scope.workspace_id)
+    if scope.pin is None:
+        raise TerminalError("standalone file has no resolved embedding space")
+    return scope.pin
+
+
+async def _standalone_pin(file_id: str, payload: dict) -> dict:
+    """A standalone file's embedding space: the one its content is already
+    indexed in (a re-ingest), else the retrieval default Go put on the job at
+    enqueue, recorded on the content row by the index write. There is no
+    reindex job, so a moved default splits spaces, as between workspaces."""
+    pin = await asyncio.to_thread(_recorded_embedding_pin, file_id)
+    if pin is None:
+        try:
+            pin = {
+                "embedding_provider_slug": str(payload["embeddingProviderSlug"]),
+                "embedding_model_slug": str(payload["embeddingModelSlug"]),
+                "embedding_model_version": int(payload["embeddingModelVersion"]),
+                "embedding_dim": int(payload["embeddingDim"]),
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            raise TerminalError("ingest payload has an invalid embedding pin") from exc
+    try:
+        store.vector_table_for_pin(pin)
+    except RuntimeError as exc:
+        raise TerminalError(str(exc)) from exc
+    return pin
+
+
+def _recorded_embedding_pin(file_id: str) -> dict | None:
+    with db.connect() as conn, conn.cursor() as cur:
+        return db.file_embedding_pin(cur, file_id)
+
+
+def _embedding_spec(pin: dict) -> registry.ModelConfig:
     return registry.resolve_pinned(
         pin["embedding_provider_slug"],
         pin["embedding_model_slug"],
@@ -2119,7 +2191,7 @@ async def _workspace_embedding_spec(workspace_id: str) -> registry.ModelConfig:
 async def _wait_for_content(
     association: dict,
     *,
-    workspace_id: str,
+    scope: db.Scope,
     file_id: str,
     content_hash: str,
     claim_job_id: str,
@@ -2149,14 +2221,16 @@ async def _wait_for_content(
             # enough that its owner looks dead. Either way, try to take it
             # over; losing the race just means waiting on whoever won it.
             await store.steal_stale_content(
-                workspace_id=workspace_id,
+                workspace_id=scope.workspace_id,
+                **scope.owner,
                 content_hash=content_hash,
                 stale_s=CONTENT_CLAIM_STALE_S,
             )
         # Attaching again aliases ready content (a deferred alias moves now)
         # or takes over a dropped claim.
         association = await store.attach_file_content(
-            workspace_id=workspace_id,
+            workspace_id=scope.workspace_id,
+            **scope.owner,
             file_id=file_id,
             content_hash=content_hash,
             source_sha256=source_sha256,
@@ -2173,7 +2247,7 @@ async def _reuse_donor(
     job: dict,
     payload: dict,
     file_id: str,
-    ws: str,
+    scope: db.Scope,
     name: str,
     kind: str,
     route: str,
@@ -2181,8 +2255,9 @@ async def _reuse_donor(
     identity: str,
     source_sha256: str,
 ) -> bool:
-    """Copy a ready donor into this workspace. Returns False on a vanished donor."""
-    pin = await store.workspace_embedding_pin(ws)
+    """Copy a ready donor into this file's scope. Returns False on a vanished
+    donor."""
+    pin = await _embedding_pin(scope)
     copy_vectors = (
         donor.get("embedding_provider_slug") == pin["embedding_provider_slug"]
         and donor.get("embedding_model_slug") == pin["embedding_model_slug"]
@@ -2203,7 +2278,8 @@ async def _reuse_donor(
         if cached is None:
             return False
     association = await store.attach_file_content(
-        workspace_id=ws,
+        workspace_id=scope.workspace_id,
+        **scope.owner,
         file_id=file_id,
         content_hash=donor["content_hash"],
         source_sha256=source_sha256,
@@ -2214,7 +2290,7 @@ async def _reuse_donor(
     )
     association = await _wait_for_content(
         association,
-        workspace_id=ws,
+        scope=scope,
         file_id=file_id,
         content_hash=donor["content_hash"],
         claim_job_id=job["id"],
@@ -2227,7 +2303,10 @@ async def _reuse_donor(
     note = None
     if association["ready"]:
         if not await store.attach_donor_captions(
-            donor_id=donor["id"], dest_workspace_id=ws, dest_file_id=file_id
+            donor_id=donor["id"],
+            dest_workspace_id=scope.workspace_id,
+            **scope.owner,
+            dest_file_id=file_id,
         ):
             return False
         note = f"{name}: identical content already indexed; reusing its index."
@@ -2236,7 +2315,8 @@ async def _reuse_donor(
             dest_file_id=file_id,
             donor_id=donor["id"],
             dest_content_id=content_id,
-            dest_workspace_id=ws,
+            dest_workspace_id=scope.workspace_id,
+            **scope.owner,
             copy_vectors=copy_vectors,
         )
         if not copied:
@@ -2248,14 +2328,15 @@ async def _reuse_donor(
                 result = {"chunks": "copied", "donor": donor["id"]}
             else:
                 result = await indexing.embed_copied_chunks(
-                    workspace_id=ws,
+                    workspace_id=scope.workspace_id,
                     content_id=content_id,
                     claim_job_id=job["id"],
+                    pin=scope.pin,
                 )
             if isinstance(result.get("chunks"), int):
                 telemetry.record(chunks_created=max(0, int(result["chunks"])))
             await store.publish_file_content(
-                workspace_id=ws,
+                workspace_id=scope.workspace_id,
                 file_id=file_id,
                 content_id=content_id,
                 claim_job_id=job["id"],
@@ -2276,12 +2357,12 @@ async def _reuse_donor(
                 job=job,
                 payload=payload,
                 file_id=file_id,
-                workspace_id=ws,
+                workspace_id=scope.workspace_id or "",
                 artifact=None,
             )
             if handed_off:
                 _publish_progress(
-                    ws,
+                    scope,
                     file_id,
                     "indexing",
                     90,
@@ -2291,7 +2372,7 @@ async def _reuse_donor(
             return handed_off
         missing = COMPLETE
     else:
-        missing = Missing(await _fill_summary(job, ws, content_id, name))
+        missing = Missing(await _fill_summary(job, scope, content_id, name))
     committed = await asyncio.to_thread(
         _finish_ok,
         file_id,
@@ -2299,7 +2380,7 @@ async def _reuse_donor(
         donor["content_hash"],
         attempt=attempt,
         actor_user_id=payload.get("actorUserId") or "",
-        workspace_id=ws,
+        workspace_id=scope.workspace_id or "",
         reservation_id=_reservation_id(payload),
         source_revision=source_revision,
         source_etag=source_etag,
@@ -2308,12 +2389,12 @@ async def _reuse_donor(
     )
     if not committed:
         return False
-    _publish_done(ws, file_id, missing, note)
+    _publish_done(scope, file_id, missing, note)
     return True
 
 
 async def _process_parts_bound(
-    job: dict, payload: dict, file_id: str, ws: str, name: str
+    job: dict, payload: dict, file_id: str, scope: db.Scope, name: str
 ) -> None:
     """A parts-only job (``partsOnly``): Retry processing of a file whose only
     missing part is its descriptor, or a parse coordinator's donor
@@ -2325,7 +2406,7 @@ async def _process_parts_bound(
     if content is None or content["status"] != "ready":
         raise TerminalError("parts-only job found no published content")
     missing = Missing(
-        await _fill_summary(job, ws, content["id"], name),
+        await _fill_summary(job, scope, content["id"], name),
         unread=content["pipeline_identity"] is None,
     )
     committed = await asyncio.to_thread(
@@ -2335,7 +2416,7 @@ async def _process_parts_bound(
         content["content_hash"],
         attempt=int(job.get("attempts") or 1),
         actor_user_id=payload.get("actorUserId") or "",
-        workspace_id=ws,
+        workspace_id=scope.workspace_id or "",
         reservation_id=_reservation_id(payload),
         source_revision=int(payload["sourceRevision"]),
         source_etag=str(payload.get("sourceETag") or ""),
@@ -2343,11 +2424,11 @@ async def _process_parts_bound(
         missing=missing,
     )
     if committed:
-        _publish_done(ws, file_id, missing)
+        _publish_done(scope, file_id, missing)
 
 
 async def _refuse_admission(
-    job: dict, payload: dict, file_id: str, ws: str, name: str
+    job: dict, payload: dict, file_id: str, scope: db.Scope, name: str
 ) -> None:
     """End the file failed and uncharged, as an ingest the account cannot
     take: locked, over quota, or without the credits an audio task's
@@ -2363,14 +2444,14 @@ async def _refuse_admission(
         source_revision=int(payload["sourceRevision"]),
         source_etag=str(payload.get("sourceETag") or ""),
         actor_user_id=str(payload.get("actorUserId") or ""),
-        workspace_id=ws,
+        workspace_id=scope.workspace_id or "",
         error_category="accounting",
         error_code="ingest_admission_refused",
     )
     if indexed is None:
         return
     _publish_progress(
-        ws, file_id, "failed", 100, status="failed", message=note, indexed=indexed
+        scope, file_id, "failed", 100, status="failed", message=note, indexed=indexed
     )
 
 
@@ -2378,7 +2459,7 @@ async def _process_ingest_job(
     job: dict,
     payload: dict,
     file_id: str,
-    ws: str,
+    scope: db.Scope,
     kind: str,
     processing_plan: ingest_plan.ProcessingPlan,
 ) -> None:
@@ -2407,10 +2488,10 @@ async def _process_ingest_job(
     if not await asyncio.to_thread(
         _account_allows_ingest, file_id, payload, _first_claim(job, payload)
     ):
-        await _refuse_admission(job, payload, file_id, ws, name)
+        await _refuse_admission(job, payload, file_id, scope, name)
         return
     if payload.get("partsOnly") is True:
-        await _process_parts_bound(job, payload, file_id, ws, name)
+        await _process_parts_bound(job, payload, file_id, scope, name)
         return
     transcript_url = ""
     filetrans = payload.get("filetrans")
@@ -2425,7 +2506,7 @@ async def _process_ingest_job(
         payload["filetrans"], transcript_url = await source_text.poll_task(
             filetrans, job_id=job["id"], attempt=attempt
         )
-    _publish_progress(ws, file_id, "queued", 5, status="pending")
+    _publish_progress(scope, file_id, "queued", 5, status="pending")
 
     if processing_plan.route == ingest_plan.STORE_ONLY:
         _set_stage("store_only")
@@ -2437,7 +2518,7 @@ async def _process_ingest_job(
             indexed=False,
             attempt=attempt,
             actor_user_id=payload.get("actorUserId") or "",
-            workspace_id=ws,
+            workspace_id=scope.workspace_id or "",
             reservation_id=_reservation_id(payload),
             source_revision=source_revision,
             source_etag=source_etag,
@@ -2445,7 +2526,7 @@ async def _process_ingest_job(
         if not committed:
             return
         _publish_progress(
-            ws, file_id, "done", 100, status="ready", message=note, indexed=False
+            scope, file_id, "done", 100, status="ready", message=note, indexed=False
         )
         return
 
@@ -2477,10 +2558,10 @@ async def _process_ingest_job(
     )
     identity = _pipeline_identity(processing_plan)
     _set_stage("donor_lookup")
-    pin = await store.workspace_embedding_pin(ws)
-    donor = None
+    pin = await _embedding_pin(scope)
     donor = await store.find_ready_donor(
-        workspace_id=ws,
+        workspace_id=scope.workspace_id,
+        **scope.owner,
         source_sha256=source_sha256,
         pipeline_identity=identity,
         embedding_provider_slug=pin["embedding_provider_slug"],
@@ -2507,7 +2588,7 @@ async def _process_ingest_job(
             job=job,
             payload=payload,
             file_id=file_id,
-            ws=ws,
+            scope=scope,
             name=name,
             kind=kind,
             route=processing_plan.route,
@@ -2517,7 +2598,7 @@ async def _process_ingest_job(
         )
         if reused:
             await _capture_thumbnail(
-                ws, file_id, processing_plan, local_path, source_sha256, None
+                scope, file_id, processing_plan, local_path, source_sha256, None
             )
             await asyncio.to_thread(cleanup_source)
             await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2537,7 +2618,7 @@ async def _process_ingest_job(
             processing_plan=processing_plan,
             source_key=source_key,
             source_sha256=source_sha256,
-            workspace_id=ws,
+            scope=scope,
             file_id=file_id,
         )
         handed_off = await asyncio.to_thread(
@@ -2545,12 +2626,12 @@ async def _process_ingest_job(
             job=job,
             payload=payload,
             file_id=file_id,
-            workspace_id=ws,
+            workspace_id=scope.workspace_id or "",
             artifact=artifact,
         )
         if handed_off:
             _publish_progress(
-                ws,
+                scope,
                 file_id,
                 "indexing",
                 45,
@@ -2571,7 +2652,7 @@ async def _process_ingest_job(
             processing_plan=processing_plan,
             local_path=local_path,
             source_key=source_key,
-            ws=ws,
+            scope=scope,
             file_id=file_id,
             source_sha256=source_sha256,
             job_id=job["id"],
@@ -2580,7 +2661,7 @@ async def _process_ingest_job(
             transcript_url=transcript_url,
         )
     except source_text.AudioCreditsRefused:
-        await _refuse_admission(job, payload, file_id, ws, name)
+        await _refuse_admission(job, payload, file_id, scope, name)
         await asyncio.to_thread(cleanup_source)
         return
     except parser_client.ParserClientError:
@@ -2601,7 +2682,7 @@ async def _process_ingest_job(
         )
         if repaired:
             _publish_progress(
-                ws,
+                scope,
                 file_id,
                 "queued",
                 5,
@@ -2628,7 +2709,8 @@ async def _process_ingest_job(
             "ingest refused because the account is locked or over quota"
         )
     association = await store.attach_file_content(
-        workspace_id=ws,
+        workspace_id=scope.workspace_id,
+        **scope.owner,
         file_id=file_id,
         content_hash=digest,
         source_sha256=source_sha256,
@@ -2640,7 +2722,7 @@ async def _process_ingest_job(
     _set_stage("content_claim")
     association = await _wait_for_content(
         association,
-        workspace_id=ws,
+        scope=scope,
         file_id=file_id,
         content_hash=digest,
         claim_job_id=job["id"],
@@ -2655,7 +2737,7 @@ async def _process_ingest_job(
         telemetry.record(donor_reused=True)
         note = f"{name}: identical content already indexed; reusing its index."
         missing = Missing(
-            await _fill_summary(job, ws, association["content_id"], name),
+            await _fill_summary(job, scope, association["content_id"], name),
             tuple(unread),
         )
         committed = await asyncio.to_thread(
@@ -2665,7 +2747,7 @@ async def _process_ingest_job(
             digest,
             attempt=attempt,
             actor_user_id=payload.get("actorUserId") or "",
-            workspace_id=ws,
+            workspace_id=scope.workspace_id or "",
             reservation_id=_reservation_id(payload),
             source_revision=source_revision,
             source_etag=source_etag,
@@ -2675,9 +2757,9 @@ async def _process_ingest_job(
         )
         if not committed:
             return
-        _publish_done(ws, file_id, missing, note)
+        _publish_done(scope, file_id, missing, note)
         await _capture_thumbnail(
-            ws, file_id, processing_plan, local_path, source_sha256, page_image
+            scope, file_id, processing_plan, local_path, source_sha256, page_image
         )
         await asyncio.to_thread(cleanup_source)
         await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2690,18 +2772,19 @@ async def _process_ingest_job(
         )
     try:
         result = await indexing.index_file(
-            workspace_id=ws,
+            workspace_id=scope.workspace_id,
+            pin=scope.pin,
             content_id=association["content_id"],
             file_id=file_id,
             file_name=name,
             chunks=chunks,
             allow_empty=payload.get("sourceRefresh") is True
             and payload.get("format") == "text",
-            on_progress=lambda pct: _publish_progress(ws, file_id, "indexing", pct),
+            on_progress=lambda pct: _publish_progress(scope, file_id, "indexing", pct),
             claim_job_id=job["id"],
         )
         await store.publish_file_content(
-            workspace_id=ws,
+            workspace_id=scope.workspace_id,
             file_id=file_id,
             content_id=association["content_id"],
             claim_job_id=job["id"],
@@ -2725,7 +2808,7 @@ async def _process_ingest_job(
         digest,
         attempt=attempt,
         actor_user_id=payload.get("actorUserId") or "",
-        workspace_id=ws,
+        workspace_id=scope.workspace_id or "",
         reservation_id=_reservation_id(payload),
         source_revision=source_revision,
         source_etag=source_etag,
@@ -2735,9 +2818,9 @@ async def _process_ingest_job(
     )
     if not committed:
         return
-    _publish_done(ws, file_id, missing)
+    _publish_done(scope, file_id, missing)
     await _capture_thumbnail(
-        ws, file_id, processing_plan, local_path, source_sha256, page_image
+        scope, file_id, processing_plan, local_path, source_sha256, page_image
     )
     await asyncio.to_thread(cleanup_source)
     await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2745,7 +2828,7 @@ async def _process_ingest_job(
 
 
 async def _capture_thumbnail(
-    ws: str,
+    scope: db.Scope,
     file_id: str,
     processing_plan: ingest_plan.ProcessingPlan,
     local_path: str | None,
@@ -2757,7 +2840,7 @@ async def _capture_thumbnail(
     await asyncio.to_thread(
         thumbnail.capture_source,
         file_id=file_id,
-        workspace_id=ws,
+        scope=scope,
         plan=processing_plan,
         local_path=local_path,
         source_sha256=source_sha256,
@@ -2977,8 +3060,7 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
     if (
         isinstance(exc, elitellm.ProviderBusy)
         and job_type == "ingest"
-        and (fid or payload.get("materialId"))
-        and ws
+        and (fid or (payload.get("materialId") and ws))
     ):
         # The in-call busy budget is spent. Re-pend without spending an attempt
         # until the per-job cap, then fail the file (or park the note) as busy.
@@ -2993,7 +3075,7 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
                 _yield_for_capacity,
                 job,
                 str(fid or ""),
-                str(ws),
+                db.Scope.of(ws, payload.get("actorUserId")),
                 name,
                 int(payload.get("sourceRevision") or 0),
                 str(payload.get("sourceETag") or ""),

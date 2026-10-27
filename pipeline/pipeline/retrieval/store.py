@@ -117,7 +117,7 @@ async def workspace_embedding_pin(workspace_id: str) -> dict[str, Any]:
 
 
 async def existing_file_vectors(
-    *, workspace_id: str, file_id: str, spec, inputs: list[str]
+    *, workspace_id: str | None, file_id: str, spec, inputs: list[str]
 ) -> dict[str, list[float]]:
     """Reuse only exact embedding input in this file's immutable model space."""
     table = vector_table(spec.provider_slug, spec.model_slug, spec.version)
@@ -130,7 +130,7 @@ async def existing_file_vectors(
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
             JOIN rag_chunks c ON c.content_id = rc.id
             JOIN {table} v ON v.chunk_id = c.id
-            WHERE fc.file_id = %s AND fc.workspace_id = %s
+            WHERE fc.file_id = %s AND fc.workspace_id IS NOT DISTINCT FROM %s
               AND rc.embedding_provider_slug = %s AND rc.embedding_model_slug = %s
               AND rc.embedding_model_version = %s
               AND c.indexed_text = ANY(%s::text[])
@@ -401,9 +401,21 @@ async def _lock_file_source(
         raise SourceSupersededError("ingest source was superseded by a newer revision")
 
 
+def _content_scope(
+    workspace_id: str | None, owner_user_id: str | None, alias: str = ""
+) -> tuple[str, str]:
+    """The rag_contents predicate for one scope and its parameter: a
+    workspace, or a standalone file's owner (todo-standalone-files.md)."""
+    if workspace_id:
+        return f"{alias}workspace_id = %s", workspace_id
+    if not owner_user_id:
+        raise TerminalError("standalone content has no owner")
+    return f"{alias}workspace_id IS NULL AND {alias}user_id = %s", owner_user_id
+
+
 async def attach_file_content(
     *,
-    workspace_id: str,
+    workspace_id: str | None,
     file_id: str,
     content_hash: str,
     source_sha256: str | None = None,
@@ -411,8 +423,10 @@ async def attach_file_content(
     claim_job_id: str | None = None,
     source_revision: int | None = None,
     source_etag: str = "",
+    owner_user_id: str | None = None,
 ) -> dict[str, Any]:
-    """Attach a logical file to canonical workspace content.
+    """Attach a logical file to canonical content in its scope: its
+    workspace, or for a standalone file (no workspace) ``owner_user_id``.
 
     ``claim_job_id`` records who owns the claim when this call creates it. On
     conflict the existing owner is left alone: the caller is a waiter, and
@@ -424,6 +438,7 @@ async def attach_file_content(
     ``publish_file_content``, so a failed retry leaves it in place.
     """
     content_id = f"rgc_{secrets.token_hex(8)}"
+    scope_sql, scope_arg = _content_scope(workspace_id, owner_user_id)
     refresh = jobdb.source_refresh_for(file_id)
     db = await pool()
     async with db.connection() as conn, conn.transaction():
@@ -431,18 +446,21 @@ async def attach_file_content(
             await _lock_source_candidate(conn, refresh)
         elif source_revision is not None:
             await _lock_file_source(conn, file_id, source_revision, source_etag)
+        # No conflict target: the scope's unique key is (workspace_id,
+        # content_hash), or the owner's partial twin for standalone content.
         cur = await conn.execute(
             """
             INSERT INTO rag_contents
-                (id, workspace_id, content_hash, status, source_sha256,
+                (id, workspace_id, user_id, content_hash, status, source_sha256,
                  pipeline_identity, claim_job_id, updated_at)
-            VALUES (%s, %s, %s, 'processing', %s, %s, %s, now())
-            ON CONFLICT (workspace_id, content_hash) DO NOTHING
+            VALUES (%s, %s, %s, %s, 'processing', %s, %s, %s, now())
+            ON CONFLICT DO NOTHING
             RETURNING id, status, claim_job_id
             """,
             (
                 content_id,
-                workspace_id,
+                workspace_id or None,
+                None if workspace_id else owner_user_id,
                 content_hash,
                 source_sha256,
                 pipeline_identity,
@@ -453,12 +471,12 @@ async def attach_file_content(
         created = row is not None
         if row is None:
             cur = await conn.execute(
-                """
+                f"""
                 SELECT id, status, claim_job_id FROM rag_contents
-                WHERE workspace_id = %s AND content_hash = %s
+                WHERE {scope_sql} AND content_hash = %s
                 FOR UPDATE
                 """,
-                (workspace_id, content_hash),
+                (scope_arg, content_hash),
             )
             row = await cur.fetchone()
         if row is None:
@@ -506,7 +524,7 @@ async def attach_file_content(
 
 async def publish_file_content(
     *,
-    workspace_id: str,
+    workspace_id: str | None,
     file_id: str,
     content_id: str,
     claim_job_id: str,
@@ -546,7 +564,11 @@ async def publish_file_content(
 
 
 async def steal_stale_content(
-    *, workspace_id: str, content_hash: str, stale_s: int
+    *,
+    workspace_id: str | None,
+    content_hash: str,
+    stale_s: int,
+    owner_user_id: str | None = None,
 ) -> bool:
     """Drop a processing claim whose owning job is no longer alive.
 
@@ -554,12 +576,13 @@ async def steal_stale_content(
     stolen on a race. The death signal is the owner's job lease: a running job
     with ``lease_expires_at > now()`` still owns the row.
     """
+    scope_sql, scope_arg = _content_scope(workspace_id, owner_user_id, "rc.")
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            """
+            f"""
             DELETE FROM rag_contents rc
-            WHERE rc.workspace_id = %s AND rc.content_hash = %s
+            WHERE {scope_sql} AND rc.content_hash = %s
               AND rc.status = 'processing'
               AND rc.updated_at < now() - make_interval(secs => %s)
               AND NOT EXISTS (
@@ -570,22 +593,48 @@ async def steal_stale_content(
                     AND j.lease_expires_at > now()
               )
             """,
-            (workspace_id, content_hash, stale_s),
+            (scope_arg, content_hash, stale_s),
         )
         return bool(cur.rowcount)
 
 
+# A donor's content is visible to a destination while a live file holds it:
+# the destination workspace or a shared one for a workspace file, the owner's
+# own standalone files for a standalone file (no workspace). The two never
+# cross. ``holder`` is the rag_file_contents row; the arguments are
+# _holder_args(dest workspace, dest owner).
+_HOLDER_JOINS = """JOIN files f ON f.id = holder.file_id
+    LEFT JOIN workspaces w ON w.id = f.workspace_id
+    JOIN users owner ON owner.id = COALESCE(w.user_id, f.user_id)"""
+_HOLDER_LIVE = """f.trashed_at IS NULL
+    AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+    AND CASE WHEN %s::text IS NULL
+        THEN f.workspace_id IS NULL AND f.user_id = %s
+        ELSE w.id = %s OR w.privacy IN ('link','public') END"""
+
+
+def _holder_args(
+    workspace_id: str | None, owner_user_id: str | None
+) -> tuple[str | None, str | None, str | None]:
+    if not workspace_id and not owner_user_id:
+        raise TerminalError("standalone content has no owner")
+    workspace_id = workspace_id or None
+    return workspace_id, None if workspace_id else owner_user_id, workspace_id
+
+
 async def find_ready_donor(
     *,
-    workspace_id: str,
+    workspace_id: str | None,
     source_sha256: str,
     pipeline_identity: str,
     embedding_provider_slug: str,
     embedding_model_slug: str,
     embedding_model_version: int,
     embedding_dim: int,
+    owner_user_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """A ready index of the same source bytes produced by the same pipeline.
+    """A ready index of the same source bytes produced by the same pipeline,
+    visible to this scope (``_HOLDER_LIVE``).
 
     Prefers a donor already in this workspace's vector space so a retarget of
     the embedding default does not force every old workspace to re-embed a
@@ -597,7 +646,7 @@ async def find_ready_donor(
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            """
+            f"""
             SELECT rc.id, rc.workspace_id, rc.content_hash,
                    rc.embedding_provider_slug, rc.embedding_model_slug,
                    rc.embedding_model_version, rc.embedding_dim
@@ -607,12 +656,8 @@ async def find_ready_donor(
               AND rc.status = 'ready'
               AND EXISTS (
                   SELECT 1 FROM rag_file_contents holder
-                  JOIN files f ON f.id = holder.file_id
-                  JOIN workspaces w ON w.id = f.workspace_id
-                  JOIN users owner ON owner.id = w.user_id
-                  WHERE holder.content_id = rc.id AND f.trashed_at IS NULL
-                    AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-                    AND (w.id = %s OR w.privacy IN ('link','public'))
+                  {_HOLDER_JOINS}
+                  WHERE holder.content_id = rc.id AND {_HOLDER_LIVE}
               )
             ORDER BY (
                 rc.embedding_provider_slug = %s
@@ -625,7 +670,7 @@ async def find_ready_donor(
             (
                 source_sha256,
                 pipeline_identity,
-                workspace_id,
+                *_holder_args(workspace_id, owner_user_id),
                 embedding_provider_slug,
                 embedding_model_slug,
                 embedding_model_version,
@@ -659,8 +704,9 @@ async def abandon_content(content_id: str) -> None:
 # Dest chunk ids are `'rc_' || substr(md5(dest_workspace_id || donor_chunk_id), 1, 12)`
 # so the vector copy can recompute them and pair each embedding with its
 # passage. A workspace holds one content row per content hash, so the pair is
-# unique. Go's clones (copyRetrievalContents in server/internal/store/share.go)
-# salt with the new content id, unique on its own.
+# unique. Standalone content (no workspace) and Go's clones
+# (copyRetrievalContents in server/internal/store/share.go) salt with the new
+# content id, unique on its own.
 _NEW_CHUNK_ID_SQL = "'rc_' || substr(md5(%s || c.id), 1, 12)"
 
 
@@ -668,40 +714,36 @@ async def _attach_donor_captions(
     conn,
     *,
     donor_id: str,
-    dest_workspace_id: str,
+    dest_workspace_id: str | None,
+    dest_owner_user_id: str | None,
     dest_file_id: str,
     refresh: dict[str, Any] | None,
 ) -> None:
+    holder = _holder_args(dest_workspace_id, dest_owner_user_id)
     await conn.execute(
-        """
+        f"""
         INSERT INTO image_caption_associations
             (id,file_id,image_sha256,caption_blob_path,size_bytes,published)
         SELECT 'ica_' || md5(%s || c.id), %s, c.image_sha256,c.caption_blob_path,c.size_bytes,%s
         FROM image_caption_associations c
         JOIN rag_file_contents holder ON holder.file_id=c.file_id
-        JOIN files f ON f.id=c.file_id JOIN workspaces w ON w.id=f.workspace_id
-        JOIN users owner ON owner.id=w.user_id
-        WHERE c.published AND holder.content_id=%s AND f.trashed_at IS NULL
-          AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-          AND (w.id=%s OR w.privacy IN ('link','public'))
+        {_HOLDER_JOINS}
+        WHERE c.published AND holder.content_id=%s AND {_HOLDER_LIVE}
         ON CONFLICT DO NOTHING
         """,
-        (dest_file_id, dest_file_id, refresh is None, donor_id, dest_workspace_id),
+        (dest_file_id, dest_file_id, refresh is None, donor_id, *holder),
     )
     if refresh is not None:
         await conn.execute(
-            """UPDATE source_refresh_candidates candidate
+            f"""UPDATE source_refresh_candidates candidate
             SET image_sha256s=ARRAY(SELECT DISTINCT c.image_sha256 FROM image_caption_associations c
             JOIN rag_file_contents holder ON holder.file_id=c.file_id
-            JOIN files f ON f.id=c.file_id JOIN workspaces w ON w.id=f.workspace_id
-            JOIN users owner ON owner.id=w.user_id
-            WHERE c.published AND holder.content_id=%s AND f.trashed_at IS NULL
-              AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-              AND (w.id=%s OR w.privacy IN ('link','public')))
+            {_HOLDER_JOINS}
+            WHERE c.published AND holder.content_id=%s AND {_HOLDER_LIVE})
             WHERE candidate.file_id=%s AND candidate.job_id=%s AND candidate.lease_token=%s""",
             (
                 donor_id,
-                dest_workspace_id,
+                *holder,
                 dest_file_id,
                 refresh["_jobId"],
                 refresh["sourceLeaseToken"],
@@ -710,23 +752,24 @@ async def _attach_donor_captions(
 
 
 async def attach_donor_captions(
-    *, donor_id: str, dest_workspace_id: str, dest_file_id: str
+    *,
+    donor_id: str,
+    dest_workspace_id: str | None,
+    dest_file_id: str,
+    owner_user_id: str | None = None,
 ) -> bool:
-    """Attach caption ownership when canonical content is already ready."""
+    """Attach caption ownership when canonical content is already ready.
+    ``owner_user_id`` names a standalone destination's owner."""
     refresh = jobdb.source_refresh_for(dest_file_id)
     db = await pool()
     async with db.connection() as conn, conn.transaction():
         if refresh is not None:
             await _lock_source_candidate(conn, refresh)
         cur = await conn.execute(
-            """SELECT rc.id FROM rag_contents rc WHERE rc.id=%s AND rc.status='ready'
-            AND EXISTS(SELECT 1 FROM rag_file_contents holder JOIN files f ON f.id=holder.file_id
-            JOIN workspaces w ON w.id=f.workspace_id
-            JOIN users owner ON owner.id=w.user_id
-            WHERE holder.content_id=rc.id AND f.trashed_at IS NULL
-              AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-              AND (w.id=%s OR w.privacy IN ('link','public'))) FOR SHARE""",
-            (donor_id, dest_workspace_id),
+            f"""SELECT rc.id FROM rag_contents rc WHERE rc.id=%s AND rc.status='ready'
+            AND EXISTS(SELECT 1 FROM rag_file_contents holder {_HOLDER_JOINS}
+            WHERE holder.content_id=rc.id AND {_HOLDER_LIVE}) FOR SHARE""",
+            (donor_id, *_holder_args(dest_workspace_id, owner_user_id)),
         )
         if await cur.fetchone() is None:
             return False
@@ -734,6 +777,7 @@ async def attach_donor_captions(
             conn,
             donor_id=donor_id,
             dest_workspace_id=dest_workspace_id,
+            dest_owner_user_id=owner_user_id,
             dest_file_id=dest_file_id,
             refresh=refresh,
         )
@@ -744,11 +788,13 @@ async def copy_content_from_donor(
     *,
     donor_id: str,
     dest_content_id: str,
-    dest_workspace_id: str,
+    dest_workspace_id: str | None,
     dest_file_id: str,
     copy_vectors: bool,
+    owner_user_id: str | None = None,
 ) -> bool:
-    """Copy a ready donor's index into this workspace's content row.
+    """Copy a ready donor's index into this scope's content row: the
+    workspace's, or a standalone file's owner's (``owner_user_id``).
 
     Mirrors CloneWorkspace. Returns False if the donor vanished under FOR SHARE
     (workspace delete) so the caller can fall through to parsing.
@@ -759,23 +805,19 @@ async def copy_content_from_donor(
         if refresh is not None:
             await _lock_source_candidate(conn, refresh)
         cur = await conn.execute(
-            """
+            f"""
             SELECT id, workspace_id, content_hash, source_sha256, pipeline_identity,
                    embedding_provider_slug, embedding_model_slug,
                    embedding_model_version, embedding_dim
             FROM rag_contents rc
             WHERE id = %s AND status = 'ready'
               AND EXISTS (
-                SELECT 1 FROM rag_file_contents holder JOIN files f ON f.id=holder.file_id
-                JOIN workspaces w ON w.id=f.workspace_id
-                JOIN users owner ON owner.id=w.user_id
-                WHERE holder.content_id=rc.id AND f.trashed_at IS NULL
-                  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-                  AND (w.id=%s OR w.privacy IN ('link','public'))
+                SELECT 1 FROM rag_file_contents holder {_HOLDER_JOINS}
+                WHERE holder.content_id=rc.id AND {_HOLDER_LIVE}
               )
             FOR SHARE
             """,
-            (donor_id, dest_workspace_id),
+            (donor_id, *_holder_args(dest_workspace_id, owner_user_id)),
         )
         donor = await cur.fetchone()
         if donor is None:
@@ -784,6 +826,7 @@ async def copy_content_from_donor(
             conn,
             donor_id=donor_id,
             dest_workspace_id=dest_workspace_id,
+            dest_owner_user_id=owner_user_id,
             dest_file_id=dest_file_id,
             refresh=refresh,
         )
@@ -793,6 +836,7 @@ async def copy_content_from_donor(
         table = None
         if copy_vectors:
             table = vector_table_for_pin(pin)
+        salt = dest_workspace_id or dest_content_id
 
         # INSERT..SELECT keeps tsvector/jsonb typed and derives dest chunk ids
         # in SQL, the same shape as cloneRetrievalIndex.
@@ -813,7 +857,7 @@ async def copy_content_from_donor(
             FROM rag_chunks c
             WHERE c.content_id = %s
             """,
-            (dest_workspace_id, dest_workspace_id, dest_content_id, donor_id),
+            (salt, dest_workspace_id, dest_content_id, donor_id),
         )
         if copy_vectors and table:
             await conn.execute(
@@ -824,7 +868,7 @@ async def copy_content_from_donor(
                 JOIN {table} v ON v.chunk_id = c.id
                 WHERE c.content_id = %s
                 """,
-                (dest_workspace_id, dest_workspace_id, donor_id),
+                (salt, dest_workspace_id, donor_id),
             )
 
         await conn.execute(
@@ -892,10 +936,11 @@ async def load_content_chunks(content_id: str) -> list[dict[str, Any]]:
 
 async def replace_content_chunks(
     *,
-    workspace_id: str,
+    workspace_id: str | None,
     content_id: str,
     rows: list[dict[str, Any]],
     claim_job_id: str | None = None,
+    pin: dict[str, Any] | None = None,
 ) -> None:
     """Swap in canonical content chunks atomically.
 
@@ -906,10 +951,16 @@ async def replace_content_chunks(
     from the workspace's own pin, read here rather than passed in, so a caller
     that embedded with the wrong model cannot also record the wrong model.
 
+    A standalone file (no workspace) passes ``pin``, the space its job
+    resolved and embedded in (todo-standalone-files.md).
+
     ``claim_job_id`` is the fencing token. Holding the content row FOR UPDATE
     for the insert loop is what stops a waiter from deleting it mid-write.
     """
-    pin = await workspace_embedding_pin(workspace_id)
+    if workspace_id:
+        pin = await workspace_embedding_pin(workspace_id)
+    elif pin is None:
+        raise TerminalError("standalone content has no embedding pin")
     table = vector_table_for_pin(pin)
     db = await pool()
     async with db.connection() as conn, conn.transaction():
@@ -989,7 +1040,7 @@ async def replace_content_chunks(
 
 async def upsert_content_summary(
     *,
-    workspace_id: str,
+    workspace_id: str | None,
     content_id: str,
     fingerprint: str,
     descriptor: str,
@@ -1025,7 +1076,7 @@ async def upsert_content_summary(
 
 
 async def published_summary(
-    *, workspace_id: str, file_id: str
+    *, workspace_id: str | None, file_id: str
 ) -> dict[str, Any] | None:
     """The file's published descriptor row with the chunks it describes, for
     the summary reuse gate; None when the file has no ready descriptor."""
@@ -1036,7 +1087,7 @@ async def published_summary(
             SELECT fc.content_id
             FROM rag_file_contents fc
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
-            WHERE fc.file_id = %s AND fc.workspace_id = %s
+            WHERE fc.file_id = %s AND fc.workspace_id IS NOT DISTINCT FROM %s
             """,
             (file_id, workspace_id),
         )
@@ -1090,7 +1141,7 @@ async def has_content_summary(content_id: str) -> bool:
 
 
 async def fill_content_summary(
-    *, workspace_id: str, content_id: str, descriptor: str
+    *, workspace_id: str | None, content_id: str, descriptor: str
 ) -> None:
     """Insert a pending descriptor, never overwriting one another job or a
     refresh wrote meanwhile. The fingerprint is the content hash, which is
@@ -1103,7 +1154,7 @@ async def fill_content_summary(
                 (content_id, workspace_id, fingerprint, descriptor, change_share,
                  updated_at)
             SELECT id, workspace_id, content_hash, %s, 0, now()
-            FROM rag_contents WHERE id = %s AND workspace_id = %s
+            FROM rag_contents WHERE id = %s AND workspace_id IS NOT DISTINCT FROM %s
             ON CONFLICT (content_id) DO NOTHING
             """,
             (descriptor, content_id, workspace_id),

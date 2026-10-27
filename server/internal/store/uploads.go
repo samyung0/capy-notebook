@@ -63,9 +63,9 @@ type NewUploadSession struct {
 // actor, workspace or source conflicts.
 func (s *Store) OpenSourceBatch(ctx context.Context, id, workspaceID, userID, source string, total int) error {
 	err := s.pool.QueryRow(ctx, `INSERT INTO source_batches (id, workspace_id, user_id, source, total)
-		VALUES ($1,$2,$3,$4,$5)
+		VALUES ($1,NULLIF($2,''),$3,$4,$5)
 		ON CONFLICT (id) DO UPDATE SET updated_at=now()
-		WHERE source_batches.workspace_id=$2 AND source_batches.user_id=$3
+		WHERE source_batches.workspace_id IS NOT DISTINCT FROM NULLIF($2,'') AND source_batches.user_id=$3
 			AND source_batches.source=$4
 		RETURNING id`, id, workspaceID, userID, source, total).Scan(&id)
 	if isNoRows(err) {
@@ -125,21 +125,23 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 		return UploadSession{}, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, in.WorkspaceID, in.CreatedBy); err != nil {
+	if _, err := s.lockFileEditorMutationTx(ctx, tx, in.WorkspaceID, in.CreatedBy, in.CreatedBy); err != nil {
 		return UploadSession{}, err
 	}
 	// The uploader pays (Sam 2026-10-18).
 	if err := s.reserveStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
 		return UploadSession{}, err
 	}
-	if err := s.gateWorkspaceFilesTx(ctx, tx, in.WorkspaceID, 1); err != nil {
-		return UploadSession{}, err
+	if in.WorkspaceID != "" {
+		if err := s.gateWorkspaceFilesTx(ctx, tx, in.WorkspaceID, 1); err != nil {
+			return UploadSession{}, err
+		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
 		 object_path, final_path, name, kind, content_type, declared_size, reserved_size, parse_mode,
 		 expires_at, batch_id)
-		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
+		VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
 		in.ID, in.WorkspaceID, in.CreatedBy, nullStr(in.CreatedBy), in.ChapterID, in.ChapterName,
 		in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode,
@@ -161,7 +163,7 @@ func scanUploadSession(row interface{ Scan(...any) error }) (UploadSession, erro
 	return u, err
 }
 
-const uploadSessionCols = `id, workspace_id, user_id, created_by, chapter_id, chapter_name, object_path, final_path,
+const uploadSessionCols = `id, COALESCE(workspace_id, ''), user_id, created_by, chapter_id, chapter_name, object_path, final_path,
 	name, kind, content_type, declared_size, parse_mode, status, file_id, expires_at`
 
 // uploadSessionFrom restricts the shared table to the source flow, so an
@@ -194,7 +196,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, actorID, uploadID, so
 
 	var workspaceID, payerID string
 	var createdBy *string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id, user_id, created_by`+uploadSessionFrom+`id=$1`, uploadID).
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id, created_by`+uploadSessionFrom+`id=$1`, uploadID).
 		Scan(&workspaceID, &payerID, &createdBy); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
@@ -204,7 +206,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, actorID, uploadID, so
 	if actorID == "" || createdBy == nil || *createdBy != actorID {
 		return File{}, ErrNotFound
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID); err != nil {
+	if _, err := s.lockFileEditorMutationTx(ctx, tx, workspaceID, payerID, actorID); err != nil {
 		return File{}, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
@@ -270,7 +272,7 @@ func (s *Store) finalizeUploadSessionTx(
 	// 2026-10-17); ingest and the first save write the same value.
 	_, err = tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode, batch_id, source_sha256)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+		VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
 			(SELECT batch_id FROM upload_sessions WHERE id=$15),NULLIF($16,''))`,
 		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, chapterID, u.Name, u.Kind, u.DeclaredSize,
 		now, status, parser, u.FinalPath, sourceETag, u.ParseMode, u.ID, sourceSHA256)

@@ -22,10 +22,21 @@ type UpdateMeReq struct {
 // into a workspace the caller edits, optionally into one of its chapters or a
 // chapter by name (created when missing).
 type CloneFileReq struct {
-	WorkspaceID string      `json:"workspaceId" minLength:"1"`
+	WorkspaceID string      `json:"workspaceId,omitempty" doc:"Omitted for a standalone copy"`
 	ChapterID   string      `json:"chapterId,omitempty" doc:"A chapter of the workspace; exclusive with chapterName"`
 	ChapterName ChapterName `json:"chapterName,omitempty" doc:"A chapter of this name (any case), created when missing"`
 	Name        FileName    `json:"name" minLength:"1" doc:"The copy's name"`
+}
+
+// MoveFilesReq is the body for POST /api/files/move: files put into a
+// workspace (Epo 2026-10-27), refused with progress_loss until confirmed when
+// the workspaces they leave hold study progress or plan steps for them.
+type MoveFilesReq struct {
+	FileIDs             []string    `json:"fileIds" minItems:"1" maxItems:"20"`
+	WorkspaceID         string      `json:"workspaceId" minLength:"1"`
+	ChapterID           string      `json:"chapterId,omitempty" doc:"A chapter of the workspace; exclusive with chapterName"`
+	ChapterName         ChapterName `json:"chapterName,omitempty" doc:"A chapter of this name (any case), created when missing"`
+	ConfirmProgressLoss bool        `json:"confirmProgressLoss,omitempty" doc:"Drop the left workspaces' study progress and plan steps for these files"`
 }
 
 // CreateBlankFileReq is the body for POST /api/workspaces/{id}/files/blank:

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // getSourceImportContent streams one selected provider object into the
@@ -15,7 +16,13 @@ import (
 // response is bounded by the caller's source upload limit.
 func (a *api) getSourceImportContent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := id(r)
-	if !a.assertWS(w, r, workspaceID) {
+	// The standalone route reads for the caller's own future file.
+	if workspaceID == "" {
+		if uid(r) == "" {
+			a.fail(w, store.ErrNotFound)
+			return
+		}
+	} else if !a.assertWS(w, r, workspaceID) {
 		return
 	}
 	provider := strings.TrimSpace(r.URL.Query().Get("provider"))

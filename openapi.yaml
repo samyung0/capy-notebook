@@ -1205,10 +1205,9 @@ components:
           minLength: 1
           type: string
         workspaceId:
-          minLength: 1
+          description: Omitted for a standalone copy
           type: string
       required:
-        - workspaceId
         - name
       type: object
     CloneMaterialReq:
@@ -2191,6 +2190,8 @@ components:
           $ref: "#/components/schemas/FileIndexLimit"
         indexed:
           type: boolean
+        isPayer:
+          type: boolean
         kind:
           $ref: "#/components/schemas/FileKind"
         lostAccess:
@@ -2239,6 +2240,7 @@ components:
         - indexed
         - hasBytes
         - revision
+        - isPayer
       type: object
     FileChange:
       additionalProperties: false
@@ -3441,6 +3443,39 @@ components:
         - selectedModel
         - defaultModel
         - selectedThinking
+      type: object
+    MoveFilesReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MoveFilesReq.json
+          format: uri
+          readOnly: true
+          type: string
+        chapterId:
+          description: A chapter of the workspace; exclusive with chapterName
+          type: string
+        chapterName:
+          description: A chapter of this name (any case), created when missing
+          maxLength: 60
+          type: string
+        confirmProgressLoss:
+          description: Drop the left workspaces' study progress and plan steps for these files
+          type: boolean
+        fileIds:
+          items:
+            type: string
+          maxItems: 20
+          minItems: 1
+          nullable: true
+          type: array
+        workspaceId:
+          minLength: 1
+          type: string
+      required:
+        - fileIds
+        - workspaceId
       type: object
     NoteChange:
       additionalProperties: false
@@ -8987,6 +9022,21 @@ paths:
           schema:
             description: Comma-separated workspace ids
             type: string
+        - description: "Comma-separated locations: workspace, standalone"
+          explode: false
+          in: query
+          name: location
+          schema:
+            description: "Comma-separated locations: workspace, standalone"
+            type: string
+        - description: Keeps files whose name holds this text, any case
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: Keeps files whose name holds this text, any case
+            maxLength: 120
+            type: string
         - description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
           explode: false
           in: query
@@ -9049,6 +9099,34 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List the files the caller pays for, or can open (scope=member)
+      tags:
+        - Content
+  /api/files/move:
+    post:
+      operationId: moveFiles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveFilesReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/File"
+                nullable: true
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Move files into a workspace
       tags:
         - Content
   /api/files/{id}:
@@ -9280,7 +9358,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Clone a file into a workspace
+      summary: Clone a file into a workspace or standalone
       tags:
         - Sharing
   /api/files/{id}/collaboration-token:
@@ -11486,6 +11564,81 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get source upload policy
+      tags:
+        - Content
+  /api/sources/import:
+    post:
+      operationId: importStandaloneSources
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportSourcesReq"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportSourcesAccepted"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Queue standalone sources from a connected drive
+      tags:
+        - Content
+  /api/sources/import-inspect:
+    post:
+      operationId: inspectStandaloneSourceImports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InspectSourceImportsReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InspectSourceImportsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Inspect standalone sources selected from a connected drive
+      tags:
+        - Content
+  /api/sources/imports/{jobId}:
+    get:
+      operationId: getStandaloneSourceImport
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceImportStatus"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get standalone source import status
       tags:
         - Content
   /api/study/plans/{id}:

@@ -222,6 +222,7 @@ export * from './modelOption.ts';
 export * from './modelSlotsOutputBody.ts';
 export * from './modelsResponse.ts';
 export * from './modelThinking.ts';
+export * from './moveFilesReq.ts';
 export * from './noteChange.ts';
 export * from './noteChangeState.ts';
 export * from './notification.ts';

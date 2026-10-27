@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { type MouseEventHandler, useState } from 'react';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -30,6 +30,7 @@ export function FileListItem({
   onDeleted,
   readOnly = false,
   canClone = false,
+  canMoveTo = false,
   retry,
   retryPending = false,
   study,
@@ -48,6 +49,9 @@ export function FileListItem({
   readOnly?: boolean;
   /** Members and editors may copy the file elsewhere (workspace.canClone). */
   canClone?: boolean;
+  /** Move to… into another workspace or chapter (fileCanMoveTo); others get
+   * the chapter-only Move. */
+  canMoveTo?: boolean;
   /** The owner's Retry processing for a failed file, one mutation for the
    * whole list; absent when the reader may not retry. */
   retry?: RetryProcessing;
@@ -63,6 +67,7 @@ export function FileListItem({
   const waitingForBytes = ingesting && !file.hasBytes;
   const failed = file.status === 'failed';
   const [retrying, setRetrying] = useState(false);
+  const navigate = useNavigate();
   const hoverMenu = menu && (!readOnly || canClone);
 
   return (
@@ -103,6 +108,7 @@ export function FileListItem({
           <ContentActions
             beforeDelete={beforeDelete}
             canClone={canClone && fileCanClone(file)}
+            canMoveTo={canMoveTo}
             chapters={chapters}
             color={color}
             confirmInMenu
@@ -135,6 +141,17 @@ export function FileListItem({
                   ]
             }
             onDeleted={() => onDeleted?.(file.id)}
+            // The open file follows itself into its new workspace.
+            onMoved={
+              active
+                ? (moved) =>
+                    void navigate({
+                      params: { workspaceId: moved.workspaceId },
+                      search: { file: moved.id },
+                      to: '/workspaces/$workspaceId',
+                    })
+                : undefined
+            }
             propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
             propertyLabelClassName="text-fg-secondary"
             readOnly={readOnly}

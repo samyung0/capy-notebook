@@ -122,6 +122,7 @@ import type {
   MicrosoftDriveHost,
   ModelSlotsOutputBody,
   ModelsResponse,
+  MoveFilesReq,
   NotificationCountOutputBody,
   NotificationPage,
   NotificationPrefs,
@@ -3077,6 +3078,70 @@ export const listOwnedFiles = async (params?: ListOwnedFilesParams, options?: Re
 
 
 
+export type moveFilesResponse200 = {
+  data: File[] | null
+  status: 200
+}
+
+export type moveFilesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type moveFilesResponseSuccess = (moveFilesResponse200) & {
+  headers: Headers;
+};
+export type moveFilesResponseError = (moveFilesResponseDefault) & {
+  headers: Headers;
+};
+
+export type moveFilesResponse = (moveFilesResponseSuccess | moveFilesResponseError)
+
+export const getMoveFilesUrl = () => {
+
+
+
+
+  return `/api/files/move`
+}
+
+/**
+ * @summary Move files into a workspace
+ */
+export const moveFiles = async (moveFilesReq: NonReadonly<MoveFilesReq>, options?: RequestInit): Promise<moveFilesResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getMoveFilesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(moveFilesReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: moveFilesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as moveFilesResponse
+}
+
+
+
 export type deleteFileResponse204 = {
   data: void
   status: 204
@@ -3513,7 +3578,7 @@ export const getCloneFileUrl = (id: string,) => {
 }
 
 /**
- * @summary Clone a file into a workspace
+ * @summary Clone a file into a workspace or standalone
  */
 export const cloneFile = async (id: string,
     cloneFileReq: NonReadonly<CloneFileReq>, options?: RequestInit): Promise<cloneFileResponse> => {
@@ -8155,6 +8220,184 @@ export const getSourceUploadPolicy = async (params?: GetSourceUploadPolicyParams
 
   const data: getSourceUploadPolicyResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getSourceUploadPolicyResponse
+}
+
+
+
+export type importStandaloneSourcesResponse202 = {
+  data: ImportSourcesAccepted
+  status: 202
+}
+
+export type importStandaloneSourcesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type importStandaloneSourcesResponseSuccess = (importStandaloneSourcesResponse202) & {
+  headers: Headers;
+};
+export type importStandaloneSourcesResponseError = (importStandaloneSourcesResponseDefault) & {
+  headers: Headers;
+};
+
+export type importStandaloneSourcesResponse = (importStandaloneSourcesResponseSuccess | importStandaloneSourcesResponseError)
+
+export const getImportStandaloneSourcesUrl = () => {
+
+
+
+
+  return `/api/sources/import`
+}
+
+/**
+ * @summary Queue standalone sources from a connected drive
+ */
+export const importStandaloneSources = async (importSourcesReq: NonReadonly<ImportSourcesReq>, options?: RequestInit): Promise<importStandaloneSourcesResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getImportStandaloneSourcesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(importSourcesReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: importStandaloneSourcesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as importStandaloneSourcesResponse
+}
+
+
+
+export type inspectStandaloneSourceImportsResponse200 = {
+  data: InspectSourceImportsResponse
+  status: 200
+}
+
+export type inspectStandaloneSourceImportsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type inspectStandaloneSourceImportsResponseSuccess = (inspectStandaloneSourceImportsResponse200) & {
+  headers: Headers;
+};
+export type inspectStandaloneSourceImportsResponseError = (inspectStandaloneSourceImportsResponseDefault) & {
+  headers: Headers;
+};
+
+export type inspectStandaloneSourceImportsResponse = (inspectStandaloneSourceImportsResponseSuccess | inspectStandaloneSourceImportsResponseError)
+
+export const getInspectStandaloneSourceImportsUrl = () => {
+
+
+
+
+  return `/api/sources/import-inspect`
+}
+
+/**
+ * @summary Inspect standalone sources selected from a connected drive
+ */
+export const inspectStandaloneSourceImports = async (inspectSourceImportsReq: NonReadonly<InspectSourceImportsReq>, options?: RequestInit): Promise<inspectStandaloneSourceImportsResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getInspectStandaloneSourceImportsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(inspectSourceImportsReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: inspectStandaloneSourceImportsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as inspectStandaloneSourceImportsResponse
+}
+
+
+
+export type getStandaloneSourceImportResponse200 = {
+  data: SourceImportStatus
+  status: 200
+}
+
+export type getStandaloneSourceImportResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getStandaloneSourceImportResponseSuccess = (getStandaloneSourceImportResponse200) & {
+  headers: Headers;
+};
+export type getStandaloneSourceImportResponseError = (getStandaloneSourceImportResponseDefault) & {
+  headers: Headers;
+};
+
+export type getStandaloneSourceImportResponse = (getStandaloneSourceImportResponseSuccess | getStandaloneSourceImportResponseError)
+
+export const getGetStandaloneSourceImportUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/sources/imports/${jobId}`
+}
+
+/**
+ * @summary Get standalone source import status
+ */
+export const getStandaloneSourceImport = async (jobId: string, options?: RequestInit): Promise<getStandaloneSourceImportResponse> => {
+
+  const res = await fetch(getGetStandaloneSourceImportUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getStandaloneSourceImportResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getStandaloneSourceImportResponse
 }
 
 

@@ -45,6 +45,7 @@ const pending: SourceFile = {
   hasBytes: true,
   id: 'f_stream',
   indexed: false,
+  isPayer: true,
   kind: 'md',
   name: 'notes.md',
   position: 0,

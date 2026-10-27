@@ -8,6 +8,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { FileError, FileLoading } from '@/features/files/FileStates';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { CenterContent } from '@/features/materials/CenterContent';
+import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { waitsForConnection } from '@/lib/online';
 
@@ -27,6 +28,12 @@ export default function MaterialOpen() {
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
   });
+  const frozen = useAccountFrozen();
+  // A standalone file (no workspace) opens only for its owner, who edits it
+  // unless their account is frozen.
+  const fileReadOnly = workspaceId
+    ? workspace?.capabilities.canEdit !== true
+    : frozen;
   const [dirty, setDirty] = useState(false);
   const confirmReplace = useOfficeEditGuard(dirty);
   const back = () =>
@@ -78,7 +85,7 @@ export default function MaterialOpen() {
                 to: '.',
               });
             }}
-            readOnly={fileId ? workspace?.capabilities.canEdit !== true : false}
+            readOnly={fileId ? fileReadOnly : false}
             requestedMode={'mode' in search ? search.mode : null}
             standalone
             workspaceId={workspaceId}

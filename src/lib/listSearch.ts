@@ -142,8 +142,7 @@ export const MATERIAL_SORT_DEFAULT: MaterialListSort = 'updated';
 export const EDITOR_ASSET_ACCESS: EditorAssetAccess[] = ['open', 'lost'];
 
 /** The Files page: the tab, then the Files or Blocks tab's own sort and
- * filters (`location` is Blocks only); Embeds keeps only its access filter,
- * Trash none. */
+ * filters; Embeds keeps only its access filter, Trash none. */
 export type FilesSearch = {
   tab?: FilesTab;
   sort?: FileListSort | MaterialListSort;
@@ -164,7 +163,7 @@ export function parseFilesSearch(search: Record<string, unknown>): FilesSearch {
     kind: csv(
       listOf<string>(blocks ? MATERIAL_KINDS : FILE_KINDS, search.kind)
     ),
-    location: blocks ? one(MATERIAL_LOCATIONS, search.location) : undefined,
+    location: one(MATERIAL_LOCATIONS, search.location),
     sort: blocks
       ? one(MATERIAL_SORTS, search.sort)
       : one(FILE_SORTS, search.sort),
@@ -182,6 +181,7 @@ export function fileListParams(search: FilesSearch): FileListParams {
     dir: search.dir ?? 'desc',
     sort: one(FILE_SORTS, search.sort) ?? FILE_SORT_DEFAULT,
     ...(kinds.length ? { kinds } : {}),
+    ...(search.location ? { locations: [search.location] } : {}),
     ...workspaceIds(search),
   };
 }

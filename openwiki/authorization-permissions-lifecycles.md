@@ -46,7 +46,7 @@ validation instead of being remapped.
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
-| Clone one of its files or materials (into a workspace the cloner edits, or a material standalone) | Yes | Yes         | Yes                | Yes           | No                 | No           |
+| Clone one of its files or materials (into a workspace the cloner edits, or standalone)      | Yes   | Yes           | Yes                | Yes           | No                 | No           |
 | Clone a standalone link/public quiz, flashcards, or material                                | Yes   | —             | —                  | —             | Yes                | No           |
 | Take a standalone link/public quiz or study its flashcards through the signed link           | Yes   | —             | —                  | —             | Yes                | Yes, kept in the browser |
 | Record own study progress and review ratings ([study-progress.md](study-progress.md))        | Yes   | Yes           | Yes                | Yes           | Yes                | No           |
@@ -498,6 +498,70 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   or shown; only a new submit signs a new one
   ([agentic-retrieval.md](agentic-retrieval.md)).
 
+### Standalone files
+
+An upload or drive import may have no workspace (Epo 2026-10-27): the Files
+page's Add file asks for the destination first (No workspace, or a workspace
+the caller can edit) and then opens the same Add file dialog for it.
+
+- The file is its uploader's alone: `files.workspace_id` is NULL and
+  `files.user_id`, the payer set at insert, is its only reader and editor
+  (`FileEffectiveRole` in `store/share.go`, owner while the account is not
+  deleted or deletion-pending). There is no file share link, no public file
+  and no Explore entry; every link, anonymous and member path stays refused.
+- Routes mirror the workspace ones without the workspace segment:
+  `/api/sources/uploads[/tickets]`, `/api/sources/batches/{batchId}/removed`,
+  `/api/sources/import`, `/api/sources/import-inspect`,
+  `/api/sources/import-content`, `/api/sources/imports/{jobId}`. A chapter is
+  refused (400). The reservation runs the owner's account and storage gates
+  (`lockFileEditorMutationTx` in `store/storage.go`) with no file-count cap
+  for now; a folder import expands to at most one request's files
+  (`FilesPerUpload`).
+- Rename, Retry processing, trash, restore and purge are the owner's, as for a
+  standalone material. Clone takes it into a workspace the owner edits or
+  standalone again; a workspace file may also be cloned standalone. A copy
+  into or out of standalone is ingested in its own scope rather than copying
+  the index.
+- The Files page (`location=standalone`), dashboard Recent, the quick open and
+  search list it for its owner; it opens at `/files/{id}`.
+- Account deletion cancels its pending upload (0125 made
+  `cancel_user_async_work` find uploads without a workspace), and an owner
+  lock evicts its source rooms.
+- Not yet: editing its Office and text files through the source room waits
+  for the 2026-10-27 release train; until then they open read-only (the view
+  session reads a NULL workspace). A standalone import's status
+  (`/api/sources/imports/{jobId}`) answers its owner alone.
+
+Move puts files into a workspace, never out (Epo 2026-10-27):
+`POST /api/files/move` `{fileIds (1-20), workspaceId, chapterId?,
+chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
+
+- A standalone file is moved by its owner; a workspace file by that
+  workspace's owner or the file's payer (`File.isPayer` tells the caller).
+  The mover edits the target, whose file cap applies. The payer stays
+  (uploader pays). Who may move is answered first (404); then a file still
+  processing, or with a parse, ingest or source refresh job pending or
+  running (409 `file_processing`), or already in the target (409) is refused.
+  A chapter move inside one workspace stays `PATCH /api/files/{id}`. Locks
+  follow every workspace write: workspace rows by id, accounts, then files.
+- The workspaces it leaves lose their study progress and plan steps for it:
+  a move that would drop someone's started or finished progress answers 409
+  `progress_loss` with `{people, planSteps}` until `confirmProgressLoss`;
+  plan steps alone go without asking.
+- Thumbnail keys stay inside their workspace: a moved file drops a key
+  borrowed from another file, and files that borrowed the moved file's key
+  drop theirs (the next capture redraws them).
+- Its served index follows: onto the target's copy of the same content, or a
+  copy made in the target, when the target embeds in the same space; else
+  the file is ingested there, paid by the mover as a cross-space clone is;
+  so is a target still building the same content.
+  Open source rooms are evicted to reconnect through the new access, and both
+  workspaces' trees hear of it (0125 `notify_workspace_tree`).
+- Entry points: Move to… in the Files page and workspace file menus (it
+  replaces the chapter-only move for files) and the workspace Add file
+  dialog's Your files tab (`GET /api/files?q=`). Clone to… opens the same
+  dialog with its name field and No workspace.
+
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
 [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
 [source upload guard](../server/internal/httpapi/uploads.go#L40),
@@ -722,19 +786,18 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 - One file or material clones through `CloneItemDialog` (file and material row
   menus in the workspace, Files and Blocks lists, quiz and flashcard pages,
   Explore, the public page link): a destination workspace the cloner edits
-  plus a chapter (existing, none, or new by name), or for a material "No
-  workspace"; and the copy's name. `POST /api/files/{id}/clone` takes
-  `{workspaceId, chapterId?, chapterName?, name}` (files live in workspaces
-  only), `POST /api/materials/{id}/clone` takes `{workspaceId?, chapterId?,
+  plus a chapter (existing, none, or new by name), or "No workspace"; and the
+  copy's name. `POST /api/files/{id}/clone` takes `{workspaceId?, chapterId?,
+  chapterName?, name}`, `POST /api/materials/{id}/clone` takes `{workspaceId?, chapterId?,
   chapterName?, title}`; an embedded row is never cloned on its own (404). The
   destination is admitted like any workspace write (workspace row, then the
   source owner's, actor's and payer's accounts in ID order): the cloner must
   edit it and neither they nor its owner may be frozen. The source access check
   runs first; the destination's member rows are read `FOR SHARE`, so a removal
   or demotion that committed after the clone's snapshot makes it retry instead
-  of landing. A copy in a workspace belongs to that workspace's owner, who pays
-  for it (and whose plan's per-file cap applies to a file, as for an upload);
-  `created_by` is the cloner. A standalone copy is the cloner's and private.
+  of landing. The cloner pays for every copy, wherever it lands (its plan's
+  per-file cap applies to a file, as for an upload); a standalone copy is the
+  cloner's and private.
 - File clones (single and workspace) copy ready files and partial ones
   (`failed` with a served index, a part missing), which stay partial in the
   copy so its owner, who alone may Retry processing, can retry them (parts

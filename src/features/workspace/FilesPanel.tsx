@@ -21,7 +21,7 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { FileListItem } from '@/features/files/FileListItem';
-import { fileIsIngesting } from '@/features/files/fileUtils';
+import { fileCanMoveTo, fileIsIngesting } from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import type { OpenItem } from '@/features/materials/openItem';
 import {
@@ -420,6 +420,7 @@ export function FilesPanel({
             active={isFileActive(item.id)}
             beforeDelete={isFileActive(item.id) ? beforeReplace : undefined}
             canClone={!!workspace?.canClone}
+            canMoveTo={fileCanMoveTo(item.data, workspace)}
             chapters={chapters}
             color="purple"
             file={item.data}
