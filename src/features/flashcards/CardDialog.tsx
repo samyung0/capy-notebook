@@ -114,9 +114,10 @@ export function CardDialog({
           )}
           {onRemove && (
             // Wrapped so phones keep it at the end (the footer starts a
-            // borderless first button at the content's edge); its label
-            // lines up with the content's right edge.
-            <div className="-mr-6.5 ml-auto">
+            // borderless first button at the content's edge); it reaches
+            // into the dialog's side padding, no further, so the dialog does
+            // not scroll sideways.
+            <div className="-mr-4 ml-auto sm:-mr-5.5">
               <Button
                 onClick={onRemove}
                 size="lg"

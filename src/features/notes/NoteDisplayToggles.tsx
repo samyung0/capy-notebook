@@ -38,7 +38,7 @@ export function NoteDisplayToggles({
           }
           onClick={toolbar.onToggle}
         >
-          <EditorIcon name="tools" />
+          <EditorIcon name="bolt" />
         </ToolbarButton>
       )}
       <ToolbarButton
