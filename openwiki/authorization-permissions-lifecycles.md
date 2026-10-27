@@ -557,7 +557,11 @@ chapterName?, confirmProgressLoss?}` (`MoveFiles` in `store/file_move.go`).
   so is a target still building the same content.
   Each open source room drains (Q447): it stores what it admitted, people's
   typing and agent edits, before it closes, and its tabs reconnect through
-  the access check of the new place. Right before the drain the room tells
+  the access check of the new place. Every source save names the workspace
+  its room opened the file in (`workspaceId`, kept across the room's saves),
+  and Go checks each actor there (Q459), so the drain's final save stores
+  the edits of people who are not in the target; someone removed from that
+  workspace still has their unsaved edits refused. Right before the drain the room tells
   every tab of the move (Q454): the outbox row is
   `enqueue_source_collaboration_eviction`'s shape with type `file-moved`,
   mode `drain` and the target `workspaceId` (written directly in

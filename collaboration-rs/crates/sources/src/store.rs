@@ -1151,6 +1151,12 @@ impl Sources {
             let row_bytes = row.len();
             let body = CheckpointBody {
                 actor_ids: save.actors.clone(),
+                // Where the room opened the file (a retry's fresh session
+                // names the file's current workspace, Q459).
+                workspace_id: known
+                    .as_ref()
+                    .map_or(&session.workspace_id, |(opened, ..)| &opened.workspace_id)
+                    .clone(),
                 epoch: room.epoch,
                 expected_checkpoint: expected,
                 base_revision: session.base_revision,
@@ -1183,6 +1189,7 @@ impl Sources {
                         record.session = SourceSession {
                             state: None,
                             published_state: record.session.published_state.take(),
+                            workspace_id: record.session.workspace_id.clone(),
                             base_source_sha256: sha.clone(),
                             checkpoint: saved.checkpoint,
                             net_tokens: body.net_tokens as i64,

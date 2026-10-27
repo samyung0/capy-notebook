@@ -123,9 +123,13 @@ func SourceGrowthBudget(exportCap, baseBytes, grownBytes int64) int64 {
 const sourceGrowthSQL = `GREATEST(0,COALESCE(octet_length(d.state),0)+COALESCE((SELECT sum(octet_length(u.update)) FROM source_document_updates u WHERE u.file_id=d.file_id AND u.epoch=d.epoch)::bigint,0)-CASE WHEN d.format='text' THEN d.seed_bytes ELSE 0 END)`
 
 type SourceCheckpoint struct {
-	ActorIDs           []string `json:"actorIds" minItems:"1"`
-	Epoch              int64    `json:"epoch" minimum:"1"`
-	ExpectedCheckpoint int64    `json:"expectedCheckpoint" minimum:"0"`
+	ActorIDs []string `json:"actorIds" minItems:"1"`
+	// The workspace the saving room opened the file in: every actor is
+	// checked there, so a Move's drain stores the edits made before it
+	// (Q459). Removing someone's access there still refuses their edits.
+	WorkspaceID        string `json:"workspaceId" minLength:"1"`
+	Epoch              int64  `json:"epoch" minimum:"1"`
+	ExpectedCheckpoint int64  `json:"expectedCheckpoint" minimum:"0"`
 	// The base revision the effects were measured under: a publication in
 	// between (which keeps epoch and checkpoint) refuses the save, whose
 	// effects are then stale.
@@ -213,7 +217,9 @@ func editableSourceFormat(name, kind string) string {
 }
 
 // sourceLockTx uses the same lock order as material rooms and workspace writes.
-func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, actors []string, edit bool) (string, string, error) {
+// The actors are checked against `actorWS` when given (a room's save, Q459),
+// else against the file's workspace.
+func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, actors []string, edit bool, actorWS string) (string, string, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
 		return "", "", err
 	}
@@ -231,9 +237,12 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	if len(actors) == 0 {
 		return "", "", ErrForbidden
 	}
+	if actorWS == "" {
+		actorWS = ws
+	}
 	// Access first, so a caller who cannot reach the file learns nothing about
 	// the owner's account; checked again under the account locks below.
-	if err = sourceActorsAllowed(ctx, tx, ws, actors, edit); err != nil {
+	if err = sourceActorsAllowed(ctx, tx, actorWS, actors, edit); err != nil {
 		return "", "", err
 	}
 	accounts := append([]string{owner}, actors...)
@@ -250,7 +259,7 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	if err = s.lockAccountSessionsTx(ctx, tx, accounts...); err != nil {
 		return "", "", err
 	}
-	return ws, owner, sourceActorsAllowed(ctx, tx, ws, actors, edit)
+	return ws, owner, sourceActorsAllowed(ctx, tx, actorWS, actors, edit)
 }
 
 // filePayer is the account a file is charged to, its uploader (Sam
@@ -292,7 +301,7 @@ func sourceActorsAllowed(ctx context.Context, q rowQueryer, ws string, actors []
 // checkpoint saves edits the room already admitted, so it takes sourceLockTx
 // alone (frozen and the limit are enforced at admission only).
 func (s *Store) sourceEditLockTx(ctx context.Context, tx pgx.Tx, fileID string, actor string) (string, string, error) {
-	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true)
+	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true, "")
 	if err != nil {
 		return "", "", HideOtherAccountLock(err, actor)
 	}
@@ -313,7 +322,7 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 		return SourceSession{}, err
 	}
 	defer tx.Rollback(ctx)
-	ws, _, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, false)
+	ws, _, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, false, "")
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -486,7 +495,10 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	ws, _, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true)
+	if in.WorkspaceID == "" {
+		return out, ErrForbidden
+	}
+	ws, _, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true, in.WorkspaceID)
 	if err != nil {
 		return out, err
 	}

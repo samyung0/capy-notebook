@@ -7847,6 +7847,8 @@ struct Gateway {
     /// How long a checkpoint takes (a slow store), and the ones started.
     checkpoint_delay: std::sync::Arc<std::sync::atomic::AtomicU64>,
     checkpoints: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// The workspace each checkpoint named (Q459).
+    saved_in: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 async fn gateway_db(gateway: &Gateway) -> tokio_postgres::Client {
@@ -7914,6 +7916,11 @@ async fn gateway_post(
     gateway
         .checkpoints
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    gateway
+        .saved_in
+        .lock()
+        .expect("saved in")
+        .push(body["workspaceId"].as_str().unwrap_or("<none>").to_owned());
     let delay = gateway
         .checkpoint_delay
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -8088,6 +8095,7 @@ async fn gateway(env: &Env) -> Gateway {
         downloads: Default::default(),
         checkpoint_delay: Default::default(),
         checkpoints: Default::default(),
+        saved_in: Default::default(),
     };
     let app = axum::Router::new()
         .route(
@@ -8098,6 +8106,97 @@ async fn gateway(env: &Env) -> Gateway {
         .with_state(gateway.clone());
     tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
     gateway
+}
+
+/// Q459 (Epo 2026-10-28, with Q447): a source room's save names the
+/// workspace its room opened the file in, which Go checks every contributor
+/// against. A Move (the file's row names another workspace) and its drain:
+/// the final save, the only one under a minute's debounce, still names the
+/// old workspace, and the room reopens on the new one with the edit. Fails
+/// if a save names the file's current workspace or none.
+#[tokio::test]
+async fn a_moved_files_drain_save_names_the_workspace_its_room_opened() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_configured(
+        &env,
+        Some(&gateway.url),
+        &[
+            ("COLLABORATION_DEBOUNCE_MS", "60000"),
+            ("COLLABORATION_MAX_DEBOUNCE_MS", "60000"),
+        ],
+    )
+    .await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let client_db = db(&env).await;
+    let opened: String = client_db
+        .query_one("SELECT workspace_id FROM files WHERE id=$1", &[&file])
+        .await
+        .expect("file")
+        .get(0);
+    let room = format!("source:{file}:epoch:1");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(writer.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(writer.settle(|c| source_text(c) == "base").await);
+    let edit = typed_as(&writer, writer.id(), "moved-");
+    writer
+        .doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&edit).expect("edit"))
+        .expect("apply");
+    writer.send(5, &sync(2, &edit)).await;
+    writer.until(6).await.expect("the edit is acknowledged");
+    let target = format!("ws_it_moved_{}", uuid_like());
+    client_db
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,privacy) VALUES ($1,$2,'IT','private')",
+            &[&target, &user],
+        )
+        .await
+        .expect("target");
+    client_db
+        .execute(
+            "UPDATE files SET workspace_id=$2 WHERE id=$1",
+            &[&file, &target],
+        )
+        .await
+        .expect("moved");
+    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
+    let event = serde_json::json!({
+        "evictionId": format!("cev_{}", uuid_like()),
+        "fileId": file,
+        "room": room,
+        "type": "file-moved",
+        "mode": "drain",
+        "workspaceId": target,
+    });
+    let _: i64 = redis::cmd("PUBLISH")
+        .arg("capy:collaboration:evict")
+        .arg(event.to_string())
+        .query_async(&mut connection)
+        .await
+        .expect("publish");
+    let mut saved = Vec::new();
+    for _ in 0..100 {
+        saved = gateway.saved_in.lock().expect("saved in").clone();
+        if !saved.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(saved, vec![opened], "the drain's save");
+    wait_unloaded(server.port).await;
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        reader.settle(|c| source_text(c) == "moved-base").await,
+        "{}",
+        source_text(&reader)
+    );
 }
 
 /// A text file owned by a fresh user; returns (user, file id).

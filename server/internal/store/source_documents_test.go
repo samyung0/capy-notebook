@@ -52,7 +52,7 @@ var sourceTestStateSeed = strings.Repeat("c", 64)
 // migration 0039's rules: the first save binds the base SHA (and a text
 // seed's size), and an Office row names the seed it is a change over.
 func sourceTestSave(doc SourceSession, actor, state string) SourceCheckpoint {
-	save := SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint, Update: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000}
+	save := SourceCheckpoint{ActorIDs: []string{actor}, WorkspaceID: doc.WorkspaceID, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint, Update: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000}
 	if doc.State == nil && len(doc.StateRows) == 0 {
 		save.BaseSourceSHA256 = strings.Repeat("a", 64)
 		if doc.Format == "text" {
@@ -120,7 +120,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); err != nil {
 		t.Fatalf("owner edit admission: %v", err)
 	}
-	req := SourceCheckpoint{ActorIDs: []string{viewer}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: 0, Update: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
+	req := SourceCheckpoint{ActorIDs: []string{viewer}, WorkspaceID: doc.WorkspaceID, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: 0, Update: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, req); err == nil {
 		t.Fatal("viewer authored checkpoint")
 	}
@@ -859,7 +859,7 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if repeat, err := s.PublishSourceRefresh(ctx, file.ID, publish); err != nil || repeat.BaseRevision != 2 {
 		t.Fatalf("idempotent publication: %+v %v", repeat, err)
 	}
-	if _, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: 1, BaseRevision: 2, ExpectedCheckpoint: doc.Checkpoint, Update: []byte("late"), PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
+	if _, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, WorkspaceID: doc.WorkspaceID, Epoch: 1, BaseRevision: 2, ExpectedCheckpoint: doc.Checkpoint, Update: []byte("late"), PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("old epoch accepted: %v", err)
 	}
 }

@@ -368,6 +368,7 @@ impl Sources {
         };
         let body = CheckpointBody {
             actor_ids: vec![input.actor_user_id.clone()],
+            workspace_id: session.workspace_id.clone(),
             epoch: session.epoch,
             expected_checkpoint: stored.checkpoint,
             base_revision: session.base_revision,

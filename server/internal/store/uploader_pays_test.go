@@ -1223,7 +1223,7 @@ func TestSourceEditsFollowTheFilesPayer(t *testing.T) {
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err = s.SaveSourceCheckpoint(waitCtx, file.ID, SourceCheckpoint{
-		ActorIDs: []string{editor}, Epoch: 1, BaseRevision: 1, Update: []byte{1}, PendingEffects: json.RawMessage(`[]`),
+		ActorIDs: []string{editor}, WorkspaceID: file.WorkspaceID, Epoch: 1, BaseRevision: 1, Update: []byte{1}, PendingEffects: json.RawMessage(`[]`),
 	})
 	var locked *AccountLockedError
 	if !errors.As(err, &locked) || locked.UserID != member {

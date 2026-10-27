@@ -84,6 +84,9 @@ pub struct SourceSession {
 #[serde(rename_all = "camelCase")]
 pub struct CheckpointBody {
     pub actor_ids: Vec<String>,
+    /// The workspace the saving room opened the file in, where Go checks every
+    /// actor (Q459): a Move's drain stores the edits made before the Move.
+    pub workspace_id: String,
     pub epoch: u64,
     pub expected_checkpoint: u64,
     pub base_revision: i64,
