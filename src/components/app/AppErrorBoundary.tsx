@@ -132,26 +132,30 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
 
     const description = describeError(this.state.error);
     const reload = description.action === 'reload';
-    return (
-      <FallbackFrame className="h-dvh">
-        <ErrorState
-          action={
-            <ErrorAction
-              onClick={reload ? () => window.location.reload() : this.reset}
-            >
-              {reload ? m.error_action_reload() : m.error_action_retry()}
-            </ErrorAction>
-          }
-          className={
-            this.props.variant === 'page' ? 'h-full w-full' : undefined
-          }
-          description={description.description}
-          errorId={unexpectedErrorId(this.state.error)}
-          icon={description.icon}
-          title={description.title}
-          variant={this.props.variant ?? 'panel'}
-        />
-      </FallbackFrame>
+    const page = this.props.variant === 'page';
+    const state = (
+      <ErrorState
+        action={
+          <ErrorAction
+            onClick={reload ? () => window.location.reload() : this.reset}
+          >
+            {reload ? m.error_action_reload() : m.error_action_retry()}
+          </ErrorAction>
+        }
+        className="h-full w-full"
+        description={description.description}
+        errorId={unexpectedErrorId(this.state.error)}
+        icon={description.icon}
+        title={description.title}
+        variant={page ? 'page' : 'panel'}
+      />
+    );
+    // A panel boundary already sits in its panel's card (frosted over a page
+    // frame); only the app-wide one draws a panel of its own.
+    return page ? (
+      <FallbackFrame className="h-dvh">{state}</FallbackFrame>
+    ) : (
+      state
     );
   }
 }

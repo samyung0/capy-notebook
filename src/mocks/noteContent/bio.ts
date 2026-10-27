@@ -1,5 +1,6 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { htmlEmbedNode, mermaidNode } from '@/features/materials/document';
+import type { Question, QuestionAnswer } from '@/features/questions/types';
 import { biologyQuizQuestions, surfaceAreaGraph } from '../biologyQuiz';
 import {
   NEAR_LIMIT_CAPTION,
@@ -36,6 +37,30 @@ import {
   todo,
   youtube,
 } from './helpers';
+
+/** A one-part question with a short worked solution. */
+function cellQuestion(
+  id: string,
+  prompt: string,
+  answer: QuestionAnswer,
+  solution: string
+): Question {
+  return {
+    id,
+    labels: 'letters',
+    layout: 'paper',
+    parts: [
+      {
+        answer,
+        blocks: [{ text: prompt, type: 'text' }],
+        id: `${id}:part`,
+        marks: 1,
+        solution: [{ text: solution, type: 'text' }],
+      },
+    ],
+    stem: [],
+  };
+}
 
 /** Biology 101 — showcase headings, marks, lists, callouts, media, study blocks. */
 export const bioNotes: SeedNote[] = [
@@ -82,6 +107,37 @@ export const bioNotes: SeedNote[] = [
       quote(
         'Remember: mitochondria is the powerhouse of the cell — but also an endosymbiont with its own DNA.'
       ),
+      embeddedQuiz('mat_note_1', 'mat_embed_bio_note_cell_types', {
+        questions: [
+          cellQuestion(
+            'cell_types_1',
+            'Which of these is found in prokaryotic cells?',
+            {
+              correct: [2],
+              options: [
+                'Nucleus',
+                'Mitochondria',
+                'Ribosomes',
+                'Golgi apparatus',
+              ],
+              type: 'mcq',
+            },
+            'Ribosomes are in every cell. The other three are membrane-bound organelles, which only eukaryotes have.'
+          ),
+          cellQuestion(
+            'cell_types_2',
+            'Bacteria are eukaryotes.',
+            { correct: false, type: 'boolean' },
+            'False. Bacteria are prokaryotes: their DNA sits in the cytoplasm, not in a nucleus.'
+          ),
+          cellQuestion(
+            'cell_types_3',
+            'Mitochondria carry their own (1) ______, a clue that they were once free-living bacteria.',
+            { accepted: [['DNA']], type: 'gaps' },
+            'This is the endosymbiont theory: mitochondria also divide on their own and have bacteria-like ribosomes.'
+          ),
+        ],
+      }),
       heading(2, 'Lab checklist'),
       todo('Sketch a labeled eukaryotic cell', true),
       todo('Compare osmosis vs diffusion in the worksheet'),
@@ -98,6 +154,28 @@ export const bioNotes: SeedNote[] = [
           ['Golgi', 'Packaging & shipping', 'Post office'],
         ]
       ),
+      embeddedFlashcards('mat_note_1', 'mat_embed_bio_note_organelles', [
+        {
+          back: 'Stores DNA and controls the cell',
+          front: 'Nucleus',
+          id: 'fc_bio_organelle_1',
+        },
+        {
+          back: 'Makes ATP through aerobic respiration',
+          front: 'Mitochondria',
+          id: 'fc_bio_organelle_2',
+        },
+        {
+          back: 'Builds proteins from mRNA',
+          front: 'Ribosome',
+          id: 'fc_bio_organelle_3',
+        },
+        {
+          back: 'Modifies, packages and ships proteins',
+          front: 'Golgi apparatus',
+          id: 'fc_bio_organelle_4',
+        },
+      ]),
       heading(3, 'Quick model'),
       mermaidNode(
         'flowchart LR\n  DNA --> Transcription\n  Transcription --> mRNA\n  mRNA --> Translation\n  Translation --> Protein',
@@ -119,11 +197,6 @@ export const bioNotes: SeedNote[] = [
           front: 'What is the basic structure of the cell membrane?',
           id: 'fc_bio_note_2',
         },
-      ]),
-      p([
-        text('Keyboard shortcut while reviewing: press '),
-        text('Space', { kbd: true }),
-        text(' to flip a card.'),
       ]),
     ],
     workspaceId: 'ws_bio',
@@ -423,6 +496,92 @@ export const bioNotes: SeedNote[] = [
         text('file', { code: true }),
         text(') are omitted on purpose.'),
       ]),
+    ],
+    workspaceId: 'ws_bio',
+    workspaceName: 'Biology 101',
+  },
+  // The starter note a new workspace will get from the template workspace
+  // (human/miscellaneous.md 2026-10-26), seeded here until that exists.
+  {
+    chapterId: null,
+    daysAgo: 1,
+    id: 'mat_note_bio_welcome',
+    title: 'Welcome to Capy Notebook',
+    value: [
+      heading(1, 'Welcome to Capy Notebook'),
+      p(
+        'This is a note: write in it like any document, and add study blocks that turn what you read into practice.'
+      ),
+      heading(2, 'What a note can hold'),
+      bullet([
+        text('Text, lists, tables, equations and diagrams from the '),
+        text('+', { kbd: true }),
+        text(' menu'),
+      ]),
+      bullet([
+        text('Quizzes and flashcards from the '),
+        text('Study', { bold: true }),
+        text(' button in the toolbar'),
+      ]),
+      bullet('Comments for your study group, right next to the text'),
+      callout(
+        'Try it: answer the quiz below, then flip the cards. Everything you get wrong comes back in your next review.',
+        'info'
+      ),
+      heading(2, 'Try a quiz'),
+      embeddedQuiz('mat_note_bio_welcome', 'mat_embed_bio_welcome_quiz', {
+        questions: [
+          cellQuestion(
+            'welcome_1',
+            'Which way of revising helps you remember the most a week later?',
+            {
+              correct: [2],
+              options: [
+                'Rereading your notes',
+                'Highlighting key sentences',
+                'Testing yourself without looking',
+                'Copying the summary out again',
+              ],
+              type: 'mcq',
+            },
+            'Recalling an answer from memory (retrieval practice) strengthens it far more than reading it again.'
+          ),
+          cellQuestion(
+            'welcome_2',
+            'Spreading reviews over several days works better than one long session the night before.',
+            { correct: true, type: 'boolean' },
+            'True. This is the spacing effect: each review after a gap makes the memory last longer.'
+          ),
+          cellQuestion(
+            'welcome_3',
+            'Explaining an idea in your own words, as if (1) ______ someone, shows you what you have not understood yet.',
+            { accepted: [['teaching', 'to teach']], type: 'gaps' },
+            'Teaching it, even to an imaginary student, makes the gaps in your understanding obvious.'
+          ),
+        ],
+      }),
+      heading(2, 'Flip some cards'),
+      embeddedFlashcards(
+        'mat_note_bio_welcome',
+        'mat_embed_bio_welcome_cards',
+        [
+          {
+            back: 'Recalling information from memory instead of rereading it',
+            front: 'Retrieval practice',
+            id: 'fc_bio_welcome_1',
+          },
+          {
+            back: 'Reviewing over spaced-out days so each memory lasts longer',
+            front: 'Spaced repetition',
+            id: 'fc_bio_welcome_2',
+          },
+          {
+            back: 'Mixing different topics in one session instead of one at a time',
+            front: 'Interleaving',
+            id: 'fc_bio_welcome_3',
+          },
+        ]
+      ),
     ],
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',

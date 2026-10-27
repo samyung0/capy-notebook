@@ -173,10 +173,11 @@ function StudyCard({
           flipped ? m.flashcards_answer() : m.flashcards_show_answer()
         }
         className={cn(
-          // Inset ring: the card's overflow clips an outer one to a bar.
+          // An inset outline: the card's overflow clips an outer ring, and the
+          // front's header paints over an inset one.
           // No scrollbar: the ratings arriving with a flip briefly overflow it.
-          'relative flex min-h-0 w-full flex-1 flex-col overflow-auto rounded-t-card-lg [scrollbar-width:none] focus-visible:ring-inset [&::-webkit-scrollbar]:hidden',
-          !(flipped && ratings) && 'rounded-b-card-lg'
+          'relative flex min-h-0 w-full flex-1 flex-col overflow-auto rounded-t-flashcard [scrollbar-width:none] focus-visible:outline-2 focus-visible:outline-action focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:ring-0 [&::-webkit-scrollbar]:hidden',
+          !(flipped && ratings) && 'rounded-b-flashcard'
         )}
         onClick={onFlip}
         type="button"
