@@ -1121,8 +1121,9 @@ test('a late tab whose drafts the service answers late runs the merge', async ({
 });
 
 // Q406 (merge view phase 2): a merged update the service refuses for an id
-// it never recorded (`unassigned`) is written anew under the new tab's own
-// id, once: the words show once, live, with no pieces.
+// it never recorded (`unassigned`, on entry: the room never holds it) is
+// written anew under the new tab's own id, once: a second merge, the words
+// once, live, with no pieces.
 test("a late merge refused for an unrecorded id is re-authored under the tab's own id", async ({
   page,
 }) => {
@@ -1140,18 +1141,14 @@ test("a late merge refused for an unrecorded id is re-authored under the tab's o
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type(OFFLINE);
   await lateSessions(page, MATERIAL);
+  // The first merge's update is refused.
+  await page.evaluate(async (path) => {
+    const { refuseNextMockNoteUpdate } = await import(path);
+    refuseNextMockNoteUpdate('mock-scenario-note', 'unassigned');
+  }, MOCK);
   await setReachable(page, true);
-  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
-  await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
-    timeout: 30_000,
-  });
   const merges = () =>
     workers.filter((url) => url.includes('lateMerge.worker')).length;
-  expect(merges()).toBe(1);
-  await page.evaluate(async (path) => {
-    const { rejectMockNoteUpdate } = await import(path);
-    rejectMockNoteUpdate('mock-scenario-note', 'unassigned');
-  }, MOCK);
   // A new editor merges the old document again, under its own id.
   await expect.poll(merges, { timeout: 30_000 }).toBe(2);
   await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {

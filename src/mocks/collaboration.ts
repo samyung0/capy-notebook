@@ -405,8 +405,18 @@ export function join(room: Room, participant: Participant) {
     throw new Error(`Mock room ${room.name} is no longer active`);
   }
   const forward = (update: Uint8Array, origin: unknown) => {
-    if (origin !== participant.origin)
-      Y.applyUpdate(room.document, update, participant);
+    if (origin === participant.origin) return;
+    const refused =
+      room.target.kind === 'material'
+        ? refusedNoteUpdates.get(room.target.id)
+        : undefined;
+    if (refused) {
+      // Refused on entry: the room never holds it.
+      refusedNoteUpdates.delete(room.target.id);
+      queueMicrotask(() => rejectMockNoteUpdate(room.target.id, refused));
+      return;
+    }
+    Y.applyUpdate(room.document, update, participant);
   };
   Y.applyUpdate(
     room.document,
@@ -1158,10 +1168,21 @@ export function lateSessions(materialId: string | null, every = false) {
  * the next join loads the last checkpoint, without the update. */
 export function rejectMockNoteUpdate(
   materialId: string,
-  code: 'document_size_exceeded' | 'unassigned' = 'document_size_exceeded'
+  code: NoteRefusal = 'document_size_exceeded'
 ) {
   for (const provider of [...materialProviders])
     provider.announce(materialId, { code, type: 'document-rejected' });
+}
+type NoteRefusal = 'document_size_exceeded' | 'unassigned';
+const refusedNoteUpdates = new Map<string, NoteRefusal>();
+/** The room refuses the next update a tab of the note sends, on entry, as
+ * the service does: the room never holds it (unlike `rejectMockNoteUpdate`,
+ * which refuses after the mock applied it). */
+export function refuseNextMockNoteUpdate(
+  materialId: string,
+  code: NoteRefusal = 'unassigned'
+) {
+  refusedNoteUpdates.set(materialId, code);
 }
 /** A draft group the service admitted (the e2e `/drafts` stub, Q436): its
  * update goes into the note's open room as the service applies it. */
