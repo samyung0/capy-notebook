@@ -441,6 +441,14 @@ export function useOfficeRuntime({
         : viewBytes!.bytes.slice(0);
     const checkpoint =
       mode === 'view' ? viewBytes!.checkpoint?.slice(0) : undefined;
+    // Copy-only recovery joins no room and never writes, so a DOCX layout
+    // worker there takes a local id instead of the room's (Q427).
+    const workerClientId =
+      format === 'docx'
+        ? source.status === 'recovery'
+          ? crypto.getRandomValues(new Uint32Array(1))[0] || 1
+          : source.workerClientId
+        : undefined;
     const collaboration =
       mode === 'edit'
         ? {
@@ -449,8 +457,7 @@ export function useOfficeRuntime({
             clientId: source.doc!.clientID,
             epoch: source.session!.epoch,
             initialUpdate: Y.encodeStateAsUpdate(source.doc!).slice().buffer,
-            workerClientId:
-              format === 'docx' ? source.workerClientId : undefined,
+            workerClientId,
           }
         : undefined;
     const imageMaxBytes =
@@ -469,7 +476,7 @@ export function useOfficeRuntime({
         imageMaxBytes > 0 &&
         growthBudgetBytes !== undefined
       ) ||
-        (format === 'docx' && !source.workerClientId))
+        (format === 'docx' && !workerClientId))
     ) {
       setError(m.error_file_body());
       return;

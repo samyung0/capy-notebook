@@ -1,4 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
+import { officeEditMenu } from '../helpers/office';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // The scenario note keeps its room and drafts across reloads (MSW stores
@@ -414,6 +416,152 @@ test('edits from a room that moved on open read-only for copying until Reload', 
   await expect(editor).not.toContainText('Kept for copying.');
   await expect(banner).toHaveCount(0);
   await expect.poll(() => storedDrafts(page)).toBe(0);
+});
+
+const DOCX = 'mock-scenario-docx';
+const docx = `/workspaces/ws_scenarios?file=${DOCX}&mode=edit`;
+
+/** The scenario DOCX's stored rows. */
+async function docxRows(page: Page) {
+  return page.evaluate(async (id) => {
+    const draftsPath = '/src/lib/editDrafts.ts';
+    const dbPath = '/src/mocks/db.ts';
+    const { draftKey, readDrafts } = await import(draftsPath);
+    const { user } = await import(dbPath);
+    return (await readDrafts(draftKey(user.id, 'file', id))).length;
+  }, DOCX);
+}
+
+/** Types `text` into the scenario DOCX offline and closes the tab with the
+ * edits on this device; returns a new tab on the workspace, back online.
+ * The new tab opens the DOCX in the app (`reopenDocx`), not by a page load: a
+ * page leaving while its load sweep asks for the file's token meets Vite
+ * instead of MSW, whose 404 drops the rows as lost. */
+async function closeDocxOffline(page: Page, text: string) {
+  await page.goto(docx);
+  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 60_000 }
+  );
+  await setOnline(page, false);
+  const input = page
+    .frameLocator('iframe[src*="office-runtime"]')
+    .getByLabel('Document input');
+  await input.focus();
+  await input.press('ControlOrMeta+End');
+  await input.pressSequentially(text);
+  await expect.poll(() => docxRows(page)).toBeGreaterThan(0);
+  const context = page.context();
+  await page.close();
+  await context.setOffline(false);
+  const next = await context.newPage();
+  await next.goto('/workspaces/ws_scenarios');
+  await expect(next.locator('main')).toBeVisible({ timeout: 30_000 });
+  return next;
+}
+
+/** Opens the scenario DOCX for editing from the workspace's file tree. */
+async function reopenDocx(page: Page) {
+  await showPanelView(page, m.workspace_tab_files());
+  await page
+    .locator(`[data-workspace-file-tree] a[href*="file=${DOCX}"]`)
+    .click();
+  // The closed tab's edit mode is remembered for the file.
+  await expect(
+    page.getByRole('button', { name: m.material_mode() })
+  ).toHaveAttribute('aria-pressed', 'true');
+}
+
+/** The text a select-all copy takes from the DOCX on screen. */
+async function copiedDocx(page: Page) {
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  // Drawn, not "We couldn't load this file" over a spinner (D1).
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  // Read after the engine's own copy handler, while the data is readable.
+  const copied = frame
+    .locator('body')
+    .evaluate(
+      () =>
+        new Promise<string>((resolve) =>
+          window.addEventListener(
+            'copy',
+            (event) =>
+              resolve(event.clipboardData?.getData('text/plain') ?? ''),
+            { once: true }
+          )
+        )
+    );
+  await frame
+    .locator('canvas')
+    .first()
+    .click({ position: { x: 120, y: 120 } });
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('ControlOrMeta+C');
+  return copied;
+}
+
+// Q427: copy-only recovery opens a DOCX without the room's layout worker id,
+// so a closed tab's draft whose room moved on shows at the next open.
+test('a DOCX edited offline in a closed tab opens copy-only after its room moved on', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const reopened = await closeDocxOffline(page, ' Typed before the move.');
+  // A discard moves the room to the next epoch while the tab is closed.
+  await reopened.evaluate(async (id) => {
+    const path = '/src/mocks/scenarioFixtures.ts';
+    const { advanceScenarioSource, scenarioSourceSession } = await import(path);
+    await scenarioSourceSession(id);
+    advanceScenarioSource(id);
+  }, DOCX);
+  await reopenDocx(reopened);
+  await expect(reopened.getByTestId('save-banner')).toHaveAttribute(
+    'data-kind',
+    'changed',
+    { timeout: 60_000 }
+  );
+  expect(await copiedDocx(reopened)).toContain('Typed before the move.');
+});
+
+// Q412/Q413 for a DOCX: an expired draft shows once copy-only, then goes.
+test('a DOCX draft past the 7-day expiry shows once copy-only, then goes', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const reopened = await closeDocxOffline(page, ' Typed long ago.');
+  await reopened.evaluate(async (id) => {
+    const draftsPath = '/src/lib/editDrafts.ts';
+    const dbPath = '/src/mocks/db.ts';
+    const { draftKey, putDrafts, readDrafts } = await import(draftsPath);
+    const { user } = await import(dbPath);
+    const rows: { savedAt: number }[] = await readDrafts(
+      draftKey(user.id, 'file', id)
+    );
+    const old = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    await putDrafts(rows.map((row) => ({ ...row, savedAt: old })));
+  }, DOCX);
+  await reopenDocx(reopened);
+  const banner = reopened.getByTestId('save-banner');
+  await expect(banner).toHaveAttribute('data-kind', 'expired', {
+    timeout: 60_000,
+  });
+  expect(await copiedDocx(reopened)).toContain('Typed long ago.');
+  await expect.poll(() => docxRows(reopened)).toBe(0);
+  // Shown once: the next open is the live document.
+  await reopened.reload();
+  await expect(officeEditMenu(reopened, 'docx')).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(reopened.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 60_000 }
+  );
+  await expect(banner).toHaveCount(0);
 });
 
 test('an editor refused as outdated stays read-only with its edits kept, which the reloaded page saves', async ({
