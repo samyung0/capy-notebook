@@ -199,6 +199,10 @@ class RequestAccounting:
     receipt_deadlines: dict[str, float] = field(default_factory=dict)
     # Calls holding a per-model capacity lease, released when the call ends.
     leased_calls: set[str] = field(default_factory=set)
+    # The session holds an embedding pin. An account chat's does not (it
+    # searches workspaces of different pins), so each embedding receipt names
+    # its own catalog version (Epo 2026-10-27).
+    embedding_pinned: bool = True
 
 
 _accounting: contextvars.ContextVar[RequestAccounting | None] = contextvars.ContextVar(
@@ -212,6 +216,13 @@ def bind(session_id: str) -> contextvars.Token[RequestAccounting | None]:
     if not cfg.gateway_url or not cfg.pipeline_secret:
         raise AccountingError("accounting callback is unavailable")
     return _accounting.set(RequestAccounting(session_id=session_id))
+
+
+def unpin_embeddings() -> None:
+    """The bound session holds no embedding pin (an account chat's)."""
+    state = current()
+    if state is not None:
+        state.embedding_pinned = False
 
 
 def bind_ingest(
@@ -639,9 +650,10 @@ async def settle(
     }
     if usage.served_by:
         payload["servedBy"] = usage.served_by
-    if kind == KIND_RERANK:
-        # The gateway labels a rerank with this catalog row; every other call
-        # is labeled from the session's pins.
+    if kind == KIND_RERANK or (kind == KIND_EMBEDDING and not state.embedding_pinned):
+        # The gateway labels a rerank, and an embedding on a session with no
+        # embedding pin, with this catalog row; every other call is labeled
+        # from the session's pins.
         payload["modelVersion"] = spec.version
     deadline = state.receipt_deadlines.get(call_id)
     response = await _finish_known_receipt(

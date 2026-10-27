@@ -89,7 +89,12 @@ def message(
 ) -> dict[str, Any]:
     lines = [
         HEADER,
-        _open_line(ctx.open_resource, ctx.chapters, ctx.role),
+        # Account chat has no open item and no workspace role.
+        *(
+            ()
+            if ctx.account
+            else (_open_line(ctx.open_resource, ctx.chapters, ctx.role),)
+        ),
         "\nStudy preferences (a request that names one material gets only that material):",
     ]
     lines.extend(f"- {line}" for line in preferences.lines(ctx.study_preferences))

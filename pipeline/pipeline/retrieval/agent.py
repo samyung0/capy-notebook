@@ -37,6 +37,7 @@ from . import (
     openui,
     pending,
     pending_hints,
+    profiles,
     scripted,
     skills,
     store,
@@ -145,7 +146,8 @@ async def _resolve_labels(ctx: ToolContext, calls: list[ToolCall]) -> None:
             if found and found not in ctx.labels and found not in wanted:
                 wanted.append(found)
     try:
-        if resources:
+        # An account turn's names come from its listing and reads.
+        if resources and not ctx.account:
             ctx.labels.update(await store.resource_titles(ctx.workspace_id, resources))
         if excerpts and library.enabled():
             ctx.labels.update(await library.excerpt_labels(excerpts))
@@ -161,7 +163,7 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
     def named(found: str) -> str:
         return labels.get(found, found)
 
-    if name in ("search_workspace", "search_knowledge", "search_web"):
+    if name in ("search_workspace", "search_files", "search_knowledge", "search_web"):
         detail = str(args.get("query") or "")
     elif name == "read_knowledge":
         detail = named(_excerpt_id(name, args))
@@ -172,6 +174,8 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
         detail = f"page {page}" if page is not None else ""
     elif name == "list_sources":
         detail = "listing sources"
+    elif name == "list_files":
+        detail = "listing files"
     elif name in ("create_material", "create_deck"):
         detail = str(args.get("title") or "")
     elif name in ("add_questions", "add_question_media"):
@@ -461,28 +465,33 @@ async def _run_turn(
         await tools.load_library_catalog(ctx)
     except Exception:  # any failure to reach the library
         log.warning("knowledge library unavailable for this turn", exc_info=True)
-    ctx.chapters, open_chapter = await store.workspace_chapters(
-        ctx.workspace_id, ctx.open_resource.get("id")
-    )
-    if open_chapter:
-        ctx.open_resource["chapter_id"] = open_chapter
+    profile = profiles.of(ctx)
+    # An account turn has no workspace chapters, open item or pending
+    # sources (Go forwards those for workspace turns only).
+    if not ctx.account:
+        ctx.chapters, open_chapter = await store.workspace_chapters(
+            ctx.workspace_id, ctx.open_resource.get("id")
+        )
+        if open_chapter:
+            ctx.open_resource["chapter_id"] = open_chapter
 
-    if ctx.file_ids is not None:
+    if ctx.file_ids is not None and not ctx.account:
         active_scope = await tools.resolve_current_scope(ctx)
         if isinstance(active_scope, ToolResult):
             yield _with_usage(events.error(active_scope.text(), "invalid_scope"))
             return
 
-    ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+    if not ctx.account:
+        ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
     # Changes reach the agent only for the documents it reads (Epo 2026-10-20).
     ctx.pending_sources.read_ids = set()
     prior = await evidence.history_turns(history, ctx)
-    schemas = tools.schemas_for(ctx)
+    schemas = profile.schemas(ctx)
     if spec.provider_slug == "zai":
         schemas = [*schemas, ASK_USER_SCHEMA]
     # A viewer is offered no write tool, and told so.
     can_write = any(s["function"]["name"] in WRITE_TOOLS for s in schemas)
-    messages = chat_prompts.chat_messages(
+    messages = profile.messages(
         locale=locale,
         checkpoint=checkpoint,
         history=prior,
@@ -1056,7 +1065,7 @@ async def _run_turn(
             ):
                 schemas = schemas + [
                     s
-                    for s in tools.schemas_for(ctx)
+                    for s in profile.schemas(ctx)
                     if s["function"]["name"] in tools.OFFICE_TOOLS
                 ]
             # The next response is the last with tools: say so where the model
@@ -1090,7 +1099,9 @@ async def _run_turn(
             # Nothing of the reply was shown; the next response answers.
             sent_back = True
             send_back_pending = True
-            messages.extend(_send_back(assembled, asked, writes=can_write))
+            messages.extend(
+                _send_back(assembled, asked, writes=can_write, texts=profile.send_back)
+            )
             continue
 
         if text:
@@ -1271,11 +1282,16 @@ def _ask_only(renderer: LangRenderer, prose: str, asked: str | None) -> bool:
 
 
 def _send_back(
-    assembled: AssembledResponse, asked: str | None, *, writes: bool
+    assembled: AssembledResponse,
+    asked: str | None,
+    *,
+    writes: bool,
+    texts: dict[tuple[bool, bool], str],
 ) -> list[dict[str, Any]]:
     """The reply as sent, then the send-back: as the result of each AskUser
     call when the model called the tool, else as a user message. A learner who
-    cannot write gets the texts that ask for the answer alone."""
+    cannot write gets the texts that ask for the answer alone. ``texts`` are
+    the profile's, by (writes, as a tool result)."""
     assistant = dict(assembled.provider_message)
     assistant.setdefault("role", "assistant")
     assistant.setdefault("content", assembled.text)
@@ -1284,8 +1300,7 @@ def _send_back(
     asks = [call for call in assembled.tool_calls if call.name == ASK_USER]
     if asked is None or not asks:
         assistant.pop("tool_calls", None)
-        text = chat_prompts.SEND_BACK if writes else chat_prompts.SEND_BACK_READ_ONLY
-        return [assistant, {"role": "user", "content": text}]
+        return [assistant, {"role": "user", "content": texts[(writes, False)]}]
     assistant["tool_calls"] = [
         {
             "id": call.id,
@@ -1300,9 +1315,7 @@ def _send_back(
             {
                 "role": "tool",
                 "tool_call_id": call.id,
-                "content": chat_prompts.SEND_BACK_TOOL
-                if writes
-                else chat_prompts.SEND_BACK_TOOL_READ_ONLY,
+                "content": texts[(writes, True)],
             }
             for call in asks
         ),
@@ -1445,7 +1458,7 @@ async def _record_searches(ctx: ToolContext, cited_order: list[int]) -> None:
     for event in ctx.search_events:
         event["cited"] = [chunk_id in cited_chunks for chunk_id in event["chunk_ids"]]
         event["trace_id"] = obs.trace_id()
-        event["workspace_id"] = ctx.workspace_id
+        event["workspace_id"] = ctx.workspace_id or None  # None: an account turn
         event["actor_user_id"] = ctx.user_id or None
         event["message_id"] = ctx.assistant_message_id
     try:
@@ -1622,7 +1635,7 @@ async def _run_tools(
             call,
             budget,
             len(accepted),
-            search_used=any(name == "search_workspace" for _, _, name in accepted),
+            search_used=any(name in _SEARCH_TOOLS for _, _, name in accepted),
             building=building,
         )
         if limit_text:
@@ -1729,6 +1742,10 @@ def _result_text(result: ToolResult, numbered: list[tuple[int, Passage]]) -> str
     return text
 
 
+# One search of the user's files per response, in either scope.
+_SEARCH_TOOLS = ("search_workspace", "search_files")
+
+
 def _limit_for(
     call: ToolCall,
     budget: TurnBudget,
@@ -1737,9 +1754,9 @@ def _limit_for(
     search_used: bool = False,
     building: bool = False,
 ) -> str | None:
-    if call.name == "search_workspace" and search_used:
+    if call.name in _SEARCH_TOOLS and search_used:
         return (
-            "This response already used search_workspace. Use those passages, "
+            f"This response already used {call.name}. Use those passages, "
             "or search again in the next step."
         )
     if accepted_here >= TOOLS_PER_RESPONSE:

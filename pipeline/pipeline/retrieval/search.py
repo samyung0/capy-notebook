@@ -8,6 +8,7 @@ and return the hit passages.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -19,7 +20,7 @@ from .. import registry
 from ..config import cfg
 from ..prompts.sources import source_block
 from . import models, store
-from .chunking import AUDIO_SPACE, search_query_terms
+from .chunking import AUDIO_SPACE, QueryTerms, search_query_terms
 from .lang import UND
 
 log = logging.getLogger("capy.search")
@@ -65,6 +66,10 @@ class Passage:
     kind: str = "file"
     # A web page's date (YYYY-MM-DD), when the search knows it.
     published: str = ""
+    # Account chat's provenance: the workspace the source lives in, "" for No
+    # workspace; None in workspace chat, whose passages all live in its one.
+    workspace_id: str | None = None
+    workspace_name: str = ""
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Passage:
@@ -98,6 +103,8 @@ class Passage:
             )
             return f"Web: {self.file_name}" + (f" ({meta})" if meta else "")
         parts = [self.file_name]
+        if self.workspace_id is not None:
+            parts.insert(0, self.workspace_name or "No workspace")
         if self.section_path:
             parts.append(self.section_path)
         if self.page_start:
@@ -185,6 +192,9 @@ class Passage:
         if self.kind == "material":
             citation["kind"] = "material"
             citation["materialId"] = self.file_id
+        if self.workspace_id is not None:
+            citation["workspaceId"] = self.workspace_id
+            citation["workspaceName"] = self.workspace_name
         if self.page_start:
             citation["pageStart"] = self.page_start
             citation["pageEnd"] = self.page_end or self.page_start
@@ -216,6 +226,8 @@ class SearchStats:
     cjk_runs: int = 0
     embed_ms: int = 0
     sql_ms: int = 0
+    # Query embeddings made: one per embedding space searched.
+    embeddings: int = 0
 
 
 async def search(
@@ -252,18 +264,114 @@ async def search(
         candidates=cfg.search_candidates,
     )
     searched = time.monotonic()
+    top = await _ranked(query, rows, top_k)
+    if stats is not None:
+        _fill_stats(stats, top, terms, started, embedded, searched, embeddings=1)
+    return top
+
+
+async def _ranked(query: str, rows: list[dict[str, Any]], top_k: int) -> list[Passage]:
+    """Fused rows reranked, capped per file and cut to ``top_k``."""
     ranked, reranked = await rerank(query, rows)
     passages = [Passage.from_row(row) for row in ranked]
     top = _cap_per_file(passages, cfg.search_per_file_cap)[:top_k]
     _mark_tier_only(top, rows, top_k, reranked)
-    if stats is not None:
-        langs = Counter(p.lang for p in top)
-        stats.hits_lang = langs.most_common(1)[0][0] if langs else UND
-        stats.query_terms = terms.terms
-        stats.cjk_runs = terms.cjk_runs
-        stats.embed_ms = int((embedded - started) * 1000)
-        stats.sql_ms = int((searched - embedded) * 1000)
     return top
+
+
+def _fill_stats(
+    stats: SearchStats,
+    top: list[Passage],
+    terms: QueryTerms,
+    started: float,
+    embedded: float,
+    searched: float,
+    *,
+    embeddings: int,
+) -> None:
+    langs = Counter(p.lang for p in top)
+    stats.hits_lang = langs.most_common(1)[0][0] if langs else UND
+    stats.query_terms = terms.terms
+    stats.cjk_runs = terms.cjk_runs
+    stats.embed_ms = int((embedded - started) * 1000)
+    stats.sql_ms = int((searched - embedded) * 1000)
+    stats.embeddings = embeddings
+
+
+async def search_account(
+    *,
+    user_id: str,
+    workspace_ids: list[str],
+    query: str,
+    file_ids: list[str] | None = None,
+    top_k: int | None = None,
+    stats: SearchStats | None = None,
+) -> list[Passage]:
+    """Search across an account chat's scope (todo-account-chat.md): the
+    workspaces grouped by embedding pin, plus the user's standalone content
+    grouped by the pin it was indexed in. The query is embedded once per pin,
+    each target runs the hybrid statement, the targets' fused lists merge by
+    reciprocal rank, and one rerank orders the union. Passages carry no
+    workspace yet; the caller labels them through Go (tools.label_passages)."""
+    top_k = top_k or cfg.search_top_k
+    spaces = await store.account_search_spaces(user_id, workspace_ids)
+    if not spaces:
+        return []
+    started = time.monotonic()
+
+    async def embedded(space: dict[str, Any]) -> list[float] | None:
+        pin = space["pin"]
+        spec = registry.resolve_pinned(
+            pin["embedding_provider_slug"],
+            pin["embedding_model_slug"],
+            pin["embedding_model_version"],
+            registry.Slot.RETRIEVAL,
+        )
+        vectors = await models.embed([models.format_query(query, spec)], spec=spec)
+        return vectors[0] if vectors else None
+
+    vectors = await asyncio.gather(*(embedded(space) for space in spaces))
+    done_embedding = time.monotonic()
+    terms = search_query_terms(query)
+    searches = []
+    for space, vector in zip(spaces, vectors, strict=True):
+        if vector is None:
+            continue
+        common = {
+            "vector": vector,
+            "terms": terms,
+            "file_ids": file_ids,
+            "candidates": cfg.search_candidates,
+            "pin": space["pin"],
+        }
+        if space["workspace_ids"]:
+            searches.append(
+                store.hybrid_search(workspace_ids=space["workspace_ids"], **common)
+            )
+        if space["standalone"]:
+            searches.append(store.hybrid_search(owner_user_id=user_id, **common))
+    targets = await asyncio.gather(*searches)
+    searched = time.monotonic()
+    rows = merge_targets(targets)[: cfg.search_candidates]
+    top = await _ranked(query, rows, top_k)
+    if stats is not None:
+        _fill_stats(
+            stats, top, terms, started, done_embedding, searched, embeddings=len(spaces)
+        )
+    return top
+
+
+def merge_targets(targets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Reciprocal rank fusion of the targets' fused lists. Each row is in one
+    target; a row's own ``score`` stays its target's, which the tier
+    telemetry compares within."""
+    ranked = [
+        (1.0 / (store._RRF_K + rank), row["id"], row)
+        for rows in targets
+        for rank, row in enumerate(rows, 1)
+    ]
+    ranked.sort(key=lambda entry: (-entry[0], entry[1]))
+    return [row for _, _, row in ranked]
 
 
 def _mark_tier_only(

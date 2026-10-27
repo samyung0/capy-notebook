@@ -157,3 +157,67 @@ def deck_building(rules: str, style: str, style_text: str) -> str:
         f"Slides:\n{rules}\n\n"
         f"Write every slide in the {style} style:\n\n{style_text}"
     )
+
+
+# Account chat's variants (todo-account-chat.md): the workspace wording of
+# editing, note_building and deck_building said for the user's files across
+# workspaces; the workspace text above is unchanged.
+def swapped(text: str, *pairs: tuple[str, str]) -> str:
+    """``text`` with each old phrase replaced, failing loudly when one is
+    gone, so an edit of the workspace text cannot leave a stale variant."""
+    for old, new in pairs:
+        if old not in text:
+            raise RuntimeError(f"account variant lost its anchor: {old!r}")
+        text = text.replace(old, new)
+    return text
+
+
+ACCOUNT_LANDING = (
+    "What you create lands in No workspace unless the learner names a workspace "
+    "they can edit; create_material and create_deck then take its workspace_id "
+    "from list_files."
+)
+
+
+def account_editing() -> str:
+    return swapped(
+        editing(),
+        ("How to write to the workspace:", "How to write to the learner's files:"),
+        (
+            (
+                "- Quizzes and flashcards are standalone materials filed in the "
+                "chapter they practise, by its chapter_id from list_sources."
+            ),
+            f"- Quizzes and flashcards are standalone materials. {ACCOUNT_LANDING}",
+        ),
+        (
+            "- Inspect a document before editing it;",
+            (
+                "- Inspect a document before editing it, and edit it only when its "
+                "Access line says canEdit is true;"
+            ),
+        ),
+    )
+
+
+def account_note_building(formats: dict[str, str]) -> str:
+    return swapped(
+        note_building(formats),
+        (
+            "Practice from the library (Workspace only off):",
+            "Practice from the library (Your files only off):",
+        ),
+    )
+
+
+def account_deck_building(rules: str, style: str, style_text: str) -> str:
+    return swapped(
+        deck_building(rules, style, style_text),
+        (
+            "stored in the workspace as a PPTX file.",
+            (
+                "stored as a PPTX file in the workspace create_deck named, or in No "
+                "workspace."
+            ),
+        ),
+    )

@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.exceptions import HTTPException
 
 from .. import elitellm, obs, registry, use_compatible_event_loop
@@ -49,6 +49,7 @@ from ..retrieval.agent import (
 from ..retrieval.chunking import estimate_tokens
 from ..retrieval.events import error as client_error
 from ..retrieval.events import phase
+from ..retrieval.scope import AccountScope
 from ..retrieval.tools import ToolContext
 from .ai_adapter import router as plate_ai_router
 
@@ -234,10 +235,23 @@ def _bind_llm(req: LLMPin) -> None:
     registry.bind_request_llm(req.thinking)
 
 
+class ChatScope(BaseModel):
+    """What the turn reaches (todo-account-chat.md): one workspace, or the
+    caller's account (owned and member workspaces plus their standalone
+    files), resolved by Go."""
+
+    kind: Literal["workspace", "account"]
+    workspaceId: str | None = None
+    workspaceIds: list[str] = Field(default_factory=list)
+    userId: str | None = None
+
+
 class ChatStreamReq(LLMPin):
     thinking: Literal["low", "mid", "high", "max"]
     query: str = Field(min_length=1, max_length=65_536)
-    workspaceId: str
+    # A workspace turn's workspace; an account turn has none.
+    workspaceId: str | None = None
+    scope: ChatScope | None = None
     # Trusted context from the gateway, never from model arguments: the shared
     # agent-tool contract version it speaks and the resource operations the
     # actor's effective role grants for this turn. Both are required so an
@@ -264,8 +278,28 @@ class ChatStreamReq(LLMPin):
     studyProgress: bool = False
     # An earlier turn of the conversation was offered the Office tools.
     officeTools: bool = False
-    # The requester's workspace role: owner, editor or viewer.
-    role: Literal["owner", "editor", "viewer"]
+    # The requester's workspace role: owner, editor or viewer (workspace turns).
+    role: Literal["owner", "editor", "viewer"] | None = None
+
+    @model_validator(mode="after")
+    def _scoped(self) -> ChatStreamReq:
+        """A workspace turn names its workspace and role; an account turn its
+        caller. Missing ones fail the request rather than guess a scope."""
+        if self.account:
+            if not self.scope.userId or self.scope.userId != self.userId:
+                raise ValueError("an account turn's scope names its caller")
+            return self
+        named = self.scope.workspaceId if self.scope else self.workspaceId
+        if not named or (self.workspaceId and named != self.workspaceId):
+            raise ValueError("a workspace turn names one workspace")
+        if self.role is None:
+            raise ValueError("a workspace turn carries the requester's role")
+        self.workspaceId = named
+        return self
+
+    @property
+    def account(self) -> bool:
+        return self.scope is not None and self.scope.kind == "account"
 
 
 def _bind_accounting(session_id: str):
@@ -424,7 +458,10 @@ async def _chat_events(req: ChatStreamReq):
     accounting_token = None
     client = ClientDrop()
     ctx = ToolContext(
-        workspace_id=req.workspaceId,
+        workspace_id=req.workspaceId or "",
+        scope=AccountScope(req.userId or "", tuple(req.scope.workspaceIds))
+        if req.account
+        else None,
         user_id=req.userId or "",
         operations=frozenset(req.operations),
         file_ids=None if req.fileIds is None else list(req.fileIds),
@@ -434,13 +471,16 @@ async def _chat_events(req: ChatStreamReq):
         study_preferences=dict(req.studyPreferences or {}),
         study_progress=req.studyProgress,
         office_tools=req.officeTools,
-        role=req.role,
+        **({"role": req.role} if req.role else {}),
     )
     turn_id = req.assistantMessageId or ""
     if turn_id:
         _running[turn_id] = client
     try:
         accounting_token = accounting.bind(req.spendSessionId)
+        if req.account:
+            # An account session has no embedding pin (Go, Epo 2026-10-27).
+            accounting.unpin_embeddings()
         agen = run_agent(
             query=req.query,
             ctx=ctx,

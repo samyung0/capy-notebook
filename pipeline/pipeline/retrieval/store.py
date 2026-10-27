@@ -1237,7 +1237,7 @@ _MATERIAL_SCOPE_SQL = """
             FROM rag_material_contents mc
             JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
             JOIN materials m ON m.id = mc.material_id
-            WHERE mc.workspace_id = %(ws)s AND m.trashed_at IS NULL
+            WHERE mc.workspace_id {in_ws} AND m.trashed_at IS NULL
                 AND (%(no_filter)s OR m.id = ANY(%(file_ids)s))"""
 
 _SEARCH_SQL_TEMPLATE = """
@@ -1249,7 +1249,7 @@ WITH scoped_files AS (
             FROM rag_file_contents fc
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
             JOIN files f ON f.id = fc.file_id
-            WHERE fc.workspace_id = %(ws)s AND f.trashed_at IS NULL
+            WHERE {file_scope} AND f.trashed_at IS NULL
                 AND (%(no_filter)s OR f.id = ANY(%(file_ids)s)){material_scope}
         ) resources
         ORDER BY content_id, ordered_at, file_id
@@ -1316,10 +1316,29 @@ ORDER BY fused.score DESC, c.id
 LIMIT %(candidates)s
 """
 
+# The file aliases a search reaches: those in its workspaces and, for account
+# chat, the caller's own files with no workspace, owned through rag_contents
+# and kept to the search's embedding space. Both rank in one pool (Epo
+# 2026-10-27); standalone notes are never indexed, so there is no note leg
+# for them. Passages and vectors follow through scoped_files' content ids.
+_STANDALONE_OWNER = (
+    "(fc.workspace_id IS NULL AND rc.user_id = %(owner)s"
+    " AND rc.embedding_provider_slug = %(pin_provider)s"
+    " AND rc.embedding_model_slug = %(pin_model)s"
+    " AND rc.embedding_model_version = %(pin_version)s)"
+)
+
+
+def _file_scope(in_ws: str | None, *, owned: bool) -> str:
+    legs = [f"fc.workspace_id {in_ws}"] if in_ws else []
+    if owned:
+        legs.append(_STANDALONE_OWNER)
+    return legs[0] if len(legs) == 1 else "(" + " OR ".join(legs) + ")"
+
 
 async def hybrid_search(
     *,
-    workspace_id: str,
+    workspace_id: str = "",
     vector: list[float],
     terms: QueryTerms,
     file_ids: list[str] | None,
@@ -1328,8 +1347,14 @@ async def hybrid_search(
     conn: Any | None = None,
     chunk_filter: str = "",
     chunk_filter_params: dict[str, Any] | None = None,
+    workspace_ids: list[str] | None = None,
+    owner_user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Vector + lexical search fused with reciprocal rank fusion.
+
+    Account chat searches ``workspace_ids`` (one pin's workspaces) or, with
+    ``owner_user_id``, that user's standalone content in ``pin``'s space;
+    either needs ``pin``.
 
     ``pin``, ``conn`` and ``chunk_filter`` exist for the knowledge library,
     which runs this same statement against its own database with a
@@ -1360,18 +1385,34 @@ async def hybrid_search(
     ``indexed_text`` (heading context and text), which the reranker scores.
     """
     pin = pin or await workspace_embedding_pin(workspace_id)
+    if workspace_ids is None:
+        in_ws: str | None = "= %(ws)s"
+    else:
+        in_ws = "= ANY(%(ws)s)" if workspace_ids else None
     scope = _LIBRARY_SCOPE if conn is not None else _CONTENT_SCOPE
     sql = _SEARCH_SQL_TEMPLATE.format(
         vector_table=vector_table_for_pin(pin),
         chunk_filter=chunk_filter,
-        material_scope="" if conn is not None else _MATERIAL_SCOPE_SQL,
+        material_scope=""
+        if conn is not None or in_ws is None
+        else _MATERIAL_SCOPE_SQL.format(in_ws=in_ws),
+        file_scope=_file_scope(in_ws, owned=bool(owner_user_id)),
         vec_scope=scope.format(alias="v"),
         lex_scope=scope.format(alias="c"),
     )
     params = dict(chunk_filter_params or {})
+    if owner_user_id:
+        params.update(
+            {
+                "owner": owner_user_id,
+                "pin_provider": pin["embedding_provider_slug"],
+                "pin_model": pin["embedding_model_slug"],
+                "pin_version": pin["embedding_model_version"],
+            }
+        )
     params.update(
         {
-            "ws": workspace_id,
+            "ws": workspace_id if workspace_ids is None else list(workspace_ids),
             "vector": vector_literal(vector),
             "any_of": terms.any_of,
             "all_of": terms.all_of,
@@ -1394,6 +1435,91 @@ async def hybrid_search(
     db = await pool()
     async with db.connection() as pooled:
         cur = await pooled.execute(sql, params)
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def account_search_spaces(
+    user_id: str, workspace_ids: list[str]
+) -> list[dict[str, Any]]:
+    """An account search's targets by embedding space: each pin with its
+    workspaces among ``workspace_ids`` and whether the user's standalone
+    content holds ready passages in it (its recorded pin)."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT embedding_provider_slug, embedding_model_slug,
+                   embedding_model_version, embedding_dim,
+                   array_agg(id ORDER BY id) AS workspace_ids, false AS standalone
+            FROM workspaces WHERE id = ANY(%s)
+            GROUP BY 1, 2, 3, 4
+            UNION ALL
+            SELECT DISTINCT embedding_provider_slug, embedding_model_slug,
+                   embedding_model_version, embedding_dim, NULL::text[], true
+            FROM rag_contents
+            WHERE workspace_id IS NULL AND user_id = %s AND status = 'ready'
+              AND embedding_provider_slug IS NOT NULL
+            """,
+            (list(workspace_ids), user_id),
+        )
+        rows = [dict(row) for row in await cur.fetchall()]
+    spaces: dict[tuple, dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            row["embedding_provider_slug"],
+            row["embedding_model_slug"],
+            int(row["embedding_model_version"]),
+            int(row["embedding_dim"]),
+        )
+        space = spaces.setdefault(
+            key,
+            {
+                "pin": dict(zip(_PIN_COLUMNS, key, strict=True)),
+                "workspace_ids": [],
+                "standalone": False,
+            },
+        )
+        space["workspace_ids"].extend(row["workspace_ids"] or [])
+        space["standalone"] = space["standalone"] or row["standalone"]
+    return list(spaces.values())
+
+
+_PIN_COLUMNS = (
+    "embedding_provider_slug",
+    "embedding_model_slug",
+    "embedding_model_version",
+    "embedding_dim",
+)
+
+
+async def account_history_passages(
+    user_id: str, workspace_ids: list[str], chunk_ids: list[str]
+) -> list[dict[str, Any]]:
+    """history_passages across an account chat's scope: its workspaces' files
+    and notes and the user's standalone files."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT c.id, fc.file_id, 'file' AS kind, c.chunk_idx, c.section_path, c.text,
+                   c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                   f.name AS file_name
+            FROM rag_file_contents fc
+            JOIN files f ON f.id = fc.file_id
+            JOIN rag_chunks c ON c.content_id = fc.content_id
+            WHERE (f.workspace_id = ANY(%s) OR (f.workspace_id IS NULL AND f.user_id = %s))
+              AND f.trashed_at IS NULL AND c.id = ANY(%s)
+            UNION ALL
+            SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
+                   c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                   m.title
+            FROM rag_material_contents mc
+            JOIN materials m ON m.id = mc.material_id
+            JOIN rag_chunks c ON c.content_id = mc.content_id
+            WHERE m.workspace_id = ANY(%s) AND m.trashed_at IS NULL AND c.id = ANY(%s)
+            """,
+            (workspace_ids, user_id, chunk_ids, workspace_ids, chunk_ids),
+        )
         return [dict(row) for row in await cur.fetchall()]
 
 
@@ -1557,15 +1683,20 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
     return {"chapters": chapters, "files": files}
 
 
-async def file_page_source(workspace_id: str, file_id: str) -> dict[str, Any] | None:
-    """Published source identity for page capture; names may change independently."""
+async def file_page_source(
+    workspace_id: str | None, file_id: str
+) -> dict[str, Any] | None:
+    """Published source identity for page capture; names may change
+    independently. None is a standalone file, which account chat reads only
+    after Go's access check (tools.document_access)."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             """
             SELECT f.kind, f.name, f.parse_mode, f.ever_parsed_successfully, f.blob_path, f.source_sha256, f.size_bytes
             FROM files f
-            WHERE f.workspace_id = %s AND f.id = %s AND f.trashed_at IS NULL
+            WHERE f.workspace_id IS NOT DISTINCT FROM %s AND f.id = %s
+              AND f.trashed_at IS NULL
             """,
             (workspace_id, file_id),
         )
@@ -1615,8 +1746,10 @@ async def history_passages(
 
 
 async def read_file_range(
-    *, workspace_id: str, file_id: str, start: int, count: int
+    *, workspace_id: str | None, file_id: str, start: int, count: int
 ) -> list[dict[str, Any]]:
+    """A file's or note's passages from ``start``; workspace_id None is a
+    standalone file, read only after Go's access check (account chat)."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -1628,7 +1761,8 @@ async def read_file_range(
                 FROM rag_file_contents fc
                 JOIN files f ON f.id = fc.file_id
                 JOIN rag_chunks c ON c.content_id = fc.content_id
-                WHERE f.workspace_id = %s AND fc.file_id = %s AND f.trashed_at IS NULL
+                WHERE f.workspace_id IS NOT DISTINCT FROM %s AND fc.file_id = %s
+                  AND f.trashed_at IS NULL
                 UNION ALL
                 SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
                        c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,

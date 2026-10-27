@@ -85,10 +85,10 @@ type Citation struct {
 	SiteName  string   `json:"siteName,omitempty"`
 	Published string   `json:"published,omitempty"`
 	// WorkspaceID and WorkspaceName say where an account chat's source lives
-	// (Epo 2026-10-27); both empty for a file with no workspace and for every
-	// workspace chat citation.
-	WorkspaceID   string `json:"workspaceId,omitempty"`
-	WorkspaceName string `json:"workspaceName,omitempty"`
+	// (Epo 2026-10-27). WorkspaceID is absent in workspace chat and "" for a
+	// file with no workspace, so it is a pointer to keep that "".
+	WorkspaceID   *string `json:"workspaceId,omitempty"`
+	WorkspaceName string  `json:"workspaceName,omitempty"`
 }
 
 // ActivityBlock is one completed narration or tool-display item persisted on
