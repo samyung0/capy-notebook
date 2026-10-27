@@ -30,10 +30,6 @@ log = logging.getLogger("capy.registry")
 
 POLL_INTERVAL = 600.0
 
-AUTH_PLATFORM = "platform"
-AUTH_USER_KEY = "user_key"
-AUTH_PLATFORM_OR_USER = "platform_or_user"
-
 
 def join_model_label(provider_name: str, model_name: str) -> str:
     provider = (provider_name or "").strip()
@@ -52,8 +48,6 @@ class ModelConfig:
     model_name: str
     provider_slug: str
     model_slug: str
-    platform_enabled: bool = True
-    byok_enabled: bool = False
     params: dict[str, Any] = field(default_factory=dict)
     slots: tuple[Slot, ...] = ()
     thinking_levels: tuple[str, ...] = ()
@@ -64,14 +58,6 @@ class ModelConfig:
     enabled: bool = True
     is_default_for: tuple[Slot, ...] = ()
     context_window_tokens: int = 0
-
-    @property
-    def auth_mode(self) -> str:
-        if self.platform_enabled and self.byok_enabled:
-            return AUTH_PLATFORM_OR_USER
-        if self.byok_enabled:
-            return AUTH_USER_KEY
-        return AUTH_PLATFORM
 
     @property
     def litellm_model_id(self) -> str:
@@ -145,8 +131,7 @@ _job_pins: ContextVar[JobPins | None] = ContextVar("job_pins", default=None)
 
 _select_cols = """
                     SELECT version, provider_name, model_name, provider_slug,
-                           model_slug, platform_enabled, byok_enabled,
-                           params, slots, thinking_levels, default_thinking,
+                           model_slug, params, slots, thinking_levels, default_thinking,
                            micros_per_input_token, micros_per_output_token,
                            enabled, is_default_for, context_window_tokens,
                            micros_per_cached_input_token
@@ -156,30 +141,14 @@ _select_cols = """
 
 @dataclass
 class RequestLLM:
-    user_id: str = ""
-    paid_by: str = ""
-    user_api_key: str = ""
     thinking: str = ""
 
 
 _request_llm: ContextVar[RequestLLM | None] = ContextVar("request_llm", default=None)
 
 
-def bind_request_llm(
-    user_id: str | None = None,
-    paid_by: str | None = None,
-    thinking: str | None = None,
-    *,
-    user_api_key: str | None = None,
-) -> None:
-    _request_llm.set(
-        RequestLLM(
-            user_id=(user_id or "").strip(),
-            paid_by=(paid_by or "").strip(),
-            user_api_key=(user_api_key or "").strip(),
-            thinking=(thinking or "").strip(),
-        )
-    )
+def bind_request_llm(thinking: str | None = None) -> None:
+    _request_llm.set(RequestLLM(thinking=(thinking or "").strip()))
 
 
 def current_request_llm() -> RequestLLM:
@@ -331,11 +300,11 @@ class Registry:
 
 
 def _cached_rate_from_row(row: tuple[Any, ...]) -> int:
-    if len(row) <= 16 or row[16] is None:
+    if len(row) <= 14 or row[14] is None:
         raise RegistryError(
             f"{row[3]}/{row[4]} v{row[0]} is missing micros_per_cached_input_token"
         )
-    return int(row[16])
+    return int(row[14])
 
 
 def _as_dict(raw: Any) -> dict[str, Any]:
@@ -343,26 +312,24 @@ def _as_dict(raw: Any) -> dict[str, Any]:
 
 
 def _from_row(row: tuple[Any, ...]) -> ModelConfig:
-    params = _as_dict(row[7])
-    slots = tuple(Slot(value) for value in (row[8] or ()))
-    thinking = tuple(row[9] or ())
-    defaults = tuple(Slot(value) for value in (row[14] or ()))
-    window = int(row[15]) if row[15] is not None else 0
+    params = _as_dict(row[5])
+    slots = tuple(Slot(value) for value in (row[6] or ()))
+    thinking = tuple(row[7] or ())
+    defaults = tuple(Slot(value) for value in (row[12] or ()))
+    window = int(row[13]) if row[13] is not None else 0
     return ModelConfig(
         version=int(row[0]),
         provider_name=str(row[1] or ""),
         model_name=str(row[2] or ""),
         provider_slug=row[3],
         model_slug=str(row[4] or ""),
-        platform_enabled=bool(row[5]),
-        byok_enabled=bool(row[6]),
         params=params,
         slots=slots,
         thinking_levels=thinking,
-        default_thinking=str(row[10] or ""),
-        micros_per_input_token=int(row[11]),
-        micros_per_output_token=int(row[12]),
-        enabled=bool(row[13]),
+        default_thinking=str(row[8] or ""),
+        micros_per_input_token=int(row[9]),
+        micros_per_output_token=int(row[10]),
+        enabled=bool(row[11]),
         is_default_for=defaults,
         context_window_tokens=window,
         micros_per_cached_input_token=_cached_rate_from_row(row),
@@ -422,28 +389,11 @@ def captioning_spec() -> ModelConfig:
 
 
 def provider_api_key_for(spec: ModelConfig) -> str:
-    """Return the key elitellm should use for this pin.
-
-    User keys are passed per request and never written to process env.
-    Platform keys come from the elitellm provider env name.
-    """
+    """Return the platform key elitellm should use for this pin, read from the
+    elitellm provider env name."""
     from .elitellm.providers import platform_api_key as elitellm_platform_key
     from .elitellm.providers import platform_env_name
 
-    req = current_request_llm()
-    if req.paid_by == "user":
-        key = req.user_api_key or _load_user_key(req.user_id, spec.provider_slug)
-        if not key or not spec.byok_enabled:
-            raise RegistryError(
-                f"user key required for {spec.provider_slug}/{spec.model_slug}"
-            )
-        return key
-    if req.user_api_key and spec.byok_enabled and not spec.platform_enabled:
-        return req.user_api_key
-    if spec.byok_enabled and not spec.platform_enabled:
-        raise RegistryError(
-            f"user key required for {spec.provider_slug}/{spec.model_slug}"
-        )
     try:
         env_name = platform_env_name(spec.provider_slug)
         key = elitellm_platform_key(spec.provider_slug)
@@ -453,17 +403,6 @@ def provider_api_key_for(spec: ModelConfig) -> str:
         raise RegistryError(
             f"missing {env_name} for {spec.provider_slug}/{spec.model_slug}"
         )
-    return key
-
-
-def _load_user_key(user_id: str, provider_slug: str) -> str:
-    if not user_id or not provider_slug:
-        return ""
-    from . import credentials
-
-    key = credentials.decrypt_user_provider_key(user_id, provider_slug)
-    req = current_request_llm()
-    req.user_api_key = key
     return key
 
 

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { USE_MSW } from '@/api/auth';
 import { useWorkspaces } from '@/api/hooks';
+import { CardSlider } from '@/components/app/CardSlider';
 import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
@@ -26,11 +27,6 @@ const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 const DASHBOARD_WORKSPACE_LIMIT = 12;
 
-/** One row of recent workspaces scrolling sideways, inside the content
- * width; the scroll fade marks the hidden cards. Only the right edge fades,
- * so the card at the left edge stays at full strength. */
-const SLIDER_CLASS =
-  'scroll-fade-x flex [--scroll-fade-start:0px]! gap-4 overflow-x-auto pt-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
 // Phones show part of the next card so the row reads as scrollable.
 const SLIDE_CLASS = 'w-[85%] shrink-0 sm:w-75';
 
@@ -61,11 +57,11 @@ function WorkspacesSection() {
       {waitsForConnection(fetchStatus, data) ? (
         <QueryPausedState />
       ) : isLoading ? (
-        <div className={SLIDER_CLASS}>
+        <CardSlider>
           {Array.from({ length: 4 }, (_, i) => (
             <WorkspaceCardSkeleton className={SLIDE_CLASS} key={i} />
           ))}
-        </div>
+        </CardSlider>
       ) : !data && error ? (
         <InlineErrorState
           className="pt-10 pb-6"
@@ -74,7 +70,7 @@ function WorkspacesSection() {
           onRetry={() => void refetch()}
         />
       ) : (
-        <div className={SLIDER_CLASS} ref={revealRef}>
+        <CardSlider ref={revealRef}>
           {recent?.map((w) => (
             <div className={SLIDE_CLASS} key={w.id}>
               <WorkspaceCard workspace={w} />
@@ -92,7 +88,7 @@ function WorkspacesSection() {
               </Button>
             </div>
           )}
-        </div>
+        </CardSlider>
       )}
     </section>
   );

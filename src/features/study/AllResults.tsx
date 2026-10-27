@@ -6,12 +6,7 @@ import { ListEnd } from '@/components/app/ListEnd';
 import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
 import { PageBody } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import {
-  ariaSort,
-  type ColumnSort,
-  SortHeader,
-  sortDirection,
-} from '@/components/app/SortHeader';
+import type { ColumnSort } from '@/components/app/SortHeader';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -146,8 +141,9 @@ export function AllResults() {
         onResetFilters={() =>
           setSearch({ kind: undefined, workspace: undefined })
         }
+        wide
       />
-      <PageBody belowToolbar>
+      <PageBody belowToolbar wide>
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -158,84 +154,43 @@ export function AllResults() {
           </p>
         ) : (
           <div className="flex flex-col gap-3" ref={revealRef}>
-            {/* Phones: Billing's plain table, scrolling sideways. */}
-            <div className="md:hidden">
-              <BillingTable
-                columns={[
-                  { id: 'date', label: m.quiz_col_date(), sort: 'date' },
-                  {
-                    clamp: true,
-                    id: 'quiz',
-                    label: m.list_col_name(),
-                    sort: 'quiz',
-                  },
-                  {
-                    clamp: true,
-                    id: 'workspace',
-                    label: m.quiz_col_workspace(),
-                    sort: 'workspace',
-                  },
-                  { id: 'score', label: m.quiz_col_score(), sort: 'score' },
-                  { align: 'right', id: 'menu', label: '' },
-                ]}
-                rows={rows.map((a) => ({
-                  cells: {
-                    date: formatDate(a),
-                    menu: menu(a),
-                    quiz: <ResultLink attempt={a} />,
-                    score: scoreText(a),
-                    workspace: (
-                      <WorkspaceCell iconId={a.iconId} name={a.workspaceName} />
-                    ),
-                  },
-                  className: 'relative hover:bg-surface-hover-bg',
-                  key: a.id,
-                }))}
-                sorting={sorting}
-              />
-            </div>
-            <div className="hidden overflow-hidden rounded-card border border-line md:block">
-              <div className="grid grid-cols-[minmax(10rem,1fr)_minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
-                {(
-                  [
-                    ['date', m.quiz_col_date()],
-                    ['quiz', m.list_col_name()],
-                    ['workspace', m.quiz_col_workspace()],
-                    ['score', m.quiz_col_score()],
-                  ] as const
-                ).map(([value, label]) => (
-                  <div
-                    aria-sort={ariaSort(sortDirection(sorting, value))}
-                    className="min-w-0"
-                    key={value}
-                    role="columnheader"
-                  >
-                    <SortHeader label={label} sorting={sorting} value={value} />
-                  </div>
-                ))}
-                <div />
-              </div>
-              {rows.map((a) => (
-                <div
-                  className="relative grid grid-cols-[minmax(10rem,1fr)_minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_2.25rem] items-center border-divider border-t pr-2 pl-4 text-sm hover:bg-surface-hover-bg"
-                  key={a.id}
-                >
-                  <div className="whitespace-nowrap py-3 pr-4">
-                    {formatDate(a)}
-                  </div>
-                  <div className="py-3 pr-4">
-                    <ResultLink attempt={a} />
-                  </div>
-                  <div className="py-3 pr-4">
+            {/* Billing's plain table, scrolling sideways on phones; from md
+             * the names may run past the clamp width. */}
+            <BillingTable
+              columns={[
+                { id: 'date', label: m.quiz_col_date(), sort: 'date' },
+                {
+                  clamp: true,
+                  className: 'md:max-w-none',
+                  id: 'quiz',
+                  label: m.list_col_name(),
+                  sort: 'quiz',
+                },
+                {
+                  clamp: true,
+                  className: 'md:max-w-none',
+                  id: 'workspace',
+                  label: m.quiz_col_workspace(),
+                  sort: 'workspace',
+                },
+                { id: 'score', label: m.quiz_col_score(), sort: 'score' },
+                { align: 'right', id: 'menu', label: '' },
+              ]}
+              rows={rows.map((a) => ({
+                cells: {
+                  date: formatDate(a),
+                  menu: menu(a),
+                  quiz: <ResultLink attempt={a} />,
+                  score: scoreText(a),
+                  workspace: (
                     <WorkspaceCell iconId={a.iconId} name={a.workspaceName} />
-                  </div>
-                  <div className="whitespace-nowrap py-3 pr-4">
-                    {scoreText(a)}
-                  </div>
-                  {menu(a)}
-                </div>
-              ))}
-            </div>
+                  ),
+                },
+                className: 'relative hover:bg-surface-hover-bg',
+                key: a.id,
+              }))}
+              sorting={sorting}
+            />
             <ListEnd
               fetchNextPage={fetchNextPage}
               hasNextPage={hasNextPage}

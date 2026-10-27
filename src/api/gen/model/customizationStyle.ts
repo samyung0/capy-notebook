@@ -9,6 +9,7 @@ export type CustomizationStyle = typeof CustomizationStyle[keyof typeof Customiz
 
 
 export const CustomizationStyle = {
-  classroom: 'classroom',
+  capy: 'capy',
+  fisheye: 'fisheye',
   notion: 'notion',
 } as const;

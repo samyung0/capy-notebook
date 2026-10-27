@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { QuestionPart } from '@/api/types';
-import { type Answer, scorePart } from './grade';
+import type { Question, QuestionPart } from '@/api/types';
+import { type Answer, runScore, scorePart } from './grade';
 
 // The server grades; this scorer stands in for it in the MSW mocks, so it must
 // agree with questions.ScorePart on the shared fixtures.
@@ -34,4 +34,17 @@ describe('scorePart matches the server on the shared scoring fixtures', () => {
         });
       });
   }
+});
+
+// A checked question counts with the marks it was checked against, an
+// unchecked one with its marks now, and one removed since still counts.
+it('scores a run as the server does', () => {
+  const question = (id: string, marks: number, awarded?: number) =>
+    ({
+      id,
+      parts: [{ awarded, id: `${id}:a`, marks }],
+    }) as unknown as Question;
+  const quiz = [question('q1', 5), question('q2', 2)];
+  const checked = [question('q1', 1, 1), question('gone', 3, 2)];
+  expect(runScore(quiz, checked)).toEqual({ awarded: 3, max: 6 });
 });

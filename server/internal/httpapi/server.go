@@ -44,8 +44,6 @@ type Config struct {
 	ClerkWebhookSecret string
 	AuthDisabled       bool
 	DevUserID          string
-	// BYOKEnabled turns on saving and removing provider keys (off by default).
-	BYOKEnabled bool
 	// APIDocs serves /docs, /openapi.* and /schemas/* and links bodies to their
 	// schemas: local development only (APP_ENV=development). Deployed
 	// environments, UAT included, leave it off.
@@ -538,20 +536,6 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 			"workspacesUsed":      workspaceLimit.Used,
 			"workspacesRequested": workspaceLimit.Requested,
 			"workspacesLimit":     workspaceLimit.Limit,
-		})
-		return
-	}
-	if errors.Is(err, store.ErrInvalidLLMKey) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code":    "invalid_llm_key",
-			"message": "the provider rejected this key",
-		})
-		return
-	}
-	if errors.Is(err, store.ErrLLMKeyFailed) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code":    "llm_key_failed",
-			"message": "Something went wrong, please double check if the key is valid",
 		})
 		return
 	}

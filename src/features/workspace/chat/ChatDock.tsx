@@ -14,6 +14,7 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { useFrosted } from '@/theme/theme';
 import { ChatBubbleIcon } from './ChatBubbleIcon';
 import { VoiceButton, VoiceElapsed, type VoiceInput } from './VoiceInput';
 
@@ -76,6 +77,8 @@ export function ChatDock({
 }) {
   const md = useMediaQuery('(min-width: 768px)');
   const fieldOnly = md && !office;
+  // The dock sits over the centre panel, outside its data-frosted card.
+  const frosted = useFrosted('center');
   const voiceBusy = voice.phase !== 'idle';
   // A recording started on the chat page keeps the field open here.
   const [expanded, setExpanded] = useState(voiceBusy);
@@ -221,6 +224,9 @@ export function ChatDock({
             'motion-chat-dock pointer-events-auto absolute right-0 bottom-0 h-full overflow-hidden shadow-pop ring-1 ring-overlay-line focus-within:ring-action-accent',
             CHAT_DOCK_TRANSITION
           )}
+          // Over a frosted centre panel the open field is frosted glass
+          // (motion-chat-dock), not an opaque bar.
+          data-frost={frosted || undefined}
           data-open={open}
           // Focus anywhere in the field (text, history, send) keeps it open,
           // so Tab reaches its buttons.
@@ -260,8 +266,12 @@ export function ChatDock({
                 the surface grows to show it: beside the buttons, the time
                 would squeeze a phone's field to a few words a line. */}
             {voice.phase === 'recording' ? (
-              <div className="flex px-2 pt-1">
-                <VoiceElapsed elapsedMs={voice.elapsedMs} />
+              <div className="flex px-2 pt-1 pb-1.5">
+                <VoiceElapsed
+                  analyser={voice.analyser}
+                  className="flex-1"
+                  elapsedMs={voice.elapsedMs}
+                />
               </div>
             ) : (
               voice.error && (
@@ -301,8 +311,6 @@ export function ChatDock({
               <div className="flex h-9.5 shrink-0 items-center gap-1">
                 {voice.supported && (
                   <VoiceButton
-                    elapsed={false}
-                    elapsedMs={voice.elapsedMs}
                     // Keeps the field focused through the tap, as Send does.
                     onMouseDown={(event) => event.preventDefault()}
                     onToggle={voice.toggle}
@@ -312,8 +320,9 @@ export function ChatDock({
                 <IconButton
                   disabled={sendDisabled}
                   icon="send"
-                  // A purple plane on no background, as in the composer.
-                  iconClassName="fill-current text-action-accent"
+                  // An outlined plane, grey until there is something to send,
+                  // as in the composer.
+                  iconClassName={sendDisabled ? 'text-fg-muted' : 'text-send'}
                   label={m.chat_send()}
                   onClick={onSend}
                   // Keeps the field focused through the tap, so its blur

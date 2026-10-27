@@ -24,8 +24,6 @@ def _spec(**overrides) -> ModelConfig:
         "model_name": "Flash",
         "provider_slug": "deepseek",
         "model_slug": "deepseek-v4-flash",
-        "platform_enabled": True,
-        "byok_enabled": True,
         "thinking_levels": ("instant", "low", "high"),
         "default_thinking": "instant",
         "context_window_tokens": 100_000,
@@ -36,7 +34,7 @@ def _spec(**overrides) -> ModelConfig:
 
 @pytest.fixture(autouse=True)
 def _platform_key(monkeypatch):
-    registry.bind_request_llm(paid_by="platform")
+    registry.bind_request_llm()
     monkeypatch.setattr(models.obs, "record_normalized", lambda *a, **k: None)
     monkeypatch.setattr(models.obs, "record_completion", lambda *a, **k: None)
     monkeypatch.setattr(models.obs, "record_embedding", lambda *a, **k: None)
@@ -147,29 +145,6 @@ async def test_a_bad_request_is_never_retried(monkeypatch, sleeps):
     with pytest.raises(elitellm.ProviderError, match="bad request"):
         await models.complete_text([{"role": "user", "content": "hi"}], model=_spec())
     assert calls == 1 and sleeps == []
-
-
-async def test_a_busy_answer_on_a_user_key_is_not_a_key_failure(monkeypatch, sleeps):
-    registry.bind_request_llm(paid_by="user", user_api_key="sk-user")
-    calls = 0
-
-    async def stream(*_args, **_kwargs):
-        nonlocal calls
-        calls += 1
-        raise _busy(retry_after=30)
-
-    monkeypatch.setattr(models, "_stream_via_adapter", stream)
-    try:
-        with pytest.raises(elitellm.ProviderBusy) as caught:
-            await models.complete_text(
-                [{"role": "user", "content": "hi"}], model=_spec()
-            )
-    finally:
-        registry.bind_request_llm(paid_by="platform")
-    # One attempt, no key mapping, and the provider's own wait carried through.
-    assert calls == 1 and sleeps == []
-    assert not isinstance(caught.value, models.UserKeyError)
-    assert caught.value.provider_retry_after == 30
 
 
 async def test_ingest_calls_get_three_attempts_with_backoff(
@@ -416,7 +391,6 @@ async def test_captioning_on_openrouter_keeps_reasoning_off(
     spec = _spec(
         provider_slug="openrouter",
         model_slug="deepseek/deepseek-v4.1-flash-1017",
-        byok_enabled=False,
         thinking_levels=("instant",),
     )
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: spec)

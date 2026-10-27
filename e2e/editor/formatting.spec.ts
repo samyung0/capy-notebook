@@ -53,7 +53,10 @@ test.describe('formatting', () => {
       exact: true,
       name: m.editor_block_type(),
     });
-    await trigger.click();
+    // Opened from the keyboard the menu focuses its first item; opened by
+    // pointer it focuses itself (useMenuOpenAutoFocus).
+    await trigger.focus();
+    await page.keyboard.press('Enter');
     const popup = page.locator(
       '[data-slot="popover-content"][data-state="open"]'
     );

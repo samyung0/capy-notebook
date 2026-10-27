@@ -137,7 +137,7 @@ func (a *api) inspectSourceImports(
 		if in.Body.Provider == integrations.ProviderGoogle && !integrations.HasGoogleDriveReadScope(scopes) {
 			expandErr = integrations.ErrGoogleDriveScopeRequired
 		} else {
-			workspace, err := a.s.GetWorkspace(ctx, userID(ctx), in.ID, false)
+			workspace, err := a.s.GetWorkspace(ctx, userID(ctx), in.ID)
 			if err != nil {
 				return nil, hErr(err)
 			}

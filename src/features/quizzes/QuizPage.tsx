@@ -47,8 +47,9 @@ export function QuizQuestionList<Q extends Question | LearnerQuestion>({
   questions: Q[];
   answers?: Answers;
   onChange?: (partId: string, value: Answers[string]) => void;
-  review?: boolean;
-  disabled?: boolean;
+  /** All questions, or per question (a quiz checked one question at a time). */
+  review?: boolean | ((question: Q) => boolean);
+  disabled?: boolean | ((question: Q) => boolean);
   showAnswerKey?: boolean;
   /** Per-question content under each question. */
   renderAfter?: (question: Q, index: number) => ReactNode;
@@ -66,11 +67,13 @@ export function QuizQuestionList<Q extends Question | LearnerQuestion>({
         >
           <QuestionRunner
             answers={answers}
-            disabled={disabled}
+            disabled={
+              typeof disabled === 'function' ? disabled(question) : disabled
+            }
             onChange={onChange}
             question={question}
             questionNumber={i + 1}
-            review={review}
+            review={typeof review === 'function' ? review(question) : review}
             showAnswerKey={showAnswerKey}
           />
           <QuestionCreditNote credit={credits?.[question.id]} />

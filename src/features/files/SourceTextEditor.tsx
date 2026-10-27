@@ -31,7 +31,7 @@ export function SourceTextEditor({
   return (
     <textarea
       aria-label={m.source_edit_raw()}
-      className="block h-full min-h-[50vh] w-full resize-none bg-surface p-4 font-mono text-sm leading-relaxed outline-none"
+      className="block h-full min-h-[50vh] w-full resize-none bg-surface frosted:bg-transparent p-4 font-mono text-sm leading-relaxed outline-none"
       readOnly={paused}
       ref={textarea}
       spellCheck={false}

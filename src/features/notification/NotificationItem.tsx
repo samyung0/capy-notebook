@@ -283,7 +283,7 @@ export function NotificationItem({
 }) {
   const copy = notificationCopy(notification);
   return (
-    <span className={cn('t-body flex w-full gap-3 text-left', className)}>
+    <span className={cn('t-body flex w-full gap-4 text-left', className)}>
       <span className="relative shrink-0">
         <ContextIcon notification={notification} self={self} />
         {!notification.readAt && (

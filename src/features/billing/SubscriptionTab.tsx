@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   useBilling,
   useBillingCheckout,
@@ -20,8 +20,10 @@ import {
   BillingTable,
   BillingTableSkeleton,
 } from './BillingTable';
+import { CreditNotices } from './CreditNotices';
 import { CreditsSection } from './CreditsSection';
 import { shortDate } from './creditLabels';
+import { creditView } from './credits';
 import { formatMoney } from './format';
 import { planLabel } from './labels';
 
@@ -46,7 +48,17 @@ export function SubscriptionTab() {
   const { mutateAsync: checkout } = useBillingCheckout();
   const { isPending: portalIsPending, mutate: openPortal } = useBillingPortal();
   const [upgrading, setUpgrading] = useState(false);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const topUpField = useRef<HTMLInputElement | null>(null);
   const tier = billing?.planTier ?? 'free';
+  const view =
+    billing &&
+    usage &&
+    creditView(
+      billing,
+      usage.bySurface.reduce((sum, bucket) => sum + bucket.creditMicros, 0)
+    );
+  const renewalAt = billing?.renewalAt && new Date(billing.renewalAt);
 
   async function upgrade() {
     setUpgrading(true);
@@ -67,10 +79,26 @@ export function SubscriptionTab() {
         description={m.billing_subscription_hint()}
         title={m.subscription_title()}
       />
+      {billing && view && (
+        <CreditNotices
+          billing={billing}
+          className="mb-8"
+          onChangeLimit={() => setLimitOpen(true)}
+          onTopUp={() => topUpField.current?.focus()}
+          view={view}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
           <p className="t-meta text-fg-muted">{m.billing_current_plan()}</p>
           <p className="t-large-card-title">{planLabel(tier)}</p>
+          {tier === 'pro' && renewalAt && (
+            <p className="t-meta text-fg-muted">
+              {billing.cancelAtPeriodEnd
+                ? m.billing_plan_ends({ date: shortDate(renewalAt) })
+                : m.billing_plan_renews({ date: shortDate(renewalAt) })}
+            </p>
+          )}
         </div>
         {tier === 'pro' ? (
           <Button
@@ -91,13 +119,13 @@ export function SubscriptionTab() {
           </Button>
         )}
       </div>
-      {billing && usage && (
+      {billing && view && (
         <CreditsSection
           billing={billing}
-          spentThisMonthMicros={usage.bySurface.reduce(
-            (sum, bucket) => sum + bucket.creditMicros,
-            0
-          )}
+          fieldRef={topUpField}
+          limitOpen={limitOpen}
+          onLimitOpenChange={setLimitOpen}
+          view={view}
         />
       )}
       <div className="mt-12 flex flex-col gap-3">

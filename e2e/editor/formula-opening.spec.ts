@@ -36,7 +36,7 @@ test('inline editing overlays its control without moving a formula near the line
       suffix: suffix.getBoundingClientRect().toJSON(),
     };
   });
-  await preview.click();
+  await preview.dblclick();
   const field = editor.locator('math-field:not([read-only])');
   await expect(field).toBeFocused();
   const after = await field.evaluate((el) => ({
@@ -81,7 +81,7 @@ test('a wrapped inline formula stays painted when opening and finishing editing'
   const preview = editor
     .getByRole('button', { exact: true, name: m.editor_equation() })
     .first();
-  await preview.click();
+  await preview.dblclick();
   const field = editor.locator('math-field:not([read-only])');
   const latex = '\\Delta G=\\Delta H-T\\Delta S+\\overline{x}+\\frac{a}{b}';
   await field.evaluate(

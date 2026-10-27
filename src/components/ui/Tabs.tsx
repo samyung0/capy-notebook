@@ -56,7 +56,9 @@ export function Tabs({
     <div
       className={cn(
         'scroll-fade-x flex w-full shrink-0 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-        bottomBorder && 'inset-shadow-[0_-1px_var(--color-divider)]',
+        // --divider itself: --color-divider resolves on the root, so it would
+        // miss a frosted panel's translucent divider.
+        bottomBorder && 'inset-shadow-[0_-1px_var(--divider)]',
         className
       )}
       ref={rowRef}

@@ -44,6 +44,7 @@ export function MaterialListItem({
   /** The hover ⋮; touch lists (the top Files drawer) leave it out. */
   menu?: boolean;
 }) {
+  const hoverMenu = menu && (!readOnly || canClone) && !generating;
   return (
     <div
       className={cn(
@@ -73,14 +74,15 @@ export function MaterialListItem({
         >
           {matRef.title}
         </span>
-        <StudyMark className={cn(menu && 'mr-6')} state={study?.state} />
+        <StudyMark hoverMenu={hoverMenu} state={study?.state} />
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
-      {menu && (!readOnly || canClone) && !generating && (
+      {hoverMenu && (
         <ContentActions
           canClone={canClone}
           chapters={chapters}
           color={color}
+          confirmInMenu
           content={toMaterialActionTarget(matRef)}
           display="hover"
           hoverClassName={cn(

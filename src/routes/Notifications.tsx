@@ -129,7 +129,7 @@ export default function Notifications() {
             <Link search={{ tab: 'notifications' }} to="/settings" />
           </IconButton>
         </div>
-        <div className="flex max-w-3xl flex-col">
+        <div className="flex max-w-7xl flex-col">
           {!data &&
             (fetchStatus === 'paused' ? (
               <QueryPausedState />

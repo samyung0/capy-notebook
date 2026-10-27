@@ -70,6 +70,7 @@ import {
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
+import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
@@ -309,9 +310,10 @@ function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   return (
     <div {...props}>
+      {/* The right gutter holds the comment-thread buttons on phones too. */}
       <div
         className={cn(
-          'mx-auto w-full px-5 sm:px-10',
+          'mx-auto w-full pr-10 pl-5 sm:pl-10',
           displayWidth === 'half' && 'md:max-w-3xl'
         )}
         data-note-content=""
@@ -1839,10 +1841,11 @@ export function NoteEditorCore({
                   </CollaborationHold>
                 </div>
                 <div
-                  className="min-h-0 flex-1 overflow-auto"
+                  className="relative min-h-0 flex-1 overflow-auto"
                   data-note-scroll=""
                   ref={setScrollArea}
                 >
+                  <NoteDisplayToggles />
                   <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
                     {/* The room replaces the projection copy the moment it syncs,
                      * so painting that copy first renders the whole document

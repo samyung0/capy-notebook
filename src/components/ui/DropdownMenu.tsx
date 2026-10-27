@@ -73,6 +73,15 @@ function DropdownMenuTrigger({
   );
 }
 
+/** Places the menu with no trigger, e.g. at a right-click point that moves
+ * with the content under it (BlockContextMenu). */
+function DropdownMenuAnchor(props: React.ComponentProps<typeof MenuAnchor>) {
+  const scope = useDropdownMenuScope();
+  return (
+    <MenuAnchor {...props} {...{ __scopeMenu: scope?.__scopeDropdownMenu }} />
+  );
+}
+
 function DropdownMenuContent({
   className,
   sideOffset = 4,
@@ -279,6 +288,7 @@ function DropdownMenuSubContent({
 
 export {
   DropdownMenu,
+  DropdownMenuAnchor,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,

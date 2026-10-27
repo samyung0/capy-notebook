@@ -5,8 +5,10 @@ import {
   type RefObject,
   useRef,
 } from 'react';
+import type { FrostPanel } from '@/api/types';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/cn';
+import { FrostedSurface, useFrosted } from '@/theme/theme';
 import { PhoneTopRow } from './Sidebar';
 
 /** The scrolling body of the page panel, the root that ListEnd watches. */
@@ -31,11 +33,13 @@ export function PagePanel({
   className?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const frosted = useFrosted('center');
   return (
     <div className={cn('flex h-full min-h-0 w-full flex-col', className)}>
       {/* The card clips, so the scrollbar follows its rounded corners. */}
       <Card
         className="min-h-0 w-full flex-1 overflow-hidden p-0 shadow-card sm:rounded-card-xl"
+        data-frosted={frosted || undefined}
         radius="button"
       >
         <section className={cn('relative h-full max-w-full', sectionClassName)}>
@@ -49,7 +53,7 @@ export function PagePanel({
             {header && <div className="shrink-0">{header}</div>}
             <div className="flex flex-1 flex-col items-stretch gap-2 p-0 pb-10">
               <PanelScrollRoot.Provider value={scrollRef}>
-                {children}
+                <FrostedSurface value={frosted}>{children}</FrostedSurface>
               </PanelScrollRoot.Provider>
             </div>
           </div>
@@ -59,21 +63,24 @@ export function PagePanel({
   );
 }
 /**
- * Body of a page without tabs (Dashboard, Workspaces, Files, the Learning
- * tables): the normal gutter (`page-px`), 20/24px under the header. A list
- * page's ListToolbar already spaces the list from the header, so
- * `belowToolbar` keeps only a small gap. For the body under a page's tabs see
- * TabContent.
+ * Body of a list or overview page (Dashboard, Workspaces, Question bank):
+ * the normal gutter (`page-px`), 20/24px under the header. A list page's
+ * ListToolbar already spaces the list from the header, so `belowToolbar`
+ * keeps only a small gap. `wide` takes the tab body's gutter
+ * (`page-px-wide`), for a list under a page's tabs (Files, Learning's All
+ * results); other tab bodies use TabContent.
  */
 export function PageBody({
   belowToolbar,
+  wide,
   className,
   ...props
-}: ComponentProps<'div'> & { belowToolbar?: boolean }) {
+}: ComponentProps<'div'> & { belowToolbar?: boolean; wide?: boolean }) {
   return (
     <div
       className={cn(
-        'page-px w-full shrink-0 grow pb-6',
+        'w-full shrink-0 grow pb-6',
+        wide ? 'page-px-wide' : 'page-px',
         belowToolbar ? 'pt-2' : 'pt-5 sm:pt-6',
         className
       )}
@@ -88,19 +95,21 @@ export function Panel({
   sectionClassName,
   scrollRef,
   as,
-  frosted,
+  frost,
 }: {
   children: ReactNode;
   className?: string;
   sectionClassName?: string;
-  /** Frosted over the page frame's paint, like the shell's sidebar. */
-  frosted?: boolean;
+  /** Which panel of the layout this is: it frosts over the page frame's
+   * paint when the Theme drawer picks that panel. */
+  frost?: FrostPanel;
   /** The scrolling element, e.g. an IntersectionObserver root. */
   scrollRef?: React.Ref<HTMLDivElement>;
   scroll?: boolean;
   as?: React.ElementType;
 }) {
   const El = as || 'section';
+  const frosted = useFrosted(frost);
   return (
     <Card
       asChild
@@ -116,7 +125,7 @@ export function Panel({
           )}
           ref={scrollRef}
         >
-          {children}
+          <FrostedSurface value={frosted}>{children}</FrostedSurface>
         </div>
       </El>
     </Card>

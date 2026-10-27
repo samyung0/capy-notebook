@@ -1,0 +1,33 @@
+File: api
+Build ID: d5f02a06f65514e3ac80faa9a875ee972655d829
+Type: inuse_space
+Time: 2026-10-24 23:05:27 JST
+Showing nodes accounting for 102.95MB, 82.70% of 124.48MB total
+Dropped 133 nodes (cum <= 0.62MB)
+Showing top 25 nodes out of 167
+      flat  flat%   sum%        cum   cum%
+   18.50MB 14.87% 14.87%       22MB 17.68%  encoding/json.(*decodeState).objectInterface
+   17.07MB 13.71% 28.58%    17.07MB 13.71%  bufio.NewWriterSize (inline)
+   13.57MB 10.90% 39.47%    13.57MB 10.90%  bufio.NewReaderSize
+   13.06MB 10.49% 49.97%    13.06MB 10.49%  github.com/samyung0/capy-notebook/server/internal/httpapi.(*channelBroker).register
+    5.01MB  4.02% 53.99%    35.51MB 28.53%  github.com/samyung0/capy-notebook/server/internal/store.materialItems
+    3.50MB  2.81% 56.80%     3.50MB  2.81%  net/textproto.readMIMEHeader
+    3.50MB  2.81% 59.61%     3.50MB  2.81%  encoding/hex.EncodeToString (inline)
+       3MB  2.41% 62.02%        3MB  2.41%  golang.org/x/sync/semaphore.(*Weighted).Acquire
+    2.50MB  2.01% 64.03%     2.50MB  2.01%  context.(*cancelCtx).propagateCancel
+       2MB  1.61% 65.64%        2MB  1.61%  reflect.mapassign_faststr0
+       2MB  1.61% 67.25%        2MB  1.61%  context.WithDeadlineCause
+    1.72MB  1.38% 68.63%     1.72MB  1.38%  runtime/pprof.StartCPUProfile
+    1.50MB  1.21% 69.84%     1.50MB  1.21%  net/http.(*Request).WithContext
+    1.50MB  1.21% 71.04%     1.50MB  1.21%  github.com/getsentry/sentry-go.(*Span).SetData
+    1.50MB  1.21% 72.25%     2.50MB  2.01%  github.com/go-jose/go-jose/v3/json.Unmarshal
+    1.50MB  1.21% 73.45%    14.01MB 11.26%  net/http.(*conn).readRequest
+    1.50MB  1.21% 74.66%    18.56MB 14.91%  github.com/samyung0/capy-notebook/server/internal/httpapi.(*api).stream
+    1.50MB  1.21% 75.86%     1.50MB  1.21%  encoding/json.(*decodeState).literalStore
+    1.50MB  1.21% 77.07%     1.50MB  1.21%  encoding/json.unquote (inline)
+    1.50MB  1.21% 78.27%     2.50MB  2.01%  encoding/json.(*decodeState).literalInterface
+    1.50MB  1.21% 79.48%    28.01MB 22.50%  encoding/json.(*decodeState).object
+    1.01MB  0.81% 80.29%     1.01MB  0.81%  bytes.(*Buffer).String
+       1MB   0.8% 81.09%     1.50MB  1.21%  github.com/danielgtaylor/huma/v2.schemaFromType
+       1MB   0.8% 81.90%        2MB  1.61%  github.com/danielgtaylor/huma/v2.(*mapRegistry).Schema
+       1MB   0.8% 82.70%        3MB  2.41%  github.com/clerk/clerk-sdk-go/v2/jwt.Verify

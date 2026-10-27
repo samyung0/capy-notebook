@@ -174,22 +174,6 @@ func mapHTTPError(err error) error {
 			}},
 		}
 	}
-	if errors.Is(err, store.ErrInvalidLLMKey) {
-		return &huma.ErrorModel{
-			Status: http.StatusBadRequest,
-			Title:  http.StatusText(http.StatusBadRequest),
-			Detail: "the provider rejected this key",
-			Errors: []*huma.ErrorDetail{{Message: "invalid_llm_key"}},
-		}
-	}
-	if errors.Is(err, store.ErrLLMKeyFailed) {
-		return &huma.ErrorModel{
-			Status: http.StatusBadRequest,
-			Title:  http.StatusText(http.StatusBadRequest),
-			Detail: "Something went wrong, please double check if the key is valid",
-			Errors: []*huma.ErrorDetail{{Message: "llm_key_failed"}},
-		}
-	}
 	var busy *providerBusyError
 	if errors.As(err, &busy) {
 		return &huma.ErrorModel{
@@ -202,9 +186,6 @@ func mapHTTPError(err error) error {
 				Value: map[string]any{"retryAfterSeconds": busy.retryAfter()},
 			}},
 		}
-	}
-	if errors.Is(err, store.ErrLLMCredentialsUnavailable) {
-		return huma.Error503ServiceUnavailable("key storage is not configured")
 	}
 	if errors.Is(err, store.ErrModelUnavailable) {
 		return &huma.ErrorModel{
@@ -607,6 +588,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerSourceUploads(api)
 	a.registerGenerate(api)
 	a.registerMaterials(api)
+	a.registerOpens(api)
 	a.registerQuizzes(api)
 	a.registerFlashcards(api)
 	a.registerStudy(api)

@@ -299,12 +299,17 @@ export function MathField({
   return (
     <span
       className={cn(
-        'relative inline-block max-w-full align-baseline outline-2 outline-action-accent -outline-offset-2 [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(virtual-keyboard-toggle)]:hidden',
+        'relative inline-block max-w-full rounded-sm align-baseline outline-2 outline-action-accent outline-offset-2 [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(virtual-keyboard-toggle)]:hidden',
         !onControlsReady &&
           !displayMode &&
           'z-10 -my-2 -mr-10.5 -ml-2 py-2 pr-10.5 pl-2',
+        // Its controls in a toolbar: the field, a touch taller than a tight
+        // line, still leaves the line's height alone.
+        onControlsReady && !displayMode && '-my-1',
+        // Centred in its height, as the formula's button centres it, so
+        // opening it does not move the formula.
         displayMode
-          ? 'block min-h-14 text-center [&_math-field::part(container)]:px-6 [&_math-field::part(container)]:py-4 [&_math-field::part(content)]:justify-center [&_math-field]:block'
+          ? 'flex min-h-14 flex-col justify-center text-center [&_math-field::part(container)]:px-6 [&_math-field::part(container)]:py-4 [&_math-field::part(content)]:justify-center [&_math-field]:block'
           : '[&_math-field::part(container)]:p-0'
       )}
       contentEditable={false}
@@ -314,8 +319,12 @@ export function MathField({
       {!onControlsReady && (
         <span
           className={cn(
-            'absolute top-1/2 right-2 flex -translate-y-1/2 flex-col gap-0.5',
-            !displayMode && 'rounded bg-surface'
+            'absolute right-2 flex -translate-y-1/2 flex-col gap-0.5',
+            displayMode
+              ? 'top-1/2'
+              : // A pixel up to sit on the formula's line; frosted pages keep
+                // the blur the block field shows while still covering text.
+                'top-[calc(50%-1px)] rounded bg-surface frosted:bg-transparent frosted:backdrop-blur-sm'
           )}
         >
           {displayMode && (

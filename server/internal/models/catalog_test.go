@@ -78,9 +78,6 @@ func TestEliteLLMProvidersPlatformEnv(t *testing.T) {
 		t.Fatal(catalog.CredentialEnv("anthropic"))
 	}
 	// GLM-5.3-Flash is served through OpenRouter (decision 2026-10-21).
-	if IsFirstPartyProvider("zai") {
-		t.Fatal("zai is served through OpenRouter and holds no user key")
-	}
 	if catalog.CredentialEnv("zai") != "OPENROUTER_API_KEY" {
 		t.Fatal(catalog.CredentialEnv("zai"))
 	}
@@ -111,7 +108,7 @@ func TestParseEliteLLMProvidersRejectsDuplicatesAndEmpty(t *testing.T) {
 	_, err = parseEliteLLMProviders([]byte(`{
 		"schemaVersion": 1,
 		"providers": {
-			"openai": {"name":"OpenAI","byok":true,"platformEnv":"OPENAI_API_KEY","thinking":["instant"]}
+			"openai": {"name":"OpenAI","platformEnv":"OPENAI_API_KEY","thinking":["instant"]}
 		}
 	}`))
 	if err != nil {
@@ -120,7 +117,7 @@ func TestParseEliteLLMProvidersRejectsDuplicatesAndEmpty(t *testing.T) {
 	_, err = parseEliteLLMProviders([]byte(`{
 		"schemaVersion": 1,
 		"providers": {
-			"openai": {"name":"OpenAI","modes":["chat"],"byok":true,"platformEnv":"OPENAI_API_KEY","thinking":["instant"]}
+			"openai": {"name":"OpenAI","modes":["chat"],"platformEnv":"OPENAI_API_KEY","thinking":["instant"]}
 		}
 	}`))
 	if err == nil {

@@ -20,7 +20,7 @@ pytestmark = pytest.mark.integration
 _CHAT_PARAMS = '{"temperature":0.3}'
 _LLM_COLS = """
                 version, provider_name, model_name, provider_slug, model_slug,
-                platform_enabled, byok_enabled, context_window_tokens,
+                context_window_tokens,
                 thinking_levels, default_thinking, params, slots,
                 micros_per_input_token, micros_per_output_token,
                 micros_per_cached_input_token, enabled, is_default_for
@@ -92,7 +92,7 @@ def test_embedding_rows_are_frozen(_test_infra):
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                     1, 'Ghost', 'Ghost', 'deepinfra', 'ghost',
-                    true, false, 0, ARRAY[]::text[], '',
+                    0, ARRAY[]::text[], '',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}}'::jsonb,
                     ARRAY['retrieval'],
                     50, 50, 0, false, ARRAY[]::text[])
@@ -104,7 +104,7 @@ def test_embedding_rows_are_frozen(_test_infra):
             f"""
             INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                 1, 'Chat', 'Disable', 'deepseek', %s,
-                true, false, 100000, {_LLM_THINKING}, %s::jsonb, ARRAY['chat'],
+                100000, {_LLM_THINKING}, %s::jsonb, ARRAY['chat'],
                 250, 1000, 250, true, ARRAY[]::text[])
             """,
             (chat_slug, _CHAT_PARAMS),
@@ -138,7 +138,7 @@ def test_embedding_rows_are_frozen(_test_infra):
             f"""
             INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                 1, 'Lock', 'Embed', 'embedtest', %s,
-                true, false, 0, ARRAY[]::text[], '',
+                0, ARRAY[]::text[], '',
                 '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_other_1"}}'::jsonb,
                 ARRAY['retrieval'],
                 50, 50, 0, true, ARRAY[]::text[])
@@ -165,7 +165,7 @@ def test_embedding_rows_are_frozen(_test_infra):
             )
 
 
-def test_credit_rates_zero_only_for_byok(_test_infra):
+def test_credit_rates_are_required(_test_infra):
     import psycopg
 
     with psycopg.connect(_test_infra, autocommit=True) as conn:
@@ -175,36 +175,10 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                     1, 'Zero', 'Platform', 'deepseek', %s,
-                    true, false, 100000, {_LLM_THINKING}, %s::jsonb, ARRAY['chat'],
+                    100000, {_LLM_THINKING}, %s::jsonb, ARRAY['chat'],
                     0, 0, 0, true, ARRAY[]::text[])
                 """,
                 (bad, _CHAT_PARAMS),
-            )
-        byok = f"zero-byok-{secrets.token_hex(4)}"
-        conn.execute(
-            f"""
-            INSERT INTO model_configs ({_LLM_COLS}) VALUES (
-                1, 'Zero', 'BYOK', 'openai', %s,
-                false, true, 100000, {_LLM_THINKING}, %s::jsonb, ARRAY['chat'],
-                0, 0, 0, true, ARRAY[]::text[])
-            """,
-            (byok, _CHAT_PARAMS),
-        )
-        conn.execute(
-            "DELETE FROM model_configs WHERE provider_slug='openai' AND model_slug=%s",
-            (byok,),
-        )
-
-        hybrid = f"zero-hybrid-{secrets.token_hex(4)}"
-        with pytest.raises(psycopg.Error):
-            conn.execute(
-                f"""
-                INSERT INTO model_configs ({_LLM_COLS}) VALUES (
-                    1, 'Zero', 'Hybrid', 'deepseek', %s,
-                    true, true, 100000, {_LLM_THINKING}, %s::jsonb, ARRAY['chat'],
-                    0, 0, 0, true, ARRAY[]::text[])
-                """,
-                (hybrid, _CHAT_PARAMS),
             )
         vision = f"zero-vision-{secrets.token_hex(4)}"
         with pytest.raises(psycopg.Error):
@@ -212,7 +186,7 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                     1, 'Zero', 'Vision', 'zai', %s,
-                    true, false, 100000, ARRAY[]::text[], '',
+                    100000, ARRAY[]::text[], '',
                     '{{}}'::jsonb, ARRAY['captioning'],
                     0, 0, 0, true, ARRAY[]::text[])
                 """,
@@ -224,7 +198,7 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                     1, 'Embed', 'In0', 'deepinfra', %s,
-                    true, false, 0, ARRAY[]::text[], '',
+                    0, ARRAY[]::text[], '',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_in0"}}'::jsonb,
                     ARRAY['retrieval'],
                     0, 0, 0, true, ARRAY[]::text[])
@@ -236,7 +210,7 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
             f"""
             INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                 1, 'Embed', 'Out0', 'embedtest', %s,
-                true, false, 0, ARRAY[]::text[], '',
+                0, ARRAY[]::text[], '',
                 '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_out0"}}'::jsonb,
                 ARRAY['retrieval'],
                 50, 0, 0, true, ARRAY[]::text[])
@@ -259,7 +233,7 @@ def test_llm_rows_require_thinking(_test_infra):
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                     1, 'No', 'Think', 'deepseek', %s,
-                    true, false, 100000, ARRAY[]::text[], '',
+                    100000, ARRAY[]::text[], '',
                     '{{}}'::jsonb, ARRAY['chat'],
                     250, 1000, 250, true, ARRAY[]::text[])
                 """,
@@ -271,7 +245,7 @@ def test_llm_rows_require_thinking(_test_infra):
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                     1, 'Wrong', 'Default', 'deepseek', %s,
-                    true, false, 100000,
+                    100000,
                     ARRAY['low','mid']::text[], 'high',
                     '{{}}'::jsonb, ARRAY['chat'],
                     250, 1000, 250, true, ARRAY[]::text[])
@@ -284,7 +258,7 @@ def test_llm_rows_require_thinking(_test_infra):
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                     1, 'Embed', 'Think', 'deepinfra', %s,
-                    true, false, 0, ARRAY['instant']::text[], 'instant',
+                    0, ARRAY['instant']::text[], 'instant',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_think"}}'::jsonb,
                     ARRAY['retrieval'],
                     50, 50, 0, true, ARRAY[]::text[])

@@ -12,7 +12,10 @@ for (const inDialog of [false, true]) {
     if (inDialog) {
       // The rail's gear (its aria-label); the empty viewer's quick action shares
       // the name as text and appears once the recent files load.
-      await page.getByLabel(m.workspace_settings(), { exact: true }).click();
+      await page
+        .getByLabel(m.workspace_settings(), { exact: true })
+        .first()
+        .click();
       await expect(page.getByRole('dialog')).toBeVisible();
     }
 

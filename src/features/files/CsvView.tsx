@@ -189,7 +189,7 @@ function HeaderCell({
   return (
     <th
       aria-sort={ariaSort(direction)}
-      className="sticky top-0 z-1 border-line bg-page p-0 text-left font-medium first:*:pl-5 last:border-r"
+      className="sticky top-0 z-1 border-line bg-page frosted:bg-black/4 p-0 text-left font-medium frosted:backdrop-blur-md first:*:pl-5 last:border-r dark:frosted:bg-white/5"
     >
       <button
         className={cn(

@@ -21,22 +21,23 @@ import {
   useFile,
   useMaterial,
   useMaterials,
+  useRecordOpen,
   useWorkspaceRecent,
 } from '@/api/hooks';
 import type {
   Chapter,
   Material,
+  MaterialListItem,
   MaterialPage,
   Provenance,
   Region,
   UserColor,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
-import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
+import { PreviewCard } from '@/components/app/PreviewCard';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
 import { Button } from '@/components/ui/Button';
-import { FileIcon } from '@/components/ui/FileIcon';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
@@ -79,6 +80,7 @@ import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
+import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
@@ -90,6 +92,7 @@ import {
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { iconUrl } from '@/lib/icon-catalog';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
@@ -150,11 +153,6 @@ const StudyPage = lazy(() =>
     default: mod.StudyPage,
   }))
 );
-const PlanPage = lazy(() =>
-  import('@/features/study/plans/PlanPage').then((mod) => ({
-    default: mod.PlanPage,
-  }))
-);
 type PreviewComponent =
   | typeof LazyMaterialPreview
   | typeof import('./MaterialPreview').MaterialPreview;
@@ -189,7 +187,7 @@ export function CenterContent({
   onOpenItem?: (item: OpenItem) => void;
   /** Opens the Study page; a quick action when no file is open. */
   onOpenProgress?: () => void;
-  /** Shows this plan while no file is open. */
+  /** The Study page's picked plan. */
   plan?: string;
   /** Shows the Study page while no file is open. */
   study?: boolean;
@@ -243,6 +241,15 @@ export function CenterContent({
     if (item && requestedMode) saveDocumentMode(item, requestedMode);
   }, [item?.kind, item?.id, requestedMode]);
 
+  // Each open orders Recent Files and the quick open (the hook sends at most
+  // one per item per few minutes).
+  const recordOpen = useRecordOpen();
+  const openKind = item?.kind;
+  const openId = item?.id;
+  useEffect(() => {
+    if (openKind && openId) recordOpen({ id: openId, kind: openKind });
+  }, [openKind, openId, recordOpen]);
+
   const changeMaterialMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
     setPresence(null);
@@ -283,8 +290,10 @@ export function CenterContent({
                   <FileMenuShown.Provider value={setMenuShown}>
                     <div
                       className={cn(
-                        'flex min-h-0 flex-1 flex-col bg-surface',
-                        isFullscreen && 'fixed inset-0 z-40'
+                        // Only fullscreen needs its own fill; in the panel the
+                        // panel's shows through, frosted or not.
+                        'flex min-h-0 flex-1 flex-col',
+                        isFullscreen && 'fixed inset-0 z-40 bg-surface'
                       )}
                     >
                       <Header
@@ -380,16 +389,17 @@ export function CenterContent({
   );
 }
 
-/** The kind a cached Files page list gives a standalone material, so a read
- * that fails can still name it. */
+/** The kind a cached material list (a Files page or the quick open) gives a
+ * standalone material, so a read that fails can still name it. */
 function listedKind(queryClient: QueryClient, id: string) {
-  for (const [, data] of queryClient.getQueriesData<InfiniteData<MaterialPage>>(
-    { queryKey: qk.ownedMaterialsRoot }
-  )) {
-    for (const page of data?.pages ?? []) {
-      const hit = page.items.find((item) => item.id === id);
-      if (hit) return hit.kind;
-    }
+  for (const [, data] of queryClient.getQueriesData<
+    InfiniteData<MaterialPage> | MaterialListItem[]
+  >({ queryKey: qk.ownedMaterialsRoot })) {
+    const rows = Array.isArray(data)
+      ? data
+      : (data?.pages.flatMap((page) => page.items) ?? []);
+    const hit = rows.find((item) => item.id === id);
+    if (hit) return hit.kind;
   }
 }
 
@@ -604,7 +614,7 @@ function MaterialContentBody({
       <div className="h-full min-h-0 overflow-auto">
         <TabContent fill>
           <QuizEditor
-            action={<StudyLink kind="quiz" materialId={materialId} />}
+            action={<StudyButton kind="quiz" materialId={materialId} />}
             key={materialId}
             onPresenceChange={onPresenceChange}
             onStatusChange={onEditorStatusChange}
@@ -626,7 +636,9 @@ function MaterialContentBody({
           <TabContent centered={centerQuiz}>
             {activeMode === 'edit' ? (
               <LiveFlashcards
-                action={<StudyLink kind="flashcards" materialId={materialId} />}
+                action={
+                  <StudyButton kind="flashcards" materialId={materialId} />
+                }
                 onPresenceChange={onPresenceChange}
                 onStatusChange={onEditorStatusChange}
                 setId={materialId}
@@ -634,7 +646,9 @@ function MaterialContentBody({
               />
             ) : (
               <LiveSetGrid
-                action={<StudyLink kind="flashcards" materialId={materialId} />}
+                action={
+                  <StudyButton kind="flashcards" materialId={materialId} />
+                }
                 material={material}
                 openCardId={target}
               />
@@ -696,7 +710,8 @@ function MaterialContentBody({
       {readOnlyStrip}
       <div className="min-h-0 flex-1">
         {activeMode === 'view' && (
-          <div className="h-full min-h-0 overflow-auto">
+          <div className="relative h-full min-h-0 overflow-auto">
+            {material.kind === 'note' && <NoteDisplayToggles />}
             {material.kind === 'quiz' ? (
               <QuizPreview
                 content={material.content}
@@ -859,9 +874,9 @@ function QuizPreview({
   const questions = useLiveQuizQuestions(quizId, stored);
   return (
     <TabContent fill>
-      <div className="mb-7 flex items-baseline gap-4">
+      <div className="mb-7 flex items-center gap-4">
         <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
-        <StudyLink kind="quiz" materialId={quizId} />
+        <StudyButton kind="quiz" materialId={quizId} />
       </div>
       <QuizQuestionList disabled questions={questions} />
       <SourcesLine
@@ -873,7 +888,7 @@ function QuizPreview({
 }
 
 /** Study: a quiz's attempt or a set's study session, in View and Edit. */
-function StudyLink({
+function StudyButton({
   kind,
   materialId,
 }: {
@@ -882,8 +897,8 @@ function StudyLink({
 }) {
   const navigate = useNavigate();
   return (
-    <TitleAction
-      label={m.action_study()}
+    <Button
+      className="shrink-0"
       onClick={() =>
         kind === 'quiz'
           ? navigate({
@@ -895,28 +910,11 @@ function StudyLink({
               to: '/flashcards/$flashcardSetId',
             })
       }
-    />
-  );
-}
-
-/** The material's one study action, set on the title's baseline at the far
- * right of the reading column. */
-function TitleAction({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm font-semibold text-sm text-tint-accent-1-fg underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-2 focus-visible:ring-action"
-      onClick={onClick}
-      type="button"
+      size="md"
+      variant="dark"
     >
-      {label}
-      <Icon className="size-4 -translate-y-px" name="arrowRight" />
-    </button>
+      {m.action_study()}
+    </Button>
   );
 }
 
@@ -953,9 +951,11 @@ function EmptyCenter({
     <>
       <div
         className={cn(
-          'flex h-12 items-center gap-1 border-divider border-b sm:h-15 sm:gap-2',
+          'flex h-12 items-center gap-1 border-divider border-b sm:h-15',
           // Workspace buttons at the edges sit as far in as a file header's.
-          leading ? 'px-2' : 'px-2 sm:px-4'
+          leading ? 'px-3' : 'px-2 sm:px-4',
+          // As in a file header: the title pill's padding spaces it.
+          !(leading && oneColumn) && 'sm:gap-2'
         )}
         data-slot="center-header"
       >
@@ -966,8 +966,17 @@ function EmptyCenter({
           </>
         )}
         {oneColumn && (
-          <h2 className="t-body min-w-0 font-semibold">
+          // Pulled in to a 10px ink gap after the back arrow, as in a file's.
+          <h2
+            className={cn('t-body min-w-0 font-semibold', leading && '-ml-2')}
+          >
             <FilesTitleButton chrome={oneColumn}>
+              {/* Sized as an open file's icon in the same spot. */}
+              <img
+                alt=""
+                className="size-4.5 shrink-0 rounded-[4px] md:size-5"
+                src={iconUrl(oneColumn.workspaceIconId)}
+              />
               <span className="min-w-0 truncate">
                 {oneColumn.workspaceName}
               </span>
@@ -999,15 +1008,11 @@ function EmptyCenter({
       {(plan || study) && workspaceId && onOpenItem ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <Suspense fallback={null}>
-            {plan ? (
-              <PlanPage
-                onOpenItem={onOpenItem}
-                planId={plan}
-                workspaceId={workspaceId}
-              />
-            ) : (
-              <StudyPage onOpenItem={onOpenItem} workspaceId={workspaceId} />
-            )}
+            <StudyPage
+              onOpenItem={onOpenItem}
+              planId={plan}
+              workspaceId={workspaceId}
+            />
           </Suspense>
         </div>
       ) : (
@@ -1071,7 +1076,7 @@ function QuickActions({
         size="sm"
         variant="ghost-muted"
       >
-        {m.workspace_tab_study()}
+        {m.workspace_study_plan()}
       </Button>
     </div>
   );
@@ -1129,11 +1134,11 @@ function RecentInWorkspace({
 function AddFileCard({ onClick }: { onClick: () => void }) {
   return (
     <button
-      className="cursor-pointer rounded-[15px] p-1 outline-none focus-visible:ring-2 focus-visible:ring-action"
+      className="cursor-pointer rounded-[calc(var(--radius-tile)+1px)] p-1 outline-none focus-visible:ring-2 focus-visible:ring-action"
       onClick={onClick}
       type="button"
     >
-      <span className="flex aspect-[16/10] flex-col items-center justify-center gap-2 rounded-[13px] text-fg-muted transition-colors hover:bg-surface-hover-bg">
+      <span className="flex aspect-[16/10] flex-col items-center justify-center gap-2 rounded-[calc(var(--radius-tile)-1px)] text-fg-muted transition-colors hover:bg-surface-hover-bg">
         <Icon name="plus" size={20} />
         <span className="t-meta">{m.action_add_file()}</span>
       </span>
@@ -1141,8 +1146,7 @@ function AddFileCard({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** A borderless card: the preview, then the kind icon and title. No hint
- * line or pill, so the grid stays quiet beside the empty viewer. */
+/** A Recent Files card: the shared preview card as a link to the item. */
 function QuickOpenCard({
   item,
   workspaceId,
@@ -1150,28 +1154,22 @@ function QuickOpenCard({
   item: RecentItem;
   workspaceId: string;
 }) {
-  const icon = recentIcon(item);
   return (
-    <Link
-      className="flex min-w-0 flex-col gap-1.5 rounded-[15px] p-1 outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action"
-      params={{ workspaceId }}
-      preload="intent"
-      search={
-        item.kind === 'material' ? { material: item.id } : { file: item.id }
-      }
-      to="/workspaces/$workspaceId"
+    <PreviewCard
+      asChild
+      icon={recentIcon(item)}
+      thumbnail={recentThumbnail(item)}
+      title={item.title}
     >
-      <ThumbnailPanel
-        dense
-        icon={icon}
-        {...recentThumbnail(item)}
-        pill={undefined}
+      <Link
+        params={{ workspaceId }}
+        preload="intent"
+        search={
+          item.kind === 'material' ? { material: item.id } : { file: item.id }
+        }
+        to="/workspaces/$workspaceId"
       />
-      <span className="flex min-w-0 items-center gap-1.5 px-1 pb-0.5">
-        <FileIcon className="size-3.5 shrink-0" name={icon} />
-        <span className="truncate text-[13px] leading-tight">{item.title}</span>
-      </span>
-    </Link>
+    </PreviewCard>
   );
 }
 

@@ -17,11 +17,7 @@ export function addSourceMenuItems(
       label: m.action_new_file(),
       onClick: () => onAddSource('create'),
     },
-    {
-      icon: 'sparkles',
-      label: m.generate_ai(),
-      onClick: () => onAddSource('generate'),
-    },
+    // TODO: refine with agentic harness. AI generate is hidden until then.
     ...(onAddChapter
       ? [
           {

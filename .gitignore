@@ -101,6 +101,8 @@ test-results/
 bench/editor/.results/
 bench/collaboration/.results/
 bench/share-pages/.results/
+bench/gateway/.results/
+bench/gateway/.tls/
 blob-report/
 playwright/.cache/
 e2e/uat/report/

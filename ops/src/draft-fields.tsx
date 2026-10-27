@@ -50,7 +50,6 @@ export function applyProvider(
     : (nextLevels[0] ?? '');
   return {
     ...draft,
-    byokEnabled: provider.byok ? draft.byokEnabled : false,
     defaultThinking,
     providerName: draft.providerName || provider.name,
     providerSlug: provider.slug,
@@ -195,48 +194,6 @@ export function DraftFields({
           Exact provider model id. DeepInfra is only valid for
           Qwen/Qwen3-Embedding-4B.
         </p>
-      </div>
-      <div className="space-y-2">
-        <span className="font-medium text-sm">Serving</span>
-        <Label
-          className="flex items-center gap-2 text-sm"
-          htmlFor={`${idPrefix}-platform-enabled`}
-        >
-          <Checkbox
-            checked={draft.platformEnabled}
-            disabled={embedding}
-            id={`${idPrefix}-platform-enabled`}
-            onCheckedChange={(checked) =>
-              setDraft((current) => ({
-                ...current,
-                platformEnabled: checked === true,
-              }))
-            }
-          />
-          Platform
-          {provider ? (
-            <span className="text-muted-foreground">
-              ({provider.platformEnv})
-            </span>
-          ) : null}
-        </Label>
-        <Label
-          className="flex items-center gap-2 text-sm"
-          htmlFor={`${idPrefix}-byok-enabled`}
-        >
-          <Checkbox
-            checked={draft.byokEnabled}
-            disabled={embedding || provider?.byok === false}
-            id={`${idPrefix}-byok-enabled`}
-            onCheckedChange={(checked) =>
-              setDraft((current) => ({
-                ...current,
-                byokEnabled: checked === true,
-              }))
-            }
-          />
-          BYOK
-        </Label>
       </div>
       <div className="space-y-2">
         <Label htmlFor={`${idPrefix}-context`}>Context window tokens</Label>

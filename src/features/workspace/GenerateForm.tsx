@@ -3,6 +3,7 @@ import {
   type Chapter,
   type DiagramType,
   type GenerateOptions,
+  type MaterialRef,
   QUESTION_TYPES,
   type QuestionType,
   type SourceFile,
@@ -10,10 +11,21 @@ import {
 import { Button } from '@/components/ui/Button';
 import { DialogFooter, DialogPrimary } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
+import { Menu } from '@/components/ui/Menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  selectTriggerVariants,
+} from '@/components/ui/Select';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
+import { GenerateSources, scopeOf, sourceGroups } from './GenerateSources';
 import {
   GENERATE_TITLE_MAX,
   nextGenerateTitle,
@@ -82,54 +94,17 @@ export function generateModeLabel(mode: GenerateMode): string {
   }
 }
 
-function Chip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      className={cn(
-        'rounded-full border px-2.5 py-1 font-medium text-xs transition-colors',
-        active
-          ? 'border-accent bg-action-accent text-action-accent-fg'
-          : 'border-line bg-surface text-fg-secondary hover:bg-surface-hover-bg'
-      )}
-      onClick={onClick}
-      type="button"
-    >
-      {children}
-    </button>
-  );
-}
+type Detail = 'brief' | 'standard' | 'detailed';
 
-function OptionRow({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: string[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <p className="t-label text-fg-muted">{label}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((o) => (
-          <Chip active={value === o} key={o} onClick={() => onChange(o)}>
-            {o}
-          </Chip>
-        ))}
-      </div>
-    </div>
-  );
+function detailLabel(detail: Detail): string {
+  switch (detail) {
+    case 'brief':
+      return m.generate_detail_brief();
+    case 'detailed':
+      return m.generate_detail_detailed();
+    case 'standard':
+      return m.generate_detail_standard();
+  }
 }
 
 /** How many questions or cards: Less makes 5, More 10 (Epo 2026-10-14). */
@@ -138,84 +113,108 @@ const AMOUNTS = [
   { count: 10, label: m.generate_amount_more },
 ];
 
-function AmountRow({
-  value,
-  onChange,
+/** One option: its label on the left, its control on the right. */
+function OptionRow({
+  label,
+  children,
 }: {
-  value: number;
-  onChange: (n: number) => void;
+  label: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <p className="t-label text-fg-muted">{m.generate_amount()}</p>
-      <div className="flex items-center gap-2">
-        {AMOUNTS.map(({ count, label }) => (
-          <Chip
-            active={value === count}
-            key={count}
-            onClick={() => onChange(count)}
-          >
-            {label({ count })}
-          </Chip>
-        ))}
-      </div>
+    <div className="flex items-center justify-between gap-3 py-2">
+      <p className="font-semibold text-fg-secondary">{label}</p>
+      {children}
     </div>
   );
 }
 
-/**
- * Config dialog for a single generate mode. State is local and short-lived —
- * the parent mounts this with `key={mode}` so each open starts fresh. On a
- * successful generate the parent closes the dialog and shows the result.
- *
- * Scope is dual: chapters (by id) and/or individual files (by id). Empty
- * scope means the whole workspace.
- */
+/** A single-choice option as a dropdown. */
+function OptionSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <OptionRow label={label}>
+      <Select onValueChange={(v) => onChange(v as T)} value={value}>
+        <SelectTrigger aria-label={label} layout="row">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </OptionRow>
+  );
+}
+
 /** The generate options for one kind, with Cancel and Generate; the Add
- * file dialog shows it under its kind tiles. */
+ * file dialog shows it under its kind tiles and mounts it with `key={mode}`,
+ * so each kind's options start fresh. */
 export function GenerateForm({
   mode,
   chapters,
   files,
+  materials,
   workspaceName,
   existingTitles,
+  picked,
+  onPickedChange,
   pending,
   onGenerate,
 }: {
   mode: GenerateMode;
   chapters: Chapter[];
   files: SourceFile[];
+  materials: MaterialRef[];
   workspaceName: string;
   existingTitles: string[];
+  /** The ticked sources, null for the whole workspace; kept by the panel
+   * so a pick survives switching kinds. */
+  picked: ReadonlySet<string> | null;
+  onPickedChange: (picked: ReadonlySet<string>) => void;
   pending: boolean;
   onGenerate: (opts: GenerateOptions) => Promise<unknown>;
 }) {
-  const [chapterScope, setChapterScope] = useState<string[]>([]);
-  const [fileScope, setFileScope] = useState<string[]>([]);
   const [title, setTitle] = useState(() =>
     nextGenerateTitle(mode, workspaceName, existingTitles)
   );
   const [count, setCount] = useState(5);
   const [types, setTypes] = useState<QuestionType[]>(['mcq', 'boolean']);
-  const [detail, setDetail] = useState<'brief' | 'standard' | 'detailed'>(
-    'standard'
-  );
+  const [detail, setDetail] = useState<Detail>('standard');
   const [diagramType, setDiagramType] = useState<DiagramType>('auto');
 
-  const readyFiles = files.filter((f) => f.indexed);
+  const groups = useMemo(
+    () => sourceGroups(chapters, files, materials),
+    [chapters, files, materials]
+  );
+  // Ticked items still listed: one trashed or no longer indexed since it
+  // was ticked drops out, so a pick never empties into the whole workspace.
+  const listed = groups.flatMap((g) => g.items.map((it) => it.id));
+  const sources = new Set(
+    picked ? listed.filter((id) => picked.has(id)) : listed
+  );
   const titleError = useMemo(
     () => validateGenerateTitle(title, existingTitles),
     [existingTitles, title]
   );
+  const ready =
+    !titleError && sources.size > 0 && (mode !== 'quiz' || types.length > 0);
 
   async function run() {
-    if (titleError) return;
-    if (mode === 'quiz' && !types.length) return;
-    const scope = {
-      chapters: chapterScope,
-      fileIds: fileScope,
-      title: title.trim(),
-    };
+    if (!ready) return;
+    const scope = { ...scopeOf(groups, sources), title: title.trim() };
     let opts: GenerateOptions;
     if (mode === 'flashcards') opts = { count, kind: 'flashcards', ...scope };
     else if (mode === 'quiz') opts = { count, kind: 'quiz', types, ...scope };
@@ -223,6 +222,18 @@ export function GenerateForm({
     else opts = { diagramType, kind: 'diagram', ...scope };
     await onGenerate(opts);
   }
+
+  const amount = (
+    <OptionSelect
+      label={m.generate_amount()}
+      onChange={(v) => setCount(Number(v))}
+      options={AMOUNTS.map(({ count, label }) => ({
+        label: label({ count }),
+        value: String(count),
+      }))}
+      value={String(count)}
+    />
+  );
 
   return (
     <>
@@ -244,119 +255,81 @@ export function GenerateForm({
           {titleError && <InputError>{titleError}</InputError>}
         </label>
 
-        <div className="flex flex-col gap-1.5">
-          <p className="t-label text-fg-muted">{m.generate_chapter_scope()}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {chapters.map((c) => (
-              <Chip
-                active={chapterScope.includes(c.id)}
-                key={c.id}
-                onClick={() =>
-                  setChapterScope((s) =>
-                    s.includes(c.id)
-                      ? s.filter((x) => x !== c.id)
-                      : [...s, c.id]
-                  )
-                }
-              >
-                {c.name}
-              </Chip>
-            ))}
-            {!chapters.length && (
-              <p className="t-meta text-fg-muted">{m.generate_no_chapters()}</p>
-            )}
-          </div>
-        </div>
+        <GenerateSources
+          groups={groups}
+          onChange={onPickedChange}
+          picked={sources}
+        />
 
-        <div className="flex flex-col gap-1.5">
-          <p className="t-label text-fg-muted">{m.generate_file_scope()}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {readyFiles.map((f) => (
-              <Chip
-                active={fileScope.includes(f.id)}
-                key={f.id}
-                onClick={() =>
-                  setFileScope((s) =>
-                    s.includes(f.id)
-                      ? s.filter((x) => x !== f.id)
-                      : [...s, f.id]
-                  )
+        <div className="flex flex-col divide-y divide-divider">
+          {(mode === 'quiz' || mode === 'flashcards') && amount}
+          {mode === 'quiz' && (
+            <OptionRow label={m.generate_question_types()}>
+              <Menu
+                align="end"
+                items={GENERATE_TYPES.map((t) => ({
+                  checked: types.includes(t),
+                  closeOnSelect: false,
+                  label: questionTypeLabel(t),
+                  onClick: () =>
+                    setTypes((s) =>
+                      s.includes(t) ? s.filter((x) => x !== t) : [...s, t]
+                    ),
+                }))}
+                trigger={
+                  <button
+                    aria-label={m.generate_question_types()}
+                    className={cn(
+                      selectTriggerVariants({ layout: 'row' }),
+                      // Grows with the picked types from sm, up to 320px.
+                      'group/select-trigger sm:w-auto sm:min-w-44 sm:max-w-80'
+                    )}
+                    type="button"
+                  >
+                    <span className="min-w-0 truncate">
+                      {types.length
+                        ? GENERATE_TYPES.filter((t) => types.includes(t))
+                            .map(questionTypeLabel)
+                            .join(', ')
+                        : m.generate_no_question_types()}
+                    </span>
+                    <Icon
+                      className="size-4 shrink-0 -translate-y-px text-fg-muted"
+                      name="chevronDown"
+                    />
+                  </button>
                 }
-              >
-                {f.name}
-              </Chip>
-            ))}
-            {!readyFiles.length && (
-              <p className="t-meta text-fg-muted">{m.generate_no_files()}</p>
-            )}
-          </div>
-          {!chapterScope.length && !fileScope.length && (
-            <p className="t-meta text-fg-muted">
-              {m.generate_nothing_selected()}
-            </p>
+              />
+            </OptionRow>
+          )}
+          {mode === 'mindmap' && (
+            <OptionSelect
+              label={m.common_detail()}
+              onChange={setDetail}
+              options={(['brief', 'standard', 'detailed'] as const).map(
+                (d) => ({ label: detailLabel(d), value: d })
+              )}
+              value={detail}
+            />
+          )}
+          {mode === 'diagram' && (
+            <OptionSelect
+              label={m.generate_diagram_type()}
+              onChange={setDiagramType}
+              options={DIAGRAM_TYPES.map((t) => ({
+                label: diagramTypeLabel(t),
+                value: t,
+              }))}
+              value={diagramType}
+            />
           )}
         </div>
-
-        {mode === 'flashcards' && (
-          <AmountRow onChange={setCount} value={count} />
-        )}
-        {mode === 'quiz' && (
-          <>
-            <AmountRow onChange={setCount} value={count} />
-            <div className="flex flex-col gap-1.5">
-              <p className="t-label text-fg-muted">
-                {m.generate_question_types()}
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {GENERATE_TYPES.map((t) => (
-                  <Chip
-                    active={types.includes(t)}
-                    key={t}
-                    onClick={() =>
-                      setTypes((s) =>
-                        s.includes(t) ? s.filter((x) => x !== t) : [...s, t]
-                      )
-                    }
-                  >
-                    {questionTypeLabel(t)}
-                  </Chip>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-        {mode === 'mindmap' && (
-          <OptionRow
-            label={m.common_detail()}
-            onChange={(v) => setDetail(v as typeof detail)}
-            options={['brief', 'standard', 'detailed']}
-            value={detail}
-          />
-        )}
-        {mode === 'diagram' && (
-          <div className="flex flex-col gap-1.5">
-            <p className="t-label text-fg-muted">{m.generate_diagram_type()}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {DIAGRAM_TYPES.map((t) => (
-                <Chip
-                  active={diagramType === t}
-                  key={t}
-                  onClick={() => setDiagramType(t)}
-                >
-                  {diagramTypeLabel(t)}
-                </Chip>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       <DialogFooter>
         <DialogPrimary pending={pending}>
           <Button
-            disabled={
-              pending || !!titleError || (mode === 'quiz' && !types.length)
-            }
+            disabled={pending || !ready}
             iconLeft={pending ? undefined : 'sparkles'}
             onClick={run}
             size="lg"

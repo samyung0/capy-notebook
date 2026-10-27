@@ -11,7 +11,7 @@ from typing import Any
 
 DEFAULTS: dict[str, Any] = {
     "mainFormat": "note",
-    "writingStyle": "normal",
+    "writingStyle": "brief",
     "quiz": "less",
     "flashcards": "off",
     "visualAids": "more",
@@ -113,7 +113,7 @@ def lines(saved: dict[str, Any] | None) -> list[str]:
         )
     return [
         MAIN_FORMAT.get(p["mainFormat"], MAIN_FORMAT["note"]),
-        WRITING.get(p["writingStyle"], WRITING["normal"]),
+        WRITING.get(p["writingStyle"], WRITING["brief"]),
         practice,
         *([CHECKS[checks]] if notes else []),
         VISUALS.get(p["visualAids"], VISUALS["more"]),

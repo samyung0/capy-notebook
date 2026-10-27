@@ -1,0 +1,495 @@
+/* ============================================================
+   STYLES: capy + fisheye  (light + dark)
+   Maps the semantic role tokens (TIER 2) onto primitives.
+   Each container role ships as a contrast PAIR/bundle
+   (bg + fg + fg-muted + border) so legibility survives the
+   style/theme switch. Components read ONLY these role tokens.
+   ============================================================ */
+
+:is([data-style="capy"], [data-style="fisheye"]) {
+  /* "Fustat" is the Office frame's own static faces (office-runtime.css);
+     "Fustat Fallback" is Arial sized to Fustat (fontFallbacks.css);
+     --font-cjk is cjkFont.css. */
+  --font-sans:
+    "Fustat Variable", "Fustat", "Fustat Fallback", var(--font-cjk), system-ui,
+    -apple-system, "Segoe UI", sans-serif;
+
+  /* Titles above 18px shrink on narrow screens with the notes' rule
+     (tailwind.css note-fs): at 360px wide a size keeps 16px plus half of
+     what it has above 16px, growing linearly to its full size at 768px.
+     Smaller sizes stay the same on every screen. */
+  --display-font-size: clamp(
+    2.0625rem,
+    calc(2.0625rem + 17 * (100vw - 360px) / 408),
+    3.125rem
+  );
+  --display-font-weight: 800;
+  --display-line-height: 1.15;
+  --display-letter-spacing: -0.02rem;
+
+  --page-title-font-size: clamp(
+    1.375rem,
+    calc(1.375rem + 6 * (100vw - 360px) / 408),
+    1.75rem
+  );
+  --page-title-font-weight: 800;
+  /* Titles keep the body's 1.45 they inherited while these names were
+     misspelled in the t-* utilities. */
+  --page-title-line-height: 1.45;
+  --page-title-letter-spacing: -0.02rem;
+
+  --large-card-title-font-size: clamp(
+    1.1875rem,
+    calc(1.1875rem + 3 * (100vw - 360px) / 408),
+    1.375rem
+  );
+  --large-card-title-font-weight: 800;
+  --large-card-title-line-height: 1.45;
+  --large-card-title-letter-spacing: normal;
+
+  --card-title-font-size: 1.125rem;
+  --card-title-font-weight: 700;
+  --card-title-line-height: 1.35;
+  --card-title-letter-spacing: normal;
+
+  --subtitle-font-size: 1rem;
+  --subtitle-font-weight: 600;
+  --subtitle-line-height: 1.45;
+
+  --body-font-size: 0.925rem;
+  --body-font-weight: 500;
+  --body-line-height: 1.45;
+
+  --meta-font-size: 0.825rem;
+  --meta-font-weight: 500;
+  --meta-line-height: 1.35;
+
+  --label-font-size: 0.6875rem;
+  --label-font-weight: 700;
+  --label-line-height: 1;
+  --label-letter-spacing: 0.06rem;
+}
+
+/* Capy's own shape: small radii and short controls. Fisheye (fisheye.css)
+   shares everything else in this file. */
+[data-style="capy"] {
+  --radius-input: 8px;
+  --radius-button: 8px;
+  --radius-button-lg: 10px;
+  --radius-button-xl: 10px;
+  --radius-tile: 10px;
+  /* Flashcards keep fisheye's rounder corner. */
+  --radius-flashcard: 24px;
+  --radius-card: 10px;
+  --radius-card-lg: 12px;
+  --radius-card-xl: 14px;
+
+  /* Control heights, phones first. --control-h is Button, Input and
+     Select md, so a button beside a field lines up. */
+  --button-h-sm: 28px;
+  --button-h-lg: 40px;
+  --control-h: 36px;
+}
+
+@media (min-width: 640px) {
+  [data-style="capy"] {
+    --button-h-lg: 44px;
+    --control-h: 40px;
+  }
+}
+
+/* ---------------- capy + fisheye · LIGHT ---------------- */
+:is([data-style="capy"], [data-style="fisheye"])[data-theme="latte"] {
+  /* Chart series, fixed order: the accent, then the dark themes' Catppuccin
+     hues darkened to 3:1 on white. Neighbours (and 6 -> 1, which pies wrap
+     onto) stay apart under protan/deutan simulation. */
+  --chart-1: var(--action-accent-bg);
+  --chart-2: #ca6816;
+  --chart-3: #269b7e;
+  --chart-4: #3a5f9e;
+  --chart-5: #b58f3c;
+  --chart-6: #cb6186;
+  --surface-page: #f7f7f7; /* outer "device" */
+  --surface-page-hover: #e6e9ea;
+  /* Grid card hover: lighter than page-hover, still a step under the canvas. */
+  --surface-item-hover: #eff1f1;
+  --surface-canvas: #f9fafa;
+  --surface-card-bg: #ffffff;
+  --surface-card-hover-bg: #f7f8f8;
+  --surface-card-dark-bg: #e6e9ea; /* dark card */
+  --surface-card-dark-hover-bg: #dfdfdf;
+
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #ffffff;
+  --surface-overlay-hover-bg: #f7f8f8;
+  --border-overlay: #d6d6d6;
+  --surface-field-bg: #ffffff;
+  --surface-field-disabled-bg: #f7f8f8;
+
+  --color-scrollbar: #afafaf;
+
+  /* Text roles */
+  --text-primary: #222222;
+  --text-secondary: #4b4b4b;
+  --text-muted: #6b6b6b;
+  --text-placeholder: #6b6b6b;
+  --text-link: #5b4aa8;
+  --selection-bg: #ece6f6; /* text + block selection */
+  --highlight-bg: #e4ecf8; /* highlight text mark */
+  --highlight-line: #8ec9f9;
+  --code-inline-bg: #ece6f6; /* inline code mark */
+  --code-inline-fg: #5b4aa8;
+  --kbd-bg: #f7f8f8; /* keyboard key mark */
+  --kbd-border: #d6d6d6;
+  /* Code block syntax colors */
+  --syntax-comment: #6b6b6b;
+  --syntax-keyword: #b8475a;
+  --syntax-string: #2e6bb0;
+  --syntax-constant: #5b4aa8;
+  --syntax-function: #2f7d56;
+  --syntax-builtin: #a9772a;
+  --text-link-hover: rgb(65, 51, 134);
+
+  /* Borders & lines */
+  --border-default: #d6d6d6;
+  --border-strong: #afafaf;
+  --divider: #e6e6e6;
+
+  /* Actions (pairs) */
+  --action-primary-bg: #222222;
+  --action-primary-fg: #ffffff;
+  --action-primary-hover: #000000;
+  --action-accent-bg: #8c7bd9;
+  --action-accent-fg: #ffffff;
+  --action-accent-hover: #7866cf;
+
+  /* Tinted containers (bg + fg) + solid signal color */
+  /* system colors */
+  --tint-success-bg: #e7f6ee;
+  --tint-success-fg: #2f7d56;
+  --tint-info-bg: #e4ecf8;
+  --tint-info-fg: #2e6bb0;
+  --tint-warning-bg: #f7f0e5;
+  --tint-warning-fg: #a9772a;
+  --tint-error-bg: #fdeaec;
+  --tint-error-fg: #b8475a;
+  --tint-accent-1-bg: #ece6f6;
+  --tint-accent-1-fg: #5b4aa8;
+  --tint-accent-dark-bg: #322a5c;
+  --tint-accent-dark-fg: #f7f7f7;
+  --tint-accent-2-bg: #e7f6ee;
+  --tint-accent-2-fg: #2f7d56;
+  --solid-accent-1: #8c7bd9;
+  --solid-accent-2: #7bd9ab;
+  --solid-success: #7bd9ab;
+  --solid-info: #8ec9f9;
+  --solid-warning: #ffcc61;
+  --solid-error: #f35a71;
+  /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
+  --tint-purple: #8c7bd9;
+  --tint-purple-fg: #ffffff;
+  --tint-green: #7bd9ab;
+  --tint-green-fg: #222222;
+  --tint-blue: #8ec9f9;
+  --tint-blue-fg: #222222;
+  --tint-amber: #f4c878;
+  --tint-amber-fg: #222222;
+  --tint-coral: #f49aa8;
+  --tint-coral-fg: #222222;
+  --tint-graphite: #2c302d;
+  --tint-graphite-fg: #ffffff;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.05), 0 16px 44px rgba(0, 0, 0, 0.07);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.14);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
+}
+
+/* ---------------- capy + fisheye · MOCHA (Catppuccin mocha) ---------------- */
+:is([data-style="capy"], [data-style="fisheye"])[data-theme="mocha"] {
+  /* Chart series, fixed order: the accent, then the light theme's hues in
+     Catppuccin's lighter register, 3:1 on cards and dialogs. Every pair stays
+     apart under protan/deutan simulation. */
+  --chart-1: var(--action-accent-bg);
+  --chart-2: #ea9344;
+  --chart-3: #6dd3c0;
+  --chart-4: #3c8dda;
+  --chart-5: #f1d589;
+  --chart-6: #d96d92;
+
+  /* Slate surfaces, one step darker than Frappe. */
+  --surface-page: #0d1219; /* outer "device" */
+  --surface-page-hover: #1a222d;
+  --surface-item-hover: #1a222d;
+  --surface-canvas: #080b10;
+  --surface-card-bg: #161d27;
+  --surface-card-hover-bg: #232c3a;
+  --surface-card-dark-bg: #222c3a; /* contrasting "heavy" card — lightens in dark mode */
+  --surface-card-dark-hover-bg: #334156;
+  --surface-topbar-bg: #1d2531;
+  --surface-topbar-fg: #e6e9ef;
+
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #1d2633;
+  --surface-overlay-hover-bg: #2c3748;
+  --border-overlay: #3f4d64;
+  --surface-field-bg: #121821;
+  --surface-field-disabled-bg: #1c2430;
+
+  --color-scrollbar: #3a4657;
+
+  /* Text roles */
+  --text-primary: #e6e9ef;
+  --text-secondary: #c0c8d4;
+  --text-muted: #9aa4b3;
+  --text-placeholder: #9aa4b3;
+  --text-link: #b4befe;
+  --selection-bg: #59547f; /* text + block selection */
+  --highlight-bg: #655534; /* highlight text mark */
+  --highlight-line: #f9e2af;
+  --code-inline-bg: #31334b; /* inline code mark */
+  --code-inline-fg: #d3c7fb;
+  --kbd-bg: #222c3a; /* keyboard key mark */
+  --kbd-border: #45546b;
+  /* Code block syntax colors */
+  --syntax-comment: #8f99a8;
+  --syntax-keyword: #df9fb1;
+  --syntax-string: #9eb9e5;
+  --syntax-constant: #c2c8f0;
+  --syntax-function: #b1d6ae;
+  --syntax-builtin: #ebddbd;
+  --text-link-hover: #c3cbfe;
+
+  /* Borders & lines */
+  --border-default: #323e52;
+  --border-strong: #3a4657;
+  --divider: rgba(255, 255, 255, 0.07);
+
+  /* Actions (pairs) — near-black primary inverts to a dimmed white */
+  --action-primary-bg: #cdd4de;
+  --action-primary-fg: #0d1219;
+  --action-primary-hover: #dde2e9;
+  --action-accent-bg: #b5a1f8;
+  --action-accent-fg: #2b2c41;
+  --action-accent-hover: #c4b4f9;
+
+  /* Tinted containers (bg + fg) + solid signal color */
+  /* system colors */
+  --tint-success-bg: #2e3f3c;
+  --tint-success-fg: #a6e3a1;
+  --tint-info-bg: #2a374b;
+  --tint-info-fg: #89b4fa;
+  --tint-warning-bg: #423c2e;
+  --tint-warning-fg: #f9e2af;
+  --tint-error-bg: #3c303d;
+  --tint-error-fg: #f38ba8;
+  --tint-accent-1-bg: #31334b;
+  --tint-accent-1-fg: #c8b8fa;
+  --tint-accent-dark-bg: #56527b;
+  --tint-accent-dark-fg: #f6f4fe;
+  --tint-accent-2-bg: #2e3f3c;
+  --tint-accent-2-fg: #a6e3a1;
+  --solid-accent-1: #b5a1f8;
+  --solid-accent-2: #a6e3a1;
+  --solid-success: #a6e3a1;
+  --solid-info: #89b4fa;
+  --solid-warning: #f9e2af;
+  --solid-error: #f38ba8;
+  /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
+  --tint-purple: #b5a1f8;
+  --tint-purple-fg: #2b2c41;
+  --tint-green: #a6e3a1;
+  --tint-green-fg: #2f3b36;
+  --tint-blue: #89b4fa;
+  --tint-blue-fg: #293248;
+  --tint-amber: #f9e2af;
+  --tint-amber-fg: #3f3b39;
+  --tint-coral: #eba0ac;
+  --tint-coral-fg: #3d2e38;
+  --tint-graphite: #5b6b82;
+  --tint-graphite-fg: #f5f6fa;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
+  --tint-graphite-dark: #222c3a;
+  --tint-graphite-dark-fg: #e6e9ef;
+
+  /* Sticky-note surfaces */
+  --note-green-bg: #41584c;
+  --note-green-fg: #c1ebbd;
+  --note-green-fg-muted: rgba(193, 235, 189, 0.66);
+  --note-purple-bg: #49476a;
+  --note-purple-fg: #d3c7fb;
+  --note-purple-fg-muted: #cbbdfa;
+  --note-green-soft-bg: #2e3f3c;
+  --note-green-soft-fg: #a6e3a1;
+  --note-purple-soft-bg: #31334b;
+  --note-purple-soft-fg: #b5a1f8;
+
+  /* Shadows — dark themes rely on surface contrast; keep shadows soft */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 48px rgba(0, 0, 0, 0.65);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+/* ---------------- capy + fisheye · FRAPPÉ (lighter Mocha) ---------------- */
+:is([data-style="capy"], [data-style="fisheye"])[data-theme="frappe"] {
+  /* Violet accent on neutral slate surfaces; other accents from Mocha. */
+  /* Chart series: same as Mocha. */
+  --chart-1: var(--action-accent-bg);
+  --chart-2: #ea9344;
+  --chart-3: #6dd3c0;
+  --chart-4: #3c8dda;
+  --chart-5: #f1d589;
+  --chart-6: #d96d92;
+
+  /* Slate surfaces: dark page, gray-800 cards, lighter heavy cards. */
+  --surface-page: #141a23; /* outer "device" */
+  --surface-page-hover: #232d3b;
+  --surface-item-hover: #232d3b;
+  --surface-canvas: #0e131a;
+  --surface-card-bg: #1f2937;
+  --surface-card-hover-bg: #2e3b4f;
+  --surface-card-dark-bg: #2f3e52; /* contrasting "heavy" card — lightens in dark mode */
+  --surface-card-dark-hover-bg: #405370;
+  --surface-topbar-bg: #263244;
+  --surface-topbar-fg: #eef1f5;
+
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #273447;
+  --surface-overlay-hover-bg: #384a63;
+  --border-overlay: #4d5e78;
+  --surface-field-bg: #1c2533;
+  --surface-field-disabled-bg: #253041;
+
+  --color-scrollbar: #475569;
+
+  /* Text roles */
+  --text-primary: #eef1f5;
+  --text-secondary: #cbd3de;
+  --text-muted: #a7b1c0;
+  --text-placeholder: #a7b1c0;
+  --text-link: #b4befe;
+  --selection-bg: #625f8e; /* text + block selection */
+  --highlight-bg: #6a5b3e; /* highlight text mark */
+  --highlight-line: #f9e2af;
+  --code-inline-bg: #3d415e; /* inline code mark */
+  --code-inline-fg: #d3c7fb;
+  --kbd-bg: #2f3e52; /* keyboard key mark */
+  --kbd-border: #52627a;
+  /* Code block syntax colors */
+  --syntax-comment: #98a2b3;
+  --syntax-keyword: #df9fb1;
+  --syntax-string: #9eb9e5;
+  --syntax-constant: #c2c8f0;
+  --syntax-function: #b1d6ae;
+  --syntax-builtin: #ebddbd;
+  --text-link-hover: #c3cbfe;
+
+  /* Borders & lines */
+  --border-default: #3e4d63;
+  --border-strong: #475569;
+  --divider: rgba(255, 255, 255, 0.09);
+
+  /* Actions (pairs) — near-black primary inverts to a dimmed white */
+  --action-primary-bg: #d3dae4;
+  --action-primary-fg: #141a23;
+  --action-primary-hover: #e2e7ee;
+  --action-accent-bg: #b5a1f8;
+  --action-accent-fg: #313249;
+  --action-accent-hover: #c4b4f9;
+
+  /* Tinted containers (bg + fg) + solid signal color */
+  /* system colors */
+  --tint-success-bg: #364949;
+  --tint-success-fg: #a6e3a1;
+  --tint-info-bg: #314158;
+  --tint-info-fg: #89b4fa;
+  --tint-warning-bg: #4d473c;
+  --tint-warning-fg: #f9e2af;
+  --tint-error-bg: #433a4a;
+  --tint-error-fg: #f38ba8;
+  --tint-accent-1-bg: #3d415e;
+  --tint-accent-1-fg: #c8b9fa;
+  --tint-accent-dark-bg: #5b5984;
+  --tint-accent-dark-fg: #f6f4fe;
+  --tint-accent-2-bg: #364949;
+  --tint-accent-2-fg: #a6e3a1;
+  --solid-accent-1: #b5a1f8;
+  --solid-accent-2: #a6e3a1;
+  --solid-success: #a6e3a1;
+  --solid-info: #89b4fa;
+  --solid-warning: #f9e2af;
+  --solid-error: #f38ba8;
+  /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
+  --tint-purple: #b5a1f8;
+  --tint-purple-fg: #313249;
+  --tint-green: #a6e3a1;
+  --tint-green-fg: #2f3b36;
+  --tint-blue: #89b4fa;
+  --tint-blue-fg: #293248;
+  --tint-amber: #f9e2af;
+  --tint-amber-fg: #3f3b39;
+  --tint-coral: #eba0ac;
+  --tint-coral-fg: #3d2e38;
+  --tint-graphite: #64748b;
+  --tint-graphite-fg: #f5f6fa;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
+  --tint-graphite-dark: #2f3e52;
+  --tint-graphite-dark-fg: #eef1f5;
+
+  /* Sticky-note surfaces */
+  --note-green-bg: #486157;
+  --note-green-fg: #c1ebbd;
+  --note-green-fg-muted: #c5e3ca;
+  --note-purple-bg: #4f4f75;
+  --note-purple-fg: #d3c7fb;
+  --note-purple-fg-muted: #cbbdfa;
+  --note-green-soft-bg: #364949;
+  --note-green-soft-fg: #a6e3a1;
+  --note-purple-soft-bg: #3d415e;
+  --note-purple-soft-fg: #b5a1f8;
+
+  /* Shadows — dark themes rely on surface contrast; keep shadows soft */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.35), 0 16px 48px rgba(0, 0, 0, 0.55);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}

@@ -36,11 +36,12 @@ func TestCustomization(t *testing.T) {
 		httpapi.Config{AuthDisabled: true, DevUserID: userID})
 	valid := func() map[string]any {
 		return map[string]any{
-			"style": "classroom",
+			"style": "capy",
 			"theme": "mocha",
 			"pageFrame": map[string]any{
 				"pattern": "arc", "colours": "custom", "strength": 0.75,
-				"dots": []map[string]any{{"x": 0.9, "y": 0.25}, {"x": 0.5, "y": 0.3}},
+				"dots":    []map[string]any{{"x": 0.9, "y": 0.25}, {"x": 0.5, "y": 0.3}},
+				"frosted": []string{"left", "center"},
 			},
 		}
 	}
@@ -50,6 +51,8 @@ func TestCustomization(t *testing.T) {
 		func(b map[string]any) { b["pageFrame"].(map[string]any)["pattern"] = "stripes" },
 		func(b map[string]any) { b["pageFrame"].(map[string]any)["strength"] = 1.5 },
 		func(b map[string]any) { b["pageFrame"].(map[string]any)["image"] = "https://example.test/x.png" },
+		func(b map[string]any) { b["pageFrame"].(map[string]any)["frosted"] = []string{"top"} },
+		func(b map[string]any) { b["pageFrame"].(map[string]any)["frosted"] = []string{"left", "left"} },
 		func(b map[string]any) {
 			b["pageFrame"].(map[string]any)["dots"] = []map[string]any{{"x": 0, "y": 0}, {"x": 0, "y": 0}, {"x": 0, "y": 0}, {"x": 0, "y": 0}}
 		},
@@ -72,7 +75,8 @@ func TestCustomization(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := me.Customization
-	if got.Theme != "mocha" || got.PageFrame.Pattern != "arc" || len(got.PageFrame.Dots) != 2 || got.PageFrame.Strength != 0.75 {
+	if got.Theme != "mocha" || got.PageFrame.Pattern != "arc" || len(got.PageFrame.Dots) != 2 || got.PageFrame.Strength != 0.75 ||
+		len(got.PageFrame.Frosted) != 2 {
 		t.Fatalf("customization = %+v", got)
 	}
 }

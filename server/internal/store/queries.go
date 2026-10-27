@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/samyung0/capy-notebook/server/internal/cover"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -92,7 +93,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 				WHERE et.workspace_id=w.id), '{}')
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
-		WHERE (w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2))
+		WHERE w.id IN (`+visibleWorkspacesSQL("$2")+`)
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND (lower(w.name) LIKE $1
 			OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id
@@ -111,13 +112,12 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	// Files in what the caller can open: its workspaces and those it belongs
-	// to under a live owner, as the workspaces above (Sam 2026-10-19). Never
-	// rows it only pays for.
+	// Files in what the caller can open: the workspaces above (Sam
+	// 2026-10-19). Never rows it only pays for.
 	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name, f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
 		JOIN workspaces w ON w.id=f.workspace_id
 		JOIN users owner ON owner.id=w.user_id
-		WHERE (w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2))
+		WHERE f.workspace_id IN (`+visibleWorkspacesSQL("$2")+`)
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND f.trashed_at IS NULL AND lower(f.name) LIKE $1
 		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
@@ -153,9 +153,8 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
-		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR EXISTS (
-			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
-		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
+		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR m.workspace_id IN (`+visibleWorkspacesSQL("$2")+`))
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1
 		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {
@@ -198,7 +197,7 @@ const wsCols = `w.id, w.name, w.description, w.privacy, w.share_role,
 		 FROM users u WHERE u.id=w.user_id),
 	(SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id),
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL),
-	w.created_at, w.last_accessed_at, w.auto_process, w.icon_id, w.cover`
+	w.created_at, w.auto_process, w.icon_id, w.cover`
 
 // memberRoleCol resolves the requester's ($1) persisted role next to wsCols;
 // the query must LEFT JOIN workspace_members AS me on that user.
@@ -209,7 +208,7 @@ func (s *Store) scanWorkspace(row pgx.Row, extra ...any) (Workspace, error) {
 	var w Workspace
 	dest := append([]any{&w.ID, &w.Name, &w.Description, &w.Privacy, &w.ShareRole, &w.Tags,
 		&w.OwnerUserID, &w.OwnerPlanTier, &w.ChapterCount,
-		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoProcess, &w.IconID, &w.Cover}, extra...)
+		&w.FileCount, &w.CreatedAt, &w.AutoProcess, &w.IconID, &w.Cover}, extra...)
 	err := row.Scan(dest...)
 	if err != nil {
 		return w, err
@@ -240,10 +239,10 @@ func splitCSVQuery(s string) []string {
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag string) ([]Workspace, error) {
-	// The id set is the user's own workspaces plus their memberships, read
-	// through both user indexes; an OR across the member join scanned every
-	// workspace in the database.
-	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL AND w.id IN (SELECT id FROM workspaces WHERE user_id=$1 UNION ALL SELECT workspace_id FROM workspace_members WHERE user_id=$1)"
+	// The id set is visibleWorkspacesSQL (owned, member and still-open visited
+	// workspaces), each read through a user index; an OR across the joins
+	// scanned every workspace in the database.
+	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 LEFT JOIN workspace_visits mv ON mv.workspace_id=w.id AND mv.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL AND w.id IN (" + visibleWorkspacesSQL("$1") + ")"
 	args := []any{userID}
 	if q != "" {
 		args = append(args, containsPattern(q))
@@ -263,7 +262,9 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag stri
 	case "files":
 		sb += " ORDER BY (SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL) DESC"
 	default:
-		sb += " ORDER BY w.last_accessed_at DESC"
+		// The caller's own last open; workspaces never opened follow, newest
+		// first.
+		sb += " ORDER BY mv.opened_at DESC NULLS LAST, w.created_at DESC"
 	}
 	rows, err := s.pool.Query(ctx, sb, args...)
 	if err != nil {
@@ -284,12 +285,9 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag stri
 }
 
 // GetWorkspace is the settings-level read: owner and editor members.
-func (s *Store) GetWorkspace(ctx context.Context, userID, id string, touch bool) (Workspace, error) {
+func (s *Store) GetWorkspace(ctx context.Context, userID, id string) (Workspace, error) {
 	if err := s.AssertWorkspaceMemberEditor(ctx, userID, id); err != nil {
 		return Workspace{}, err
-	}
-	if touch {
-		_, _ = s.pool.Exec(ctx, `UPDATE workspaces SET last_accessed_at=now() WHERE id=$1`, id)
 	}
 	w, err := s.scanWorkspace(s.pool.QueryRow(ctx, "SELECT "+wsCols+" FROM workspaces w WHERE w.id=$1", id))
 	if isNoRows(err) {
@@ -395,7 +393,7 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID string, input Worksp
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, err
 	}
-	return s.GetWorkspace(ctx, userID, id, false)
+	return s.GetWorkspace(ctx, userID, id)
 }
 
 // setWorkspaceAppearanceTx applies a new workspace's optional icon,
@@ -586,7 +584,7 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, err
 	}
-	return s.GetWorkspace(ctx, userID, id, false)
+	return s.GetWorkspace(ctx, userID, id)
 }
 
 func (s *Store) UpdateWorkspaceSharing(
@@ -644,7 +642,7 @@ func (s *Store) UpdateWorkspaceSharing(
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, err
 	}
-	return s.GetWorkspace(ctx, userID, id, false)
+	return s.GetWorkspace(ctx, userID, id)
 }
 
 func (s *Store) DeleteWorkspace(ctx context.Context, userID, id string) error {
@@ -1314,6 +1312,11 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 			return "", ErrTitleTaken
 		}
 		return "", err
+	}
+	if mt.ParentMaterialID == "" {
+		if err := markCreatedTx(ctx, tx, creatorID, OpenMaterial, mt.ID); err != nil {
+			return "", err
+		}
 	}
 	if mt.Kind == "flashcards" {
 		if err := syncFlashcardCardsTx(ctx, tx, mt.ID, cardIDs); err != nil {
@@ -2076,63 +2079,194 @@ func startedBefore(started *time.Time, now time.Time) *time.Time {
 	return &t
 }
 
-// CreateAttempt stores the attempt and, for a workspace quiz, rates each
-// question and marks the quiz done in the user's study progress. A quiz
-// embedded in a note is a quick check: its graded attempt is returned without
-// an id and nothing is stored.
-func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage, startedAt *time.Time) (Attempt, error) {
+// QuizCheck is one question checked in a quiz attempt, graded by the caller.
+type QuizCheck struct {
+	// AttemptID is the attempt the browser continues; an empty or unknown id
+	// (another user's, another quiz's, or one since deleted) starts a new
+	// attempt, begun at StartedAt.
+	AttemptID string
+	StartedAt *time.Time
+	// Answers are the question's answers by part id; Question is its graded copy.
+	Answers  map[string]any
+	Question map[string]any
+	// Order is the quiz's question ids, which order the attempt's snapshot,
+	// and Marks each one's marks now: unchecked questions score 0 of them.
+	Order []string
+	Marks map[string]float64
+}
+
+// ErrQuestionChecked refuses a second check of a question in one attempt: it
+// would rate the question twice.
+var ErrQuestionChecked = errors.New("the question is already checked in this attempt")
+
+// CheckQuizQuestion adds one checked question to the user's attempt at the
+// quiz, creating the attempt with its first check, and for a workspace quiz
+// rates the question and marks the quiz done. An attempt is never closed: one
+// left partway counts with its unchecked questions at 0. A quiz embedded in a
+// note is a quick check: the question comes back in an attempt without an id
+// and nothing is stored.
+func (s *Store) CheckQuizQuestion(ctx context.Context, userID, materialID string, c QuizCheck, now time.Time) (AttemptDetail, error) {
 	q, err := s.GetQuiz(ctx, materialID)
 	if err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
 	mt, err := s.GetMaterial(ctx, materialID)
 	if err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
-	quizName, workspaceName, chapters := q.Name, q.WorkspaceName, q.Chapters
-	linkedMaterial := &materialID
-	pct := 0
-	if total > 0 {
-		pct = int(float64(correct) / float64(total) * 100.0)
+	now = now.UTC()
+	id, _ := c.Question["id"].(string)
+	answers := c.Answers
+	snapshot := []map[string]any{c.Question}
+	started := startedBefore(c.StartedAt, now)
+	if mt.ParentMaterialID != "" {
+		return quizAttemptDetail(Attempt{Kind: "quiz", Chapters: []string{}, StartedAt: started, TakenAt: now}, answers, snapshot, c)
 	}
-	now := time.Now().UTC()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return AttemptDetail{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return AttemptDetail{}, err
+	}
+	// One user's checks of one quiz serialize, so an attempt's checks made at
+	// once see each other.
+	if err := lockRating(ctx, tx, userID, mt.ID); err != nil {
+		return AttemptDetail{}, err
+	}
 	a := Attempt{
-		ID: uid("at"), MaterialID: linkedMaterial, WorkspaceID: &mt.WorkspaceID, Kind: "quiz", QuizName: quizName, WorkspaceName: workspaceName,
-		Chapters: chapters, Correct: correct, Total: total, Pct: pct, StartedAt: startedBefore(startedAt, now), TakenAt: now,
+		ID: uid("at"), MaterialID: &mt.ID, WorkspaceID: &mt.WorkspaceID, Kind: "quiz",
+		QuizName: q.Name, WorkspaceName: q.WorkspaceName, Chapters: q.Chapters, StartedAt: started, TakenAt: now,
 	}
 	if a.Chapters == nil {
 		a.Chapters = []string{}
 	}
-	if len(answers) == 0 {
-		answers = json.RawMessage("{}")
+	var rawAnswers, rawQuestions []byte
+	err = tx.QueryRow(ctx, `SELECT started_at, answers, questions FROM attempts
+		WHERE id=$1 AND user_id=$2 AND material_id=$3 AND kind='quiz' FOR UPDATE`,
+		c.AttemptID, userID, mt.ID).Scan(&a.StartedAt, &rawAnswers, &rawQuestions)
+	exists := err == nil
+	if err != nil && !isNoRows(err) {
+		return AttemptDetail{}, err
 	}
-	if len(questions) == 0 {
-		questions = json.RawMessage("[]")
+	if exists {
+		a.ID = c.AttemptID
+		var stored []map[string]any
+		if err := json.Unmarshal(rawQuestions, &stored); err != nil {
+			return AttemptDetail{}, err
+		}
+		for _, sq := range stored {
+			if sq["id"] == id {
+				return AttemptDetail{}, ErrQuestionChecked
+			}
+		}
+		merged := map[string]any{}
+		if err := json.Unmarshal(rawAnswers, &merged); err != nil {
+			return AttemptDetail{}, err
+		}
+		for part, answer := range answers {
+			merged[part] = answer
+		}
+		answers = merged
+		snapshot = orderQuestions(append(stored, c.Question), c.Order)
 	}
-	if mt.ParentMaterialID != "" {
-		a.ID = ""
-		return a, nil
-	}
-	tx, err := s.pool.Begin(ctx)
+	d, err := quizAttemptDetail(a, answers, snapshot, c)
 	if err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
-	defer tx.Rollback(ctx)
-	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
-		return Attempt{}, err
+	if exists {
+		_, err = tx.Exec(ctx, `UPDATE attempts SET correct=$2, total=$3, pct=$4, taken_at=$5, answers=$6, questions=$7 WHERE id=$1`,
+			d.ID, d.Correct, d.Total, d.Pct, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, d.ID, d.MaterialID, userID, d.QuizName, d.WorkspaceName, d.Chapters, d.Correct, d.Total, d.Pct, d.StartedAt, d.TakenAt, []byte(d.Answers), []byte(d.Questions))
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, a.ID, a.MaterialID, userID, a.QuizName, a.WorkspaceName, a.Chapters, a.Correct, a.Total, a.Pct, a.StartedAt, a.TakenAt, []byte(answers), []byte(questions))
 	if err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
-	if err := rateAttemptTx(ctx, tx, userID, mt, answers, questions, a.TakenAt); err != nil {
-		return Attempt{}, err
+	if err := rateQuestionTx(ctx, tx, userID, mt, c.Question, c.Answers, now); err != nil {
+		return AttemptDetail{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Attempt{}, err
+		return AttemptDetail{}, err
 	}
-	return a, nil
+	return d, nil
+}
+
+// quizAttemptDetail scores a quiz attempt out of the quiz's marks. A checked
+// question counts with the marks it was checked against, so an edit to its
+// marks since, or its removal, never takes the score past its total;
+// unchecked questions count with their marks now and score 0.
+func quizAttemptDetail(a Attempt, answers map[string]any, snapshot []map[string]any, c QuizCheck) (AttemptDetail, error) {
+	a.Correct, a.Total = 0, 0
+	checked := map[string]bool{}
+	for _, q := range snapshot {
+		id, _ := q["id"].(string)
+		checked[id] = true
+		awarded, marks := questionMarks(q)
+		a.Correct += awarded
+		a.Total += marks
+	}
+	for _, id := range c.Order {
+		if !checked[id] {
+			a.Total += c.Marks[id]
+		}
+	}
+	if a.Total > 0 {
+		a.Pct = int(a.Correct / a.Total * 100.0)
+	}
+	rawAnswers, err := json.Marshal(answers)
+	if err != nil {
+		return AttemptDetail{}, err
+	}
+	rawQuestions, err := json.Marshal(snapshot)
+	if err != nil {
+		return AttemptDetail{}, err
+	}
+	return AttemptDetail{Attempt: a, Answers: rawAnswers, Questions: rawQuestions}, nil
+}
+
+// questionMarks sums a graded question's awarded and available marks.
+func questionMarks(q map[string]any) (awarded, marks float64) {
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		a, _ := p["awarded"].(float64)
+		m, _ := p["marks"].(float64)
+		awarded, marks = awarded+a, marks+m
+	}
+	return awarded, marks
+}
+
+// orderQuestions sorts an attempt's checked questions into the quiz's order,
+// questions no longer in the quiz last.
+func orderQuestions(qs []map[string]any, order []string) []map[string]any {
+	index := make(map[string]int, len(order))
+	for i, id := range order {
+		index[id] = i
+	}
+	pos := func(q map[string]any) int {
+		id, _ := q["id"].(string)
+		if i, ok := index[id]; ok {
+			return i
+		}
+		return len(order)
+	}
+	sort.SliceStable(qs, func(i, j int) bool { return pos(qs[i]) < pos(qs[j]) })
+	return qs
+}
+
+// QuizQuestionChecked reports whether the user's attempt at the quiz already
+// holds the question, so a repeated check is refused before it is graded.
+// CheckQuizQuestion refuses it again under its lock.
+func (s *Store) QuizQuestionChecked(ctx context.Context, userID, materialID, attemptID, questionID string) (bool, error) {
+	var checked bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM attempts
+		WHERE id=$1 AND user_id=$2 AND material_id=$3 AND kind='quiz'
+		AND questions @> jsonb_build_array(jsonb_build_object('id', $4::text)))`,
+		attemptID, userID, materialID, questionID).Scan(&checked)
+	return checked, err
 }
 
 // GetAttempt returns a single attempt with its per-question breakdown, scoped to

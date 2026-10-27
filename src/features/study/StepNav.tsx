@@ -21,7 +21,6 @@ export function StepNav({
     <div className={cn('flex justify-end', className)}>
       <Button
         disabled={!canPrevious}
-        iconLeft="navigationBack"
         onClick={onPrevious}
         size="sm"
         variant="ghost-hover"
@@ -30,7 +29,6 @@ export function StepNav({
       </Button>
       <Button
         disabled={!canNext}
-        iconRight="navigationForward"
         onClick={onNext}
         size="sm"
         variant="ghost-hover"

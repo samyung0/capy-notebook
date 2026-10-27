@@ -1,6 +1,6 @@
 /* The note text font, a per-browser pick in Plate settings: Fustat with roomy
    block gaps or the system font with the Plate playground's compact ones.
-   Without a pick the style decides (classroom → Fustat, notion → system).
+   Without a pick the style decides (capy and fisheye → Fustat, notion → system).
    The pick lives in its own localStorage key so the head scripts in
    index.html and share.html can put it on <html data-note-font> before first
    paint; tailwind.css reads that attribute. */

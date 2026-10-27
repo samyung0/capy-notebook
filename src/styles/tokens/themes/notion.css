@@ -3,7 +3,7 @@
    Clean, professional, document-first. Neutral warm grays,
    blue accent, restrained type scale, low radii (rounded but
    not bubbly). Maps the same TIER-2 role-token contract as
-   classroom; components read ONLY these role tokens.
+   capy; components read ONLY these role tokens.
    ============================================================ */
 
 [data-style="notion"] {
@@ -51,15 +51,31 @@
   --radius-input: 6px;
   --radius-button: 6px;
   --radius-button-lg: 6px;
+  --radius-button-xl: 9999px;
   --radius-row: 6px;
+  --radius-tile: 14px;
   --radius-card: 8px;
   --radius-card-lg: 10px;
   --radius-card-xl: 12px;
+  --radius-flashcard: 10px;
+
+  /* Control heights, phones first. --control-h is Button, Input and
+     Select md, so a button beside a field lines up. */
+  --button-h-sm: 30px;
+  --button-h-lg: 48px;
+  --control-h: 40px;
 
   /* Top inset bar geometry (notion edition) */
   --top-inset-bar-radius: 8px;
   --top-inset-bar-height: 52px;
   --top-inset-bar-width: 100%;
+}
+
+@media (min-width: 640px) {
+  [data-style="notion"] {
+    --button-h-lg: 52px;
+    --control-h: 44px;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -102,6 +118,7 @@
   /* Surfaces: off-white frame, white content, gray dim surface */
   --surface-page: #f7f7f5; /* outer sidebar/frame */
   --surface-page-hover: #efeeec;
+  --surface-item-hover: #f3f3f1;
   --surface-canvas: #ffffff;
   --surface-card-bg: #ffffff;
   --surface-card-hover-bg: #f7f7f6;
@@ -236,6 +253,7 @@
   /* Surfaces */
   --surface-page: #1d1d1f;
   --surface-page-hover: #28282b;
+  --surface-item-hover: #28282b;
   --surface-canvas: #151517;
   --surface-card-bg: #222225;
   --surface-card-hover-bg: #2a2a2e;
@@ -371,6 +389,7 @@
   /* Surfaces */
   --surface-page: #171717;
   --surface-page-hover: #232323;
+  --surface-item-hover: #232323;
   --surface-canvas: #111111;
   --surface-card-bg: #1d1d1d;
   --surface-card-hover-bg: #252525;

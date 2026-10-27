@@ -68,7 +68,8 @@ serially.
 3. **`write_slide {deck_id, slide, svg, excerpt_ids?}`.** At most 40,000
    characters of SVG. Our checks first: the XML parses, the root is `<svg>`
    with `viewBox="0 0 1280 720"` and `lang`, and every `<image>` is
-   `../images/c<n>.jpg` for capture n of this turn, made with a bbox (a
+   `../images/c<n>.jpg` for capture n of this turn, made with a bbox or an
+   Office picture `inspect_office_document` attached by id (Q278; a
    capture's result names n; a whole page, a number no capture holds, or a
    capture the turn's image budget has dropped, "no longer available", is
    refused; agentic-retrieval.md, Q349). Captures are numbered rather than
@@ -98,7 +99,8 @@ the model copied it into slides (`lab/playground/DECKS.md`, 2026-10-05).
 slide SVGs themselves live on the deck record.
 
 **Figures.** Nothing is rasterised: drawn diagrams export as native shapes and
-book figures are the turn's bbox crops, embedded as images. A slide names a
+book figures are the turn's bbox crops and Office pictures read by id
+(whole, `deck.turn_figures`), embedded as images. A slide names a
 capture by its page; the JPEG comes from the capture's attached image
 (`ToolContext.pending_images`), and a later capture of the same page wins. The
 turn's image budget can drop an older capture mid-turn (Q349); a slide naming

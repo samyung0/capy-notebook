@@ -44,7 +44,7 @@ without one of the typed codes `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`, `upload_queue_full` (the gateway's
 upload line is full: busy, try again), `rate_limit_unavailable`,
 `captcha_unavailable` (siteverify could not check a signed-out answer check;
-the quiz shows it under Submit with `captcha_failed`), or an unknown status
+the quiz shows it under the question's Check with `captcha_failed`), or an unknown status
 without a code)
 shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
 the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
@@ -229,7 +229,8 @@ not offline use: without a service worker the app itself does not load offline.
 - Stored: `/me`, workspace lists (not searches), a workspace and its chapters,
   files, materials, conversations and study states, file metadata, the
   dashboard recents, Thinking, notifications and the unread count, learning
-  progress, the review overview, calendar events, labels, tasks, tags,
+  progress, the review overview, quiz attempts (the quiz page resumes its open
+  one from it), calendar events, labels, tasks, tags,
   notification preferences, integrations, models, LLM key last-4s, Explore,
   and the question bank's syllabus and progress. Infinite lists keep their first
   page.
@@ -356,7 +357,8 @@ full-screen `AccountBlockedScreen`.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
 workspace storage status, and one while offline (also whenever the browser
-goes offline there). The status is the viewer's own account from `/me`, since
+goes offline there). Coming back online after that replaces it with a success
+toast ("You're back online"); arriving online shows nothing. The status is the viewer's own account from `/me`, since
 what the viewer adds is charged to the viewer (uploader pays, Sam 2026-10-18):
 frozen ("Account frozen"), full, grace counting as full ("Your storage is
 full"), then near the limit ("Your storage is almost full"). Near uses the
@@ -448,11 +450,7 @@ Chat SSE failures stay on the assistant turn. A `response_flagged` error clears 
 stream that closes before a terminal `done` frame, both mark that turn as errored;
 they do not crash a page boundary or emit the default mutation toast. A
 `model_unavailable` (422) response before the stream opens is the same surface,
-with copy that sends the user to Settings → LLM. A
-rejected or unclear user
-provider key (`invalid_llm_key` / `llm_key_failed`, or the matching stream
-`invalid_key` / `key_failed` frames) stays on that same chat/editor/quiz
-surface and asks the user to check the key.
+with copy that sends the user to Settings → LLM.
 
 Stop is a request, not a dropped connection (Epo 2026-10-21): the button calls
 `POST /api/conversations/{id}/messages/{messageId}/stop` (`useStopChatTurn`)

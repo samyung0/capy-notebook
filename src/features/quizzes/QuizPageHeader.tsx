@@ -74,16 +74,16 @@ export function QuizPageHeader({
         {(onBack || trail.length > 0) && (
           <div
             className={cn(
-              'flex min-h-9 items-center',
+              'flex min-h-9 items-center gap-1',
               // Pulled left past the icon's padding, and from sm a further
               // 8px so arrow and text balance; phones keep the edge margin.
-              onBack && '-ml-2 sm:-translate-x-2',
+              onBack && '-ml-1.5 sm:-translate-x-2',
               trailClassName
             )}
           >
             {onBack && (
               <IconButton
-                className="rounded-input"
+                className="rounded-input p-1.5"
                 icon="navigationBack"
                 iconClassName="-translate-y-px"
                 label={m.action_back()}

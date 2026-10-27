@@ -33,7 +33,6 @@ const (
 	VoiceInputSeconds = 120
 	// Comment bounds the plain text of one note comment.
 	Comment           = 3_000
-	LLMAPIKey         = 512
 	EventTitle        = 60
 	EventLocation     = 100
 	TaskTitle         = 80

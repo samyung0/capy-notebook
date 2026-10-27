@@ -5,6 +5,7 @@ import type { AnonymousFlashcards } from '@/api/types';
 import { PublicActionMenu } from '@/components/app/PublicActionMenu';
 import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
 import { userToast } from '@/components/ui/userToast';
+import { useKeptFlashcardRun } from '@/features/flashcards/flashcardRun';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
@@ -51,6 +52,11 @@ export function SharedFlashcards({
   // One notice per page however many saves fail.
   const saveFailed = useRef(false);
   const setId = set.id;
+  // The run resumes once the page is live; reading it earlier would not match
+  // the server's render.
+  const kept = useKeptFlashcardRun('share', setId, set.cards, {
+    afterHydration: true,
+  });
 
   useEffect(() => {
     localCardStates(setId)
@@ -109,6 +115,7 @@ export function SharedFlashcards({
           )
         }
         frame={Frame}
+        key={kept.ready && kept.resume ? 'kept' : 'server'}
         name={set.name}
         onFinished={(total) =>
           track('flashcards_study_finished', {
@@ -116,8 +123,13 @@ export function SharedFlashcards({
             source: 'share',
           })
         }
-        onRate={(card, rating) => void save(card.id, rating)}
+        onRate={(card, rating, _attempt, run) => {
+          kept.keep(run);
+          void save(card.id, rating);
+        }}
+        onRestart={kept.forget}
         provenance={set.provenance}
+        resume={kept.resume}
         trail={[]}
       />
     </AssetUrlContext.Provider>

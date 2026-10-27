@@ -14,6 +14,6 @@ export interface UpdateStudyPlanReq {
      * @maxLength 60
      */
   name?: string;
-  /** @maxItems 50 */
+  /** @maxItems 200 */
   steps?: PlanStepInput[];
 }

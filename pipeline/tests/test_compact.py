@@ -19,8 +19,6 @@ def _spec(**overrides) -> ModelConfig:
         "model_name": "Flash",
         "provider_slug": "deepseek",
         "model_slug": "deepseek-v4-flash",
-        "platform_enabled": True,
-        "byok_enabled": True,
         "thinking_levels": ("low", "high"),
         "default_thinking": "high",
         "context_window_tokens": 20_000,

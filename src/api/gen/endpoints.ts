@@ -35,6 +35,7 @@ import type {
   BrowserSourceSession,
   Chapter,
   CheckBankQuestionReq,
+  CheckQuizQuestionReq,
   CheckReviewItemReq,
   CheckSharedNoteQuizReq,
   CheckSourceAccessParams,
@@ -47,7 +48,7 @@ import type {
   ComputationCheckReq,
   ComputationCheckResp,
   Conversation,
-  CreateAttemptReq,
+  CreateBlankFileReq,
   CreateCommentReq,
   CreateConversationReq,
   CreateDiscussionReq,
@@ -83,9 +84,9 @@ import type {
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetWorkspaceReviewParams,
+  GetWorkspaceStudyParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
-  GradedQuiz,
   ImportSourcesAccepted,
   ImportSourcesReq,
   IngestSlots,
@@ -93,7 +94,6 @@ import type {
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
-  LLMCredentialsResponse,
   Label,
   LearningProgress,
   ListAttemptsParams,
@@ -104,6 +104,7 @@ import type {
   ListOwnedFilesParams,
   ListOwnedMaterialsParams,
   ListPastReviewsParams,
+  ListRecentParams,
   ListTagsParams,
   ListTrashParams,
   ListUsageEventsParams,
@@ -136,6 +137,7 @@ import type {
   Quiz,
   RateReviewItemReq,
   ReadSourceRefreshParams,
+  RecentOutputBody,
   RedeemShareLinkInputBody,
   ReorderChaptersReq,
   ReorderContentReq,
@@ -202,7 +204,6 @@ import type {
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
   UploadBankAssetBody,
-  UpsertLLMCredentialReq,
   UsageEventPage,
   UsageReport,
   User,
@@ -3664,6 +3665,56 @@ export const getFileLinks = async (id: string, options?: RequestInit): Promise<g
 
 
 
+export type openFileResponse204 = {
+  data: void
+  status: 204
+}
+
+export type openFileResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type openFileResponseSuccess = (openFileResponse204) & {
+  headers: Headers;
+};
+export type openFileResponseError = (openFileResponseDefault) & {
+  headers: Headers;
+};
+
+export type openFileResponse = (openFileResponseSuccess | openFileResponseError)
+
+export const getOpenFileUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/open`
+}
+
+/**
+ * @summary Note that the caller opened a file
+ */
+export const openFile = async (id: string, options?: RequestInit): Promise<openFileResponse> => {
+
+  const res = await fetch(getOpenFileUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: openFileResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as openFileResponse
+}
+
+
+
 export type cancelSourceChangesResponse204 = {
   data: void
   status: 204
@@ -5324,6 +5375,56 @@ const res = await fetch(getUpdateMaterialUrl(id),
 
 
 
+export type openMaterialResponse204 = {
+  data: void
+  status: 204
+}
+
+export type openMaterialResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type openMaterialResponseSuccess = (openMaterialResponse204) & {
+  headers: Headers;
+};
+export type openMaterialResponseError = (openMaterialResponseDefault) & {
+  headers: Headers;
+};
+
+export type openMaterialResponse = (openMaterialResponseSuccess | openMaterialResponseError)
+
+export const getOpenMaterialUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/open`
+}
+
+/**
+ * @summary Note that the caller opened a material
+ */
+export const openMaterial = async (id: string, options?: RequestInit): Promise<openMaterialResponse> => {
+
+  const res = await fetch(getOpenMaterialUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: openMaterialResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as openMaterialResponse
+}
+
+
+
 export type processNoteChangesResponse202 = {
   data: void
   status: 202
@@ -5727,170 +5828,6 @@ export const getIngestSlots = async ( options?: RequestInit): Promise<getIngestS
 
   const data: getIngestSlotsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getIngestSlotsResponse
-}
-
-
-
-export type listLLMCredentialsResponse200 = {
-  data: LLMCredentialsResponse
-  status: 200
-}
-
-export type listLLMCredentialsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listLLMCredentialsResponseSuccess = (listLLMCredentialsResponse200) & {
-  headers: Headers;
-};
-export type listLLMCredentialsResponseError = (listLLMCredentialsResponseDefault) & {
-  headers: Headers;
-};
-
-export type listLLMCredentialsResponse = (listLLMCredentialsResponseSuccess | listLLMCredentialsResponseError)
-
-export const getListLLMCredentialsUrl = () => {
-
-
-
-
-  return `/api/me/llm-credentials`
-}
-
-/**
- * @summary Saved provider keys
- */
-export const listLLMCredentials = async ( options?: RequestInit): Promise<listLLMCredentialsResponse> => {
-
-  const res = await fetch(getListLLMCredentialsUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listLLMCredentialsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listLLMCredentialsResponse
-}
-
-
-
-export type upsertLLMCredentialResponse204 = {
-  data: void
-  status: 204
-}
-
-export type upsertLLMCredentialResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type upsertLLMCredentialResponseSuccess = (upsertLLMCredentialResponse204) & {
-  headers: Headers;
-};
-export type upsertLLMCredentialResponseError = (upsertLLMCredentialResponseDefault) & {
-  headers: Headers;
-};
-
-export type upsertLLMCredentialResponse = (upsertLLMCredentialResponseSuccess | upsertLLMCredentialResponseError)
-
-export const getUpsertLLMCredentialUrl = () => {
-
-
-
-
-  return `/api/me/llm-credentials`
-}
-
-/**
- * @summary Save a provider key
- */
-export const upsertLLMCredential = async (upsertLLMCredentialReq: NonReadonly<UpsertLLMCredentialReq>, options?: RequestInit): Promise<upsertLLMCredentialResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getUpsertLLMCredentialUrl(),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(upsertLLMCredentialReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: upsertLLMCredentialResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as upsertLLMCredentialResponse
-}
-
-
-
-export type deleteLLMCredentialResponse204 = {
-  data: void
-  status: 204
-}
-
-export type deleteLLMCredentialResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type deleteLLMCredentialResponseSuccess = (deleteLLMCredentialResponse204) & {
-  headers: Headers;
-};
-export type deleteLLMCredentialResponseError = (deleteLLMCredentialResponseDefault) & {
-  headers: Headers;
-};
-
-export type deleteLLMCredentialResponse = (deleteLLMCredentialResponseSuccess | deleteLLMCredentialResponseError)
-
-export const getDeleteLLMCredentialUrl = (provider: string,) => {
-
-
-
-
-  return `/api/me/llm-credentials/${provider}`
-}
-
-/**
- * @summary Remove a provider key
- */
-export const deleteLLMCredential = async (provider: string, options?: RequestInit): Promise<deleteLLMCredentialResponse> => {
-
-  const res = await fetch(getDeleteLLMCredentialUrl(provider),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deleteLLMCredentialResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteLLMCredentialResponse
 }
 
 
@@ -6720,7 +6657,7 @@ export const getAnonymousNoteAsset = async (token: string,
 
 
 export type gradeAnonymousNoteQuizResponse200 = {
-  data: GradedQuiz
+  data: GradedQuestion
   status: 200
 }
 
@@ -6748,7 +6685,7 @@ export const getGradeAnonymousNoteQuizUrl = (token: string,
 }
 
 /**
- * @summary Grade an attempt at a quiz embedded in a shared note
+ * @summary Grade one question of a quiz embedded in a shared note
  */
 export const gradeAnonymousNoteQuiz = async (token: string,
     quizId: string,
@@ -6889,7 +6826,7 @@ export const getAnonymousQuizAsset = async (token: string,
 
 
 export type gradeAnonymousQuizResponse200 = {
-  data: GradedQuiz
+  data: GradedQuestion
   status: 200
 }
 
@@ -6916,7 +6853,7 @@ export const getGradeAnonymousQuizUrl = (token: string,) => {
 }
 
 /**
- * @summary Grade a signed-out attempt at a shared quiz
+ * @summary Grade one question of a signed-out attempt at a shared quiz
  */
 export const gradeAnonymousQuiz = async (token: string,
     gradeAnonymousQuizReq: NonReadonly<GradeAnonymousQuizReq>, options?: RequestInit): Promise<gradeAnonymousQuizResponse> => {
@@ -7290,38 +7227,38 @@ export const getQuiz = async (id: string, options?: RequestInit): Promise<getQui
 
 
 
-export type createAttemptResponse201 = {
+export type checkQuizQuestionResponse200 = {
   data: AttemptDetail
-  status: 201
+  status: 200
 }
 
-export type createAttemptResponseDefault = {
+export type checkQuizQuestionResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
+  status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type createAttemptResponseSuccess = (createAttemptResponse201) & {
+export type checkQuizQuestionResponseSuccess = (checkQuizQuestionResponse200) & {
   headers: Headers;
 };
-export type createAttemptResponseError = (createAttemptResponseDefault) & {
+export type checkQuizQuestionResponseError = (checkQuizQuestionResponseDefault) & {
   headers: Headers;
 };
 
-export type createAttemptResponse = (createAttemptResponseSuccess | createAttemptResponseError)
+export type checkQuizQuestionResponse = (checkQuizQuestionResponseSuccess | checkQuizQuestionResponseError)
 
-export const getCreateAttemptUrl = (id: string,) => {
-
-
+export const getCheckQuizQuestionUrl = (id: string,) => {
 
 
-  return `/api/quizzes/${id}/attempts`
+
+
+  return `/api/quizzes/${id}/check`
 }
 
 /**
- * @summary Grade and record a quiz attempt
+ * @summary Grade one question of a quiz attempt and record it
  */
-export const createAttempt = async (id: string,
-    createAttemptReq: NonReadonly<CreateAttemptReq>, options?: RequestInit): Promise<createAttemptResponse> => {
+export const checkQuizQuestion = async (id: string,
+    checkQuizQuestionReq: NonReadonly<CheckQuizQuestionReq>, options?: RequestInit): Promise<checkQuizQuestionResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -7337,20 +7274,20 @@ export const createAttempt = async (id: string,
     }
     return headers;
   };
-const res = await fetch(getCreateAttemptUrl(id),
+const res = await fetch(getCheckQuizQuestionUrl(id),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(createAttemptReq)
+    body: JSON.stringify(checkQuizQuestionReq)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: createAttemptResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createAttemptResponse
+  const data: checkQuizQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkQuizQuestionResponse
 }
 
 
@@ -7531,6 +7468,63 @@ const res = await fetch(getUpdateQuizSharingUrl(id),
 
   const data: updateQuizSharingResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateQuizSharingResponse
+}
+
+
+
+export type listRecentResponse200 = {
+  data: RecentOutputBody
+  status: 200
+}
+
+export type listRecentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listRecentResponseSuccess = (listRecentResponse200) & {
+  headers: Headers;
+};
+export type listRecentResponseError = (listRecentResponseDefault) & {
+  headers: Headers;
+};
+
+export type listRecentResponse = (listRecentResponseSuccess | listRecentResponseError)
+
+export const getListRecentUrl = (params?: ListRecentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/recent?${stringifiedParams}` : `/api/recent`
+}
+
+/**
+ * @summary The caller's newest opened files and materials
+ */
+export const listRecent = async (params?: ListRecentParams, options?: RequestInit): Promise<listRecentResponse> => {
+
+  const res = await fetch(getListRecentUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listRecentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listRecentResponse
 }
 
 
@@ -8042,7 +8036,7 @@ const res = await fetch(getRedeemShareLinkUrl(),
 
 
 export type checkSharedNoteQuizResponse200 = {
-  data: GradedQuiz
+  data: GradedQuestion
   status: 200
 }
 
@@ -8070,7 +8064,7 @@ export const getCheckSharedNoteQuizUrl = (token: string,
 }
 
 /**
- * @summary Grade a signed-in check of a quiz embedded in a shared note
+ * @summary Grade a signed-in check of one question of a quiz embedded in a shared note
  */
 export const checkSharedNoteQuiz = async (token: string,
     quizId: string,
@@ -9764,6 +9758,71 @@ export const listWorkspaceFiles = async (id: string, options?: RequestInit): Pro
 
 
 
+export type createBlankFileResponse201 = {
+  data: File
+  status: 201
+}
+
+export type createBlankFileResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createBlankFileResponseSuccess = (createBlankFileResponse201) & {
+  headers: Headers;
+};
+export type createBlankFileResponseError = (createBlankFileResponseDefault) & {
+  headers: Headers;
+};
+
+export type createBlankFileResponse = (createBlankFileResponseSuccess | createBlankFileResponseError)
+
+export const getCreateBlankFileUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/files/blank`
+}
+
+/**
+ * @summary Create a blank Word or Excel file
+ */
+export const createBlankFile = async (id: string,
+    createBlankFileReq: NonReadonly<CreateBlankFileReq>, options?: RequestInit): Promise<createBlankFileResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateBlankFileUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createBlankFileReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createBlankFileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createBlankFileResponse
+}
+
+
+
 export type generateResponse200 = {
   data: Generate200
   status: 200
@@ -10705,20 +10764,29 @@ export type getWorkspaceStudyResponseError = (getWorkspaceStudyResponseDefault) 
 
 export type getWorkspaceStudyResponse = (getWorkspaceStudyResponseSuccess | getWorkspaceStudyResponseError)
 
-export const getGetWorkspaceStudyUrl = (id: string,) => {
+export const getGetWorkspaceStudyUrl = (id: string,
+    params?: GetWorkspaceStudyParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/workspaces/${id}/study`
+  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/study?${stringifiedParams}` : `/api/workspaces/${id}/study`
 }
 
 /**
  * @summary Study progress in a workspace
  */
-export const getWorkspaceStudy = async (id: string, options?: RequestInit): Promise<getWorkspaceStudyResponse> => {
+export const getWorkspaceStudy = async (id: string,
+    params?: GetWorkspaceStudyParams, options?: RequestInit): Promise<getWorkspaceStudyResponse> => {
 
-  const res = await fetch(getGetWorkspaceStudyUrl(id),
+  const res = await fetch(getGetWorkspaceStudyUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -11142,6 +11210,106 @@ const res = await fetch(getTransferWorkspaceUrl(id),
 
   const data: transferWorkspaceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as transferWorkspaceResponse
+}
+
+
+
+export type forgetWorkspaceResponse204 = {
+  data: void
+  status: 204
+}
+
+export type forgetWorkspaceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type forgetWorkspaceResponseSuccess = (forgetWorkspaceResponse204) & {
+  headers: Headers;
+};
+export type forgetWorkspaceResponseError = (forgetWorkspaceResponseDefault) & {
+  headers: Headers;
+};
+
+export type forgetWorkspaceResponse = (forgetWorkspaceResponseSuccess | forgetWorkspaceResponseError)
+
+export const getForgetWorkspaceUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/visit`
+}
+
+/**
+ * @summary Forget the caller's visit to a workspace
+ */
+export const forgetWorkspace = async (id: string, options?: RequestInit): Promise<forgetWorkspaceResponse> => {
+
+  const res = await fetch(getForgetWorkspaceUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: forgetWorkspaceResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as forgetWorkspaceResponse
+}
+
+
+
+export type visitWorkspaceResponse204 = {
+  data: void
+  status: 204
+}
+
+export type visitWorkspaceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type visitWorkspaceResponseSuccess = (visitWorkspaceResponse204) & {
+  headers: Headers;
+};
+export type visitWorkspaceResponseError = (visitWorkspaceResponseDefault) & {
+  headers: Headers;
+};
+
+export type visitWorkspaceResponse = (visitWorkspaceResponseSuccess | visitWorkspaceResponseError)
+
+export const getVisitWorkspaceUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/visit`
+}
+
+/**
+ * @summary Note that the caller opened a workspace
+ */
+export const visitWorkspace = async (id: string, options?: RequestInit): Promise<visitWorkspaceResponse> => {
+
+  const res = await fetch(getVisitWorkspaceUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: visitWorkspaceResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as visitWorkspaceResponse
 }
 
 

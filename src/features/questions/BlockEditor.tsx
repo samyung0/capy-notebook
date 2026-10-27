@@ -1,28 +1,29 @@
 import { Collapsible } from 'radix-ui';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input, type InputProps } from '@/components/ui/Input';
-import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
-import { Field, FieldInput, SelectField } from './editorFields';
+import { Field, FieldInput, SelectField, StringList } from './editorFields';
 import { GraphEditor } from './GraphEditor';
 import { IssueIcon } from './IssueViews';
 import { QuestionBlockView } from './QuestionView';
 import { repairFigureBlock } from './repair';
-import { TextEditor } from './TextEditor';
+import { IdleFormulaTools, TextEditor } from './TextEditor';
 import {
   CHART_KINDS,
   type ChartBlock,
   type ChartKind,
+  gapNumbers,
   type PlotBlock,
   type QuestionBlock,
 } from './types';
@@ -187,6 +188,7 @@ function ChartEditor({
                             ),
                           })
                         }
+                        placeholder={m.question_ui_chart_series_placeholder()}
                         value={series.name}
                       />
                     </th>
@@ -237,6 +239,7 @@ function ChartEditor({
                             ),
                           })
                         }
+                        placeholder={m.question_ui_chart_label_placeholder()}
                         value={block.labels[row] ?? ''}
                       />
                     </td>
@@ -285,6 +288,7 @@ function ChartEditor({
                               ),
                             });
                           }}
+                          placeholder={m.question_ui_chart_value_placeholder()}
                           type="number"
                           value={series.values[row] ?? ''}
                         />
@@ -339,7 +343,7 @@ function ChartEditor({
                   type="button"
                   variant="ghost-hover"
                 >
-                  {m.question_ui_add_series()}
+                  {m.question_ui_add_column()}
                 </Button>
               )}
               {(!single || block.series.length > 1) && (
@@ -352,7 +356,7 @@ function ChartEditor({
                   type="button"
                   variant="danger-light"
                 >
-                  {m.question_ui_remove_last_series()}
+                  {m.question_ui_remove_last_column()}
                 </Button>
               )}
             </div>
@@ -987,6 +991,8 @@ export function BlockEditor({
   onBusyChange,
   onInvalidChange,
   textPlaceholder,
+  toolbarTarget,
+  gaps,
 }: {
   /** A bank question: figure descriptions take the bank's longer bound. */
   bank?: boolean;
@@ -1000,8 +1006,25 @@ export function BlockEditor({
   onInvalidChange?: (invalid: boolean) => void;
   /** What an empty text block shows, by where it sits. */
   textPlaceholder?: string;
+  /** The block's heading row: a graph's zoom tools and a table cell's
+   * formula tools go there. */
+  toolbarTarget?: HTMLElement | null;
+  /** A gaps part's text block: the number of its first blank, its blanks'
+   * accepted answers in order, and a change of either. */
+  gaps?: {
+    start: number;
+    lists: string[][];
+    onChange: (text: string, lists: string[][]) => void;
+  };
 }) {
   const [cell, setCell] = useState<string | null>(null);
+  // The text's blanks by id, in order, as the editor read them in; each
+  // change carries every list along with its blank.
+  const blankIds = useRef<string[] | null>(null);
+  if (gaps && block.type === 'text')
+    blankIds.current ??= gapNumbers([block]).map((_, i) => `g${i}`);
+  // Where the click that opened the cell landed (none from the keyboard).
+  const cellClick = useRef<{ x: number; y: number } | null>(null);
   const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -1015,12 +1038,41 @@ export function BlockEditor({
     return (
       <div className="space-y-3">
         <TextEditor
+          gapStart={gaps?.start}
           maxLength={limits.QUESTION_TEXT_MAX}
-          onChange={(text) => onChange({ ...block, text })}
+          onChange={(text, ids) => {
+            if (!gaps) return onChange({ ...block, text });
+            const before = blankIds.current ?? [];
+            const used = new Set<number>();
+            const lists = ids.map((id) => {
+              const at = before.indexOf(id);
+              if (at < 0 || used.has(at)) return [''];
+              used.add(at);
+              return gaps.lists[at] ?? [''];
+            });
+            blankIds.current = ids;
+            gaps.onChange(text, lists);
+          }}
           placeholder={textPlaceholder}
           value={block.text}
         />
-        <div className="border-divider border-t pt-4">
+        {/* Each blank's accepted answers, under the text that holds it. */}
+        {gaps?.lists.map((list, i) => (
+          <StringList
+            addLabel={m.question_ui_add_accepted_answer()}
+            className="max-w-md"
+            key={blankIds.current?.[i] ?? i}
+            label={m.question_ui_gap({ number: gaps.start + i })}
+            onChange={(values) =>
+              gaps.onChange(
+                block.text,
+                gaps.lists.map((item, j) => (j === i ? values : item))
+              )
+            }
+            values={list}
+          />
+        ))}
+        <div className="pt-2">
           <p className="t-label mb-3 text-fg-muted">
             {m.question_ui_preview()}
           </p>
@@ -1038,7 +1090,7 @@ export function BlockEditor({
               {m.question_ui_advanced()}
             </Button>
           </Collapsible.Trigger>
-          <Collapsible.Content className="pt-3">
+          <Collapsible.Content className="max-w-sm pt-3">
             <Field
               count={{
                 max: limits.QUESTION_METADATA_MAX,
@@ -1082,14 +1134,18 @@ export function BlockEditor({
         descriptionMax={descriptionMax}
         onChange={onChange}
         onInvalidChange={onInvalidChange}
+        toolbarTarget={toolbarTarget}
         value={block}
       />
     );
   if (block.type === 'image')
     return (
       <div className="space-y-4">
-        <QuestionBlockView block={block} />
-        <Field label={m.question_ui_replace()}>
+        {/* A preview, not the shown size: capped, from the left edge. */}
+        <div className="[&_figure]:mx-0 [&_img]:max-h-80 [&_img]:w-auto">
+          <QuestionBlockView block={block} />
+        </div>
+        <Field label={m.question_ui_image_file()}>
           <input
             accept={IMAGE_ACCEPT}
             disabled={!uploadAsset || uploading}
@@ -1176,116 +1232,94 @@ export function BlockEditor({
           : cells
       ),
     });
+  // The chart's data table: a trash per row, Add row and column below, the
+  // header row under Advanced. A cell's formula tools go to the block's
+  // heading row, else a row of their own; they show disabled until a cell
+  // opens, so opening one shifts nothing.
+  const tools = toolbarTarget ?? cellTools;
   return (
     <div className="space-y-3">
-      <Toolbar
-        aria-label={m.question_ui_table_tools()}
-        className="scroll-fade-x min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        role="toolbar"
-      >
-        <ToolbarGroup>
-          <ToolbarButton
-            active={block.header}
-            className="w-auto px-2"
-            label={m.question_ui_header_row()}
-            onClick={() => onChange({ ...block, header: !block.header })}
-          >
-            {m.question_ui_header_row()}
-          </ToolbarButton>
-        </ToolbarGroup>
-        <ToolbarGroup>
-          <ToolbarButton
-            disabled={block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX}
-            label={m.question_ui_add_row()}
-            onClick={() =>
-              onChange({
-                ...block,
-                rows: [
-                  ...block.rows,
-                  Array.from({ length: columns }, () => ''),
-                ],
-              })
-            }
-          >
-            R+
-          </ToolbarButton>
-          <ToolbarButton
-            disabled={block.rows.length <= 1}
-            label={m.question_ui_remove_row()}
-            onClick={() =>
-              onChange({ ...block, rows: block.rows.slice(0, -1) })
-            }
-          >
-            R−
-          </ToolbarButton>
-          <ToolbarButton
-            disabled={columns >= limits.QUESTION_TABLE_COLUMNS_MAX}
-            label={m.question_ui_add_column()}
-            onClick={() =>
-              onChange({
-                ...block,
-                rows: block.rows.map((row) => [...row, '']),
-              })
-            }
-          >
-            C+
-          </ToolbarButton>
-          <ToolbarButton
-            disabled={columns <= 1}
-            label={m.question_ui_remove_column()}
-            onClick={() =>
-              onChange({
-                ...block,
-                rows: block.rows.map((row) => row.slice(0, -1)),
-              })
-            }
-          >
-            C−
-          </ToolbarButton>
-        </ToolbarGroup>
-        <div className="flex shrink-0 items-center" ref={setCellTools} />
-      </Toolbar>
+      {!toolbarTarget && (
+        <div className="flex items-center" ref={setCellTools} />
+      )}
+      {cell === null && tools && createPortal(<IdleFormulaTools />, tools)}
       <div className="overflow-x-auto">
-        <table
-          className="w-full table-fixed border-collapse"
-          style={{ minWidth: columns * 112 }}
-        >
+        <table className="border-collapse text-sm">
           <tbody>
             {block.rows.map((row, i) => (
               <tr key={i}>
+                <td className="w-0 whitespace-nowrap pr-1">
+                  <ToolbarButton
+                    disabled={block.rows.length <= 1}
+                    label={m.question_ui_remove_row_number({ number: i + 1 })}
+                    onClick={() => {
+                      setCell(null);
+                      onChange({
+                        ...block,
+                        rows: block.rows.filter((_, j) => i !== j),
+                      });
+                    }}
+                  >
+                    <Icon name="trash" />
+                  </ToolbarButton>
+                </td>
                 {row.map((text, j) => {
                   const id = `${i}:${j}`;
+                  // What an empty cell is for, until it holds text.
+                  const placeholder =
+                    block.header && i === 0
+                      ? m.question_ui_table_heading_placeholder()
+                      : m.question_ui_table_cell_placeholder();
                   return (
                     <td
                       className={cn(
-                        'border border-line p-2 align-top',
+                        'border border-divider p-0 align-top',
                         block.header &&
                           i === 0 &&
                           'bg-surface-hover-bg font-semibold'
                       )}
                       key={j}
                     >
-                      {cell === id ? (
-                        <TextEditor
-                          compact
-                          maxLength={limits.QUESTION_TEXT_MAX}
-                          onChange={(value) => updateCell(i, j, value)}
-                          toolbarTarget={cellTools}
-                          value={text}
-                        />
-                      ) : (
-                        <button
-                          aria-label={m.question_ui_edit_cell({
-                            column: j + 1,
-                            row: i + 1,
-                          })}
-                          className="min-h-10 w-full text-left"
-                          onClick={() => setCell(id)}
-                          type="button"
-                        >
-                          <QuestionBlockView block={{ text, type: 'text' }} />
-                        </button>
-                      )}
+                      {/* Columns grow with their text between these widths,
+                          then wrap. */}
+                      <div className="min-w-28 max-w-80 px-2 py-1.5">
+                        {cell === id ? (
+                          <TextEditor
+                            caretAt={cellClick.current}
+                            compact
+                            maxLength={limits.QUESTION_TEXT_MAX}
+                            onChange={(value) => updateCell(i, j, value)}
+                            placeholder={placeholder}
+                            toolbarTarget={tools}
+                            value={text}
+                          />
+                        ) : (
+                          <button
+                            aria-label={m.question_ui_edit_cell({
+                              column: j + 1,
+                              row: i + 1,
+                            })}
+                            className="min-h-8 w-full cursor-text text-left"
+                            onClick={(event) => {
+                              cellClick.current = event.detail
+                                ? { x: event.clientX, y: event.clientY }
+                                : null;
+                              setCell(id);
+                            }}
+                            type="button"
+                          >
+                            {text.trim() ? (
+                              <QuestionBlockView
+                                block={{ text, type: 'text' }}
+                              />
+                            ) : (
+                              <p className="font-normal text-placeholder leading-relaxed">
+                                {placeholder}
+                              </p>
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   );
                 })}
@@ -1294,6 +1328,77 @@ export function BlockEditor({
           </tbody>
         </table>
       </div>
+      <div className="-ml-4 flex flex-wrap gap-2">
+        <Button
+          disabled={block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX}
+          iconLeft="plus"
+          onClick={() =>
+            onChange({
+              ...block,
+              rows: [...block.rows, Array.from({ length: columns }, () => '')],
+            })
+          }
+          size="sm"
+          type="button"
+          variant="ghost-hover"
+        >
+          {m.question_ui_add_row()}
+        </Button>
+        <Button
+          disabled={columns >= limits.QUESTION_TABLE_COLUMNS_MAX}
+          iconLeft="plus"
+          onClick={() =>
+            onChange({ ...block, rows: block.rows.map((row) => [...row, '']) })
+          }
+          size="sm"
+          type="button"
+          variant="ghost-hover"
+        >
+          {m.question_ui_add_column()}
+        </Button>
+        <Button
+          disabled={columns <= 1}
+          onClick={() => {
+            setCell(null);
+            onChange({
+              ...block,
+              rows: block.rows.map((row) => row.slice(0, -1)),
+            });
+          }}
+          size="sm"
+          type="button"
+          variant="danger-light"
+        >
+          {m.question_ui_remove_last_column()}
+        </Button>
+      </div>
+      <Collapsible.Root>
+        <Collapsible.Trigger asChild>
+          <Button
+            className="-ml-4"
+            iconLeft="chevronDown"
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {m.question_ui_advanced()}
+          </Button>
+        </Collapsible.Trigger>
+        <Collapsible.Content className="translate-x-0.5 pt-3">
+          <SelectField
+            className="w-44"
+            label={m.question_ui_header_row()}
+            onChange={(value) =>
+              onChange({ ...block, header: value === 'shown' })
+            }
+            options={[
+              { label: m.question_ui_graph_shown(), value: 'shown' },
+              { label: m.question_ui_graph_hidden(), value: 'hidden' },
+            ]}
+            value={block.header ? 'shown' : 'hidden'}
+          />
+        </Collapsible.Content>
+      </Collapsible.Root>
     </div>
   );
 }

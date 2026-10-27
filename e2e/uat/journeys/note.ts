@@ -204,7 +204,7 @@ export async function createNote(run: UatRun, workspaceId: string) {
   await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-add-menu]')
-    .getByRole('button', { exact: true, name: m.action_add_file() })
+    .getByRole('button', { exact: true, name: m.action_new_file_or_chapter() })
     .click();
   await page.getByRole('menuitem', { name: m.action_new_file() }).click();
   const dialog = page.getByRole('dialog');
@@ -1103,10 +1103,11 @@ export async function quizImageOnPick(run: UatRun, quizId: string) {
   await dialog
     .getByRole('textbox', { name: m.question_ui_description() })
     .fill('Field photo');
-  // No Save: back to the question, where the new block stays selected under
-  // its floating toolbar. Esc closes the toolbar, then a second Esc the dialog.
+  // No Save: Done goes back to the question, where the new block stays
+  // selected under its floating toolbar. Esc closes the toolbar, then a second
+  // Esc the dialog.
   await dialog
-    .getByRole('button', { name: m.question_ui_back_to_question() })
+    .getByRole('button', { exact: true, name: m.question_ui_done() })
     .click();
   const blockActions = page.getByRole('toolbar', {
     name: m.question_ui_block_actions(),

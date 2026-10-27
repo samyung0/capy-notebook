@@ -82,6 +82,9 @@ type Config struct {
 	// Voice applies to chat voice input, a few recordings a minute from a
 	// person talking; it leaves the chat allowance to the turns they send.
 	Voice Rule
+	// Review applies to starting a review session, which reads and scores
+	// every quiz and set in scope; continuing a session is not counted.
+	Review Rule
 	// BankComment applies to question-bank comment posts, each a notice in
 	// the maintainers' digest.
 	BankComment Rule
@@ -108,6 +111,8 @@ func DefaultConfig() Config {
 		// with a few hundred images.
 		SharePage: Rule{Limit: 300, Window: time.Minute},
 		Voice:     Rule{Limit: 60, Window: time.Hour, Burst: 6},
+		// A learner starts a few reviews an hour; Review more starts another.
+		Review: Rule{Limit: 60, Window: time.Hour, Burst: 10},
 		// Epo 2026-10-24, Q314.
 		BankComment: Rule{Limit: 120, Window: time.Hour, Burst: 20},
 	}
