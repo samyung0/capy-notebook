@@ -2244,6 +2244,12 @@ room joins (`src/features/notes/merge/`):
   (`takeOverCopy`). Without Web Locks, or when they fail, no copy is adopted
   and each merges as an older one, another open tab's too: that tab's later
   typing then shows as conflict pieces at its own bind (Q410).
+- **A late mount** (Q406, Q408) shows the projection, never the adopted
+  copy, records no copy edits, and merges the copies only once its late
+  merge applied (`boundWaiting`). After a failed merge, or when the mount
+  goes stale, pauses, is rejected or unmounts while its merged document is
+  being stored, it never merges them and their rows stay for the next mount
+  (Q451).
 - **Undo before the bind** (Q397). The Yjs history works on the bound
   document only, so until the bind Undo and Redo walk Slate's own history of
   the copy (`roomBindingPlugin`).
@@ -2873,7 +2879,12 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   current, and `mergeLate` (`src/features/collaboration/lateMerge`) runs the
   merge in a worker that is gone afterwards (and stopped when the editor
   goes). Meanwhile no draft is applied raw or sent: a late mount runs no
-  draft send, so no Q360 hold. The tab's own copy shows read-only: the paused
+  draft send, so no Q360 hold. Before any merge code the rows it took go
+  once as ordinary drafts (Q436): the note opens afresh, with no merge, only
+  when every one of them went in a group the room admitted (a held or
+  refused row the send skips keeps the merge, Q451), and a room sync while
+  that try waits (a reconnect) waits for its answer instead of starting the
+  merge (Q451). The tab's own copy shows read-only: the paused
   note beside the late mount (the swap waits for the merged editor, which
   paints once and takes the caret and focus back), or, where nothing paused
   shows it (an opening editor, a hidden tab), the late mount's static copy
@@ -2941,6 +2952,11 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   newest date of the rows it replaces (this session's last edit, the adopted
   rows'), so the 7-day expiry runs from the edits, not the rewrite (Q420); an
   expired late row opens once as the expired copy instead of merging (Q413).
+  A re-authored late row (a merged update refused `unassigned`) keeps the
+  newest date of the rows the mount took when it started, and what the mount
+  did after its merge applied (a copy merged at the bind, typing) is kept
+  beside it whole as one refused row under a session of its own, the next
+  open's pieces (Q451).
   Once the merge view lands, a failed late merge opens the live note with
   merge view pieces instead of the copy-only recovery (Q420).
 - **Stored drafts**: a sweep or draft send answered `late` marks the group's

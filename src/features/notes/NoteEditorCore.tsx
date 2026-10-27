@@ -715,6 +715,13 @@ export function NoteEditorCore({
       sendRows: [] as EditDraft[],
     };
   });
+  // The newest date of the rows the merge stands for, taken now: they go
+  // once it applied (Q451).
+  const [adoptedSavedAt] = useState(() =>
+    adoptedRows.length
+      ? adoptedRows.reduce((at, row) => Math.max(at, row.savedAt), 0)
+      : undefined
+  );
   const [lateMerging, setLateMerging] = useState(!!lateDocument);
   // The header reads Getting ready until the merge applied (Q295).
   const lateNow = useRef(!!lateDocument);
@@ -1029,12 +1036,18 @@ export function NoteEditorCore({
   // of a never-accepted session ride in it, Q406): the old document goes to
   // a new editor, which writes its edits anew under its own assigned id,
   // once (merge view phase 2); what it cannot place becomes pieces.
+  // The late row keeps its drafts' date (Q420), and what this mount did
+  // after its merge applied stays beside it as pieces (Q451).
   const reauthorLate = useRef(() => {});
   reauthorLate.current = () => {
     if (!lateDocument || stale.current || rejected.current) return;
     stale.current = true;
     roomProvider(editorRef.current)?.disconnect();
-    const kept = recorder.current?.late(lateDocument);
+    const kept = recorder.current?.late(
+      lateDocument,
+      adoptedSavedAt,
+      mergedSequence.current
+    );
     reportLate.current?.({
       reauthor: true,
       session: kept?.session ?? '',
@@ -1054,6 +1067,8 @@ export function NoteEditorCore({
   // Set once the merged update is applied: from then on this session holds
   // the note's edits as any session does.
   const mergeApplied = useRef(false);
+  // The recorder's sequence once the merged update applied.
+  const mergedSequence = useRef<number | undefined>(undefined);
   // Stops the merge's worker when this editor goes (review r3 L4).
   const mergeStop = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -1103,11 +1118,16 @@ export function NoteEditorCore({
           applyMerged(ydoc, result.merged, LATE_ORIGIN, !!late?.reauthor);
         }
         mergeApplied.current = true;
+        // Edits past this one are the mount's own (a re-author keeps them).
+        mergedSequence.current = recorder.current?.sequence;
         lateNow.current = false;
         const hidden = result?.hidden.length
           ? hiddenDocument(lateDocument, result.hidden)
           : undefined;
         const kept = await recorder.current?.supersede(hidden, !!result);
+        // Gone stale, paused, rejected or unmounted meanwhile: the copies
+        // never merge into this editor and their rows stay (Q451).
+        if (signal?.aborted || stale.current || rejected.current) return;
         if (hidden && !kept) {
           // The hidden blocks could not be stored: the adopted rows stay (no
           // receipt may delete them), the note never opens live here, and
@@ -1143,8 +1163,11 @@ export function NoteEditorCore({
   // refused, unanswered) runs the merge. Rows not holding the handed
   // document (its late row was not read) go straight to the merge.
   const cleanTried = useRef(false);
+  // The try is in flight: a sync meanwhile (a reconnect) waits for it.
+  const cleanTrying = useRef(false);
   const tryClean = useRef(() => {});
   tryClean.current = () => {
+    if (cleanTrying.current) return;
     // A re-author's rows name an id the room never recorded: no clean try.
     if (!lateDocument || cleanTried.current || late?.reauthor) {
       mergeNow.current();
@@ -1157,17 +1180,20 @@ export function NoteEditorCore({
     }
     const ids = new Set(adoptedRows.map((row) => row.id));
     const current = () => !(stale.current || rejected.current);
+    cleanTrying.current = true;
     void (async () => {
-      let answers: string[] | null = null;
+      let admitted: boolean | null = null;
       try {
         const room = await getMaterialCollaborationToken(material.id);
         if (room.access === 'write')
-          answers = await sendLateDrafts(draftKey, room, ids, current);
+          admitted = await sendLateDrafts(draftKey, room, ids, current);
       } catch (error) {
         console.warn('Drafts cannot be sent:', error);
       }
+      cleanTrying.current = false;
       if (!current()) return;
-      if (answers?.length && answers.every((sent) => sent === 'sent')) {
+      // Every adopted row went in a group the room admitted (Q451).
+      if (admitted) {
         stale.current = true;
         roomProvider(editorRef.current)?.disconnect();
         reportLate.current?.(null);
@@ -1766,6 +1792,8 @@ export function NoteEditorCore({
   const boundWaiting = useRef<MaterialValue | null>(null);
   const bound = useRef((_unbound: MaterialValue) => {});
   bound.current = (unbound) => {
+    // A mount out of the room merges nothing; the next one takes the rows.
+    if (stale.current || rejected.current) return;
     if (lateDocument && !mergeApplied.current) {
       boundWaiting.current = unbound;
       return;

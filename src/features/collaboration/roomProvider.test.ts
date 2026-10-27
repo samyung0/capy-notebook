@@ -307,6 +307,31 @@ it('joins with its token, syncs both ways and counts unacknowledged updates', as
   expect(events.stateless).toHaveBeenCalledWith({ payload: '{"type":"x"}' });
 });
 
+// Q451 (review L4, Q443/Q444): an update the room answers late on a joined
+// channel ends that channel and tells the editor once, which then goes the
+// late way. Fails if a mid-session refusal is dropped or told twice.
+it('reports a late answer on a joined channel once and ends the channel', async () => {
+  const { document, events, join, provider, socket } = await joined();
+  const server = new Y.Doc();
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  expect(provider.isAuthenticated).toBe(true);
+  document.getText('content').insert(0, 'typed');
+  socket.deliver(
+    message(join.channel, MessageKind.Refused, text('collaboration-late')),
+    message(join.channel, MessageKind.Refused, text('collaboration-late'))
+  );
+  expect(events.failed).toHaveBeenCalledTimes(1);
+  expect(events.failed).toHaveBeenCalledWith({ reason: 'collaboration-late' });
+  expect(provider.isAuthenticated).toBe(false);
+});
+
 it('reports a refusal with its reason and rejoins on the same socket', async () => {
   const { events, join, provider, socket } = await joined();
   socket.deliver(

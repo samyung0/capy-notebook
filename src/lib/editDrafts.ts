@@ -842,22 +842,20 @@ export function recordDrafts({
     ...pendingAdopted,
   ];
   // The whole document (or `data`) as one row flagged `flag` in place of
-  // every row this session wrote or adopted, dated as the newest of them,
-  // and no more recording.
+  // every row this session wrote or adopted, dated as the newest of them
+  // (or `savedAt`), with `beside`, and no more recording.
   const keepAs = (
     flag: 'late' | 'refused',
-    data = Y.encodeStateAsUpdate(doc)
+    data = Y.encodeStateAsUpdate(doc),
+    savedAt = dated(Math.max(lastEdit, adoptedAt())),
+    beside: EditDraft[] = []
   ): EditDraft => {
     const previous = ownRows();
     stop();
-    const kept = row(
-      'state',
-      sequence,
-      data,
-      flag,
-      dated(Math.max(lastEdit, adoptedAt()))
+    const kept = row('state', sequence, data, flag, savedAt);
+    void write(
+      Promise.all([deleteDrafts(previous), putWithBase([kept, ...beside])])
     );
-    void write(Promise.all([deleteDrafts(previous), putWithBase([kept])]));
     return kept;
   };
 
@@ -964,9 +962,29 @@ export function recordDrafts({
      * `data`, the old document a re-author merges anew) as one late row,
      * which the next editor merges, and stop recording. Returns
      * that row, dated as its newest edit (past the 7-day expiry it becomes
-     * pieces, Q413). */
-    late(data?: Uint8Array): EditDraft {
-      return keepAs('late', data);
+     * pieces, Q413). A re-author passes its drafts' date (`savedAt`) and the
+     * sequence its merge applied at (`since`): edits made after it stay
+     * whole beside the late row as one refused row, the next open's pieces,
+     * under a session of their own so each keeps its expiry (Q451). */
+    late(data?: Uint8Array, savedAt?: number, since?: number): EditDraft {
+      const own = crypto.randomUUID();
+      const beside =
+        since !== undefined && sequence > since
+          ? [
+              {
+                ...row(
+                  'state',
+                  sequence,
+                  Y.encodeStateAsUpdate(doc),
+                  'refused',
+                  dated(lastEdit)
+                ),
+                id: `${own}:state`,
+                session: own,
+              },
+            ]
+          : [];
+      return keepAs('late', data, savedAt, beside);
     },
     /** A save refused for good: keep the whole document (or `data`, the
      * document the edits are in) as one refused row (shown for copying,
@@ -1344,7 +1362,8 @@ async function sendGroups(
   token: RoomToken,
   current: () => boolean,
   only: (row: DraftInfo) => boolean = () => true,
-  late = false
+  late = false,
+  admitted?: Set<string>
 ): Promise<Sent[] | null> {
   const answers: Sent[] = [];
   const rows = await call<DraftInfo[]>({ key, op: 'rows' });
@@ -1358,8 +1377,10 @@ async function sendGroups(
       return null;
     }
     answers.push(sent);
-    if (sent === 'sent') await deleteDrafts(refs);
-    else if (sent === 'late')
+    if (sent === 'sent') {
+      for (const ref of group.refs) admitted?.add(ref.id);
+      await deleteDrafts(refs);
+    } else if (sent === 'late')
       await markDrafts(
         key,
         refs.map((row) => row.id),
@@ -1396,15 +1417,26 @@ export function splitOpenDrafts(rows: EditDraft[]) {
 /** A late note editor's one try of the rows it took (`ids`, late ones
  * included) as ordinary drafts before any merge code loads (Epo 2026-10-27,
  * Q436): the room admits a group naming nothing it collected and answers
- * the others late (their rows marked so). Sent rows go. Resolves each
- * group's answer, or null when stopped or refused as outdated. */
-export function sendLateDrafts(
+ * the others late (their rows marked so). Sent rows go. Resolves whether
+ * every row of `ids` went in a group the room admitted (a row no group
+ * took, held or refused, did not: Q451), or null when stopped or refused
+ * as outdated. */
+export async function sendLateDrafts(
   key: string,
   token: RoomToken,
   ids: ReadonlySet<string>,
   current: () => boolean
 ) {
-  return sendGroups(key, token, current, (row) => ids.has(row.id), true);
+  const admitted = new Set<string>();
+  const answers = await sendGroups(
+    key,
+    token,
+    current,
+    (row) => ids.has(row.id),
+    true,
+    admitted
+  );
+  return answers && [...ids].every((id) => admitted.has(id));
 }
 
 /** How long an opening editor waits, view-only, for the draft send of its

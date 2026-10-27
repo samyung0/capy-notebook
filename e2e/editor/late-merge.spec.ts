@@ -191,13 +191,15 @@ function storedRows(page: Page) {
     const { user } = await import(dbPath);
     const rows: {
       id: string;
+      kind: string;
       late?: true;
       refused?: true;
       session: string;
     }[] = await readDrafts(draftKey(user.id, 'material', id));
     return rows
-      .map(({ id: row, late, refused, session }) => ({
+      .map(({ id: row, kind, late, refused, session }) => ({
         id: row,
+        kind,
         late: !!late,
         refused: !!refused,
         session,
@@ -645,7 +647,12 @@ async function serveDrafts(page: Page) {
             sentKey,
             String(Number(sessionStorage.getItem(sentKey) ?? 0) + 1)
           );
-        const answer = sweep ? null : sessionStorage.getItem(answerKey);
+        let answer = sweep ? null : sessionStorage.getItem(answerKey);
+        // `holdDrafts`: the answer waits until another one is set.
+        while (answer === 'hold') {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          answer = sessionStorage.getItem(answerKey);
+        }
         if (answer === 'late')
           return Response.json({ class: 'late' }, { status: 409 });
         if (answer === 'clean') {
@@ -663,6 +670,13 @@ async function serveDrafts(page: Page) {
 function answerDraftsClean(page: Page) {
   return page.evaluate(
     (key) => sessionStorage.setItem(key, 'clean'),
+    DRAFTS_ANSWER
+  );
+}
+
+function holdDrafts(page: Page) {
+  return page.evaluate(
+    (key) => sessionStorage.setItem(key, 'hold'),
     DRAFTS_ANSWER
   );
 }
@@ -1199,4 +1213,191 @@ test("a late tab's own edits past the expiry become pieces instead of merging", 
   await expect(sheet).toContainText(m.merge_source_expired());
   expect(workers.some((url) => url.includes('lateMerge.worker'))).toBe(false);
   await lateSessions(page, null);
+});
+
+const COPY = 'A block typed in the saved copy.';
+
+/** A saved copy (Q229) a closed tab left on this device: the projection with
+ * one block added, recorded by no open tab, so the next mount adopts it. */
+async function seedCopy(page: Page) {
+  await page.evaluate(
+    async ({ id, intro, text }) => {
+      const draftsPath = '/src/lib/editDrafts.ts';
+      const dbPath = '/src/mocks/db.ts';
+      const { draftKey, putDrafts } = await import(draftsPath);
+      const { user } = await import(dbPath);
+      const base = [
+        { children: [{ text: intro }], id: `${id}-intro`, type: 'p' },
+      ];
+      const mine = [
+        ...base,
+        { children: [{ text }], id: 'late-copy-block', type: 'p' },
+      ];
+      const session = crypto.randomUUID();
+      await putDrafts([
+        {
+          data: new TextEncoder().encode(
+            JSON.stringify({ base, mine, revision: 1 })
+          ),
+          id: `${session}:copy`,
+          key: draftKey(user.id, 'material', id),
+          kind: 'copy',
+          lineage: `material:${id}`,
+          savedAt: Date.now(),
+          seq: 1,
+          session,
+        },
+      ]);
+    },
+    { id: MATERIAL, intro: seed, text: COPY }
+  );
+}
+
+const storedKinds = async (page: Page) =>
+  (await storedRows(page)).map((row) => row.kind);
+
+// Q451 (review M2, Q406/Q408): a saved copy a late mount adopts waits for
+// its late merge: the room holds none of it while the merge waits, then it
+// merges once and its row goes. Fails if the copy merges at the bind.
+test('a saved copy waits for the late merge and merges once it applied', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await holdMerges(page);
+  await goLateWithOfflineWords(page);
+  await seedCopy(page);
+  await setReachable(page, true);
+  await mergeHeld(page);
+  await page.waitForTimeout(1000);
+  expect(await roomText(page)).not.toContain(COPY);
+  expect(await storedKinds(page)).toContain('copy');
+  await page.evaluate(() =>
+    (window as unknown as { releaseLateMerge: () => void }).releaseLateMerge()
+  );
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  await expect(editor).toContainText(COPY);
+  expect((await editor.innerText()).split(COPY).length - 1).toBe(1);
+  await expect.poll(() => roomText(page)).toContain(COPY);
+  await expect.poll(() => storedKinds(page)).not.toContain('copy');
+  await lateSessions(page, null);
+});
+
+/** A session's whole-document write (a late merge's `supersede`) waits in
+ * the page while `holdingStateWrites` is set, until `releaseStateWrite`. */
+async function holdStateWrites(page: Page) {
+  await page.addInitScript(() => {
+    const Native = window.Worker;
+    window.Worker = class extends Native {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes('draftStore.worker')) return;
+        const post = this.postMessage.bind(this);
+        this.postMessage = (...args: Parameters<Worker['postMessage']>) => {
+          const [message] = args as [
+            {
+              op?: string;
+              rows?: { kind: string; late?: true; refused?: true }[];
+            },
+          ];
+          const held =
+            (window as { holdingStateWrites?: boolean }).holdingStateWrites &&
+            message.op === 'put' &&
+            message.rows?.some(
+              (row) => row.kind === 'state' && !row.late && !row.refused
+            );
+          if (!held) {
+            post(...args);
+            return;
+          }
+          Object.assign(window, { releaseStateWrite: () => post(...args) });
+        };
+      }
+    };
+  });
+}
+
+// Q451 (review M1): a late mount left while its merged document is being
+// stored never merges the saved copy it adopted: the copy's row stays, and
+// the note opened again merges it. Fails if the copy merges into the
+// unmounted editor (its row goes, the text is lost).
+test('a saved copy outlives a late mount left while its merge is stored', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await holdStateWrites(page);
+  await goLateWithOfflineWords(page);
+  await seedCopy(page);
+  await page.evaluate(() =>
+    Object.assign(window, { holdingStateWrites: true })
+  );
+  await setReachable(page, true);
+  await page.waitForFunction(() => 'releaseStateWrite' in window, undefined, {
+    timeout: 30_000,
+  });
+  // Leave the note (client-side: the mock room and database stay).
+  await page.evaluate(() => {
+    history.pushState({}, '', '/workspaces/ws_scenarios');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page.locator('[data-note-mount]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await page.evaluate(() => {
+    const held = window as unknown as {
+      holdingStateWrites: boolean;
+      releaseStateWrite: () => void;
+    };
+    held.holdingStateWrites = false;
+    held.releaseStateWrite();
+  });
+  await page.waitForTimeout(1500);
+  expect(await storedKinds(page)).toContain('copy');
+  await lateSessions(page, null);
+  await page.evaluate((url) => {
+    history.pushState({}, '', url);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, note);
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(COPY, { timeout: 60_000 });
+  expect((await editor.innerText()).split(COPY).length - 1).toBe(1);
+  await expect.poll(() => roomText(page)).toContain(COPY);
+});
+
+// Q451 (review L3, Q436): a reconnect while the clean try waits for its
+// answer waits for it too: the service then admits the rows and the note
+// opens afresh, the merge's code never fetched. Fails if the reconnect
+// starts the merge alongside the try.
+test('a reconnect during the clean try waits for its answer instead of merging', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const workers: string[] = [];
+  page.on('worker', (worker) => workers.push(worker.url()));
+  await serveDrafts(page);
+  await goLateWithOfflineWords(page);
+  await holdDrafts(page);
+  await setReachable(page, true);
+  await expect.poll(() => draftSends(page), { timeout: 30_000 }).toBe(1);
+  // The late mount joined; its rejoin (at once, the same provider) is
+  // answered as any new session's and syncs while the try waits.
+  await lateSessions(page, null);
+  await setReachable(page, false);
+  await setReachable(page, true);
+  await page.waitForTimeout(2000);
+  await answerDraftsClean(page);
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(OFFLINE.trim(), { timeout: 30_000 });
+  await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  expect((await editor.innerText()).split(OFFLINE.trim()).length - 1).toBe(1);
+  expect(await draftSends(page)).toBe(1);
+  expect(workers.some((url) => url.includes('lateMerge.worker'))).toBe(false);
 });

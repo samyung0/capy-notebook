@@ -89,6 +89,7 @@ import {
   recoveryDocument,
   reportRecoveryGroup,
   sameSourceLineage,
+  sendLateDrafts,
   splitOpenDrafts,
   sweepDrafts,
 } from './editDrafts';
@@ -1027,6 +1028,53 @@ describe('recording a note session', () => {
     ).toBeGreaterThan(newer.savedAt);
   });
 
+  // Q451 (review L1, L2): a late merge refused for an unrecorded id hands
+  // the old document anew. Its late row keeps the drafts' date, and what the
+  // session did after its merge applied stays beside it as one refused row
+  // (the next open's pieces) under a session of its own, so the late row's
+  // expiry is its own. Fails if the row is dated now or the edits go.
+  it("keeps a re-authored late row at its drafts' date, with the edits since the merge beside it", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const key = 'u_1:material:reauthor';
+    const adopted = draft('older:1', {
+      key,
+      late: true,
+      savedAt: Date.now() - 6 * day,
+      session: 'older',
+    });
+    await putDrafts([adopted]);
+    const { client, recorder } = noteRecorder(key, 'note', {
+      adopted: [adopted],
+    });
+    const old = Y.encodeStateAsUpdate(client);
+    client.getText('content').insert(4, ' merged');
+    const merged = recorder.sequence;
+    await recorder.supersede(undefined, true);
+    client.getText('content').insert(0, 'copy ');
+    recorder.late(old, adopted.savedAt, merged);
+    const rows = await vi.waitFor(async () => {
+      const stored = await readDrafts(key);
+      expect(stored).toHaveLength(2);
+      return stored;
+    });
+    const late = rows.find((row) => row.late);
+    expect(late?.savedAt).toBe(adopted.savedAt);
+    const own = rows.find((row) => row.refused);
+    expect(own?.session).not.toBe(late?.session);
+    const shown = new Y.Doc();
+    applyDrafts(shown, own ? [own] : [], 'recovery');
+    expect(shown.getText('content').toString()).toBe('copy note merged');
+
+    // Nothing done after the merge: the late row alone.
+    const quiet = 'u_1:material:reauthor-quiet';
+    const second = noteRecorder(quiet, 'note');
+    second.client.getText('content').insert(4, ' merged');
+    second.recorder.late(old, adopted.savedAt, second.recorder.sequence);
+    await vi.waitFor(async () =>
+      expect((await readDrafts(quiet)).map((row) => row.late)).toEqual([true])
+    );
+  });
+
   // Review r4 N4: nothing merged (the document already held every edit), so
   // the adopted rows go with no whole document written.
   it('writes no whole document when a late merge had nothing to merge', async () => {
@@ -1959,6 +2007,29 @@ describe('the draft sweep sending', () => {
     expect(requests).toHaveLength(1);
     // The editor's next open takes them, as late rows.
     expect((await later.draftGroups(rows, ROOM)).current).toHaveLength(2);
+  });
+
+  // Q451 (review L3): a late editor's clean try opens the note afresh only
+  // when every row it took went in a group the room admitted; a held row no
+  // group takes keeps the merge. Fails if the groups' answers alone decide.
+  it("counts a late editor's clean try admitted only when every row it took went in an admitted group", async () => {
+    const key = 'u_clean:material:mat_1';
+    const room = {
+      access: 'write' as const,
+      room: ROOM,
+      token: 'room-token',
+      url: 'wss://collab.test',
+    };
+    const rows = await leftRows(key);
+    const held = draft('clean-held', { held: true, key });
+    await putDrafts([held]);
+    requests.length = 0;
+    const taken = new Set([...rows.map((row) => row.id), held.id]);
+    expect(await sendLateDrafts(key, room, taken, () => true)).toBe(false);
+    expect(requests).toHaveLength(1);
+    const again = await leftRows(key);
+    const ids = new Set(again.map((row) => row.id));
+    expect(await sendLateDrafts(key, room, ids, () => true)).toBe(true);
   });
 
   it('sends a group larger than a piece as pieces of at most 2 MiB, in order, and its rows go once the last is stored', async () => {
