@@ -323,10 +323,15 @@ async fn source_changes(State(app): State<Shared>, headers: HeaderMap, body: Byt
     let rooms = app.clone();
     let result = app
         .sources
-        .office_changes(&input.workspace_id, &input.file_ids, move |room| {
-            let app = rooms.clone();
-            Box::pin(async move { crate::edits::live_state(&app, &room).await })
-        })
+        .office_changes(
+            &input.workspace_id,
+            &input.file_ids,
+            move |room| {
+                let app = rooms.clone();
+                Box::pin(async move { crate::edits::live_state(&app, &room).await })
+            },
+            sources::pending::OFFICE_CHANGES_BUDGET,
+        )
         .await
         .map(|changes| serde_json::to_value(changes).unwrap_or(Value::Null));
     source_answer("source_changes", result)

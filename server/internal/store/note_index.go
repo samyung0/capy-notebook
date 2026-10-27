@@ -97,6 +97,11 @@ func noteBlocks(ctx context.Context, q rowsQueryer, materialID, workspaceID, con
 	return before, now, nil
 }
 
+// noteEffectsFormat versions cached note changes (Q435): raise it when the
+// index text or the note effects change, and every cached entry is read
+// again.
+const noteEffectsFormat = 1
+
 // NotePending is one note's changes since its last index, for chat.
 type NotePending struct {
 	MaterialID string                   `json:"materialId"`
@@ -114,13 +119,13 @@ type NotePending struct {
 func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, materialIDs []string) ([]NotePending, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id, title, revision, xmin::text, cached,
 			CASE WHEN cached IS NULL THEN content END, CASE WHEN cached IS NULL THEN indexed_blocks END
-		FROM (SELECT *, xmin, CASE WHEN effects_cache->'at'=jsonb_build_object('revision', revision)
+		FROM (SELECT *, xmin, CASE WHEN effects_cache->'at'=jsonb_build_object('revision', revision, 'format', $3::int)
 				THEN effects_cache->'effects' END AS cached
 			FROM materials
 			WHERE workspace_id=$1 AND kind='note' AND trashed_at IS NULL
 			  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL OR index_error IS NOT NULL)
 			  AND ($2::text[] IS NULL OR id=ANY($2::text[]))) m
-		ORDER BY id`, workspaceID, materialIDs)
+		ORDER BY id`, workspaceID, materialIDs, noteEffectsFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -148,25 +153,34 @@ func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, mate
 	out := []NotePending{}
 	for _, n := range notes {
 		if n.cached != nil {
-			if err := json.Unmarshal(n.cached, &n.pending.Changes); err != nil {
-				return nil, fmt.Errorf("cached changes of %s: %w", n.pending.MaterialID, err)
-			}
-		} else {
-			before, now, err := noteBlocks(ctx, s.pool, n.pending.MaterialID, workspaceID, *n.content, n.baseline)
-			if errors.Is(err, materialdoc.ErrInvalid) {
-				// A stored note the rules refuse is unreadable: it gives no
-				// changes, and the rest of the workspace still does.
-				obs.Log(ctx).Warn("note changes skipped: content unreadable", "material_id", n.pending.MaterialID, "error", err)
+			err := json.Unmarshal(n.cached, &n.pending.Changes)
+			if err == nil {
+				if len(n.pending.Changes) > 0 {
+					out = append(out, n.pending)
+				}
 				continue
 			}
-			if err != nil {
-				return nil, err
-			}
-			n.pending.Changes, _ = materialdoc.NoteChanges(before, now)
-			if err := s.cacheNoteChanges(ctx, n.pending.MaterialID, n.pending.Revision, n.xmin, n.pending.Changes); err != nil {
+			// An entry that no longer decodes is a miss (Q435): the note is
+			// read and its changes computed again.
+			obs.Log(ctx).Warn("note changes cache unreadable", "material_id", n.pending.MaterialID, "error", err)
+			n.pending.Changes = nil
+			if err := s.pool.QueryRow(ctx, `SELECT content, indexed_blocks FROM materials WHERE id=$1`,
+				n.pending.MaterialID).Scan(&n.content, &n.baseline); err != nil {
 				return nil, err
 			}
 		}
+		before, now, err := noteBlocks(ctx, s.pool, n.pending.MaterialID, workspaceID, *n.content, n.baseline)
+		if errors.Is(err, materialdoc.ErrInvalid) {
+			// A stored note the rules refuse is unreadable: it gives no
+			// changes, and the rest of the workspace still does.
+			obs.Log(ctx).Warn("note changes skipped: content unreadable", "material_id", n.pending.MaterialID, "error", err)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		n.pending.Changes, _ = materialdoc.NoteChanges(before, now)
+		s.cacheNoteChanges(ctx, n.pending.MaterialID, n.pending.Revision, n.xmin, n.pending.Changes)
 		if len(n.pending.Changes) > 0 {
 			out = append(out, n.pending)
 		}
@@ -176,19 +190,21 @@ func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, mate
 
 // cacheNoteChanges keeps a note's changes for the revision they were
 // computed at, unless its row changed since it was read (xmin): an embedded
-// item's write and the index clear the cache without a new revision.
-func (s *Store) cacheNoteChanges(ctx context.Context, materialID string, revision int64, xmin string, changes []materialdoc.NoteEffect) error {
+// item's write and the index clear the cache without a new revision. A
+// failed write is logged: the changes were computed and still answer (Q435).
+func (s *Store) cacheNoteChanges(ctx context.Context, materialID string, revision int64, xmin string, changes []materialdoc.NoteEffect) {
 	if changes == nil {
 		changes = []materialdoc.NoteEffect{}
 	}
 	raw, err := json.Marshal(changes)
-	if err != nil {
-		return err
+	if err == nil {
+		_, err = s.pool.Exec(ctx, `UPDATE materials
+			SET effects_cache=jsonb_build_object('at', jsonb_build_object('revision', revision, 'format', $5::int), 'effects', $4::jsonb)
+			WHERE id=$1 AND revision=$2 AND xmin::text=$3`, materialID, revision, xmin, raw, noteEffectsFormat)
 	}
-	_, err = s.pool.Exec(ctx, `UPDATE materials
-		SET effects_cache=jsonb_build_object('at', jsonb_build_object('revision', revision), 'effects', $4::jsonb)
-		WHERE id=$1 AND revision=$2 AND xmin::text=$3`, materialID, revision, xmin, raw)
-	return err
+	if err != nil {
+		obs.Log(ctx).Warn("note changes cache write failed", "material_id", materialID, "error", err)
+	}
 }
 
 // NoteChangeText is one note block's index text at the last index and now,
@@ -296,9 +312,7 @@ func (s *Store) measureNoteChange(ctx context.Context, materialID string) (*int6
 	}
 	// The changes it computes are the next read's (Q415).
 	changes, tokens := materialdoc.NoteChanges(before, now)
-	if err := s.cacheNoteChanges(ctx, materialID, revision, xmin, changes); err != nil {
-		return nil, 0, err
-	}
+	s.cacheNoteChanges(ctx, materialID, revision, xmin, changes)
 	return &tokens, revision, nil
 }
 

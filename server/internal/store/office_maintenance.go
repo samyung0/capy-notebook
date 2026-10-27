@@ -287,7 +287,7 @@ func (s *Store) OfficeReadiness(ctx context.Context) (OfficeReadiness, error) {
 	// A pending rebuild counts: its state is still a change over the old
 	// base's seed. The collaboration service rebuilds it while rooms are
 	// closed for the pause.
-	rows, err := s.pool.Query(ctx, `SELECT file_id,format,COALESCE(running_job_id,''),COALESCE(refresh_error,''),checkpoint,indexed_checkpoint,rebuild_pending FROM source_documents WHERE format<>'text' AND (checkpoint>indexed_checkpoint OR pending_effects<>'[]'::jsonb OR rebuild_pending) ORDER BY file_id`)
+	rows, err := s.pool.Query(ctx, `SELECT file_id,format,COALESCE(running_job_id,''),COALESCE(refresh_error,''),checkpoint,indexed_checkpoint,rebuild_pending FROM source_documents WHERE format<>'text' AND (checkpoint>indexed_checkpoint OR net_tokens>0 OR rebuild_pending) ORDER BY file_id`)
 	if err != nil {
 		return out, err
 	}

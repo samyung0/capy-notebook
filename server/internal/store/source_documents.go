@@ -695,12 +695,13 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 		if refreshError != nil || (status == string(FileFailed) && !indexed && !manual) {
 			return result, ErrConflict
 		}
-		// Edits worth no tokens never refresh automatically: an Office save
-		// counts the text it inserted and deleted (Q405), so one that only
-		// formatted counts 0. A refused rebuild (RefuseSourceRebuild) makes
+		// A text file's edits worth no tokens (undone) never refresh. An
+		// Office save counts the text it inserted and deleted (Q405), so
+		// pictures or formatting alone count 0: such a file waits for the
+		// stale rule (Q435). A refused rebuild (RefuseSourceRebuild) makes
 		// the file due whatever its edits weigh.
 		refused := rebuildRefusal != nil
-		if doc.Checkpoint <= doc.IndexedCheckpoint || (!refused && doc.NetTokens == 0) {
+		if doc.Checkpoint <= doc.IndexedCheckpoint || (!refused && doc.NetTokens == 0 && doc.Format == "text") {
 			return result, ErrConflict
 		}
 		if doc.Format == "text" {

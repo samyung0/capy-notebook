@@ -813,6 +813,12 @@ func TestOfficeReadiness(t *testing.T) {
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "office_readiness")
 	unpublished := maintenanceTestEdited(t, s, owner, "lesson.docx", false)
+	// Q435 (review L1): a count of edits is unpublished by itself, as the
+	// window reset's guard reads it.
+	counted := maintenanceTestEdited(t, s, owner, "counted.docx", false)
+	if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=checkpoint,net_tokens=5 WHERE file_id=$1`, counted); err != nil {
+		t.Fatal(err)
+	}
 	_, textFile := sourceTestFile(t, s, owner, "notes.txt", "txt")
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, textFile.ID), "text-edit")
 	refresh, err := s.RequestSourceRefresh(ctx, owner, unpublished, false)
@@ -840,7 +846,7 @@ func TestOfficeReadiness(t *testing.T) {
 		flying := func(id string) bool {
 			return slices.ContainsFunc(ready.InFlight, func(j InFlightJob) bool { return j.ID == id })
 		}
-		if ready.Paused != paused || !listed(unpublished) || listed(textFile.ID) || !flying(refresh.JobID) || !flying(reprocess) || flying(upload) || ready.Ready() {
+		if ready.Paused != paused || !listed(unpublished) || !listed(counted) || listed(textFile.ID) || !flying(refresh.JobID) || !flying(reprocess) || flying(upload) || ready.Ready() {
 			t.Fatalf("readiness %+v", ready)
 		}
 		return ready

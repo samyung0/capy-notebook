@@ -438,8 +438,8 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	owner := newBlobTestUser(t, s, "source_auto_refresh")
-	// Q405: the count is the text saves inserted and deleted; saves that only
-	// formatted count 0 and never refresh, whatever effects a read finds.
+	// Q405: the count is the text saves inserted and deleted. Saves worth 0
+	// (pictures, formatting) wait for the stale rule (Q435).
 	for _, c := range []struct {
 		tokens   int
 		idle     string
@@ -450,7 +450,8 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 		{3000, "30 seconds", false},
 		{2999, "6 days", false},
 		{1, "7 days 1 minute", true},
-		{0, "8 days", false},
+		{0, "6 days", false},
+		{0, "8 days", true},
 	} {
 		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
 		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
@@ -550,9 +551,10 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	due := edited(3000, "2 minutes")
 	// One token under the trigger, idle as long: not yet.
 	under := edited(2999, "2 minutes")
-	// Saves that only formatted count 0 (Q405): never due, whatever effects
-	// the stored row holds (sourceTestSave stores some).
+	// Saves worth 0 (pictures only, Q405) are due once stale (Q435), and
+	// not before.
 	formatted := edited(0, "9 days")
+	picturesFresh := edited(0, "2 minutes")
 	unedited := edited(5, "8 days")
 	// Due by its edits, but failed: only the owner's Retry processing runs it.
 	failed := edited(3000, "3 minutes")
@@ -579,7 +581,7 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	}
 	defer tx.Rollback(ctx)
 	// Only this test's rows compete for the batch; the rollback restores the rest.
-	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, under, formatted, unedited, failed, partial, textPartial, textPaused, textTyping}); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, under, formatted, picturesFresh, unedited, failed, partial, textPartial, textPaused, textTyping}); err != nil {
 		t.Fatal(err)
 	}
 	candidates := func() []string {
@@ -604,14 +606,14 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 		}
 		return files
 	}
-	if got := candidates(); !slices.Equal(got, []string{unedited, partial, due, textPartial, textPaused}) {
-		t.Fatalf("candidates %v, want the unedited file, the partial one, the due one, then the partial and the paused text", got)
+	if got := candidates(); !slices.Equal(got, []string{formatted, unedited, partial, due, textPartial, textPaused}) {
+		t.Fatalf("candidates %v, want the stale pictures-only file, the unedited one, the partial one, the due one, then the partial and the paused text", got)
 	}
 	// A 429 (owner at the ingest-job limit) rotates the file behind the others.
 	if _, err = tx.Exec(ctx, deferSQL, unedited); err != nil {
 		t.Fatal(err)
 	}
-	if got := candidates(); !slices.Equal(got, []string{partial, due, textPartial, textPaused, unedited}) {
+	if got := candidates(); !slices.Equal(got, []string{formatted, partial, due, textPartial, textPaused, unedited}) {
 		t.Fatalf("candidates after a 429 %v, want the refused file last", got)
 	}
 	if err = tx.Rollback(ctx); err != nil {
@@ -1723,6 +1725,10 @@ func TestFileChangesQueueAndCancel(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "queued-state")
+	// Q435: a saved Office edit worth no tokens (pictures only) is listed.
+	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=0 WHERE file_id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
 	state := func() string {
 		t.Helper()
 		stats, err := s.WorkspaceStats(ctx, owner, ws.ID)
@@ -1733,6 +1739,9 @@ func TestFileChangesQueueAndCancel(t *testing.T) {
 			t.Fatalf("file changes = %+v", stats.FileChanges)
 		}
 		return stats.FileChanges[0].State
+	}
+	if got := state(); got != "waiting" {
+		t.Fatalf("a pictures-only save is %s", got)
 	}
 	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
 	if err != nil {

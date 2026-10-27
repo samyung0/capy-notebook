@@ -514,8 +514,10 @@ moves bytes from the rows into the state. The effects caches are not charged
 file's read effects) is outside `storage_bytes`, and `materials.effects_cache`
 (a note's changes) outside `size_bytes`. Each holds one read's trimmed effects
 for one version and is cleared when that version moves. Text pending effects
-stay charged, but are trimmed line runs since Q416, so far-apart edits in a
-large file no longer charge twice its size.
+stay charged, but are trimmed line runs since Q416, and a run worth more than
+a read's cap (16,000 tokens) is a placeholder without text since Q435, so
+far-apart edits in a large file, one long line included, no longer charge
+twice its size.
 Edits a publication captured are charged once, in the file:
 
 - An Office state is charged as stored: the change over seed(base) that the

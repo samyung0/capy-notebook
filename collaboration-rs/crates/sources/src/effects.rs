@@ -48,6 +48,16 @@ pub struct TextChange {
 /// cells for D changed lines, so it stops past 511.
 pub const LINE_DIFF_CELLS: usize = 1 << 18;
 
+/// The diff's work budget in line comparisons (Q435): repeated short lines
+/// let every diagonal run far, so past this the change is the placeholder.
+pub const LINE_DIFF_STEPS: usize = 1 << 24;
+
+/// A read's cap on pending changes (Q435): a run of changed lines worth more
+/// is the placeholder, so one long line edited in two far places does not
+/// store the text between them.
+/// IMPORTANT: KEEP IN SYNC WITH READ_PENDING_TOKENS IN pipeline/pipeline/retrieval/pending.py
+pub const READ_PENDING_TOKENS: u64 = 16_000;
+
 /// [`TextChange`] from `before` to `after`.
 pub fn text_effects(before: &[u16], after: &[u16]) -> TextChange {
     text_effects_with(before, after.len(), |index| after[index], 0, 0)
@@ -98,6 +108,13 @@ pub(crate) fn text_effects_with(
     let new: Vec<u16> = (from..end_after + rest).map(&at).collect();
     let (a, b) = (lines(old), lines(&new));
     let span = Some((prefix, end_after - prefix));
+    // The text's lines now, a final newline ending the last rather than
+    // starting another: counted only for a placeholder, O(text).
+    let total = || {
+        let ends = after_len > 0 && at(after_len - 1) == newline;
+        before.iter().filter(|unit| **unit == newline).count() + 1 - a.len() + b.len()
+            - usize::from(ends)
+    };
     let Some(hunks) = line_hunks(&a, &b) else {
         // A heavy change: its lines counted, its text left out.
         let mut count = TextCount::default();
@@ -105,22 +122,14 @@ pub(crate) fn text_effects_with(
         count.add_units(&new[prefix - from..end_after - from]);
         let (head, tail) = common_ends(&a, &b);
         let changed = (a.len() - head - tail).max(b.len() - head - tail);
-        let total = before.iter().filter(|unit| **unit == newline).count() + 1 - a.len() + b.len();
-        let label = format!("{changed} of {total} lines changed");
         return TextChange {
-            effects: vec![NetEffect {
-                id: office_service::sha256_hex(
-                    serde_json::to_string(&(prefix, end_before, end_after, count.tokens(), &label))
-                        .unwrap_or_default(),
-                ),
-                kind: EffectKind::Text,
-                operation: operation(end_before > prefix, end_after > prefix),
-                label,
-                before: None,
-                after: None,
-                asset_ref: None,
-                image_sha256: None,
-            }],
+            effects: vec![placeholder(
+                changed,
+                total(),
+                prefix,
+                count.tokens(),
+                operation(end_before > prefix, end_after > prefix),
+            )],
             tokens: count.tokens(),
             span,
         };
@@ -131,30 +140,70 @@ pub(crate) fn text_effects_with(
     for line in &b {
         starts.push(starts[starts.len() - 1] + line.len() + 1);
     }
+    let mut lines_now = None;
+    let mut tokens = 0;
     let effects: Vec<NetEffect> = hunks
         .into_iter()
         .map(|(removed, added)| {
             let join = |texts: &[&[u16]]| string(&texts.join(&newline));
             let (gone, came) = (join(&a[removed.clone()]), join(&b[added.clone()]));
             let offset = starts[added.start].min(from + new.len());
-            trim_effect(NetEffect {
+            let operation = operation(!removed.is_empty(), !added.is_empty());
+            let effect = trim_effect(NetEffect {
                 id: office_service::sha256_hex(
                     serde_json::to_string(&(offset, &gone, &came)).unwrap_or_default(),
                 ),
                 kind: EffectKind::Text,
-                operation: operation(!removed.is_empty(), !added.is_empty()),
+                operation,
                 label: format!("Text at UTF-16 offset {offset}"),
                 before: Some(gone),
                 after: Some(came),
                 asset_ref: None,
                 image_sha256: None,
-            })
+            });
+            let weight = effect_tokens(std::slice::from_ref(&effect));
+            tokens += weight;
+            if weight <= READ_PENDING_TOKENS {
+                return effect;
+            }
+            let changed = removed.len().max(added.len());
+            placeholder(
+                changed,
+                *lines_now.get_or_insert_with(total),
+                offset,
+                weight,
+                operation,
+            )
         })
         .collect();
     TextChange {
-        tokens: effect_tokens(&effects),
         effects,
+        tokens,
         span,
+    }
+}
+
+/// A change too heavy to list: `changed of total lines changed`, no text.
+/// Its id hashes where it is, its weight and its label, not its text.
+fn placeholder(
+    changed: usize,
+    total: usize,
+    offset: usize,
+    tokens: u64,
+    operation: Operation,
+) -> NetEffect {
+    let label = format!("{changed} of {total} lines changed");
+    NetEffect {
+        id: office_service::sha256_hex(
+            serde_json::to_string(&(offset, tokens, &label)).unwrap_or_default(),
+        ),
+        kind: EffectKind::Text,
+        operation,
+        label,
+        before: None,
+        after: None,
+        asset_ref: None,
+        image_sha256: None,
     }
 }
 
@@ -173,7 +222,8 @@ fn lines(text: &[u16]) -> Vec<&[u16]> {
 
 /// The runs of lines `a` lost and `b` gained, as (lines of `a`, lines of
 /// `b`), in order: Myers' O(ND) diff, so the work grows with the changed
-/// lines D. None once its trace would pass [`LINE_DIFF_CELLS`].
+/// lines D. None once its trace would pass [`LINE_DIFF_CELLS`] or its line
+/// comparisons [`LINE_DIFF_STEPS`].
 fn line_hunks(a: &[&[u16]], b: &[&[u16]]) -> Option<Vec<(Range<usize>, Range<usize>)>> {
     let (head, tail) = common_ends(a, b);
     let (x0, y0) = (head, head);
@@ -187,6 +237,7 @@ fn line_hunks(a: &[&[u16]], b: &[&[u16]]) -> Option<Vec<(Range<usize>, Range<usi
     let mut v = vec![0isize; 2 * limit as usize + 3];
     let mut trace: Vec<Vec<isize>> = Vec::new();
     let mut found = None;
+    let mut steps = 0usize;
     'search: for d in 0..=limit {
         for k in (-d..=d).step_by(2) {
             let mut x = if k == -d || (k != d && v[at(k - 1)] < v[at(k + 1)]) {
@@ -198,6 +249,11 @@ fn line_hunks(a: &[&[u16]], b: &[&[u16]]) -> Option<Vec<(Range<usize>, Range<usi
             while x < n && y < m && a[x0 + x as usize] == b[y0 + y as usize] {
                 x += 1;
                 y += 1;
+                steps += 1;
+            }
+            steps += 1;
+            if steps > LINE_DIFF_STEPS {
+                return None;
             }
             v[at(k)] = x;
             if x >= n && y >= m {
@@ -430,6 +486,24 @@ fn xlsx_cell(item: &Item) -> bool {
         )
 }
 
+/// Whether everything `txn` inserted and deleted is a contributor marker
+/// (`ydoc::CONTRIBUTORS_ROOT`): a store's marker clear, or a writer's marker
+/// written on its own, changes nothing in the document (Q435).
+pub fn markers_only(txn: &TransactionMut<'_>) -> bool {
+    let store = ReadTxn::store(txn);
+    [txn.insert_set(), txn.delete_set()].iter().all(|set| {
+        set.iter().all(|(client, ranges)| {
+            ranges.iter().all(|range| {
+                store.blocks_in(client, range.clone()).all(|(_, item)| {
+                    item.and_then(|item| item.parent_branch()).is_some_and(|parent| {
+                        matches!(parent.id(), BranchID::Root(name) if &*name == ydoc::CONTRIBUTORS_ROOT)
+                    })
+                })
+            })
+        })
+    })
+}
+
 /// The text `txn` inserted and deleted (Q405, Epo 2026-10-26): Y.Text
 /// strings (Word and PowerPoint stories) and XLSX cell contents, gross, so
 /// a replacement counts both sides; formatting, attributes and structure
@@ -569,7 +643,8 @@ mod tests {
         let heavy: String = (0..2000).map(|i| format!("ROW {i}\n")).collect();
         let change = text_effects(&utf16(&base), &utf16(&heavy));
         let [placeholder] = change.effects.try_into().unwrap();
-        assert_eq!(placeholder.label, "2000 of 2001 lines changed");
+        // A final newline ends the last line (Q435).
+        assert_eq!(placeholder.label, "2000 of 2000 lines changed");
         assert_eq!((placeholder.before, placeholder.after), (None, None));
         assert_eq!(placeholder.operation, Operation::Replace);
         let mut whole = TextCount::default();
@@ -582,6 +657,51 @@ mod tests {
             .replacen("row 1500\n", "row 1500\nnew\n", 1);
         let ops: Vec<Operation> = texts(&base, &few).iter().map(|e| e.operation).collect();
         assert_eq!(ops, [Operation::Replace, Operation::Remove, Operation::Add]);
+    }
+
+    // Q435: a run of changed lines over the read cap is the placeholder, so
+    // one 30 MiB line edited near both ends stores no text between them;
+    // its tokens still count the whole run.
+    #[test]
+    fn a_hunk_over_the_read_cap_is_a_placeholder() {
+        let line = "x".repeat(30 << 20);
+        let edited = format!("A{}Z", &line[1..line.len() - 1]);
+        let change = text_effects(&utf16(&format!("{line}\n")), &utf16(&format!("{edited}\n")));
+        let [placeholder] = change.effects.try_into().unwrap();
+        assert_eq!(placeholder.label, "1 of 1 lines changed");
+        assert_eq!((placeholder.before, placeholder.after), (None, None));
+        assert!(change.tokens > READ_PENDING_TOKENS);
+    }
+
+    // Q435: alternating short lines let every other diagonal run far, so the
+    // work grows with lines times edits; past the budget (about 50M steps here)
+    // the change is the placeholder, though its 500 edits are under the cap.
+    #[test]
+    fn the_line_diff_stops_at_its_work_budget() {
+        let base: String = (0..400_000).map(|i| ["a\n", "b\n"][i % 2]).collect();
+        let mut edited: Vec<&str> = base.lines().collect();
+        for i in 0..250 {
+            edited[i * 1600 + 800] = "c";
+        }
+        let edited = edited.join("\n") + "\n";
+        let [placeholder] = texts(&base, &edited).try_into().unwrap();
+        // As the cap's placeholder, it counts the window's lines, the first
+        // changed line to the last.
+        assert_eq!(placeholder.label, "398401 of 400000 lines changed");
+    }
+
+    // The cap a hunk is measured against is the pipeline's read cap.
+    #[test]
+    fn the_read_cap_matches_the_pipeline() {
+        let pending = include_str!("../../../../pipeline/pipeline/retrieval/pending.py");
+        assert!(
+            pending.contains(&format!(
+                "READ_PENDING_TOKENS = {}_{:03}\n",
+                READ_PENDING_TOKENS / 1000,
+                READ_PENDING_TOKENS % 1000
+            )),
+            "pending.py's READ_PENDING_TOKENS is not {READ_PENDING_TOKENS}"
+        );
     }
 
     // Office text effects keep the changed span with 40 characters of context.

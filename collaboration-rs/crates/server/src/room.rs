@@ -4206,6 +4206,8 @@ impl Room {
         let computed = tokio::task::spawn_blocking(move || {
             let txn = doc.transact();
             let (row, durable) = ydoc::delta_update(&txn, &previous, &hidden);
+            // An Office room's edit count and version as of this row (Q435).
+            let edits = sources.take_edits(&effect_room);
             let (state, text) = match format {
                 sources::SourceFormat::Text => {
                     (None, Some(sources.text_effects(&effect_room, &txn, &row)))
@@ -4215,10 +4217,10 @@ impl Room {
                     None,
                 ),
             };
-            (row, durable, state, text)
+            (row, durable, state, text, edits)
         })
         .await;
-        let (row, durable, state, text) = match computed {
+        let (row, durable, state, text, edits) = match computed {
             Ok(computed) => computed,
             Err(error) => {
                 self.markers.unclaim(&contributors);
@@ -4251,6 +4253,7 @@ impl Room {
             text,
             actors,
             retry_event: self.store.failed_event.clone(),
+            edits,
         };
         let Some(handle) = self.own_handle() else {
             return;

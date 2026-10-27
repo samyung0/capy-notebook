@@ -25,7 +25,7 @@ use yrs::updates::decoder::Decode;
 use yrs::{Doc, GetString, ReadTxn, StateVector, Transact, Update};
 
 use crate::disk::{DiskStore, Hold, Key, PutError};
-use crate::effects::{effect_tokens, trim_effect, utf16};
+use crate::effects::{TextCount, effect_tokens, trim_effect, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
 use crate::gateway::{CheckpointBody, CheckpointSaved, Gateway, RefreshCandidate, SourceSession};
@@ -167,6 +167,9 @@ pub struct Save {
     pub actors: Vec<String>,
     /// The first failure's Sentry event while this store retries it.
     pub retry_event: Option<String>,
+    /// An Office room's edit count and version as of the row
+    /// ([`Sources::take_edits`]).
+    pub edits: Option<(TextCount, u64)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -345,6 +348,10 @@ pub struct Sources {
     disk: Arc<DiskStore>,
     rooms: Mutex<HashMap<String, RoomRecord>>,
     generations: std::sync::atomic::AtomicU64,
+    /// The engine program, and its build's hash once a read needed it
+    /// ([crate::pending]).
+    pub(crate) engine_program: std::path::PathBuf,
+    pub(crate) engine_version: tokio::sync::OnceCell<String>,
 }
 
 impl Sources {
@@ -370,10 +377,12 @@ impl Sources {
         Ok(Self {
             gateway: Gateway::new(http, config.api_url, config.secret),
             db,
+            engine_program: config.engine.program.clone(),
             engines: EnginePool::new(config.engine),
             disk,
             rooms: Mutex::new(HashMap::new()),
             generations: std::sync::atomic::AtomicU64::new(0),
+            engine_version: tokio::sync::OnceCell::new(),
         })
     }
 
@@ -779,6 +788,15 @@ impl Sources {
         }
     }
 
+    /// A loaded Office room's edit count and version, taken as the room
+    /// captures a save's row (none for a text room or one not loaded here).
+    pub fn take_edits(&self, room: &SourceRoom) -> Option<(TextCount, u64)> {
+        lock(&self.rooms)
+            .get(&room.name())
+            .and_then(|record| record.edits.as_ref())
+            .map(|edits| edits.take())
+    }
+
     /// An Office room loaded here holds edits its last save did not store:
     /// a read computes them live and caches nothing ([crate::pending]).
     pub(crate) fn unsaved(&self, file_id: &str, epoch: u64) -> bool {
@@ -986,24 +1004,26 @@ impl Sources {
     /// session and the rows saved meanwhile, measures text again over them
     /// and appends again (3 attempts); an ended epoch never will.
     pub async fn store(&self, room: &SourceRoom, save: Save) -> Result<Saved, SourceError> {
-        if save.actors.is_empty() {
-            // A receipt for an unchanged document is still a durability receipt.
-            return self.current_checkpoint(room).await.map(|checkpoint| Saved {
-                checkpoint,
-                row_bytes: 0,
-            });
-        }
-        // An Office room's count since its last save (Q405); a failed save
-        // gives it back for the next.
+        // An Office room's count as of the row (Q405, Q435): stored, its
+        // version marks the room saved; otherwise it goes back for the next.
         let edits = lock(&self.rooms)
             .get(&room.name())
             .and_then(|record| record.edits.clone());
-        let (count, version) = edits.as_ref().map(|edits| edits.take()).unwrap_or_default();
-        let stored = self.store_row(room, save, count.tokens()).await;
-        if let Some(edits) = edits {
+        let taken = save.edits;
+        let stored = if save.actors.is_empty() {
+            // A receipt for an unchanged document is still a durability receipt.
+            self.current_checkpoint(room).await.map(|checkpoint| Saved {
+                checkpoint,
+                row_bytes: 0,
+            })
+        } else {
+            let tokens = taken.map_or(0, |(count, _)| count.tokens());
+            self.store_row(room, save, tokens).await
+        };
+        if let (Some(edits), Some((count, version))) = (edits, taken) {
             match &stored {
-                Ok(_) => edits.saved(version),
-                Err(_) => edits.put_back(count),
+                Ok(saved) if saved.row_bytes > 0 => edits.saved(version),
+                _ => edits.put_back(count),
             }
         }
         stored
@@ -1554,8 +1574,9 @@ impl Sources {
         {
             return Err(SourceError::request(409, "Source checkpoint changed", None));
         }
+        let cached = self.cached_effects(&session).await?;
         let object_ref: ObjectRef = self
-            .read_effects(&session, &live)
+            .read_effects(&session, &live, cached)
             .await?
             .iter()
             .find(|effect| effect.id == input.change_id)

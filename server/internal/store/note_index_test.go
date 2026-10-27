@@ -679,15 +679,19 @@ func TestNoteChangesAreCachedPerRevision(t *testing.T) {
 		}
 		return labels
 	}
-	// A marker entry at the note's current revision: served only from the cache.
-	plant := func() {
+	// An entry at the note's current revision (a marker unless effects are
+	// given), at noteEffectsFormat unless another format is given.
+	plantAs := func(format int, effects string) {
 		t.Helper()
 		if _, err := s.pool.Exec(ctx, `UPDATE materials SET effects_cache=jsonb_build_object(
-				'at', jsonb_build_object('revision', revision),
-				'effects', '[{"id":"x","kind":"text","operation":"add","label":"planted","blockId":"b"}]'::jsonb)
-			WHERE id=$1`, note.ID); err != nil {
+				'at', jsonb_build_object('revision', revision, 'format', $2::int), 'effects', $3::jsonb)
+			WHERE id=$1`, note.ID, format, effects); err != nil {
 			t.Fatal(err)
 		}
+	}
+	plant := func() {
+		t.Helper()
+		plantAs(noteEffectsFormat, `[{"id":"x","kind":"text","operation":"add","label":"planted","blockId":"b"}]`)
 	}
 	cleared := func(how string) {
 		t.Helper()
@@ -719,6 +723,16 @@ func TestNoteChangesAreCachedPerRevision(t *testing.T) {
 	plant()
 	if got := read(); len(got) != 1 || got[0] != "planted" {
 		t.Fatalf("a cached read gave %v", got)
+	}
+	// Q435: an entry of another format, or one that no longer decodes, is
+	// computed again.
+	plantAs(noteEffectsFormat+1, `[{"id":"x","kind":"text","operation":"add","label":"planted","blockId":"b"}]`)
+	if got := read(); strings.Join(got, "|") != strings.Join(computed, "|") {
+		t.Fatalf("an entry of another format was served: %v", got)
+	}
+	plantAs(noteEffectsFormat, `[{"id":"x","kind":"text","operation":5}]`)
+	if got := read(); strings.Join(got, "|") != strings.Join(computed, "|") {
+		t.Fatalf("an unreadable entry gave %v", got)
 	}
 
 	// An entry for another revision is never served, and a read replaces it.
@@ -762,10 +776,27 @@ func TestNoteChangesAreCachedPerRevision(t *testing.T) {
 	if _, err := s.UpdateMaterial(ctx, cards.ID, MaterialPatch{Content: &saved, UpdatedBy: ownerID}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.cacheNoteChanges(ctx, note.ID, revision, xmin, nil); err != nil {
+	s.cacheNoteChanges(ctx, note.ID, revision, xmin, nil)
+	cleared("a cache write computed before the row changed")
+
+	// Q435: a cache write that fails is logged, and the read still answers
+	// the changes it computed (here a trigger refuses this note's writes).
+	if _, err := s.pool.Exec(ctx, `CREATE FUNCTION q435_refuse_cache() RETURNS trigger AS $$
+		BEGIN RAISE EXCEPTION 'cache write refused'; END $$ LANGUAGE plpgsql`); err != nil {
 		t.Fatal(err)
 	}
-	cleared("a cache write computed before the row changed")
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`CREATE TRIGGER q435_refuse_cache BEFORE UPDATE OF effects_cache ON materials
+		FOR EACH ROW WHEN (NEW.id = '%s' AND NEW.effects_cache IS NOT NULL) EXECUTE FUNCTION q435_refuse_cache()`, note.ID)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `DROP TRIGGER IF EXISTS q435_refuse_cache ON materials`)
+		_, _ = s.pool.Exec(context.Background(), `DROP FUNCTION IF EXISTS q435_refuse_cache()`)
+	})
+	if got := read(); len(got) != 2 || got[0] == "planted" {
+		t.Fatalf("with its cache write refused a read gave %v", got)
+	}
+	cleared("a refused cache write")
 }
 
 // TestNoteIndexSchedulerQuery runs NOTE_INDEX_SQL from

@@ -6,11 +6,12 @@
 -- since. Neither column is charged to storage (materials charge their
 -- content, source documents their generated storage_bytes).
 --
--- A note's version is {"revision"}: content writes clear it
--- (noteIndexDirtySQL), and so does the index's write of indexed_blocks.
+-- A note's version is {"revision", "format"} (Go's noteEffectsFormat, Q435):
+-- content writes clear it (noteIndexDirtySQL), and so does the index's write
+-- of indexed_blocks.
 ALTER TABLE materials ADD COLUMN effects_cache jsonb;
 
--- An Office file's is {"epoch", "checkpoint", "baseRevision"}: every save
--- and publication clears it. Unsaved edits in an open room are read live
--- and never written here.
+-- An Office file's is {"epoch", "checkpoint", "baseRevision", "engine"}, the
+-- engine the build's hash (Q435): every save and publication clears it.
+-- Unsaved edits in an open room are read live and never written here.
 ALTER TABLE source_documents ADD COLUMN effects_cache jsonb;

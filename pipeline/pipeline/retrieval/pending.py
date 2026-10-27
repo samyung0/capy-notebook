@@ -17,6 +17,7 @@ from . import store
 from .chunking import estimate_tokens
 
 # The most a read's appended changes may weigh before they are omitted.
+# IMPORTANT: KEEP IN SYNC WITH READ_PENDING_TOKENS IN collaboration-rs/crates/sources/src/effects.rs
 READ_PENDING_TOKENS = 16_000
 
 NOTICE = (

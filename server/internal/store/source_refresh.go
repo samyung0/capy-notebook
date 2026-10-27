@@ -452,7 +452,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		// Text keeps its lineage; its baseline is the exported blob decoded.
 		// The published text is the file's bytes now, so the seed size takes
 		// the change in its size (Yjs stores the text as its UTF-8 bytes).
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET effects_cache=NULL,indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,seed_bytes=seed_bytes+$7,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens, resized)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,seed_bytes=seed_bytes+$7,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens, resized)
 	default:
 		// Indexed now, so an export-only publication's reprocess mark is done.
 		// The new epoch's state replaces the old base and its rows.
@@ -657,7 +657,7 @@ func (s *Store) workspaceFileChanges(ctx context.Context, ws string) ([]FileChan
 		CASE WHEN j.id IS NULL AND d.refresh_error IS NOT NULL THEN COALESCE(d.refresh_trace_id,'') ELSE '' END
 		FROM source_documents d JOIN files f ON f.id=d.file_id LEFT JOIN jobs j ON j.id=d.running_job_id
 		WHERE f.workspace_id=$1 AND f.trashed_at IS NULL AND COALESCE(j.payload->>'paidBy','')<>'system'
-		  AND (j.id IS NOT NULL OR d.net_tokens>0)
+		  AND (j.id IS NOT NULL OR d.net_tokens>0 OR (d.format<>'text' AND d.checkpoint>d.indexed_checkpoint))
 		ORDER BY d.last_edited_at,f.id`, ws)
 	if err != nil {
 		return nil, err
