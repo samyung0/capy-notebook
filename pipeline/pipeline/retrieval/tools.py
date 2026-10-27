@@ -1837,15 +1837,17 @@ async def _post_operation(
     """POST a receipt-backed mutation to the gateway.
 
     Transient failures retry the same operation id (Go makes it idempotent);
-    a lost response is reconciled through the durable receipt read. A confirmed
-    absence is a normal tool failure; an unknown outcome fails the turn.
-    ``explain`` turns a refusal's ``details`` into the result's detail.
+    a lost response is reconciled through the durable receipt read. Tries
+    that end without a receipt are a tool failure that never says nothing was
+    saved (Q463, Q464): a timed-out or `outcome_unknown` try may still land.
+    An unreadable receipt fails the turn. ``explain`` turns a refusal's
+    ``details`` into the result's detail.
     """
     last_exc: BaseException | None = None
     last_status = 0
-    last_detail = ""
+    # What the last try got back, for the model.
+    last_answer = "the service could not be reached"
     last_event_id = None
-    timeouts = 0
     for attempt in range(_POST_ATTEMPTS):
         try:
 
@@ -1863,6 +1865,9 @@ async def _post_operation(
                 return _receipt_result(resp.json())
             last_event_id = resp.headers.get(obs.ERROR_EVENT_HEADER)
             last_detail = _response_detail(resp)
+            last_answer = f"the service answered {resp.status_code}" + (
+                f" ({last_detail})" if last_detail else ""
+            )
             if resp.status_code in (400, 401, 403, 404, 409, 422) or not _is_transient(
                 None, resp.status_code
             ):
@@ -1873,15 +1878,15 @@ async def _post_operation(
                     f"Could not {failure}: {detail or resp.status_code}",
                     detail=explain(details) if explain and details else "",
                 )
-        except (requests.Timeout, requests.ConnectionError) as exc:
+        except requests.Timeout as exc:
             last_exc = exc
             last_event_id = None
-            # Only a timeout leaves the request possibly still running.
-            timeouts += isinstance(exc, requests.Timeout)
+            last_answer = "the service did not answer in time"
             log.warning("operation POST attempt failed: %s", exc)
         except requests.RequestException as exc:
             last_exc = exc
             last_event_id = None
+            last_answer = "the service could not be reached"
             log.warning("operation POST attempt failed: %s", exc)
         if attempt < _POST_ATTEMPTS - 1:
             await asyncio.sleep(0.25 * (2**attempt))
@@ -1895,25 +1900,13 @@ async def _post_operation(
         raise obs.with_event_id(
             TurnFailed("mutation outcome is unknown"), last_event_id
         ) from last_exc
-    if recovered is None and timeouts == _POST_ATTEMPTS:
-        # Every try timed out: the first may still be computing or saving and
-        # land after this answer (Q448), so the model re-reads before redoing.
-        return _failed(
-            f"Could not {failure} in time: the service did not answer on "
-            f"{_POST_ATTEMPTS} tries and has no record of it yet. It may still "
-            "be applied; read the document again before redoing it."
-        )
     if recovered is None:
-        # Nothing was saved; say what the service last answered, so the model
-        # can tell a passing outage from a write it should change.
-        why = (
-            f"the service answered {last_status}"
-            + (f" ({last_detail})" if last_detail else "")
-            if last_status
-            else "the service could not be reached"
-        )
+        # No receipt yet: a try that timed out or whose outcome the service
+        # does not know may still land, so the model re-reads before redoing
+        # it (Q460, Q463); the wording is Epo's (Q464).
         return _failed(
-            f"Could not {failure}: {why} on {_POST_ATTEMPTS} tries; nothing was saved."
+            f"Could not {failure}: {last_answer}. This might have been saved, "
+            "Re-read before further editing"
         )
     return _receipt_result(recovered)
 

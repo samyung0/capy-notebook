@@ -4228,13 +4228,17 @@ over Excel's limits) comes back as `invalid_input` with the engine's sentence
 and no details, a 409 the pipeline does not retry; a lost, killed or
 panicking engine process and any other engine failure stay a 503
 `outcome_unknown` ([Office files](frontend/office-files.md)). A
-write whose retries run out and whose receipt is absent says what the service
-last answered (`the service answered 503 (…) on 3 tries; nothing was saved`);
-the POST makes at most 3 attempts, 0.25 s and 0.5 s apart (parts design Q12).
-When every attempt timed out the first may still be computing (a large DOCX
-with no room) or saving (a room's save after admission, Q403), so with no
-receipt yet the tool says the edit may still be applied and to read the
-document again before redoing it, never that nothing was saved (Q448).
+write whose retries run out and whose receipt is absent never says nothing
+was saved (Q448, Q460, Q463): a timed-out try may still be computing (a large
+DOCX with no room) or saving (a room's save after admission, Q403), and an
+`outcome_unknown` 503 may have landed, so whatever mix of timeouts, 5xx, 429
+or lost connections the tries met, the tool answers `Could not <failure>:
+<the last answer>. This might have been saved, Re-read before further editing`
+(Q464's wording), the last answer being `the service answered 503 (…)`, `the
+service did not answer in time` or `the service could not be reached`. A
+refusal (400, 401, 403, 404, 409, 422, Q456's `saves_failing`) keeps its own
+message. The POST makes at most 3 attempts, 0.25 s and 0.5 s apart (parts
+design Q12).
 A `chapter_id` naming no chapter of the workspace is refused in the pipeline
 before anything is built (`tools.unknown_chapter`, for notes, decks and new
 quizzes).

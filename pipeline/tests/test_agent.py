@@ -1604,7 +1604,11 @@ async def test_material_confirmed_404_is_a_tool_failure(monkeypatch):
     )
     assert result.failed and result.outcome == "failed"
     assert posts["n"] == 3
-    assert "on 3 tries; nothing was saved" in result.error
+    # Q463, Q464: tries that all lost the connection still might have saved.
+    assert result.error == (
+        "Could not create the note: the service could not be reached. "
+        "This might have been saved, Re-read before further editing"
+    )
     assert got["params"] == {"workspaceId": "ws_1", "userId": "u1"}
     assert got["url"].endswith(
         "/api/internal/agent-operations/" + tools.operation_id("m_1", "call_1")
@@ -3112,17 +3116,47 @@ async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypa
     assert "The user can undo this" in result.text()
 
 
-async def test_an_edit_whose_every_try_timed_out_may_still_land(monkeypatch):
-    """Q448: every POST timed out and no receipt is stored yet, so the first
-    may still be computing or saving: the tool tells the model to re-read
-    before redoing, never that nothing was saved."""
+_MIGHT_HAVE_SAVED = "This might have been saved, Re-read before further editing"
+
+
+@pytest.mark.parametrize(
+    ("answers", "last"),
+    [
+        (["timeout", 503, 503], "the service answered 503 (Busy.)"),
+        (
+            ["outcome_unknown"] * 3,
+            "the service answered 503 (The document authority is unavailable.)",
+        ),
+        (["timeout"] * 3, "the service did not answer in time"),
+        (["down"] * 3, "the service could not be reached"),
+    ],
+)
+async def test_an_edit_without_a_receipt_might_have_been_saved(
+    monkeypatch, answers, last
+):
+    """Q448, Q460, Q463, Q464: tries that end with no receipt stored (any mix
+    of timeouts, `outcome_unknown` and other 503s, lost connections) may still
+    land: the tool quotes the last answer and tells the model it might have
+    been saved, never that nothing was."""
     ctx = _owner_ctx()
     ctx.file_ids = ["f_1"]
-    posts = {"n": 0}
+    tries = iter(answers)
 
     def _post(*_a, **_k):
-        posts["n"] += 1
-        raise tools.requests.ReadTimeout("slow")
+        answer = next(tries)
+        if answer == "timeout":
+            raise tools.requests.ReadTimeout("slow")
+        if answer == "down":
+            raise tools.requests.ConnectionError("down")
+        if answer == "outcome_unknown":
+            return _JsonResp(
+                {
+                    "code": "outcome_unknown",
+                    "message": "The document authority is unavailable.",
+                },
+                503,
+            )
+        return _JsonResp({"message": "Busy."}, answer)
 
     async def _nosleep(*_a, **_k):
         return None
@@ -3139,10 +3173,9 @@ async def test_an_edit_whose_every_try_timed_out_may_still_land(monkeypatch):
         },
         ctx,
     )
-    assert result.failed and posts["n"] == 3
-    assert "may still be applied" in result.error
-    assert "read the document again" in result.error
-    assert "nothing was saved" not in result.error
+    assert result.failed
+    assert result.error == f"Could not edit the document: {last}. {_MIGHT_HAVE_SAVED}"
+    assert next(tries, None) is None
 
 
 async def test_an_edit_refused_for_failing_saves_says_not_to_retry(monkeypatch):
