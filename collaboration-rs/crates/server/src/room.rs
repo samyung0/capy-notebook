@@ -329,6 +329,11 @@ struct AgentSteps {
 
 const AGENT_STORED_KEPT: usize = 256;
 
+/// The agent steps a room keeps waiting for a store (pending and storing)
+/// before it refuses new ones (Q432): a checkpoint carries at most this
+/// many, and a store failing for good holds them.
+const AGENT_UNSTORED_MAX: usize = 256;
+
 impl AgentSteps {
     fn find(
         &self,
@@ -628,6 +633,17 @@ pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
 /// second late, in debug builds only.
 #[cfg(debug_assertions)]
 pub const IT_SLOW_STORE: &str = "capy-it-slow-store";
+
+/// See `edits::edit_in_room`: an agent edit of a material whose id holds
+/// this computes three seconds late, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_SLOW_COMPUTE: &str = "capy-it-slow-compute";
+
+/// See `edits::source_request`: a no-room source edit whose operation id
+/// holds this waits half a second after its stored receipt check, in debug
+/// builds only.
+#[cfg(debug_assertions)]
+pub const IT_SLOW_RECHECK: &str = "capy-it-slow-recheck";
 
 /// See `RoomCmd::AgentKeys`: the keys room of a quiz whose id holds this
 /// refuses an agent edit's part, in debug builds only.
@@ -1701,6 +1717,11 @@ impl Room {
                 .known(&receipt.id, &receipt.request_hash, undo.as_deref())?
         {
             return Ok(Some(known));
+        }
+        if self.agent.pending.len() + self.agent.storing.len() >= AGENT_UNSTORED_MAX {
+            return Err(DocumentError::Unavailable(
+                "too many agent edits of this document wait to be saved",
+            ));
         }
         if let Some(of) = &undo {
             // The step as this room admitted it, else as stored: a click
@@ -3118,15 +3139,18 @@ impl Room {
             }
             Verdict::Limit(code, metrics) => {
                 let payload = self.rejection_payload(code, metrics, None);
-                incidents::record(
-                    &self.app,
-                    vec![Incident {
-                        cause: Cause::new(IncidentKind::OverLimit, code.as_str()),
-                        room: self.name.clone(),
-                        size_bytes: Some(bytes.len() as u64),
-                        user_id: Some(context.user_id.clone()),
-                    }],
-                );
+                // An agent edit refused here loses no one's work (Q432).
+                if context.token_id != AGENT_TOKEN {
+                    incidents::record(
+                        &self.app,
+                        vec![Incident {
+                            cause: Cause::new(IncidentKind::OverLimit, code.as_str()),
+                            room: self.name.clone(),
+                            size_bytes: Some(bytes.len() as u64),
+                            user_id: Some(context.user_id.clone()),
+                        }],
+                    );
+                }
                 return Err(Outcome::Refused {
                     payloads: vec![payload],
                     reason: "invalid material document".into(),
@@ -3321,15 +3345,17 @@ impl Room {
             "update under another user's client id refused",
             json!({ "client": client, "room": self.name, "user_id": context.user_id }),
         );
-        incidents::record(
-            &self.app,
-            vec![Incident {
-                cause: Cause::new(IncidentKind::SaveRefused, "client_id"),
-                room: self.name.clone(),
-                size_bytes: Some(bytes as u64),
-                user_id: Some(context.user_id.clone()),
-            }],
-        );
+        if context.token_id != AGENT_TOKEN {
+            incidents::record(
+                &self.app,
+                vec![Incident {
+                    cause: Cause::new(IncidentKind::SaveRefused, "client_id"),
+                    room: self.name.clone(),
+                    size_bytes: Some(bytes as u64),
+                    user_id: Some(context.user_id.clone()),
+                }],
+            );
+        }
         // `unassigned`: the browser does not resend them as they are; it
         // re-applies them under its assigned id (Epo 2026-10-24).
         let payload = match &self.kind {
@@ -3396,15 +3422,17 @@ impl Room {
                 Class::Malformed,
             ),
         };
-        incidents::record(
-            &self.app,
-            vec![Incident {
-                cause,
-                room: self.name.clone(),
-                size_bytes: Some(bytes as u64),
-                user_id: Some(context.user_id.clone()),
-            }],
-        );
+        if context.token_id != AGENT_TOKEN {
+            incidents::record(
+                &self.app,
+                vec![Incident {
+                    cause,
+                    room: self.name.clone(),
+                    size_bytes: Some(bytes as u64),
+                    user_id: Some(context.user_id.clone()),
+                }],
+            );
+        }
         Outcome::Refused {
             payloads: vec![payload],
             reason: refusal.message().to_owned(),

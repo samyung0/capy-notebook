@@ -200,6 +200,24 @@ async fn note_named(env: &Env, text: &str, prefix: &str) -> (String, String) {
     (user, material)
 }
 
+/// Another note of `user`'s, holding `text`.
+async fn note_for(env: &Env, user: &str, text: &str) -> String {
+    let material = format!("m_it_{}", uuid_like());
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "b1", "children": [{ "text": text }] }],
+    });
+    db(env)
+        .await
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'note', 'IT', $3)",
+            &[&material, &user, &content],
+        )
+        .await
+        .expect("material");
+    material
+}
+
 fn uuid_like() -> String {
     // A counter too: two tests in one clock tick (100 ns on Windows) took the
     // same user id.
@@ -2686,6 +2704,11 @@ async fn a_join_costs_one_message_of_the_users_allowance() {
 /// A note in a workspace of `owner`'s that `editor` edits too: (owner,
 /// editor, room).
 async fn shared_note(env: &Env, text: &str) -> (String, String, String) {
+    shared_note_named(env, text, "m_it").await
+}
+
+/// [shared_note] whose id starts with `prefix`.
+async fn shared_note_named(env: &Env, text: &str, prefix: &str) -> (String, String, String) {
     let client = db(env).await;
     let (owner, editor) = (user(env).await, user(env).await);
     let workspace = format!("ws_it_{}", uuid_like());
@@ -2703,7 +2726,7 @@ async fn shared_note(env: &Env, text: &str) -> (String, String, String) {
         )
         .await
         .expect("member");
-    let material = format!("m_it_{}", uuid_like());
+    let material = format!("{prefix}_{}", uuid_like());
     let content = serde_json::json!({
         "schemaVersion": 1,
         "value": [{ "type": "p", "id": "b1", "children": [{ "text": text }] }],
@@ -5004,7 +5027,8 @@ async fn a_payload_from_before_a_compaction_is_refused() {
 /// Security regression (durable Undo, Epo 2026-10-21): a payload comes back
 /// from the browser, so the server takes nothing from it on trust beyond its
 /// signature (checked in Go). One naming items this note does not hold
-/// (another note's payload, changed ids) is refused as unheld and nothing is
+/// (the same user's other note's payload, so the step's actor check passes,
+/// Q432; changed ids) is refused as unheld and nothing is
 /// written; one over the 8 MiB update cap is refused before it is read; one
 /// that is not base64 is invalid. Fails if a payload is applied unchecked
 /// (it would leave the stored note pending, unloadable).
@@ -5014,12 +5038,12 @@ async fn a_tampered_or_oversized_payload_is_refused() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "hello world").await;
-    let (other_user, other) = note(&env, "hello world").await;
+    let other = note_for(&env, &user, "hello world").await;
     let (status, receipt) = internal(
         server.port,
         "/internal/documents/edit",
         &note_edit(
-            &other_user,
+            &user,
             &other,
             &format!("e_{other}"),
             serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "hello", "text": "howdy" }]),
@@ -11702,7 +11726,8 @@ async fn a_note_undo_past_its_limits_is_refused_as_too_large() {
 /// Review r1 L3 (defence in depth behind the gateway's signature, which this
 /// internal route comes after): an edit that only removed has a payload of
 /// copies alone, anchored on ids a note seeded alike holds too. Sent to that
-/// other note it is refused, and the other note stays as it was. End to end
+/// other note of the same user's (so the step's actor check passes, Q432) it
+/// is refused, and the other note stays as it was. End to end
 /// only: with the anchor check reverted another check still refuses it here,
 /// so `ydoc::undo`'s `a_deletion_only_payload_of_a_note_seeded_alike_is_unheld`
 /// is the check's revert test.
@@ -11713,13 +11738,24 @@ async fn a_removal_payload_of_a_note_seeded_alike_is_refused() {
     let p = |id: &str, text: &str| serde_json::json!({ "type": "p", "id": id, "children": [{ "text": text }] });
     let value = serde_json::json!([p("b1", "first"), p("b2", "second")]);
     let (user, material) = note_with(&env, value.clone()).await;
-    let (other_user, other) = note_with(&env, value).await;
+    let other = note_for(&env, &user, "").await;
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET content=$2 WHERE id=$1",
+            &[
+                &other,
+                &serde_json::json!({ "schemaVersion": 1, "value": value }),
+            ],
+        )
+        .await
+        .expect("content");
     let edit = format!("e_{other}");
     let (status, receipt) = internal(
         server.port,
         "/internal/documents/edit",
         &note_edit(
-            &other_user,
+            &user,
             &other,
             &edit,
             serde_json::json!([{ "type": "remove_block", "blockId": "b2", "expectedText": "second" }]),
@@ -11845,6 +11881,11 @@ async fn an_open_room_admits_an_agent_edit_and_its_store_writes_the_receipt() {
     );
     let (status, receipt) = internal(server.port, "/internal/documents/edit", &request).await;
     assert_eq!(status, 200, "{receipt}");
+    // The room projects it like a person's edit (Q432 L3).
+    assert!(
+        receipt["effect"].get("projectionPending").is_none(),
+        "{receipt}"
+    );
     let stored: i64 = db(&env)
         .await
         .query_one(
@@ -12043,8 +12084,33 @@ async fn an_open_room_refuses_an_agent_edit_as_it_refuses_a_persons() {
     assert_eq!(status, 413, "{refusal}");
     let _ = client.hears(200, 500).await;
     assert_eq!(source_text(&client).len(), base.len());
+    // An agent's refusal loses no one's work: no edit incident (Q432 L4);
+    // the person's below records one.
+    assert_eq!(file_incidents(&env, &file).await, 0);
     type_at_start(&mut client, &appended).await;
     closed_for_size(client.until(4).await);
+    let mut recorded = 0;
+    for _ in 0..50 {
+        recorded = file_incidents(&env, &file).await;
+        if recorded > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(recorded > 0, "the person's refusal recorded no incident");
+}
+
+/// The edit incidents recorded for a file or material.
+async fn file_incidents(env: &Env, file: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM edit_incidents WHERE file_id=$1",
+            &[&file],
+        )
+        .await
+        .expect("incidents")
+        .get(0)
 }
 
 /// Q402, Q399 M1: the same agent edit of an open text source sent twice at
@@ -12087,10 +12153,11 @@ async fn a_source_edit_retried_at_its_open_room_lands_once() {
 
 /// Review r2 M1: with no room loaded, a source edit retried after its
 /// checkpoint committed is answered with its stored receipt, no Undo payload
-/// of its own and nothing computed or written again; two requests of one
-/// operation racing its checkpoint land once, the second answered by Go's
-/// replay without a payload. Fails if a retry recomputes the edit (refused
-/// as stale) or a replayed retry offers its own change as the step's Undo.
+/// of its own and nothing computed or written again (the edit would still
+/// apply to the text it left); two requests of one operation racing its
+/// checkpoint land once, the second answered by Go's replay without a
+/// payload. Fails if a retry recomputes the edit and reaches a checkpoint,
+/// or a replayed retry offers its own change as the step's Undo.
 #[tokio::test]
 async fn a_source_edit_retried_after_its_checkpoint_is_replayed() {
     use std::sync::atomic::Ordering::Relaxed;
@@ -12103,7 +12170,7 @@ async fn a_source_edit_retried_after_its_checkpoint_is_replayed() {
         &user,
         &file,
         &edit,
-        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "world!" }]),
     );
     let (status, receipt) = internal(server.port, "/internal/documents/edit", &body).await;
     assert_eq!(status, 200, "{receipt}");
@@ -12161,6 +12228,342 @@ async fn a_live_note_read_answers_only_a_room_with_unprojected_edits() {
     assert_eq!(status, 200, "{typed}");
     let text = typed["content"]["value"][0]["children"][0]["text"].as_str();
     assert!(text.is_some_and(|text| text.contains('!')), "{typed}");
+}
+
+/// Q432 (Epo 2026-10-27, review r1 M1): a room-path agent edit holds a
+/// pooled connection only for its receipt checks and its admission, never
+/// through its compute. Twelve agent edits computing slowly on an open note
+/// (a debug hook, three seconds each), more than the pool's ten
+/// connections, leave the room's store free: a person's typing meanwhile is
+/// stored within two seconds, and every edit lands after. Fails if the
+/// compute holds its connection.
+#[tokio::test]
+async fn a_slow_agent_compute_holds_no_pool_connection() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note_named(&env, "hello", "capy-it-slow-compute").await;
+    let room = format!("material:{material}:schema:1");
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello").await);
+    let rows = update_rows(&env, "material_yjs_updates", &material).await;
+    let edits: Vec<_> = (0..12)
+        .map(|i| {
+            let body = note_edit(
+                &user,
+                &material,
+                &format!("e{i}_{material}"),
+                serde_json::json!([{
+                    "type": "insert_block",
+                    "afterBlockId": "b1",
+                    "blocks": [{ "type": "p", "id": format!("n{i}"), "children": [{ "text": format!("agent {i}") }] }],
+                }]),
+            );
+            let port = server.port;
+            tokio::spawn(async move { internal(port, "/internal/documents/edit", &body).await })
+        })
+        .collect();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    person.type_text("!").await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while update_rows(&env, "material_yjs_updates", &material).await <= rows {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the store waited for a connection"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    for edit in edits {
+        let (status, body) = edit.await.expect("edit");
+        assert_eq!(status, 200, "{body}");
+    }
+}
+
+/// Q432 (review r1 M2): a receipt the room's store cannot write is passed
+/// over under a savepoint and reported, and the store saves everyone's
+/// edits. The agent's chat is deleted between the edit's admission and its
+/// store (a second late, a debug hook): the store lands without the
+/// receipt, and the person's typing after it is stored too. Fails if the
+/// receipt fails the store.
+#[tokio::test]
+async fn a_store_passes_over_a_receipt_whose_chat_was_deleted() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, _, room) = shared_note_named(&env, "hello world", "capy-it-slow-store").await;
+    let material = material_of(&room).to_owned();
+    let client = db(&env).await;
+    let conversation = format!("conv_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO conversations (id, user_id, workspace_id)
+             SELECT $1, $2, workspace_id FROM materials WHERE id=$3",
+            &[&conversation, &owner, &material],
+        )
+        .await
+        .expect("conversation");
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    let rows = update_rows(&env, "material_yjs_updates", &material).await;
+    let edit = format!("e_{material}");
+    let mut request = note_edit(
+        &owner,
+        &material,
+        &edit,
+        serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
+    );
+    request["operation"]["conversationId"] = serde_json::json!(conversation);
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &request).await;
+    assert_eq!(status, 200, "{receipt}");
+    client
+        .execute("DELETE FROM conversations WHERE id=$1", &[&conversation])
+        .await
+        .expect("chat deleted");
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    person.type_text("!").await;
+    assert!(
+        rows_past(&env, "material_yjs_updates", &material, rows + 1).await,
+        "the stores did not land"
+    );
+    let receipts: i64 = client
+        .query_one(
+            "SELECT count(*) FROM agent_operations WHERE id=$1",
+            &[&edit],
+        )
+        .await
+        .expect("receipts")
+        .get(0);
+    assert_eq!(receipts, 0, "the receipt of a deleted chat was written");
+}
+
+/// Q432 (review r1 M2): a room refuses a new agent edit with
+/// `unavailable_target` once 256 of its agent steps wait unstored. The
+/// test holds the note's lock so the room's store cannot commit: the first
+/// edit's store waits on it, 255 more edits are admitted, the next is
+/// refused; once the lock goes, the store writes all 256 receipts. Fails if
+/// the room keeps admitting.
+#[tokio::test]
+async fn a_room_refuses_agent_edits_past_256_unstored() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, _person) = writer(&env, server.port, "hello").await;
+    let material = material_of(&room).to_owned();
+    let mut holder = db(&env).await;
+    let lock = holder.transaction().await.expect("transaction");
+    lock.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        &[&material],
+    )
+    .await
+    .expect("the note's lock");
+    let insert = |i: usize| {
+        note_edit(
+            &user,
+            &material,
+            &format!("e{i}_{material}"),
+            serde_json::json!([{
+                "type": "insert_block",
+                "afterBlockId": "b1",
+                "blocks": [{ "type": "p", "id": format!("n{i}"), "children": [{ "text": "a" }] }],
+            }]),
+        )
+    };
+    // Each answers at once: an edit waiting on the held lock is a failure.
+    let send = |i: usize| {
+        let body = insert(i);
+        let port = server.port;
+        async move {
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                internal(port, "/internal/documents/edit", &body),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("edit {i} waited on the note's lock"))
+        }
+    };
+    for i in 0..256 {
+        let (status, body) = send(i).await;
+        assert_eq!(status, 200, "edit {i}: {body}");
+    }
+    let (status, refusal) = send(256).await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (503, Some("unavailable_target")),
+        "{refusal}"
+    );
+    lock.rollback().await.expect("lock let go");
+    let mut stored = 0;
+    for _ in 0..100 {
+        stored = db(&env)
+            .await
+            .query_one(
+                "SELECT count(*) FROM agent_operations WHERE actor_user_id=$1",
+                &[&user],
+            )
+            .await
+            .expect("receipts")
+            .get::<_, i64>(0);
+        if stored == 256 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(stored, 256);
+}
+
+/// Security regression (Q432, review r1 M3): an agent Undo or Redo is
+/// refused unless its actor made the step. A's agent edit of a shared note
+/// through its open room, its store a second late (a debug hook); B, an
+/// editor of the note holding A's payload, sends the Undo before the store:
+/// refused 403 by the room, the text unchanged. Once the room unloaded (the
+/// step stored), B's Undo through the direct write is refused the same way,
+/// and an Undo naming a step never stored is refused `undo_unavailable`;
+/// A's own Undo then lands. Fails if the room's or the direct path's actor
+/// check is removed, or the direct path takes an Undo of a missing step.
+#[tokio::test]
+async fn an_undo_of_another_users_agent_step_is_refused() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note_named(&env, "hello world", "capy-it-slow-store").await;
+    let material = material_of(&room).to_owned();
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    let edit = format!("e_{material}");
+    let request = note_edit(
+        &owner,
+        &material,
+        &edit,
+        serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &request).await;
+    assert_eq!(status, 200, "{receipt}");
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&editor, &format!("u1_{material}"), &material, &receipt),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (403, Some("lifecycle_rejected")),
+        "{refusal}"
+    );
+    let _ = person.hears(200, 500).await;
+    assert_eq!(person.block_text(), "hello there");
+    assert!(receipt_stored(&env, &edit).await);
+    drop(person);
+    wait_unloaded(server.port).await;
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&editor, &format!("u2_{material}"), &material, &receipt),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (403, Some("lifecycle_rejected")),
+        "{refusal}"
+    );
+    let (status, gone) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &sent_back(
+            &owner,
+            &format!("u3_{material}"),
+            &format!("never_{material}"),
+            "material",
+            &material,
+            &receipt["undoPayload"],
+        ),
+    )
+    .await;
+    assert_eq!(gone["code"], "undo_unavailable", "{status} {gone}");
+    assert_eq!(
+        note_blocks(server.port, &owner, &material).await,
+        [("b1".to_owned(), "hello there".to_owned())]
+    );
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&owner, &format!("u4_{material}"), &material, &receipt),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+}
+
+/// Security regression (Q432, review r1 M3): with no room loaded, a source
+/// Undo of another user's step is refused before anything is computed or
+/// written. Fails if the no-room source path skips the actor check.
+#[tokio::test]
+async fn a_source_undo_of_another_users_step_is_refused() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) = text_file(&env, &gateway, "hello world").await;
+    let other = user(&env).await;
+    let edit = format!("e_{file}");
+    let body = source_edit(
+        &owner,
+        &file,
+        &edit,
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &body).await;
+    assert_eq!(status, 200, "{receipt}");
+    let checkpoints = gateway
+        .checkpoints
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &source_undo(&other, &format!("u_{file}"), &file, &receipt),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (403, Some("lifecycle_rejected")),
+        "{refusal}"
+    );
+    assert_eq!(
+        gateway
+            .checkpoints
+            .load(std::sync::atomic::Ordering::Relaxed),
+        checkpoints,
+        "the refused Undo reached a checkpoint"
+    );
+}
+
+/// Q432 (review r1 L1): with no room loaded, a retry that passed the stored
+/// receipt check while its first request was still on the way, then
+/// computed on the text that request left, is refused stale and answers
+/// with the first request's receipt instead. A debug hook holds both half a
+/// second after that check; the retry is sent a quarter second later. Fails
+/// if the refusal stands.
+#[tokio::test]
+async fn a_no_room_source_retry_refused_stale_answers_the_stored_receipt() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let edit = format!("capy-it-slow-recheck_{file}");
+    let body = source_edit(
+        &user,
+        &file,
+        &edit,
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+    );
+    let port = server.port;
+    let first = {
+        let body = body.clone();
+        tokio::spawn(async move { internal(port, "/internal/documents/edit", &body).await })
+    };
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let (status, again) = internal(port, "/internal/documents/edit", &body).await;
+    let (first_status, receipt) = first.await.expect("first");
+    assert_eq!((first_status, status), (200, 200), "{receipt} {again}");
+    assert_eq!(again["operationId"], receipt["operationId"]);
+    assert!(again.get("undoPayload").is_none(), "{again}");
 }
 
 /// Review r2 L1 (Q386): a fold drops an agent holds record it cannot read

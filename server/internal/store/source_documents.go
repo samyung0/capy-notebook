@@ -608,32 +608,52 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 }
 
 // commitRoomOperationsTx writes a room save's agent steps (Q402) in its
-// checkpoint's transaction, in order. A step already stored, or naming a
-// step another receipt reversed, is passed over and logged: the room's save
-// holds everyone's edits and must still land.
+// checkpoint's transaction, in order, each in a nested transaction: one
+// that cannot be written (its chat deleted, a Redo naming a step that was
+// passed over) is rolled back alone and reported, and the save still lands
+// with everyone's edits (Q432). A step already stored, or naming a step
+// another receipt reversed, is passed over and logged.
 func (s *Store) commitRoomOperationsTx(ctx context.Context, tx pgx.Tx, fileID, ws string, ops []SourceCheckpointOperation) error {
 	for _, op := range ops {
-		existing, err := lockAgentOperationTx(ctx, tx, op.Receipt.ID, op.Receipt.RequestHash)
-		if errors.Is(err, ErrOperationConflict) {
-			existing, err = &AgentOperation{ID: op.Receipt.ID}, nil
-		}
+		nested, err := tx.Begin(ctx)
 		if err != nil {
 			return err
 		}
-		if existing == nil && op.UndoOf != "" {
-			if existing, err = undoReceiptTx(ctx, tx, op.UndoOf); err != nil {
-				return err
+		if err := s.commitRoomOperationTx(ctx, nested, fileID, ws, op); err != nil {
+			if rollback := nested.Rollback(ctx); rollback != nil {
+				return rollback
 			}
-		}
-		if existing != nil {
-			obs.Log(ctx).Warn("room agent step passed over", "file_id", fileID, "operation_id", op.Receipt.ID)
+			obs.Log(ctx).Warn("agent receipt passed over", "file_id", fileID, "operation_id", op.Receipt.ID, "error", err)
+			obs.CaptureErr(ctx, errors.New("agent receipt passed over"), map[string]string{"file_id": fileID})
 			continue
 		}
-		if _, err := s.commitSourceOperationTx(ctx, tx, fileID, ws, op); err != nil {
+		if err := nested.Commit(ctx); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// commitRoomOperationTx writes one room agent step in tx.
+func (s *Store) commitRoomOperationTx(ctx context.Context, tx pgx.Tx, fileID, ws string, op SourceCheckpointOperation) error {
+	existing, err := lockAgentOperationTx(ctx, tx, op.Receipt.ID, op.Receipt.RequestHash)
+	if errors.Is(err, ErrOperationConflict) {
+		existing, err = &AgentOperation{ID: op.Receipt.ID}, nil
+	}
+	if err != nil {
+		return err
+	}
+	if existing == nil && op.UndoOf != "" {
+		if existing, err = undoReceiptTx(ctx, tx, op.UndoOf); err != nil {
+			return err
+		}
+	}
+	if existing != nil {
+		obs.Log(ctx).Warn("room agent step passed over", "file_id", fileID, "operation_id", op.Receipt.ID)
+		return nil
+	}
+	_, err = s.commitSourceOperationTx(ctx, tx, fileID, ws, op)
+	return err
 }
 
 // validSourcePreview: at most sourcePreviewChars characters of UTF-8 with no

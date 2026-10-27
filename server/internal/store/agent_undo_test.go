@@ -432,6 +432,47 @@ func TestCreatedMaterialUndoTrashesAndRedoRestores(t *testing.T) {
 	}
 }
 
+// Q432 (Epo 2026-10-27): a room's save passes over an agent step it cannot
+// write, each in a nested transaction: one whose chat was deleted (a missing
+// conversation) and a Redo naming a step that is not stored. The save lands
+// with the step it can write. Fails if one bad step refuses the save.
+func TestARoomSavePassesOverAStepItCannotWrite(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "room_skip")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	step := func(id string) SourceCheckpointReceipt {
+		return SourceCheckpointReceipt{ID: id, ToolVersion: 1, RequestHash: "h_" + id, ActorUserID: owner}
+	}
+	orphan, redo, kept := step(uid("op")), step(uid("op")), step(uid("op"))
+	orphan.ConversationID = uid("conv")
+	save := sourceTestSave(sourceTestSeed(t, s, owner, file.ID), owner, "room")
+	save.Operations = []SourceCheckpointOperation{
+		{Receipt: orphan},
+		{Receipt: redo, UndoOf: uid("op")},
+		{Receipt: kept},
+	}
+	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, save)
+	if err != nil || saved.Checkpoint == 0 {
+		t.Fatalf("the save = %+v %v", saved, err)
+	}
+	var ids []string
+	rows, err := s.pool.Query(ctx, `SELECT id FROM agent_operations WHERE actor_user_id=$1`, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if rows.Err() != nil || len(ids) != 1 || ids[0] != kept.ID {
+		t.Fatalf("receipts = %v %v, want only %s", ids, rows.Err(), kept.ID)
+	}
+}
+
 // Q402 (Epo 2026-10-26): a room's save writes the agent steps the room
 // admitted with its checkpoint, each with its Undo ref, an Undo naming its
 // step; a step stored already (or naming a step another receipt reversed)

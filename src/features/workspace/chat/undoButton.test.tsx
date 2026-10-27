@@ -43,10 +43,14 @@ afterEach(() => {
 const at = (s: number) =>
   new Date(Date.UTC(2026, 9, 20, 12, 0, s)).toISOString();
 
+// One time for every payload of a test file: two calls across a second
+// boundary would differ.
+const issuedAt = Math.floor(Date.now() / 1000);
+
 const payload = (operationId: string) => ({
   documentId: 'mat_1',
   epoch: 1,
-  issuedAt: Math.floor(Date.now() / 1000),
+  issuedAt,
   mac: 'f'.repeat(64),
   operationId,
   updates: { content: 'dW5kbw==' },

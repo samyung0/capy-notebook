@@ -1230,6 +1230,30 @@ pub async fn edit_material(
         tx.commit().await?;
         return Ok(receipt);
     }
+    // An Undo or Redo reverses a stored step of its own actor, as the room
+    // checks one it holds (Q432): a missing step is gone, another user's is
+    // refused.
+    let step_operation = match &request.undo_of {
+        Some(step) => {
+            let row = tx
+                .query_opt(
+                    "SELECT actor_user_id, effect->>'operation' FROM agent_operations WHERE id=$1",
+                    &[step],
+                )
+                .await?;
+            match row.as_ref().map(|row| row.get::<_, Option<String>>(0)) {
+                None => return Err(undo_unavailable(UNDO_GONE)),
+                Some(owner) if owner.as_deref() != Some(actor.as_str()) => {
+                    return Err(DocumentError::Lifecycle(
+                        "the step is another user's".into(),
+                    ));
+                }
+                Some(_) => {}
+            }
+            row.and_then(|row| row.get::<_, Option<String>>(1))
+        }
+        None => None,
+    };
     access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor), &[]).await?;
     access::assert_access(&tx, &material_id, &actor, crate::auth::Access::Write).await?;
     let select = "SELECT d.state, d.room_schema, d.stored_version, m.kind
@@ -1317,16 +1341,6 @@ pub async fn edit_material(
     let payload = computed
         .undo
         .map(|updates| UndoPayload::of(schema, issued_at, updates));
-    let step_operation = match &request.undo_of {
-        Some(step) => tx
-            .query_opt(
-                "SELECT effect->>'operation' FROM agent_operations WHERE id=$1",
-                &[step],
-            )
-            .await?
-            .and_then(|row| row.get::<_, Option<String>>(0)),
-        None => None,
-    };
     let mut receipt = material_receipt(
         &tx,
         request,
@@ -1341,7 +1355,10 @@ pub async fn edit_material(
         .held
         .clone()
         .map(|held| (held, edited_at(issued_at)));
-    note_store::write_receipts(&tx, &material_id, std::slice::from_ref(&receipt)).await?;
+    // Its own write: a receipt that cannot be written refuses it (unlike a
+    // room's store, which passes the receipt over). One already stored is
+    // unreachable here, under the operation's lock and the `undo_of` check.
+    note_store::write_receipt(&tx, &material_id, &receipt).await?;
     let mut receipt = receipt.answer();
     tx.commit().await?;
     drop(client);
@@ -1567,6 +1584,62 @@ async fn known(
     answer.await.unwrap_or(Ok(None))
 }
 
+/// [known] on a transaction of its own, committed at once: the operation's
+/// lock and a pooled connection are held only while it reads (Q432).
+async fn known_now(
+    app: &Shared,
+    room: &str,
+    operation: &Operation,
+    undo_of: Option<&str>,
+) -> Result<Option<Value>, DocumentError> {
+    let mut client = app
+        .db
+        .get()
+        .await
+        .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+    let tx = client.transaction().await?;
+    let known = known(app, &tx, room, operation, undo_of).await?;
+    tx.commit().await?;
+    Ok(known)
+}
+
+/// A room-path refusal from the compute: a request racing one that landed
+/// meanwhile answers with that one's receipt instead (Q432).
+async fn refused_unless_known(
+    app: &Shared,
+    room: &str,
+    operation: &Operation,
+    undo_of: Option<&str>,
+    refusal: DocumentError,
+) -> Result<Option<Value>, DocumentError> {
+    match known_now(app, room, operation, undo_of).await? {
+        Some(receipt) => Ok(Some(receipt)),
+        None => Err(refusal),
+    }
+}
+
+/// An Undo or Redo with no room to hold its step reverses a stored step of
+/// its own actor (Q432): a missing step is gone, another user's is refused.
+async fn step_of_actor<C: deadpool_postgres::GenericClient>(
+    client: &C,
+    step: &str,
+    actor: &str,
+) -> Result<(), DocumentError> {
+    let row = client
+        .query_opt(
+            "SELECT actor_user_id FROM agent_operations WHERE id=$1",
+            &[&step],
+        )
+        .await?;
+    match row.map(|row| row.get::<_, Option<String>>(0)) {
+        None => Err(undo_unavailable(UNDO_GONE)),
+        Some(owner) if owner.as_deref() == Some(actor) => Ok(()),
+        Some(_) => Err(DocumentError::Lifecycle(
+            "the step is another user's".into(),
+        )),
+    }
+}
+
 /// Hands an agent edit to its loaded room and waits for the answer (Q402).
 /// None when the room unloaded before it took the edit (nothing admitted):
 /// the caller writes it directly.
@@ -1610,8 +1683,10 @@ async fn admit(
 /// admitted by that room like a person's edit, answered at admission; a
 /// quiz by both its rooms, the one not loaded loaded for it (Q403). It is
 /// computed on the room's snapshot, outside the room's task (Q403, Q-E),
-/// with the checks of a stored write. None when the room unloaded before it
-/// took the edit, or the material moved lineage: the stored write follows.
+/// with the checks of a stored write. A pooled connection is held only for
+/// the receipt checks and the admission, never through the compute (Q432).
+/// None when the room unloaded before it took the edit, or the material
+/// moved lineage: the stored write follows.
 async fn edit_in_room(
     app: &Shared,
     request: &DocumentRequest,
@@ -1624,13 +1699,14 @@ async fn edit_in_room(
 ) -> Result<Option<Value>, DocumentError> {
     let actor = &request.actor_user_id;
     let undo = request.undo.is_some();
+    let undo_of = request.undo_of.as_deref();
     let mut client = app
         .db
         .get()
         .await
         .map_err(|error| DocumentError::Unknown(error.to_string()))?;
     let tx = client.transaction().await?;
-    if let Some(known) = known(app, &tx, room, operation, request.undo_of.as_deref()).await? {
+    if let Some(known) = known(app, &tx, room, operation, undo_of).await? {
         return Ok(Some(known));
     }
     let Some(current) = tx
@@ -1652,6 +1728,9 @@ async fn edit_in_room(
         Ok(step) => step,
         Err(reversed) => return Ok(Some(reversed)),
     };
+    let mut assigned = assigned_ids(&tx, material_id).await?;
+    tx.commit().await?;
+    drop(client);
     let quiz = kind == "quiz";
     if quiz {
         // Both rooms admit it together: the one not loaded loads (Q403).
@@ -1676,27 +1755,50 @@ async fn edit_in_room(
     } else {
         None
     };
-    let mut assigned = assigned_ids(&tx, material_id).await?;
     assigned.extend(live_ids(app, room).await);
     assigned.extend(live_ids(app, keys_room).await);
+    // Debug builds only: the integration test's slow compute, which must
+    // hold no pooled connection.
+    #[cfg(debug_assertions)]
+    if material_id.contains(crate::room::IT_SLOW_COMPUTE) {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
     let computed = tokio::task::spawn_blocking(move || {
         compute(live, Vec::new(), None, kind, change, keys, &assigned, true)
     })
     .await
-    .map_err(|error| DocumentError::Unknown(error.to_string()))?;
-    let computed = match computed {
-        Err(DocumentError::Quota(_)) if undo => return Err(undo_unavailable(UNDO_TOO_LARGE)),
-        other => other?,
-    };
-    if over_update_cap(&computed.writes) {
-        if undo {
-            return Err(undo_unavailable(UNDO_TOO_LARGE));
+    .map_err(|error| DocumentError::Unknown(error.to_string()))?
+    .map_err(|error| match error {
+        DocumentError::Quota(_) if undo => undo_unavailable(UNDO_TOO_LARGE),
+        other => other,
+    })
+    .and_then(|computed| {
+        if !over_update_cap(&computed.writes) {
+            Ok(computed)
+        } else if undo {
+            Err(undo_unavailable(UNDO_TOO_LARGE))
+        } else {
+            Err(DocumentError::Quota(UPDATE_TOO_LARGE.into()))
         }
-        return Err(DocumentError::Quota(UPDATE_TOO_LARGE.into()));
-    }
+    });
+    let computed = match computed {
+        Ok(computed) => computed,
+        Err(refusal) => {
+            return refused_unless_known(app, room, operation, undo_of, refusal).await;
+        }
+    };
     let payload = computed
         .undo
         .map(|updates| UndoPayload::of(schema, issued_at, updates));
+    let mut client = app
+        .db
+        .get()
+        .await
+        .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+    let tx = client.transaction().await?;
+    if let Some(known) = known(app, &tx, room, operation, undo_of).await? {
+        return Ok(Some(known));
+    }
     let mut receipt = material_receipt(
         &tx,
         request,
@@ -1707,6 +1809,10 @@ async fn edit_in_room(
         step.as_ref().and_then(|step| step.operation.as_deref()),
     )
     .await?;
+    // The room projects it like a person's edit: nothing is pending (L3).
+    if let Some(effect) = receipt.effect.as_object_mut() {
+        effect.remove("projectionPending");
+    }
     receipt.held = computed.held.map(|held| (held, edited_at(issued_at)));
     let write_of = |doc: note_store::Doc| {
         computed
@@ -1751,32 +1857,43 @@ async fn source_in_room(
     session: &sources::gateway::SourceSession,
     issued_at: i64,
 ) -> Result<Option<Value>, DocumentError> {
-    // Under the operation's lock to the room's answer, as a material's:
-    // Go's checkpoint takes the file's locks before the operation's, and
-    // nothing here waits on the file's locks.
-    let mut client = app
-        .db
-        .get()
-        .await
-        .map_err(|error| DocumentError::Unknown(error.to_string()))?;
-    let tx = client.transaction().await?;
+    // As a material's: the connection and the operation's lock for the
+    // receipt checks and the admission only, never through the engine call
+    // (Q432). Go's checkpoint takes the file's locks before the operation's,
+    // and nothing here waits on the file's locks.
     let room = &session.room;
-    if let Some(known) = known(app, &tx, room, operation, request.undo_of.as_deref()).await? {
-        return Ok(Some(known));
-    }
-    let step = match stored_step(&tx, request).await? {
-        Ok(step) => step,
-        Err(reversed) => return Ok(Some(reversed)),
+    let undo_of = request.undo_of.as_deref();
+    let (step, name) = {
+        let mut client = app
+            .db
+            .get()
+            .await
+            .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+        let tx = client.transaction().await?;
+        if let Some(known) = known(app, &tx, room, operation, undo_of).await? {
+            return Ok(Some(known));
+        }
+        let step = match stored_step(&tx, request).await? {
+            Ok(step) => step,
+            Err(reversed) => return Ok(Some(reversed)),
+        };
+        let name: String = tx
+            .query_opt("SELECT name FROM files WHERE id=$1", &[&request.target.id])
+            .await?
+            .map(|row| row.get(0))
+            .unwrap_or_default();
+        tx.commit().await?;
+        (step, name)
     };
     let Some(live) = live_state(app, room).await else {
         return Ok(None);
     };
-    let edit = app.sources.edit_live(input, session, live).await?;
-    let name: String = tx
-        .query_opt("SELECT name FROM files WHERE id=$1", &[&request.target.id])
-        .await?
-        .map(|row| row.get(0))
-        .unwrap_or_default();
+    let edit = match app.sources.edit_live(input, session, live).await {
+        Ok(edit) => edit,
+        Err(refusal) => {
+            return refused_unless_known(app, room, operation, undo_of, refusal.into()).await;
+        }
+    };
     let payload = edit.undo.map(|update| UndoPayload {
         epoch: edit.epoch,
         issued_at,
@@ -1815,6 +1932,15 @@ async fn source_in_room(
         Some(session.workspace_id.clone()),
     );
     let update = edit.update;
+    let mut client = app
+        .db
+        .get()
+        .await
+        .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+    let tx = client.transaction().await?;
+    if let Some(known) = known(app, &tx, room, operation, undo_of).await? {
+        return Ok(Some(known));
+    }
     let answered = admit(app, room, None, |reply| AgentEdit {
         actor: request.actor_user_id.clone(),
         receipt,
@@ -2200,20 +2326,51 @@ pub async fn source_request(
             .get()
             .await
             .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+        if let Some(step) = &request.undo_of {
+            step_of_actor(&client, step, &request.actor_user_id).await?;
+        }
         stored_receipt(&client, &operation).await?
     };
     if let Some(receipt) = stored {
         return Ok(receipt);
     }
+    // Debug builds only: the integration test's retry, held after its check
+    // while its first request lands.
+    #[cfg(debug_assertions)]
+    if operation.id.contains(crate::room::IT_SLOW_RECHECK) {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
     let rooms = app.clone();
-    let result = app
+    let applied = app
         .sources
         .apply_edit(input, move |room| {
             let app = rooms.clone();
             let room = room.to_owned();
             Box::pin(async move { live_state(&app, &room).await })
         })
-        .await?;
+        .await;
+    let result = match applied {
+        Ok(result) => result,
+        Err(error) => {
+            // A retry that raced the edit's first checkpoint is refused on
+            // the text that edit left: the edit's stored receipt answers it
+            // (Q432).
+            let refusal = DocumentError::from(error);
+            if matches!(&refusal, DocumentError::Edit { code, .. }
+                if code == "stale_target" || code == "invalid_input")
+            {
+                let client = app
+                    .db
+                    .get()
+                    .await
+                    .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+                if let Some(receipt) = stored_receipt(&client, &operation).await? {
+                    return Ok(receipt);
+                }
+            }
+            return Err(refusal);
+        }
+    };
     if let (Some(handle), Some(update)) = (app.rooms.get(&result.room), result.update) {
         let edit = ServiceEdit {
             update,

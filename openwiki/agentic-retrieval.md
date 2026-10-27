@@ -4437,12 +4437,25 @@ same transaction as the change: `note_store::append` with the receipts, or a
 source room's checkpoint with its `operations` (Go
 `commitRoomOperationsTx`, each with its Undo ref). A failed store keeps
 them for the retry; a room that throws its unsaved state away loses them
-with everyone's edits. Each request holds its operation's advisory lock
-from its receipt checks (the stored receipt, then the room's, before
-anything is computed: `known`) to the room's answer; the room's store takes
-the same locks before the material's (Go's checkpoint after the file's), so
-a retry waits for the first request's answer, gets the room's receipt until
-the store and the stored one after, and never applies twice. A quiz edit
+with everyone's edits. A receipt the store cannot write (its chat deleted,
+a Redo naming a step that was passed over) is rolled back alone under a
+savepoint (a nested transaction in Go), logged and reported to Sentry as
+"agent receipt passed over" with the material or file id, and the store
+commits everyone's edits; a room refuses new agent edits with
+`unavailable_target` once 256 of its steps wait unstored (Q432,
+`AGENT_UNSTORED_MAX`; a checkpoint carries at most 256). A request holds
+a pooled connection and its operation's advisory lock only for its receipt
+checks (the stored receipt, then the room's: `known`) and for its
+admission, never through the compute or an Office engine call (Q432): the
+checks run on a short transaction committed at once, a compute that
+refuses checks again and answers a receipt that landed meanwhile, and the
+admission takes a new transaction, checks again and holds the lock to the
+room's answer. The room's store takes the same locks before the
+material's (Go's checkpoint after the file's), so a retry gets the room's
+receipt until the store and the stored one after, and never applies twice.
+Room-path receipts carry no `projectionPending` (the room projects like a
+person's edit), and an agent edit refused at admission records no edit
+incident (Q432). A quiz edit
 loads the room not yet loaded and the content room admits its part only
 once the keys room admitted its own (both or neither), each storing at
 once; with neither room loaded it writes both stored documents directly.
@@ -4532,7 +4545,12 @@ with current edit access, checked before the collaboration service
 (`server/internal/httpapi/huma_undo.go`). A step its room admitted and has
 not stored yet has no stored receipt: its signed payload names its document
 (`PendingUndoStep`), and the room, which holds the step's receipt, checks
-the actor and gives the Undo's receipt the step's chat (Q403).
+the actor and gives the Undo's receipt the step's chat (Q403). With no room
+loaded, the collaboration service checks the stored step itself before
+writing: a missing step is `undo_unavailable` and another user's is
+`lifecycle_rejected`, for a material and a source alike (Q432). A no-room
+source retry refused `stale_target` or `invalid_input` reads its stored
+receipt again and answers it when the first request landed meanwhile.
 
 **Undo chain** (Epo 2026-10-20, durable since 2026-10-21). The browser
 keeps each payload in memory and in IndexedDB (`capy-local`, store
@@ -4666,7 +4684,7 @@ person may have filled it since), and refuses one that no longer fits with
 `undo_unavailable`. Each Undo's receipt (`agent_operations`, kind
 `undo_edit`, with `undo_of` naming the step it reversed: unique, so a step
 is reversed once; migration 0106 dropped `agent_edit_inverses`) commits in
-the write's own transaction (r1 M2): `insert_receipt` for a material, the
+the write's own transaction (r1 M2): `note_store::write_receipt` for a material, the
 checkpoint's `operation.undoOf` for a source (Go's
 `commitSourceOperationTx`); the collaboration service answers with it and
 its Redo payload, and Go signs that payload. The

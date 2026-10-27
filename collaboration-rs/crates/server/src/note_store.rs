@@ -367,58 +367,91 @@ pub(crate) async fn lock_operations<'a>(
     Ok(())
 }
 
-/// Writes agent receipts in the caller's transaction, which holds the
-/// material's lock: the provenance an edit credits, the receipt row and the
-/// holds of what it deleted. A receipt already stored, or naming a step
-/// another receipt reversed, is passed over and logged, so the store that
-/// carries it still saves everyone's edits.
+/// Writes a room store's agent receipts in its transaction, which holds the
+/// material's lock, each under a savepoint: one that cannot be written (its
+/// chat deleted, its actor purged) is rolled back alone, reported, and
+/// passed over, so the store still saves everyone's edits (Q432).
 pub(crate) async fn write_receipts(
     tx: &Transaction<'_>,
     material_id: &str,
     receipts: &[AgentReceipt],
 ) -> Result<(), StoreError> {
     for receipt in receipts {
-        if let Some(provenance) = &receipt.provenance {
-            tx.execute(
-                "UPDATE materials SET provenance=$2 WHERE id=$1",
-                &[&material_id, provenance],
-            )
-            .await?;
+        tx.batch_execute("SAVEPOINT agent_receipt").await?;
+        match write_receipt(tx, material_id, receipt).await {
+            Ok(()) => tx.batch_execute("RELEASE SAVEPOINT agent_receipt").await?,
+            Err(error) => {
+                tx.batch_execute("ROLLBACK TO SAVEPOINT agent_receipt")
+                    .await?;
+                crate::observe::log(
+                    crate::observe::Level::Warn,
+                    "agent receipt passed over",
+                    serde_json::json!({
+                        "error": error.to_string(),
+                        "operation": receipt.id,
+                        "room": material_id,
+                    }),
+                );
+                crate::observe::capture(
+                    "agent receipt passed over",
+                    None,
+                    &[("material_id", material_id)],
+                );
+            }
         }
-        let written = tx
-            .execute(
-                "INSERT INTO agent_operations
-                 (id, kind, tool_version, request_hash, actor_user_id, workspace_id, conversation_id,
-                  message_id, call_id, outcome, effect, undo_of)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'succeeded',$10,$11)
-                 ON CONFLICT DO NOTHING",
-                &[
-                    &receipt.id,
-                    &receipt.kind,
-                    &receipt.tool_version,
-                    &receipt.request_hash,
-                    &receipt.actor,
-                    &receipt.workspace_id,
-                    &receipt.conversation_id,
-                    &receipt.message_id,
-                    &receipt.call_id,
-                    &receipt.effect,
-                    &receipt.undo_of,
-                ],
-            )
-            .await?;
-        if written == 0 {
-            crate::observe::log(
-                crate::observe::Level::Warn,
-                "agent receipt passed over",
-                serde_json::json!({ "operation": receipt.id, "room": material_id }),
-            );
-        }
-        if let Some((held, edited)) = &receipt.held
-            && !held.is_empty()
-        {
-            hold_agent(tx, material_id, held.clone(), *edited).await?;
-        }
+    }
+    Ok(())
+}
+
+/// One agent receipt in the caller's transaction, which holds the
+/// material's lock: the provenance its edit credits, the receipt row and the
+/// holds of what it deleted. One already stored, or naming a step another
+/// receipt reversed, is passed over and logged.
+pub(crate) async fn write_receipt(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    receipt: &AgentReceipt,
+) -> Result<(), StoreError> {
+    if let Some(provenance) = &receipt.provenance {
+        tx.execute(
+            "UPDATE materials SET provenance=$2 WHERE id=$1",
+            &[&material_id, provenance],
+        )
+        .await?;
+    }
+    let written = tx
+        .execute(
+            "INSERT INTO agent_operations
+             (id, kind, tool_version, request_hash, actor_user_id, workspace_id, conversation_id,
+              message_id, call_id, outcome, effect, undo_of)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'succeeded',$10,$11)
+             ON CONFLICT DO NOTHING",
+            &[
+                &receipt.id,
+                &receipt.kind,
+                &receipt.tool_version,
+                &receipt.request_hash,
+                &receipt.actor,
+                &receipt.workspace_id,
+                &receipt.conversation_id,
+                &receipt.message_id,
+                &receipt.call_id,
+                &receipt.effect,
+                &receipt.undo_of,
+            ],
+        )
+        .await?;
+    if written == 0 {
+        crate::observe::log(
+            crate::observe::Level::Warn,
+            "agent receipt passed over",
+            serde_json::json!({ "operation": receipt.id, "room": material_id }),
+        );
+    }
+    if let Some((held, edited)) = &receipt.held
+        && !held.is_empty()
+    {
+        hold_agent(tx, material_id, held.clone(), *edited).await?;
     }
     Ok(())
 }
