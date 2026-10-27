@@ -60,10 +60,7 @@ import {
 } from '@/features/materials/document';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
-import {
-  NoteDisplayToggles,
-  NoteToolbarToggleContext,
-} from '@/features/notes/NoteDisplayToggles';
+import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
@@ -1537,7 +1534,16 @@ export function NoteEditorCore({
   // editor's content stops edits without Slate's readOnly (pauseEdits).
   const locked =
     offlineLimit || outdated || phase === 'paused' || draftsSending;
-  const toolbarToggle = useContext(NoteToolbarToggleContext);
+  // Edit opens without the toolbar; the Tools toggle brings it back for this
+  // opening only.
+  const [toolbarShown, setToolbarShown] = useState(false);
+  const toolbarToggle = useMemo(
+    () => ({
+      onToggle: () => setToolbarShown((shown) => !shown),
+      shown: toolbarShown,
+    }),
+    [toolbarShown]
+  );
   return (
     <EditorHoldScope>
       <NoteSeatContext.Provider value={seat}>
@@ -1548,13 +1554,10 @@ export function NoteEditorCore({
                 currentUserId={currentUserId}
                 discussions={discussions}
               >
-                {/* Held back: until sent. Full screen hides it until the
-                 * Tools toggle asks; hidden, not unmounted. */}
+                {/* Held back: until sent. Hidden, not unmounted, until the
+                 * Tools toggle asks. */}
                 <div
-                  className={cn(
-                    'contents',
-                    toolbarToggle && !toolbarToggle.shown && 'hidden'
-                  )}
+                  className={cn('contents', !toolbarShown && 'hidden')}
                   data-note-toolbar=""
                   inert={locked}
                 >

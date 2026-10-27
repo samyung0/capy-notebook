@@ -1,4 +1,3 @@
-import { createContext } from 'react';
 import { buttonVariants } from '@/components/ui/Button';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
@@ -8,13 +7,6 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useTheme } from '@/theme/theme';
 
-/** Set while the viewer is full screen: the note's toolbar starts hidden
- * there and the Tools toggle brings it back until full screen ends. */
-export const NoteToolbarToggleContext = createContext<{
-  shown: boolean;
-  onToggle: () => void;
-} | null>(null);
-
 /** Shortcuts to the width and font picks of Editor settings, in the top right
  * corner of a note's scroll area in View and Edit. Each flips between the two
  * choices; the note itself shows which one is on. The scroll area must be
@@ -22,7 +14,7 @@ export const NoteToolbarToggleContext = createContext<{
 export function NoteDisplayToggles({
   toolbar,
 }: {
-  /** The full screen toolbar toggle; Edit passes it, View has no toolbar. */
+  /** The toolbar toggle; Edit passes it, View has no toolbar. */
   toolbar?: { shown: boolean; onToggle: () => void } | null;
 }) {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);

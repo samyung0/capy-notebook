@@ -244,6 +244,10 @@ export async function openNote(
   );
   const editor = actor.page.locator('[contenteditable="true"]').first();
   await expect(editor).toBeVisible({ timeout: 60_000 });
+  // Edit opens with the toolbar hidden; the import and export steps use it.
+  await actor.page
+    .getByRole('button', { exact: true, name: m.editor_toolbar_show() })
+    .click();
   return editor;
 }
 

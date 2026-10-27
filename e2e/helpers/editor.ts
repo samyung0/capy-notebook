@@ -28,6 +28,16 @@ export async function expectEditorLive(page: Page): Promise<void> {
   );
 }
 
+/** A note's Edit opens with its toolbar hidden; the Tools toggle shows it. */
+export async function showNoteToolbar(page: Page): Promise<void> {
+  await page
+    .getByRole('button', { exact: true, name: m.editor_toolbar_show() })
+    .click();
+  await expect(
+    page.getByRole('toolbar', { name: m.editor_doc_formatting() })
+  ).toBeVisible();
+}
+
 /**
  * Static Plate preview is a lazy chunk. Wait for the preview root to mount
  * (chunk loaded + document parsed), then assert text inside it — not "this

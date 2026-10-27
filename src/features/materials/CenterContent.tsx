@@ -85,10 +85,7 @@ import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
-import {
-  NoteDisplayToggles,
-  NoteToolbarToggleContext,
-} from '@/features/notes/NoteDisplayToggles';
+import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
@@ -234,22 +231,6 @@ export function CenterContent({
     true;
   const navigate = useNavigate();
   const router = useRouter();
-  // Full screen opens a note's Edit without its toolbar; Tools brings it
-  // back until full screen ends.
-  const [toolbarShown, setToolbarShown] = useState(false);
-  useEffect(() => {
-    if (!isFullscreen) setToolbarShown(false);
-  }, [isFullscreen]);
-  const toolbarToggle = useMemo(
-    () =>
-      isFullscreen
-        ? {
-            onToggle: () => setToolbarShown((shown) => !shown),
-            shown: toolbarShown,
-          }
-        : null,
-    [isFullscreen, toolbarShown]
-  );
   // Set when this pane pushed the entry: leaving pops it, so back afterwards
   // does not land on the same page again. A loaded full screen URL replaces.
   const pushedFullscreen = useRef(false);
@@ -351,103 +332,101 @@ export function CenterContent({
               <EditorStatusStoreContext.Provider value={editorStatus}>
                 <PresenceContext.Provider value={setPresence}>
                   <FileMenuShown.Provider value={setMenuShown}>
-                    <NoteToolbarToggleContext.Provider value={toolbarToggle}>
-                      <div
-                        className={cn(
-                          // Only fullscreen needs its own fill; in the panel the
-                          // panel's shows through, frosted or not. Fixed, it
-                          // covers both side panels without closing them.
-                          'flex min-h-0 flex-1 flex-col',
-                          isFullscreen && 'fixed inset-0 z-40 bg-surface'
-                        )}
-                      >
-                        {/* Hidden, not unmounted: the file's controls portal
-                         * into the header's slots. */}
-                        <div className={isFullscreen ? 'hidden' : 'contents'}>
-                          <Header
-                            beforeFileDelete={beforeFileDelete}
-                            chapters={chapters}
-                            color={color}
-                            editorStatus={editorStatus}
-                            fileActions={
-                              <span
-                                className="flex items-center"
-                                ref={setFileActions}
-                              />
-                            }
-                            fileControls={
-                              <span
-                                className="flex items-center"
-                                ref={setFileHeader}
-                              />
-                            }
-                            imageZoom={imageZoom}
-                            isFullscreen={isFullscreen}
-                            item={item}
-                            leading={leading}
-                            materialMode={materialMode}
-                            menuBar={
-                              <span
-                                className="flex min-w-0 items-center"
-                                ref={setFileMenu}
-                              />
-                            }
-                            menuShown={menuShown}
-                            onDeleted={onDeleted}
-                            oneColumn={oneColumn}
-                            onImageZoomChange={setImageZoom}
-                            onMaterialModeChange={changeMaterialMode}
-                            onToggleFullscreen={() =>
-                              setFullscreen(!isFullscreen)
-                            }
-                            presence={presence}
-                            readOnly={readOnly}
-                            standalone={standalone}
-                            trailing={trailing}
-                            workspaceId={workspaceId}
-                          />
-                        </div>
-                        {/* One strip at a time under the header: the newest shows. */}
-                        <BannerStack key={item.id}>
-                          <div
-                            className={cn(
-                              'relative min-h-0 flex-1',
-                              item.kind === 'file'
-                                ? 'flex flex-col overflow-hidden'
-                                : 'overflow-auto'
-                            )}
-                          >
-                            {item.kind === 'material' && (
-                              <MaterialBody
-                                allowExternalAssets={!readOnly}
-                                centerQuiz={!standalone}
-                                key={item.id}
-                                materialId={item.id}
-                                mode={materialMode}
-                                onEditorStatusChange={setEditorStatus}
-                                onPresenceChange={setPresence}
-                                readOnly={readOnly}
-                                target={item.target}
-                                workspaceId={workspaceId}
-                              />
-                            )}
-                            {item.kind === 'file' && (
-                              <FileBody
-                                citation={item.citation}
-                                color={color}
-                                fileId={item.id}
-                                imageZoom={imageZoom}
-                                key={item.id}
-                                onImageZoomChange={setImageZoom}
-                                onViewerDirtyChange={onFileViewerDirtyChange}
-                                page={item.page}
-                                regions={item.regions}
-                              />
-                            )}
-                          </div>
-                        </BannerStack>
+                    <div
+                      className={cn(
+                        // Only fullscreen needs its own fill; in the panel the
+                        // panel's shows through, frosted or not. Fixed, it
+                        // covers both side panels without closing them.
+                        'flex min-h-0 flex-1 flex-col',
+                        isFullscreen && 'fixed inset-0 z-40 bg-surface'
+                      )}
+                    >
+                      {/* Hidden, not unmounted: the file's controls portal
+                       * into the header's slots. */}
+                      <div className={isFullscreen ? 'hidden' : 'contents'}>
+                        <Header
+                          beforeFileDelete={beforeFileDelete}
+                          chapters={chapters}
+                          color={color}
+                          editorStatus={editorStatus}
+                          fileActions={
+                            <span
+                              className="flex items-center"
+                              ref={setFileActions}
+                            />
+                          }
+                          fileControls={
+                            <span
+                              className="flex items-center"
+                              ref={setFileHeader}
+                            />
+                          }
+                          imageZoom={imageZoom}
+                          isFullscreen={isFullscreen}
+                          item={item}
+                          leading={leading}
+                          materialMode={materialMode}
+                          menuBar={
+                            <span
+                              className="flex min-w-0 items-center"
+                              ref={setFileMenu}
+                            />
+                          }
+                          menuShown={menuShown}
+                          onDeleted={onDeleted}
+                          oneColumn={oneColumn}
+                          onImageZoomChange={setImageZoom}
+                          onMaterialModeChange={changeMaterialMode}
+                          onToggleFullscreen={() =>
+                            setFullscreen(!isFullscreen)
+                          }
+                          presence={presence}
+                          readOnly={readOnly}
+                          standalone={standalone}
+                          trailing={trailing}
+                          workspaceId={workspaceId}
+                        />
                       </div>
-                    </NoteToolbarToggleContext.Provider>
+                      {/* One strip at a time under the header: the newest shows. */}
+                      <BannerStack key={item.id}>
+                        <div
+                          className={cn(
+                            'relative min-h-0 flex-1',
+                            item.kind === 'file'
+                              ? 'flex flex-col overflow-hidden'
+                              : 'overflow-auto'
+                          )}
+                        >
+                          {item.kind === 'material' && (
+                            <MaterialBody
+                              allowExternalAssets={!readOnly}
+                              centerQuiz={!standalone}
+                              key={item.id}
+                              materialId={item.id}
+                              mode={materialMode}
+                              onEditorStatusChange={setEditorStatus}
+                              onPresenceChange={setPresence}
+                              readOnly={readOnly}
+                              target={item.target}
+                              workspaceId={workspaceId}
+                            />
+                          )}
+                          {item.kind === 'file' && (
+                            <FileBody
+                              citation={item.citation}
+                              color={color}
+                              fileId={item.id}
+                              imageZoom={imageZoom}
+                              key={item.id}
+                              onImageZoomChange={setImageZoom}
+                              onViewerDirtyChange={onFileViewerDirtyChange}
+                              page={item.page}
+                              regions={item.regions}
+                            />
+                          )}
+                        </div>
+                      </BannerStack>
+                    </div>
                   </FileMenuShown.Provider>
                 </PresenceContext.Provider>
               </EditorStatusStoreContext.Provider>

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
-import { expectEditorLive } from '../helpers/editor';
+import { expectEditorLive, showNoteToolbar } from '../helpers/editor';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
@@ -63,6 +63,7 @@ test('editor settings keep drafts until Apply, persist the width and keep margin
   await expect(dialog).toHaveCount(0);
   await page.reload();
   await expectEditorLive(page);
+  await showNoteToolbar(page);
   await settings.click();
   await expect(displaySize).toHaveAttribute('data-width', 'full');
 });
