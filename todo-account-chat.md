@@ -170,3 +170,19 @@ listing stay workspace-only.
   route.
 - **Copy:** the sources switch says "Your files only". Citations show their
   workspace, or No workspace.
+
+## After the first version
+
+- **Search ranking (decided 2026-10-27):** each embedding space runs one
+  search over its workspace files and the caller's no-workspace files
+  together, so owned, member and no-workspace files rank alike. Spaces of
+  different embedding models still merge by rank before the one rerank.
+- **Tuning and scale (Windows PC):** account search quality, and the
+  no-workspace vector leg. It filters on `workspace_id IS NULL`, which every
+  user's standalone vectors share, so the vector index may return few of the
+  caller's rows at scale.
+- **Planned tools:** account-level tools such as creating a workspace.
+- **Open gaps:** some shared Go tool texts still say `list_sources` and
+  "workspace", and the `write_sources` refusal says "Workspace only is on".
+  `add_questions` starting a quiz and a new Office file take no
+  `workspace_id`, so they always land in No workspace.

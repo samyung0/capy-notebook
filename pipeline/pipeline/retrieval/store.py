@@ -1352,9 +1352,9 @@ async def hybrid_search(
 ) -> list[dict[str, Any]]:
     """Vector + lexical search fused with reciprocal rank fusion.
 
-    Account chat searches ``workspace_ids`` (one pin's workspaces) or, with
-    ``owner_user_id``, that user's standalone content in ``pin``'s space;
-    either needs ``pin``.
+    Account chat searches ``workspace_ids`` (one pin's workspaces) and, with
+    ``owner_user_id``, that user's standalone content in ``pin``'s space, in
+    one statement so both rank in one pool; it needs ``pin``.
 
     ``pin``, ``conn`` and ``chunk_filter`` exist for the knowledge library,
     which runs this same statement against its own database with a

@@ -368,7 +368,9 @@ async def test_an_account_create_lands_where_the_user_named(monkeypatch, named):
     assert "workspaceId" in sent if named else "workspaceId" not in sent
 
 
-async def test_search_account_embeds_once_per_pin_and_merges_by_rank(monkeypatch):
+async def test_search_account_ranks_each_pins_files_together_and_merges_pins(
+    monkeypatch,
+):
     pins = [
         {
             "embedding_provider_slug": "p",
@@ -411,8 +413,8 @@ async def test_search_account_embeds_once_per_pin_and_merges_by_rank(monkeypatch
                 kwargs["pin"]["embedding_model_slug"],
             )
         )
-        target = kwargs.get("workspace_ids") or ["mine"]
-        return [row(f"{target[0]}_{i}") for i in range(2)]
+        target = kwargs["workspace_ids"][0]
+        return [row(f"{target}_{i}") for i in range(2)]
 
     monkeypatch.setattr(search.store, "account_search_spaces", spaces)
     monkeypatch.setattr(search.store, "hybrid_search", hybrid_search)
@@ -427,11 +429,12 @@ async def test_search_account_embeds_once_per_pin_and_merges_by_rank(monkeypatch
     )
 
     assert embedded == ["a", "b"]
+    # One statement per pin: its workspace and standalone files in one pool.
     assert sorted(searched, key=str) == sorted(
-        [(["ws_1"], None, "a"), (None, "u_1", "a"), (["ws_2"], None, "b")], key=str
+        [(["ws_1"], "u_1", "a"), (["ws_2"], None, "b")], key=str
     )
-    # Each target's first rows lead, before any target's second.
-    assert {p.chunk_id for p in found[:3]} == {"ws_1_0", "mine_0", "ws_2_0"}
+    # Each pin's first rows lead, before any pin's second.
+    assert {p.chunk_id for p in found[:2]} == {"ws_1_0", "ws_2_0"}
 
 
 async def test_an_account_sessions_embedding_receipt_names_its_pin(monkeypatch):

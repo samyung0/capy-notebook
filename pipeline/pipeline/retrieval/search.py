@@ -310,8 +310,9 @@ async def search_account(
     """Search across an account chat's scope (todo-account-chat.md): the
     workspaces grouped by embedding pin, plus the user's standalone content
     grouped by the pin it was indexed in. The query is embedded once per pin,
-    each target runs the hybrid statement, the targets' fused lists merge by
-    reciprocal rank, and one rerank orders the union. Passages carry no
+    each pin's workspace and standalone files rank together in one hybrid
+    statement, the pins' fused lists merge by reciprocal rank, and one rerank
+    orders the union. Passages carry no
     workspace yet; the caller labels them through Go (tools.label_passages)."""
     top_k = top_k or cfg.search_top_k
     spaces = await store.account_search_spaces(user_id, workspace_ids)
@@ -344,12 +345,15 @@ async def search_account(
             "candidates": cfg.search_candidates,
             "pin": space["pin"],
         }
-        if space["workspace_ids"]:
-            searches.append(
-                store.hybrid_search(workspace_ids=space["workspace_ids"], **common)
+        # One statement per space: its workspace files and the caller's
+        # standalone files rank in one pool (Epo 2026-10-27).
+        searches.append(
+            store.hybrid_search(
+                workspace_ids=space["workspace_ids"],
+                owner_user_id=user_id if space["standalone"] else None,
+                **common,
             )
-        if space["standalone"]:
-            searches.append(store.hybrid_search(owner_user_id=user_id, **common))
+        )
     targets = await asyncio.gather(*searches)
     searched = time.monotonic()
     rows = merge_targets(targets)[: cfg.search_candidates]
