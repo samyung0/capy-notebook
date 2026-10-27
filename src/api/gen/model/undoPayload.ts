@@ -8,6 +8,11 @@ import type { UndoPayloadUpdates } from './undoPayloadUpdates.ts';
 
 export interface UndoPayload {
   /**
+     * The user whose tool call made the step, the only one its Undo admits
+     * @maxLength 64
+     */
+  actorUserId?: string;
+  /**
      * The material or file the step changed
      * @maxLength 64
      */
@@ -17,7 +22,7 @@ export interface UndoPayload {
   /** Unix seconds of the agent edit; offered for 24 h from then (an Undo's Redo keeps it) */
   issuedAt: number;
   /**
-     * The server's signature over the step, the document, the epoch, the time and the updates
+     * The server's signature over the step, the document, the actor, the epoch, the time and the updates
      * @maxLength 64
      */
   mac?: string;

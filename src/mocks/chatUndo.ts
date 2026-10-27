@@ -28,6 +28,7 @@ export function mockUndoPayload(effect: ResourceEffect): UndoPayload | null {
     effect.operation === 'edited' || effect.operation === 'edit_undone';
   if (!edit || !effect.undo) return null;
   return {
+    actorUserId: 'u_1',
     documentId: effect.resource.id,
     epoch: 1,
     issuedAt: Math.floor(Date.now() / 1000),

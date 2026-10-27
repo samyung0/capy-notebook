@@ -41,16 +41,21 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 		return nil, err
 	}
 	actor := userID(ctx)
+	// The payload names the user whose tool call made the step (Q466): anyone
+	// else is refused before any lookup, for a stored step or a pending one.
+	if in.Body.Payload != nil && in.Body.Payload.ActorUserID != actor {
+		return nil, hErr(store.ErrNotFound)
+	}
 	step, err := a.s.UndoStep(ctx, in.OperationID)
 	if errors.Is(err, store.ErrNotFound) {
 		// A step its room admitted and has not stored yet goes to the room
-		// on its signed payload; the room checks the actor (Q403).
+		// on its signed payload, which names its actor (Q403, Q466).
 		step, err = a.s.PendingUndoStep(in.OperationID, in.Body.Payload)
 	}
 	if err != nil {
 		return nil, hErr(err)
 	}
-	if step.ActorUserID != "" && step.ActorUserID != actor {
+	if step.ActorUserID != actor {
 		return nil, hErr(store.ErrNotFound)
 	}
 	unlock, err := a.undos.lock(ctx, step.ID)

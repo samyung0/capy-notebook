@@ -63,6 +63,7 @@ describe('opening a source from its route', () => {
   // refused); another file's stay.
   it("drops a file's agent Undo payloads once its session or token shows a newer epoch", async () => {
     const payload = (operationId: string, documentId: string) => ({
+      actorUserId: 'u_1',
       documentId,
       epoch: 1,
       issuedAt: Math.floor(Date.now() / 1000),

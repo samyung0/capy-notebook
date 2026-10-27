@@ -1085,6 +1085,8 @@ export const UndoEditOperationParams = zod.object({
   "operationId": zod.string()
 })
 
+export const undoEditOperationBodyPayloadActorUserIdMax = 64;
+
 export const undoEditOperationBodyPayloadDocumentIdMax = 64;
 
 export const undoEditOperationBodyPayloadMacMax = 64;
@@ -1097,15 +1099,18 @@ export const undoEditOperationBodyRequestIdMax = 64;
 
 export const UndoEditOperationBody = zod.object({
   "payload": zod.object({
+  "actorUserId": zod.string().max(undoEditOperationBodyPayloadActorUserIdMax).optional().describe('The user whose tool call made the step, the only one its Undo admits'),
   "documentId": zod.string().max(undoEditOperationBodyPayloadDocumentIdMax).optional().describe('The material or file the step changed'),
   "epoch": zod.int().describe('The document lineage it was made in'),
   "issuedAt": zod.int().describe('Unix seconds of the agent edit; offered for 24 h from then (an Undo\'s Redo keeps it)'),
-  "mac": zod.string().max(undoEditOperationBodyPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the epoch, the time and the updates'),
+  "mac": zod.string().max(undoEditOperationBodyPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the actor, the epoch, the time and the updates'),
   "operationId": zod.string().max(undoEditOperationBodyPayloadOperationIdMax).optional().describe('The step this payload reverses'),
   "updates": zod.record(zod.string(), zod.string()).describe('Per document, the base64 Yjs update that reverses the step')
 }).optional().describe('The step\'s Undo payload as the server sent it'),
   "requestId": zod.string().min(1).max(undoEditOperationBodyRequestIdMax).describe('Client-generated idempotency key for this action')
 })
+
+export const undoEditOperationResponseUndoPayloadActorUserIdMax = 64;
 
 export const undoEditOperationResponseUndoPayloadDocumentIdMax = 64;
 
@@ -1152,10 +1157,11 @@ export const UndoEditOperationResponse = zod.object({
   "outcome": zod.string(),
   "toolVersion": zod.int(),
   "undoPayload": zod.object({
+  "actorUserId": zod.string().max(undoEditOperationResponseUndoPayloadActorUserIdMax).optional().describe('The user whose tool call made the step, the only one its Undo admits'),
   "documentId": zod.string().max(undoEditOperationResponseUndoPayloadDocumentIdMax).optional().describe('The material or file the step changed'),
   "epoch": zod.int().describe('The document lineage it was made in'),
   "issuedAt": zod.int().describe('Unix seconds of the agent edit; offered for 24 h from then (an Undo\'s Redo keeps it)'),
-  "mac": zod.string().max(undoEditOperationResponseUndoPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the epoch, the time and the updates'),
+  "mac": zod.string().max(undoEditOperationResponseUndoPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the actor, the epoch, the time and the updates'),
   "operationId": zod.string().max(undoEditOperationResponseUndoPayloadOperationIdMax).optional().describe('The step this payload reverses'),
   "updates": zod.record(zod.string(), zod.string()).describe('Per document, the base64 Yjs update that reverses the step')
 }).optional().describe('The step\'s signed Undo payload, on a fresh receipt only; never stored'),
@@ -6172,6 +6178,8 @@ export const PurgeTrashedQueryParams = zod.object({
   "requestId": zod.string().min(1).max(purgeTrashedQueryRequestIdMax).optional()
 })
 
+export const purgeTrashedResponseUndoPayloadActorUserIdMax = 64;
+
 export const purgeTrashedResponseUndoPayloadDocumentIdMax = 64;
 
 export const purgeTrashedResponseUndoPayloadMacMax = 64;
@@ -6217,10 +6225,11 @@ export const PurgeTrashedResponse = zod.object({
   "outcome": zod.string(),
   "toolVersion": zod.int(),
   "undoPayload": zod.object({
+  "actorUserId": zod.string().max(purgeTrashedResponseUndoPayloadActorUserIdMax).optional().describe('The user whose tool call made the step, the only one its Undo admits'),
   "documentId": zod.string().max(purgeTrashedResponseUndoPayloadDocumentIdMax).optional().describe('The material or file the step changed'),
   "epoch": zod.int().describe('The document lineage it was made in'),
   "issuedAt": zod.int().describe('Unix seconds of the agent edit; offered for 24 h from then (an Undo\'s Redo keeps it)'),
-  "mac": zod.string().max(purgeTrashedResponseUndoPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the epoch, the time and the updates'),
+  "mac": zod.string().max(purgeTrashedResponseUndoPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the actor, the epoch, the time and the updates'),
   "operationId": zod.string().max(purgeTrashedResponseUndoPayloadOperationIdMax).optional().describe('The step this payload reverses'),
   "updates": zod.record(zod.string(), zod.string()).describe('Per document, the base64 Yjs update that reverses the step')
 }).optional().describe('The step\'s signed Undo payload, on a fresh receipt only; never stored'),
@@ -6245,6 +6254,8 @@ export const RestoreTrashedBody = zod.object({
   "episodeId": zod.string().min(1).describe('Trash episode returned by the trash listing'),
   "requestId": zod.string().min(1).max(restoreTrashedBodyRequestIdMax).describe('Client-generated idempotency key for this action')
 })
+
+export const restoreTrashedResponseUndoPayloadActorUserIdMax = 64;
 
 export const restoreTrashedResponseUndoPayloadDocumentIdMax = 64;
 
@@ -6291,10 +6302,11 @@ export const RestoreTrashedResponse = zod.object({
   "outcome": zod.string(),
   "toolVersion": zod.int(),
   "undoPayload": zod.object({
+  "actorUserId": zod.string().max(restoreTrashedResponseUndoPayloadActorUserIdMax).optional().describe('The user whose tool call made the step, the only one its Undo admits'),
   "documentId": zod.string().max(restoreTrashedResponseUndoPayloadDocumentIdMax).optional().describe('The material or file the step changed'),
   "epoch": zod.int().describe('The document lineage it was made in'),
   "issuedAt": zod.int().describe('Unix seconds of the agent edit; offered for 24 h from then (an Undo\'s Redo keeps it)'),
-  "mac": zod.string().max(restoreTrashedResponseUndoPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the epoch, the time and the updates'),
+  "mac": zod.string().max(restoreTrashedResponseUndoPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the actor, the epoch, the time and the updates'),
   "operationId": zod.string().max(restoreTrashedResponseUndoPayloadOperationIdMax).optional().describe('The step this payload reverses'),
   "updates": zod.record(zod.string(), zod.string()).describe('Per document, the base64 Yjs update that reverses the step')
 }).optional().describe('The step\'s signed Undo payload, on a fresh receipt only; never stored'),
@@ -8249,6 +8261,7 @@ export const checkpointSourceDocumentBodySeedBytesMin = 0;
 
 
 
+
 export const CheckpointSourceDocumentBody = zod.object({
   "actorIds": zod.array(zod.string()).min(1).nullable(),
   "baseRevision": zod.int().min(1),
@@ -8294,8 +8307,11 @@ export const CheckpointSourceDocumentBody = zod.object({
   "preview": zod.string().optional(),
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
   "stateSeedSHA256": zod.string().optional(),
-  "update": zod.string()
+  "update": zod.string(),
+  "workspaceId": zod.string().min(1)
 })
+
+export const checkpointSourceDocumentResponseOperationUndoPayloadActorUserIdMax = 64;
 
 export const checkpointSourceDocumentResponseOperationUndoPayloadDocumentIdMax = 64;
 
@@ -8345,10 +8361,11 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "outcome": zod.string(),
   "toolVersion": zod.int(),
   "undoPayload": zod.object({
+  "actorUserId": zod.string().max(checkpointSourceDocumentResponseOperationUndoPayloadActorUserIdMax).optional().describe('The user whose tool call made the step, the only one its Undo admits'),
   "documentId": zod.string().max(checkpointSourceDocumentResponseOperationUndoPayloadDocumentIdMax).optional().describe('The material or file the step changed'),
   "epoch": zod.int().describe('The document lineage it was made in'),
   "issuedAt": zod.int().describe('Unix seconds of the agent edit; offered for 24 h from then (an Undo\'s Redo keeps it)'),
-  "mac": zod.string().max(checkpointSourceDocumentResponseOperationUndoPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the epoch, the time and the updates'),
+  "mac": zod.string().max(checkpointSourceDocumentResponseOperationUndoPayloadMacMax).optional().describe('The server\'s signature over the step, the document, the actor, the epoch, the time and the updates'),
   "operationId": zod.string().max(checkpointSourceDocumentResponseOperationUndoPayloadOperationIdMax).optional().describe('The step this payload reverses'),
   "updates": zod.record(zod.string(), zod.string()).describe('Per document, the base64 Yjs update that reverses the step')
 }).optional().describe('The step\'s signed Undo payload, on a fresh receipt only; never stored'),

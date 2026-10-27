@@ -408,6 +408,7 @@ export function getMockScenarioHandlers(
                     ],
                     undoPayloads: [
                       {
+                        actorUserId: 'u_1',
                         documentId: 'f_2',
                         epoch: 1,
                         issuedAt: Math.floor(Date.now() / 1000),

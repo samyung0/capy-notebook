@@ -16,6 +16,7 @@ const payload = (
   epoch = 1,
   issuedAt = Math.floor(Date.now() / 1000)
 ) => ({
+  actorUserId: 'u_1',
   documentId,
   epoch,
   issuedAt,

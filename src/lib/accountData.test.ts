@@ -17,6 +17,7 @@ it("clears the account's drafts and caches when its deletion is confirmed", asyn
   await claimUndoPayloads('user_a');
   keepUndoPayloads([
     {
+      actorUserId: 'u_1',
       documentId: 'mat_1',
       epoch: 1,
       issuedAt: Math.floor(Date.now() / 1000),

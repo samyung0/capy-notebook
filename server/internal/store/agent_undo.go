@@ -44,9 +44,8 @@ func (s *Store) UndoStep(ctx context.Context, operationID string) (AgentOperatio
 }
 
 // PendingUndoStep is a step its room admitted and has not stored yet (Q402,
-// Q403): its signed payload names the step's document, and the room, which
-// holds the step's receipt, checks the actor. ErrNotFound when the payload
-// is not this server's for that step.
+// Q403): its signed payload names the step's document and its actor (Q466).
+// ErrNotFound when the payload is not this server's for that step.
 func (s *Store) PendingUndoStep(stepID string, payload *UndoPayload) (AgentOperation, error) {
 	if payload == nil || payload.OperationID != stepID {
 		return AgentOperation{}, ErrNotFound
@@ -55,7 +54,7 @@ func (s *Store) PendingUndoStep(stepID string, payload *UndoPayload) (AgentOpera
 		resource := agenttools.ResourceRef{Kind: kind, ID: payload.DocumentID}
 		if s.verifyUndoPayload(stepID, resource, payload) {
 			return AgentOperation{
-				ID: stepID,
+				ID: stepID, ActorUserID: payload.ActorUserID,
 				Effect: &agenttools.ResourceEffect{
 					Operation: agenttools.EffectEdited, Resource: resource, OperationID: stepID,
 					Undo: &agenttools.UndoRef{OperationID: stepID, Status: agenttools.UndoAvailable, ExpiresAt: undoExpiry(payload.IssuedAt)},
@@ -226,8 +225,9 @@ func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, step Agent
 	var refusal *EditRefusal
 	if errors.As(err, &refusal) && refusal.Code == undoUnavailableCode {
 		// The step's receipt may have committed under a request whose answer
-		// was lost while this one waited: that receipt answers.
-		if existing, err := s.UndoReceipt(ctx, step.ID); err == nil {
+		// was lost while this one waited: that receipt answers its own actor
+		// only (Q466).
+		if existing, err := s.UndoReceipt(ctx, step.ID); err == nil && existing.ActorUserID == actorID {
 			return existing, nil
 		}
 		return AgentOperation{}, ErrUndoUnavailable
@@ -236,7 +236,7 @@ func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, step Agent
 		return AgentOperation{}, err
 	}
 	receipt := out.AgentOperation
-	receipt.UndoPayload = s.signUndoPayload(receipt.ID, target, receipt.UndoPayload)
+	receipt.UndoPayload = s.signUndoPayload(receipt.ID, target, actorID, receipt.UndoPayload)
 	return receipt, nil
 }
 

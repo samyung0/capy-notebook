@@ -4562,10 +4562,15 @@ state; the command result's inverse is unused. PDFs and store-only files
 refuse with `unsupported_format`. Undo is
 `POST /api/chat/edit-operations/{id}/undo`, only for the original chat actor
 with current edit access, checked before the collaboration service
-(`server/internal/httpapi/huma_undo.go`). A step its room admitted and has
+(`server/internal/httpapi/huma_undo.go`). The signed payload names the
+user whose tool call made the step (`actorUserId`, in its MAC): the route
+refuses anyone else with not found before any lookup (a replayed request,
+the step's Undo receipt, the pending step), a payload naming no actor fails
+its signature, and the lost-answer fallback in `UndoDocumentEdit` answers
+only its own actor's receipt (Q466). A step its room admitted and has
 not stored yet has no stored receipt: its signed payload names its document
-(`PendingUndoStep`), and the room, which holds the step's receipt, checks
-the actor and gives the Undo's receipt the step's chat (Q403). With no room
+and actor (`PendingUndoStep`), and the room, which holds the step's receipt,
+gives the Undo's receipt the step's chat (Q403). With no room
 loaded, the collaboration service checks the stored step itself before
 writing: a missing step is `undo_unavailable` and another user's is
 `lifecycle_rejected`, for a material and a source alike (Q432). The actor

@@ -19,16 +19,19 @@ import (
 // time. The chat keeps it in the browser for a day and sends it back;
 // nothing here stores it, and it is never logged. The MAC binds it to its
 // step, document and time, so a payload cannot be replayed onto another
-// file, kept past its day or forged. DocumentID tells the browser which
+// file, kept past its day or forged; it binds the user whose tool call
+// made the step too, the only one its Undo admits (Q466). DocumentID tells
+// the browser which
 // document's lineage retires it (Epo 2026-10-22, Q122); the server reads the
 // document from the step, never from it.
 type UndoPayload struct {
 	OperationID string            `json:"operationId,omitempty" maxLength:"64" doc:"The step this payload reverses"`
+	ActorUserID string            `json:"actorUserId,omitempty" maxLength:"64" doc:"The user whose tool call made the step, the only one its Undo admits"`
 	DocumentID  string            `json:"documentId,omitempty" maxLength:"64" doc:"The material or file the step changed"`
 	Epoch       int64             `json:"epoch" doc:"The document lineage it was made in"`
 	IssuedAt    int64             `json:"issuedAt" doc:"Unix seconds of the agent edit; offered for 24 h from then (an Undo's Redo keeps it)"`
 	Updates     map[string]string `json:"updates" doc:"Per document, the base64 Yjs update that reverses the step"`
-	MAC         string            `json:"mac,omitempty" maxLength:"64" doc:"The server's signature over the step, the document, the epoch, the time and the updates"`
+	MAC         string            `json:"mac,omitempty" maxLength:"64" doc:"The server's signature over the step, the document, the actor, the epoch, the time and the updates"`
 }
 
 // undoOffer is how long after an agent edit its Undo and Redo are offered
@@ -54,8 +57,8 @@ func (s *Store) undoPayloadKey() []byte {
 	return mac.Sum(nil)
 }
 
-// undoPayloadMAC signs (step, target kind and id, epoch, issued at, updates
-// digest); the digest reads the updates in name order, each as its name, a
+// undoPayloadMAC signs (step, target kind and id, actor, epoch, issued at,
+// updates digest); the digest reads the updates in name order, each as its name, a
 // zero byte, its length and its decoded bytes. False when an update is not
 // base64.
 func undoPayloadMAC(key []byte, step string, target DocumentTarget, payload *UndoPayload) (string, bool) {
@@ -76,7 +79,7 @@ func undoPayloadMAC(key []byte, step string, target DocumentTarget, payload *Und
 		digest.Write(update)
 	}
 	mac := hmac.New(sha256.New, key)
-	for _, field := range []string{"v1", step, string(target.Kind), target.ID, strconv.FormatInt(payload.Epoch, 10), strconv.FormatInt(payload.IssuedAt, 10)} {
+	for _, field := range []string{"v2", step, string(target.Kind), target.ID, payload.ActorUserID, strconv.FormatInt(payload.Epoch, 10), strconv.FormatInt(payload.IssuedAt, 10)} {
 		mac.Write([]byte(field))
 		mac.Write([]byte{0})
 	}
@@ -84,26 +87,30 @@ func undoPayloadMAC(key []byte, step string, target DocumentTarget, payload *Und
 	return hex.EncodeToString(mac.Sum(nil)), true
 }
 
-// signUndoPayload names the payload's step and signs it; nil when it cannot
-// be signed (no secret configured, an update that is not base64), which only
-// means that step gets no Undo in the browser.
-func (s *Store) signUndoPayload(step string, target DocumentTarget, payload *UndoPayload) *UndoPayload {
+// signUndoPayload names the payload's step and the user whose tool call made
+// it (Q466), and signs it; nil when it cannot be signed (no secret
+// configured, no actor, an update that is not base64), which only means that
+// step gets no Undo in the browser.
+func (s *Store) signUndoPayload(step string, target DocumentTarget, actor string, payload *UndoPayload) *UndoPayload {
 	key := s.undoPayloadKey()
-	if payload == nil || len(payload.Updates) == 0 || key == nil {
+	if payload == nil || len(payload.Updates) == 0 || key == nil || actor == "" {
 		return nil
 	}
-	mac, ok := undoPayloadMAC(key, step, target, payload)
+	signed := &UndoPayload{OperationID: step, DocumentID: target.ID, ActorUserID: actor, Epoch: payload.Epoch, IssuedAt: payload.IssuedAt, Updates: payload.Updates}
+	mac, ok := undoPayloadMAC(key, step, target, signed)
 	if !ok {
 		return nil
 	}
-	return &UndoPayload{OperationID: step, DocumentID: target.ID, Epoch: payload.Epoch, IssuedAt: payload.IssuedAt, Updates: payload.Updates, MAC: mac}
+	signed.MAC = mac
+	return signed
 }
 
 // verifyUndoPayload reports whether the browser sent back a payload this
-// server signed for this step of this document, within its 24 h.
+// server signed for this step of this document and its actor, within its
+// 24 h. A payload naming no actor is refused (Q466).
 func (s *Store) verifyUndoPayload(step string, resource agenttools.ResourceRef, payload *UndoPayload) bool {
 	key := s.undoPayloadKey()
-	if payload == nil || len(payload.Updates) == 0 || key == nil {
+	if payload == nil || len(payload.Updates) == 0 || key == nil || payload.ActorUserID == "" {
 		return false
 	}
 	if !time.Now().Before(*undoExpiry(payload.IssuedAt)) {

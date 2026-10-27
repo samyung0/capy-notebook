@@ -41,14 +41,23 @@ function fresh(payload: LocalUndoPayload | undefined, now = Date.now()) {
     : undefined;
 }
 
-/** A payload as the server sends it: a step and document id, an epoch, its
- * edit's time, base64 updates and a signature, within the size bound. */
+/** A payload as the server sends it: a step, document and actor id, an
+ * epoch, its edit's time, base64 updates and a signature, within the size
+ * bound. */
 function valid(value: unknown): value is LocalUndoPayload {
   if (!value || typeof value !== 'object') return false;
-  const { documentId, epoch, issuedAt, mac, operationId, updates } =
-    value as Record<string, unknown>;
+  const {
+    actorUserId,
+    documentId,
+    epoch,
+    issuedAt,
+    mac,
+    operationId,
+    updates,
+  } = value as Record<string, unknown>;
   if (
     typeof operationId !== 'string' ||
+    typeof actorUserId !== 'string' ||
     typeof documentId !== 'string' ||
     typeof mac !== 'string' ||
     typeof epoch !== 'number' ||
@@ -99,8 +108,17 @@ export async function claimUndoPayloads(owner: string | null): Promise<void> {
 export function keepUndoPayloads(payloads: readonly unknown[]) {
   for (const payload of payloads) {
     if (!valid(payload)) continue;
-    const { documentId, epoch, issuedAt, mac, operationId, updates } = payload;
+    const {
+      actorUserId,
+      documentId,
+      epoch,
+      issuedAt,
+      mac,
+      operationId,
+      updates,
+    } = payload;
     const record: LocalUndoPayload = {
+      actorUserId,
       documentId,
       epoch,
       issuedAt,

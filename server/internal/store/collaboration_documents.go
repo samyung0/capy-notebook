@@ -252,7 +252,7 @@ func (s *Store) EditDocument(ctx context.Context, actorID string, target Documen
 	}
 	var out DocumentEdit
 	err := s.postDocumentAuthority(ctx, "/internal/documents/edit", req, &out)
-	out.UndoPayload = s.signUndoPayload(out.ID, target, out.UndoPayload)
+	out.UndoPayload = s.signUndoPayload(out.ID, target, actorID, out.UndoPayload)
 	return out, err
 }
 

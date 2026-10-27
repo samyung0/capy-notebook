@@ -22,6 +22,7 @@ const edit = (id: string): ResourceEffect => ({
 // 2026-10-21).
 keepUndoPayloads(
   ['op_1', 'op_2'].map((operationId) => ({
+    actorUserId: 'u_1',
     documentId: 'f_1',
     epoch: 1,
     issuedAt: Math.floor(Date.now() / 1000),

@@ -123,7 +123,7 @@ func undoTestPayload(t *testing.T, s *Store, step AgentOperation, update string)
 func undoTestPayloadAt(t *testing.T, s *Store, step AgentOperation, update string, issuedAt int64) *UndoPayload {
 	t.Helper()
 	resource := step.Effect.Resource
-	signed := s.signUndoPayload(step.ID, DocumentTarget{Kind: resource.Kind, ID: resource.ID},
+	signed := s.signUndoPayload(step.ID, DocumentTarget{Kind: resource.Kind, ID: resource.ID}, step.ActorUserID,
 		&UndoPayload{Epoch: 1, IssuedAt: issuedAt, Updates: map[string]string{"source": base64.StdEncoding.EncodeToString([]byte(update))}})
 	if signed == nil {
 		t.Fatal("the payload was not signed")
@@ -205,9 +205,9 @@ func TestDocumentUndoSendsItsPayloadAndReturnsTheRedo(t *testing.T) {
 // keeps the payload, so it is untrusted when it comes back. Only a payload
 // this server signed for this step of this document, within its 24 h, is
 // sent on: none at all, a changed update, a changed epoch, a changed time, a
-// bad signature, another step's payload, one signed for another file and one
-// past its 24 h (r1 L4, Q385) are refused before the collaboration service
-// is asked. Fails if the signature or lifetime check goes.
+// bad signature, another step's payload, one signed for another file, one
+// past its 24 h (r1 L4, Q385), and one whose actor was changed or dropped
+// (Q466) are refused before the collaboration service is asked. Fails if the signature or lifetime check goes.
 func TestAnUndoPayloadMustCarryTheServersSignature(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -224,7 +224,7 @@ func TestAnUndoPayloadMustCarryTheServersSignature(t *testing.T) {
 		change(&payload)
 		return &payload
 	}
-	forOtherFile := s.signUndoPayload(edit.ID, DocumentTarget{Kind: agenttools.KindSourceFile, ID: other.ID},
+	forOtherFile := s.signUndoPayload(edit.ID, DocumentTarget{Kind: agenttools.KindSourceFile, ID: other.ID}, owner,
 		&UndoPayload{Epoch: 1, IssuedAt: time.Now().Unix(), Updates: map[string]string{"source": base64.StdEncoding.EncodeToString([]byte("undo"))}})
 	for name, payload := range map[string]*UndoPayload{
 		"none":           nil,
@@ -233,6 +233,8 @@ func TestAnUndoPayloadMustCarryTheServersSignature(t *testing.T) {
 		"changed time":   tamper(func(p *UndoPayload) { p.IssuedAt++ }),
 		"past 24 h":      undoTestPayloadAt(t, s, edit, "undo", time.Now().Add(-undoOffer).Unix()),
 		"bad mac":        tamper(func(p *UndoPayload) { p.MAC = strings.Repeat("0", 64) }),
+		"another actor":  tamper(func(p *UndoPayload) { p.ActorUserID = "u_someone_else" }),
+		"no actor":       tamper(func(p *UndoPayload) { p.ActorUserID = "" }),
 		"another step":   undoTestPayload(t, s, otherEdit, "undo"),
 		"another file":   forOtherFile,
 	} {

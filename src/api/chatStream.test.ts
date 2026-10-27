@@ -35,6 +35,7 @@ describe('the Undo payloads a tool_end carries', () => {
   it('keeps a large payload delivered in many reads', async () => {
     const update = 'A'.repeat(3 * 1024 * 1024);
     const payload = {
+      actorUserId: 'u_1',
       documentId: 'mat_1',
       epoch: 1,
       issuedAt: Math.floor(Date.now() / 1000),

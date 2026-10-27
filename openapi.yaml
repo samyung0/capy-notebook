@@ -5588,8 +5588,12 @@ components:
         update:
           format: base64
           type: string
+        workspaceId:
+          minLength: 1
+          type: string
       required:
         - actorIds
+        - workspaceId
         - epoch
         - expectedCheckpoint
         - baseRevision
@@ -6797,6 +6801,10 @@ components:
     UndoPayload:
       additionalProperties: false
       properties:
+        actorUserId:
+          description: The user whose tool call made the step, the only one its Undo admits
+          maxLength: 64
+          type: string
         documentId:
           description: The material or file the step changed
           maxLength: 64
@@ -6810,7 +6818,7 @@ components:
           format: int64
           type: integer
         mac:
-          description: The server's signature over the step, the document, the epoch, the time and the updates
+          description: The server's signature over the step, the document, the actor, the epoch, the time and the updates
           maxLength: 64
           type: string
         operationId:

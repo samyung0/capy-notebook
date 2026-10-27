@@ -48,6 +48,7 @@ export interface LocalCardState {
 /** An agent step's Undo payload exactly as the server sent it (Epo
  * 2026-10-21). */
 export interface LocalUndoPayload extends UndoPayload {
+  actorUserId: string;
   documentId: string;
   operationId: string;
 }

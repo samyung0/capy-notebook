@@ -48,6 +48,7 @@ const at = (s: number) =>
 const issuedAt = Math.floor(Date.now() / 1000);
 
 const payload = (operationId: string) => ({
+  actorUserId: 'u_1',
   documentId: 'mat_1',
   epoch: 1,
   issuedAt,

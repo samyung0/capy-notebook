@@ -98,7 +98,7 @@ func TestUndoEndpointWalksACreatedFilesChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	// With the step's own signed payload, so only the role refuses it.
-	payload := signedUndoPayload(t, st, edit, created.Effect.Resource.ID)
+	payload := signedUndoPayload(t, st, edit, created.Effect.Resource.ID, other)
 	rec := doReq(t, handler(other), http.MethodPost, "/api/chat/edit-operations/"+edit+"/undo", "",
 		map[string]any{"requestId": "x2", "payload": payload})
 	if rec.Code != http.StatusNotFound {
@@ -162,7 +162,7 @@ func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
 			created.Effect.Resource.ID, edit)); err != nil {
 		t.Fatal(err)
 	}
-	payload := signedUndoPayload(t, st, edit, created.Effect.Resource.ID)
+	payload := signedUndoPayload(t, st, edit, created.Effect.Resource.ID, userID)
 	// The collaboration service: the Undo lands after the client left, its
 	// receipt committed with the write (r1 M2).
 	started := make(chan struct{}, 1)
@@ -225,7 +225,7 @@ func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
 // signedUndoPayload asks the store to sign `step`'s payload the way an edit's
 // receipt gets it: through EditDocument, against an authority answering the
 // edit with that payload.
-func signedUndoPayload(t *testing.T, st *store.Store, step, materialID string) *store.UndoPayload {
+func signedUndoPayload(t *testing.T, st *store.Store, step, materialID, actor string) *store.UndoPayload {
 	t.Helper()
 	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -235,7 +235,7 @@ func signedUndoPayload(t *testing.T, st *store.Store, step, materialID string) *
 	}))
 	defer authority.Close()
 	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
-	receipt, err := st.EditDocument(context.Background(), "actor",
+	receipt, err := st.EditDocument(context.Background(), actor,
 		store.DocumentTarget{Kind: "material", ID: materialID}, nil, nil, store.DocumentOperation{ID: step})
 	if err != nil || receipt.UndoPayload == nil {
 		t.Fatalf("signing: %+v %v", receipt.UndoPayload, err)
@@ -276,7 +276,7 @@ func TestUndoEndpointSendsAnUnstoredStepToItsRoom(t *testing.T) {
 	}
 	material := created.Effect.Resource.ID
 	edit := "op_edit_" + userID
-	payload := signedUndoPayload(t, st, edit, material)
+	payload := signedUndoPayload(t, st, edit, material, userID)
 	forged := *payload
 	forged.MAC = strings.Repeat("0", 64)
 	var asked []map[string]any
