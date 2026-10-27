@@ -1549,10 +1549,11 @@ func (s *Store) ReplayAgentOperation(ctx context.Context, id, requestHash string
 }
 
 // AssistantMessageContext resolves the trusted identity behind a chat tool
-// callback: who owns the conversation and which workspace it belongs to. A
-// missing message (deleted turn or conversation) is ErrNotFound.
+// callback: who owns the conversation and which workspace it belongs to (""
+// for an account conversation). A missing message (deleted turn or
+// conversation) is ErrNotFound.
 func (s *Store) AssistantMessageContext(ctx context.Context, messageID string) (userID, workspaceID, conversationID string, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT c.user_id, c.workspace_id, c.id
+	err = s.pool.QueryRow(ctx, `SELECT c.user_id, COALESCE(c.workspace_id, ''), c.id
 		FROM messages m JOIN conversations c ON c.id=m.conversation_id
 		WHERE m.id=$1 AND m.role='assistant'`, messageID).Scan(&userID, &workspaceID, &conversationID)
 	if isNoRows(err) {

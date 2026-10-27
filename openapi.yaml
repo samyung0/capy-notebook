@@ -1411,6 +1411,7 @@ components:
           format: date-time
           type: string
         workspaceId:
+          description: Empty for an account conversation
           type: string
       required:
         - id
@@ -8600,6 +8601,59 @@ paths:
       summary: Edit an authored comment
       tags:
         - Material collaboration
+  /api/conversations:
+    get:
+      operationId: listAccountConversations
+      parameters:
+        - description: true lists the archived threads instead of the live list
+          explode: false
+          in: query
+          name: archived
+          schema:
+            description: true lists the archived threads instead of the live list
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Conversation"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List the caller's account chat conversations
+      tags:
+        - Chat
+    post:
+      operationId: createAccountConversation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConversationReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Start a new account chat conversation
+      tags:
+        - Chat
   /api/conversations/{id}:
     delete:
       operationId: deleteConversation

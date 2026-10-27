@@ -314,6 +314,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/sources/batches/{batchId}/removed", a.removeUnsentSource)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
+	r.Post("/api/chat/stream", a.accountChatStream)
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
@@ -330,6 +331,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/note-changes", a.internalNoteChanges)
 		r.Post("/api/internal/note-changes/resolve", a.internalResolveNoteChange)
 		r.Post("/api/internal/documents/list", a.internalListDocuments)
+		r.Post("/api/internal/documents/access", a.internalDocumentAccess)
 		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)
 		r.Post("/api/internal/documents/edit", a.internalEditDocument)
 		r.Post("/api/internal/documents/office/create", a.internalCreateOfficeDocument)
@@ -752,6 +754,24 @@ func (a *api) assertWSChat(w http.ResponseWriter, r *http.Request, wsID string) 
 	return chatAccess{
 		canEdit: store.RoleCanEdit(effective) && !readOnly, readOnly: readOnly, full: full, role: effective,
 	}, true
+}
+
+// assertAccountChat admits any signed-in user to their account chat (Epo
+// 2026-10-27), narrowed by their own account as a workspace editor's turn is:
+// a frozen actor reads only, one at its storage limit creates and edits
+// nothing. Each item's role is checked per tool call.
+func (a *api) assertAccountChat(w http.ResponseWriter, r *http.Request) (chatAccess, bool) {
+	readOnly, err := a.readOnly(r.Context(), uid(r))
+	if err != nil {
+		a.fail(w, err)
+		return chatAccess{}, false
+	}
+	full, err := a.ownerFull(r.Context(), uid(r))
+	if err != nil {
+		a.fail(w, err)
+		return chatAccess{}, false
+	}
+	return chatAccess{canEdit: !readOnly, readOnly: readOnly, full: full}, true
 }
 
 func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) bool {

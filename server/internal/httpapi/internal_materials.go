@@ -38,8 +38,11 @@ import (
 // transaction. The same call replayed returns that receipt; a lost response is
 // reconciled through GET /api/internal/agent-operations/{id}.
 type internalMaterialReq struct {
+	// WorkspaceID is the turn's workspace, or with Scope "account" where the
+	// material lands: a workspace the actor edits, or "" for No workspace.
 	WorkspaceID        string `json:"workspaceId"`
 	UserID             string `json:"userId"`
+	Scope              string `json:"scope"`
 	AssistantMessageID string `json:"assistantMessageId"`
 	ToolCallID         string `json:"toolCallId"`
 	Kind               string `json:"kind"`
@@ -232,7 +235,11 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 // a model's content, or the bank copy route with the bank's questions and their
 // credits. Callers have checked the pipeline secret and the provenance origin.
 func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req internalMaterialReq) {
-	if req.WorkspaceID == "" || req.UserID == "" || req.AssistantMessageID == "" || req.ToolCallID == "" {
+	account, ok := a.internalScope(w, r, req.Scope)
+	if !ok {
+		return
+	}
+	if (req.WorkspaceID == "" && !account) || req.UserID == "" || req.AssistantMessageID == "" || req.ToolCallID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"code": "invalid_input", "message": "workspaceId, userId, assistantMessageId and toolCallId are required",
 		})
@@ -263,14 +270,18 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		return
 	}
 	// Bind the callback to the real conversation: the actor and workspace it
-	// claims must be the ones this assistant message belongs to. A deleted turn
-	// is not valid authorization for a late callback.
-	convUser, convWS, convID, err := a.s.AssistantMessageContext(ctx, req.AssistantMessageID)
-	if err != nil || convUser != req.UserID || convWS != req.WorkspaceID {
-		a.fail(w, store.ErrNotFound)
+	// claims must be the ones this assistant message belongs to (an account
+	// call's, the actor's account conversation). A deleted turn is not valid
+	// authorization for a late callback.
+	var convID string
+	if account {
+		if convID, ok = a.accountConversation(w, r, req.UserID, req.AssistantMessageID); !ok ||
+			!a.accountDestination(w, r, req.UserID, req.WorkspaceID) {
+			return
+		}
+	} else if convID, ok = a.workspaceConversation(w, r, req.UserID, req.WorkspaceID, req.AssistantMessageID); !ok {
 		return
-	}
-	if err := a.s.AssertWorkspaceEditor(ctx, req.UserID, req.WorkspaceID); err != nil {
+	} else if err := a.s.AssertWorkspaceEditor(ctx, req.UserID, req.WorkspaceID); err != nil {
 		if errors.Is(err, store.ErrForbidden) || errors.Is(err, store.ErrNotFound) {
 			// The role or membership changed after the turn started; the write
 			// is refused, not lost (an unmapped error read as an unknown outcome).
@@ -282,7 +293,12 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 	}
 
 	opID := store.ChatOperationID(req.AssistantMessageID, req.ToolCallID)
-	hash, err := store.RequestHash(req.hashPayload())
+	payload := req.hashPayload()
+	if account {
+		// The model chose where it lands.
+		payload["workspaceId"] = req.WorkspaceID
+	}
+	hash, err := store.RequestHash(payload)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -297,7 +313,12 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		return
 	}
 
-	sourceNames, err := a.resolveSources(ctx, req.WorkspaceID, req.Sources)
+	var sourceNames []string
+	if account {
+		sourceNames, err = a.resolveAccountSources(ctx, req.UserID, req.Sources)
+	} else {
+		sourceNames, err = a.resolveSources(ctx, req.WorkspaceID, req.Sources)
+	}
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -307,13 +328,17 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 	// already-paid tools to finish. The pipeline secret plus the editor check
 	// above authorize the write; storage quota is still enforced by the store.
 
-	ws, err := a.s.GetWorkspaceShared(ctx, req.WorkspaceID)
-	if err != nil {
-		a.fail(w, err)
-		return
+	// A standalone material has no workspace name, and an untitled one is
+	// "Untitled" (DisambiguateMaterialTitle).
+	var ws store.Workspace
+	if req.WorkspaceID != "" {
+		if ws, err = a.s.GetWorkspaceShared(ctx, req.WorkspaceID); err != nil {
+			a.fail(w, err)
+			return
+		}
 	}
 	title := strings.TrimSpace(req.Title)
-	if title == "" {
+	if title == "" && req.WorkspaceID != "" {
 		title = ws.Name + " " + req.Kind
 	}
 	title, err = a.s.DisambiguateMaterialTitle(ctx, req.WorkspaceID, title)
@@ -464,16 +489,21 @@ func (a *api) convertAgentNote(w http.ResponseWriter, r *http.Request, req inter
 }
 
 // internalGetAgentOperation is the reconciliation read for a lost response:
-// the recorded receipt, only to the actor and workspace it belongs to.
+// the recorded receipt, only to the actor and workspace it belongs to, or with
+// scope=account to the actor of the account conversation it was made in.
 func (a *api) internalGetAgentOperation(w http.ResponseWriter, r *http.Request) {
-	if !a.pipelineSecretOK(r) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
+	account, ok := a.internalScope(w, r, r.URL.Query().Get("scope"))
+	if !ok {
 		return
 	}
 	operationID := chi.URLParam(r, "operationId")
 	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspaceId"))
 	userID := strings.TrimSpace(r.URL.Query().Get("userId"))
-	if operationID == "" || workspaceID == "" || userID == "" {
+	if account && workspaceID != "" {
+		refuseAccountWorkspace(w)
+		return
+	}
+	if operationID == "" || (workspaceID == "" && !account) || userID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "operationId, workspaceId and userId are required"})
 		return
 	}
@@ -491,9 +521,16 @@ func (a *api) internalGetAgentOperation(w http.ResponseWriter, r *http.Request) 
 		a.fail(w, err)
 		return
 	}
-	if op.ActorUserID != userID || op.WorkspaceID != workspaceID {
+	if op.ActorUserID != userID || (!account && op.WorkspaceID != workspaceID) {
 		a.fail(w, store.ErrNotFound)
 		return
+	}
+	if account {
+		conv, err := a.s.GetConversation(r.Context(), userID, op.ConversationID)
+		if err != nil || conv.WorkspaceID != "" {
+			a.fail(w, store.ErrNotFound)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, op)
 }

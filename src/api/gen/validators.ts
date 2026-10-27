@@ -1210,6 +1210,49 @@ export const UpdateMaterialCommentResponse = zod.object({
 
 
 /**
+ * @summary List the caller's account chat conversations
+ */
+export const ListAccountConversationsQueryParams = zod.object({
+  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list')
+})
+
+export const ListAccountConversationsResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string().describe('Empty for an account conversation')
+})
+export const ListAccountConversationsResponse = zod.array(ListAccountConversationsResponseItem)
+
+
+/**
+ * @summary Start a new account chat conversation
+ */
+export const createAccountConversationBodyTitleMax = 60;
+
+
+
+export const CreateAccountConversationBody = zod.object({
+  "title": zod.string().max(createAccountConversationBodyTitleMax).optional().describe('Optional thread title')
+})
+
+export const CreateAccountConversationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string().describe('Empty for an account conversation')
+})
+
+
+/**
  * @summary Delete a conversation
  */
 export const DeleteConversationParams = zod.object({
@@ -1244,7 +1287,7 @@ export const UpdateConversationResponse = zod.object({
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
+  "workspaceId": zod.string().describe('Empty for an account conversation')
 })
 
 
@@ -6934,7 +6977,7 @@ export const ListConversationsResponseItem = zod.object({
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
+  "workspaceId": zod.string().describe('Empty for an account conversation')
 })
 export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
 
@@ -6962,7 +7005,7 @@ export const CreateConversationResponse = zod.object({
   "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "workspaceId": zod.string()
+  "workspaceId": zod.string().describe('Empty for an account conversation')
 })
 
 

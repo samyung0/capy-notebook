@@ -18,7 +18,8 @@ import (
 // createSourceWithJobTx inserts a source as 'pending' and enqueues its first
 // pipeline stage in the caller's transaction. Document routes start as parse
 // jobs; direct routes start as ingest jobs. The file stays pending until a
-// worker starts it. Agent-created files land through here.
+// worker starts it. Agent-created files land through here, with wsID "" as a
+// standalone file of createdBy (an account chat's, Epo 2026-10-27).
 // A file the chat agent made carries the library provenance it was written
 // from; the quota gate counts that record with the bytes, as for a material.
 func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string, provenance *Provenance) (File, string, error) {
@@ -38,19 +39,26 @@ func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, crea
 
 	// The creator pays (uploader pays).
 	ownerID := createdBy
-	_, err = s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy)
+	_, err = s.lockFileEditorMutationTx(ctx, tx, wsID, ownerID, createdBy)
 	if err != nil {
 		return File{}, "", err
 	}
-	chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName)
-	if err != nil {
-		return File{}, "", err
+	if wsID == "" && (chapterID != nil || chapterName != "") {
+		return File{}, "", fmt.Errorf("%w: a standalone file has no chapter", ErrNotFound)
+	}
+	if wsID != "" {
+		if chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName); err != nil {
+			return File{}, "", err
+		}
 	}
 	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes+int64(len(provenanceJSON))); err != nil {
 		return File{}, "", err
 	}
-	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
-		return File{}, "", err
+	// Standalone files have no file-count cap (Epo 2026-10-27).
+	if wsID != "" {
+		if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
+			return File{}, "", err
+		}
 	}
 	reservationID, err := s.beginIngestSpendTx(ctx, tx, createdBy, wsID)
 	if err != nil {
@@ -60,7 +68,7 @@ func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, crea
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, provenance)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13)`,
+		VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13)`,
 		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, parseMode, provenanceJSON); err != nil {
 		return File{}, "", err
 	}

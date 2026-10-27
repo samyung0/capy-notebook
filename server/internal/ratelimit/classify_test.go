@@ -13,6 +13,7 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/internal/materials":                           classExempt,
 		"/webhooks/stripe":                                  classExempt,
 		"/api/workspaces/ws_1/chat/stream":                  classAI,
+		"/api/chat/stream":                                  classAI,
 		"/api/workspaces/ws_1/generate":                     classAI,
 		"/api/quizzes/mat_1/check":                          classAI,
 		"/api/attempts":                                     classDefault,

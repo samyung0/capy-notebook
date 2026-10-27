@@ -25,6 +25,8 @@ import (
 type internalDocumentsListReq struct {
 	WorkspaceID string `json:"workspaceId"`
 	UserID      string `json:"userId"`
+	// Scope "account" lists the actor's account scope instead of a workspace.
+	Scope string `json:"scope"`
 }
 
 type documentListItem struct {
@@ -90,6 +92,20 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	account, ok := a.internalScope(w, r, req.Scope)
+	if !ok {
+		return
+	}
+	if account {
+		if req.WorkspaceID != "" {
+			refuseAccountWorkspace(w)
+			return
+		}
+		if a.internalAccountActor(w, r, req.UserID) {
+			a.listAccountDocuments(w, r, req.UserID)
+		}
+		return
+	}
 	if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, false) {
 		return
 	}
@@ -101,15 +117,7 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, f := range files {
-		item := documentListItem{Kind: agenttools.KindSourceFile, ID: f.ID, Title: f.Name, Format: string(f.Kind)}
-		if format := store.SourceEditFormat(f.Name, string(f.Kind)); format != "" {
-			item.Format, item.Editable = format, true
-		} else if f.Kind == "pdf" {
-			item.Reason = pdfRefusal
-		} else {
-			item.Reason = "This file type cannot be edited."
-		}
-		items = append(items, item)
+		items = append(items, fileListItem(documentListItem{Kind: agenttools.KindSourceFile, ID: f.ID}, f.Name, string(f.Kind)))
 	}
 	refs, err := a.s.ListMaterialRefs(ctx, req.WorkspaceID)
 	if err != nil {
@@ -123,6 +131,20 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// fileListItem fills a file's listing row: its edit format, or why it cannot
+// be edited.
+func fileListItem(item documentListItem, name, kind string) documentListItem {
+	item.Title, item.Format = name, kind
+	if format := store.SourceEditFormat(name, kind); format != "" {
+		item.Format, item.Editable = format, true
+	} else if kind == "pdf" {
+		item.Reason = pdfRefusal
+	} else {
+		item.Reason = "This file type cannot be edited."
+	}
+	return item
 }
 
 // learnerInspectedQuestions replaces each inspected quiz question, whose text
@@ -161,6 +183,7 @@ func learnerInspectedQuestions(children []json.RawMessage) ([]json.RawMessage, e
 type internalDocumentsInspectReq struct {
 	WorkspaceID string                 `json:"workspaceId"`
 	UserID      string                 `json:"userId"`
+	Scope       string                 `json:"scope"`
 	Target      agenttools.ResourceRef `json:"target"`
 	Start       int                    `json:"start"`
 	Count       int                    `json:"count"`
@@ -255,14 +278,31 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, false) {
+	account, ok := a.internalScope(w, r, req.Scope)
+	if !ok {
 		return
+	}
+	ctx := r.Context()
+	if account {
+		if req.WorkspaceID != "" {
+			refuseAccountWorkspace(w)
+			return
+		}
+		if !a.internalAccountActor(w, r, req.UserID) {
+			return
+		}
+		if _, ok := a.accountTarget(w, r, req.UserID, req.Target, false); !ok {
+			return
+		}
+	} else {
+		if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, false) {
+			return
+		}
+		if !a.documentInWorkspace(w, r, req.Target, req.WorkspaceID) {
+			return
+		}
 	}
 	req.Start, req.Count = max(req.Start, 0), pageCount(req.Count)
-	ctx := r.Context()
-	if !a.documentInWorkspace(w, r, req.Target, req.WorkspaceID) {
-		return
-	}
 	switch req.Target.Kind {
 	case agenttools.KindMaterial:
 		mt, err := a.s.GetMaterial(ctx, req.Target.ID)
@@ -469,6 +509,7 @@ func (a *api) failDocument(w http.ResponseWriter, err error) {
 type internalDocumentsEditReq struct {
 	WorkspaceID        string                 `json:"workspaceId"`
 	UserID             string                 `json:"userId"`
+	Scope              string                 `json:"scope"`
 	AssistantMessageID string                 `json:"assistantMessageId"`
 	ToolCallID         string                 `json:"toolCallId"`
 	Target             agenttools.ResourceRef `json:"target"`
@@ -543,7 +584,16 @@ func (l *operationLocks) lock(ctx context.Context, id string) (func(), error) {
 // model's commands, or the bank copy route appending the bank's questions with
 // their credits. Callers have checked the provenance origin.
 func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req internalDocumentsEditReq) {
-	if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, true) {
+	account, ok := a.internalScope(w, r, req.Scope)
+	if !ok {
+		return
+	}
+	if account && req.WorkspaceID != "" {
+		refuseAccountWorkspace(w)
+		return
+	}
+	if account && !a.internalAccountActor(w, r, req.UserID) ||
+		!account && !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, true) {
 		return
 	}
 	if req.AssistantMessageID == "" || req.ToolCallID == "" || len(req.Commands) == 0 {
@@ -553,6 +603,8 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	ctx := r.Context()
 	convUser, convWS, convID, err := a.s.AssistantMessageContext(ctx, req.AssistantMessageID)
 	if err != nil || convUser != req.UserID || convWS != req.WorkspaceID {
+		// An account call's conversation is the actor's account one (""), as
+		// its request names no workspace.
 		a.fail(w, store.ErrNotFound)
 		return
 	}
@@ -577,7 +629,11 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		a.fail(w, err)
 		return
 	}
-	if !a.documentInWorkspace(w, r, req.Target, req.WorkspaceID) {
+	if account {
+		if _, ok := a.accountTarget(w, r, req.UserID, req.Target, true); !ok {
+			return
+		}
+	} else if !a.documentInWorkspace(w, r, req.Target, req.WorkspaceID) {
 		return
 	}
 	var normalized []json.RawMessage

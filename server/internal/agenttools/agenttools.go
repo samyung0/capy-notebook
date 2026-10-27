@@ -143,7 +143,21 @@ import (
 // its reads list pictures, charts, equations and drawn shapes; capture_page
 // shows PDF pages and images only, Office files having no page view (Epo
 // 2026-10-24, Q278, Q283, Q284).
-const ContractVersion = 42
+// v43: account chat (Epo 2026-10-27): each definition names the chat scopes
+// it is offered in, workspace or account; search_files and list_files search
+// and list the user's workspaces and files with no workspace, and the stream
+// request carries scope.
+const ContractVersion = 43
+
+// Scope is the kind of chat a tool is offered in: a workspace's, or the
+// account's across the user's own files (Epo 2026-10-27). A conversation keeps
+// its scope, and so its tools, for life.
+type Scope string
+
+const (
+	ScopeWorkspace Scope = "workspace"
+	ScopeAccount   Scope = "account"
+)
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -192,6 +206,14 @@ func OperationsForRole(role string) []Operation {
 	return nil
 }
 
+// AccountOperations are the operations of an account chat: reading, creating
+// and editing (Epo 2026-10-27, first version); trash, restore and the trash
+// listing stay in workspace chat. Every target is still checked per item, and
+// library.read is added like a workspace turn's.
+func AccountOperations() []Operation {
+	return []Operation{OpSourceRead, OpMaterialRead, OpMaterialCreate, OpDocumentEdit}
+}
+
 // Definition is one model-callable tool. InputSchema is JSON Schema
 // (draft 2020-12) and is the only part of the definition the model sees
 // together with Name and Description.
@@ -206,6 +228,7 @@ type Definition struct {
 	UsesEmbedding      bool           `json:"usesEmbedding"`
 	Concurrency        string         `json:"concurrency" enum:"search,read,mutate"`
 	AllowedSlots       []Slot         `json:"allowedSlots"`
+	Scopes             []Scope        `json:"scopes"`
 	RequiredOperations []Operation    `json:"requiredOperations"`
 	// Retention applies between user messages; until a turn's answer is
 	// finished every result stays whole (Epo 2026-10-21).
@@ -834,8 +857,19 @@ func bboxSchema() map[string]any {
 	}
 }
 
+// both are the scopes of a tool offered in every chat; workspaceOnly those of
+// one only a workspace chat offers.
+var (
+	both          = []Scope{ScopeWorkspace, ScopeAccount}
+	workspaceOnly = []Scope{ScopeWorkspace}
+	accountOnly   = []Scope{ScopeAccount}
+)
+
 func chatTool(def Definition) Definition {
 	def.AllowedSlots = []Slot{SlotChat}
+	if len(def.Scopes) == 0 {
+		panic("agent tool " + def.Name + " names no scope")
+	}
 	if def.Version == 0 {
 		def.Version = 1
 	}
@@ -849,6 +883,7 @@ func Definitions() []Definition {
 	return []Definition{
 		chatTool(Definition{
 			Name:        "search_workspace",
+			Scopes:      workspaceOnly,
 			Retention:   RetainCitedPassages,
 			Description: "Search the learner's sources for passages matching one focused query.",
 			InputSchema: obj(map[string]any{
@@ -862,6 +897,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "list_sources",
+			Scopes:    workspaceOnly,
 			Retention: RetainFull,
 			Description: "List the workspace's source files and study materials by chapter, " +
 				"with ids, kinds, editability and passage counts.",
@@ -870,7 +906,33 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
+			Name:      "search_files",
+			Scopes:    accountOnly,
+			Retention: RetainCitedPassages,
+			Description: "Search the user's files, in their workspaces and with no workspace, for " +
+				"passages matching one focused query. Each passage names its workspace.",
+			InputSchema: obj(map[string]any{
+				"query": str(""),
+				"file_ids": idList("Restrict to these items (ids from list_files); only source "+
+					"files and notes hold text to search. Omit to search all of them.", 0, 0),
+			}, "query"),
+			UsesEmbedding:      true,
+			Concurrency:        "search",
+			RequiredOperations: []Operation{OpSourceRead},
+		}),
+		chatTool(Definition{
+			Name:      "list_files",
+			Scopes:    accountOnly,
+			Retention: RetainFull,
+			Description: "List the user's source files and study materials, in their workspaces " +
+				"and with no workspace, with ids, kinds, editability and each one's workspace.",
+			InputSchema:        obj(map[string]any{}),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
+		}),
+		chatTool(Definition{
 			Name:      "read_document",
+			Scopes:    both,
 			Retention: RetainCitedPassages,
 			Description: "Read a source file or note in order from a chunk index: a passage's " +
 				"surrounding argument, or a short document end to end.",
@@ -884,6 +946,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "capture_page",
+			Scopes:    both,
 			Retention: RetainNone,
 			Description: "Render a PDF page a shown passage cites, or a region of it, as an " +
 				"image you read directly. An uploaded image is page 1. Word, Excel and PowerPoint " +
@@ -898,6 +961,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "read_study_progress",
+			Scopes:    workspaceOnly,
 			Retention: RetainNone,
 			Description: "Read the learner's study progress in this workspace: files and " +
 				"materials done or started, recent quiz results, and the chapters they retain least.",
@@ -907,6 +971,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "search_knowledge",
+			Scopes:    both,
 			Retention: RetainNone,
 			Description: "Search the shared library of verified textbook excerpts, one section " +
 				"of one book each. A hit is a selection aid; read_knowledge reads the excerpt.",
@@ -928,6 +993,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "read_knowledge",
+			Scopes:    both,
 			Retention: RetainUsedExcerpts,
 			Description: "Read an excerpt's reviewed notes and source chunks in order from a " +
 				"chunk index; the notes and scope come on its first page.",
@@ -944,6 +1010,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "capture_knowledge_page",
+			Scopes:    both,
 			Retention: RetainNone,
 			Description: "Render a printed page an excerpt covers, or a region of it, as an " +
 				"image you read directly.",
@@ -957,6 +1024,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "search_web",
+			Scopes:    both,
 			Retention: RetainCitedPassages,
 			Description: "Search the web. Expensive: each search costs the learner credits, so " +
 				"call it only when the workspace, the library and your own knowledge cannot " +
@@ -975,6 +1043,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "read_skill",
+			Scopes:    both,
 			Retention: RetainNone,
 			Description: "Read a skill: the full instructions for one kind of work, listed " +
 				"below with when to read it. Read it before that work.",
@@ -988,6 +1057,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "create_material",
+			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Create a study material from content you wrote, in the formats the " +
 				"editing skill describes (a note: the note_building skill). A quiz is made with add_questions.",
@@ -1019,6 +1089,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "add_questions",
+			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Add questions to a quiz (quiz_id), or create a quiz with them (title); read " +
 				"the editing skill before the first call. A question's fields make its kind: multiple choice (options, one correct) and short answer " +
@@ -1048,6 +1119,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "add_question_media",
+			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Add a chart, a plot or a library figure to one quiz question, shown after " +
 				`its text. A figure is one read_knowledge listed this turn: {"type": "figure", "id": ` +
@@ -1071,6 +1143,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "create_deck",
+			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Create a slide deck from an outline, one title and brief per slide, as " +
 				"the deck skill describes.",
@@ -1095,6 +1168,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "write_slide",
+			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Write one slide of a deck as SVG in the deck skill's rules; writing a " +
 				"slide again replaces it.",
@@ -1110,6 +1184,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "resolve_source_change",
+			Scopes:    workspaceOnly,
 			Retention: RetainNone,
 			Description: "Resolve an exact pending-change placeholder. For a file's image " +
 				"change give file_id, change_id and checkpoint: the image is attached to " +
@@ -1128,6 +1203,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "inspect_document",
+			Scopes:    both,
 			Retention: RetainNone,
 			Description: "Read a document's current content as editable targets with stable " +
 				"ids. Inspect before editing; never take edit positions from search results. A quiz's " +
@@ -1142,6 +1218,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "edit_document",
+			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
@@ -1169,6 +1246,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "trash_file",
+			Scopes:    workspaceOnly,
 			Retention: RetainFull,
 			Description: "Move a source file or study material in this workspace to the " +
 				"trash. Only call this when the user asked to delete or remove it. " +
@@ -1182,6 +1260,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "list_trashed_files",
+			Scopes:    workspaceOnly,
 			Retention: RetainNone,
 			Description: "List the trashed source files and study materials of this " +
 				"workspace with their ids, names and expiry. Use it before restore_file " +
@@ -1192,6 +1271,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "restore_file",
+			Scopes:    workspaceOnly,
 			Retention: RetainFull,
 			Description: "Restore a trashed source file or study material of this " +
 				"workspace. Only call this when the user asked for it; use " +
@@ -1208,6 +1288,7 @@ func Definitions() []Definition {
 		// of the request's prefix.
 		chatTool(Definition{
 			Name:      "inspect_office_document",
+			Scopes:    both,
 			Retention: RetainNone,
 			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
@@ -1240,6 +1321,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "edit_office_document",
+			Scopes:    both,
 			Retention: RetainFull,
 			Description: "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +

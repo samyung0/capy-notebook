@@ -183,13 +183,39 @@ func TestEveryOfficeCommandHasALimit(t *testing.T) {
 	}
 }
 
+// Account chat's first version (Epo 2026-10-27) reads, searches, creates and
+// edits; trash, restore, study progress and source changes stay in workspace
+// chat, and each scope searches and lists with its own tools.
+func TestToolScopes(t *testing.T) {
+	want := map[string][]Scope{
+		"search_workspace": {ScopeWorkspace}, "list_sources": {ScopeWorkspace},
+		"search_files": {ScopeAccount}, "list_files": {ScopeAccount},
+		"read_study_progress": {ScopeWorkspace}, "resolve_source_change": {ScopeWorkspace},
+		"trash_file": {ScopeWorkspace}, "list_trashed_files": {ScopeWorkspace}, "restore_file": {ScopeWorkspace},
+	}
+	for _, def := range Definitions() {
+		scopes, ok := want[def.Name]
+		if !ok {
+			scopes = []Scope{ScopeWorkspace, ScopeAccount}
+		}
+		if !slices.Equal(def.Scopes, scopes) {
+			t.Errorf("%s scopes = %v, want %v", def.Name, def.Scopes, scopes)
+		}
+	}
+	for _, op := range AccountOperations() {
+		if op == OpResourceTrash || op == OpTrashRead || op == OpTrashRestore {
+			t.Fatalf("account chat was granted %s", op)
+		}
+	}
+}
+
 func TestRetentionBetweenMessages(t *testing.T) {
 	want := map[ResultRetention][]string{
 		RetainFull: {
 			"list_sources", "create_material", "add_questions", "add_question_media", "create_deck",
-			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document",
+			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document", "list_files",
 		},
-		RetainCitedPassages: {"search_workspace", "read_document", "search_web"},
+		RetainCitedPassages: {"search_workspace", "read_document", "search_web", "search_files"},
 		RetainUsedExcerpts:  {"read_knowledge"},
 		RetainNone: {
 			"capture_page", "read_study_progress", "search_knowledge", "capture_knowledge_page", "read_skill",

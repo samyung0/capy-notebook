@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -17,8 +18,11 @@ import (
 // internalFileReq is a file the chat agent made: the PPTX of a finished deck
 // (pipeline/pipeline/retrieval/deck.py). Content is base64 in JSON.
 type internalFileReq struct {
+	// WorkspaceID is the turn's workspace, or with Scope "account" where the
+	// deck lands ("" for No workspace), as for a material.
 	WorkspaceID        string            `json:"workspaceId"`
 	UserID             string            `json:"userId"`
+	Scope              string            `json:"scope"`
 	AssistantMessageID string            `json:"assistantMessageId"`
 	ToolCallID         string            `json:"toolCallId"`
 	Name               string            `json:"name"`
@@ -84,7 +88,7 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sum := sha256.Sum256(req.Content)
-	op, ok := a.agentFileOperation(w, r, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
+	op, ok := a.agentFileOperation(w, r, req.Scope, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
 		"name": name, "chapterId": req.ChapterID, "provenance": req.Provenance,
 		"contentSha256": hex.EncodeToString(sum[:]), "sources": req.Sources,
 	})
@@ -95,7 +99,12 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sourceNames, err := a.resolveSources(r.Context(), req.WorkspaceID, req.Sources)
+	var sourceNames []string
+	if req.Scope == string(agenttools.ScopeAccount) {
+		sourceNames, err = a.resolveAccountSources(r.Context(), req.UserID, req.Sources)
+	} else {
+		sourceNames, err = a.resolveSources(r.Context(), req.WorkspaceID, req.Sources)
+	}
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -110,19 +119,34 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // agentFileOperation checks a chat file write's actor (an editor, on the
-// assistant message's own workspace) and returns the operation its receipt is
-// stored under. A replayed receipt or a refusal is written to w and ok is
-// false.
-func (a *api) agentFileOperation(w http.ResponseWriter, r *http.Request, userID, workspaceID, messageID, callID string, request map[string]any) (store.AgentOperation, bool) {
-	if !a.internalDocumentsActor(w, r, userID, workspaceID, true) {
+// assistant message's own workspace; an account call's, its own account
+// conversation and a destination it may create in) and returns the operation
+// its receipt is stored under. A replayed receipt or a refusal is written to w
+// and ok is false.
+func (a *api) agentFileOperation(w http.ResponseWriter, r *http.Request, scope, userID, workspaceID, messageID, callID string, request map[string]any) (store.AgentOperation, bool) {
+	account, ok := a.internalScope(w, r, scope)
+	if !ok {
 		return store.AgentOperation{}, false
+	}
+	var convID string
+	if account {
+		if !a.internalAccountActor(w, r, userID) {
+			return store.AgentOperation{}, false
+		}
+		if convID, ok = a.accountConversation(w, r, userID, messageID); !ok || !a.accountDestination(w, r, userID, workspaceID) {
+			return store.AgentOperation{}, false
+		}
+		// The model chose where it lands.
+		request["workspaceId"] = workspaceID
+	} else {
+		if !a.internalDocumentsActor(w, r, userID, workspaceID, true) {
+			return store.AgentOperation{}, false
+		}
+		if convID, ok = a.workspaceConversation(w, r, userID, workspaceID, messageID); !ok {
+			return store.AgentOperation{}, false
+		}
 	}
 	ctx := r.Context()
-	convUser, convWS, convID, err := a.s.AssistantMessageContext(ctx, messageID)
-	if err != nil || convUser != userID || convWS != workspaceID {
-		a.fail(w, store.ErrNotFound)
-		return store.AgentOperation{}, false
-	}
 	opID := store.ChatOperationID(messageID, callID)
 	hash, err := store.RequestHash(request)
 	if err != nil {

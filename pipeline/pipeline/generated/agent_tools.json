@@ -1,5 +1,5 @@
 {
-  "version": 42,
+  "version": 43,
   "operations": [
     "source.read",
     "material.read",
@@ -68,6 +68,9 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace"
+      ],
       "requiredOperations": [
         "source.read"
       ],
@@ -87,6 +90,72 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace"
+      ],
+      "requiredOperations": [
+        "source.read",
+        "material.read"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "search_files",
+      "version": 1,
+      "description": "Search the user's files, in their workspaces and with no workspace, for passages matching one focused query. Each passage names its workspace.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file_ids": {
+            "description": "Restrict to these items (ids from list_files); only source files and notes hold text to search. Omit to search all of them.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": true,
+      "concurrency": "search",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "account"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ],
+      "retention": "cited_passages"
+    },
+    {
+      "name": "list_files",
+      "version": 1,
+      "description": "List the user's source files and study materials, in their workspaces and with no workspace, with ids, kinds, editability and each one's workspace.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "scopes": [
+        "account"
       ],
       "requiredOperations": [
         "source.read",
@@ -127,6 +196,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read"
@@ -172,6 +245,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "source.read"
       ],
@@ -191,6 +268,9 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace"
       ],
       "requiredOperations": [
         "source.read"
@@ -241,6 +321,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "library.read"
       ],
@@ -280,6 +364,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "library.read"
@@ -325,6 +413,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "library.read"
       ],
@@ -355,6 +447,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "source.read"
       ],
@@ -383,6 +479,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read"
@@ -467,6 +567,10 @@
       "concurrency": "mutate",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "material.create"
@@ -623,6 +727,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "material.create"
       ],
@@ -670,6 +778,10 @@
       "concurrency": "mutate",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "document.edit"
@@ -749,6 +861,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "material.create"
       ],
@@ -797,6 +913,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "material.create"
       ],
@@ -837,6 +957,9 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace"
       ],
       "requiredOperations": [
         "source.read",
@@ -896,6 +1019,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read",
@@ -1167,6 +1294,10 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace",
+        "account"
+      ],
       "requiredOperations": [
         "document.edit"
       ],
@@ -1213,6 +1344,9 @@
       "allowedSlots": [
         "chat"
       ],
+      "scopes": [
+        "workspace"
+      ],
       "requiredOperations": [
         "resource.trash"
       ],
@@ -1232,6 +1366,9 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace"
       ],
       "requiredOperations": [
         "trash.read"
@@ -1278,6 +1415,9 @@
       "concurrency": "mutate",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace"
       ],
       "requiredOperations": [
         "trash.restore"
@@ -1341,6 +1481,10 @@
       "concurrency": "read",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "source.read"
@@ -2223,6 +2367,10 @@
       "concurrency": "mutate",
       "allowedSlots": [
         "chat"
+      ],
+      "scopes": [
+        "workspace",
+        "account"
       ],
       "requiredOperations": [
         "document.edit"
