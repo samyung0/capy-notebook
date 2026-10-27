@@ -40,7 +40,6 @@ use crate::app::App;
 use crate::config::Config;
 use crate::observe::{Level, log};
 
-const INSTANCE_REGISTRY: &str = "capy:collaboration:instances";
 const INSTANCE_HEARTBEAT: Duration = Duration::from_secs(15);
 
 fn main() {
@@ -367,7 +366,7 @@ async fn heartbeat(app: app::Shared) {
             .map(|elapsed| elapsed.as_millis() as u64)
             .unwrap_or(0);
         let result = redis::cmd("HSET")
-            .arg(INSTANCE_REGISTRY)
+            .arg(app::INSTANCE_REGISTRY)
             .arg(&app.instance_id)
             .arg(now)
             .query_async::<i64>(&mut redis)
@@ -404,7 +403,8 @@ async fn shutdown_signal() {
 
 /// Every loaded room stores what it holds before the process exits (the
 /// container's shutdown grace period covers it), then the source disk store's
-/// files go (Epo 2026-10-17; a crash leaves them for the next start's wipe).
+/// files go (Epo 2026-10-17; a crash leaves them for the next start's wipe)
+/// and the instance leaves the heartbeat registry.
 async fn shutdown(app: &app::Shared) {
     let mut waits = Vec::new();
     for name in app.rooms.names() {
@@ -425,6 +425,11 @@ async fn shutdown(app: &app::Shared) {
             json!({ "error": error.to_string() }),
         );
     }
+    // The next process need not wait a minute for this one's heartbeat to
+    // age out before it collects (Q419).
+    let mut redis = app.redis.clone();
+    let _: Result<i64, _> =
+        redis::AsyncCommands::hdel(&mut redis, app::INSTANCE_REGISTRY, &app.instance_id).await;
 }
 
 #[cfg(test)]

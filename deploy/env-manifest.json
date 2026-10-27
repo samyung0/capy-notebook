@@ -435,6 +435,10 @@
       "kind": "variable",
       "targets": ["app"]
     },
+    "COLLABORATION_GC_COLLECT": {
+      "kind": "variable",
+      "targets": ["app"]
+    },
     "COLLABORATION_INTERNAL_URL": {
       "kind": "variable",
       "targets": ["local"]

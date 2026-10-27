@@ -399,11 +399,52 @@ impl AgentSteps {
     }
 }
 
+/// Every collaboration process's id and its last heartbeat (Unix ms), kept
+/// by `main.rs`'s heartbeat; the source handoff and the API's eviction
+/// worker read it too.
+pub const INSTANCE_REGISTRY: &str = "capy:collaboration:instances";
+
+/// How recent a heartbeat keeps another process live, as the source handoff
+/// and the API's eviction worker read the registry.
+const INSTANCE_LIVE_FOR: std::time::Duration = std::time::Duration::from_secs(60);
+
 impl App {
     /// The source handoff (set before any connection is accepted).
     #[allow(clippy::expect_used)]
     pub fn handoff(&self) -> &Arc<sources::handoff::Handoff> {
         self.handoff.get().expect("the handoff is set at start")
+    }
+
+    /// Why another collaboration process may be live: one heartbeat within
+    /// the last minute, a heartbeat that cannot be read, or a registry that
+    /// cannot be read (the cause and its detail); none when this one is
+    /// alone. The in-place collection requires one process per database
+    /// (Q400, review r3 L1). Each value is read on its own, as the source
+    /// handoff reads the registry.
+    pub async fn another_instance(&self) -> Option<(&'static str, String)> {
+        let mut redis = self.redis.clone();
+        let entries = match redis::AsyncCommands::hgetall::<_, HashMap<String, String>>(
+            &mut redis,
+            INSTANCE_REGISTRY,
+        )
+        .await
+        {
+            Ok(entries) => entries,
+            Err(error) => return Some(("registry unreadable", error.to_string())),
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as u64)
+            .unwrap_or(0);
+        let cutoff = now.saturating_sub(INSTANCE_LIVE_FOR.as_millis() as u64);
+        entries
+            .iter()
+            .filter(|(id, _)| **id != self.instance_id)
+            .find_map(|(id, at)| match at.parse::<u64>() {
+                Ok(at) if at >= cutoff => Some(("another process live", id.clone())),
+                Ok(_) => None,
+                Err(_) => Some(("heartbeat unreadable", id.clone())),
+            })
     }
 }
 

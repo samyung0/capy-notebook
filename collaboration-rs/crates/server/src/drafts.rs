@@ -367,14 +367,18 @@ async fn checked_and_stored(
     let granted = header_text(headers, GRANTS_HEADER)
         .map(|header| crate::auth::granted_by(header, &app.config.secret, room, user, now))
         .unwrap_or_default();
-    // An unreadable version is refused, not taken as none (review r2 N2).
-    let version =
-        match header_text(headers, VERSION_HEADER) {
-            None => None,
-            Some(value) => Some(value.parse::<u64>().map_err(|_| {
-                Refused::new(Class::Malformed, "the drafts' version is not a number")
-            })?),
-        };
+    // An unreadable version is refused, not taken as none (review r2 N2), and
+    // so is a missing or zero one: a group always holds an edit, made at
+    // version 1 or later, and 0 (a new tab's) is never late (audit N1).
+    let version = header_text(headers, VERSION_HEADER)
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|&version| version > 0)
+        .ok_or_else(|| {
+            Refused::new(
+                Class::Malformed,
+                "the drafts' version is missing or not a stored version",
+            )
+        })?;
     let durable = admitted(app, &name, &context, update, base, granted, version).await?;
     match durable.await {
         Ok(Ok(())) => Ok(()),
@@ -396,7 +400,7 @@ async fn admitted(
     update: Bytes,
     base: Option<String>,
     granted: Vec<u64>,
-    version: Option<u64>,
+    version: u64,
 ) -> Result<Durable, Refused> {
     for _ in 0..2 {
         let handle = app.rooms.get_or_spawn(&name.to_string(), |id| {

@@ -165,6 +165,8 @@ service_lines() {
 # (Compose would stop the gateway first). `up` then stops the old gateway and
 # retrieval before migrate runs, and starts collaboration once the new gateway
 # is healthy.
+# Stop-first, never start-first: the in-place Yjs collection requires one
+# collaboration process per database (Q400, openwiki/deployment-runbook.md).
 if [[ "$stack" == app ]]; then
   dc stop collaboration >/dev/null 2>&1 || fail "stopping collaboration failed"
 fi

@@ -560,6 +560,17 @@ before migrations, as the cutover reset below requires), and starts
 collaboration only once the new gateway is healthy (`depends_on`, with a probe
 a second while they boot). Old and new containers never overlap: the
 gateway's boot sweep and the single collaboration instance need that.
+The in-place Yjs collection requires one collaboration process per database
+(Q400): never scale `collaboration` to replicas, roll it out start-first, or
+point another collaboration server (a developer's) at an environment's
+database. A fold collects nothing while it sees another process's heartbeat
+in that Redis (within a minute) or cannot read the registry, and reports
+each cause once per process: a Sentry event and a `captured error` log line,
+`in-place collection withheld: <cause>` with the other id or the Redis
+error, tagged `file_id` with the note whose fold first saw it. A stopping
+process removes its heartbeat, so folds after
+a deploy collect at once; after a crash its last heartbeat holds collection
+off for up to a minute.
 Postgres and Redis are not restarted. Expect the API to be down for about
 2-12 s (the gateway's drain, up to 10 s with open SSE streams, plus `migrate`)
 and collaboration for about 4-35 s (its flush plus the API gap), against
@@ -684,8 +695,9 @@ Run exactly one `collaboration` container per environment. A redeploy
 its rooms and exits before the new one starts, so two never serve at once.
 The Rust collaboration server keeps documents and awareness in its own
 rooms; Redis only carries evictions, relays and handoff, so a second
-instance would not share document or awareness state with the first. Its
-stale entry in the instance registry lingers up to 60 s after a restart, which only slows
+instance would not share document or awareness state with the first. A
+clean stop removes its entry in the instance registry; after a crash the
+stale entry lingers up to 60 s, which only slows
 an eviction or handoff in that window (they wait for its acknowledgement and
 retry). Scaling out later means document-sticky routing, every connection
 to a room reaching the instance that holds it, not Redis fan-out.

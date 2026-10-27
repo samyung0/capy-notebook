@@ -34,6 +34,18 @@ pub struct Config {
     /// `fold_max_rows` rows (DESIGN.md 3.5); an unloaded one always.
     pub fold_min_bytes: u64,
     pub fold_max_rows: u64,
+    /// A note's folds collect the tombstones no session can still name
+    /// (`ydoc::gc`), in place, keeping what the room's sessions hold
+    /// (`sessions.rs`), and an open room collects its own document at its
+    /// threshold folds (Q401). The collection requires one collaboration
+    /// process per database (Q400): a fold collects nothing while another
+    /// process's heartbeat is seen. The kill switch, off unless exactly `true`, and
+    /// refused outside tests (`APP_ENV=test`) until the rest of the
+    /// collection's release lands: the merge of a tab older than the window
+    /// (without it that tab's unsent edits would be lost), and the durable
+    /// Undo payloads' holds and the durable Undo route's refusal of payloads
+    /// naming collected units.
+    pub gc_collect: bool,
     /// Office engine child processes per lane and each one's memory cap
     /// (Epo 2026-10-07: production 2 + 1 at 4 GiB, UAT 1 + 1 at 3 GiB).
     pub engine_save_processes: u64,
@@ -154,6 +166,21 @@ fn flag(env: &HashMap<String, String>, name: &str) -> Result<bool, ConfigError> 
     }
 }
 
+/// `COLLABORATION_GC_COLLECT`, refused outside tests (see `gc_collect`).
+fn collection(env: &HashMap<String, String>) -> Result<bool, ConfigError> {
+    let on = flag(env, "COLLABORATION_GC_COLLECT")?;
+    if on && env.get("APP_ENV").map(|value| value.trim()) != Some("test") {
+        return Err(ConfigError(
+            concat!(
+                "COLLABORATION_GC_COLLECT=true is refused outside tests until the collection's ",
+                "inputs exist (the late merge, the durable Undo holds and refusal)"
+            )
+            .into(),
+        ));
+    }
+    Ok(on)
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::load(&std::env::vars().collect())
@@ -226,6 +253,7 @@ impl Config {
             projection_cadence: millis(env, "COLLABORATION_PROJECTION_CADENCE_MS", 300_000)?,
             fold_min_bytes: positive(env, "COLLABORATION_FOLD_MIN_BYTES", 256 * 1024)?,
             fold_max_rows: positive(env, "COLLABORATION_FOLD_MAX_ROWS", 1000)?,
+            gc_collect: collection(env)?,
             engine_save_processes: required(env, "COLLABORATION_ENGINE_SAVE_PROCESSES")?,
             engine_background_processes: required(
                 env,
@@ -346,6 +374,32 @@ mod tests {
         assert_eq!(config.api_url, "http://server:8080");
         assert_eq!(config.port, 2345);
         assert_eq!(config.secret, "prod-secret");
+    }
+
+    /// Off unless exactly `true`, and refused outside tests: turned on in a
+    /// deployment before the late merge and the durable Undo holds land, a
+    /// late tab's edits or a durable Undo's text could be lost.
+    #[test]
+    fn the_collection_is_off_unless_exactly_true_and_only_in_tests() {
+        let on = ("COLLABORATION_GC_COLLECT", "true");
+        assert!(!Config::load(&env(&[])).unwrap().gc_collect);
+        assert!(
+            Config::load(&env(&[on, ("APP_ENV", "test")]))
+                .unwrap()
+                .gc_collect
+        );
+        let refused = Config::load(&env(&[on]))
+            .err()
+            .map(|error| error.to_string());
+        assert!(refused.is_some_and(|message| message.contains("collection's inputs exist (")));
+        assert!(Config::load(&env(&[on, ("APP_ENV", "production")])).is_err());
+        assert!(
+            Config::load(&env(&[
+                ("COLLABORATION_GC_COLLECT", "on"),
+                ("APP_ENV", "test")
+            ]))
+            .is_err()
+        );
     }
 
     #[test]

@@ -135,8 +135,13 @@ pub enum RoomCmd {
     },
     /// Close every channel of a user (account access changed).
     CloseUser(String, u16, String),
-    /// A fold of the log finished: rows and bytes it removed, the new base size.
-    Folded(Option<(i64, i64, i64)>),
+    /// A fold of the log finished: rows and bytes it removed, the new base
+    /// size; with a collection, its window and held set
+    /// (`note_store::Folded`).
+    Folded(
+        Option<(i64, i64, i64)>,
+        Option<Box<(ydoc::gc::Window, yrs::IdSet)>>,
+    ),
     /// The source handoff: a channel goes read-only, every channel back to
     /// its token's access, channels close (none named: all of them).
     SetReadOnly(u64),
@@ -192,8 +197,8 @@ pub struct Draft {
     /// under the JOIN's rule before the drafts may write under them.
     pub granted: Vec<u64>,
     /// The stored version the drafts were made at, their oldest's
-    /// (`X-Capy-Version`, `sessions.rs`).
-    pub version: Option<u64>,
+    /// (`X-Capy-Version`, `sessions.rs`): 1 or later.
+    pub version: u64,
     pub reply: oneshot::Sender<Result<Durable, Refused>>,
 }
 
@@ -385,12 +390,13 @@ struct Note {
     base_bytes: i64,
     folding: bool,
     /// The stored version of the latest collection's window: a session or
-    /// draft group older than it is late (`sessions::late`). Nothing is
-    /// collected yet, so 0.
+    /// draft group older than it is late (`sessions::late`). Loaded with the
+    /// document; while a fold runs, the most that fold may move it to
+    /// (`maybe_fold`).
     window: i64,
     /// Versions below `stored_version` the room has not applied: service
     /// edits whose rows committed before a later store's (`sessions::took`).
-    /// Note content rooms only.
+    /// No fold runs while one is open (Q419). Note content rooms only.
     gaps: std::collections::BTreeSet<i64>,
     /// The first gap below a store the room could not announce, and whether
     /// it was warned of (`announce_stored`).
@@ -521,6 +527,11 @@ pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
 /// builds only.
 #[cfg(debug_assertions)]
 pub const IT_KEYS_LATER: &str = "capy-it-keys-later";
+
+/// See `edits::send_writes`: a note edit whose step id starts with this
+/// reaches its room 3 s after its rows committed, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_SERVICE_LATER: &str = "capy-it-service-later";
 
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -705,10 +716,11 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 crate::model::Model::of(&kind)
             };
             let (log_rows, base_bytes) = (loaded.rows.len() as i64, loaded.base.len() as i64);
-            let (stored_version, projected_version, log_bytes) = (
+            let (stored_version, projected_version, log_bytes, window) = (
                 loaded.stored_version,
                 loaded.projected_version,
                 loaded.log_bytes,
+                loaded.window,
             );
             let material_kind = kind.clone();
             let (doc, durable, metrics, mut refused) =
@@ -792,7 +804,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 log_rows,
                 base_bytes,
                 folding: false,
-                window: 0,
+                window,
                 gaps: std::collections::BTreeSet::new(),
                 stall: None,
             };
@@ -1307,7 +1319,7 @@ impl Room {
                     self.close_channel(key, None, code, &reason);
                 }
             }
-            RoomCmd::Folded(folded) => {
+            RoomCmd::Folded(folded, collected) => {
                 let (folding, log_rows, log_bytes, base_bytes) = match &mut self.kind {
                     Kindly::Note(note) => (
                         &mut note.folding,
@@ -1328,6 +1340,10 @@ impl Room {
                     *log_bytes -= bytes;
                     *base_bytes = base;
                     unlog_bytes(&self.app, bytes.max(0) as u64);
+                }
+                if let Some(collected) = collected {
+                    let (window, held) = *collected;
+                    self.collect_live(&window, held).await;
                 }
             }
             RoomCmd::SetReadOnly(channel) => {
@@ -1469,13 +1485,13 @@ impl Room {
         context: &Context,
         update: &[u8],
         granted: &[u64],
-        version: Option<u64>,
+        version: u64,
     ) -> Result<Option<Outcome>, Refused> {
         let decoded = ydoc::decode(update).ok();
         // A group under a lost session's id is late: an id its grants name,
         // or one it writes under, which the room admits through its record
-        // (review r3 L4). Nothing is collected yet, so nothing is late; the
-        // late path holds such a group once collection lands.
+        // (review r3 L4). The late merge holds such a group once it lands;
+        // logged until then.
         let mut ids = granted.to_vec();
         if let Some(decoded) = &decoded {
             ids.extend(client_ids::written(
@@ -1483,7 +1499,7 @@ impl Room {
                 decoded,
             ));
         }
-        if self.late(&ids, version) {
+        if self.late(&ids, Some(version)) {
             log(
                 Level::Info,
                 "late draft group",
@@ -1513,10 +1529,19 @@ impl Room {
             }
             self.admit_update(None, context, read_only, update, decoded, granted)
         }));
-        Ok(Some(checked.unwrap_or_else(|_| {
+        let outcome = checked.unwrap_or_else(|_| {
             self.update_panicked(None, update.len());
             Outcome::refused(Class::Malformed, "update cannot be checked")
-        })))
+        });
+        // Its session is not counted: until its row is stored, no fold may
+        // collect past the version it was made at (Q400, review r3 M1).
+        if matches!(outcome, Outcome::Admitted)
+            && let (Some(sessions), Kindly::Note(note)) = (&mut self.sessions, &self.kind)
+        {
+            let version = i64::try_from(version).unwrap_or(i64::MAX);
+            sessions.draft_admitted(version.min(note.stored_version));
+        }
+        Ok(Some(outcome))
     }
 
     /// A draft's receipt: answered once nothing is left to store, so after
@@ -2276,12 +2301,17 @@ impl Room {
                             None
                         }
                     };
-                    let _ = handle.tx.send(RoomCmd::Folded(folded)).await;
+                    let _ = handle.tx.send(RoomCmd::Folded(folded, None)).await;
                 });
                 return;
             }
         };
+        // A committed row the room has not applied (a direct write racing its
+        // load): no fold until it arrives, so the window never holds a row the
+        // open room lacks and a store holding a draft group is folded with it
+        // (Q419); `service_edit()` folds once the gap closes.
         if note.folding
+            || !note.gaps.is_empty()
             || (note.log_bytes < min_bytes.max(note.base_bytes) && note.log_rows < max_rows)
         {
             return;
@@ -2294,29 +2324,84 @@ impl Room {
             note.stored_version,
             note.doc,
         );
-        self.fold_holds("threshold");
+        let holds = self.fold_holds(Some(self.doc.client_id()));
+        // The fold's window is at most the version every counted session
+        // reached (the stored one when none counts): a JOIN or draft group
+        // older than that while the fold runs is late already.
+        if let (Some(holds), Kindly::Note(note)) = (&holds, &mut self.kind) {
+            note.window = note.window.max(holds.reached.unwrap_or(through));
+        }
         tokio::spawn(async move {
-            let folded = match note_store::fold(
+            let holds = one_process(&app, &material_id, holds).await;
+            let (folded, collected) = match note_store::fold(
                 &app.db,
                 &material_id,
                 schema,
                 doc_kind,
                 Some(through),
+                holds,
             )
             .await
             {
-                Ok(folded) => folded.map(|f| (f.rows as i64, f.log_bytes, f.base_bytes)),
+                Ok(Some(f)) => (
+                    Some((f.rows as i64, f.log_bytes, f.base_bytes)),
+                    f.collected.map(Box::new),
+                ),
+                Ok(None) => (None, None),
                 Err(error) => {
                     observe::capture(
                         &error.to_string(),
                         None,
                         &[("room", &material_id), ("stage", "fold")],
                     );
-                    None
+                    (None, None)
                 }
             };
-            let _ = handle.tx.send(RoomCmd::Folded(folded)).await;
+            let _ = handle.tx.send(RoomCmd::Folded(folded, collected)).await;
         });
+    }
+
+    /// The open room collects its own document (Q401) at the window and held
+    /// set its threshold fold collected the stored state at, in its own task
+    /// (what arrives meanwhile waits), and swaps the result in: tabs joining
+    /// get the collected state, open tabs keep their tombstones. The state
+    /// vector, the unstored edits, the room's own marker chains and its
+    /// window stay. A guard refusal (or a panic) keeps the document as it
+    /// is, reported once. While the room keeps agent steps it waits: their
+    /// live Undo reverts against this document's own deleted content and
+    /// redo links, which a reload drops (durable Undo removes those steps).
+    async fn collect_live(&mut self, window: &ydoc::gc::Window, held: yrs::IdSet) {
+        let Kindly::Note(note) = &self.kind else {
+            return;
+        };
+        if !self.agent_changes.is_empty() {
+            return;
+        }
+        let (doc, model, started) = (self.doc.clone(), note.model, Instant::now());
+        let window = window.clone();
+        let collected = tokio::task::spawn_blocking(move || {
+            note_store::collect_live(&doc, &window, &held, model)
+        })
+        .await
+        .unwrap_or_else(|error| Err(error.to_string()));
+        match collected {
+            Ok(Some((doc, units))) => {
+                self.doc = doc;
+                log(
+                    Level::Info,
+                    "live document collected",
+                    json!({
+                        "room": self.name,
+                        "units": units,
+                        "ms": started.elapsed().as_millis() as u64,
+                    }),
+                );
+            }
+            Ok(None) => {}
+            Err(why) => {
+                note_store::report_refusal(&note.material_id, note.doc, "live", &why);
+            }
+        }
     }
 
     // ---------------------------------------------------------------- channels
@@ -3913,8 +3998,8 @@ impl Room {
     fn session_joined(&mut self, key: MemberKey, version: Option<u64>) {
         let client = self.members.get(&key).map(|member| member.client);
         if self.late(client.as_slice(), version) {
-            // Nothing is collected yet, so nothing is late; the late path
-            // takes such a JOIN once collection lands.
+            // The late merge refuses such a JOIN once it lands; logged until
+            // then.
             log(
                 Level::Info,
                 "late session joined",
@@ -4012,23 +4097,22 @@ impl Room {
         }
     }
 
-    /// What a fold of a note must keep for its sessions (`sessions.rs`): the
-    /// collection's input once it lands; logged until then.
-    fn fold_holds(&mut self, fold: &str) {
-        let Some(sessions) = &mut self.sessions else {
-            return;
-        };
-        let holds = sessions.holds(std::time::SystemTime::now());
-        log(
-            Level::Info,
-            "fold holds",
-            json!({
-                "fold": fold,
-                "held_clients": holds.held.len(),
-                "reached": holds.reached,
-                "room": self.name,
-            }),
-        );
+    /// What a fold of a note must keep for its sessions (`sessions.rs`), the
+    /// in-place collection's input; none with the collection off, and for
+    /// rooms that keep no sessions (Q274: notes only). `live_room`: the open
+    /// room's client, whose contributor markers stay.
+    fn fold_holds(&mut self, live_room: Option<yrs::block::ClientID>) -> Option<note_store::Holds> {
+        if !self.app.config.gc_collect {
+            return None;
+        }
+        let holds = self.sessions.as_mut()?.holds(std::time::SystemTime::now());
+        let (app, name, id) = (self.app.clone(), self.name.clone(), self.id);
+        Some(note_store::Holds {
+            reached: holds.reached,
+            held: holds.held,
+            live_room,
+            alone: Box::new(move || app.rooms.get(&name).is_none_or(|room| room.id == id)),
+        })
     }
 
     /// Keeps an agent step for its Undo or Redo until 24 h after its agent
@@ -4853,7 +4937,8 @@ impl Room {
             }
             _ => crate::sessions::Unsaved::default(),
         };
-        self.fold_holds("unload");
+        // The room's life ended: its contributor markers go too.
+        let holds = self.fold_holds(None);
         let Kindly::Note(note) = &self.kind else {
             return;
         };
@@ -4904,8 +4989,9 @@ impl Room {
                         json!({ "error": error.to_string(), "room": material_id }),
                     );
                 }
+                let holds = one_process(&app, &material_id, holds).await;
                 if let Err(error) =
-                    note_store::fold(&app.db, &material_id, schema, doc_kind, None).await
+                    note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds).await
                 {
                     observe::capture(
                         &error.to_string(),
@@ -4918,6 +5004,46 @@ impl Room {
         });
     }
 }
+
+/// `holds` collecting nothing while another collaboration process may be
+/// live: the in-place collection requires one process per database (Q400,
+/// review r3 L1), whose rooms' sessions and windows this one cannot see.
+/// Each cause is reported once per process (Q419), to Sentry and the log
+/// (`capture` logs it), tagged with the material whose fold first saw it.
+async fn one_process(
+    app: &crate::app::App,
+    material_id: &str,
+    holds: Option<note_store::Holds>,
+) -> Option<note_store::Holds> {
+    let holds = holds?;
+    let Some((cause, detail)) = app.another_instance().await else {
+        return Some(holds);
+    };
+    if WITHHELD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(cause)
+    {
+        observe::capture(
+            &format!("in-place collection withheld: {cause}"),
+            None,
+            &[
+                ("room", material_id),
+                ("file_id", material_id),
+                ("stage", "fold"),
+                ("detail", &detail),
+            ],
+        );
+    }
+    Some(note_store::Holds {
+        alone: Box::new(|| false),
+        ..holds
+    })
+}
+
+/// The causes of withheld collections this process reported.
+static WITHHELD: std::sync::LazyLock<std::sync::Mutex<HashSet<&'static str>>> =
+    std::sync::LazyLock::new(Default::default);
 
 /// What admission decided about a writer's update.
 enum Verdict {

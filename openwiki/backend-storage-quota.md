@@ -938,37 +938,146 @@ log in `source_document_updates`, charged in `storage_bytes` with the state
 compare-and-swap; a moved checkpoint re-reads the rows saved meanwhile and
 appends again, 3 attempts in all (`collaboration-rs/crates/sources/src/store.rs`).
 
-Yjs history is not compacted for now (Epo 2026-10-22). A compaction never
-moves the room epoch (`room_schema`), so the epoch-moving one (a rebuild from
-the projection under the next `room_schema`) is removed, and history stays
-until an in-place collection lands. Note, quiz and flashcard history is not
-charged: a material pays for its content JSON alone (`materials.size_bytes`).
-No cap bounds a note room's state: a store appends only the update since the
-durable state, each client update is at most `ydoc::MAX_UPDATE_BYTES`, and the
-shape bounds measure the content, not its history. A heavily edited note
-costs load time and memory instead, and a full answer of at least 256 KiB
-waits behind its user's spent open budget (`rate.rs`).
+A compaction never moves the room epoch (`room_schema`): history is
+collected in place, at the fold, with no new lineage and no reload for anyone
+(Epo 2026-10-22 and 2026-10-23). The collection below is built and stays off
+in deployments until the rest of its release lands (**Switch**). Note, quiz and flashcard history is not charged: a
+material pays for its content JSON alone (`materials.size_bytes`). No cap
+bounds a note room's state: a store appends only the update since the durable
+state, each client update is at most `ydoc::MAX_UPDATE_BYTES`, and the shape
+bounds measure the content, not its history. A heavily edited note costs load
+time and memory instead, and a full answer of at least 256 KiB waits behind
+its user's spent open budget (`rate.rs`).
 
-The in-place collection Epo approved on 2026-10-23 is to collect a note's
-stored state when its room folds it, keeping what an open session or an Undo
-may still name; Q274 (2026-10-24) limits it to notes. Its first step keeps
-the bookkeeping without collecting anything ([editing
-sessions](frontend/plate-editor.md#editing-sessions), `sessions.rs`): each
-editing session's last acknowledged stored version, when it was last seen
-and the deletions its own updates made, each kept 25 h after it arrived (Undo
-reaches back 24 h, Q2), as columns of the session's client-id row (migration
-0117), written with the store that holds them, and the deletions of agent
-steps the room keeps for their Undo or Redo, each kept 25 h from its agent
-edit, an hour past the room's offer of that Undo (`material_yjs_documents.agent_held`;
-review r1 M3, Editor 2026-10-26; Q385; review r3 N8). A
-session counts while connected and 24 h after it was last seen. A fold reads
-from it the oldest version every counted session reached and the held
-deletions (`Sessions::holds`), logged until the collection lands. A session
-row whose held deletions cannot be read is dropped alone, written lost (its
-tab returns as late) and reported, and the note loads (Q382, Q385); so are
-agent holds that cannot be read (Q386). The rows are bounded by the document: a held deletion
-is one the room held undeleted, and the record's 7-day scan clears an unused
-id's row with its session. Not charged, as note history is not.
+### In-place collection at the fold
+
+Every fold of a note's document, at unload and at the log threshold, replays
+its base and rows into a scratch document and, with the collection on,
+writes that document without the deleted units no replica can still name
+(`ydoc::gc::collect`). Quizzes, flashcard sets and other item rooms keep
+their whole history (Q274, 2026-10-24): their folds take no window. An open
+room also collects its own document at each threshold fold (Q401), in its
+own task (what arrives meanwhile waits), at that fold's window and held set,
+and swaps the result in: its state vector, unstored edits and own marker
+chains stay, tabs joining get the collected state, and open tabs keep their
+tombstones until they reload. With the same W and H it drops only units the
+stored pass drops too (a unit newer than W only ends a run), except a deleted
+block's children, which Yjs drops with the block either way. It can also
+keep units the stored base dropped: a refused or skipped pass, or one that
+found nothing while the stored pass did, leaves its document whole. A check
+of what a payload names therefore reads both documents (Q419). While the
+room keeps agent steps it keeps its
+document whole: their live Undo reverts against the room document's own
+deleted content and redo links, which a reload drops (durable Undo removes
+those steps). Kept list items keep their origins, and a map value drops its
+origin only when nothing behind it stays, so tabs holding the full history
+and tabs loading the collected state agree.
+
+- **Sessions.** A note's content room keeps its editing sessions
+  (`sessions.rs`; [editing sessions](frontend/plate-editor.md#editing-sessions)):
+  each session's last acknowledged stored version, when it was last seen,
+  and the deletions its own updates made, each held 25 h after it arrived
+  (Undo reaches back 24 h, Q2), as columns of the session's client-id row
+  (migration 0117), written with the store that holds them; and the
+  deletions of agent steps, each held 25 h from its agent edit, an hour past
+  the room's 24 h offer of its Undo and Redo (`material_yjs_documents.agent_held`;
+  Q385, Q390). A session counts while connected and 24 h after it was last
+  seen, and ends earlier on a clean Leave naming it. A session row whose
+  held deletions cannot be read is dropped alone, written lost (its tab
+  returns as late) and reported, and the note loads (Q382, Q385); so are
+  agent holds that cannot be read (Q386). The rows are bounded by the
+  document: a held deletion is one the room held undeleted, and the record's
+  7-day scan clears an unused id's row with its session.
+- **Inputs.** The folded document, a window W (a state vector, delete set and
+  stored_version an earlier fold stored) and a held set H, both from the
+  room's sessions (`Sessions::holds`). A unit is dead when W deleted it and H
+  does not hold it.
+  - W is the newest stored window that every counted session has reached; with
+    no counted session, W is the folded document itself; with no qualifying
+    window, the fold collects nothing. A session has reached the last store it
+    acknowledged on its socket, never above the version its oldest unsent edit
+    was made at: an edit made before W and not yet stored would otherwise sit
+    next to a unit the collection dropped.
+  - A `/drafts` group counts no session, so W never passes the oldest group
+    the room admitted until a store taken after it commits (the draft floor,
+    Q400), whichever trigger folds: a store or a service edit. A group must
+    name its version (`X-Capy-Version`, 1 or later): one without is refused.
+  - A room never folds while a committed row has not reached it (a direct
+    write racing its load, or a service edit's row it hears of after a later
+    store's; Q419). The service edit's own fold runs once the row arrives
+    and folds up to the stored version, so W never holds a row the live
+    document lacks, and a store holding an admitted group is folded with
+    that group.
+  - H holds what counted sessions deleted (their editor Undo may restore it)
+    and what agent steps deleted (their Undo and Redo re-create it, naming
+    the deleted items).
+- **Late tabs.** A fold that collected keeps its window's stored_version as
+  the latest (`material_yjs_documents.collected_window`), and a room loads it
+  with the document. A JOIN or `/drafts` group naming an older version, or
+  under a lost session's id, is late (`sessions::late`): the late merge takes
+  it (logged until that lands). While a fold runs, its room checks JOINs
+  against the most that fold may move the window to (the version every
+  counted session reached, or the stored version when none counts). A fold
+  collects only while no other life of its room is loaded, asked under the
+  material's lock: a room that loaded before it holds the older window, and
+  one loading after it waits for the lock and reads the new one. That rule
+  sees one process's rooms, so the collection requires one collaboration
+  process per database (Q400; no replicas, no start-first rollout, see
+  [deployment-runbook.md](deployment-runbook.md)): a fold collects nothing
+  while another process's heartbeat is in the instance registry
+  (`capy:collaboration:instances`, within a minute), or a heartbeat there or
+  the registry cannot be read (each value is read on its own, as the source
+  handoff reads them). Each such cause is logged and reported to Sentry once
+  per process (Q419), tagged `file_id` with the note whose fold first saw
+  it. A process removes its heartbeat when it stops.
+- **Lists.** In the document's current order, each run of dead units keeps its
+  first and last unit: typing names the last unit of a deleted run, a list
+  insert the first. Any other unit ends a run, a unit newer than W included,
+  since a session that has seen it can type next to it. The rest goes unless a
+  kept item names it as origin or right origin, closed over that. List origins
+  are never rewritten, so an item goes only whole: one holding an edge or a
+  unit that is not dead stays with all its units (a word typed at once and
+  deleted again is one item, its edges inside it). Runs are read by clock
+  range, so an item costs its ranges, not the units it claims.
+- **Maps.** The value current at W is kept. It drops its origin, so the values
+  behind it go, only when nothing behind it stays: a value behind it held,
+  newer than W, or named by a value after it keeps the origin.
+- **Contributor markers.** A marker chain written by an ended room life goes
+  whole; the open room's own chains follow the map rule.
+- **Windows.** Each fold of a note with the collection on stores the folded
+  document's state vector, delete set and stored_version in
+  `material_yjs_windows` as a later window candidate, and keeps the newest of
+  each hour for the latest 25 hours that have one (Q400), so a collection
+  can reach a session counted up to 24 h back. They hold ids only and are
+  not charged.
+- **Guard.** A collected state that does not load with nothing pending, keep
+  the model's roots and hold the folded document's state vector and value is
+  refused: the fold stores the folded document uncollected, as without the
+  collection, and reports the refusal to Sentry once per material (tagged
+  `file_id`) while the process runs, logging every refusal; a panic in the
+  collection or the guard is a refusal too. The next fold collects again (Epo 2026-10-24). The open room's own
+  collection has the same guard: a refusal keeps its document as it is.
+- **Undo.** An item that names a collected unit as origin, right origin or
+  parent integrates as collected, so a durable Undo payload whose items name
+  one would restore only part of its edit. `ydoc::gc::names_collected` finds
+  such a payload; the durable Undo route must refuse it (`undo_unavailable`)
+  before the collection is turned on, checking both the loaded room's
+  document and the stored state (Q419).
+- **Switch.** `COLLABORATION_GC_COLLECT=true` turns the collection on. It is
+  off by default, and the server refuses to start with it on outside tests
+  (`APP_ENV=test`) until the rest of the release lands: the merge of a tab or
+  draft older than the window (without it, a late tab's unsent edits would be
+  lost), the durable Undo payloads' holds and the durable Undo route's
+  refusal.
+
+On the most churned note measured (1,000 characters after 100,000 edit
+bursts in 605 sessions) one collection takes the stored state from 716 KB to
+54 KB (12 KB of it the delete set) in about 60 ms, and the next fold writes
+49 KB; a collected state collects again in about 2 ms. Ordinarily edited notes
+gain 5-12%. Not charged, as note history is not. The open room's swap of its
+own document on the same notes (release build, W the document itself) holds
+its task 18-42 ms: the collection 10-27 ms, the load 3-17 ms and the guard's
+two values 1-11 ms; the churn note's room document goes from 716 KB to 54 KB.
 
 Source text states grow the same way. Their history grows with the number of
 separate edits (and the contributor markers each save writes and clears), not
@@ -1014,7 +1123,8 @@ Sources: [storage gate and reconciliation](../server/internal/store/storage.go),
 [material bounds](../server/internal/materialdoc/document.go),
 [collab limits](../collaboration-rs/crates/notes/src/limits.rs),
 [collab document validation](../collaboration-rs/crates/notes/src/material.rs),
-[note store and folds](../collaboration-rs/crates/server/src/note_store.rs).
+[note store and folds](../collaboration-rs/crates/server/src/note_store.rs),
+[in-place collection](../collaboration-rs/crates/ydoc/src/gc.rs).
 
 ## Text field limits
 
