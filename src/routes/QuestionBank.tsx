@@ -563,7 +563,6 @@ export default function QuestionBank() {
             })
           }
           questions={topicSummary.questions}
-          topicLabel={place?.item.label ?? ''}
         />
       );
     else body = <Skeleton className="h-64 w-full" />;
@@ -607,6 +606,7 @@ export default function QuestionBank() {
       <div className="order-last hidden h-full shrink-0 flex-col gap-2.5 xl:flex xl:w-(--top-inset-bar-width)">
         <Panel
           className="min-h-0 flex-1"
+          frost="right"
           sectionClassName="scroll-fade-y h-full px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
         >
           {tree()}
@@ -615,6 +615,7 @@ export default function QuestionBank() {
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <Panel
           className="min-h-0 flex-1 rounded-button sm:rounded-card-xl"
+          frost="center"
           scrollRef={scrollRef}
           sectionClassName="h-full gap-0 pb-10"
         >
@@ -1075,29 +1076,28 @@ function CheckableQuestion({
       <div className="flex justify-end">
         {checked ? (
           <Button
-            className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+            className="h-9 px-3.5"
             iconLeft="refresh"
             onClick={() => {
               reset();
               setAnswers({});
             }}
-            rounded="large"
+            rounded="normal"
             size="sm"
             variant="ghost-hover"
           >
             {m.question_ui_answer_again()}
           </Button>
         ) : (
+          // Sized like the review session's Check.
           <Button
-            className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+            className="h-9 px-3.5"
             disabled={isPending}
-            iconLeft="check"
             onClick={() => check(answers)}
-            rounded="large"
+            rounded="normal"
             size="sm"
-            variant="accent"
           >
-            {m.question_ui_check_answer()}
+            {m.question_ui_check()}
           </Button>
         )}
       </div>
@@ -1222,10 +1222,13 @@ function TopicTree({
   dialog?: boolean;
 }) {
   const [open, setOpen] = useState(() => new Set(opened));
-  const [seen, setSeen] = useState(opened.join());
-  if (seen !== opened.join()) {
-    setSeen(opened.join());
-    setOpen((prev) => new Set([...prev, ...opened]));
+  // Only ids new to `opened` reveal themselves: opening a topic in another
+  // exam must not reopen the last attempted exam the learner closed.
+  const [seen, setSeen] = useState(opened);
+  if (seen.join() !== opened.join()) {
+    const added = opened.filter((id) => !seen.includes(id));
+    setSeen(opened);
+    setOpen((prev) => new Set([...prev, ...added]));
   }
   const toggle = (id: string) =>
     setOpen((prev) => {

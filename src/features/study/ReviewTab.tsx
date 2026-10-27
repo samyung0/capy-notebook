@@ -6,6 +6,7 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
+import { userToast } from '@/components/ui/userToast';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -17,8 +18,8 @@ import type { ReviewSearch } from './reviewSearch';
 import { groupName, itemCount, REVIEW_MODE, reviewReason } from './reviewText';
 
 /** Learning → Review: suggested reviews with their reason, sessions left
- * before the end, every workspace for a review of your own, then past
- * reviews. */
+ * before the end, your plans and every workspace's Default Plan for a review
+ * of your own, then past reviews. */
 export function ReviewTab() {
   const { data, fetchStatus, isLoading } = useReviewOverview();
   const revealRef = useLoadingReveal(isLoading);
@@ -34,11 +35,13 @@ export function ReviewTab() {
     });
   return (
     <div className="flex flex-col gap-9" ref={revealRef}>
-      {!data.workspaces.length && !data.unfinished.length && (
-        <p className="py-8 text-center text-fg-muted">
-          {m.review_no_workspaces()}
-        </p>
-      )}
+      {!data.workspaces.length &&
+        !data.plans.length &&
+        !data.unfinished.length && (
+          <p className="py-8 text-center text-fg-muted">
+            {m.review_no_workspaces()}
+          </p>
+        )}
       {data.suggestions.length > 0 && (
         <section>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
@@ -76,13 +79,6 @@ export function ReviewTab() {
             const group = groupName(u.group, u.chapterName);
             return (
               <Row
-                action={
-                  <UnderlineLink
-                    onClick={() => review(u.workspaceId, { session: u.id })}
-                  >
-                    {m.study_continue()}
-                  </UnderlineLink>
-                }
                 iconId={u.iconId}
                 key={u.id}
                 meta={m.review_unfinished_meta({
@@ -90,6 +86,7 @@ export function ReviewTab() {
                   total: u.total,
                   when: relativeTime(u.lastAnswerAt),
                 })}
+                onOpen={() => review(u.workspaceId, { session: u.id })}
                 title={group || u.workspaceName}
                 titleSub={group ? u.workspaceName : undefined}
               />
@@ -97,35 +94,41 @@ export function ReviewTab() {
           })}
         </section>
       )}
+      {data.plans.length > 0 && (
+        <section>
+          <h3 className="mb-1 font-bold text-fg-muted text-sm">
+            {m.learning_your_plans()}
+          </h3>
+          {byLastReviewed(data.plans).map((p) => (
+            <Row
+              iconId={p.iconId}
+              key={p.planId}
+              meta={reviewedMeta(p)}
+              onOpen={() =>
+                p.canReview
+                  ? review(p.workspaceId, { group: 'plan', planId: p.planId })
+                  : nothingToReview()
+              }
+              title={p.name}
+              titleSub={p.workspaceName}
+            />
+          ))}
+        </section>
+      )}
       {data.workspaces.length > 0 && (
         <section>
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
-            {m.review_all_workspaces()}
+            {m.learning_default_plans()}
           </h3>
           {byLastReviewed(data.workspaces).map((ws) => (
             <Row
-              action={
-                <UnderlineLink
-                  disabled={!ws.reviewable}
-                  noArrow
-                  onClick={() => review(ws.workspaceId, { group: 'workspace' })}
-                >
-                  {ws.lastReviewedAt
-                    ? m.review_again()
-                    : m.study_review_button()}
-                </UnderlineLink>
-              }
-              count={itemCount(ws.reviewable)}
               iconId={ws.iconId}
               key={ws.workspaceId}
-              meta={
-                ws.lastReviewedAt
-                  ? m.review_reviewed_when({
-                      when: relativeTime(ws.lastReviewedAt),
-                    })
-                  : ws.reviewable
-                    ? m.review_not_reviewed()
-                    : m.review_nothing_practised()
+              meta={reviewedMeta(ws)}
+              onOpen={() =>
+                ws.canReview
+                  ? review(ws.workspaceId, { group: 'workspace' })
+                  : nothingToReview()
               }
               title={ws.name}
             />
@@ -135,6 +138,27 @@ export function ReviewTab() {
       <PastReviews />
     </div>
   );
+}
+
+/** An empty plan or workspace still opens: it says why it cannot. */
+function nothingToReview() {
+  userToast({
+    description: m.review_nothing_body(),
+    id: 'review-nothing',
+    title: m.review_nothing_title(),
+  });
+}
+
+/** When the plan or workspace was last reviewed, or why it never was. */
+function reviewedMeta(row: {
+  lastReviewedAt?: string;
+  reviewable: number;
+  canReview: boolean;
+}) {
+  if (row.lastReviewedAt)
+    return m.review_reviewed_when({ when: relativeTime(row.lastReviewedAt) });
+  if (row.reviewable) return m.review_not_reviewed();
+  return row.canReview ? m.review_nothing_practised() : m.review_no_quizzes();
 }
 
 /** Most recently reviewed first; never-reviewed workspaces keep the server's
@@ -180,27 +204,36 @@ function SuggestionRow({
   );
 }
 
-/** One row of the Review tab: the workspace icon, a title with its context,
- * an optional count (hidden on phones) and the row's action. */
+/** One row of the Review tab: the workspace icon and a title with its
+ * context. A suggestion ends with its Start; every other row hovers as a
+ * whole (no radius) and opens on a click (`onOpen`). */
 function Row({
   iconId,
   title,
   titleSub,
   meta,
-  count,
   action,
+  onOpen,
   children,
 }: {
   iconId: string;
   title: string;
   titleSub?: string;
   meta?: string;
-  count?: string;
-  action: ReactNode;
+  action?: ReactNode;
+  onOpen?: () => void;
   children?: ReactNode;
 }) {
+  const name = <span className="truncate font-semibold text-fg">{title}</span>;
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3.5 gap-y-1 border-divider border-t py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
+    <div
+      className={cn(
+        'grid items-start gap-x-3.5 gap-y-1 border-divider border-t py-3',
+        action
+          ? 'grid-cols-[auto_minmax(0,1fr)_auto]'
+          : 'relative -mx-1.5 grid-cols-[auto_minmax(0,1fr)] px-1.5 hover:bg-surface-hover-bg'
+      )}
+    >
       <img
         alt=""
         className="size-8 rounded-button"
@@ -210,7 +243,17 @@ function Row({
       />
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-          <span className="truncate font-semibold text-fg">{title}</span>
+          {onOpen ? (
+            <button
+              className="min-w-0 truncate text-left after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
+              onClick={onOpen}
+              type="button"
+            >
+              {name}
+            </button>
+          ) : (
+            name
+          )}
           {titleSub && (
             <span className="truncate text-fg-muted text-xs">{titleSub}</span>
           )}
@@ -218,14 +261,7 @@ function Row({
         {meta && <p className="truncate text-fg-muted text-xs">{meta}</p>}
         {children}
       </div>
-      {count === undefined ? (
-        <span className="hidden sm:block" />
-      ) : (
-        <span className="hidden self-center text-fg-secondary text-sm sm:block">
-          {count}
-        </span>
-      )}
-      <div className="self-center">{action}</div>
+      {action && <div className="self-center">{action}</div>}
     </div>
   );
 }

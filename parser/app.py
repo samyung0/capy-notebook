@@ -30,7 +30,6 @@ import hashlib
 import hmac
 import io
 import json
-import math
 import multiprocessing
 import os
 import re
@@ -76,7 +75,7 @@ except ImportError:  # Not POSIX.
 PARSER_TOKEN = os.environ.pop("PARSER_TOKEN", "")
 ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
 # Bump when parse output changes: it names the output in the ingest donor key.
-PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v19"
+PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v20"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
     r"[0-9a-f]{40}", RELEASE_SHA
@@ -177,7 +176,6 @@ class Document:
     data: bytes
     name: str
     fingerprint: str = ""
-    capture: dict | None = None
 
 
 class ParseHardTimeout(RuntimeError):
@@ -262,13 +260,8 @@ def run_document(document: Document) -> dict[str, Any]:
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     # The element limits: an Office package before LibreOffice, every PDF
     # (an Office file's conversion too) before the parse.
-    if document.capture is None:
-        check_office(document.data, document.name)
+    check_office(document.data, document.name)
     normalized = normalize_document(document.data, document.name, WORK_DIR)
-    if document.capture is not None:
-        from odl.capture import capture_page
-
-        return capture_page(normalized.data, **document.capture)
     # The only page count: every document, before the parse (an Office
     # document's pages exist only after LibreOffice).
     _check_page_count(pdf_page_count(normalized.data))
@@ -418,13 +411,11 @@ def _parse_worker_main(
             return
         if request is None:
             return
-        source_path, result_path, name, fingerprint, capture = request
+        source_path, result_path, name, fingerprint = request
         document = None
         result = None
         try:
-            document = Document(
-                Path(source_path).read_bytes(), name, fingerprint, capture
-            )
+            document = Document(Path(source_path).read_bytes(), name, fingerprint)
             result = run_document(document)
             _write_worker_result(Path(result_path), result)
             _send(responses, "ok", None)
@@ -619,7 +610,6 @@ class _ParseWorkerProcess(_Child):
                     str(result_path),
                     document.name,
                     document.fingerprint,
-                    document.capture,
                 )
             )
             _unwrap(await self.recv())
@@ -1495,59 +1485,6 @@ def _failure_response(
             status_code=500,
         )
     return JSONResponse({"code": code, "detail": str(exc)}, status_code=status)
-
-
-@app.post("/capture_page")
-async def office_capture(request: Request) -> JSONResponse:
-    if not _authorized(request):
-        return JSONResponse({"detail": "invalid token"}, status_code=401)
-    if runtime.active_jobs >= QUEUE_DEPTH:
-        return JSONResponse(
-            {"detail": "parser document queue is full"}, status_code=429
-        )
-    form = await request.form()
-    upload = form.get("file")
-    if upload is None or not hasattr(upload, "read"):
-        return JSONResponse({"detail": "missing file field"}, status_code=400)
-    name = str(form.get("filename") or "")
-    if Path(name).suffix.lower() not in {".docx", ".xlsx", ".pptx"}:
-        return JSONResponse(
-            {"detail": "capture requires an Office source"}, status_code=400
-        )
-    try:
-        page, max_edge = int(str(form.get("page"))), int(str(form.get("max_edge")))
-        box = json.loads(str(form.get("bbox") or "null"))
-        if page < 1 or not 1 <= max_edge <= 2048:
-            raise ValueError("invalid page or render size")
-        if box is not None and (
-            not isinstance(box, list)
-            or len(box) != 4
-            or any(
-                type(v) not in (float, int)
-                or not math.isfinite(v)
-                or not 0 <= v <= 1000
-                for v in box
-            )
-            or box[0] >= box[2]
-            or box[1] >= box[3]
-        ):
-            raise ValueError("invalid capture box")
-    except (TypeError, ValueError):
-        return JSONResponse({"detail": "invalid capture parameters"}, status_code=400)
-    data = await upload.read(MAX_SOURCE_BYTES + 1)
-    if len(data) > MAX_SOURCE_BYTES:
-        return JSONResponse({"detail": "source exceeds size limit"}, status_code=413)
-    try:
-        result, _ = await runtime.parse(
-            Document(
-                data, name, capture={"page": page, "bbox": box, "max_edge": max_edge}
-            )
-        )
-        return JSONResponse(result)
-    except ParserCapacity as exc:
-        return JSONResponse({"detail": str(exc)}, status_code=429)
-    except Exception as exc:  # noqa: BLE001 - bounded worker diagnostics
-        return _failure_response(exc)
 
 
 @app.post("/file_parse")

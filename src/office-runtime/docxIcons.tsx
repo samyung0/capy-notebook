@@ -7,16 +7,6 @@ import {
   ArrowHorizontalIcon,
   ArrowLeft02Icon,
   ArrowVerticalIcon,
-  BorderAllIcon,
-  BorderBottomIcon,
-  BorderFullIcon,
-  BorderHorizontalIcon,
-  BorderInnerIcon,
-  BorderLeftIcon,
-  BorderNoneIcon,
-  BorderRightIcon,
-  BorderTopIcon,
-  BorderVerticalIcon,
   BringToFrontIcon,
   BubbleChatDoneIcon,
   Cancel01Icon,
@@ -107,6 +97,7 @@ import {
 import type { IconSvgElement } from '@hugeicons/react';
 import type { ComponentProps } from 'react';
 import { HugeIcon } from '@/components/ui/HugeIcon';
+import { BorderIcon, type BorderIconKind } from './borderIcons';
 import { officeIconSize } from './officeIconSize';
 
 // Capy's own icons where Hugeicons has none, as in Icon.tsx.
@@ -114,26 +105,29 @@ const PILCROW = ['M10 3v11', 'M14 3v11', 'M16 3H9.5a3.5 3.5 0 000 7H10'];
 
 /**
  * Every icon docx-react draws, from Capy's set: the same icon as Icon.tsx for
- * the same command. Imported one by one so the rest of Hugeicons stays out of
- * the runtime bundle.
+ * the same command, with the border icons drawn by hand (borderIcons.tsx).
+ * Imported one by one so the rest of Hugeicons stays out of the runtime bundle.
  */
-const ICONS: Record<keyof IconSet, IconSvgElement | readonly string[]> = {
+const ICONS: Record<
+  keyof IconSet,
+  IconSvgElement | readonly string[] | { border: BorderIconKind }
+> = {
   add: PlusSignIcon,
   add_comment: CommentAdd01Icon,
   'agent-sparkle': SparklesIcon,
   arrow_back: ArrowLeft02Icon,
   arrow_drop_down: ChevronDownIcon,
-  border_all: BorderAllIcon,
-  border_bottom: BorderBottomIcon,
-  border_clear: BorderNoneIcon,
+  border_all: { border: 'all' },
+  border_bottom: { border: 'bottom' },
+  border_clear: { border: 'none' },
   border_color: PencilEdit01Icon,
-  border_horizontal: BorderHorizontalIcon,
-  border_inner: BorderInnerIcon,
-  border_left: BorderLeftIcon,
-  border_outer: BorderFullIcon,
-  border_right: BorderRightIcon,
-  border_top: BorderTopIcon,
-  border_vertical: BorderVerticalIcon,
+  border_horizontal: { border: 'horizontal' },
+  border_inner: { border: 'inner' },
+  border_left: { border: 'left' },
+  border_outer: { border: 'outer' },
+  border_right: { border: 'right' },
+  border_top: { border: 'top' },
+  border_vertical: { border: 'vertical' },
   branding_watermark: Stamp01Icon,
   call_merge: CombineIcon,
   call_split: UngroupIcon,
@@ -278,15 +272,22 @@ export const docxIcons = Object.fromEntries(
       size = 16,
       className,
       style,
-    }: ComponentProps<IconSet[keyof IconSet]>) => (
-      <HugeIcon
-        className={className}
-        icon={icon}
-        size={
-          name.startsWith('placeholder-') ? size : officeIconSize(name, size)
-        }
-        style={style}
-      />
-    ),
+    }: ComponentProps<IconSet[keyof IconSet]>) =>
+      'border' in icon ? (
+        <BorderIcon
+          kind={icon.border}
+          size={officeIconSize(name, size)}
+          style={style}
+        />
+      ) : (
+        <HugeIcon
+          className={className}
+          icon={icon}
+          size={
+            name.startsWith('placeholder-') ? size : officeIconSize(name, size)
+          }
+          style={style}
+        />
+      ),
   ])
 ) as IconSet;

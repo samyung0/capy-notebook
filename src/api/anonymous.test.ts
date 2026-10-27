@@ -18,8 +18,9 @@ it('reads the daily grading cap from the error body', async () => {
         )
     )
   );
-  const error = await gradeAnonymousQuiz('qz.sig', { answers: {} }).catch(
-    (err: unknown) => err
-  );
+  const error = await gradeAnonymousQuiz('qz.sig', {
+    answers: {},
+    questionId: 'q1',
+  }).catch((err: unknown) => err);
   expect(isAnonymousGradingLimit(error)).toBe(true);
 });

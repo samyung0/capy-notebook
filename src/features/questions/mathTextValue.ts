@@ -1,9 +1,18 @@
 import type { TElement, Value } from 'platejs';
 import { parseMathText } from './parseMathText';
+import { GAP_MARKER, gapText } from './types';
 
-export function mathTextToValue(text: string): Value {
+/** A gaps part's blank in the editor: numbered by its place, so it holds
+ * only an id that keeps its accepted answers with it as blanks come and go. */
+export const GAP_TYPE = 'gap';
+
+export function mathTextToValue(
+  text: string,
+  { gaps = false }: { gaps?: boolean } = {}
+): Value {
   const nodes: TElement[] = [];
   let children: TElement['children'] = [{ text: '' }];
+  let blanks = 0;
   const hasContent = () =>
     children.some(
       (node) =>
@@ -13,6 +22,23 @@ export function mathTextToValue(text: string): Value {
   const flush = () => {
     if (hasContent()) nodes.push({ children, type: 'p' });
     children = [{ text: '' }];
+  };
+  // Plain text, its "(n) ______" markers as blanks in a gaps part.
+  const pushText = (value: string) => {
+    if (!gaps) {
+      children.push({ text: value });
+      return;
+    }
+    let at = 0;
+    for (const match of value.matchAll(GAP_MARKER)) {
+      children.push(
+        { text: value.slice(at, match.index) },
+        { children: [{ text: '' }], id: `g${blanks++}`, type: GAP_TYPE },
+        { text: '' }
+      );
+      at = match.index + match[0].length;
+    }
+    children.push({ text: value.slice(at) });
   };
   for (const token of parseMathText(text)) {
     if (token.type === 'display') {
@@ -35,7 +61,7 @@ export function mathTextToValue(text: string): Value {
       const paragraphs = token.value.split('\n\n');
       paragraphs.forEach((part, i) => {
         if (i) flush();
-        children.push({ text: part });
+        pushText(part);
       });
     }
   }
@@ -44,7 +70,9 @@ export function mathTextToValue(text: string): Value {
   return nodes;
 }
 
-export function valueToMathText(value: Value): string {
+/** The text a value holds; its blanks numbered from `gapStart` in order. */
+export function valueToMathText(value: Value, gapStart = 1): string {
+  let number = gapStart;
   const read = (node: Value[number]['children'][number]): string => {
     if ('text' in node && typeof node.text === 'string')
       return node.text.replace(/\$/g, '\\$');
@@ -52,7 +80,20 @@ export function valueToMathText(value: Value): string {
       return `$${String(node.texExpression ?? '')}$`;
     if (node.type === 'equation')
       return `$$${String(node.texExpression ?? '')}$$`;
+    if (node.type === GAP_TYPE) return gapText(number++);
     return (node as TElement).children.map(read).join('');
   };
   return value.map(read).join('\n\n');
+}
+
+/** The ids of a value's blanks, in reading order. */
+export function gapIds(value: Value): string[] {
+  const ids: string[] = [];
+  const walk = (node: Value[number]['children'][number]) => {
+    if ('text' in node) return;
+    if (node.type === GAP_TYPE) ids.push(String(node.id));
+    else (node as TElement).children.forEach(walk);
+  };
+  value.forEach(walk);
+  return ids;
 }

@@ -5,7 +5,8 @@
  * - drag handle: click selects the block (block selection), drag moves it,
  *   multi-block drags render a stacked preview;
  * - right-click: Plate's injected handler adds the block to the block
- *   selection, then the Radix context menu operates on that selection;
+ *   selection, then the block menu (a dropdown anchored at the click point,
+ *   inside the content so it moves with the block) operates on that selection;
  * - blocks nested in columns (path length 3) and table cells (path length 4)
  *   get their own drag handles.
  */
@@ -38,16 +39,17 @@ import {
 } from 'platejs/react';
 import * as React from 'react';
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuGroup,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
-  ContextMenuTrigger,
-} from '@/components/ui/ContextMenu';
+  DropdownMenu,
+  DropdownMenuAnchor,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from '@/components/ui/DropdownMenu';
+import type { IconName } from '@/components/ui/Icon';
 import { MATERIAL_REF_TYPE } from '@/features/materials/document';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
@@ -659,12 +661,38 @@ function useIsTouchDevice() {
   return isTouch;
 }
 
+// The block menu takes the editor popovers' look (ToolbarPopoverContent and
+// ToolbarPopoverItem: the All blocks menu), not the app's menus.
+const MENU_CONTENT =
+  'w-auto min-w-48 rounded-lg px-1 py-1.5 font-medium leading-(--body-line-height)';
+const MENU_ROW =
+  'h-7.5 gap-2 rounded-lg px-2 py-0 font-medium [&_svg]:-translate-y-px';
+
+function BlockMenuItem({
+  icon,
+  label,
+  onSelect,
+}: {
+  icon?: IconName;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <DropdownMenuItem className={MENU_ROW} onSelect={onSelect}>
+      {icon && <EditorIcon name={icon} />}
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
 export function BlockContextMenu({ children }: { children: React.ReactNode }) {
   const { api, editor } = useEditorPlugin(BlockMenuPlugin);
   const readOnly = useReadOnly();
   const { allowExternalAssets } = useEditorRuntime();
   const isTouch = useIsTouchDevice();
   const [askAiPending, setAskAiPending] = React.useState(false);
+  // The click point within the content, so the menu scrolls with its block.
+  const [point, setPoint] = React.useState({ x: 0, y: 0 });
   const openId = usePluginOption(BlockMenuPlugin, 'openId');
   const isOpen = openId === BLOCK_CONTEXT_MENU_ID;
 
@@ -690,14 +718,15 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ContextMenu
+    <DropdownMenu
       modal={false}
       onOpenChange={(open) => {
         if (!open) api.blockMenu.hide();
       }}
+      open={isOpen}
     >
-      <ContextMenuTrigger
-        asChild
+      <div
+        className="relative w-full"
         onContextMenu={(event) => {
           const target = event.target as HTMLElement;
           const dataset = target.dataset;
@@ -708,9 +737,11 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
             !!target.closest(
               'input, textarea, [data-plate-open-context-menu="false"]'
             );
+          event.preventDefault();
+          if (disabled) return;
 
-          if (disabled) return event.preventDefault();
-
+          const box = event.currentTarget.getBoundingClientRect();
+          setPoint({ x: event.clientX - box.left, y: event.clientY - box.top });
           if (editorAiEnabled(allowExternalAssets)) {
             editor.getApi(AIChatPlugin).aiChat.hide({ focus: false });
           }
@@ -722,12 +753,23 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
           }, 0);
         }}
       >
-        <div className="w-full">{children}</div>
-      </ContextMenuTrigger>
+        {children}
+        <DropdownMenuAnchor asChild>
+          <span
+            aria-hidden
+            className="pointer-events-none absolute size-0"
+            style={{ left: point.x, top: point.y }}
+          />
+        </DropdownMenuAnchor>
+      </div>
       {isOpen && (
-        <ContextMenuContent
-          className="w-60"
+        <DropdownMenuContent
+          align="start"
+          className={MENU_CONTENT}
           data-plate-prevent-deselect
+          data-slot="context-menu-content"
+          // Hidden with its block once that scrolls out of the editor.
+          hideWhenDetached
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             if (askAiPending) {
@@ -737,82 +779,97 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
             }
             editor.getApi(BlockSelectionPlugin).blockSelection.focus();
           }}
+          side="right"
+          sideOffset={2}
         >
-          <ContextMenuGroup>
+          <DropdownMenuGroup>
             {editorAiEnabled(allowExternalAssets) && (
-              <ContextMenuItem onClick={() => setAskAiPending(true)}>
-                {m.editor_ask_ai()}
-              </ContextMenuItem>
+              <BlockMenuItem
+                icon="sparkles"
+                label={m.editor_ask_ai()}
+                onSelect={() => setAskAiPending(true)}
+              />
             )}
-            <ContextMenuItem
-              onClick={() => {
+            <BlockMenuItem
+              icon="trash"
+              label={m.action_delete()}
+              onSelect={() => {
                 editor
                   .getTransforms(BlockSelectionPlugin)
                   .blockSelection.removeNodes();
                 editor.tf.focus();
               }}
-            >
-              {m.action_delete()}
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => {
+            />
+            <BlockMenuItem
+              icon="clone"
+              label={m.editor_duplicate()}
+              onSelect={() =>
                 editor
                   .getTransforms(BlockSelectionPlugin)
-                  .blockSelection.duplicate();
-              }}
-            >
-              {m.editor_duplicate()}
-            </ContextMenuItem>
-            <ContextMenuSub>
-              <ContextMenuSubTrigger>
+                  .blockSelection.duplicate()
+              }
+            />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={MENU_ROW}>
                 {m.editor_turn_into()}
-              </ContextMenuSubTrigger>
-              <ContextMenuSubContent className="w-48">
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className={MENU_CONTENT}>
                 {TURN_INTO_OPTIONS.map(([type, label]) => (
-                  <ContextMenuItem key={type} onClick={() => turnInto(type)}>
-                    {label()}
-                  </ContextMenuItem>
+                  <BlockMenuItem
+                    key={type}
+                    label={label()}
+                    onSelect={() => turnInto(type)}
+                  />
                 ))}
-              </ContextMenuSubContent>
-            </ContextMenuSub>
-          </ContextMenuGroup>
-          <ContextMenuSeparator />
-          <ContextMenuGroup>
-            <ContextMenuItem
-              onClick={() =>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <BlockMenuItem
+              icon="indentIncrease"
+              label={m.editor_indent()}
+              onSelect={() =>
                 editor
                   .getTransforms(BlockSelectionPlugin)
                   .blockSelection.setIndent(1)
               }
-            >
-              {m.editor_indent()}
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() =>
+            />
+            <BlockMenuItem
+              icon="indentDecrease"
+              label={m.editor_outdent()}
+              onSelect={() =>
                 editor
                   .getTransforms(BlockSelectionPlugin)
                   .blockSelection.setIndent(-1)
               }
-            >
-              {m.editor_outdent()}
-            </ContextMenuItem>
-            <ContextMenuSub>
-              <ContextMenuSubTrigger>{m.editor_align()}</ContextMenuSubTrigger>
-              <ContextMenuSubContent className="w-48">
-                <ContextMenuItem onClick={() => align('left')}>
-                  {m.editor_align_left()}
-                </ContextMenuItem>
-                <ContextMenuItem onClick={() => align('center')}>
-                  {m.editor_align_center()}
-                </ContextMenuItem>
-                <ContextMenuItem onClick={() => align('right')}>
-                  {m.editor_align_right()}
-                </ContextMenuItem>
-              </ContextMenuSubContent>
-            </ContextMenuSub>
-          </ContextMenuGroup>
-        </ContextMenuContent>
+            />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={MENU_ROW}>
+                <EditorIcon name="alignLeft" />
+                {m.editor_align()}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className={MENU_CONTENT}>
+                <BlockMenuItem
+                  icon="alignLeft"
+                  label={m.editor_align_left()}
+                  onSelect={() => align('left')}
+                />
+                <BlockMenuItem
+                  icon="alignCenter"
+                  label={m.editor_align_center()}
+                  onSelect={() => align('center')}
+                />
+                <BlockMenuItem
+                  icon="alignRight"
+                  label={m.editor_align_right()}
+                  onSelect={() => align('right')}
+                />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
       )}
-    </ContextMenu>
+    </DropdownMenu>
   );
 }

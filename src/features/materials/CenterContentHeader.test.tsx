@@ -47,6 +47,7 @@ function render(menuShown: boolean) {
           filesOpen: false,
           onOpenFiles: () => undefined,
           settingsItems: [],
+          workspaceIconId: 'flask',
           workspaceName: 'Biology',
         }}
         onImageZoomChange={() => undefined}

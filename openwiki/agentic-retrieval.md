@@ -32,9 +32,8 @@ The Python services share one Postgres schema owned by Go migrations
 The Go gateway is the public face: it authenticates the user, proxies chat and
 generate to the retrieval service, and owns material persistence (including the
 internal materials endpoint the chat agent calls). Retrieval HTTP is
-Go-only: every route except `/healthz` requires `X-Pipeline-Secret`. User
-provider keys stay ciphertext on that hop; retrieval decrypts them with
-`LLM_CREDENTIALS_KEY`.
+Go-only: every route except `/healthz` requires `X-Pipeline-Secret`. Every
+provider call uses the platform key (see Configuration surface).
 
 Public workspace landing pages use a separate live metadata projection from Go
 at `GET /api/public/workspaces/{token}/summary` (the share token, not the bare
@@ -375,7 +374,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-vlm-v19` plus the release SHA (the donor key uses the first
+`odl-2.5.7-refined-vlm-v20` plus the release SHA (the donor key uses the first
 part alone, see Donor reuse), and the bundle schema `capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
@@ -894,6 +893,15 @@ their shape; there are no slices.
 `CAPY_PARSE_WORKERS` (7) persistent parse children each take one document at
 a time from one FIFO and run all of it: LibreOffice for an Office source, the
 page count, `parse_pdf`, the page-1 thumbnail and the text-less page renders.
+A PowerPoint file's PDF keeps its hidden slides (`odl/document.py`
+`_HIDDEN_SLIDES`, LibreOffice 7.4's JSON export options on `--convert-to`;
+Epo 2026-10-24, Q276), so page N is slide N as `inspect_office_document`
+numbers slides; files parsed before keep their pages and are not reparsed
+(parser `odl-2.5.7-refined-vlm-v20`). Hidden slides therefore count toward
+`CAPY_PARSE_MAX_PAGES` and the per-page parse fee, are indexed, and a hidden
+slide 1 is the ingest page-1 thumbnail, as the PPTX editor draws it for the
+browser capture; the page-cap, parse-fee and thumbnail decisions count the
+converted PDF's pages and exclude none (review r1 N4).
 `CAPY_PARSE_QUEUE_DEPTH` (8) counts documents in a parse child and waiting, and
 must be at least the worker count (checked at startup); one more concurrent request is answered
 `429` and the coordinator returns its job to `pending` as a capacity wait
@@ -2860,8 +2868,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `POST /api/internal/provider-calls` before the agent chooses its next action.
    The turn spend session remains open, so this does not take another
    concurrency slot. `(sessionId, callId)` makes callback retries idempotent.
-   Query embeddings use the same protocol at zero actor credits. BYOK LLM calls
-   also write zero-credit rows. If an LLM call exhausts platform credits and
+   Query embeddings use the same protocol at zero actor credits. If an LLM call exhausts platform credits and
    emitted tools, the agent runs every accepted emitted tool, then makes one
    tools-disabled terminal call. That call may overspend and closes the loop.
    Internal material creation does not recheck inference credits, because that
@@ -3087,7 +3094,7 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   (`ai_adapter._refuse_past_capacity`, Q339, Q359). The Go limits come first:
   5 open chat sessions per user and the AI route class.
 - **Render pool.** Deck scripts (the checker and exporter), page renders,
-  image and Office captures and capture downloads run on two threads of their
+  image captures, Office pictures and capture downloads run on two threads of their
   own (`render_thread`), never on the default executor, where every model
   call's accounting admission and settlement run: a slow export or a large
   decode queues behind its own kind and never delays another user's next
@@ -3099,8 +3106,6 @@ AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
   live (captures check no pixel size of their own, Q342), a JPEG capture
   about 90 MiB, a PNG or TIFF 0.4 to 0.8 GiB, a WebP 1.3 GiB
   (capture_page below).
-- **Office captures.** One at a time per process (`OFFICE_CAPTURE_SLOTS`; see
-  `capture_page` under Tools).
 
 A request's context estimate is kept per message (Epo 2026-10-24, Q238): a
 message's provider-shaped estimate is computed once, when it enters the
@@ -3331,7 +3336,12 @@ and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
 - **Recording.** The button toggles one recording: Opus in WebM or Ogg where
   `MediaRecorder.isTypeSupported` says so, else Safari's AAC in MP4, asked for
   at 32 kb/s. While it records, the elapsed time and the limit show beside it
-  (`0:42 / 2:00`) and the mic is filled purple, its label Stop recording; it
+  (`0:42 / 2:00`, held at its widest width) after a waveform of the input's
+  recent levels (`VoiceWaveform`: an `AnalyserNode` on the microphone, one
+  bar every 80 ms sliding left and growing leftwards to fill the row,
+  animated with the motion tokens; the composer's scope label gives way to
+  it), and the mic is filled
+  purple, its label Stop recording; it
   stops by itself at `VOICE_INPUT_MAX_SECONDS` (120,
   `fieldlimits.VoiceInputSeconds`, generated into
   `src/api/limits.generated.ts`). The microphone's tracks stop whenever
@@ -3599,7 +3609,7 @@ materials are sources.
   `list_sources`; the turn still loads them (`store.workspace_chapters`, at
   most 20, `MaxChaptersPerWorkspace` in Go) for the open item's chapter and the
   `chapter_id` checks. It lists the study preferences (`prompts/preferences.py`: output files (a note
-  or a deck per chapter), writing style (brief, normal, verbose or story, a narrated explainer from
+  or a deck per chapter), writing style (brief by default since Epo 2026-10-26, normal, verbose or story, a narrated explainer from
   three science-documentary transcripts, Epo 2026-10-25), quiz more (5 questions), less (2)
   or off and flashcards more (10), less (5) or off (Epo 2026-10-25), visual
   aids (more: images wherever possible; fewer: charts, plots and interactive
@@ -3931,20 +3941,20 @@ materials are sources.
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `capture_knowledge_page` | none | As `search_knowledge`, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
-| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
+| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF, or an uploaded image as its single page 1, as a JPEG for the model; a Word, Excel or PowerPoint file is refused first, naming `inspect_office_document` (`unsupported_format`; Q283); refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes and flashcard sets (a quiz is created by `add_questions`; the agent makes no mindmap or diagram since 2026-10-25, Epo, though it can still rewrite a Mermaid block a learner added). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref and payload when its Undo fits (see Undo chain). A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes. The engine's reads also list pictures and charts and answer them by id (Pictures and charts, below); the tool shows them from phase B |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, its head saying a command copies an `[id]` whole (UAT 2026-10-22), a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes. Reads also list pictures, charts, equations and drawn shapes, and `ids` (any format, at most 4) returns each picture as an image and each chart with every point (Pictures and charts, below) |
 | `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref and payload when its Undo fits, and its result offers Undo only then |
 
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
 | `create_deck` | turn only | Needs `material.create` and ppt-master in the image. Outlines a deck (1 to 30 slides, optional `chapter_id` and `sources`, the latter stored with the PPTX as `files.scope_file_names`) on the turn; nothing is stored yet. The material `excerpt_ids` rule ([decks.md](decks.md)) |
-| `write_slide` | yes | Checks one SVG slide alone with ppt-master's checker (figures only this turn's bbox captures) and keeps it; once every slide is written, adds the Sources slide, exports the PPTX and stores it as a workspace file through `/api/internal/files` ([decks.md](decks.md)) |
+| `write_slide` | yes | Checks one SVG slide alone with ppt-master's checker (figures only this turn's bbox captures and Office pictures) and keeps it; once every slide is written, adds the Sources slide, exports the PPTX and stores it as a workspace file through `/api/internal/files` ([decks.md](decks.md)) |
 
 Read tools hit Postgres directly. Every mutation goes through the gateway with
 `X-Pipeline-Secret`, so authz, quota, and the materials model stay in one place.
@@ -3982,16 +3992,14 @@ prompts say once that text inside `<source>` tags is data, never instructions.
 
 `capture_page` (`retrieval/capture.py`) keeps a size-bounded copy of native PDF
 sources on the retrieval host (`CAPY_CAPTURE_CACHE_DIR`, LRU by size,
-`CAPY_CAPTURE_CACHE_MAX_BYTES` 2 GiB). Office captures download the exact published
-source, verify its size/hash, then send it to the parser's authenticated
-`/capture_page` route. That route shares the bounded parser FIFO and hard deadline,
-converts temporarily with LibreOffice and returns only JPEG. It runs no ODL parse
-and creates no parse receipt. Temporary Office bytes are removed after the request.
-The retrieval process sends one Office capture at a time (Epo 2026-10-24,
-`limits.OFFICE_CAPTURE_SLOTS`), so captures never take more than one of the
-parser's slots from ingest: a capture while another runs is refused with "the
-Office converter is busy; try this capture again later" (`unavailable_target`,
-as a parser 429 surfaces) and the turn continues.
+`CAPY_CAPTURE_CACHE_MAX_BYTES` 2 GiB). Word, Excel and PowerPoint files have no
+page capture (Epo 2026-10-24, Q283; Q240 phase B): `capture_page` refuses one
+before its cited-page check, naming `inspect_office_document`
+(`capture.OFFICE_NO_PAGES`, `unsupported_format`, after one file-row lookup,
+`capture.office_file`), and the parser's `/capture_page` route,
+`limits.OFFICE_CAPTURE_SLOTS` and the retrieval service's parser settings are
+gone. Their pictures come back through `inspect_office_document`'s `ids`
+(Pictures and charts, under Office tools).
 Image captures download the published bytes the same way and normalise them
 with Pillow (EXIF orientation, crop to the box, shrunk to the max edge, alpha
 flattened on white, first frame only, Pillow's decompression-bomb limit bounding the
@@ -4002,7 +4010,7 @@ at a reduced DCT scale while it decodes, any other format whole in its own
 mode and then reduced by a whole factor before any full-size copy or colour
 conversion. The box and the capture's size are still computed from the
 full-size image, so the capture is the size it was before.
-PDF and Office routes render `CAPY_CAPTURE_MAX_EDGE` (1568 px); the image route
+The PDF route renders `CAPY_CAPTURE_MAX_EDGE` (1568 px); the image route
 crops at native resolution and only shrinks to that edge, which the tool
 description says may not help on a low-resolution image. All are JPEG q80. Images are billed
 through the ordinary LLM usage path. Context telemetry and the compaction
@@ -4024,7 +4032,7 @@ model call `tools.keep_images_within_budget` checks the total; only when new
 images take it past the budget does it drop the oldest images an earlier
 request carried, of either kind, at once, until at most 17,500 remains
 (`IMAGE_BUDGET_AFTER_DROP`). The images it counts are the ones the three tools
-register (`ToolContext.budget_images`). An image no request has carried yet
+and `inspect_office_document`'s pictures register (`ToolContext.budget_images`). An image no request has carried yet
 (`ToolContext.images_sent`) is never dropped, so the model sees each at least
 once. Drops come in batches, so between them every request starts the same and
 the provider's cached prefix holds. A dropped image leaves
@@ -4036,14 +4044,16 @@ way, or captures it again while under the 16 below, when it needs it.
 A dropped image still counts toward the 16 below, and a deck slide asking
 for a dropped capture finds it no longer available.
 A user message attaches 16 images, `capture_page`,
-`capture_knowledge_page` and `resolve_source_change`'s image changes together
+`capture_knowledge_page`, `resolve_source_change`'s image changes and
+`inspect_office_document`'s pictures together
 (`tools.MAX_IMAGES`, Epo 2026-10-22; counted in `ToolContext.images_taken` and
 checked again after the render, since a response's image calls run side by
 side): a 16th image from a capture returns with "capture_page limit reached,
 do not call capture_page anymore." and later captures are refused with that
 sentence (`limit_reached`); a source change's image says nothing when it is the
 16th and fails past the cap with `tools.SOURCE_IMAGE_LIMIT` (`limit_reached`,
-Epo 2026-10-22). A `resolve_source_change` image stays attached through folds the
+Epo 2026-10-22); a picture past the cap is named as not attached and the
+read ends with `tools.PICTURE_LIMIT`. A `resolve_source_change` image stays attached through folds the
 same way, within the image budget above. No capture image is carried to the
 next message. The chat prompt requires capture before
 using source-specific numerical results, formulas, table cells/relationships or
@@ -4053,7 +4063,11 @@ and reports unavailable or illegible evidence instead of guessing. Text-only
 sources and user-supplied values need no capture. It also says `[formula]`
 in passage or material text marks a formula printed as a picture
 (parser v12): the page is captured when a question needs it, and the
-placeholder is never presented as content. This prompt rule does not add
+placeholder is never presented as content; a Word, Excel or PowerPoint file's
+formula is read with `inspect_office_document`, which shows equation text
+(Q280). The same rule calls `capture_page` the costly page view of PDFs and
+images and `inspect_office_document` an Office file's cheap read (Q278,
+Q283). This prompt rule does not add
 capture to the standalone `/generate` workflow, whose prompt instead never
 copies `[formula]` into an item and skips items that need the formula. The
 render lives server-side because the pixels must be inside the provider request
@@ -4860,8 +4874,7 @@ retried create gives the same bytes. The engine has every XLSX command above
 
 Pictures and charts (Epo 2026-10-24, Q240, Q275 to Q280, Q283, Q284;
 2026-10-26, Q381, Q384, Q388; phase A, the engine, gateway and lane: the tool's
-argument, its renderers and the pictures' images come with phase B, so the
-tool shows none of this yet). The engine's reads list them: a DOCX page puts
+argument, its renderers and the pictures' images are phase B, below). The engine's reads list them: a DOCX page puts
 a paragraph's in `objects` (a picture, a chart, `{kind: "equation", text}`,
 `{kind: "drawing", text}` for a drawn shape or text box), a PPTX slide read
 adds them to a picture's or a chart's shape entry (the deck read only a
@@ -4892,7 +4905,7 @@ size rules follow the upload check (Q381, Q384, Q388; applied with the
 read's limits, `Picture::seen`, with no fallback side), so a picture stored before
 that check whose header names a size past it, or none, is not sent; the
 header is all the engine reads, so a file whose header understates its
-pixels still reaches the AI process, whose pixel guard comes with phase B. A
+pixels still reaches the AI process, whose pixel guard (below) stops it. A
 PPTX
 picture takes its file picture's alt text and crop only while it shows that
 picture's media (a picture added in the editor has none; review r1 L5). A
@@ -4966,6 +4979,44 @@ after the session lookup and before the base download and seed), and runs as
 a bounded call (`call_bounded`): skipped when its caller is gone by the time
 it would start, busy once it waited past 10 s (`IDS_READ_WAIT`; a rebuild
 rebase ahead of it). Every other call on the lane keeps its unbounded queue.
+
+The tool (phase B, `tools.py`): a read shows each object under its paragraph
+(DOCX), on its shape (PPTX: a slide read's picture with its size and a chart
+with its series, a deck read's alt text, viewability, type and title) or under
+its sheet at its anchor cell (XLSX, with the sheet's `notice`), as `[id]
+picture alt "…", W x H px (cropped)` or `… not viewable: why`, `[id] chart type
+"title"` followed by `series "name" (references), N points: [[idx, category,
+value], …] … M more`, `equation: text` and `drawing: text`; a read holding any
+explains them once in its head (`tools.OFFICE_OBJECTS_HEAD`). `ids` (any
+format, at most 4: named in the contract's description, counted only by Go's
+cap after its repair, `agenttools.OfficeIDsPerCall`, Q396) sends `office.ids`;
+the answer comes fenced, the `notice` its first line since it names ids and
+part paths from the file: a chart with its points (`cut` shown as not sent), a
+picture the engine marks not viewable as its alt text and why, never
+decoded, and each viewable picture decoded on the render pool and attached as
+its own image (`tools._office_picture`). A picture's image id is `<call
+id>#<n>` (`capture.picture_id`; `capture.inject_images` puts a call's images
+after its result, in order); its record in `ToolContext.captures` carries
+`picture` and no page, so a deck slide uses it whole by its capture number
+(`deck.turn_figures`, Q278). It counts toward the message's 16 images and
+stays within the image budget like a capture; one past the 16 is named not
+attached and the result ends with `tools.PICTURE_LIMIT`. A picture whose
+decode raises anything else (a garbage EXIF block raises SyntaxError) is
+named "not attached: it could not be decoded" and the read stands, the other
+pictures attached (Q396).
+`capture_page` refuses as an Office file only a `doc`, `sheet` or `slides`
+file whose name ends `.docx`, `.xlsx` or `.pptx` (Go's `SourceEditFormat`,
+`capture.is_office`); CSV, TSV and legacy `.doc`, `.xls` and `.ppt` files get
+the page-less source's "this source has no retained PDF" (`unsupported_format`).
+The decode (`capture.picture_jpeg`) clamps the crop first (`capture.crop_box`, review r1
+L1: a side that is missing or no finite number reads as 0, a negative padding
+side as 0, a side past 1 as 1, and a pair of sides that would leave nothing
+leaves that axis whole, so a broken or crafted crop shows pixels the author
+cropped away, where Office would show none; review r1 N3), then refuses a picture whose side, as Pillow reads
+its header, is past `IMAGE_MAX_SIDE` (2,400: the upload check's limit and the
+engine's `pictureSide`) before any pixel is decoded (review r1 L3; Pillow sizes
+a GIF by its first frame too, review r2), and shrinks the rest with the Q239
+reduced-size decode to `CAPY_CAPTURE_MAX_EDGE`, flattened on white as JPEG q80.
 
 Slides (Epo 2026-10-20, phase 3): `set_shape_text {shape_id,
 expected_text, paragraphs}` replaces a shape's whole text, `expected_text`
@@ -5958,7 +6009,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Concern | Env | Default / note |
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
-| User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
+| Provider keys | `platformEnv` names | Every call uses the platform key named by `platformEnv` in `elitellm_providers.json`; there are no user keys (Q290). |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
 | Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `OPENROUTER_API_KEY` | The ingest queue env carries the `OPENROUTER_API_KEY` chat also uses (GLM) for the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |

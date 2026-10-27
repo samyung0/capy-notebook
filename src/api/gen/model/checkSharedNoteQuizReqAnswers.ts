@@ -6,6 +6,6 @@
  */
 
 /**
- * The learner's answers by part id
+ * The learner's answers to the question's parts, by part id
  */
 export type CheckSharedNoteQuizReqAnswers = {[key: string]: unknown};

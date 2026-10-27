@@ -30,7 +30,7 @@ export function AuthPage({ children }: { children: React.ReactNode }) {
       >
         <div className="flex min-h-fit flex-1 flex-col gap-4 p-6 md:p-8">
           {/* Single column: right edge of the form, nudged out to balance the icon's weight. */}
-          <div className="mx-auto flex w-full max-w-sm translate-x-0.5 justify-end xl:mx-0 xl:max-w-none xl:translate-x-0 xl:justify-start">
+          <div className="mx-auto flex w-full max-w-sm translate-x-0.5 justify-end">
             <PublicThemeToggle />
           </div>
           {/* Auto margins center the form but keep it scrollable when it outgrows a short screen. */}
@@ -38,40 +38,8 @@ export function AuthPage({ children }: { children: React.ReactNode }) {
             <div className="m-auto w-full max-w-sm">{children}</div>
           </div>
         </div>
-        <div className="relative hidden flex-1 xl:block">
-          <BrandColumn />
-        </div>
       </Panel>
     </main>
-  );
-}
-
-function BrandColumn() {
-  return (
-    <Card
-      className={cn(
-        'relative flex h-full flex-1 flex-col items-center justify-center gap-10 bg-tint-accent-dark p-13 text-tint-accent-dark-fg'
-      )}
-      radius="card"
-      theme="surface-dark"
-    >
-      <figure className="authBlockquote -mt-6 min-w-sm max-w-[600px]">
-        <blockquote>
-          <p>
-            Perhaps studying is not about the destination. Perhaps it is about
-            the promise engraved in each step you take, that the seeking itself
-            is the answer.{' '}
-          </p>
-        </blockquote>
-        <figcaption className="mt-7 flex items-center gap-3 font-sans tracking-wide">
-          <span
-            aria-hidden="true"
-            className="h-0.5 w-11 flex-none bg-action-accent"
-          />
-          <span>Metal Garden Enthusiast</span>
-        </figcaption>
-      </figure>
-    </Card>
   );
 }
 
@@ -94,9 +62,9 @@ export function AuthCard({
       className={cn('gap-1.5 p-0', containerClassName)}
       radius="card-lg"
     >
-      <h2 className="t-page-title self-center xl:self-start">{title}</h2>
+      <h2 className="t-page-title self-center">{title}</h2>
       {hint && (
-        <p className="t-card-title self-center text-center text-fg-muted xl:self-start xl:text-left">
+        <p className="t-card-title self-center text-center text-fg-muted">
           {hint}
         </p>
       )}

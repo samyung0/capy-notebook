@@ -14,7 +14,7 @@ test('plain text keeps its font and width, and conjugates use one arrow step per
   const preview = editor
     .getByRole('button', { exact: true, name: m.editor_equation() })
     .last();
-  await preview.click();
+  await preview.dblclick();
   const field = editor.locator('math-field:not([read-only])');
   await expect(field).toBeVisible();
   await field.evaluate((el) =>
@@ -26,7 +26,7 @@ test('plain text keeps its font and width, and conjugates use one arrow step per
     font: getComputedStyle(el.querySelector('.ML__text')!).font,
     width: el.getBoundingClientRect().width,
   }));
-  await preview.click();
+  await preview.dblclick();
   await expect(field.locator('.ML__text')).toHaveCount(15);
   const edit = await field.locator('.ML__text').evaluateAll((els) => ({
     fonts: [...new Set(els.map((el) => getComputedStyle(el).font))],

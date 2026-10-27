@@ -18,9 +18,10 @@ export default function TextView({
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
+  // A newer URL (the live text after an edit) keeps the last text on screen
+  // until it loads.
   useEffect(() => {
     let cancelled = false;
-    setText(null);
     setError(false);
     fetch(url)
       .then((response) => {
@@ -53,8 +54,9 @@ export default function TextView({
       </Suspense>
     );
   }
+  // Laid out as SourceTextEditor's textarea, so switching modes moves nothing.
   return (
-    <article className="mx-auto max-w-175 whitespace-pre-wrap p-6 text-[0.95rem] text-fg leading-relaxed">
+    <article className="whitespace-pre-wrap p-4 font-mono text-fg text-sm leading-relaxed">
       {text}
     </article>
   );

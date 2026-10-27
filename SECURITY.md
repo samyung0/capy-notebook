@@ -65,8 +65,8 @@ The important boundaries are:
   Share roles never become structural workspace membership.
 - Only owners manage members, sharing, workspace settings, statistics,
   deletion, and ownership transfer.
-- Conversations, schedules, notifications, billing records, provider keys,
-  quiz attempts, study progress, and integrations remain scoped to their actor.
+- Conversations, schedules, notifications, billing records, quiz attempts,
+  study progress, and integrations remain scoped to their actor.
 - A collaboration token grants only the computed `write`, `comment`, `shrink`,
   or read behavior for that material at mint time. Membership, sharing, account
   state, or quota changes evict or constrain existing room access.
@@ -148,8 +148,8 @@ Review these paths even when broad discovery does not select them:
    changing the wrong user's plan.
 7. Clerk identity deletion, webhook ordering, session revocation, and operator
    membership after account locks.
-8. LLM credential encryption, actor/provider confusion, prompt injection,
-   unmetered provider calls, and cross-user conversation retrieval.
+8. Actor/provider confusion, prompt injection, unmetered provider calls, and
+   cross-user conversation retrieval.
 9. Operator database role expansion, Access bypass, registry writes, and
    reconciliation execution.
 10. Production configuration that exposes a private service or enables a test

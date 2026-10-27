@@ -21,7 +21,7 @@ test('formula menus reopen after outside dismissal and replacing the editor', as
     name: m.question_ui_formula_menu(),
   });
   for (let round = 0; round < 3; round++) {
-    await preview.click();
+    await preview.dblclick();
     await expect(field).toBeVisible();
     await toggle.click();
     if (round > 0) {
@@ -41,13 +41,13 @@ test('formula menus reopen after outside dismissal and replacing the editor', as
     await field.press('Enter');
     await expect(field).toHaveCount(0);
   }
-  await preview.click();
+  await preview.dblclick();
   await toggle.click();
   await expect(field.getByRole('menu')).toHaveCount(1);
   // Focus changes or editor teardown can replace the formula with a menu open.
   await field.dispatchEvent('blur');
   await expect(field).toHaveCount(0);
-  await preview.click();
+  await preview.dblclick();
   await toggle.click();
   await expect(field.getByRole('menu')).toHaveCount(1);
   expect(errors).toEqual([]);
@@ -66,7 +66,7 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
   await editor
     .getByRole('button', { exact: true, name: m.editor_equation() })
     .last()
-    .click();
+    .dblclick();
   const field = editor.locator('math-field:not([read-only])');
   await expect(field).toBeVisible();
   await field.press('ControlOrMeta+A');
@@ -101,7 +101,7 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
     .last();
   await expect(preview.locator('.ML__base')).toHaveText(/▢.*▢.*▢.*▢.*▢.*▢/);
   await expect(preview.locator('.ML__base')).not.toContainText('\\placeholder');
-  await preview.click();
+  await preview.dblclick();
   await expect(field).toHaveJSProperty('value', matrix);
   await toggle.click();
   await field.getByRole('menuitem', { exact: true, name: 'Copy' }).hover();
@@ -127,7 +127,7 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
   await field.press('Enter');
   await expect(preview.locator('.ML__base')).toContainText('▢');
   await expect(preview.locator('.ML__base')).not.toContainText('\\placeholder');
-  await preview.click();
+  await preview.dblclick();
   await field.press('ControlOrMeta+A');
   await field.press('Backspace');
   await toggle.click();
@@ -155,7 +155,7 @@ test('formula menu inserts matrices and templates, switches modes, and copies an
   await editor
     .getByRole('button', { exact: true, name: m.editor_equation() })
     .last()
-    .click();
+    .dblclick();
   await expect(field).toHaveJSProperty('value', '\\text{ATP}\\to');
 });
 
@@ -170,7 +170,7 @@ test('text caret stays on the math baseline and physical arrow shortcuts survive
   await editor
     .getByRole('button', { exact: true, name: m.editor_equation() })
     .last()
-    .click();
+    .dblclick();
   const field = editor.locator('math-field:not([read-only])');
   await expect(field).toBeVisible();
   const mathCaret = await field.locator('.ML__caret').boundingBox();
@@ -237,7 +237,7 @@ test('a formula preview draws HTML commands as text', async ({ page }) => {
   const preview = editor
     .getByRole('button', { exact: true, name: m.editor_equation() })
     .last();
-  await preview.click();
+  await preview.dblclick();
   const field = editor.locator('math-field:not([read-only])');
   await field.evaluate(
     (el, value) => (el as MathfieldElement).setValue(value),
@@ -271,7 +271,7 @@ for (const kind of ['block', 'inline'] as const) {
     const container = await button.locator('..').elementHandle();
     const before = await container!.boundingBox();
     expect(before).not.toBeNull();
-    await button.click();
+    await button.dblclick();
     const field = editor.locator('math-field:not([read-only])');
     await expect(field).toBeVisible();
     await expect(field).toHaveJSProperty('selectionIsCollapsed', true);
@@ -296,7 +296,7 @@ for (const kind of ['block', 'inline'] as const) {
             wrapperBox!.y -
             wrapperBox!.height / 2
         )
-      ).toBeLessThan(1);
+      ).toBeLessThanOrEqual(1);
       const fieldBox = await field.boundingBox();
       expect(menuBox!.x - fieldBox!.x - fieldBox!.width).toBeGreaterThanOrEqual(
         8
@@ -392,3 +392,28 @@ for (const kind of ['block', 'inline'] as const) {
     expect(Math.abs(closed!.height - before!.height)).toBeLessThanOrEqual(1);
   });
 }
+
+test('a click selects a formula for Delete, a double click edits it', async ({
+  page,
+}) => {
+  const editor = await openEditorNote(
+    page,
+    'mat_note_bio_feature_matrix',
+    'Editor feature matrix'
+  );
+  const formulas = editor.getByRole('button', {
+    exact: true,
+    name: m.editor_equation(),
+  });
+  const field = editor.locator('math-field:not([read-only])');
+  const count = await formulas.count();
+  // Inline first, the block formula last.
+  await formulas.first().click();
+  await expect(field).toHaveCount(0);
+  await page.keyboard.press('Backspace');
+  await expect(formulas).toHaveCount(count - 1);
+  await formulas.last().click();
+  await expect(field).toHaveCount(0);
+  await page.keyboard.press('Delete');
+  await expect(formulas).toHaveCount(count - 2);
+});

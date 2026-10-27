@@ -4,7 +4,7 @@ export function Toolbar({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'flex h-9 shrink-0 items-center gap-0 border-divider border-b bg-surface/95 px-1 backdrop-blur-sm sm:h-10 sm:px-2',
+        'flex h-9 shrink-0 items-center gap-0 border-divider border-b bg-surface/95 frosted:bg-transparent px-1 backdrop-blur-sm sm:h-10 sm:px-2',
         className
       )}
       {...props}

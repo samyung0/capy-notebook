@@ -25,15 +25,15 @@ export function WorkspaceCell({
       title={lost ? m.files_lost_access() : undefined}
     >
       {lost ? (
-        <Icon className="size-4 shrink-0" name="error" />
+        <Icon className="size-5 shrink-0" name="error" />
       ) : (
         iconId && (
           <img
             alt=""
-            className="size-4 shrink-0 rounded-[4px]"
-            height={16}
+            className="size-5 shrink-0 rounded-[5px]"
+            height={20}
             src={iconUrl(iconId)}
-            width={16}
+            width={20}
           />
         )
       )}

@@ -119,13 +119,14 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
 
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await showPanelView(page, m.workspace_tab_chat());
-  const workspaceOnly = page.getByRole('button', {
-    exact: true,
-    name: m.chat_workspace_only(),
-  });
-  if ((await workspaceOnly.getAttribute('aria-pressed')) !== 'true')
-    await workspaceOnly.click();
-  await expect(workspaceOnly).toHaveAttribute('aria-pressed', 'true');
+  // The scope menu's button names the scope in use; it starts on all.
+  await page
+    .getByRole('button', { exact: true, name: m.chat_all_sources() })
+    .click();
+  await page.getByRole('menuitem', { name: m.chat_workspace_only() }).click();
+  await expect(
+    page.getByRole('button', { exact: true, name: m.chat_workspace_only() })
+  ).toBeVisible();
 
   // The real turn: the content is the model's own; only the route is checked.
   const chat = await slotDefault(run, 'chat');

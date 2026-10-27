@@ -4,15 +4,6 @@ import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
-  ContextMenuTrigger,
-} from '@/components/ui/ContextMenu';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -86,23 +77,6 @@ function MotionChecks() {
           </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <Button>Context actions</Button>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>More actions</ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              <ContextMenuItem
-                onSelect={() => setExecutions((count) => count + 1)}
-              >
-                Nested action
-              </ContextMenuItem>
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-        </ContextMenuContent>
-      </ContextMenu>
     </main>
   );
 }

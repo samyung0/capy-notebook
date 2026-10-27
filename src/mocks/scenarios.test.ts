@@ -48,6 +48,7 @@ describe('mock user scenarios', () => {
       'offline',
       'connection-reconnecting',
       'collab-chaos',
+      'onboarding-get-started',
     ];
     for (const id of ids) {
       if (runtimeOnly.includes(id)) continue;

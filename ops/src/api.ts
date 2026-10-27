@@ -458,7 +458,7 @@ export const userDetailSchema = z.object({
     z.object({
       fileCount: countSchema,
       id: z.string(),
-      lastActivityAt: dateTimeSchema,
+      lastActivityAt: dateTimeSchema.nullable(),
       name: z.string(),
     })
   ),
@@ -535,7 +535,6 @@ export const capacitySchema = z
 export type CapacityFields = z.infer<typeof capacitySchema>;
 
 export const catalogConfigSchema = z.object({
-  byokEnabled: z.boolean(),
   capabilities: z.array(capabilitySchema),
   concurrencyTotal: z.number().int().positive().nullable(),
   contextWindowTokens: countSchema,
@@ -553,7 +552,6 @@ export const catalogConfigSchema = z.object({
   modelName: z.string().min(1),
   modelSlug: z.string().min(1),
   params: jsonObjectSchema,
-  platformEnabled: z.boolean(),
   providerName: z.string().min(1),
   providerSlug: z.string().min(1),
   slots: z.array(slotSchema),
@@ -588,7 +586,6 @@ export const registrySchema = z.object({
 });
 
 export const draftConfigSchema = z.object({
-  byokEnabled: z.boolean(),
   capabilities: z.array(capabilitySchema),
   concurrencyTotal: z.number().int().positive().nullable(),
   contextWindowTokens: countSchema,
@@ -601,7 +598,6 @@ export const draftConfigSchema = z.object({
   modelName: z.string().min(1),
   modelSlug: z.string().min(1),
   params: jsonObjectSchema,
-  platformEnabled: z.boolean(),
   providerName: z.string().min(1),
   providerSlug: z.string().min(1),
   thinkingLevels: z.array(thinkingLevelSchema),
@@ -826,7 +822,6 @@ export const libraryModelRunsSchema = z.array(
 );
 
 export const eliteLLMProviderSchema = z.object({
-  byok: z.boolean(),
   name: z.string(),
   platformEnv: z.string(),
   slug: z.string(),

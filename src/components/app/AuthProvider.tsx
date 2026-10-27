@@ -7,6 +7,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { signInHref } from '@/features/auth/clerk';
 import { dropSourceOpens } from '@/features/files/sourceOpen';
 import { claimAccountData } from '@/lib/accountData';
+import { claimSentOpens } from '@/lib/sentOpens';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
@@ -29,13 +30,15 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
   // ownership. Never reuse them after sign-in, sign-out, or account changes.
   // The account's stored cache from its last visit goes in before the route
   // loaders run; signing out deletes it, as it deletes the source bytes and
-  // agent Undo payloads kept on the device (another account signing in does
-  // too, r1 M1) and drops an Office open started for the previous account.
+  // agent Undo payloads kept on the device and the record of sent opens
+  // (another account signing in does too, r1 M1) and drops an Office open
+  // started for the previous account.
   useEffect(() => {
     if (identity === undefined) return;
     if (previousIdentity.current !== identity) {
       queryClient.clear();
       dropSourceOpens();
+      claimSentOpens(identity);
       previousIdentity.current = identity;
     }
     let cancelled = false;

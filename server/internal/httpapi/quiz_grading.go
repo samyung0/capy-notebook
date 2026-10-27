@@ -215,9 +215,6 @@ type gradeAnonymousNoteQuizInput struct {
 	QuizID string `path:"quizId"`
 	Body   apimodel.GradeAnonymousQuizReq
 }
-type gradedQuizOutput struct {
-	Body apimodel.GradedQuiz
-}
 
 // registerAnonymousGrading serves POST /api/public/quizzes/{token}/grade and,
 // for a quiz embedded in a shared note, POST
@@ -236,23 +233,23 @@ func (a *api) registerAnonymousGrading(api huma.API) {
 	}}
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousQuiz", Method: http.MethodPost, Path: "/api/public/quizzes/{token}/grade",
-		Summary: "Grade a signed-out attempt at a shared quiz", Tags: []string{"Sharing"},
+		Summary: "Grade one question of a signed-out attempt at a shared quiz", Tags: []string{"Sharing"},
 		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: clientIP,
-	}, func(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuizOutput, error) {
+	}, func(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuestionOutput, error) {
 		out, err := a.gradeAnonymousQuiz(ctx, in)
 		return out, reportHandlerError(ctx, err)
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousNoteQuiz", Method: http.MethodPost, Path: "/api/public/notes/{token}/quizzes/{quizId}/grade",
-		Summary: "Grade an attempt at a quiz embedded in a shared note", Tags: []string{"Sharing"},
+		Summary: "Grade one question of a quiz embedded in a shared note", Tags: []string{"Sharing"},
 		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: clientIP,
-	}, func(ctx context.Context, in *gradeAnonymousNoteQuizInput) (*gradedQuizOutput, error) {
+	}, func(ctx context.Context, in *gradeAnonymousNoteQuizInput) (*gradedQuestionOutput, error) {
 		out, err := a.gradeAnonymousNoteQuiz(ctx, in)
 		return out, reportHandlerError(ctx, err)
 	})
 }
 
-func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuizOutput, error) {
+func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInput) (*gradedQuestionOutput, error) {
 	id, err := a.sharedMaterialID(in.Token)
 	if err != nil {
 		return nil, err
@@ -266,7 +263,7 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 
 // gradeAnonymousNoteQuiz grades a quiz the shared note embeds and references;
 // any other quiz is 404.
-func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNoteQuizInput) (*gradedQuizOutput, error) {
+func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNoteQuizInput) (*gradedQuestionOutput, error) {
 	id, err := a.sharedMaterialID(in.Token)
 	if err != nil {
 		return nil, err
@@ -278,14 +275,18 @@ func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNote
 	return a.gradeAnonymous(ctx, stored, in.Body)
 }
 
-// gradeAnonymous grades a signed-out attempt against the stored questions
-// under the anonymous daily caps.
-func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuizOutput, error) {
+// gradeAnonymous grades one question of a signed-out attempt against the
+// stored questions under the anonymous daily caps.
+func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuestionOutput, error) {
 	qs, err := decodeStoredQuestions(stored)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	plan, err := planGrading(qs, body.Answers)
+	q, _, _ := quizQuestion(qs, body.QuestionID)
+	if q == nil {
+		return nil, huma.Error404NotFound("the question is not in this quiz")
+	}
+	plan, err := planGrading([]map[string]any{q}, body.Answers)
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
@@ -323,7 +324,7 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 			obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
 		}
 	}
-	return &gradedQuizOutput{Body: apimodel.GradedQuiz{Correct: correct, Total: total, Questions: graded}}, nil
+	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
 }
 
 /* ------------------------------------ signed-in check of a shared note quiz */
@@ -336,7 +337,7 @@ type checkSharedNoteQuizInput struct {
 
 // registerSharedNoteQuizCheck serves POST
 // /api/shared/notes/{token}/quizzes/{quizId}/check: a signed-in visitor's
-// check of a quiz embedded in a shared note, graded under the user's daily
+// check of one question of a quiz embedded in a shared note, graded under the user's daily
 // grading parts with no captcha and recording nothing (Epo 2026-10-24,
 // Q311). It keeps the anonymous route's share-token checks: a forged token
 // is refused before the body is read, and only a quiz the shared note embeds
@@ -351,15 +352,15 @@ func (a *api) registerSharedNoteQuizCheck(api huma.API) {
 	}}
 	huma.Register(api, huma.Operation{
 		OperationID: "checkSharedNoteQuiz", Method: http.MethodPost, Path: "/api/shared/notes/{token}/quizzes/{quizId}/check",
-		Summary: "Grade a signed-in check of a quiz embedded in a shared note", Tags: []string{"Sharing"},
+		Summary: "Grade a signed-in check of one question of a quiz embedded in a shared note", Tags: []string{"Sharing"},
 		DefaultStatus: http.StatusOK, MaxBodyBytes: answersMaxBytes, Middlewares: verified,
-	}, func(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuizOutput, error) {
+	}, func(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuestionOutput, error) {
 		out, err := a.checkSharedNoteQuiz(ctx, in)
 		return out, reportHandlerError(ctx, err)
 	})
 }
 
-func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuizOutput, error) {
+func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizInput) (*gradedQuestionOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
@@ -375,7 +376,11 @@ func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizIn
 	if err != nil {
 		return nil, hErr(err)
 	}
-	plan, err := planGrading(qs, in.Body.Answers)
+	q, _, _ := quizQuestion(qs, in.Body.QuestionID)
+	if q == nil {
+		return nil, huma.Error404NotFound("the question is not in this quiz")
+	}
+	plan, err := planGrading([]map[string]any{q}, in.Body.Answers)
 	if err != nil {
 		return nil, gradeRequestError(err)
 	}
@@ -383,7 +388,7 @@ func (a *api) checkSharedNoteQuiz(ctx context.Context, in *checkSharedNoteQuizIn
 	if err != nil {
 		return nil, err
 	}
-	return &gradedQuizOutput{Body: apimodel.GradedQuiz{Correct: correct, Total: total, Questions: graded}}, nil
+	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
 }
 
 /* --------------------------------------------------------- authoring check */

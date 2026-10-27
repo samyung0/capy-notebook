@@ -1,11 +1,16 @@
 import { linkOptions } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useDeleteEditorAsset, useEditorAssets } from '@/api/hooks';
+import {
+  useDeleteEditorAsset,
+  useEditorAssets,
+  useWorkspaces,
+} from '@/api/hooks';
 import type { EditorAssetAccess, EditorAssetItem } from '@/api/types';
 import {
   ItemCard,
   ItemList,
   ItemSkeletonGrid,
+  itemMenuIcon,
 } from '@/components/app/ItemCard';
 import { ListEnd } from '@/components/app/ListEnd';
 import { ListToolbar, type ListView } from '@/components/app/ListToolbar';
@@ -18,7 +23,7 @@ import { Menu } from '@/components/ui/Menu';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
-import { fileIconName } from '@/lib/fileIcons';
+import { materialIconName } from '@/lib/fileIcons';
 import { EDITOR_ASSET_ACCESS } from '@/lib/listSearch';
 import { waitsForConnection } from '@/lib/online';
 import { fileKindLabel } from './fileKindLabel';
@@ -28,8 +33,8 @@ const accessLabel = (access: EditorAssetAccess) =>
   access === 'open' ? m.files_access_open() : m.files_access_lost();
 
 /** The Files page's Embeds tab: every image and audio clip the caller pays
- * for (M16), named by its note. One in a note the caller can open opens that
- * note. Any can be deleted for good (Q273), since nothing restores it, and
+ * for (M16), named by its block (note, quiz or set) and drawn with that
+ * block's icon. One in a block the caller can open opens it. Any can be deleted for good (Q273), since nothing restores it, and
  * its note then shows it as removed. */
 export function EmbedsTab({
   access,
@@ -57,6 +62,11 @@ export function EmbedsTab({
     mutateAsync: deleteMedia,
     reset,
   } = useDeleteEditorAsset();
+  // For each note's workspace icon, as the Files and Trash tabs look it up.
+  const { data: workspaces = [] } = useWorkspaces(
+    { sort: 'accessed' },
+    { errorBoundary: false }
+  );
   const [target, setTarget] = useState<EditorAssetItem | null>(null);
   const items = data?.pages.flatMap((page) => page.items) ?? [];
   const close = () => {
@@ -85,8 +95,9 @@ export function EmbedsTab({
         onResetFilters={() => onAccessChange(undefined)}
         onViewChange={onViewChange}
         view={view}
+        wide
       />
-      <PageBody belowToolbar>
+      <PageBody belowToolbar wide>
         {access === 'lost' && (
           <p className="t-meta mb-3 text-fg-muted" role="note">
             {m.files_lost_media_notice()}
@@ -108,7 +119,7 @@ export function EmbedsTab({
           <div className="flex flex-col gap-3">
             <ItemList
               columns={[
-                m.files_col_note(),
+                m.files_col_block(),
                 m.create_filter_workspace(),
                 m.list_col_details(),
                 m.files_sort_added(),
@@ -121,6 +132,9 @@ export function EmbedsTab({
                   key={item.assetId}
                   onDelete={setTarget}
                   view={view}
+                  workspaceIconId={
+                    workspaces.find((ws) => ws.id === item.workspaceId)?.iconId
+                  }
                 />
               ))}
             </ItemList>
@@ -166,10 +180,12 @@ function EmbedCard({
   item,
   view,
   onDelete,
+  workspaceIconId,
 }: {
   item: EditorAssetItem;
   view: ListView;
   onDelete: (item: EditorAssetItem) => void;
+  workspaceIconId?: string;
 }) {
   const kind = item.purpose === 'audio' ? 'audio' : 'image';
   const open = !item.lostAccess && item.materialId;
@@ -185,11 +201,11 @@ function EmbedCard({
               onClick: () => onDelete(item),
             },
           ]}
-          triggerIcon="moreHorizontal"
+          triggerIcon={itemMenuIcon(view)}
         />
       }
       details={`${fileKindLabel(kind)} · ${formatFileSize(item.sizeBytes)}`}
-      icon={fileIconName({ kind, name: item.name })}
+      icon={materialIconName(item.materialType)}
       link={
         open
           ? linkOptions({
@@ -203,6 +219,7 @@ function EmbedCard({
       title={item.materialTitle || m.files_note_unavailable()}
       view={view}
       workspace={item.workspaceName}
+      workspaceIconId={workspaceIconId}
       workspaceLost={item.lostAccess}
     />
   );

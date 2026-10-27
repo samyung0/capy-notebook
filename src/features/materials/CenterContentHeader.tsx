@@ -55,6 +55,7 @@ import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useOnlineStatus } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { usePointerDownPress } from '@/lib/usePointerDownPress';
 import { MaterialModeToggle } from './MaterialModeToggle';
 import { MaterialShareDialog } from './MaterialShareDialog';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
@@ -72,6 +73,30 @@ const STATUS_ICON = {
   unsaved: 'cloudAlert',
 } satisfies Record<NoteEditorSaveState, IconName>;
 
+/* The header's labels follow its width. A size container breaks WebKit's
+   scroll anchoring for a reader while blocks are added above (Q393), so
+   WebKit browsers (Safari and every iOS browser, all of which report Apple's
+   vendor) skip `@container/header` and measure the header instead:
+   `data-roomy` at 36rem (`@xl`) and `data-wide` at 42rem (`@2xl`), which the
+   label variants also read. */
+const WEBKIT =
+  typeof navigator !== 'undefined' &&
+  navigator.vendor === 'Apple Computer, Inc.';
+
+function measureHeader(header: HTMLDivElement | null) {
+  if (!(WEBKIT && header)) return;
+  const rem = Number.parseFloat(
+    getComputedStyle(document.documentElement).fontSize
+  );
+  const observer = new ResizeObserver(([entry]) => {
+    const width = entry.contentRect.width;
+    header.toggleAttribute('data-roomy', width >= 36 * rem);
+    header.toggleAttribute('data-wide', width >= 42 * rem);
+  });
+  observer.observe(header);
+  return () => observer.disconnect();
+}
+
 /** The workspace below lg has no side panels: the title opens Files from the
  * top, and ⋮ carries the workspace actions the panels held. */
 export interface OneColumnChrome {
@@ -81,11 +106,14 @@ export interface OneColumnChrome {
   onOpenFiles: () => void;
   /** Workspace settings, before Delete in ⋮. */
   settingsItems: MenuItem[];
-  /** The title when no file is open. */
+  /** The title when no file is open, after the workspace's icon. */
+  workspaceIconId: string;
   workspaceName: string;
 }
 
-/** The title as the button that opens the Files dropdown, chevron after it. */
+/** The title as the button that opens the Files dropdown, chevron after it.
+ * Opens on press, like the menus. Icon, name and chevron ink sit 10px apart;
+ * the chevron's -ml takes back its glyph's side bearing. */
 export function FilesTitleButton({
   chrome,
   children,
@@ -93,17 +121,18 @@ export function FilesTitleButton({
   chrome: OneColumnChrome;
   children: ReactNode;
 }) {
+  const press = usePointerDownPress();
   return (
     <button
       aria-expanded={chrome.filesOpen}
-      className="flex min-w-0 max-w-full items-center gap-1.5 rounded-button text-left sm:gap-2"
-      onClick={chrome.onOpenFiles}
+      className="flex min-w-0 max-w-full items-center gap-2.5 rounded-button px-1 py-1 text-left transition-colors hover:bg-surface-hover-bg/80"
       type="button"
+      {...press(chrome.onOpenFiles)}
     >
       {children}
       <Icon
         className={cn(
-          'shrink-0 text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out)',
+          '-ml-1 shrink-0 text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out)',
           chrome.filesOpen && 'rotate-180'
         )}
         name="chevronDown"
@@ -137,14 +166,15 @@ export const EditorStatusStoreContext = createContext<EditorStatusStore | null>(
  * name on the top row at every width (Epo 2026-10-20), its label in the
  * tooltip, held open with the slowed line while an open waits on the open
  * budget; `labelled` (a dialog's footer) writes the label beside the icon,
- * and `labelFromMd` (every file's header, Epo 2026-10-22) from md up. */
+ * and `labelWhenWide` (every file's header, Epo 2026-10-22) once the header
+ * is 36rem wide, measured on the header so a dragged panel drops it too. */
 export function EditorSaveStatus({
   labelled = false,
-  labelFromMd = false,
+  labelWhenWide = false,
   store,
 }: {
   labelled?: boolean;
-  labelFromMd?: boolean;
+  labelWhenWide?: boolean;
   store: EditorStatusStore;
 }) {
   // Subscribed in an effect rather than with `useStore`: an external-store
@@ -177,10 +207,7 @@ export function EditorSaveStatus({
         role="status"
       >
         {/* Lifted 1px to Fustat's cap band, level with the label. */}
-        <Icon
-          className="size-[15px] -translate-y-px"
-          name={STATUS_ICON[editorStatus.saveState]}
-        />
+        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
         {statusLabel}
       </span>
     );
@@ -189,6 +216,10 @@ export function EditorSaveStatus({
       <TooltipTrigger
         className={cn(
           'inline-flex size-(--toolbar-button) shrink-0 items-center justify-center rounded-button outline-none focus-visible:ring-2 focus-visible:ring-action',
+          // With its label the button grows to fit it rather than spilling
+          // the icon over the ⋮ before it.
+          labelWhenWide &&
+            '@xl/header:w-auto @xl/header:px-1.5 group-data-roomy/header:w-auto group-data-roomy/header:px-1.5',
           failed && 'text-solid-error'
         )}
         data-save-state={editorStatus.saveState}
@@ -196,21 +227,15 @@ export function EditorSaveStatus({
         render={<span role="status" />}
         tabIndex={0}
       >
-        <Icon
-          className={cn(
-            'size-4 sm:size-4.5',
-            // The plain cloud is drawn a unit above the ⋮ dots' centre.
-            STATUS_ICON[editorStatus.saveState] === 'CloudIcon' &&
-              'translate-y-[calc(100%/24)]'
-          )}
-          name={STATUS_ICON[editorStatus.saveState]}
-        />
+        {/* Unlifted, a touch below the ⋮: the cloud's glyph leaves room
+            under its base, so its ink centre reads high. */}
+        <Icon className="size-4.5" name={STATUS_ICON[editorStatus.saveState]} />
         <span
           className={cn(
             'sr-only',
-            labelFromMd &&
-              'md:not-sr-only md:ml-1 md:whitespace-nowrap md:text-[0.8125rem]',
-            labelFromMd && !failed && 'md:text-fg-muted'
+            labelWhenWide &&
+              // Dropped 1px with the cloud.
+              't-meta @xl/header:not-sr-only @xl/header:ml-2 translate-y-[1px] @xl/header:whitespace-nowrap group-data-roomy/header:not-sr-only group-data-roomy/header:ml-2 group-data-roomy/header:whitespace-nowrap'
           )}
         >
           {statusLabel}
@@ -334,6 +359,7 @@ function ReadToggle({
         set({ id: item.id, kind: item.kind }, done ? null : 'done')
       }
     >
+      {/* Lifted 1px, level with the title, the ⋮ and the cloud beside it. */}
       <Icon
         className={cn(done && 'text-tint-success-fg')}
         name={done ? 'bookCheck' : 'bookOpenCheck'}
@@ -430,7 +456,10 @@ export function Header({
   // Phones drop the read toggle and workspace status for the title's chevron.
   const compact = !!oneColumn && !sm;
   const fileIcon = (
-    <FileIcon className="size-4 shrink-0 md:size-5" name={icon} />
+    <FileIcon
+      className="size-4.5 shrink-0 -translate-y-px md:size-5"
+      name={icon}
+    />
   );
   const nameClassName = cn(
     'min-w-0 truncate',
@@ -549,18 +578,20 @@ export function Header({
   );
   // The save status sits beside the name on the top row at every width (Epo
   // 2026-10-20); the offline icon stands in for it while offline. Its label
-  // shows beside it from md up for every file, Office included (Epo
-  // 2026-10-22).
+  // shows beside it in a 36rem-wide header for every file, Office included
+  // (Epo 2026-10-22).
   const status = (
     <>
       <OfflineStatus />
-      <EditorSaveStatus labelFromMd store={editorStatus} />
+      <EditorSaveStatus labelWhenWide store={editorStatus} />
       {!compact && <WorkspaceStatusButton />}
     </>
   );
-  // One row so the status icons keep the ⋮'s button spacing.
+  // One row so the status icons keep the ⋮'s button spacing. Phones, where
+  // the status follows the title's chevron, pull its button box in so the
+  // cloud's ink sits about as far from the chevron as the name from its icon.
   const statusRow = (
-    <div className="flex items-center">
+    <div className={cn('flex items-center', compact && '-ml-2')}>
       {!compact && menu}
       {status}
     </div>
@@ -574,33 +605,37 @@ export function Header({
     return (
       <div
         className={cn(
-          'grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 border-divider border-b pr-2',
+          WEBKIT ? 'group/header' : '@container/header',
+          'grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 border-divider border-b',
           menuShown
             ? 'h-15 grid-rows-[24px_24px] gap-y-1 pt-1.5'
             : 'h-12 items-center sm:h-15',
           // Workspace buttons at the left edge (24px here, the right's are
           // full size) sit as far in as the right's.
-          leading ? 'pl-3' : 'pl-4'
+          leading ? 'pr-3 pl-4' : 'pr-2 pl-4'
         )}
         data-layout="office"
         data-rows={menuShown ? 2 : 1}
         data-testid="content-header"
+        ref={measureHeader}
       >
         <div
           className={cn(
             'flex min-w-0 items-center gap-2',
             // The workspace chrome at the row's height; the workspace picker
-            // (a dropdown trigger) as a slimmer pill.
-            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6 [&_[role=status]]:size-6',
+            // (a dropdown trigger) as a slimmer pill. The save status grows
+            // with its label where it shows one, or its icon spills under ⋮.
+            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6 [&_[role=status]]:size-6 @xl/header:[&_[role=status]]:w-auto group-data-roomy/header:[&_[role=status]]:w-auto',
             '[&_[data-slot=dropdown-menu-trigger]]:h-6 [&_[data-slot=dropdown-menu-trigger]]:gap-1.5 [&_[data-slot=dropdown-menu-trigger]]:px-2'
           )}
         >
           {leading}
           <div
             className={cn(
-              '-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5',
-              // Workspace buttons before it keep the buttons' narrow gaps.
-              !leading && 'lg:ml-2'
+              'flex min-w-0 items-center gap-2',
+              // After workspace buttons the file icon keeps the right side's
+              // 19px ink gap.
+              leading ? 'ml-0.5' : '-ml-2 sm:-ml-0.5 lg:ml-2'
             )}
           >
             {name}
@@ -630,17 +665,23 @@ export function Header({
   return (
     <div
       className={cn(
-        'flex h-12 items-center gap-1 border-divider border-b pr-2 sm:h-15 sm:gap-2',
+        WEBKIT ? 'group/header' : '@container/header',
+        'flex h-12 items-center gap-1 border-divider border-b sm:h-15',
         // Workspace buttons at the left edge sit as far in as the right's.
-        leading ? 'pl-2' : 'pl-2 sm:pl-4'
+        leading ? 'px-3' : 'pr-2 pl-2 sm:pl-4',
+        // The title pill's padding already spaces it from the back button.
+        !(leading && oneColumn) && 'sm:gap-2'
       )}
       data-testid="content-header"
+      ref={measureHeader}
     >
       {leading}
       <div
         className={cn(
-          '-ml-0.5 flex min-w-0 items-center gap-1.5 sm:gap-2',
-          // Workspace buttons before it keep the buttons' narrow gaps.
+          'flex min-w-0 items-center gap-1.5 sm:gap-2',
+          // A file icon after workspace buttons, bare or in the title pill,
+          // keeps their 19px ink gap; standalone headers pull in a little.
+          !leading && '-ml-0.5',
           !leading && 'lg:ml-2'
         )}
       >

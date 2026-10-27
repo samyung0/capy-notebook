@@ -544,13 +544,20 @@ change) jumped the page back to its top.
 Quizzes and flashcard sets never render through Plate. Opened as a file (in a
 workspace or standalone) the center pane shows the quiz page's question list or
 the flashcard grid (`src/features/flashcards/FlashcardGrid.tsx`: numbered
-fronts as `CardTile`s, a preview dialog with the front over the back and
-Previous/Next), each under the material title, and flashcard edit mode is the
+fronts as `CardTile`s; a click turns a tile in place to the front header over
+the back (the image left out, an image-only front reading "No text", as on the
+study card's back), fading the new face in like the study card, and another turns it
+back; a link to a card opens with that tile turned and scrolled to), each under
+the material title, and flashcard edit mode is the
 live card grid described under authoring below, its tiles turned like the
 result pages' (front header over the back, the image small in the header,
 Edit/Remove beside the number) (`src/features/materials/CenterContent.tsx`).
 Every flashcard grid (View, edit, flashcard and review results) is
-`CardGrid` and `CardTile` in `src/features/flashcards/CardView.tsx`.
+`CardGrid` and `CardTile` in `src/features/flashcards/CardView.tsx`, except a
+note's flashcards block in Edit, which lists Quick review's small front-only
+cards (`CompactCardGrid`, `CompactCardTile`: as many 144px, 160px past phones,
+columns as fit, the front cut at the padding, no toolbar: a click opens the
+card dialog; a dashed Add card tile of the same size; Epo 2026-10-25).
 
 Standalone quiz, flashcard, mindmap, and diagram titles live only in relational
 material metadata. Their stored Plate documents contain the custom block but no
@@ -587,8 +594,9 @@ render (images, embeds, diagrams, interactive HTML) sit in an `Island`
 (`Island.tsx`, views in `staticViews.tsx`): inert in the app, they are what a
 server-rendered shared note hydrates, and equations render MathLive's static markup
 there (`StaticMathContext`). Inserting through the slash command or toolbar
-creates the row through `POST /api/materials/{noteId}/embedded` (a set with one
-blank card) and inserts the reference at the top level, where it opens in place
+creates the row through `POST /api/materials/{noteId}/embedded` (a quiz with
+one starter question to edit, "What is 2 + 2?" as multiple choice, Epo
+2026-10-25; a set with one blank card) and inserts the reference at the top level, where it opens in place
 for editing. The block goes where the command ran, not where the caret is when
 the row arrives (`holdInsertPlace` in `insertEditorNode.ts`): over the
 command's line while it is still an empty paragraph, otherwise after it, and it
@@ -617,7 +625,7 @@ quiz needs at least one question and a set needs cards each with a front and a
 back (a pasted quiz's questions are checked too, `validateQuestions`). A fence
 that does not read is left out with a warning toast naming the kind; one
 whose create is refused is left out under the mutation's own error toast. The
-slash commands' new empty quiz and one-blank-card set pass their drafts to
+slash commands' new one-question quiz and one-blank-card set pass their drafts to
 `insertEmbedded` without a fence. The
 collaboration server refuses an update that writes `pending` or leaves a
 reference without its material id or below the top level, the store check refuses one (logged with the room's name, so with the note), Go refuses a
@@ -2014,6 +2022,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   Leave from an older build carries no version or session and still reads.
   The two landed together, so their deploy request names "client protocol
   18 -> 20, material 18 -> 20, source 18 -> 19".
+  The UI branch's reading layouts (pin 502d19fc9: the DOCX reading layout
+  for narrow viewers and the PPTX strip and Notes button below the slide;
+  Epo 2026-10-26, Q394) raised `CLIENT_PROTOCOL` to 21 and `MIN_SOURCE` to
+  20; `MIN_MATERIAL` stays 20. Its deploy request names "client protocol
+  20 -> 21, source 19 -> 20".
 
 #### When to bump
 
@@ -2827,7 +2840,7 @@ figure).
 block editors write through `writeQuestion`
 (`src/features/quizzes/liveQuiz.ts`: the fewest changes, lists by their common
 head and tail, a move as a new order key), a chart or graph stays staged until
-the block's Done (one value per block, D8), and the footer holds Undo, Redo and
+the block's Back (one value per block, D8), and the footer holds Undo, Redo and
 the live state; there is no Save or Cancel and the dialog closes with its X or
 Esc. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
@@ -2886,13 +2899,16 @@ card, blank ones included, and projects the set to its Plate envelope with blank
 cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
 workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the
 old `/flashcards/$id/edit` page is gone) and inside a note. The card dialog
-(front, back, one optional image under the front) writes as you type through
+(front, back on ruled lines like a quiz's written answer, one optional image
+under the front; the study card as a preview, at the study size, beside them
+from `md` and under the back on narrower screens, turned to the answer until a
+click flips it to the front, `CardPreview` in `CardStack.tsx`) writes as you type through
 `useBoundText` (`src/features/collaboration/yText.ts`: the fewest changes to the
 `Y.Text`, the caret carried through remote changes) and uploads a picked image
 at once. There is no Save, Reset or Done: the dialog closes with its X or Esc,
 and its footer holds Undo and Redo (this user's own edits: a `Y.UndoManager`
 over the item document tracking the `LOCAL_EDIT` origin), the live state and
-Remove card. A card added and left blank goes when its dialog closes. On a
+Remove card (borderless danger, at the footer's end on phones too). A card added and left blank goes when its dialog closes. On a
 set's own page Undo and Redo sit in the center header beside View (portaled into
 its actions slot). Rooms ride the tab's shared collaboration socket (`ItemRoom`
 in `src/features/collaboration/itemRoom.ts`, one token per room); the socket
@@ -3100,16 +3116,23 @@ fill the available width. Note previews use the same preference.
 General also holds Note font: Fustat with roomy block gaps, or the system font
 with the Plate playground's compact ones (paragraphs 4px padding and 1.5 line
 height, my-1 lists, quotes, code, callouts and columns; headings unchanged).
-Without a pick the style decides: classroom shows Fustat, notion the system
+Without a pick the style decides: capy and fisheye show Fustat, notion the system
 font. A pick is per browser in `capy.noteFont` (`noteFont.ts`), not the prefs
 blob, so the head scripts in `index.html` and `share.html` set
 `<html data-note-font>` before first paint; `tailwind.css` maps it to
 `--font-sans` and the `--note-*` gap variables on `.note-editor`, which the
 editor, View and shared note pages all render in. Applying an unchanged font
 stores nothing, so the default keeps following the style. Shared note pages
-show the viewer's own choice (visitors without one get classroom, so Fustat)
+show the viewer's own choice (visitors without one get capy, so Fustat)
 and carry a server-rendered Aa button that switches it with plain script
 (`src/share/main.tsx`); the edge-cached HTML stays the same for everyone.
+
+Both picks also have shortcuts in the top right corner of a note's scroll area,
+in View and Edit alike (`NoteDisplayToggles.tsx`): an Aa button flips the font
+and a ↔ button (from `md`, where the width shows) flips the width, each saving
+at once like Apply. Their icons stay the same either way; the note shows which
+pick is on. They sit in the scroll area, not the toolbar, so they scroll away
+with the note's top.
 
 Slate's editable root spans the pane at either size. A stable `as` component
 wraps its children in the width-constrained inner container, leaving margin
@@ -3198,7 +3221,7 @@ Editor AI is two public routes: `POST /api/workspaces/{id}/ai/command`
 (Python `/plate-ai/command`) and `POST /api/workspaces/{id}/ai/copilot`
 (Python `/plate-ai/copilot`). Both resolve the
 `users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
-way chat does, including BYOK. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
+way chat does. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
 (off by default).
 
 The command menu always sends `ctx.toolName`. Missing or unknown values are
@@ -3220,9 +3243,14 @@ leases, and credit rates.
 
 `MaterialPreview` uses `PlateStatic` and the checkpointed Plate envelope. Static
 components must not use editor hooks. `StaticMaterialKit` has no markdown
-parser: uploaded `.md` files convert first (`files/MarkdownPreview.tsx` through
-`markdownToDocument`), and the markdown converters add `noteMarkdownPlugin` on
-top of the kit themselves. Interactive and static component
+parser: uploaded `.md` files convert first, in a worker
+(`files/MarkdownPreview.worker.ts` through `markdownToDocument`), and the
+markdown converters add `noteMarkdownPlugin` on top of the kit themselves. The
+kit imports no `.tsx` module and nothing render-only, so that worker can load
+it; `MaterialPreview` adds code highlighting (lowlight) and
+`UnsupportedBlockPlugin` itself. Vite aliases
+`decode-named-character-reference` to its DOM-free entry, since a worker has
+no `document`. Interactive and static component
 registries share node vocabulary but have different behavior.
 
 Obsolete `suggestion` and `suggestion_*` properties are rejected by server
@@ -3305,6 +3333,14 @@ validation and are not rendered.
   (`getSelectionInformation`). Drops land where the pointer is and dragging
   auto-scrolls blocks into range, so the handle shows on hover and drag and
   drop work as before (`e2e/editor/block-interactions.spec.ts`).
+- The block menu (right-click, `BlockContextMenu` in `BlockInteractions.tsx`)
+  is a non-modal `DropdownMenu` anchored by `DropdownMenuAnchor` to a
+  zero-size span at the click point inside the editor's content, so it
+  scrolls with its block and hides once the block leaves the scroll area
+  (`hideWhenDetached`), as the floating toolbars do. It takes the editor
+  popovers' look (All blocks: `rounded-lg`, 30px rows, an icon per row
+  except Turn into); its content keeps `data-slot="context-menu-content"`
+  for the specs.
 - Comment decorations must match Slate paths structurally (`Path.compare`,
   not dot-joined path strings, which put block 10 before block 3); remote
   cursors are returned at the root only. Shared-link editors may be absent from the

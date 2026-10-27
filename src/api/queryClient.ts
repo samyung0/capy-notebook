@@ -12,6 +12,7 @@ import {
   isAccountBlockingError,
   isAccountForbiddenError,
   isApiError,
+  qk,
 } from './client';
 import { isPersisted } from './queryPersistence';
 
@@ -77,6 +78,12 @@ export const queryClient = new QueryClient({
       )
         return;
       showErrorToast(error);
+    },
+    // Recent rows come from many lists (files, materials, workspaces): any
+    // write may rename, move, trash or create one, so every success marks it
+    // stale. It refetches only where it shows (dashboard, quick open).
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.recent });
     },
   }),
   queryCache: new QueryCache({

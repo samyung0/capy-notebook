@@ -196,7 +196,6 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		userID,
 		wsID,
 		store.SurfaceChat,
-		llm.PaidBy,
 		llm.Rates,
 		embed.Rates,
 		llm.Thinking,
@@ -371,9 +370,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	if streamErr != nil {
 		obs.CaptureErr(ctx, unexpectedChatError(streamErr), map[string]string{"stage": "chat_stream"})
 		var eventErr *chatEventError
-		if code, msg, ok := llmKeyPayload(streamErr); ok {
-			send(pipeChatEvent{Type: "error", Code: code, Message: msg})
-		} else if errors.As(streamErr, &eventErr) {
+		if errors.As(streamErr, &eventErr) {
 			send(pipeChatEvent{
 				Type: "error", Code: eventErr.Code, Message: eventErr.Message,
 				RetryAfterSeconds: eventErr.RetryAfterSeconds,
@@ -540,7 +537,7 @@ func (a *api) relayChat(
 							RetryAfterSeconds: ev.RetryAfterSeconds,
 						}
 					}
-					if mapped := keyErrorFromEvent(ev.Code, ev.Message); mapped != nil {
+					if mapped := errorFromEvent(ev.Code, ev.Message); mapped != nil {
 						return obs.WithEventID(mapped, ev.SentryEventID)
 					}
 					return obs.WithEventID(errAgentFailed, ev.SentryEventID)
@@ -576,9 +573,6 @@ func titleFrom(text string) string {
 
 // Validation and provider admission failures have a client action, not an incident.
 func unexpectedChatError(err error) error {
-	if _, _, ok := llmKeyPayload(err); ok {
-		return obs.ExpectedError(err)
-	}
 	var busy *providerBusyError
 	var event *chatEventError
 	if errors.As(err, &busy) {

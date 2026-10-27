@@ -83,7 +83,7 @@ export default function ReviewResult() {
         />
       }
     >
-      <TabContent wide>
+      <TabContent>
         <ReviewResultBody
           onAgain={() =>
             navigate({

@@ -231,58 +231,47 @@ func (s *Store) StudyEnabled(ctx context.Context, userID, wsID string) (bool, er
 }
 
 func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.Time) (StudySummary, error) {
+	return s.studySummary(ctx, userID, wsID, nil, now)
+}
+
+// PlanStudySummary is one of the user's plans kept in the workspace as the
+// Study page reads it: Enabled and the review parts (Reviewable, QuickReview,
+// Unfinished) drawn from the plan, Items and RecentAttempts left empty (the
+// workspace's own summary has them); ErrReviewGroup for any other plan.
+func (s *Store) PlanStudySummary(ctx context.Context, userID, wsID, planID string, now time.Time) (StudySummary, error) {
+	plan, err := s.workspacePlan(ctx, userID, wsID, &planID)
+	if err != nil {
+		return StudySummary{}, err
+	}
+	return s.studySummary(ctx, userID, wsID, &plan, now)
+}
+
+func (s *Store) studySummary(ctx context.Context, userID, wsID string, plan *PlanScope, now time.Time) (StudySummary, error) {
 	out := StudySummary{Items: []StudyItem{}, RecentAttempts: []Attempt{}, QuickReview: []ReviewItem{}}
 	var err error
 	if out.Enabled, err = s.StudyEnabled(ctx, userID, wsID); err != nil {
 		return out, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT sp.file_id, sp.material_id, sp.state, sp.updated_at FROM study_progress sp
-		LEFT JOIN files f ON f.id=sp.file_id LEFT JOIN materials m ON m.id=sp.material_id
-		WHERE sp.user_id=$1 AND sp.workspace_id=$2 AND f.trashed_at IS NULL AND m.trashed_at IS NULL`, userID, wsID)
-	if err != nil {
-		return out, err
-	}
-	for rows.Next() {
-		var it StudyItem
-		if err := rows.Scan(&it.FileID, &it.MaterialID, &it.State, &it.UpdatedAt); err != nil {
-			rows.Close()
+	// A plan's summary carries only its review parts; the page reads the
+	// workspace's marks and attempts from the workspace's own summary.
+	if plan == nil {
+		if err := s.studyMarks(ctx, userID, wsID, &out); err != nil {
 			return out, err
 		}
-		out.Items = append(out.Items, it)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return out, err
-	}
-	rows, err = s.pool.Query(ctx, `SELECT `+attemptCols+`
-		FROM attempts a JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.user_id=$1 AND m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND a.kind='quiz'
-		ORDER BY a.taken_at DESC LIMIT 5`, userID, wsID)
-	if err != nil {
-		return out, err
-	}
-	for rows.Next() {
-		var a Attempt
-		if err := rows.Scan(attemptDest(&a)...); err != nil {
-			rows.Close()
-			return out, err
-		}
-		if a.Chapters == nil {
-			a.Chapters = []string{}
-		}
-		out.RecentAttempts = append(out.RecentAttempts, a)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return out, err
-	}
+	// Continue review: the workspace's latest whole-workspace session, or the
+	// plan's latest plan session.
 	var u UnfinishedSession
-	err = s.pool.QueryRow(ctx, `SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind,
+	group, planID := GroupWorkspace, ""
+	if plan != nil {
+		group, planID = GroupPlan, plan.ID
+	}
+	err = s.pool.QueryRow(ctx, `SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind, COALESCE(rs.plan_name, ''),
 			(SELECT count(*) FROM review_answers ra WHERE ra.session_id=rs.id), jsonb_array_length(rs.items), rs.last_answer_at
 		FROM review_sessions rs JOIN workspaces w ON w.id=rs.workspace_id
-		WHERE rs.user_id=$1 AND rs.workspace_id=$2 AND rs.group_kind='workspace' AND rs.finished_at IS NULL
-		ORDER BY rs.last_answer_at DESC LIMIT 1`, userID, wsID).
-		Scan(&u.ID, &u.WorkspaceID, &u.WorkspaceName, &u.IconID, &u.Group, &u.Answered, &u.Total, &u.LastAnswerAt)
+		WHERE rs.user_id=$1 AND rs.workspace_id=$2 AND rs.group_kind=$3 AND ($4 = '' OR rs.plan_id=$4) AND rs.finished_at IS NULL
+		ORDER BY rs.last_answer_at DESC LIMIT 1`, userID, wsID, group, planID).
+		Scan(&u.ID, &u.WorkspaceID, &u.WorkspaceName, &u.IconID, &u.Group, &u.ChapterName, &u.Answered, &u.Total, &u.LastAnswerAt)
 	if err == nil {
 		out.Unfinished = &u
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -292,21 +281,71 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	if err != nil {
 		return out, err
 	}
-	pool, err := s.reviewPool(ctx, userID, wsID, now)
-	if err != nil {
-		return out, err
+	var items []scored
+	if plan != nil {
+		if items, err = s.scoredPlan(ctx, userID, *plan, reviewPrefsOf(prefs), now); err != nil {
+			return out, err
+		}
+		out.Reviewable = len(items)
+	} else {
+		pool, err := s.reviewPool(ctx, userID, wsID, now)
+		if err != nil {
+			return out, err
+		}
+		out.Reviewable = len(pool)
+		if len(pool) == 0 {
+			return out, nil
+		}
+		history, err := s.reviewHistory(ctx, userID, pool)
+		if err != nil {
+			return out, err
+		}
+		items = scoreItems(pool, history, reviewPrefsOf(prefs))
 	}
-	out.Reviewable = len(pool)
-	if len(pool) == 0 {
-		return out, nil
-	}
-	history, err := s.reviewHistory(ctx, userID, pool)
-	if err != nil {
-		return out, err
-	}
-	items := scoreItems(pool, history, reviewPrefsOf(prefs))
 	out.QuickReview = quickReview(items)
 	return out, nil
+}
+
+// studyMarks fills the summary's per-item states and recent quiz attempts.
+func (s *Store) studyMarks(ctx context.Context, userID, wsID string, out *StudySummary) error {
+	rows, err := s.pool.Query(ctx, `SELECT sp.file_id, sp.material_id, sp.state, sp.updated_at FROM study_progress sp
+		LEFT JOIN files f ON f.id=sp.file_id LEFT JOIN materials m ON m.id=sp.material_id
+		WHERE sp.user_id=$1 AND sp.workspace_id=$2 AND f.trashed_at IS NULL AND m.trashed_at IS NULL`, userID, wsID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var it StudyItem
+		if err := rows.Scan(&it.FileID, &it.MaterialID, &it.State, &it.UpdatedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		out.Items = append(out.Items, it)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows, err = s.pool.Query(ctx, `SELECT `+attemptCols+`
+		FROM attempts a JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
+		WHERE a.user_id=$1 AND m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND a.kind='quiz'
+		ORDER BY a.taken_at DESC LIMIT 5`, userID, wsID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var a Attempt
+		if err := rows.Scan(attemptDest(&a)...); err != nil {
+			rows.Close()
+			return err
+		}
+		if a.Chapters == nil {
+			a.Chapters = []string{}
+		}
+		out.RecentAttempts = append(out.RecentAttempts, a)
+	}
+	rows.Close()
+	return rows.Err()
 }
 
 // quickReview ranks the items a suggested review would (scoreItems, so the
@@ -529,15 +568,15 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 				return err
 			}
 		}
+		// Done once every current card or question has been rated: a review
+		// that brings a new item marks its quiz or set started, not read. A
+		// quiz finished in one attempt is done by its check instead.
 		state := "done"
-		if mt.Kind == "flashcards" {
-			// Done once every current card has been seen.
-			prev[target.ItemID] = storedState{hash: target.hash}
-			for _, it := range items {
-				if st, ok := prev[it.ItemID]; !ok || st.hash != it.hash {
-					state = "started"
-					break
-				}
+		prev[target.ItemID] = storedState{hash: target.hash}
+		for _, it := range items {
+			if st, ok := prev[it.ItemID]; !ok || st.hash != it.hash {
+				state = "started"
+				break
 			}
 		}
 		return markProgressTx(ctx, tx, userID, mt, state)
@@ -575,53 +614,36 @@ var ErrStudyRating = errors.New("cards take a rating and questions take a score"
 // records nothing.
 var ErrStudyEmbedded = errors.New("embedded quizzes and flashcards record nothing")
 
-// rateAttemptTx rates every question of a workspace quiz from an attempt's
-// snapshot and marks the quiz done. Embedded and standalone quizzes record
-// nothing.
 // lockRating serializes one user's ratings of one material, so ratings of a
 // set's last cards made at once still see each other and mark it done, and a
-// quiz attempt and a review rating of the same question do not lose a review.
+// quiz check and a review rating of the same question do not lose a review.
 func lockRating(ctx context.Context, tx pgx.Tx, userID, materialID string) error {
 	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "study-rating:"+userID+":"+materialID)
 	return err
 }
 
-// rateAttemptTx rates each question of a workspace quiz attempt from its
-// awarded marks. A question the learner left wholly blank is not rated: it
-// still scores 0 in the attempt, but a skip says nothing about recall.
-func rateAttemptTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, answers, snapshot json.RawMessage, now time.Time) error {
+// rateQuestionTx rates a checked question of a workspace quiz from its
+// awarded marks and marks the quiz done. A question with no marks, one no
+// longer in the quiz, or one the learner left wholly blank is not rated: a
+// skip says nothing about recall. Embedded and standalone quizzes record
+// nothing. The caller holds lockRating.
+func rateQuestionTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, q, given map[string]any, now time.Time) error {
 	if mt.Kind != "quiz" || mt.WorkspaceID == "" || mt.ParentMaterialID != "" {
 		return nil
-	}
-	if err := lockRating(ctx, tx, userID, mt.ID); err != nil {
-		return err
 	}
 	items, err := itemsOf(mt)
 	if err != nil {
 		return err
 	}
-	byID := map[string]studyItem{}
+	id, _ := q["id"].(string)
+	score, scored := review.QuestionScore(q)
 	for _, it := range items {
-		byID[it.ItemID] = it
-	}
-	var qs []map[string]any
-	if err := json.Unmarshal(snapshot, &qs); err != nil {
-		return err
-	}
-	var given map[string]any
-	if err := json.Unmarshal(answers, &given); err != nil {
-		return err
-	}
-	prev, err := reviewStates(ctx, tx, userID, mt.ID)
-	if err != nil {
-		return err
-	}
-	for _, q := range qs {
-		id, _ := q["id"].(string)
-		it, ok := byID[id]
-		score, scored := review.QuestionScore(q)
-		if !ok || !scored || questions.Blank(q, given) {
+		if it.ItemID != id || !scored || questions.Blank(q, given) {
 			continue
+		}
+		prev, err := reviewStates(ctx, tx, userID, mt.ID)
+		if err != nil {
+			return err
 		}
 		if err := rateTx(ctx, tx, userID, it, prev, review.ScoreRating(score), now); err != nil {
 			return err
@@ -640,18 +662,20 @@ type ranked struct {
 	chapterID *string
 }
 
-// reviewPool is every rated item of the quizzes and sets in progress (not
-// removed, trashed or embedded) whose content still matches what was rated,
+// reviewPool is every rated item of the quizzes and sets not removed,
+// trashed or embedded (Mark as unread keeps them) whose content still matches
+// what was rated,
 // least retained first. Only rated materials are read, in one query, and a
 // document is loaded and parsed only when the cache misses its revision.
 func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Time) ([]ranked, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.chapter_id, rs.item_id, rs.item_hash,
 			rs.stability, rs.difficulty, rs.reps, rs.lapses, rs.fsrs_state, rs.last_review
 		FROM materials m
-		JOIN study_progress sp ON sp.material_id=m.id AND sp.user_id=$1
 		JOIN review_states rs ON rs.material_id=m.id AND rs.user_id=$1
 		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL AND sp.state <> 'removed'
+			AND m.parent_material_id IS NULL
+			AND NOT EXISTS (SELECT 1 FROM study_progress sp
+				WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed')
 		ORDER BY m.position, m.created_at, m.id`, userID, wsID)
 	if err != nil {
 		return nil, err
@@ -728,12 +752,124 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 		for _, it := range rm.items {
 			if st, ok := rm.states[it.ItemID]; ok && st.hash == it.hash {
 				it.MaterialTitle = rm.title
-				all = append(all, ranked{it, review.Retrievability(st.State, now), st.Lapses, st.Reps, st.LastReview, rm.chapterID})
+				all = append(all, ranked{studyItem: it, r: review.Retrievability(st.State, now), lapses: st.Lapses, reps: st.Reps, lastReview: st.LastReview, chapterID: rm.chapterID})
 			}
 		}
 	}
 	sort.SliceStable(all, func(i, j int) bool { return all[i].r < all[j].r })
 	return all, nil
+}
+
+// newPool is every item of the workspace's quizzes and sets (not removed,
+// trashed or embedded; among only when it is not nil) the user has never
+// rated, or whose content changed since its rating, in reading order:
+// chapters in order, then unfiled, each by position, newest first on ties.
+// Only a new manual session reads it: it parses every quiz and set in scope
+// (through the cache), which the overview and the Study page never do.
+func (s *Store) newPool(ctx context.Context, userID, wsID string, only []string) ([]ranked, error) {
+	type quizMaterial struct {
+		id, title string
+		revision  int64
+		chapterID *string
+		items     []studyItem
+	}
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, m.chapter_id FROM materials m
+		LEFT JOIN chapters c ON c.id=m.chapter_id
+		WHERE m.workspace_id=$2 AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
+			AND m.parent_material_id IS NULL AND ($3::text[] IS NULL OR m.id = ANY($3))
+			AND NOT EXISTS (SELECT 1 FROM study_progress sp
+				WHERE sp.user_id=$1 AND sp.material_id=m.id AND sp.state='removed')
+		ORDER BY m.chapter_id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID, only)
+	if err != nil {
+		return nil, err
+	}
+	var order []*quizMaterial
+	byID := map[string]*quizMaterial{}
+	for rows.Next() {
+		qm := &quizMaterial{}
+		if err := rows.Scan(&qm.id, &qm.title, &qm.revision, &qm.chapterID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		order = append(order, qm)
+		byID[qm.id] = qm
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(order) == 0 {
+		return nil, nil
+	}
+	// Documents load only when the cache misses their revision.
+	ids := make([]string, 0, len(order))
+	var missing []string
+	for _, qm := range order {
+		ids = append(ids, qm.id)
+		parsedItems.Lock()
+		hit, ok := parsedItems.m[qm.id]
+		parsedItems.Unlock()
+		if ok && hit.revision == qm.revision {
+			qm.items = hit.items
+		} else {
+			missing = append(missing, qm.id)
+		}
+	}
+	if len(missing) > 0 {
+		rows, err := s.pool.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id = ANY($1)`, missing)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			mt, err := scanMaterial(rows)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			items, err := itemsOf(mt)
+			if refused(err) {
+				continue
+			}
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			byID[mt.ID].items = items
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	rated := map[string]string{}
+	rows, err = s.pool.Query(ctx, `SELECT material_id, item_id, item_hash FROM review_states
+		WHERE user_id=$1 AND material_id = ANY($2)`, userID, ids)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var materialID, itemID, hash string
+		if err := rows.Scan(&materialID, &itemID, &hash); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rated[materialID+"/"+itemID] = hash
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []ranked
+	for _, qm := range order {
+		for _, it := range qm.items {
+			if hash, ok := rated[qm.id+"/"+it.ItemID]; ok && hash == it.hash {
+				continue
+			}
+			it.MaterialTitle = qm.title
+			out = append(out, ranked{studyItem: it, chapterID: qm.chapterID})
+		}
+	}
+	return out, nil
 }
 
 /* ------------------------------------------------------------ agent read */

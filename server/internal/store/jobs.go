@@ -64,6 +64,9 @@ func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, crea
 		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, parseMode, provenanceJSON); err != nil {
 		return File{}, "", err
 	}
+	if err := markCreatedTx(ctx, tx, createdBy, OpenFile, fileID); err != nil {
+		return File{}, "", err
+	}
 
 	jobID := uid("job")
 	payload, err := s.ingestJobPayload(ctx, tx, createdBy, map[string]any{

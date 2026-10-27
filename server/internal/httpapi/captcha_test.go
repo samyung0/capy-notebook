@@ -50,7 +50,7 @@ func TestSignedOutChecksNeedATurnstileToken(t *testing.T) {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM anonymous_grading_usage WHERE ip_hash=$1`,
 			st.AnonymousIPHash("198.51.100.61"))
 	})
-	answers := `"answers":{"open-a":"Because."}`
+	answers := `"questionId":"q1","answers":{"open-a":"Because."}`
 	for name, body := range map[string]string{
 		"no token":  `{` + answers + `}`,
 		"bad token": `{` + answers + `,"turnstileToken":"forged"}`,
@@ -92,7 +92,7 @@ func TestSignedOutChecksTakeTokensFromTheAppHosts(t *testing.T) {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM anonymous_grading_usage WHERE ip_hash=$1`,
 			st.AnonymousIPHash("198.51.100.61"))
 	})
-	answers := `{"answers":{"open-a":"Because."},"turnstileToken":`
+	answers := `{"questionId":"q1","answers":{"open-a":"Because."},"turnstileToken":`
 	rec := gradeSignedOut(h, path, answers+`"other-token"}`)
 	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "captcha_failed" {
 		t.Fatalf("token from another host → %d %s, want 403 captcha_failed", rec.Code, rec.Body.String())
@@ -103,15 +103,15 @@ func TestSignedOutChecksTakeTokensFromTheAppHosts(t *testing.T) {
 }
 
 // TestSignedInChecksNeedNoTurnstileToken (rate-limit audit Q271). A
-// signed-in attempt is graded without a token.
+// signed-in question check is graded without a token.
 func TestSignedInChecksNeedNoTurnstileToken(t *testing.T) {
 	h, _, _ := openGradingAPI(t, "full")
 	id := gradingQuiz(t, h, "private")
 	before := captchaCalls.Load()
-	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/attempts", "u_owner",
-		map[string]any{"answers": map[string]any{"open-a": "Because."}})
-	if rec.Code != http.StatusCreated || captchaCalls.Load() != before {
-		t.Fatalf("signed-in attempt → %d %s, want graded with no check", rec.Code, rec.Body.String())
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/check", "u_owner",
+		map[string]any{"questionId": "q1", "answers": map[string]any{"open-a": "Because."}})
+	if rec.Code != http.StatusOK || captchaCalls.Load() != before {
+		t.Fatalf("signed-in check → %d %s, want graded with no check", rec.Code, rec.Body.String())
 	}
 }
 
@@ -130,7 +130,7 @@ func TestShareTokenIsCheckedBeforeTurnstile(t *testing.T) {
 		"/api/public/quizzes/" + forged + "/grade",
 		"/api/public/notes/" + forged + "/quizzes/q_1/grade",
 	} {
-		rec := gradeSignedOut(h, path, `{"answers":{"open-a":"Because."},"turnstileToken":"turnstile-ok"}`)
+		rec := gradeSignedOut(h, path, `{"questionId":"q1","answers":{"open-a":"Because."},"turnstileToken":"turnstile-ok"}`)
 		if rec.Code != http.StatusNotFound || captchaCalls.Load() != before {
 			t.Fatalf("%s → %d with %d checks, want 404 before any check", path, rec.Code, captchaCalls.Load()-before)
 		}

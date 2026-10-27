@@ -34,6 +34,7 @@ import { cn } from '@/lib/cn';
 import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import { CalloutIcon } from './CalloutIcon';
 import { Column, ColumnGroup } from './ColumnNodes';
+import { FormulaButton } from './FormulaButton';
 import { MediaAssetElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import {
@@ -548,27 +549,22 @@ function EquationBody({
   }
   if (readOnly) return <MathPreview displayMode={displayMode} tex={tex} />;
   return (
-    <button
-      aria-label={m.editor_equation()}
-      className={cn(
-        'max-w-full cursor-text text-inherit',
-        displayMode && 'block min-h-14 w-full px-6 py-4'
-      )}
-      onClick={(event) => {
-        if (displayMode) {
-          setEditingHeight(event.currentTarget.getBoundingClientRect().height);
-        }
+    <FormulaButton
+      display={displayMode}
+      element={props.element}
+      label={m.editor_equation()}
+      onEdit={(height) => {
+        if (displayMode) setEditingHeight(height);
         setDraft(tex);
         setEditing(true);
       }}
-      type="button"
     >
       {tex ? (
         <MathPreview displayMode={displayMode} tex={tex} />
       ) : (
         <span className="text-fg-muted">{m.editor_equation()}</span>
       )}
-    </button>
+    </FormulaButton>
   );
 }
 

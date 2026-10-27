@@ -184,6 +184,24 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 	if len(sharedFiles.Items) != 1 || sharedFiles.Items[0].ID != file.ID {
 		t.Fatalf("member files = %+v", sharedFiles.Items)
 	}
+	// The quick open's ids filter keeps the asked rows the caller can open: another
+	// owner's standalone note stays out.
+	picked, err := s.ListOwnedMaterials(ctx, memberID, MaterialListFilter{
+		Member: true, IDs: []string{note.ID, standalone.ID}, Locations: []string{"workspace", "standalone"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(picked.Items) != 1 || picked.Items[0].ID != note.ID {
+		t.Fatalf("materials by id = %+v", picked.Items)
+	}
+	pickedFiles, err := s.ListOwnedFiles(ctx, ownerID, FileListFilter{Member: true, IDs: []string{otherFile.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pickedFiles.Items) != 1 || pickedFiles.Items[0].ID != otherFile.ID {
+		t.Fatalf("files by id = %+v", pickedFiles.Items)
+	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET deletion_requested_at=now() WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}

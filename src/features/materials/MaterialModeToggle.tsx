@@ -27,13 +27,19 @@ export function MaterialModeToggle({
     >
       <ToolbarButton
         aria-label={m.material_mode()}
-        className="lg:w-auto lg:gap-1.5 lg:px-2"
+        className="@2xl/header:w-auto @2xl/header:gap-1.5 @2xl/header:px-2 group-data-wide/header:w-auto group-data-wide/header:gap-1.5 group-data-wide/header:px-2"
         disabled={disabled}
         label={label}
       >
-        <Icon className="lg:-translate-y-px" name={MATERIALMODE_ICON[next]} />
-        {/* Phones and tablets keep the icon only: the header has no room. */}
-        <span className="hidden lg:inline">{label}</span>
+        <Icon
+          className="@2xl/header:-translate-y-px group-data-wide/header:-translate-y-px"
+          name={MATERIALMODE_ICON[next]}
+        />
+        {/* A narrow header keeps the icon only, measured on the header so a
+            dragged panel drops the label too. */}
+        <span className="@2xl/header:inline hidden group-data-wide/header:inline">
+          {label}
+        </span>
       </ToolbarButton>
     </Toggle.Root>
   );

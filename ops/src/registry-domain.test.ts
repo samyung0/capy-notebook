@@ -16,7 +16,6 @@ function config(
   defaults: CatalogConfig['isDefaultFor']
 ): CatalogConfig {
   return {
-    byokEnabled: false,
     capabilities: slots.includes('retrieval') ? ['embedding'] : [],
     concurrencyTotal: 10,
     contextWindowTokens: 128_000,
@@ -34,7 +33,6 @@ function config(
     modelName: name,
     modelSlug: `test/${name}`,
     params: {},
-    platformEnabled: true,
     providerName: 'Test',
     providerSlug: 'deepseek',
     slots,
@@ -134,7 +132,6 @@ describe('registry request assembly', () => {
         {
           defaultFor: ['chat', 'retrieval'],
           modelSlug: 'test/alpha',
-          platformEnabled: true,
           providerSlug: 'deepseek',
           slots: ['chat', 'retrieval'],
         },
@@ -278,13 +275,10 @@ describe('missingRuntimeConfig', () => {
     ).toEqual([]);
   });
 
-  it('ignores rows that never admit platform calls', () => {
+  it('ignores disabled rows', () => {
     const row = { ...config('flash', ['chat'], []), concurrencyTotal: null };
     expect(
       missingRuntimeConfig({ ...row, enabled: false }, credentials)
-    ).toEqual([]);
-    expect(
-      missingRuntimeConfig({ ...row, platformEnabled: false }, credentials)
     ).toEqual([]);
   });
 });

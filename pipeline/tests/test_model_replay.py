@@ -91,8 +91,6 @@ def _spec(provider_slug: str, model_id: str) -> ModelConfig:
         model_name="replay",
         provider_slug=provider_slug,
         model_slug=model_id,
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=levels,
         default_thinking=default,
         params={"temperature": 0},
@@ -152,7 +150,7 @@ async def _turn(
     spec: ModelConfig,
     messages: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    bind_request_llm(paid_by="platform", thinking=_cert_thinking(spec))
+    bind_request_llm(thinking=_cert_thinking(spec))
     assembled = await stream_agent_response(
         messages,
         model=spec,

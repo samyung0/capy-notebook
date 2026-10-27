@@ -138,6 +138,17 @@ masked, link targets are not). Cloudflare Workers Logs keep
 the site Worker's request URLs (`/w/*`, `/share/*`, `/p/*`), accepted as a
 trusted platform log (Sam 2026-10-19).
 
+The gateway logs one `db pool waits` line (info, `component` `db_pool`,
+`server/cmd/api/db_pool.go`) per 10 s window in which a request found no idle
+Postgres connection in the pool: `waits` (those acquires), `wait_ms` (their
+summed wait), `acquired` and `max` at the line. Opening a new connection
+under `max` counts too, so a few after a start or a quiet spell are normal.
+Lines every window with `acquired` at `max` mean requests queue for a
+connection: slow statements holding the connections (the gateway's CPU then
+sits idle), a busy gateway core delaying the goroutines that hold them, or
+a pool too small for the load. A larger pool helps only the last (the
+[2026-10-24 load test](../bench/gateway/reports/2026-10-24-gateway-capacity.md)).
+
 The collaboration server logs one `collab_health` line per minute
 (`collaboration-rs/crates/server/src/health.rs`, a background task; counting a message is an
 atomic increment, nothing allocates):
@@ -483,7 +494,7 @@ Pageviews fire once per parameterized TanStack route pattern
 | `chat_turn_sent` and `chat_turn_completed` | `useChatStream.send`. `hasScope` is `false`. Completed fires once for ok, error, or abort. |
 | `material_generated` / `material_generate_failed` | `useGenerate` success or error. |
 | `editor_ai_used` | Plate AI menu submit. `continue` vs typed or other actions (`command`). Prompt is not sent. |
-| `quiz_attempt_finished` | Grade succeeds, even if persist 401s. |
+| `quiz_attempt_finished` | The check of a quiz's last unchecked question succeeds (not a page that opens an already finished try). |
 | `share_link_created` | Visibility becomes `link` or `public`. |
 | `collaborator_invited` | Invite create succeeds. |
 | `quota_blocked` | User-visible quota or credits block on mutation, clone, or upload. |
@@ -551,7 +562,7 @@ named provider directly. These exact routing exceptions are allowed:
   OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`), and
   `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
   (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
-  `model_configs_deepinfra_check` keeps each in its own slot, never BYOK.
+  `model_configs_deepinfra_check` keeps each in its own slot.
 - `zai/glm-5.3-flash` keeps its `zai` catalog identity, credit rates and
   capacity row but is served through OpenRouter (decision 2026-10-21): the
   request names OpenRouter's `z-ai/glm-5.3-flash`, routed to DigitalOcean, then
@@ -595,8 +606,7 @@ named provider directly. These exact routing exceptions are allowed:
   of `prompt_tokens` (1,024 of 1,208 observed).
 
 No exception opens a general router path. Other DeepInfra, ZAI and
-OpenRouter slugs fail registry validation. The `zai` provider takes no user
-key (`byok: false`, and `models.IsFirstPartyProvider` leaves it out).
+OpenRouter slugs fail registry validation.
 A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
 workflows run on the chat slot (migration `0044` merged the former `generate`
@@ -620,7 +630,8 @@ slot-to-capability policy lives is the map in
 `server/internal/models/slot.go`: chat needs `agentic_loop` and `vision`,
 retrieval needs `embedding`, captioning needs `vision`, rerank needs `rerank`,
 the other slots need nothing. Chat needs `vision` because its tools attach
-images (`capture_page`, pending Office images); the assignment check is the
+images (`capture_page`, Office pictures from `inspect_office_document`,
+pending Office images); the assignment check is the
 only gate, with no runtime vision check, and both seeded chat rows
 (`deepseek/deepseek-flash`, `zai/glm-5.3-flash`) carry it. Every
 registry save runs that subset check for drafts and for existing rows alike,
@@ -669,8 +680,7 @@ longer use (`remapPrefsToDefaults` in `server/internal/ops/registry.go`)
 also writes one `model_deprecated` in-app notification per moved slot; it
 sends no email and is not pushed live (the ops process has no Redis), so it
 appears on the next load of the notifications page. A pref that still names an unusable key fails
-`model_unavailable`, except BYOK-only rows that the user still has a key
-for.
+`model_unavailable`.
 
 Conversations do not snapshot a model. Each chat turn calls
 `ratesForSlot`, which reads `users.chat_model_provider_slug` and
@@ -697,10 +707,10 @@ pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`), which Go calls directly:
 it is not an EliteLLM provider and has no registry row (migration `0050`
 dropped the `quiz` slot). `POST /api/quizzes/{id}/grade` (signed in) and
 `POST /api/public/quizzes/{token}/grade` (anonymous, through the site Worker)
-take part ids and answers only; the server loads the marking scheme from the
-stored quiz, so neither grades arbitrary text. One Jev request per open part,
-at most 20 per attempt, five at a time; any failure fails the attempt and the
-learner retries. Jev costs $0.042 per million input tokens and nothing for
+take one question's part ids and answers only; the server loads the marking
+scheme from the stored quiz, so neither grades arbitrary text. One Jev request
+per answered open part, five at a time; any failure fails that check and the
+learner checks again. Jev costs $0.042 per million input tokens and nothing for
 output, so grading is **recorded, never charged**: signed-in requests write one
 `usage_events` row (surface `quiz`, provider `typesafe`, `credit_micros` 0,
 `units` = graded parts, `metadata.costMicroUsd`), and the author's
@@ -728,13 +738,14 @@ or per-address count. A shared page runs at most one widget (managed mode, a
 challenge only when Cloudflare asks), rendered at the first signed-out check
 and solved again only when a check asks, never in the background (it renders
 with `refresh-expired: never`, Q350, and `refresh-timeout: manual`, so a
-timed-out interactive challenge waits for the visitor). It sits under the
-Submit of the check that asks, rendering again under another quiz's Submit
-when that one asks. Its slot shows while a solve runs (the invisible widget
+timed-out interactive challenge waits for the visitor). Answers are checked
+one question at a time, and the widget sits under the Check button that asks,
+rendering again under another question's Check when that one asks; a captcha
+refusal shows under that Check too. Its slot shows while a solve runs (the invisible widget
 takes no room, and its solve needs a rendered container) and is hidden once
 the token settles or the interaction ends, which clears the widget's success
-box. While Cloudflare shows a challenge the hint "Complete the check below to
-submit." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
+box. While Cloudflare shows a challenge the hint "Complete the challenge below
+to check your answer." shows above it (Epo 2026-10-25, Q372; `src/share/TurnstileCheck.tsx`). A check stops waiting for its token after
 15 s, a clock that stops while an interactive challenge shows, so the check
 waits until the challenge is solved or errors; the API's refusal of an empty
 token shows the failed-check copy (Epo 2026-10-24, Q309;
@@ -747,7 +758,7 @@ than the environment's app hosts (the hosts of `APP_URL`,
 development and e2e, whose test keys name no app host), answers 403
 `captcha_failed`, and a siteverify that cannot answer 503
 `captcha_unavailable`, refusing rather than skipping the check; the page shows
-both under Submit (Q308). A deployed gateway refuses Cloudflare's published
+both under the question's Check (Q308). A deployed gateway refuses Cloudflare's published
 test secrets at boot, and an empty app host list, which would check no host
 (Q350; `turnstileHosts`, `server/cmd/api/main.go`). Signed-in checks take no token, a signed-in
 visitor's check of a quiz embedded in a shared note included (Q311). Setup: [deployment-runbook.md](deployment-runbook.md) §2.5. The local id
@@ -802,15 +813,11 @@ repeated chat prompt), with reasoning under
 `completion_tokens_details.reasoning_tokens`. A split larger
 than reported input is still refused as
 `cached_gt_input` and charged in full.
-The web app offers no key entry since 2026-10-16 (Settings → LLM has no keys
-section), so the BYOK paths below stay in the backend but no user can reach
-them: saving or removing a key (`PUT /api/me/llm-credentials`, `DELETE
-/api/me/llm-credentials/{provider}`) answers 404 unless the API runs with
-`BYOK_ENABLED=true`, which no deployment sets. Before BYOK returns, stored
-keys need associated data (user and provider) and a key version, and a
-user-supplied base URL needs an SSRF policy. UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
-reranker and descriptor rows. Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
-(`model_configs_credit_rates_check`). Platform chat/generate/editor/
+There is no BYOK (Q290): users cannot bring their own provider keys, every
+model session is platform-paid, and a catalog row's only switch is `enabled`.
+UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
+reranker and descriptor rows. Every row carries credit rates
+(`model_configs_credit_rates_check`): chat/generate/editor/
 ingest/vision rows need input, cached-read, and output all > 0. Embedding needs
 input > 0; cached-read and output may be 0.
 
@@ -1007,14 +1014,12 @@ begin(session)  →  provider call  →  settle(call id, measured usage)
 
 A current session reserves 0 credits in `provider_sessions.reserved_micros`.
 The column records the session's contribution when a future workflow takes an
-estimated credit hold. Platform
-chat, generate and editor share `ConcurrentLLMLeases` (5); a chat voice
+estimated credit hold. Chat,
+generate and editor share `ConcurrentLLMLeases` (5); a chat voice
 clip's reserved session (`reserved_micros` above zero) neither takes nor
 counts as one, since its hold bounds it. The gate is
 `used + reserved >= limit` plus that cap, the same check as
-`AssertCreditsAvailable`. BYOK chat has a session for idempotent usage events
-but does not consume a concurrency slot and skips the platform used+reserved
-gate. Other BYOK routes skip the LLM lease.
+`AssertCreditsAvailable`.
 
 Every outbound attempt inserts its `provider_calls` row before the network
 call. A successful response appends its `usage_events` row and marks the call
@@ -1224,8 +1229,7 @@ catalog columns name the reranker row the pipeline called: the settle payload
 sends its `modelVersion`, the gateway requires one on every `rerank` call and
 refuses one on any other kind, and the row must serve the `rerank` slot. Billing
 therefore shows "{surface} · Rerank · deepinfra/Qwen/Qwen3-Reranker-4B" and a
-separate Rerank bucket. The call always uses the platform key; in a BYOK chat it
-skips the capacity gate, as query embeddings do. Search takes the scores as
+separate Rerank bucket. Search takes the scores as
 soon as they arrive and the settlement finishes in a background task
 (`accounting.settle_in_background`), so a slow gateway never holds a search.
 The lease is released when the provider answers; the call row stays open until
@@ -1246,8 +1250,8 @@ request and settles it with `units`: 1 for a search that returned results, 0
 for an empty one; a failed search abandons the row unbilled. The gateway
 accepts units only on this kind, at most 1 and with no tokens, and prices a
 unit at the active `web_search` resource rate (1,800,000 micros, 1.8 credits,
-from DeepSeek's $0.75 per 1,000 searches), charged like LLM tokens on a
-platform-paid session. The usage row's `unit` is `search` and its catalog
+from DeepSeek's $0.75 per 1,000 searches), charged like LLM tokens; every
+model session is platform-paid, so a search is always charged. The usage row's `unit` is `search` and its catalog
 columns are empty. Once a session's credits run out, the pipeline's call open
 refuses a search, as it refuses any call but the terminal one. The cap of 3
 counted searches per message is the agent's (agentic-retrieval.md).
@@ -1443,9 +1447,8 @@ unread pages sends `parseFee` the same way (`!ever_parsed_successfully`, parts
 design Q6), and `_parse_fee` honours the payload for every job type; a full
 retry carries none and pays like an upload.
 
-`provider_sessions.paid_by` names who pays: `platform` (platform keys, the
-actor is charged credits; every ordinary ingest session), `user` (BYOK, zero
-credits) and `system`. A maintenance republish opens its ingest session with
+`provider_sessions.paid_by` names who pays: `platform` (the actor is charged
+credits; every model session and every ordinary ingest session) and `system`. A maintenance republish opens its ingest session with
 `paid_by='system'` (`beginSystemIngestSessionTx`, reachable only through the
 unexported `requestSourceRefresh` and `reprocessTx`) and its job payload carries
 `paidBy: "system"`. So does the reprocess of an export-only file, a plain parse
@@ -1627,7 +1630,9 @@ orders of magnitude. Listing workspaces touches one index. A chat turn gets
 12 responses before its first write, 4 tool calls per response and 160 per
 turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
-(`/chat/stream`, `/generate`, `/ai/command`, signed-in quiz `/grade` and
+(`/chat/stream`, `/generate`, `/ai/command`, question checks (`/check`: a
+quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
+keeps them here, since a learner does not check 15 questions a minute) and
 `/computation-check`) are 200/hour with burst 15, plus
 a 15/minute short-window guard so a scripted loop trips immediately. Cheap
 editor routes (`/ai/copilot`) have their own 120/minute
@@ -1644,6 +1649,9 @@ line); an import past it answers 429. Chat voice
 input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
 with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
 person talking, apart from the chat allowance the turns they send then use.
+Starting a review session (`GET /api/workspaces/{id}/review`, which reads and
+scores every quiz and set in scope) has its own class, 60/hour with burst 10;
+continuing one is not counted.
 Credits remain the money bound; these limits only stop abuse patterns.
 
 The rate-limit audit (Epo 2026-10-24) added these classes:
@@ -1763,7 +1771,7 @@ large answer:
 and drives an agent loop the whole time, so a requests-per-hour budget alone
 still allows arbitrary parallel spend. `BeginProviderSession` counts open
 non-ingest leases in Postgres (cap 5). A replica that dies mid-stream leaves a row the
-sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
+sweeper releases after 30 minutes. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
 The retrieval process bounds itself behind those per-user caps (Epo
@@ -1777,8 +1785,8 @@ and the planning phase when the slot arrives, or the in-stream
 request answers the existing 503 `provider_busy` with `Retry-After` at once,
 the editor routes before starting a response (Q359). Model-call
 admission holds the model-wide lock for one conditional insert, and a call's
-lease goes with its settlement. Deck scripts, renders and captures run on a
-pool of two threads of their own; one Office capture at a time
+lease goes with its settlement. Deck scripts, renders, captures and Office
+picture decodes run on a pool of two threads of their own
 ([agentic-retrieval.md](agentic-retrieval.md#process-capacity)).
 
 **Per-model outbound concurrency** bounds what reaches a provider.
@@ -1803,7 +1811,6 @@ updates wait for an admission transaction to finish; subsequent attempts see the
 committed limits immediately, without a restart or the catalog's ten-minute poll.
 The app and ingest hosts share the lease table. Lowering a limit leaves existing
 calls running and blocks new admissions until usage falls below the new limit.
-Only platform-key calls take a lease; BYOK uses the user's own provider limits.
 Missing capacity raises an explicit configuration error before a call row or
 provider request is created. A full gate polls with jitter within the call budget,
 then fails as `provider_busy`. Leases use the call id and receipt deadline and are

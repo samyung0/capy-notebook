@@ -9,9 +9,6 @@ export type PlanStepKind = typeof PlanStepKind[keyof typeof PlanStepKind];
 
 
 export const PlanStepKind = {
-  workspace: 'workspace',
-  unfiled: 'unfiled',
-  chapter: 'chapter',
   file: 'file',
   material: 'material',
 } as const;

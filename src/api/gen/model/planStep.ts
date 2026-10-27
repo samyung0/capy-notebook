@@ -9,8 +9,8 @@ import type { PlanStepKind } from './planStepKind.ts';
 export interface PlanStep {
   kind: PlanStepKind;
   locked: boolean;
-  /** The chapter, file or material */
-  targetId?: string;
+  /** The file or material */
+  targetId: string;
   title: string;
   workspaceId: string;
 }

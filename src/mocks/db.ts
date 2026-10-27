@@ -26,6 +26,8 @@ import type {
   PublicQuiz,
   PublicWorkspace,
   Question,
+  RecentOpen,
+  RecentPage,
   ReportEditIncidentReq,
   SourceFile,
   Task,
@@ -74,6 +76,7 @@ import {
   EDITOR_WORKSPACE_ID,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
+import { markdownSamples } from './markdownSamples';
 import {
   nearLimitCards,
   nearLimitFlowchart,
@@ -216,7 +219,6 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-01',
     id: 'ws_bio',
     isOwner: true,
-    lastAccessedAt: hours(3),
     name: 'Biology 101',
     privacy: 'link',
     role: 'owner',
@@ -242,7 +244,6 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-02',
     id: 'ws_calc',
     isOwner: true,
-    lastAccessedAt: days(1),
     name: 'Calculus II',
     privacy: 'private',
     role: 'owner',
@@ -268,7 +269,6 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-03',
     id: 'ws_hist',
     isOwner: true,
-    lastAccessedAt: days(2),
     name: 'World History',
     privacy: 'link',
     role: 'owner',
@@ -294,7 +294,6 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-04',
     id: 'ws_chem',
     isOwner: true,
-    lastAccessedAt: days(5),
     name: 'Organic Chemistry',
     privacy: 'private',
     role: 'owner',
@@ -320,7 +319,6 @@ export const workspaces: Workspace[] = [
     iconId: 'waves-05',
     id: 'ws_eng',
     isOwner: true,
-    lastAccessedAt: hours(20),
     name: 'English Literature',
     privacy: 'public',
     role: 'owner',
@@ -631,6 +629,7 @@ print(punnett("Aa", "Aa"))
     kind: 'txt',
     name: 'Photosynthesis.tex',
   },
+  ...markdownSamples,
 ] as const;
 
 /** Inline text sources for MSW: the links handler hands this back as the
@@ -2953,14 +2952,67 @@ export const quizMaterials = () => materials.filter((m) => m.kind === 'quiz');
 export const flashcardSetMaterials = () =>
   materials.filter((m) => m.kind === 'flashcards');
 
-/** GET /api/workspaces: search, tag filter and sort. */
+/** The signed-in user's last opens (workspace_visits): the recent order, and
+ * which public workspaces they visited. */
+export const visits = new Map<string, string>([
+  ['ws_bio', hours(3)],
+  ['ws_calc', days(1)],
+  ['ws_hist', days(2)],
+  ['ws_chem', days(5)],
+  ['ws_eng', hours(20)],
+]);
+
+/** The user's file and material opens (item_opens), `file:<id>` or
+ * `material:<id>`. An item never opened counts as opened when it was created,
+ * as the server marks creations. */
+export const itemOpens = new Map<string, string>();
+
+const RECENT_KINDS = ['note', 'quiz', 'flashcards', 'mindmap', 'diagram'];
+
+/** GET /api/recent: opens in the workspace list's set, newest first. */
+export function listRecent(url: URL): RecentPage {
+  const limit = Number(url.searchParams.get('limit') ?? 20);
+  const visible = new Set(
+    listWorkspaces(new URL('http://mock/api/workspaces')).map((w) => w.id)
+  );
+  const rows: RecentOpen[] = [
+    ...files
+      .filter((f) => visible.has(f.workspaceId))
+      .map((f) => ({
+        file: f,
+        openedAt: itemOpens.get(`file:${f.id}`) ?? f.addedAt,
+      })),
+    ...materials
+      .filter(
+        (mt) =>
+          !mt.parentMaterialId &&
+          RECENT_KINDS.includes(mt.kind) &&
+          (!mt.workspaceId || visible.has(mt.workspaceId))
+      )
+      .map((mt) => ({
+        material: materialListItem(mt),
+        openedAt: itemOpens.get(`material:${mt.id}`) ?? mt.createdAt,
+      })),
+  ];
+  return {
+    items: rows
+      .sort((a, b) => +new Date(b.openedAt) - +new Date(a.openedAt))
+      .slice(0, limit),
+  };
+}
+
+/** GET /api/workspaces: search, tag filter and sort. Visited public
+ * workspaces list with the user's own. */
 export function listWorkspaces(url: URL): Workspace[] {
   const q = (url.searchParams.get('q') ?? '').toLowerCase().trim();
   const tags = (url.searchParams.get('tag') ?? '')
     .split(',')
     .map((t) => t.trim())
     .filter(Boolean);
-  let list = [...workspaces];
+  let list: Workspace[] = [
+    ...workspaces,
+    ...publicWorkspaces.filter((w) => visits.has(w.id)),
+  ];
   if (q)
     list = list.filter(
       (w) =>
@@ -2981,9 +3033,14 @@ export function listWorkspaces(url: URL): Workspace[] {
       return list.sort((a, b) => b.chapterCount - a.chapterCount);
     case 'files':
       return list.sort((a, b) => b.fileCount - a.fileCount);
-    default:
+    default: {
+      // Never opened last, newest first, as the server.
+      const opened = (w: Workspace) => +new Date(visits.get(w.id) ?? 0);
       return list.sort(
-        (a, b) => +new Date(b.lastAccessedAt) - +new Date(a.lastAccessedAt)
+        (a, b) =>
+          opened(b) - opened(a) ||
+          +new Date(b.createdAt) - +new Date(a.createdAt)
       );
+    }
   }
 }

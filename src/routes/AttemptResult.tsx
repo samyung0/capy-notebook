@@ -113,7 +113,7 @@ export default function AttemptResult() {
         />
       }
     >
-      <TabContent wide>
+      <TabContent>
         {/* In the gap under the header, flush with the content's right edge. */}
         {attempt.materialId && (
           <div className="-mt-2 mb-6 flex justify-end sm:-mt-5 sm:mb-3">

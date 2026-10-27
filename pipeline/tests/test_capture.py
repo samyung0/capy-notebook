@@ -45,6 +45,17 @@ def _ctx(*pages: int) -> ToolContext:
     return ctx
 
 
+@pytest.fixture(autouse=True)
+def no_office_files(monkeypatch):
+    """capture_page looks the file's kind up first; these files are no Office
+    files unless a test says so."""
+
+    async def office_file(*_args):
+        return False
+
+    monkeypatch.setattr(capture, "office_file", office_file)
+
+
 @pytest.fixture
 def pdf(tmp_path):
     path = tmp_path / "two-pages.pdf"
@@ -458,8 +469,6 @@ def test_injected_captures_keep_their_estimate_without_a_decode(monkeypatch):
         model_name="GLM",
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=("low", "high"),
         default_thinking="high",
     )
@@ -557,8 +566,6 @@ def test_a_request_after_a_drop_counts_only_its_attached_images():
         model_name="GLM",
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        platform_enabled=True,
-        byok_enabled=False,
         thinking_levels=("low", "high"),
         default_thinking="high",
     )
@@ -753,96 +760,185 @@ async def test_knowledge_pdf_cache_is_keyed_by_the_object_key(tmp_path, monkeypa
         await capture.knowledge_pdf_path("", 10)
 
 
-def test_office_capture_returns_only_jpeg_and_removes_temporary_source(monkeypatch):
-    import base64
-    import hashlib
-    from contextlib import contextmanager
+async def test_capture_names_inspect_office_document_before_asking_for_a_passage(
+    monkeypatch, rendered
+):
+    """An Office file is refused at once, cited page or not (Q283), so the
+    model is not sent searching for a passage to capture."""
 
-    data = b"editable-office-source"
-    jpeg = _jpeg(100, 100)
-    downloaded_paths = []
+    async def office_file(workspace_id, file_id):
+        return (workspace_id, file_id) == ("ws_1", "f_1")
 
-    def download(key, path, limit):
-        assert key == "sources/office" and limit == len(data)
-        target = Path(path)
-        downloaded_paths.append(target)
-        target.write_bytes(data)
-        return len(data), hashlib.sha256(data).hexdigest()
-
-    @contextmanager
-    def post(url, **kwargs):
-        assert url == "http://parser.test/capture_page"
-        assert kwargs["files"]["file"][1].read() == data
-
-        class Response:
-            def raise_for_status(self):
-                pass
-
-            def iter_content(self, _size):
-                yield json.dumps(
-                    {
-                        "jpeg": base64.b64encode(jpeg).decode(),
-                        "box": [0, 0, 1000, 1000],
-                        "size": [100, 100],
-                    }
-                ).encode()
-
-        yield Response()
-
-    monkeypatch.setattr(capture.cfg, "parser_url", "http://parser.test/file_parse")
-    monkeypatch.setattr(capture.blobstore, "download_file", download)
-    monkeypatch.setattr(capture.requests, "post", post)
-    result = capture._office_capture(
-        {
-            "name": "source.docx",
-            "blob_path": "sources/office",
-            "size_bytes": len(data),
-            "source_sha256": hashlib.sha256(data).hexdigest(),
-        },
-        1,
-        None,
-        100,
-    )
-    assert result[0] == jpeg and result[2] == (100, 100)
-    assert downloaded_paths and all(
-        not path.parent.exists() for path in downloaded_paths
-    )
+    monkeypatch.setattr(capture, "office_file", office_file)
+    for ctx in (_ctx(), _ctx(2)):
+        result = await tools._capture_page(
+            {"file_id": "f_1", "page": 2, "_tool_call_id": "c1"}, ctx
+        )
+        assert result.refused and result.error_code == "unsupported_format"
+        assert capture.OFFICE_NO_PAGES in result.text()
+        assert not ctx.pending_images and ctx.images_taken == 0
 
 
 @pytest.mark.parametrize(
-    "kind,extension",
-    [("doc", "docx"), ("sheet", "xlsx"), ("slides", "pptx"), ("pdf", "pdf")],
+    ("kind", "name", "outcome"),
+    [
+        ("doc", "plan.docx", "office"),
+        ("sheet", "grades.XLSX", "office"),
+        ("slides", "deck.pptx", "office"),
+        ("sheet", "marks.csv", "no pdf"),
+        ("sheet", "marks.tsv", "no pdf"),
+        ("doc", "old.doc", "no pdf"),
+        ("slides", "old.ppt", "no pdf"),
+        ("pdf", "renamed.docx", "renders"),
+    ],
 )
-async def test_capture_uses_stored_format_after_rename(
-    monkeypatch, pdf, kind, extension
+async def test_capture_refuses_only_the_office_files_inspect_reads(
+    monkeypatch, pdf, kind, name, outcome
 ):
+    """A Word, Excel or PowerPoint file inspect_office_document reads (its
+    kind and a .docx, .xlsx or .pptx name, as Go's SourceEditFormat) has no
+    page view (Q283): the refusal names inspect_office_document. CSV, TSV and
+    legacy .doc, .xls and .ppt files keep the page-less source's refusal, and
+    a PDF renders whatever its name (Q396, review r1 L3)."""
     row = {
         "kind": kind,
-        "name": "renamed.docx" if kind == "pdf" else "renamed without extension",
+        "name": name,
         "ever_parsed_successfully": True,
         "parse_mode": "standard",
         "blob_path": "source/blob",
     }
-    expected = capture.render(pdf, 1, None, 100)
-    calls = []
 
     async def source(*_args):
         return row
 
-    async def pdf_path(*_args):
-        calls.append("pdf")
-        return pdf
-
-    def office(source_row, page, bbox, max_edge):
-        calls.append(source_row["name"])
-        assert (page, bbox, max_edge) == (1, None, 100)
-        return expected
-
     monkeypatch.setattr(capture.store, "file_page_source", source)
-    monkeypatch.setattr(capture, "pdf_path", pdf_path)
-    monkeypatch.setattr(capture, "_office_capture", office)
-    assert await capture.render_file("ws_1", "f_1", 1, None, 100) == expected
-    assert calls == ["pdf" if kind == "pdf" else f"source.{extension}"]
+    assert capture.is_office(row) is (outcome == "office")
+    if outcome == "renders":
+
+        async def pdf_path(*_args):
+            return pdf
+
+        monkeypatch.setattr(capture, "pdf_path", pdf_path)
+        expected = capture.render(pdf, 1, None, 100)
+        assert await capture.render_file("ws_1", "f_1", 1, None, 100) == expected
+        return
+    with pytest.raises(capture.CaptureUnavailable) as no:
+        await capture.render_file("ws_1", "f_1", 1, None, 100)
+    assert no.value.code == "unsupported_format"
+    if outcome == "office":
+        assert str(no.value) == capture.OFFICE_NO_PAGES
+    else:
+        assert str(no.value) == "this source has no retained PDF"
+
+
+# ------------------------------------------------------------- Office pictures
+
+
+def test_a_picture_crop_box_stays_inside_the_picture():
+    """Security regression (review r1 L1, Q381): an Office picture's crop is
+    what the file says, any finite value in a DOCX and null in an XLSX: a
+    side that is no finite number reads as 0, a padding (negative) side as 0,
+    a side past 1 as 1, and a pair leaving nothing leaves that axis whole, so
+    the box never leaves the picture or turns empty."""
+    box = capture.crop_box
+    assert box(None) == [0, 0, 1000, 1000]
+    assert box({"left": 0.125, "top": 0.25}) == [125, 250, 1000, 1000]
+    for junk in (None, float("nan"), float("inf"), -float("inf"), "0.5", True):
+        assert box({"left": junk, "right": 0.5}) == [0, 0, 500, 1000]
+    assert box({"left": -0.5, "right": 0.25}) == [0, 0, 750, 1000]
+    assert box({"top": 7.0, "bottom": 0.0}) == [0, 0, 1000, 1000]
+    assert box({"left": 0.75, "right": 0.25, "top": 0.5}) == [0, 500, 1000, 1000]
+    assert box({"top": 0.5, "bottom": 0.375}) == [0, 500, 1000, 625]
+    assert box([0.1, 0.1, 0.1, 0.1]) == [0, 0, 1000, 1000]
+
+
+def _halves(width: int, height: int) -> bytes:
+    """A PNG red on its left half and blue on its right."""
+    import io
+
+    from PIL import Image
+
+    image = Image.new("RGB", (width, height), (255, 0, 0))
+    image.paste((0, 0, 255), (width // 2, 0, width, height))
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_a_picture_is_sent_with_its_crop_applied():
+    import io
+
+    from PIL import Image
+
+    jpeg, box, size = capture.picture_jpeg(_halves(200, 100), {"left": 0.5}, 1568)
+    assert box == [500, 0, 1000, 1000] and size == (100, 100)
+    with Image.open(io.BytesIO(jpeg)) as image:
+        red, _, blue = image.convert("RGB").getpixel((50, 50))
+    assert blue > 200 and red < 50
+
+
+@pytest.mark.parametrize("gif_frame", [False, True])
+def test_a_picture_past_the_side_limit_is_refused_before_decoding(
+    monkeypatch, gif_frame
+):
+    """Security regression (review r1 L3, r2, Q381, Q384): the engine lists a
+    picture from its header alone, so the AI process checks the size Pillow
+    reads before any pixel is decoded: a picture past IMAGE_MAX_SIDE (the
+    upload check's limit) is refused, a GIF whose first frame passes its small
+    logical screen included."""
+    import io
+    import struct
+
+    from PIL import Image
+
+    side = capture.IMAGE_MAX_SIDE + 1
+    buffer = io.BytesIO()
+    if gif_frame:
+        Image.new("P", (side, 4)).save(buffer, "GIF")
+        data = bytearray(buffer.getvalue())
+        data[6:8] = struct.pack("<H", 10)  # the logical screen says 10 wide
+        data = bytes(data)
+    else:
+        Image.new("RGB", (side, 4)).save(buffer, "PNG")
+        data = buffer.getvalue()
+
+    def decoded(*_args):
+        raise AssertionError("decoded past the side limit")
+
+    monkeypatch.setattr(capture, "_decoded", decoded)
+    with pytest.raises(capture.CaptureUnavailable, match=f"{side} by 4 pixels"):
+        capture.picture_jpeg(data, None, 1568)
+
+
+def test_pictures_of_one_call_follow_its_result_in_order():
+    """Several pictures of one inspect_office_document call ride after its
+    tool result, each its own image; a folded call's ride after the note."""
+    url = capture.data_url(_jpeg(8, 8))
+    images = {
+        capture.picture_id("c1", 1): ("first", url),
+        "c2": ("capture", url),
+        capture.picture_id("c1", 2): ("second", url),
+        capture.picture_id("gone", 1): ("folded", url),
+    }
+    messages = [
+        {"role": "user", "content": "q"},
+        {"role": "user", "_kind": "turn_note", "content": "note"},
+        {"role": "assistant", "content": "", "tool_calls": []},
+        {"role": "tool", "tool_call_id": "c1", "content": "pictures"},
+        {"role": "tool", "tool_call_id": "c2", "content": "page"},
+    ]
+    out = capture.inject_images(messages, images)
+
+    def labels(message):
+        return [
+            part["text"].split("\n")[0]
+            for part in message["content"]
+            if part["type"] == "text" and part["text"].endswith("<source>")
+        ]
+
+    assert labels(out[2]) == ["folded"]
+    assert [m.get("tool_call_id") for m in out[4:6]] == ["c1", "c2"]
+    assert labels(out[6]) == ["first", "second", "capture"]
 
 
 # ------------------------------------------------------------- image sources

@@ -125,12 +125,13 @@ describe('office host protocol', () => {
     ).toBe(true);
   });
 
-  it("accepts only Capy's own styles, themes and locales, with the narrow and compact flags", () => {
+  it("accepts only Capy's own styles, themes and locales, with the narrow, compact and frosted flags", () => {
     const message = {
       compact: false,
+      frosted: true,
       locale: 'zh',
       narrow: false,
-      style: 'classroom',
+      style: 'capy',
       theme: 'mocha',
       type: 'set-appearance',
       version: OFFICE_PROTOCOL_VERSION,
@@ -141,6 +142,7 @@ describe('office host protocol', () => {
     expect(isOfficeHostMessage({ ...message, style: undefined })).toBe(false);
     expect(isOfficeHostMessage({ ...message, narrow: undefined })).toBe(false);
     expect(isOfficeHostMessage({ ...message, compact: undefined })).toBe(false);
+    expect(isOfficeHostMessage({ ...message, frosted: undefined })).toBe(false);
     expect(isOfficeHostMessage({ ...message, locale: 'zh-CN' })).toBe(false);
   });
 

@@ -11,7 +11,9 @@ export interface ProgressItem {
   /** @nullable */
   chapterId: string | null;
   createdAt: string;
+  doneAt?: string;
   id: string;
+  kind: string;
   position: number;
   state?: ProgressItemState;
   title: string;

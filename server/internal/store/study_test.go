@@ -34,6 +34,46 @@ type studyFixture struct {
 	ws   Workspace
 }
 
+// checkQuiz checks every question of a graded snapshot into one attempt, as
+// the quiz page does, giving each question its own answers, and returns the
+// attempt.
+func checkQuiz(t *testing.T, s *Store, userID, quizID string, snapshot []byte, answers string) AttemptDetail {
+	t.Helper()
+	var qs []map[string]any
+	if err := json.Unmarshal(snapshot, &qs); err != nil {
+		t.Fatal(err)
+	}
+	var given map[string]any
+	if err := json.Unmarshal([]byte(answers), &given); err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	marks := map[string]float64{}
+	for _, q := range qs {
+		id := q["id"].(string)
+		order = append(order, id)
+		_, marks[id] = questionMarks(q)
+	}
+	var d AttemptDetail
+	for _, q := range qs {
+		own := map[string]any{}
+		for _, raw := range q["parts"].([]any) {
+			id := raw.(map[string]any)["id"].(string)
+			if answer, ok := given[id]; ok {
+				own[id] = answer
+			}
+		}
+		var err error
+		d, err = s.CheckQuizQuestion(context.Background(), userID, quizID, QuizCheck{
+			AttemptID: d.ID, Answers: own, Question: q, Order: order, Marks: marks,
+		}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return d
+}
+
 func newStudyFixture(t *testing.T, label string) studyFixture {
 	t.Helper()
 	s := openAccessTestStore(t)
@@ -113,9 +153,7 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot), nil); err != nil {
-		t.Fatal(err)
-	}
+	checkQuiz(t, f.s, f.user, quiz.ID, []byte(studySnapshot), studyAnswers)
 	if got := f.progress(t, quiz.ID); got != "done" {
 		t.Fatalf("quiz progress after an attempt = %q", got)
 	}
@@ -134,7 +172,13 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attempt, err := f.s.CreateAttempt(ctx, f.user, embedded.ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot), nil); err != nil || attempt.ID != "" || attempt.Correct != 1 {
+	var first []map[string]any
+	if err := json.Unmarshal([]byte(studySnapshot), &first); err != nil {
+		t.Fatal(err)
+	}
+	if attempt, err := f.s.CheckQuizQuestion(ctx, f.user, embedded.ID, QuizCheck{
+		Answers: map[string]any{"q1:part:1": true}, Question: first[0], Order: []string{"q1", "q2"}, Marks: map[string]float64{"q1": 1, "q2": 1},
+	}, time.Now()); err != nil || attempt.ID != "" || attempt.Correct != 1 {
 		t.Fatalf("embedded attempt %+v %v", attempt, err)
 	}
 	if n := f.count(t, `SELECT count(*) FROM attempts WHERE material_id=$1`, embedded.ID); n != 0 {
@@ -198,6 +242,7 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	kept := f.set(t, [2]string{"Golgi", "Ships proteins"}, [2]string{"Lysosome", "Digests waste"})
 	gone := f.set(t, [2]string{"Ribosome", "Makes proteins"})
 	trashed := f.set(t, [2]string{"Nucleus", "Holds DNA"})
+	unrated := f.set(t, [2]string{"Vacuole", "Stores water"})
 	for _, c := range []Flashcard{kept[0], kept[1], gone[0], trashed[0]} {
 		f.rate(t, c, 3)
 	}
@@ -208,14 +253,20 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if _, err := f.s.TrashMaterial(ctx, f.user, trashed[0].MaterialID, "", AgentOperation{}); err != nil {
 		t.Fatal(err)
 	}
-	// Editing a card makes it new: it leaves mixed review until it is rated again.
+	// Editing a card makes it new until it is rated again.
 	editCardFront(t, f.s, f.user, kept[1].MaterialID, kept[1].ID, "Golgi apparatus")
 
+	// A manual review takes the practised card and the new ones (the edited
+	// card and the never-rated set), not the removed or trashed sets.
 	mixed, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mixed.Items) != 1 || mixed.Items[0].ItemID != kept[0].ID {
+	got := map[string]bool{}
+	for _, it := range mixed.Items {
+		got[it.ItemID] = true
+	}
+	if len(mixed.Items) != 3 || !got[kept[0].ID] || !got[kept[1].ID] || !got[unrated[0].ID] {
 		t.Fatalf("mixed review = %+v", mixed)
 	}
 	// A missed card enters Quick review with both faces once it fades (a
@@ -306,10 +357,8 @@ func TestQuizAttemptRatesHalfMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot, _ := json.Marshal([]any{question("a", 0.5), question("b", 1), question("c", 1.5)})
-	answers := json.RawMessage(`{"a:part:1":"x","b:part:1":"x","c:part:1":"x"}`)
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 3, 6, answers, snapshot, nil); err != nil {
-		t.Fatal(err)
-	}
+	answers := `{"a:part:1":"x","b:part:1":"x","c:part:1":"x"}`
+	checkQuiz(t, f.s, f.user, quiz.ID, snapshot, answers)
 	if got := f.progress(t, quiz.ID); got != "done" {
 		t.Fatalf("removed quiz after an attempt = %q", got)
 	}
@@ -317,6 +366,65 @@ func TestQuizAttemptRatesHalfMarks(t *testing.T) {
 		if n := f.count(t, `SELECT rating FROM review_log WHERE user_id=$1 AND material_id=$2 AND item_id=$3`, f.user, quiz.ID, item); n != want {
 			t.Errorf("question %s rated %d, want %d", item, n, want)
 		}
+	}
+}
+
+// Checks build one attempt in the quiz's order, scored out of the whole quiz;
+// a question is checked once per attempt, and an unknown id starts a new one.
+func TestQuizChecksBuildOneAttempt(t *testing.T) {
+	f := newStudyFixture(t, "u_study_checks")
+	ctx := context.Background()
+	quiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "Quiz", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Questions: json.RawMessage(studyQuestions), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var graded []map[string]any
+	if err := json.Unmarshal([]byte(studySnapshot), &graded); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now().Add(-5 * time.Minute)
+	marks := map[string]float64{"q1": 1, "q2": 1}
+	check := func(attemptID string, q int) (AttemptDetail, error) {
+		id := graded[q]["id"].(string)
+		return f.s.CheckQuizQuestion(ctx, f.user, quiz.ID, QuizCheck{
+			AttemptID: attemptID, StartedAt: &started, Answers: map[string]any{id + ":part:1": true},
+			Question: graded[q], Order: []string{"q1", "q2"}, Marks: marks,
+		}, time.Now())
+	}
+	// q2 first: the snapshot still follows the quiz's order.
+	first, err := check("", 1)
+	if err != nil || first.ID == "" || first.Correct != 0 || first.Total != 2 || first.StartedAt == nil {
+		t.Fatalf("first check = %+v, %v", first.Attempt, err)
+	}
+	if _, err := check(first.ID, 1); !errors.Is(err, ErrQuestionChecked) {
+		t.Fatalf("second check of a question = %v", err)
+	}
+	if checked, err := f.s.QuizQuestionChecked(ctx, f.user, quiz.ID, first.ID, "q2"); err != nil || !checked {
+		t.Fatalf("q2 checked = %v, %v", checked, err)
+	}
+	if checked, err := f.s.QuizQuestionChecked(ctx, f.user, quiz.ID, first.ID, "q1"); err != nil || checked {
+		t.Fatalf("q1 checked = %v, %v", checked, err)
+	}
+	// q2's marks rise after it was checked: it still counts out of the 1 mark
+	// it was checked against, so the score never passes its total.
+	marks["q2"] = 5
+	both, err := check(first.ID, 0)
+	if err != nil || both.ID != first.ID || both.Correct != 1 || both.Total != 2 || both.Pct != 50 {
+		t.Fatalf("continued attempt = %+v, %v", both.Attempt, err)
+	}
+	var order []struct{ ID string }
+	var answers map[string]any
+	if err := json.Unmarshal(both.Questions, &order); err != nil || len(order) != 2 || order[0].ID != "q1" {
+		t.Fatalf("snapshot order = %+v, %v", order, err)
+	}
+	if err := json.Unmarshal(both.Answers, &answers); err != nil || len(answers) != 2 {
+		t.Fatalf("answers = %v, %v", answers, err)
+	}
+	if fresh, err := check("at_gone", 0); err != nil || fresh.ID == "at_gone" || fresh.ID == first.ID {
+		t.Fatalf("unknown attempt id = %+v, %v", fresh.Attempt, err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM attempts WHERE material_id=$1`, quiz.ID); n != 2 {
+		t.Fatalf("attempts = %d, want 2", n)
 	}
 }
 
@@ -329,8 +437,8 @@ func TestQuizAttemptSkipsBlankQuestions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(`{"q1:part:1":true}`), json.RawMessage(studySnapshot), nil); err != nil {
-		t.Fatal(err)
+	if d := checkQuiz(t, f.s, f.user, quiz.ID, []byte(studySnapshot), `{"q1:part:1":true}`); d.Correct != 1 || d.Total != 2 {
+		t.Fatalf("attempt scored %v of %v", d.Correct, d.Total)
 	}
 	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1 AND material_id=$2 AND item_id='q1'`, f.user, quiz.ID); n != 1 {
 		t.Fatalf("answered question ratings = %d, want 1", n)
@@ -340,8 +448,8 @@ func TestQuizAttemptSkipsBlankQuestions(t *testing.T) {
 	}
 }
 
-// Embedded sets, cards deleted from their set and edited cards stay out of
-// review; an edited card starts again when it is rated.
+// Embedded sets and cards deleted from their set stay out of review; an
+// edited card comes back as a new item and starts again when it is rated.
 func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
 	f := newStudyFixture(t, "u_study_orphans")
 	ctx := context.Background()
@@ -373,7 +481,7 @@ func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mixed.Items) != 1 || mixed.Items[0].ItemID != cards[0].ID {
+	if len(mixed.Items) != 2 || mixed.Items[0].ItemID != cards[2].ID || mixed.Items[1].ItemID != cards[0].ID {
 		t.Fatalf("mixed review = %+v", mixed)
 	}
 	f.rate(t, cards[2], 3)
@@ -502,9 +610,7 @@ func TestFlashcardAttemptRecordsRatings(t *testing.T) {
 		len(got) != 2 || got[0].Front != "Ribosome" || len(got[0].Ratings) != 2 || got[1].Ratings[0] != 4 {
 		t.Fatalf("attempt = %+v, cards %+v", d.Attempt, got)
 	}
-	if _, err := f.s.CreateAttempt(ctx, f.user, f.quiz(t).ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot), nil); err != nil {
-		t.Fatal(err)
-	}
+	checkQuiz(t, f.s, f.user, f.quiz(t).ID, []byte(studySnapshot), studyAnswers)
 	only, _, err := f.s.ListAttempts(ctx, f.user, AttemptParams{Kinds: []string{"flashcards"}, Limit: 30})
 	if err != nil || len(only) != 1 || only[0].ID != ref.ID {
 		t.Fatalf("flashcard attempts = %+v, %v", only, err)

@@ -27,7 +27,7 @@ test('bank checks an answer and marks its square', async ({ page }) => {
     .getByRole('textbox', { name: m.question_ui_your_answer() })
     .fill('6');
   await question
-    .getByRole('button', { name: m.question_ui_check_answer() })
+    .getByRole('button', { exact: true, name: m.question_ui_check() })
     .click();
   await expect(question).toContainText('1 / 1');
   await expect(
@@ -77,7 +77,7 @@ test('bank continues and filters', async ({ page }) => {
 });
 
 // Summary on a finished topic opens its summary page under the topic: the
-// score, the missed questions to retry, and a square that opens its question.
+// score and a square that opens its question.
 test('a finished topic opens its summary', async ({ page }) => {
   await page.goto('/qb/circles/summary');
   await expect(page.getByText('7 / 10', { exact: true })).toBeVisible({
@@ -91,9 +91,6 @@ test('a finished topic opens its summary', async ({ page }) => {
       .getByRole('link')
       .last()
   ).toHaveAttribute('href', /\/qb\/circles$/);
-  await expect(
-    page.getByRole('button', { name: m.question_ui_retry() })
-  ).toHaveCount(3);
   // The summary's own square, not the tree's.
   await page
     .getByRole('list', { name: m.quiz_question_results() })

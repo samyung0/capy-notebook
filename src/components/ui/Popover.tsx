@@ -4,10 +4,35 @@ import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 
 import { cn } from '@/lib/cn';
 
+/** Whether the trigger last opened its popover by pointer rather than key. */
+const OpenedByPointer = React.createContext<React.RefObject<boolean> | null>(
+  null
+);
+
 function Popover({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />;
+  const openedByPointer = React.useRef(false);
+  return (
+    <OpenedByPointer value={openedByPointer}>
+      <PopoverPrimitive.Root data-slot="popover" {...props} />
+    </OpenedByPointer>
+  );
+}
+
+/** Menus focus their first item on open. Opened by pointer, they focus the
+ * menu itself: the prevented pointerdown leaves Chrome in keyboard modality
+ * after any key press, so the item would show the keyboard focus ring. */
+function useMenuOpenAutoFocus(
+  onOpenAutoFocus?: (event: Event) => void
+): (event: Event) => void {
+  const openedByPointer = React.useContext(OpenedByPointer);
+  return (event) => {
+    onOpenAutoFocus?.(event);
+    if (event.defaultPrevented || !openedByPointer?.current) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).focus();
+  };
 }
 
 /** Toggles on pointerdown like the dropdown menus: the press replays as a
@@ -16,10 +41,12 @@ function Popover({
  * pointerdown keeps focus from leaving the opened popover. */
 function PopoverTrigger({
   onClick,
+  onKeyDown,
   onPointerDown,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
   const pressed = React.useRef(false);
+  const openedByPointer = React.useContext(OpenedByPointer);
   return (
     <PopoverAnchor asChild>
       <span className="inline-flex min-w-0 shrink-0">
@@ -30,11 +57,16 @@ function PopoverTrigger({
             if (pressed.current && event.detail > 0) event.preventDefault();
             pressed.current = false;
           }}
+          onKeyDown={(event) => {
+            onKeyDown?.(event);
+            if (openedByPointer) openedByPointer.current = false;
+          }}
           onPointerDown={(event) => {
             onPointerDown?.(event);
             if (event.defaultPrevented || event.button !== 0 || event.ctrlKey)
               return;
             event.preventDefault();
+            if (openedByPointer) openedByPointer.current = true;
             event.currentTarget.click();
             pressed.current = true;
           }}
@@ -96,4 +128,5 @@ export {
   PopoverContent,
   PopoverTitle,
   PopoverTrigger,
+  useMenuOpenAutoFocus,
 };

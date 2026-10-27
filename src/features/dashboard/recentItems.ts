@@ -2,12 +2,11 @@ import type {
   FileKind,
   MaterialKind,
   MaterialListItem,
+  RecentOpen,
   SourceFile,
   Workspace,
 } from '@/api/types';
 import { fileCanClone } from '@/features/files/fileUtils';
-
-export const RECENT_ITEM_LIMIT = 20;
 
 export type RecentItem =
   | {
@@ -33,14 +32,14 @@ export type RecentItem =
       workspaceId: string;
     };
 
-/** Merges the newest files and materials into one list. Each input is a
- * newest-first page of at least `limit` rows, so the merged top `limit` is
- * exact. Workspaces supply edit and clone rights. */
-export function mergeRecentItems(
+/** A Recent row: the item and when the caller last opened it. */
+export type OpenedRecentItem = RecentItem & { openedAt: string };
+
+/** The rows as recent items; workspaces supply edit and clone rights. */
+function toRecentItems(
   files: SourceFile[],
   materials: MaterialListItem[],
-  workspaces: Workspace[],
-  limit = RECENT_ITEM_LIMIT
+  workspaces: Workspace[]
 ): RecentItem[] {
   const workspaceById = new Map(workspaces.map((ws) => [ws.id, ws]));
   // A standalone material in this list is always the caller's own.
@@ -48,7 +47,7 @@ export function mergeRecentItems(
     !workspaceId || !!workspaceById.get(workspaceId)?.capabilities.canEdit;
   const canClone = (workspaceId: string) =>
     !workspaceId || !!workspaceById.get(workspaceId)?.canClone;
-  const items: RecentItem[] = [
+  return [
     ...files.map((file) => ({
       canClone: fileCanClone(file) && canClone(file.workspaceId),
       canEdit: canEdit(file.workspaceId),
@@ -72,9 +71,37 @@ export function mergeRecentItems(
       workspaceId: material.workspaceId,
     })),
   ];
-  items.sort((a, b) => {
-    const byDate = Date.parse(b.createdAt) - Date.parse(a.createdAt);
-    return byDate === 0 ? a.id.localeCompare(b.id) : byDate;
+}
+
+/** Merges the newest files and materials into one list. Each input is a
+ * newest-first page of at least `limit` rows, so the merged top `limit` is
+ * exact. */
+export function mergeRecentItems(
+  files: SourceFile[],
+  materials: MaterialListItem[],
+  workspaces: Workspace[],
+  limit: number
+): RecentItem[] {
+  return toRecentItems(files, materials, workspaces)
+    .sort((a, b) => {
+      const byDate = Date.parse(b.createdAt) - Date.parse(a.createdAt);
+      return byDate === 0 ? a.id.localeCompare(b.id) : byDate;
+    })
+    .slice(0, limit);
+}
+
+/** GET /recent's rows as recent items, in its open order, each with its open
+ * time; workspaces supply edit and clone rights. */
+export function fromRecent(
+  rows: RecentOpen[],
+  workspaces: Workspace[]
+): OpenedRecentItem[] {
+  return rows.flatMap((row) => {
+    const [item] = toRecentItems(
+      row.file ? [row.file] : [],
+      row.material ? [row.material] : [],
+      workspaces
+    );
+    return item ? [{ ...item, openedAt: row.openedAt }] : [];
   });
-  return items.slice(0, limit);
 }

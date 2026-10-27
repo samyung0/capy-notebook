@@ -1,12 +1,20 @@
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import type { Region } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
+import { Toolbar } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
@@ -14,14 +22,40 @@ import { CitationOverlay } from './CitationOverlay';
 import { normalizeCitationRegions } from './citationRegions';
 import { FileModeControl, useFileMode } from './FileModeControl';
 import { FileError } from './FileStates';
+import { FileHeaderTarget } from './fileModeContext';
 import { PdfAnnotations } from './PdfAnnotations';
 
 // Keep PDF rendering available under the app's CSP and while offline.
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-const MAX_PAGE_WIDTH = 800;
 const PAGE_OVERSCAN_PX = 1200;
-const DEFAULT_PAGE_ASPECT_RATIO = 1 / Math.SQRT2;
+/* Fit as pdf.js's "auto" zoom does (Firefox's default): a portrait page fills
+   the pane's width less a gutter, a landscape one fits whole in the pane, and
+   neither grows past 125% of the page's own size, where 10 pt body text reads
+   like the app's. 100% draws a PDF point at 96/72 CSS px. */
+const MAX_AUTO_SCALE = 1.25;
+const PDF_TO_CSS_UNITS = 96 / 72;
+/** Both sides' gutter together, pdf.js's SCROLLBAR_PADDING. */
+const PAGE_GUTTER_PX = 40;
+
+type Size = { height: number; width: number };
+
+/** The CSS width the first page fits at; every page takes it. */
+function autoPageWidth(page: Size, pane: Size) {
+  const width = page.width * PDF_TO_CSS_UNITS;
+  const height = page.height * PDF_TO_CSS_UNITS;
+  const widthScale = (pane.width - PAGE_GUTTER_PX) / width;
+  const fit =
+    page.width > page.height
+      ? Math.min(widthScale, (pane.height - PAGE_GUTTER_PX) / height)
+      : widthScale;
+  return Math.max(0, Math.floor(width * Math.min(MAX_AUTO_SCALE, fit)));
+}
+
+// TODO: better UX for PDF highlighting and overlays. Until then the annotation
+// tools and the Edit/View switch stay hidden; saved marks still draw.
+const ANNOTATION_TOOLS = false;
+
 /** Quiet time after the last scroll event before a citation box flashes. */
 const SCROLL_SETTLE_MS = 120;
 /** How long a citation box shows; matches the overlay's animation. */
@@ -87,7 +121,6 @@ function LazyPdfPage({
   onRetry,
   pageNumber,
   pageWidth,
-  onAspectRatio,
   onMeasured,
   onPainted,
   observeVisibility,
@@ -100,7 +133,6 @@ function LazyPdfPage({
   onRetry: () => void;
   pageNumber: number;
   pageWidth: number;
-  onAspectRatio?: (ratio: number) => void;
   onMeasured?: () => void;
   onPainted?: () => void;
   observeVisibility: ObserveVisibility;
@@ -150,7 +182,6 @@ function LazyPdfPage({
             if (viewport.height > 0) {
               const ratio = viewport.width / viewport.height;
               setMeasuredAspectRatio(ratio);
-              onAspectRatio?.(ratio);
               onMeasured?.();
             }
           }}
@@ -191,12 +222,15 @@ export default function PdfView({
   page?: number;
   regions?: Region[];
 }) {
+  // Page count and zoom sit in the file header, as an image's zoom does.
+  const header = useContext(FileHeaderTarget);
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   const [strip, setStrip] = useState<HTMLDivElement | null>(null);
   useHorizontalWheelScroll(toolbar);
-  const canAnnotate = !!annotationFile && !annotationsReadOnly;
+  const canAnnotate =
+    ANNOTATION_TOOLS && !!annotationFile && !annotationsReadOnly;
   const [mode, setMode] = useFileMode(canAnnotate, 'view');
   const editing = mode === 'edit';
   const [annotationBusy, setAnnotationBusy] = useState(false);
@@ -210,14 +244,19 @@ export default function PdfView({
   const [retryVersion, setRetryVersion] = useState(0);
   const retry = () => {
     setNumPages(0);
+    setFirstPageFailed(false);
     setRetryVersion((value) => value + 1);
     onRetry?.();
   };
-  const [pageWidth, setPageWidth] = useState(0);
+  const [pane, setPane] = useState<Size | null>(null);
+  // The first page's size in PDF points, read before any page mounts so none
+  // paints at a width it then leaves.
+  const [firstPage, setFirstPage] = useState<Size | null>(null);
+  const [firstPageFailed, setFirstPageFailed] = useState(false);
+  const loadingPdf = useRef<unknown>(null);
+  const pageWidth = pane && firstPage ? autoPageWidth(firstPage, pane) : 0;
+  const pageAspectRatio = firstPage ? firstPage.width / firstPage.height : 1;
   const [pageMeasureVersion, setPageMeasureVersion] = useState(0);
-  const [pageAspectRatio, setPageAspectRatio] = useState(
-    DEFAULT_PAGE_ASPECT_RATIO
-  );
   // Bumped when the cited page paints, to run the final citation scroll.
   const [paintVersion, setPaintVersion] = useState(0);
   // The citation whose box is flashing; it shows only during the flash.
@@ -260,7 +299,8 @@ export default function PdfView({
 
   useEffect(() => {
     setNumPages(0);
-    setPageAspectRatio(DEFAULT_PAGE_ASPECT_RATIO);
+    setFirstPage(null);
+    setFirstPageFailed(false);
   }, [url]);
 
   useEffect(() => {
@@ -336,9 +376,10 @@ export default function PdfView({
     if (!container) return;
 
     const resizeObserver = new ResizeObserver(([entry]) => {
-      setPageWidth(
-        Math.min(MAX_PAGE_WIDTH, Math.floor(entry.contentRect.width))
-      );
+      setPane({
+        height: entry.contentRect.height,
+        width: entry.contentRect.width,
+      });
     });
 
     if (scrollRef.current) resizeObserver.observe(scrollRef.current);
@@ -374,37 +415,45 @@ export default function PdfView({
         mode={mode}
         onChange={setMode}
       />
-      <Toolbar className="grid grid-cols-[max-content_minmax(0,1fr)] lg:grid-cols-[minmax(max-content,1fr)_minmax(0,max-content)_minmax(max-content,1fr)]">
-        <span className="t-meta whitespace-nowrap text-fg-muted">
-          {numPages ? (
-            m.pdf_page_count({ count: numPages, page: currentPage })
-          ) : (
-            <Skeleton className="inline-block h-3.5 w-20 rounded-full align-middle" />
-          )}
-        </span>
-        <div
-          aria-label={m.pdf_private_annotations()}
-          className="scroll-fade-x flex h-full min-w-0 max-w-full items-center justify-self-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          ref={setToolbar}
-          role="toolbar"
-        />
-        <ToolbarGroup className="hidden justify-self-end lg:flex">
-          <ToolbarButton
-            disabled={zoom <= 0.5}
-            label={m.material_zoom_out()}
-            onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}
-          >
-            <Icon name="zoomOut" />
-          </ToolbarButton>
-          <ToolbarButton
-            disabled={zoom >= 3}
-            label={m.material_zoom_in()}
-            onClick={() => setZoom((value) => Math.min(3, value + 0.25))}
-          >
-            <Icon name="zoomIn" />
-          </ToolbarButton>
-        </ToolbarGroup>
-      </Toolbar>
+      {header &&
+        createPortal(
+          <>
+            <span className="t-body whitespace-nowrap px-1 text-fg-muted lg:pr-[7px]">
+              {numPages ? (
+                m.pdf_page_count({ count: numPages, page: currentPage })
+              ) : (
+                <Skeleton className="inline-block h-3.5 w-20 rounded-full align-middle" />
+              )}
+            </span>
+            <ToolbarButton
+              className="hidden lg:flex"
+              disabled={zoom <= 0.5}
+              label={m.material_zoom_out()}
+              onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}
+            >
+              <Icon name="zoomOut" />
+            </ToolbarButton>
+            <ToolbarButton
+              className="hidden lg:flex"
+              disabled={zoom >= 3}
+              label={m.material_zoom_in()}
+              onClick={() => setZoom((value) => Math.min(3, value + 0.25))}
+            >
+              <Icon name="zoomIn" />
+            </ToolbarButton>
+          </>,
+          header
+        )}
+      {canAnnotate && (
+        <Toolbar className="justify-center">
+          <div
+            aria-label={m.pdf_private_annotations()}
+            className="scroll-fade-x flex h-full min-w-0 max-w-full items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            ref={setToolbar}
+            role="toolbar"
+          />
+        </Toolbar>
+      )}
       <div ref={setStrip} />
       <div className="min-h-0 flex-1 overflow-auto" ref={scrollRef}>
         <div
@@ -412,6 +461,11 @@ export default function PdfView({
           ref={containerRef}
           tabIndex={annotationFile ? 0 : undefined}
         >
+          {firstPageFailed && (
+            <div className="absolute inset-0">
+              <FileError onRetry={retry} />
+            </div>
+          )}
           <div className="shrink-0" style={{ width: pageWidth * zoom }}>
             <Document
               className="shrink-0"
@@ -423,7 +477,19 @@ export default function PdfView({
               file={url}
               key={`${url}:${retryVersion}`}
               loading={<Skeleton className="h-full w-full" />}
-              onLoadSuccess={(pdf) => setNumPages(pdf.numPages)}
+              onLoadSuccess={async (pdf) => {
+                loadingPdf.current = pdf;
+                try {
+                  const first = (await pdf.getPage(1)).getViewport({
+                    scale: 1,
+                  });
+                  if (loadingPdf.current !== pdf) return;
+                  setFirstPage({ height: first.height, width: first.width });
+                  setNumPages(pdf.numPages);
+                } catch {
+                  if (loadingPdf.current === pdf) setFirstPageFailed(true);
+                }
+              }}
             >
               <div className="flex w-full flex-col items-center gap-4">
                 {Array.from({ length: numPages }, (_, i) => {
@@ -437,7 +503,6 @@ export default function PdfView({
                       forceRender={p === 1 || p === targetPage}
                       key={p}
                       observeVisibility={observeVisibility}
-                      onAspectRatio={p === 1 ? setPageAspectRatio : undefined}
                       onMeasured={() =>
                         setPageMeasureVersion((value) => value + 1)
                       }

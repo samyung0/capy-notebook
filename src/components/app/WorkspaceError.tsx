@@ -17,7 +17,7 @@ export function WorkspaceError({
   description?: string;
 }) {
   return (
-    <Panel sectionClassName="items-center justify-center h-full">
+    <Panel frost="center" sectionClassName="items-center justify-center h-full">
       <ErrorState
         action={
           backTo ? (

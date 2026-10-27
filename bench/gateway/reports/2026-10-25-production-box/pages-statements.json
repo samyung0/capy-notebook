@@ -1,0 +1,1296 @@
+{
+  "users": 6000,
+  "from": 1792865335,
+  "to": 1792865428,
+  "measured_seconds": 92.260607373,
+  "overall": {
+    "label": "overall",
+    "count": 8110,
+    "per_second": 87.90317158017524,
+    "p50_ms": 7.440494,
+    "p95_ms": 22.169348,
+    "p99_ms": 36.084476,
+    "max_ms": 67.65039,
+    "error_rate": 0
+  },
+  "labels": [
+    {
+      "label": "GET /api/files sort=added p6+",
+      "count": 660,
+      "per_second": 7.15364898186383,
+      "p50_ms": 6.840099,
+      "p95_ms": 11.679199,
+      "p99_ms": 20.353464,
+      "max_ms": 39.27874,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=workspace p6+",
+      "count": 660,
+      "per_second": 7.15364898186383,
+      "p50_ms": 17.217607,
+      "p95_ms": 23.923445,
+      "p99_ms": 37.20402,
+      "max_ms": 61.859394,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files?scope=member p6+",
+      "count": 660,
+      "per_second": 7.15364898186383,
+      "p50_ms": 5.178836,
+      "p95_ms": 8.600418,
+      "p99_ms": 11.410873,
+      "max_ms": 15.921138,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=name p6+",
+      "count": 660,
+      "per_second": 7.15364898186383,
+      "p50_ms": 7.150651,
+      "p95_ms": 11.394695,
+      "p99_ms": 20.800562,
+      "max_ms": 26.497328,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=size p6+",
+      "count": 660,
+      "per_second": 7.15364898186383,
+      "p50_ms": 6.28073,
+      "p95_ms": 10.742121,
+      "p99_ms": 17.23975,
+      "max_ms": 41.013622,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces/{id}/files",
+      "count": 420,
+      "per_second": 4.552322079367892,
+      "p50_ms": 4.73848,
+      "p95_ms": 10.456155,
+      "p99_ms": 12.608718,
+      "max_ms": 14.997358,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=title p6+",
+      "count": 180,
+      "per_second": 1.9509951768719536,
+      "p50_ms": 4.49827,
+      "p95_ms": 9.49237,
+      "p99_ms": 14.49749,
+      "max_ms": 16.157701,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=workspace p6+",
+      "count": 180,
+      "per_second": 1.9509951768719536,
+      "p50_ms": 8.32381,
+      "p95_ms": 16.52525,
+      "p99_ms": 34.131226,
+      "max_ms": 36.15638,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=updated p6+",
+      "count": 180,
+      "per_second": 1.9509951768719536,
+      "p50_ms": 9.494944,
+      "p95_ms": 16.59443,
+      "p99_ms": 24.68314,
+      "max_ms": 28.271694,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials?scope=member p6+",
+      "count": 180,
+      "per_second": 1.9509951768719536,
+      "p50_ms": 7.001601,
+      "p95_ms": 12.013173,
+      "p99_ms": 13.63842,
+      "max_ms": 13.683294,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/attempts p6+",
+      "count": 70,
+      "per_second": 0.7587203465613153,
+      "p50_ms": 3.586792,
+      "p95_ms": 5.628228,
+      "p99_ms": 9.600763,
+      "max_ms": 9.600763,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=updated p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 12.188521,
+      "p95_ms": 23.534798,
+      "p99_ms": 23.966745,
+      "max_ms": 23.966745,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials?scope=member p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 7.837308,
+      "p95_ms": 12.404038,
+      "p99_ms": 14.58291,
+      "max_ms": 14.58291,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=name p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 9.09208,
+      "p95_ms": 22.403957,
+      "p99_ms": 23.330854,
+      "max_ms": 23.330854,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=size p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 16.887327,
+      "p95_ms": 24.607376,
+      "p99_ms": 28.661533,
+      "max_ms": 28.661533,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=title p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.20795,
+      "p95_ms": 15.988684,
+      "p99_ms": 19.916054,
+      "max_ms": 19.916054,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=title p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.083057,
+      "p95_ms": 15.646032,
+      "p99_ms": 19.249506,
+      "max_ms": 19.249506,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=workspace p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 10.867216,
+      "p95_ms": 39.006794,
+      "p99_ms": 57.795174,
+      "max_ms": 57.795174,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files?scope=member p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.441618,
+      "p95_ms": 9.498451,
+      "p99_ms": 10.332375,
+      "max_ms": 10.332375,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/review/sessions p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.171221,
+      "p95_ms": 11.256805,
+      "p99_ms": 12.374191,
+      "max_ms": 12.374191,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=name p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 8.395974,
+      "p95_ms": 19.704247,
+      "p99_ms": 23.875084,
+      "max_ms": 23.875084,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=name p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 9.796751,
+      "p95_ms": 21.00212,
+      "p99_ms": 25.197924,
+      "max_ms": 25.197924,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=title p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 4.793403,
+      "p95_ms": 14.628614,
+      "p99_ms": 17.298819,
+      "max_ms": 17.298819,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=workspace p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 20.956976,
+      "p95_ms": 29.483515,
+      "p99_ms": 35.69676,
+      "max_ms": 35.69676,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=workspace p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 10.370134,
+      "p95_ms": 32.702747,
+      "p99_ms": 44.300713,
+      "max_ms": 44.300713,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials?scope=member p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 10.09665,
+      "p95_ms": 16.603827,
+      "p99_ms": 17.13482,
+      "max_ms": 17.13482,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=added p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 21.110142,
+      "p95_ms": 45.955677,
+      "p99_ms": 67.65039,
+      "max_ms": 67.65039,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=workspace p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 9.386993,
+      "p95_ms": 31.913338,
+      "p99_ms": 36.50134,
+      "max_ms": 36.50134,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/editor-assets p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 24.916155,
+      "p95_ms": 39.38533,
+      "p99_ms": 48.970325,
+      "max_ms": 48.970325,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=workspace p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 20.604586,
+      "p95_ms": 43.980076,
+      "p99_ms": 64.62316,
+      "max_ms": 64.62316,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/editor-assets p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.09566,
+      "p95_ms": 24.530401,
+      "p99_ms": 30.672903,
+      "max_ms": 30.672903,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/trash p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 6.286862,
+      "p95_ms": 11.415032,
+      "p99_ms": 12.082965,
+      "max_ms": 12.082965,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/attempts p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 3.877616,
+      "p95_ms": 5.808776,
+      "p99_ms": 7.159929,
+      "max_ms": 7.159929,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/workspaces",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 4.648682,
+      "p95_ms": 7.169556,
+      "p99_ms": 11.752555,
+      "max_ms": 11.752555,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=updated p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 13.231066,
+      "p95_ms": 24.925983,
+      "p99_ms": 52.31673,
+      "max_ms": 52.31673,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=title p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 12.874208,
+      "p95_ms": 20.810762,
+      "p99_ms": 23.798088,
+      "max_ms": 23.798088,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files?scope=member p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 7.68952,
+      "p95_ms": 11.61102,
+      "p99_ms": 13.203625,
+      "max_ms": 13.203625,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials?scope=member p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 7.372046,
+      "p95_ms": 12.205694,
+      "p99_ms": 12.588693,
+      "max_ms": 12.588693,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=added p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 9.45541,
+      "p95_ms": 19.730839,
+      "p99_ms": 36.779655,
+      "max_ms": 36.779655,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files?scope=member p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.852147,
+      "p95_ms": 10.069341,
+      "p99_ms": 14.123409,
+      "max_ms": 14.123409,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=added p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 11.320727,
+      "p95_ms": 28.63773,
+      "p99_ms": 48.625977,
+      "max_ms": 48.625977,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=added p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 11.577987,
+      "p95_ms": 38.72231,
+      "p99_ms": 40.63788,
+      "max_ms": 40.63788,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=added p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 10.048951,
+      "p95_ms": 18.762835,
+      "p99_ms": 22.604563,
+      "max_ms": 22.604563,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=name p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 17.204844,
+      "p95_ms": 30.90625,
+      "p99_ms": 37.214584,
+      "max_ms": 37.214584,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=name p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 10.066034,
+      "p95_ms": 22.17516,
+      "p99_ms": 32.967003,
+      "max_ms": 32.967003,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=workspace p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 20.49479,
+      "p95_ms": 39.50621,
+      "p99_ms": 44.72033,
+      "max_ms": 44.72033,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/attempts p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 3.730882,
+      "p95_ms": 6.878923,
+      "p99_ms": 7.961581,
+      "max_ms": 7.961581,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=size p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 8.059815,
+      "p95_ms": 22.990477,
+      "p99_ms": 28.114267,
+      "max_ms": 28.114267,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=updated p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 18.106785,
+      "p95_ms": 30.5111,
+      "p99_ms": 40.96291,
+      "max_ms": 40.96291,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials?scope=member p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 7.792484,
+      "p95_ms": 12.583102,
+      "p99_ms": 13.4675,
+      "max_ms": 13.4675,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/editor-assets p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 4.08819,
+      "p95_ms": 26.332418,
+      "p99_ms": 47.798058,
+      "max_ms": 47.798058,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files?scope=member p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.816591,
+      "p95_ms": 9.658731,
+      "p99_ms": 10.582432,
+      "max_ms": 10.582432,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files?scope=member p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.715051,
+      "p95_ms": 9.542343,
+      "p99_ms": 12.518069,
+      "max_ms": 12.518069,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/editor-assets p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 4.989611,
+      "p95_ms": 31.211153,
+      "p99_ms": 46.259346,
+      "max_ms": 46.259346,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/trash p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 3.304253,
+      "p95_ms": 8.012866,
+      "p99_ms": 9.839711,
+      "max_ms": 9.839711,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials?scope=member p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 7.547174,
+      "p95_ms": 14.870008,
+      "p99_ms": 17.497152,
+      "max_ms": 17.497152,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/attempts p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 3.804338,
+      "p95_ms": 5.622828,
+      "p99_ms": 11.84009,
+      "max_ms": 11.84009,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=workspace p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 9.59345,
+      "p95_ms": 31.005527,
+      "p99_ms": 42.07452,
+      "max_ms": 42.07452,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=workspace p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 27.30404,
+      "p95_ms": 38.667076,
+      "p99_ms": 53.729195,
+      "max_ms": 53.729195,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=updated p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 11.462702,
+      "p95_ms": 22.045094,
+      "p99_ms": 24.2827,
+      "max_ms": 24.2827,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/trash p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 6.048496,
+      "p95_ms": 11.425212,
+      "p99_ms": 13.942089,
+      "max_ms": 13.942089,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/attempts p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 3.802455,
+      "p95_ms": 5.898765,
+      "p99_ms": 6.254712,
+      "max_ms": 6.254712,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=updated p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 10.956143,
+      "p95_ms": 23.416094,
+      "p99_ms": 26.17718,
+      "max_ms": 26.17718,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/attempts p1",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 4.252029,
+      "p95_ms": 6.527484,
+      "p99_ms": 6.858563,
+      "max_ms": 6.858563,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/review/sessions p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 5.959778,
+      "p95_ms": 10.939953,
+      "p99_ms": 11.572579,
+      "max_ms": 11.572579,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=workspace p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 22.34184,
+      "p95_ms": 41.553635,
+      "p99_ms": 59.625576,
+      "max_ms": 59.625576,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=workspace p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 20.06402,
+      "p95_ms": 37.397385,
+      "p99_ms": 44.02582,
+      "max_ms": 44.02582,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=size p3",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 8.438575,
+      "p95_ms": 18.944042,
+      "p99_ms": 21.237432,
+      "max_ms": 21.237432,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=size p4",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 7.91767,
+      "p95_ms": 20.959078,
+      "p99_ms": 28.789154,
+      "max_ms": 28.789154,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/files sort=size p2",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 8.80443,
+      "p95_ms": 19.97829,
+      "p99_ms": 21.331747,
+      "max_ms": 21.331747,
+      "error_rate": 0
+    },
+    {
+      "label": "GET /api/materials sort=title p5",
+      "count": 60,
+      "per_second": 0.6503317256239846,
+      "p50_ms": 4.79708,
+      "p95_ms": 14.450992,
+      "p99_ms": 17.460672,
+      "max_ms": 17.460672,
+      "error_rate": 0
+    }
+  ],
+  "streams": {
+    "ended": 0,
+    "failed": 0,
+    "open_at_end": 0,
+    "opened": 0,
+    "refused": 0
+  },
+  "timeline": [
+    {
+      "t": 1792865335,
+      "requests": 15,
+      "errors": 0,
+      "p95_ms": 44.427204
+    },
+    {
+      "t": 1792865336,
+      "requests": 54,
+      "errors": 0,
+      "p95_ms": 41.705902
+    },
+    {
+      "t": 1792865337,
+      "requests": 75,
+      "errors": 0,
+      "p95_ms": 31.951994
+    },
+    {
+      "t": 1792865338,
+      "requests": 60,
+      "errors": 0,
+      "p95_ms": 44.02582
+    },
+    {
+      "t": 1792865339,
+      "requests": 67,
+      "errors": 0,
+      "p95_ms": 30.895351
+    },
+    {
+      "t": 1792865340,
+      "requests": 61,
+      "errors": 0,
+      "p95_ms": 37.189026
+    },
+    {
+      "t": 1792865341,
+      "requests": 78,
+      "errors": 0,
+      "p95_ms": 24.3524
+    },
+    {
+      "t": 1792865342,
+      "requests": 78,
+      "errors": 0,
+      "p95_ms": 25.219416
+    },
+    {
+      "t": 1792865343,
+      "requests": 87,
+      "errors": 0,
+      "p95_ms": 18.490984
+    },
+    {
+      "t": 1792865344,
+      "requests": 78,
+      "errors": 0,
+      "p95_ms": 30.458082
+    },
+    {
+      "t": 1792865345,
+      "requests": 71,
+      "errors": 0,
+      "p95_ms": 23.82461
+    },
+    {
+      "t": 1792865346,
+      "requests": 90,
+      "errors": 0,
+      "p95_ms": 20.602592
+    },
+    {
+      "t": 1792865347,
+      "requests": 80,
+      "errors": 0,
+      "p95_ms": 22.647625
+    },
+    {
+      "t": 1792865348,
+      "requests": 85,
+      "errors": 0,
+      "p95_ms": 14.308756
+    },
+    {
+      "t": 1792865349,
+      "requests": 96,
+      "errors": 0,
+      "p95_ms": 23.674438
+    },
+    {
+      "t": 1792865350,
+      "requests": 68,
+      "errors": 0,
+      "p95_ms": 22.216154
+    },
+    {
+      "t": 1792865351,
+      "requests": 101,
+      "errors": 0,
+      "p95_ms": 15.408477
+    },
+    {
+      "t": 1792865352,
+      "requests": 88,
+      "errors": 0,
+      "p95_ms": 24.762087
+    },
+    {
+      "t": 1792865353,
+      "requests": 83,
+      "errors": 0,
+      "p95_ms": 21.308874
+    },
+    {
+      "t": 1792865354,
+      "requests": 109,
+      "errors": 0,
+      "p95_ms": 12.001923
+    },
+    {
+      "t": 1792865355,
+      "requests": 103,
+      "errors": 0,
+      "p95_ms": 20.828325
+    },
+    {
+      "t": 1792865356,
+      "requests": 70,
+      "errors": 0,
+      "p95_ms": 20.451609
+    },
+    {
+      "t": 1792865357,
+      "requests": 101,
+      "errors": 0,
+      "p95_ms": 18.655762
+    },
+    {
+      "t": 1792865358,
+      "requests": 99,
+      "errors": 0,
+      "p95_ms": 20.956976
+    },
+    {
+      "t": 1792865359,
+      "requests": 72,
+      "errors": 0,
+      "p95_ms": 20.218271
+    },
+    {
+      "t": 1792865360,
+      "requests": 100,
+      "errors": 0,
+      "p95_ms": 19.422129
+    },
+    {
+      "t": 1792865361,
+      "requests": 98,
+      "errors": 0,
+      "p95_ms": 18.897467
+    },
+    {
+      "t": 1792865362,
+      "requests": 81,
+      "errors": 0,
+      "p95_ms": 20.126148
+    },
+    {
+      "t": 1792865363,
+      "requests": 94,
+      "errors": 0,
+      "p95_ms": 19.857014
+    },
+    {
+      "t": 1792865364,
+      "requests": 98,
+      "errors": 0,
+      "p95_ms": 18.934546
+    },
+    {
+      "t": 1792865365,
+      "requests": 93,
+      "errors": 0,
+      "p95_ms": 20.62383
+    },
+    {
+      "t": 1792865366,
+      "requests": 92,
+      "errors": 0,
+      "p95_ms": 19.795689
+    },
+    {
+      "t": 1792865367,
+      "requests": 103,
+      "errors": 0,
+      "p95_ms": 13.489621
+    },
+    {
+      "t": 1792865368,
+      "requests": 85,
+      "errors": 0,
+      "p95_ms": 24.21439
+    },
+    {
+      "t": 1792865369,
+      "requests": 83,
+      "errors": 0,
+      "p95_ms": 22.00014
+    },
+    {
+      "t": 1792865370,
+      "requests": 102,
+      "errors": 0,
+      "p95_ms": 12.24084
+    },
+    {
+      "t": 1792865371,
+      "requests": 93,
+      "errors": 0,
+      "p95_ms": 23.849396
+    },
+    {
+      "t": 1792865372,
+      "requests": 86,
+      "errors": 0,
+      "p95_ms": 19.444832
+    },
+    {
+      "t": 1792865373,
+      "requests": 108,
+      "errors": 0,
+      "p95_ms": 13.954553
+    },
+    {
+      "t": 1792865374,
+      "requests": 99,
+      "errors": 0,
+      "p95_ms": 22.505358
+    },
+    {
+      "t": 1792865375,
+      "requests": 81,
+      "errors": 0,
+      "p95_ms": 19.511246
+    },
+    {
+      "t": 1792865376,
+      "requests": 93,
+      "errors": 0,
+      "p95_ms": 20.583876
+    },
+    {
+      "t": 1792865377,
+      "requests": 97,
+      "errors": 0,
+      "p95_ms": 20.250732
+    },
+    {
+      "t": 1792865378,
+      "requests": 87,
+      "errors": 0,
+      "p95_ms": 20.686628
+    },
+    {
+      "t": 1792865379,
+      "requests": 71,
+      "errors": 0,
+      "p95_ms": 36.15638
+    },
+    {
+      "t": 1792865380,
+      "requests": 52,
+      "errors": 0,
+      "p95_ms": 41.013622
+    },
+    {
+      "t": 1792865381,
+      "requests": 62,
+      "errors": 0,
+      "p95_ms": 32.3144
+    },
+    {
+      "t": 1792865382,
+      "requests": 84,
+      "errors": 0,
+      "p95_ms": 26.039028
+    },
+    {
+      "t": 1792865383,
+      "requests": 84,
+      "errors": 0,
+      "p95_ms": 21.600922
+    },
+    {
+      "t": 1792865384,
+      "requests": 100,
+      "errors": 0,
+      "p95_ms": 22.75664
+    },
+    {
+      "t": 1792865385,
+      "requests": 81,
+      "errors": 0,
+      "p95_ms": 24.82173
+    },
+    {
+      "t": 1792865386,
+      "requests": 92,
+      "errors": 0,
+      "p95_ms": 27.345577
+    },
+    {
+      "t": 1792865387,
+      "requests": 97,
+      "errors": 0,
+      "p95_ms": 18.230715
+    },
+    {
+      "t": 1792865388,
+      "requests": 69,
+      "errors": 0,
+      "p95_ms": 36.8551
+    },
+    {
+      "t": 1792865389,
+      "requests": 66,
+      "errors": 0,
+      "p95_ms": 34.455193
+    },
+    {
+      "t": 1792865390,
+      "requests": 50,
+      "errors": 0,
+      "p95_ms": 40.107464
+    },
+    {
+      "t": 1792865391,
+      "requests": 90,
+      "errors": 0,
+      "p95_ms": 23.966745
+    },
+    {
+      "t": 1792865392,
+      "requests": 100,
+      "errors": 0,
+      "p95_ms": 19.320528
+    },
+    {
+      "t": 1792865393,
+      "requests": 82,
+      "errors": 0,
+      "p95_ms": 20.833454
+    },
+    {
+      "t": 1792865394,
+      "requests": 94,
+      "errors": 0,
+      "p95_ms": 17.13482
+    },
+    {
+      "t": 1792865395,
+      "requests": 73,
+      "errors": 0,
+      "p95_ms": 28.550076
+    },
+    {
+      "t": 1792865396,
+      "requests": 96,
+      "errors": 0,
+      "p95_ms": 24.845581
+    },
+    {
+      "t": 1792865397,
+      "requests": 91,
+      "errors": 0,
+      "p95_ms": 18.85678
+    },
+    {
+      "t": 1792865398,
+      "requests": 84,
+      "errors": 0,
+      "p95_ms": 22.541153
+    },
+    {
+      "t": 1792865399,
+      "requests": 91,
+      "errors": 0,
+      "p95_ms": 24.62108
+    },
+    {
+      "t": 1792865400,
+      "requests": 108,
+      "errors": 0,
+      "p95_ms": 15.29297
+    },
+    {
+      "t": 1792865401,
+      "requests": 76,
+      "errors": 0,
+      "p95_ms": 24.085068
+    },
+    {
+      "t": 1792865402,
+      "requests": 89,
+      "errors": 0,
+      "p95_ms": 27.762999
+    },
+    {
+      "t": 1792865403,
+      "requests": 108,
+      "errors": 0,
+      "p95_ms": 15.215996
+    },
+    {
+      "t": 1792865404,
+      "requests": 118,
+      "errors": 0,
+      "p95_ms": 19.72087
+    },
+    {
+      "t": 1792865405,
+      "requests": 69,
+      "errors": 0,
+      "p95_ms": 27.3947
+    },
+    {
+      "t": 1792865406,
+      "requests": 98,
+      "errors": 0,
+      "p95_ms": 15.752351
+    },
+    {
+      "t": 1792865407,
+      "requests": 103,
+      "errors": 0,
+      "p95_ms": 18.677422
+    },
+    {
+      "t": 1792865408,
+      "requests": 93,
+      "errors": 0,
+      "p95_ms": 20.567526
+    },
+    {
+      "t": 1792865409,
+      "requests": 92,
+      "errors": 0,
+      "p95_ms": 19.49793
+    },
+    {
+      "t": 1792865410,
+      "requests": 100,
+      "errors": 0,
+      "p95_ms": 20.65666
+    },
+    {
+      "t": 1792865411,
+      "requests": 83,
+      "errors": 0,
+      "p95_ms": 22.85481
+    },
+    {
+      "t": 1792865412,
+      "requests": 84,
+      "errors": 0,
+      "p95_ms": 19.841904
+    },
+    {
+      "t": 1792865413,
+      "requests": 97,
+      "errors": 0,
+      "p95_ms": 16.51016
+    },
+    {
+      "t": 1792865414,
+      "requests": 103,
+      "errors": 0,
+      "p95_ms": 20.604586
+    },
+    {
+      "t": 1792865415,
+      "requests": 71,
+      "errors": 0,
+      "p95_ms": 24.713545
+    },
+    {
+      "t": 1792865416,
+      "requests": 120,
+      "errors": 0,
+      "p95_ms": 12.373559
+    },
+    {
+      "t": 1792865417,
+      "requests": 102,
+      "errors": 0,
+      "p95_ms": 17.580957
+    },
+    {
+      "t": 1792865418,
+      "requests": 80,
+      "errors": 0,
+      "p95_ms": 20.444485
+    },
+    {
+      "t": 1792865419,
+      "requests": 98,
+      "errors": 0,
+      "p95_ms": 19.859879
+    },
+    {
+      "t": 1792865420,
+      "requests": 102,
+      "errors": 0,
+      "p95_ms": 16.924707
+    },
+    {
+      "t": 1792865421,
+      "requests": 89,
+      "errors": 0,
+      "p95_ms": 28.992403
+    },
+    {
+      "t": 1792865422,
+      "requests": 82,
+      "errors": 0,
+      "p95_ms": 19.547693
+    },
+    {
+      "t": 1792865423,
+      "requests": 103,
+      "errors": 0,
+      "p95_ms": 14.007481
+    },
+    {
+      "t": 1792865424,
+      "requests": 102,
+      "errors": 0,
+      "p95_ms": 20.8966
+    },
+    {
+      "t": 1792865425,
+      "requests": 96,
+      "errors": 0,
+      "p95_ms": 18.387568
+    },
+    {
+      "t": 1792865426,
+      "requests": 96,
+      "errors": 0,
+      "p95_ms": 18.4732
+    },
+    {
+      "t": 1792865427,
+      "requests": 97,
+      "errors": 0,
+      "p95_ms": 17.372147
+    }
+  ],
+  "pass": true
+}

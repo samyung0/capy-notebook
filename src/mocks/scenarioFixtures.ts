@@ -10,6 +10,8 @@ import xlsxURL from '../../e2e/fixtures/files/basic/grades.xlsx?url';
 import docxURL from '../../e2e/fixtures/files/basic/lesson.docx?url';
 import pptxURL from '../../e2e/fixtures/files/basic/lesson.pptx?url';
 import pdfURL from '../../e2e/fixtures/files/basic/three-pages.pdf?url';
+import blankDocxURL from '../../vendor/betteroffice/crates/office-service/starters/blank.docx?url';
+import blankXlsxURL from '../../vendor/betteroffice/crates/office-service/starters/blank.xlsx?url';
 import {
   resetScenarioRooms,
   sourceRoom,
@@ -17,6 +19,8 @@ import {
   sourceRoomState,
 } from './collaboration';
 import * as db from './db';
+import blankDocxStateURL from './fixtures/blank-docx-checkpoint.bin?url';
+import blankXlsxStateURL from './fixtures/blank-xlsx-checkpoint.bin?url';
 import docxStateURL from './fixtures/docx-checkpoint.bin?url';
 import pptxStateURL from './fixtures/pptx-checkpoint.bin?url';
 import xlsxStateURL from './fixtures/xlsx-checkpoint.bin?url';
@@ -232,6 +236,23 @@ async function prepareOfficeSource(
     sourceURL: fixture.sourceURL,
     state,
   });
+}
+
+/** The Office engine's starters, which the blank file route stores, with
+ * their room states (scripts/dev/seed-scenario-office.ts). */
+export const blankOffice = {
+  docx: { sourceURL: blankDocxURL, stateURL: blankDocxStateURL },
+  xlsx: { sourceURL: blankXlsxURL, stateURL: blankXlsxStateURL },
+};
+
+/** A created blank file opens on its starter's room state. */
+export function prepareBlankOffice(fileId: string, format: 'docx' | 'xlsx') {
+  return prepareOfficeSource(
+    fileId,
+    format,
+    blankOffice[format],
+    new AbortController().signal
+  );
 }
 
 /** An Office file the mock upload stored opens to view from its own bytes,
