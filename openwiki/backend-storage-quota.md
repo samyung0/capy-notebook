@@ -978,11 +978,9 @@ stored pass drops too (a unit newer than W only ends a run), except a deleted
 block's children, which Yjs drops with the block either way. It can also
 keep units the stored base dropped: a refused or skipped pass, or one that
 found nothing while the stored pass did, leaves its document whole. A check
-of what a payload names therefore reads both documents (Q419). A room
-holding agent steps (waiting for a store, being stored, or stored in this
-room life) does not collect its open document; its stored copy is still
-collected at its folds (Q441, keeping for the release the skip Q432 had
-dropped). Kept list items keep their
+of what a payload names therefore reads both documents (Q419). Rooms with
+agent edits waiting to be stored collect like any other (Q432): those
+edits' deletions are newer than any window. Kept list items keep their
 origins, and a map value drops its
 origin only when nothing behind it stays, so tabs holding the full history
 and tabs loading the collected state agree.

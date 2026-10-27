@@ -971,10 +971,20 @@ async fn windows(env: &Env, material: &str) -> i64 {
 /// Asks for a receipt and waits for the one naming `id` (other members'
 /// receipts reach every channel).
 async fn persisted(client: &mut Client, id: &str) {
+    checkpoint_requested(client, id).await;
+    checkpoint_persisted(client, id).await;
+}
+
+/// Asks the room to store now, under checkpoint `id`.
+async fn checkpoint_requested(client: &mut Client, id: &str) {
     let request = serde_json::json!({ "id": id, "type": "checkpoint-request" }).to_string();
     let mut payload = Vec::new();
     varbytes(&mut payload, request.as_bytes());
     client.send(9, &payload).await;
+}
+
+/// Waits for checkpoint `id`'s receipt.
+async fn checkpoint_persisted(client: &mut Client, id: &str) {
     loop {
         let (receipt, _) = client.stateless("checkpoint-persisted").await;
         if receipt["checkpointIds"]
@@ -1528,14 +1538,16 @@ async fn an_agent_undo_after_a_collecting_fold_restores_the_text() {
     );
 }
 
-/// Q441 (Epo 2026-10-27, keeping for the release the skip Q432 had
-/// dropped): a room holding agent steps does not collect its open document,
-/// while its stored copy is still collected at its folds. After an agent
-/// step, folds collect the cut letters from the stored base and the room
-/// logs no live collection; the step's Undo restores the text, which a
-/// reload holds. Fails without the skip (the room collects its document).
+/// Q432 (agent-edits-room item 3): live collection no longer skips a room
+/// holding agent steps. An agent step admitted while a store runs (each
+/// store of this note commits a second late, a debug hook) is pending: its
+/// row and agent holds come with the next store. The running store's fold
+/// collects the cut letters, and the open room collects its own document at
+/// that fold's window meanwhile; the step's deletions, newer than any stored
+/// window, are kept, and the step's Undo restores the text. Fails if the
+/// pending step's deletions are collected.
 #[tokio::test]
-async fn an_open_room_holding_an_agent_step_collects_only_its_stored_copy() {
+async fn an_agent_step_pending_its_store_survives_a_live_collection() {
     let Some(env) = env() else { return };
     let (server, logs) = start_logged_with(
         &env,
@@ -1545,11 +1557,11 @@ async fn an_open_room_holding_an_agent_step_collects_only_its_stored_copy() {
         ],
     )
     .await;
-    let (user, material) = note(&env, "base").await;
+    let (user, material) = note_named(&env, "base", "capy-it-slow-store").await;
     let room = format!("material:{material}:schema:1");
     let mut a = tab(server.port, &room, &user).await;
-    // Three writers type a, c, then b between them, each leaving after its
-    // store.
+    // Three writers type a, c, then b between them (the middle one named by
+    // nothing), each leaving after its store.
     let mut writers = Vec::new();
     for (at, letter, before) in [(4, "a", "base"), (5, "c", "basea"), (5, "b", "baseac")] {
         let mut writer = tab(server.port, &room, &user).await;
@@ -1578,9 +1590,15 @@ async fn an_open_room_holding_an_agent_step_collects_only_its_stored_copy() {
     cutter.leave(false).await;
     writers.push(cutter);
     assert!(a.settle(|c| c.block_text() == "baseabc").await);
+    a.ack_all().await;
     assert!(!collected_in_base(&env, &material, y).await);
+    // A's store of "!" runs (after the 200 ms debounce); the agent step is
+    // admitted meanwhile.
     let live = ["live document collected", material.as_str()];
     let lives = logs.count(&live);
+    a.type_at(0, "!").await;
+    checkpoint_requested(&mut a, "!").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     let (edit, undo) = (format!("e_{material}"), format!("u_{material}"));
     let (status, receipt) = internal(
         server.port,
@@ -1595,21 +1613,22 @@ async fn an_open_room_holding_an_agent_step_collects_only_its_stored_copy() {
     )
     .await;
     assert_eq!(status, 200, "{receipt}");
-    assert!(a.settle(|c| c.block_text() == "baseZ").await);
-    assert!(log_folded(&env, &material).await);
-    a.ack_all().await;
-    for mark in ["!", "?"] {
-        a.type_at(0, mark).await;
-        persisted(&mut a, mark).await;
-        assert!(log_folded(&env, &material).await);
-        a.ack_all().await;
+    checkpoint_persisted(&mut a, "!").await;
+    for _ in 0..50 {
+        if logs.count(&live) > lives {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    assert!(logs.count(&live) > lives, "the open room collected");
     assert!(collected_in_base(&env, &material, y).await);
     assert_eq!(
-        logs.count(&live),
-        lives,
-        "the room collected its document while it held an agent step"
+        receipts_now(&env, &edit).await,
+        0,
+        "the live collection ran after the step's store"
     );
+    assert!(a.settle(|c| c.block_text() == "!baseZ").await);
+    assert!(receipt_stored(&env, &edit).await, "the step's store");
     let (status, answer) = internal(
         server.port,
         "/internal/documents/undo",
@@ -1618,7 +1637,7 @@ async fn an_open_room_holding_an_agent_step_collects_only_its_stored_copy() {
     .await;
     assert_eq!(status, 200, "{answer}");
     assert!(
-        a.settle(|c| c.block_text() == "?!baseabc").await,
+        a.settle(|c| c.block_text() == "!baseabc").await,
         "{}",
         a.block_text()
     );
@@ -1627,7 +1646,7 @@ async fn an_open_room_holding_an_agent_step_collects_only_its_stored_copy() {
     let mut fresh = Client::open(server.port).await;
     fresh.joined(&room, &token(&room, &user, "write")).await;
     assert!(
-        fresh.settle(|c| c.block_text() == "?!baseabc").await,
+        fresh.settle(|c| c.block_text() == "!baseabc").await,
         "{}",
         fresh.block_text()
     );
@@ -1907,10 +1926,9 @@ enum UndoRoom {
     /// material whose id holds `capy-it-refuse-live`), so it keeps the unit
     /// the stored base dropped: the stored check on the room path.
     LiveRefused,
-    /// The open room's next life, which holds no agent steps and so
-    /// collects its document (Q441), doing so between the Undo's snapshot
-    /// and its admission (debug builds: `capy-it-slow-compute` computes 3 s
-    /// late): the room's check at admission.
+    /// The open room, collecting between the Undo's snapshot and its
+    /// admission (debug builds: `capy-it-slow-compute` computes 3 s late):
+    /// the room's check at admission.
     CollectedMeanwhile,
 }
 
@@ -1919,8 +1937,7 @@ enum UndoRoom {
 /// a fold drops them (Q386) and collects the middle item. The step's Undo,
 /// which names it, is refused `undo_unavailable` wherever the collection
 /// meets it, and a reload shows the note as it was: never a partial restore.
-/// A room holding the agent step collects only its stored copy (Q441). Each
-/// case fails with its own check removed.
+/// Each case fails with its own check removed.
 async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
     let Some(env) = env() else { return };
     let (server, logs) = start_logged_with(
@@ -1970,15 +1987,6 @@ async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
     assert_eq!(status, 200, "{receipt}");
     assert!(a.settle(|c| c.block_text() == "baseZ").await);
     assert!(log_folded(&env, &material).await);
-    if case == UndoRoom::CollectedMeanwhile {
-        a.ack_all().await;
-        a.leave(false).await;
-        wait_unloaded(server.port).await;
-        a = tab(server.port, &room, &user).await;
-        assert!(a.settle(|c| c.block_text() == "baseZ").await);
-    }
-    let live = ["live document collected", material.as_str()];
-    let lives = logs.count(&live);
     db(&env)
         .await
         .execute(
@@ -2003,19 +2011,11 @@ async fn an_undo_naming_a_collected_unit_is_refused(case: UndoRoom) {
         collected_in_base(&env, &material, middle).await,
         "the fold collected the middle letter"
     );
-    if case == UndoRoom::CollectedMeanwhile {
-        for _ in 0..50 {
-            if logs.count(&live) > lives {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        assert!(
-            logs.count(&live) > lives,
-            "the open room collected the unit"
-        );
+    let live = ["live document collected", material.as_str()];
+    if case == UndoRoom::LiveRefused {
+        assert_eq!(logs.count(&live), 0, "the open room kept the unit");
     } else {
-        assert_eq!(logs.count(&live), lives, "the open room kept the unit");
+        assert!(logs.has(&live).await, "the open room collected the unit");
     }
     if case == UndoRoom::Unloaded {
         a.leave(false).await;
@@ -13932,6 +13932,19 @@ async fn a_viewer_whose_token_turns_writable_gets_a_session_at_its_first_write()
     let answered = v.stored_past(0).await;
     v.stored_past(answered).await;
     assert_eq!(session_row(&env, &material, v.id()).await.2, held);
+}
+
+/// How many receipts of `operation` are stored now.
+async fn receipts_now(env: &Env, operation: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM agent_operations WHERE id=$1",
+            &[&operation],
+        )
+        .await
+        .expect("receipts")
+        .get(0)
 }
 
 /// Waits until `operation`'s receipt is stored, at most 10 s: a loaded room

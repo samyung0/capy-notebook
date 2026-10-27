@@ -373,11 +373,6 @@ impl AgentSteps {
             .map(note_store::AgentReceipt::answer))
     }
 
-    /// Whether the room holds any agent step (Q441: no live collection).
-    fn holds_steps(&self) -> bool {
-        !(self.pending.is_empty() && self.storing.is_empty() && self.stored.is_empty())
-    }
-
     /// A store takes every waiting step.
     fn claim(&mut self) -> Vec<note_store::AgentReceipt> {
         self.storing = std::mem::take(&mut self.pending);
@@ -2475,16 +2470,13 @@ impl Room {
     /// get the collected state, open tabs keep their tombstones. The state
     /// vector, the unstored edits, the room's own marker chains and its
     /// window stay. A guard refusal (or a panic) keeps the document as it
-    /// is, reported once. While the room holds agent steps (waiting,
-    /// storing, or stored this life) it waits (Q441, keeping the skip Q432
-    /// had dropped): the stored copy is still collected at its folds.
+    /// is, reported once. Agent edits waiting to be stored do not hold it
+    /// back (Q432): their deletions are newer than any window, and their
+    /// Undo is a payload checked against what the room holds collected.
     async fn collect_live(&mut self, window: &ydoc::gc::Window, held: yrs::IdSet) {
         let Kindly::Note(note) = &self.kind else {
             return;
         };
-        if self.agent.holds_steps() {
-            return;
-        }
         // Debug builds only: the integration tests' refused live pass (the
         // stored fold collects; this document stays whole).
         #[cfg(debug_assertions)]
