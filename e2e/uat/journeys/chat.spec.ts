@@ -42,7 +42,9 @@ function effect(end: Frame | undefined, operation: string) {
   const found = ((end?.effects ?? []) as Effect[]).find(
     (item) => item.operation === operation
   );
-  assert(found, `no ${operation} effect in ${JSON.stringify(end)}`);
+  // Only the effects: an edit's tool_end also carries its signed Undo
+  // payloads (durable Undo), which stay out of failure messages.
+  assert(found, `no ${operation} effect in ${JSON.stringify(end?.effects)}`);
   return found.resource.id;
 }
 
