@@ -973,7 +973,6 @@
   "files_office_slide_count": "{count} 张幻灯片",
   "files_office_page_count": "{count} 页",
   "files_office_cancel_editing": "取消编辑",
-  "files_office_discard_changes": "放弃未保存的更改？",
   "files_office_workbook_frame_title": "{name} 的表格查看器",
   "files_office_presentation_frame_title": "{name} 的演示文稿查看器",
   "files_office_document_frame_title": "{name} 的文档查看器",

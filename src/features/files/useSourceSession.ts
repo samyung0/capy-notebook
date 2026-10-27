@@ -278,6 +278,8 @@ export function useSourceSession(
   }, []);
   const [generation, setGeneration] = useState(0);
   const [dirty, setDirty] = useState(false);
+  // This device's draft storage is failing (the recorder's report).
+  const [storageFailing, setStorageFailing] = useState(false);
   const [bufferDirty, setBufferDirty] = useState(false);
   const bufferDirtyRef = useRef(false);
   const pendingInput = useCallback((pending: boolean) => {
@@ -463,6 +465,7 @@ export function useSourceSession(
     };
     setStatus('connecting');
     setDirty(false);
+    setStorageFailing(false);
     setHandoff(false);
     setReplaced(false);
     setDraftsSending(false);
@@ -1149,6 +1152,7 @@ export function useSourceSession(
         onLost: toastDraftsLost,
         onStorage: (ok) => {
           storageOk = ok;
+          if (!disposed) setStorageFailing(!ok);
           showOffline();
         },
         report,
@@ -1242,15 +1246,20 @@ export function useSourceSession(
     };
   }, [fileId, actorId, enabled, generation, pendingInput, cursors]);
 
+  // Closing or reloading the tab loses edits only while this device's
+  // storage fails and the room has not acknowledged one of them: only then
+  // the browser asks first (Q465). In-app navigation never asks; the drafts
+  // and the room keep every edit.
+  const leaveLoses = storageFailing && (dirty || bufferDirty);
   useEffect(() => {
-    if (!dirty && !bufferDirty) return;
+    if (!leaveLoses) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty, bufferDirty]);
+  }, [leaveLoses]);
 
   return {
     ...loaded,

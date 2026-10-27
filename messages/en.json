@@ -973,7 +973,6 @@
   "files_office_slide_count": "{count} slides",
   "files_office_page_count": "{count} pages",
   "files_office_cancel_editing": "Cancel editing",
-  "files_office_discard_changes": "Discard unsaved changes?",
   "files_office_workbook_frame_title": "Spreadsheet viewer for {name}",
   "files_office_presentation_frame_title": "Presentation viewer for {name}",
   "files_office_document_frame_title": "Document viewer for {name}",

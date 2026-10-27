@@ -1,12 +1,10 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { useState } from 'react';
 import { useFile, useMaterial, useWorkspace } from '@/api/hooks';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { PhoneTopRow } from '@/components/app/Sidebar';
 import { IconButton } from '@/components/ui/IconButton';
 import { FileError, FileLoading } from '@/features/files/FileStates';
-import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { CenterContent } from '@/features/materials/CenterContent';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -34,8 +32,6 @@ export default function MaterialOpen() {
   const fileReadOnly = workspaceId
     ? workspace?.capabilities.canEdit !== true
     : frozen;
-  const [dirty, setDirty] = useState(false);
-  const confirmReplace = useOfficeEditGuard(dirty);
   const back = () =>
     navigate({ search: fileId ? {} : { tab: 'blocks' }, to: '/files' });
   const item = fileId
@@ -59,7 +55,6 @@ export default function MaterialOpen() {
           <FileError />
         ) : (
           <CenterContent
-            beforeFileDelete={confirmReplace}
             chapters={[]}
             item={item}
             key={`${item?.kind}:${item?.id}`}
@@ -75,7 +70,6 @@ export default function MaterialOpen() {
               />
             }
             onDeleted={back}
-            onFileViewerDirtyChange={setDirty}
             onModeChange={(mode) => {
               void navigate({
                 // The viewer has already completed its save/export checks.

@@ -640,6 +640,14 @@ Saved requires an explicit durable checkpoint receipt. A failed save the
 server retries keeps the mounted editor and its pending receipts, shows Not
 saved and the save banner; the retry's receipt brings Saved back.
 
+Leaving an Office or text file never asks in the app (Q465, Epo
+2026-10-28): in-app navigation keeps every edit, since the drafts worker
+finishes and the editor writes the document at unmount. The browser's own
+leave prompt (`beforeunload`, in `useSourceSession`) shows on a tab close or
+reload only while this device's draft storage is failing (the recorder's
+`onStorage`) and the room has not acknowledged a local edit
+(`leaveLoses`); the few milliseconds a draft write takes are not guarded.
+
 The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
 strip under the file or note header with one state at a time:
 `delayed` ("Saving is delayed. Your recent changes aren't saved yet."); the

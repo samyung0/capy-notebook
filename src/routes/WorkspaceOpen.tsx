@@ -58,7 +58,6 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { heardMove, toastFileMoved } from '@/features/files/fileMoved';
 import { officeFormatOf } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
-import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import {
   registerTourPanels,
   type TourPanels,
@@ -113,6 +112,9 @@ const isLeftView = (value: unknown): value is LeftView =>
 /** The header's panel toggles while their panel is open: the icon's strip
  * fills in the accent. */
 const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
+// The Files panel's replacement check: the in-app unsaved-changes guard is
+// gone (Q465), so opening another item always goes ahead.
+const keepNothing = () => true;
 
 const LEFT_SIZE = 340;
 const LEFT_MIN = 300;
@@ -417,8 +419,6 @@ export default function WorkspaceOpen() {
     regions: Region[];
     citation?: OfficeCitation;
   } | null>(null);
-  const [officeEditDirty, setOfficeEditDirty] = useState(false);
-  const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
   // The chat dock sits 8px above the Office frame's bottom chrome, which the
   // runtime reports; written to the box's style so the workspace does not
   // re-render while a resize moves it.
@@ -438,7 +438,6 @@ export default function WorkspaceOpen() {
 
   /** `push` keeps the page behind in history (the Study page). */
   function setOpenItem(item: OpenItem | null, push = false) {
-    if (!confirmViewerReplacement()) return;
     setCitationTarget(null);
     setFilesOpen(false);
     navigate({
@@ -465,14 +464,12 @@ export default function WorkspaceOpen() {
 
   /** The Study page takes the centre pane; Back returns here. */
   function openProgress() {
-    if (!confirmViewerReplacement()) return;
     setCitationTarget(null);
     setFilesOpen(false);
     navigate({ search: { study: true }, to: '.' });
   }
 
   function openCitation(citation: Citation) {
-    if (!confirmViewerReplacement()) return;
     if (citation.materialId) {
       navigate({
         replace: true,
@@ -723,7 +720,7 @@ export default function WorkspaceOpen() {
     );
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
-      beforeReplace={confirmViewerReplacement}
+      beforeReplace={keepNothing}
       generating={generating}
       header={picker}
       onAddChapter={
@@ -750,7 +747,7 @@ export default function WorkspaceOpen() {
   // and Study pinned under it; Add chapter stays in the header's ⋮.
   const filesDropdown = (
     <FilesPanel
-      beforeReplace={confirmViewerReplacement}
+      beforeReplace={keepNothing}
       className="h-auto flex-1"
       footer={
         <div className="flex shrink-0 flex-col gap-1 border-divider border-t px-2.5 pt-1.5 pb-2">
@@ -840,7 +837,6 @@ export default function WorkspaceOpen() {
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
         <CenterContent
-          beforeFileDelete={confirmViewerReplacement}
           chapters={chapters ?? []}
           color="purple"
           item={openItem}
@@ -871,7 +867,6 @@ export default function WorkspaceOpen() {
           onAddFile={readOnly ? undefined : () => setAddSource('upload')}
           onDeleted={() => setOpenItem(null)}
           oneColumn={oneColumn}
-          onFileViewerDirtyChange={setOfficeEditDirty}
           onModeChange={(mode) => {
             void navigate({
               // The viewer has already completed its save/export checks.

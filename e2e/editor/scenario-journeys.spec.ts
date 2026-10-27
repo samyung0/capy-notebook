@@ -98,14 +98,6 @@ test('one click fails a real source save and retry preserves the mounted editor'
   await expect(banner).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const mounted = await input.elementHandle();
-  const currentURL = page.url();
-  await showPanelView(page, m.workspace_tab_files());
-  page.once('dialog', (dialog) => dialog.dismiss());
-  await page
-    .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-pdf"]')
-    .click();
-  await expect(page).toHaveURL(currentURL);
-  await expect(input).toHaveValue(new RegExp(marker));
   await input.press('Control+s');
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',

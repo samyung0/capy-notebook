@@ -377,3 +377,43 @@ describe('an edit session opening with stored drafts', () => {
     expect(recorder.adopt).not.toHaveBeenCalled();
   });
 });
+
+// Q465 (Epo 2026-10-28): no in-app guard; the tab's own close or reload asks
+// first only while this device's draft storage fails and the room has not
+// acknowledged a local edit. Working storage with an unacknowledged edit, or
+// failing storage with nothing unacknowledged, leaves the tab free. Fails if
+// the prompt arms on unacknowledged edits alone.
+describe("an edit session's leave prompt", () => {
+  const armings = () =>
+    vi
+      .mocked(window.addEventListener)
+      .mock.calls.filter(([type]) => String(type) === 'beforeunload').length;
+  const opened = async () => {
+    const { options } = await open();
+    options.onSynced?.({ state: true });
+    const [{ onStorage }] = vi.mocked(recordDrafts).mock.calls.at(-1)!;
+    const edit = () => options.document.getMap('edit').set('k', Date.now());
+    return { edit, onStorage: onStorage! };
+  };
+
+  it('stays off for an unacknowledged edit while storage works', async () => {
+    const { edit, onStorage } = await opened();
+    edit();
+    render();
+    expect(render().dirty).toBe(true);
+    expect(armings()).toBe(0);
+    onStorage(false);
+    render();
+    expect(armings()).toBe(1);
+  });
+
+  it('stays off while storage fails with nothing unacknowledged', async () => {
+    const { edit, onStorage } = await opened();
+    onStorage(false);
+    render();
+    expect(armings()).toBe(0);
+    edit();
+    render();
+    expect(armings()).toBe(1);
+  });
+});
