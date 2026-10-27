@@ -272,7 +272,9 @@ export async function lineAfter(page: Page, editor: Locator, text: string) {
   // End moves only the browser's caret. Slate reads it on a 100 ms throttled
   // selectionchange, and an Enter or re-render before then puts the click's
   // caret back: the line lands before the text. End until the caret is still
-  // at the text's end once Slate has read it.
+  // at the text's end once Slate has read it. The caret is measured as Slate
+  // maps it: a collaborator's caret at the line end is a zero-width leaf that
+  // End lands in, at the same Slate offset.
   await expect(async () => {
     await page.keyboard.press('End');
     await page.waitForTimeout(150);
@@ -280,15 +282,26 @@ export async function lineAfter(page: Page, editor: Locator, text: string) {
       await line.evaluate((element) => {
         const selection = getSelection();
         const node = selection?.focusNode;
-        return (
-          !!node &&
-          !!selection?.isCollapsed &&
-          element.contains(node) &&
-          selection.focusOffset === node.textContent?.length
-        );
+        const block = element.closest('[data-slate-node="element"]');
+        if (!selection?.isCollapsed || !node || !block?.contains(node))
+          return false;
+        const text = (range: Range) => {
+          const contents = range.cloneContents();
+          for (const zero of contents.querySelectorAll(
+            '[data-slate-zero-width]'
+          ))
+            zero.remove();
+          return contents.textContent;
+        };
+        const before = document.createRange();
+        before.setStart(block, 0);
+        before.setEnd(node, selection.focusOffset);
+        const whole = document.createRange();
+        whole.selectNodeContents(block);
+        return text(before) === text(whole);
       })
     ).toBe(true);
-  }).toPass();
+  }).toPass({ timeout: 15_000 });
   await page.keyboard.press('Enter');
 }
 
