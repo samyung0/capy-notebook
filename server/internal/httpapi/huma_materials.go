@@ -289,14 +289,13 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	// View reads a note (or a live quiz or set) while its room may hold
-	// edits the idle projection has not written yet: the room projects them
-	// now. A failed projection serves the stored one and is reported.
-	if res.Kind == "note" || res.Kind == store.MaterialQuiz || res.Kind == store.MaterialFlashcards {
-		if a.projectLive(ctx, in.ID) {
-			if res, err = a.s.GetMaterial(ctx, in.ID); err != nil {
-				return nil, hErr(err)
-			}
+	// View reads a material (a note, a live quiz or set, a diagram or
+	// mindmap, Q453) while its room may hold edits the idle projection has
+	// not written yet: the room projects them now. A failed projection serves
+	// the stored one and is reported.
+	if a.projectLive(ctx, in.ID) {
+		if res, err = a.s.GetMaterial(ctx, in.ID); err != nil {
+			return nil, hErr(err)
 		}
 	}
 	readOnly, err := a.readOnly(ctx, res.OwnerUserID)

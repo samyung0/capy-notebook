@@ -3064,7 +3064,9 @@ projecting the durable state from the store; Epo 2026-10-08), when the room
 unloads, and on demand. View asks for one (`ProjectLiveNote`,
 `POST /internal/materials/{id}/project`) when the stored version is ahead of
 the projection, and serves the stored projection if that call fails
-(Epo, 2026-10-07).
+(Epo, 2026-10-07); every material kind's `GET /api/materials/{id}` asks,
+diagrams and mindmaps included (Q453), so a person's or an agent's edit
+shows at once. Public pages read the stored projection.
 
 Go validates the complete envelope, locks the material, ignores stale versions,
 updates `materials.content`, increments the material revision, reconciles

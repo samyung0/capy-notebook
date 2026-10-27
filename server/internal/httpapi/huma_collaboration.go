@@ -529,7 +529,8 @@ func (a *api) deleteMaterialComment(ctx context.Context, in *discussionIDInput) 
 }
 
 // projectLive asks a live material's room to project edits its idle
-// projection has not written yet (notes, quizzes, sets; Epo 2026-10-07/10).
+// projection has not written yet (notes, quizzes, sets, diagrams, mindmaps;
+// Epo 2026-10-07/10, Q453).
 // Reports whether materials.content moved; a failure serves the stored
 // projection and is reported.
 func (a *api) projectLive(ctx context.Context, materialID string) bool {
